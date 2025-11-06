@@ -25,6 +25,16 @@
 #include "test_state.hpp"
 #include "transaction.hpp"
 
+#include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/monad/chain/monad_devnet.hpp>
+
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
@@ -60,9 +70,9 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
-using namespace evmone::state;
 using namespace evmc::literals;
 using namespace monad;
 using namespace monad::vm::fuzzing;
@@ -117,6 +127,9 @@ static constexpr std::string_view to_string(evmc_status_code const sc) noexcept
 static constexpr auto genesis_address =
     0xBEEFCAFE000000000000000000000000BA5EBA11_address;
 
+ static constexpr auto beneficiary_address =
+    0x5353535353535353535353535353535353535353_address;
+
 static constexpr auto block_gas_limit = 300'000'000;
 
 static evmone::test::TestState initial_state()
@@ -128,12 +141,36 @@ static evmone::test::TestState initial_state()
         .balance = std::numeric_limits<intx::uint256>::max() / 2,
         .storage = {},
         .code = {}};
+    init[beneficiary_address] = {};
     return init;
 }
 
-static Transaction tx_from(State &state, evmc::address const &addr) noexcept
+static void initial_state(TrieDb &tdb)
 {
-    auto tx = Transaction{};
+
+    auto const eth_header = BlockHeader{};
+
+    bytes32_t const block_id =
+        eth_header.number ? bytes32_t{eth_header.number} : NULL_HASH_BLAKE3;
+    tdb.commit(
+        StateDeltas{
+            {genesis_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = std::numeric_limits<intx::uint256>::max() / 2}}}},
+            {beneficiary_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{}}}}},
+        Code{},
+        block_id, eth_header);
+    tdb.finalize(eth_header.number, block_id);
+    tdb.set_block_and_prefix(eth_header.number);
+}
+
+static evmone::state::Transaction tx_from(evmone::state::State &state, evmc::address const &addr) noexcept
+{
+    auto tx = evmone::state::Transaction{};
     tx.gas_limit = block_gas_limit;
     tx.sender = addr;
     tx.nonce = state.get_or_insert(addr).nonce;
@@ -144,7 +181,7 @@ static Transaction tx_from(State &state, evmc::address const &addr) noexcept
 // book-keeping is elided here to keep the implementation simple and allow us to
 // send arbitrary messages to update the state.
 static evmc::Result transition(
-    State &state, evmc_message const &msg, evmc_revision const rev,
+    evmone::state::State &state, evmc_message const &msg, evmc_revision const rev,
     evmc::VM &vm, std::int64_t const block_gas_left)
 {
     // Pre-transaction clean-up.
@@ -164,7 +201,7 @@ static evmc::Result transition(
     // TODO(BSC): fill out block and host context properly; should all work fine
     // for the moment as zero values from the perspective of the VM
     // implementations.
-    auto block = BlockInfo{};
+    auto block = evmone::state::BlockInfo{};
     auto hashes = evmone::test::TestBlockHashes{};
     auto tx = tx_from(state, msg.sender);
     tx.to = msg.recipient;
@@ -178,7 +215,7 @@ static evmc::Result transition(
     ++sender_acc.nonce;
     sender_acc.balance -= block_gas_left * effective_gas_price;
 
-    Host host{rev, vm, state, block, hashes, tx};
+    evmone::state::Host host{rev, vm, state, block, hashes, tx};
 
     sender_acc.access_status = EVMC_ACCESS_WARM; // Tx sender is always warm.
     if (tx.to.has_value()) {
@@ -198,7 +235,7 @@ static evmc::Result transition(
     // Apply destructs.
     std::erase_if(
         state.get_modified_accounts(),
-        [](std::pair<address const, Account> const &p) noexcept {
+        [](std::pair<evmc::address const, evmone::state::Account> const &p) noexcept {
             return p.second.destructed;
         });
 
@@ -209,7 +246,7 @@ static evmc::Result transition(
     if (rev >= EVMC_SPURIOUS_DRAGON) {
         std::erase_if(
             state.get_modified_accounts(),
-            [](std::pair<address const, Account> const &p) noexcept {
+            [](std::pair<evmc::address const, evmone::state::Account> const &p) noexcept {
                 auto const &acc = p.second;
                 return acc.erase_if_empty && acc.is_empty();
             });
@@ -219,32 +256,57 @@ static evmc::Result transition(
 }
 
 static evmc::address deploy_contract(
-    State &state, evmc::address const &from,
-    std::span<std::uint8_t const> const code_)
+    evmone::test::TestState &state, evmc::address const &from,
+    std::span<std::uint8_t const> const code_, intx::uint256 balance = 0)
 {
-    auto code = bytes{code_.data(), code_.size()};
+    auto code = evmc::bytes{code_.data(), code_.size()};
 
+    state.try_emplace(from);
+
+    auto const nonce = state[from].nonce++;
+    // std::cerr << "nonce evmone: " << hex(from) << " " << nonce << "\n";
     auto const create_address =
-        compute_create_address(from, state.get_or_insert(from).nonce++);
-    MONAD_VM_DEBUG_ASSERT(state.find(create_address) == nullptr);
+        evmone::state::compute_create_address(from, nonce);
+    MONAD_VM_DEBUG_ASSERT(state.find(create_address) == state.end());
 
-    state.insert(
-        create_address,
-        Account{
+    state[create_address] =
+        evmone::test::TestAccount{
             .nonce = 0,
-            .balance = 0,
-            .code_hash = evmone::keccak256(code),
+            .balance = balance,
             .storage = {},
-            .transient_storage = {},
-            .code = code});
+            .code = code};
 
-    MONAD_VM_ASSERT(state.find(create_address) != nullptr);
+    MONAD_VM_ASSERT(state.find(create_address) != state.end());
+
+    return create_address;
+}
+
+
+static evmc::address deploy_contract(
+    monad::State &state, evmc::address const &from,
+    std::span<std::uint8_t const> const code_, intx::uint256 balance = 0)
+{
+    auto code = evmc::bytes{code_.data(), code_.size()};
+
+    auto const nonce = state.get_nonce(from);
+    state.set_nonce(from, nonce + 1);
+
+    // std::cerr << "nonce mnad: " << hex(from) << " " << nonce << "\n";
+    auto const create_address =
+        evmone::state::compute_create_address(from, nonce);
+    MONAD_VM_DEBUG_ASSERT(!state.account_exists(create_address));
+
+    state.create_contract(create_address);
+    state.set_code(create_address, code);
+    state.add_to_balance(create_address, balance);
+
+    MONAD_VM_ASSERT(state.account_exists(create_address));
 
     return create_address;
 }
 
 static evmc::address deploy_delegated_contract(
-    State &state, evmc::address const &from, evmc::address const &delegatee)
+    evmone::test::TestState &state, evmc::address const &from, evmc::address const &delegatee)
 {
     std::vector<uint8_t> code = {0xef, 0x01, 0x00};
     code.append_range(delegatee.bytes);
@@ -252,16 +314,28 @@ static evmc::address deploy_delegated_contract(
     return deploy_contract(state, from, code);
 }
 
-static evmc::address deploy_delegated_contracts(
-    State &evmone_state, State &monad_state, evmc::address const &from,
-    evmc::address delegatee)
+static evmc::address deploy_delegated_contract(
+    monad::State &state, evmc::address const &from, evmc::address const &delegatee)
 {
-    auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
-    auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
-    MONAD_VM_ASSERT(a == a1);
-    assert_equal(evmone_state, monad_state);
-    return a;
+    std::vector<uint8_t> code = {0xef, 0x01, 0x00};
+    code.append_range(delegatee.bytes);
+    MONAD_VM_ASSERT(code.size() == 23);
+    return deploy_contract(state, from, code);
 }
+
+// static evmc::address deploy_delegated_contracts(
+//     evmone::state::State &evmone_state, evmone::state::State &monad_state, monad::State &/*monad_state2*/, evmc::address const &from,
+//     evmc::address delegatee)
+// {
+//     auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
+//     auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
+//     MONAD_VM_ASSERT(a == a1);
+//     // auto const a2 = deploy_delegated_contract(monad_state2, from, delegatee);
+//     // MONAD_VM_ASSERT(a == a2);
+    
+//     assert_equal(evmone_state, monad_state);
+//     return a;
+// }
 
 // It's possible for the compiler and evmone to reach equivalent-but-not-equal
 // states after both executing. For example, the compiler may exit a block
@@ -271,32 +345,32 @@ static evmc::address deploy_delegated_contracts(
 // `K |-> 0` for some key `K`. This won't directly compare equal to the _empty_
 // state that the compiler has, and so we need to normalise the states after
 // execution to remove cold zero slots.
-static void clean_storage(State &state)
-{
-    for (auto &[addr, acc] : state.get_modified_accounts()) {
-        for (auto it = acc.storage.begin(); it != acc.storage.end();) {
-            auto const &[k, v] = *it;
+// static void clean_storage(evmone::state::State &state)
+// {
+//     for (auto &[addr, acc] : state.get_modified_accounts()) {
+//         for (auto it = acc.storage.begin(); it != acc.storage.end();) {
+//             auto const &[k, v] = *it;
 
-            if (v.current == evmc::bytes32{} && v.original == evmc::bytes32{} &&
-                v.access_status == EVMC_ACCESS_COLD) {
-                it = acc.storage.erase(it);
-            }
-            else {
-                ++it;
-            }
-        }
-        for (auto it = acc.transient_storage.begin();
-             it != acc.transient_storage.end();) {
-            auto const &[k, v] = *it;
-            if (v == evmc::bytes32{}) {
-                it = acc.transient_storage.erase(it);
-            }
-            else {
-                ++it;
-            }
-        }
-    }
-}
+//             if (v.current == evmc::bytes32{} && v.original == evmc::bytes32{} &&
+//                 v.access_status == EVMC_ACCESS_COLD) {
+//                 it = acc.storage.erase(it);
+//             }
+//             else {
+//                 ++it;
+//             }
+//         }
+//         for (auto it = acc.transient_storage.begin();
+//              it != acc.transient_storage.end();) {
+//             auto const &[k, v] = *it;
+//             if (v == evmc::bytes32{}) {
+//                 it = acc.transient_storage.erase(it);
+//             }
+//             else {
+//                 ++it;
+//             }
+//         }
+//     }
+// }
 
 using random_engine_t = std::mt19937_64;
 
@@ -308,7 +382,7 @@ namespace
         static constexpr seed_t default_seed =
             std::numeric_limits<seed_t>::max();
 
-        std::int64_t iterations_per_run = 100;
+        std::uint64_t iterations_per_run = 100;
         std::size_t messages = 4;
         seed_t seed = default_seed;
         std::size_t runs = std::numeric_limits<std::size_t>::max();
@@ -318,6 +392,8 @@ namespace
         evmc_revision revision = EVMC_PRAGUE;
         std::optional<std::string> focus_path = std::nullopt;
         std::optional<GeneratorFocus> focus = std::nullopt;
+        bool tx = false;
+
 
         void set_random_seed_if_default()
         {
@@ -370,6 +446,10 @@ static arguments parse_args(int const argc, char **const argv)
         "--print-stats",
         args.print_stats,
         "Print message result statistics when logging");
+    app.add_flag(
+        "--tx",
+        args.tx,
+        "fuzz transactions insted o messages");
 
     auto const rev_map = std::map<std::string, evmc_revision>{
         {"FRONTIER", EVMC_FRONTIER},
@@ -410,21 +490,70 @@ static arguments parse_args(int const argc, char **const argv)
     return args;
 }
 
-static evmc_status_code fuzz_iteration(
-    evmc_message const &msg, evmc_revision const rev, State &evmone_state,
-    evmc::VM &evmone_vm, State &monad_state, evmc::VM &monad_vm,
+
+void print_state_diff(const evmone::state::StateDiff& diff)
+{
+
+    std::cerr << "StateDiff {\n";
+
+    // Modified accounts
+    std::cerr << "  modified_accounts (" << diff.modified_accounts.size() << "):\n";
+    for (const auto& entry : diff.modified_accounts)
+    {
+        std::cerr << "    Entry {\n";
+        std::cerr << "      addr: 0x" << hex(entry.addr) << "\n";
+        std::cerr << "      nonce: " << entry.nonce << "\n";
+        std::cerr << "      balance: 0x" << hex(entry.balance) << "\n";
+
+        std::cerr << "      code: ";
+        if (entry.code)
+        {
+            if (entry.code->empty())
+                std::cerr << "(cleared)\n";
+            else
+                std::cerr << "0x" << hex(*entry.code) << "\n";
+        }
+        else
+        {
+            std::cerr << "(unchanged)\n"; 
+        }
+
+        std::cerr << "      modified_storage (" << entry.modified_storage.size() << "):\n";
+        for (const auto& [key, value] : entry.modified_storage)
+        {
+            std::cerr << "        [0x" << hex(key) << "] => 0x" << hex(value) << "\n";
+        }
+
+        std::cerr << "    }\n";
+    }
+
+    // Deleted accounts
+    std::cerr << "  deleted_accounts (" << diff.deleted_accounts.size() << "):\n";
+    for (const auto& addr : diff.deleted_accounts)
+    {
+        std::cerr << "    0x" << hex(addr) << "\n";
+    }
+
+    std::cerr << "}\n";
+}
+
+
+static evmc_status_code execute_message(
+    evmc_message const &msg, evmc_revision const rev, evmone::test::TestState &state,
+    evmc::VM &evmone_vm, evmc::VM &monad_vm,
     BlockchainTestVM::Implementation const impl)
 {
-    for (State &state : {std::ref(evmone_state), std::ref(monad_state)}) {
+    auto evmone_state = evmone::state::State{state};
+    auto monad_state = evmone::state::State{state};
+
+    for (evmone::state::State &state : {std::ref(evmone_state), std::ref(monad_state)}) {
         state.get_or_insert(msg.sender);
         state.get_or_insert(msg.recipient);
     }
-
-    auto const evmone_checkpoint = evmone_state.checkpoint();
+   
     auto const evmone_result =
         transition(evmone_state, msg, rev, evmone_vm, block_gas_limit);
 
-    auto const monad_checkpoint = monad_state.checkpoint();
     auto const monad_result =
         transition(monad_state, msg, rev, monad_vm, block_gas_limit);
 
@@ -433,18 +562,177 @@ static evmc_status_code fuzz_iteration(
         monad_result,
         impl == BlockchainTestVM::Implementation::Interpreter);
 
-    if (evmone_result.status_code != EVMC_SUCCESS) {
-        evmone_state.rollback(evmone_checkpoint);
-    }
-    clean_storage(evmone_state);
+    auto evm_diff = evmone_state.build_diff(rev);
 
-    if (monad_result.status_code != EVMC_SUCCESS) {
-        monad_state.rollback(monad_checkpoint);
-    }
-    clean_storage(monad_state);
+    auto monad_diff = monad_state.build_diff(rev);
 
-    assert_equal(evmone_state, monad_state);
+    assert_equal(evm_diff, monad_diff, state);
+
+
+    if (evmone_result.status_code == EVMC_SUCCESS)
+        state.apply(evmone_state.build_diff(rev));
     return evmone_result.status_code;
+}
+
+static monad::TransactionType to_monad_tx_type(evmone::state::Transaction::Type tx_type)
+{
+    switch (tx_type)
+    {
+    case evmone::state::Transaction::Type::legacy:
+        return monad::TransactionType::legacy;
+    case evmone::state::Transaction::Type::access_list:
+        return monad::TransactionType::eip2930;
+    case evmone::state::Transaction::Type::eip1559:
+        return monad::TransactionType::eip1559;
+    case evmone::state::Transaction::Type::blob:
+        return monad::TransactionType::eip4844;
+    case evmone::state::Transaction::Type::set_code:
+        return monad::TransactionType::eip7702;
+    }
+}
+
+static monad::AccessList to_monad_access_list (evmone::state::AccessList const &al){
+    monad::AccessList mal;
+    mal.reserve(al.size());
+    
+    for(auto const &a : al) {
+        mal.emplace_back(a.first, a.second);
+    }
+
+    return mal;
+}
+
+
+static monad::AuthorizationList to_monad_authorization_list (evmone::state::AuthorizationList const &al) {
+    monad::AuthorizationList mal;
+    mal.reserve(al.size());
+    
+    for(auto const &a : al) {
+        monad::SignatureAndChain sc = {.r = a.r, .s = a.s};
+        sc.from_v(a.v);
+        mal.emplace_back(sc, a.addr, a.nonce);
+    }
+
+    return mal;
+}
+
+
+static monad::Transaction to_monad_tx(evmone::state::Transaction const &tx)
+{
+    
+    monad::SignatureAndChain sc = {.r = tx.r, .s = tx.s, .chain_id = tx.chain_id, .y_parity = tx.v};
+
+    return monad::Transaction {
+        .sc = sc,
+        .nonce = tx.nonce,
+        .max_fee_per_gas = tx.max_gas_price,
+        .gas_limit = static_cast<uint64_t>(tx.gas_limit),
+        .value = tx.value,
+        .to = tx.to,
+        .type = to_monad_tx_type(tx.type),
+        .data = tx.data,
+        .access_list = to_monad_access_list(tx.access_list),
+        .max_priority_fee_per_gas = tx.max_priority_gas_price,
+        .max_fee_per_blob_gas = tx.max_blob_gas_price,
+        .blob_versioned_hashes = tx.blob_hashes,
+        .authorization_list = to_monad_authorization_list(tx.authorization_list)
+    };
+}
+
+static evmc_status_code execute_transaction(uint64_t block_no, uint64_t tx_no,
+    evmone::state::Transaction const &tx, evmc_revision const rev, evmone::test::TestState &evmone_state, monad::BlockState &bs,
+    evmc::VM &evmone_vm, evmc::VM &monad_vm,
+    BlockchainTestVM::Implementation const impl)
+{
+    // {
+    //     State s{monad_state2, Incarnation{0, 0}};
+    //     if(!s.account_exists(msg.sender))
+    //         s.create_account_no_rollback(msg.sender);
+    //     if(!s.account_exists(msg.recipient))
+    //         s.create_account_no_rollback(msg.recipient);
+    //     monad_state2.merge(s);
+    // }
+
+    auto block = evmone::state::BlockInfo{
+        .number = static_cast<int64_t>(block_no),
+        .coinbase = beneficiary_address,
+        .parent_ommers_hash = NULL_LIST_HASH,
+        .prev_randao = {}, 
+        .parent_beacon_block_root = NULL_HASH, 
+        .base_fee = 10,
+        .blob_gas_used = std::nullopt,
+        .excess_blob_gas = std::nullopt,
+        .blob_base_fee = std::nullopt,
+        .ommers = {},
+        .withdrawals = {}
+    };
+    auto block_hashes = evmone::test::TestBlockHashes{};
+
+    const auto tx_props_or_error =
+        evmone::state::validate_transaction(evmone_state, block, tx, rev, block_gas_limit, static_cast<int64_t>(evmone::state::max_blob_gas_per_block(rev)));
+    if (std::holds_alternative<std::error_code>(tx_props_or_error)){
+        const auto& ec = std::get<std::error_code>(tx_props_or_error);
+        std::cerr << "Transaction validation failed: " << ec.message() << "\n";
+        return EVMC_FAILURE;
+    }
+    const auto &tx_props = std::get<evmone::state::TransactionProperties>(tx_props_or_error);
+
+    auto const evmone_result =
+        evmone::state::transition(evmone_state, block, block_hashes, tx, rev, evmone_vm, tx_props);
+
+    auto const monad_result =
+        evmone::state::transition(evmone_state, block, block_hashes, tx, rev, monad_vm, tx_props);
+
+
+    monad::BlockMetrics metrics;
+    monad::BlockHeader const header{.number = block_no, .beneficiary = beneficiary_address};
+    monad::BlockHashBufferFinalized const block_hash_buffer;
+
+    boost::fibers::promise<void> prev{};
+    prev.set_value();
+
+    monad::NoopCallTracer noop_call_tracer;
+    trace::StateTracer noop_state_tracer = std::monostate{};
+
+    auto const monad_tx = to_monad_tx(tx);
+
+    Result<monad::Receipt> const monad_result2 = monad::ExecuteTransaction<EvmTraits<EVMC_PRAGUE>>(
+            MonadDevnet{},
+            tx_no,
+            monad_tx,
+            tx.sender,
+            {},
+            header,
+            block_hash_buffer,
+            bs,
+            metrics,
+            prev,
+            noop_call_tracer,
+            noop_state_tracer)();
+    if(!monad_result2){
+        std::cerr << "Transaction validation failed: " << monad_result2.assume_error().message().c_str() << "\n";
+        MONAD_VM_ASSERT(false);
+    }
+    // MONAD_VM_ASSERT(!!monad_result2);
+    // std::cerr << "emvone:\n";
+    // print_state_diff(evmone_result.state_diff);
+    // std::cerr << "\nmonad:\n";
+    // print_state_diff(monad_result.state_diff);
+
+    assert_equal(
+        evmone_result,
+        monad_result,
+        evmone_state,
+        impl == BlockchainTestVM::Implementation::Interpreter);
+
+
+    evmone_state.apply(evmone_result.state_diff);
+    const auto diff = evmone::state::finalize(evmone_state, rev, beneficiary_address, 0, {}, {});
+    evmone_state.apply(diff);
+
+
+    assert_equal(evmone_state, bs);
+    return evmone_result.status;
 }
 
 static void
@@ -458,7 +746,7 @@ log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
 
     auto const end = high_resolution_clock::now();
     auto const diff = (end - start).count();
-    auto const per_contract = diff / args.iterations_per_run;
+    auto const per_contract = diff / static_cast<int64_t>(args.iterations_per_run);
 
     std::cerr << std::format(
         "[{}]: {:.4f}s / iteration\n",
@@ -509,10 +797,17 @@ static void do_run(std::size_t const run_index, arguments const &args)
 
     auto initial_state_ = initial_state();
 
-    auto evmone_state = State{initial_state_};
-    auto monad_state = State{initial_state_};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    initial_state(tdb);
 
+    vm::VM vm;
+
+    BlockState block_state{tdb, vm};
+   
     auto contract_addresses = std::vector<evmc::address>{};
+    auto sender_addresses = std::vector<evmc::address>{};
     auto known_addresses = std::vector<evmc::address>{};
 
     auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
@@ -520,7 +815,9 @@ static void do_run(std::size_t const run_index, arguments const &args)
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    for (auto i = 0; i < args.iterations_per_run; ++i) {
+    for (uint64_t i = 0; i < args.iterations_per_run; ++i) {
+        State monad_state_temp{block_state, Incarnation{i, 0}};
+
         using monad::vm::fuzzing::GeneratorFocus;
         auto const &focus =
             args.focus
@@ -534,8 +831,11 @@ static void do_run(std::size_t const run_index, arguments const &args)
         if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
             auto precompile =
                 monad::vm::fuzzing::generate_precompile_address(engine, rev);
-            auto const a = deploy_delegated_contracts(
-                evmone_state, monad_state, genesis_address, precompile);
+            auto const a = deploy_delegated_contract(
+                initial_state_, genesis_address, precompile);
+            auto const a2 = deploy_delegated_contract(
+                monad_state_temp, genesis_address, precompile);
+            MONAD_VM_ASSERT(a == a2);
             known_addresses.push_back(a);
         }
 
@@ -552,51 +852,111 @@ static void do_run(std::size_t const run_index, arguments const &args)
                 continue;
             }
 
-            auto const a =
-                deploy_contract(evmone_state, genesis_address, contract);
-            auto const a1 =
-                deploy_contract(monad_state, genesis_address, contract);
-            MONAD_VM_ASSERT(a == a1);
+            auto a = deploy_contract(initial_state_, genesis_address, contract);
+            // auto const a1 =
+            //     deploy_contract(monad_state, genesis_address, contract);
+            // MONAD_VM_ASSERT(a == a1);
+            auto const a2 =
+                deploy_contract(monad_state_temp, genesis_address, contract);
+            MONAD_VM_ASSERT(a == a2);
 
-            assert_equal(evmone_state, monad_state);
+            // assert_equal(evmone_state, monad_state);
 
             contract_addresses.push_back(a);
             known_addresses.push_back(a);
 
+            auto sender_addr = deploy_contract(initial_state_, genesis_address, {}, std::numeric_limits<intx::uint256>::max() / 2);
+            auto sender_addr2 = deploy_contract(monad_state_temp, genesis_address, {}, std::numeric_limits<intx::uint256>::max() / 2);
+            MONAD_VM_ASSERT(sender_addr == sender_addr2);
+            sender_addresses.push_back(sender_addr);
+
+
             if (args.revision >= EVMC_PRAGUE && toss(engine, 0.2)) {
-                auto const b = deploy_delegated_contracts(
-                    evmone_state, monad_state, genesis_address, a);
+                auto const b = deploy_delegated_contract(
+                    initial_state_, genesis_address, a);
+                auto const b2 = deploy_delegated_contract(
+                    monad_state_temp, genesis_address, a);
+                MONAD_VM_ASSERT(b == b2);
                 known_addresses.push_back(b);
             }
             break;
         }
 
-        for (auto j = 0u; j < args.messages; ++j) {
-            auto msg = monad::vm::fuzzing::generate_message(
-                focus,
-                engine,
-                contract_addresses,
-                {genesis_address},
-                [&](auto const &address) {
-                    if (auto *found = evmone_state.find(address);
-                        found != nullptr) {
-                        return found->code;
-                    }
+        block_state.merge(monad_state_temp);
 
-                    return evmc::bytes{};
-                });
-            ++total_messages;
+        // auto evmone_state = evmone::state::State{initial_state_};
 
-            auto const ec = fuzz_iteration(
-                *msg,
-                rev,
-                evmone_state,
-                evmone_vm,
-                monad_state,
-                monad_vm,
-                args.implementation);
-            ++exit_code_stats[ec];
+
+        // auto monad_state = evmone::state::State{initial_state_};
+
+        assert_equal(initial_state_, block_state);
+        // std::cerr << "got here\n";
+
+
+        if(args.tx)
+        {
+            for (auto j = 1u; j <= args.messages; ++j) {
+                auto tx = monad::vm::fuzzing::generate_transaction(
+                    focus,
+                    engine,
+                    contract_addresses,
+                    sender_addresses,
+                    {genesis_address},
+                    [&](auto const &address) {
+                        return initial_state_.get_account_code(address);
+                    },
+                    [&](auto const &address) {
+                        auto nonce = initial_state_[address].nonce;
+                        // std::cerr << "nonce evmone: " << hex(address) << " " << nonce << "\n";
+                        return nonce;
+                    });
+                ++total_messages;
+
+                auto const ec = execute_transaction(
+                    i,
+                    j,
+                    tx,
+                    rev,
+                    initial_state_,
+                    block_state,
+                    evmone_vm,
+                    monad_vm,
+                    args.implementation);
+                ++exit_code_stats[ec];
+            }
         }
+        else {
+            for (auto j = 0u; j < args.messages; ++j) {
+                auto msg = monad::vm::fuzzing::generate_message(
+                    focus,
+                    engine,
+                    contract_addresses,
+                    {genesis_address},
+                    [&](auto const &address) {
+
+                        return initial_state_.get_account_code(address);
+                        // if (auto *found = initial_state_.find(address);
+                        //     found != initial_state_.end()) {
+                        //     return found->code;
+                        // }
+
+                        // return evmc::bytes{};
+                    });
+                ++total_messages;
+
+                auto const ec = execute_message(
+                    *msg,
+                    rev,
+                    initial_state_,
+                    evmone_vm,
+                    // monad_state,
+                    // monad_state2,
+                    monad_vm,
+                    args.implementation);
+                ++exit_code_stats[ec];
+            }
+        }
+       
     }
 
     log(start_time, args, exit_code_stats, run_index, total_messages);

@@ -15,6 +15,10 @@
 
 #include "account.hpp"
 #include "state.hpp"
+#include "test_state.hpp"
+
+#include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -30,7 +34,17 @@ namespace monad::vm::fuzzing
     void
     assert_equal(evmone::state::State const &a, evmone::state::State const &b);
 
+    void
+    assert_equal(evmone::test::TestState const &, monad::BlockState &);
+    
+    void
+    assert_equal(evmone::state::StateDiff const &a, evmone::state::StateDiff const &b, evmone::test::TestState const &);
+
     void assert_equal(
         evmc::Result const &evmone_result, evmc::Result const &compiler_result,
         bool strict_out_of_gas);
+
+    void assert_equal(
+        evmone::state::TransactionReceipt const &evmone_result, evmone::state::TransactionReceipt const &compiler_result,
+        evmone::test::TestState const &initial, bool const strict_out_of_gas);
 }

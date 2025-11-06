@@ -27,6 +27,7 @@ target_link_libraries(monad-compiler-fuzzer
   PRIVATE blockchain-test-vm
   PRIVATE monad-vm::monad-vm-fuzzing
   PRIVATE monad_execution
+  PRIVATE monad_execution_ethereum
   PRIVATE CLI11::CLI11
 )
 monad_compile_options(monad-compiler-fuzzer)

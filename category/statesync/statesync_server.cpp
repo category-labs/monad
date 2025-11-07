@@ -409,9 +409,9 @@ bool statesync_server_handle_request(
     auto const elapsed_seconds =
         std::chrono::duration_cast<std::chrono::duration<double>>(end - start)
             .count();
-    double disk_ios_per_sec = 0.0;
-    double disk_bytes_per_sec = 0.0;
-    double upsert_bytes_per_sec = 0.0;
+    [[maybe_unused]] double disk_ios_per_sec = 0.0;
+    [[maybe_unused]] double disk_bytes_per_sec = 0.0;
+    [[maybe_unused]] double upsert_bytes_per_sec = 0.0;
     if (elapsed_seconds > 0.0) {
         disk_ios_per_sec =
             static_cast<double>(disk_ios_submitted) / elapsed_seconds;

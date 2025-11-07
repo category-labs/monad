@@ -303,9 +303,15 @@ bool statesync_server_handle_request(
         return false;
     }
 
-    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
+    // load the target root to verify existence of target
     auto *const ctx = sync->context;
     auto &db = *ctx->ro;
+    NodeCursor const root{db.load_root_for_version(rq.target)};
+    if (!root.is_valid()) {
+        return false;
+    }
+
+    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
     if (rq.prefix < 256 && rq.target > rq.prefix) {
         auto const version = rq.target - rq.prefix - 1;
         NodeCursor const root{db.load_root_for_version(version)};
@@ -333,10 +339,6 @@ bool statesync_server_handle_request(
     }
 
     auto const bytes = from_prefix(rq.prefix, rq.prefix_bytes);
-    NodeCursor const root{db.load_root_for_version(rq.target)};
-    if (!root.is_valid()) {
-        return false;
-    }
     auto const finalized_root_res = db.find(root, finalized_nibbles, rq.target);
     if (!finalized_root_res.has_value()) {
         return false;

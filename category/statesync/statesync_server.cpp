@@ -58,6 +58,53 @@ using namespace monad::mpt;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
+// validate the request sent by client
+bool static_validate_request(monad_sync_request const &rq)
+{
+    // sanity check the number of bytes in the prefix
+    constexpr size_t MAX_PREFIX_BYTES = sizeof(decltype(rq.prefix));
+    static_assert(MAX_PREFIX_BYTES == 8);
+    if (rq.prefix_bytes > MAX_PREFIX_BYTES) {
+        LOG_INFO(
+            "Invalid request: prefix_bytes={} exceeds maximum={}",
+            rq.prefix_bytes,
+            MAX_PREFIX_BYTES);
+        return false;
+    }
+
+    // validate target
+    if (rq.target == INVALID_BLOCK_NUM) {
+        LOG_INFO(
+            "Invalid request: target cannot be INVALID_BLOCK_NUM ({})",
+            INVALID_BLOCK_NUM);
+        return false;
+    }
+
+    // Validate block number ordering: from <= until <= target
+    if (rq.from > rq.until) {
+        LOG_INFO("Invalid request: from={} > until={}", rq.from, rq.until);
+        return false;
+    }
+
+    if (rq.until > rq.target) {
+        LOG_INFO("Invalid request: until={} > target={}", rq.until, rq.target);
+        return false;
+    }
+
+    // Validate old_target == INVALID_BLOCK_NUM || old_target <= target
+    if (rq.old_target != INVALID_BLOCK_NUM) {
+        if (rq.old_target > rq.target) {
+            LOG_INFO(
+                "Invalid request: old_target={} > target={}",
+                rq.old_target,
+                rq.target);
+            return false;
+        }
+    }
+
+    return true;
+}
+
 byte_string from_prefix(uint64_t const prefix, size_t const n_bytes)
 {
     byte_string bytes;
@@ -251,6 +298,10 @@ bool statesync_server_handle_request(
             return depth >= prefix.nibble_size() || prefix.get(depth) == branch;
         }
     };
+
+    if (MONAD_UNLIKELY(!static_validate_request(rq))) {
+        return false;
+    }
 
     [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
     auto *const ctx = sync->context;

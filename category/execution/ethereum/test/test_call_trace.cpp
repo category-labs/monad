@@ -347,3 +347,99 @@ TYPED_TEST(TraitsTest, create_call_trace)
     EXPECT_EQ(call_frames[1].depth, 1u);
     EXPECT_EQ(call_frames[1].logs, std::vector<CallFrame::Log>{});
 }
+
+TYPED_TEST(TraitsTest, selfdestruct_logs)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    // Deploy a nested contract, which then immediately selfdestructs.
+    auto const code =
+        evmc::from_hex(
+            "0x60806040526004361061003f576000357c010000000000000000000000000000"
+            "000000000000000000000000000090048063e2179b8e1461004b57610046565b36"
+            "61004657005b600080fd5b34801561005757600080fd5b50610060610062565b00"
+            "5b7f440a57bf0cad4531f0d64cfe9a30829810bbcd2b992d0ef6c9a6bd73bb65c5"
+            "e560405160405180910390a160405161009a90610159565b604051809103906000"
+            "f0801580156100b157600080fd5b5073ffffffffffffffffffffffffffffffffff"
+            "ffffff166326121ff06040518163ffffffff167c01000000000000000000000000"
+            "000000000000000000000000000000000281526004016000604051808303816000"
+            "87803b15801561011557600080fd5b5060325a03f115801561012757600080fd5b"
+            "505050507fd217144c730a1ad05c23bd421e694cff562f313468e7486c268e4930"
+            "19a7829b60405160405180910390a1565b60ea806101668339019056fe60806040"
+            "52348015600f57600080fd5b5060cd80601d6000396000f3fe6080604052348015"
+            "600f57600080fd5b50600436106045576000357c01000000000000000000000000"
+            "000000000000000000000000000000009004806326121ff014604a575b600080fd"
+            "5b60506052565b005b7f6031a8d62d7c95988fa262657cd92107d90ed96e08d8f8"
+            "67d32f26edfe85502260405160405180910390a13373ffffffffffffffffffffff"
+            "ffffffffffffffffff16fffea26469706673582212206367043456832a7ff0e060"
+            "4dde473049ca4ba64964041f92dfd8f25f0c37dafd64736f6c634300081e0033a2"
+            "646970667358221220427a5624d9e1f84187016962f57b5c42f4b04d42afb5c627"
+            "6904553a8a6ef61c64736f6c634300081e0033")
+            .value();
+    auto const icode = vm::make_shared_intercode(code);
+    auto const code_hash = to_bytes(keccak256(code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max()}}}},
+            {ADDR_B,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = code_hash}}}}},
+        Code{
+            {code_hash, icode},
+        },
+        BlockHeader{});
+
+    BlockState bs{tdb, vm};
+    Incarnation const incarnation{0, 0};
+    State s{bs, incarnation};
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 1'000'000,
+        .value = 0,
+        .to = ADDR_B,
+        .data = 0xe2179b8e_bytes,
+    };
+
+    auto const &sender = ADDR_A;
+    auto const &beneficiary = ADDR_A;
+
+    evmc_tx_context const tx_context{};
+    BlockHashBufferFinalized buffer{};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+    EvmcHost<typename TestFixture::Trait> host{
+        call_tracer, tx_context, buffer, s};
+
+    auto const result =
+        ExecuteTransactionNoValidation<typename TestFixture::Trait>(
+            EthereumMainnet{},
+            tx,
+            sender,
+            authorities_empty,
+            BlockHeader{.beneficiary = beneficiary},
+            0)(s, host);
+    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+
+    EXPECT_EQ(call_frames.size(), 4);
+    EXPECT_EQ(call_frames[0].type, CallType::CALL);
+    EXPECT_EQ(call_frames[1].type, CallType::CREATE);
+    EXPECT_EQ(call_frames[2].type, CallType::CALL);
+    EXPECT_EQ(call_frames[3].type, CallType::SELFDESTRUCT);
+
+    for (auto const &frame : call_frames) {
+        EXPECT_TRUE(frame.logs.has_value());
+    }
+}

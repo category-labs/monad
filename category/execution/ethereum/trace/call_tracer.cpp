@@ -209,6 +209,7 @@ void CallTracer::on_self_destruct(Address const &from, Address const &to)
         .output = {},
         .status = EVMC_SUCCESS, // TODO
         .depth = depth_ + 1,
+        .logs = std::vector<CallFrame::Log>{},
     });
 }
 

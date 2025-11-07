@@ -1255,8 +1255,8 @@ uint64_t Db::get_latest_finalized_version() const
 uint64_t Db::get_latest_verified_version() const
 {
     MONAD_ASSERT(impl_);
-    MONAD_ASSERT(is_on_disk());
-    return impl_->aux().get_latest_verified_version();
+    return is_on_disk() ? impl_->aux().get_latest_verified_version()
+                        : INVALID_BLOCK_NUM;
 }
 
 bytes32_t Db::get_latest_voted_block_id() const

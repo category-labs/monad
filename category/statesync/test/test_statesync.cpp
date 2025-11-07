@@ -1202,3 +1202,141 @@ TEST(Deletions, exceed_max_deletions)
     bool const success = deletions->for_each(12, [](auto const &) {});
     EXPECT_TRUE(success);
 }
+
+// Unit tests for request validation logic
+TEST_F(StateSyncFixture, validation_prefix_bytes_too_large)
+{
+    // Set up a valid database state
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 9, // exceeds maximum of 8 - INVALID
+        .target = 99,
+        .from = 0,
+        .until = 99,
+        .old_target = INVALID_BLOCK_NUM};
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    // Should fail due to validation, not due to missing data
+    EXPECT_FALSE(client.success);
+}
+
+TEST_F(StateSyncFixture, validation_target_invalid)
+{
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 8,
+        .target = INVALID_BLOCK_NUM, // invalid target
+        .from = 0,
+        .until = 99,
+        .old_target = INVALID_BLOCK_NUM};
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    EXPECT_FALSE(client.success);
+}
+
+TEST_F(StateSyncFixture, validation_from_greater_than_until)
+{
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 8,
+        .target = 99,
+        .from = 50,
+        .until = 40, // from > until - INVALID
+        .old_target = INVALID_BLOCK_NUM};
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    EXPECT_FALSE(client.success);
+}
+
+TEST_F(StateSyncFixture, validation_until_greater_than_target)
+{
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 8,
+        .target = 99,
+        .from = 0,
+        .until = 100, // until > target - INVALID
+        .old_target = INVALID_BLOCK_NUM};
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    EXPECT_FALSE(client.success);
+}
+
+TEST_F(StateSyncFixture, validation_old_target_greater_than_target)
+{
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 8,
+        .target = 50,
+        .from = 0,
+        .until = 50,
+        .old_target = 51}; // old_target > target - INVALID
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    EXPECT_FALSE(client.success);
+}

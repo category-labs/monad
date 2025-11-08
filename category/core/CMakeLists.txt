@@ -162,6 +162,8 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     PRIVATE # core
             "cpuset.c"
             "cpuset.h"
+            # event
+            "event/event_ring_util_linux.c"
             # io
             "io/buffers.cpp"
             "io/buffers.hpp"

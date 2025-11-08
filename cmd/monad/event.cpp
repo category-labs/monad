@@ -83,11 +83,9 @@ int claim_event_ring_file(fs::path const &ring_path)
         int const saved_errno = errno;
         if (saved_errno == EWOULDBLOCK) {
             pid_t owner_pid = 0;
-            size_t owner_pid_size = 1;
 
             // Another process has an exclusive lock; find out who it is
-            (void)monad_event_ring_find_writer_pids(
-                ring_fd, &owner_pid, &owner_pid_size);
+            (void)monad_event_ring_query_excl_writer_pid(ring_fd, &owner_pid);
             if (owner_pid == 0) {
                 LOG_ERROR(
                     "event ring file `{}` is owned by an unknown other process",
@@ -156,9 +154,9 @@ int allocate_event_ring_file(
 
 // Create an event ring file which we own exclusively. This is tricky because
 // as soon as we open a file with O_RDWR or O_WRONLY, any API user calling the
-// function monad_event_ring_find_writer_pids might assume the file is ready
-// to be used. Unless they're careful, they could mmap a half-initialized file,
-// which gives confusing errors.
+// function monad_event_ring_query_excl_writer_pid might assume the file is
+// ready to be used. Unless they're careful, they could mmap a half-initialized
+// file, which gives confusing errors.
 //
 // This will create a new locked file that is fully initialized, and then
 // rename it to the correct name using Linux's renameat2(2) RENAME_NOREPLACE
@@ -166,12 +164,11 @@ int allocate_event_ring_file(
 //
 //   1. First we try to take possession of the file's name (on an advisory
 //      basis using flock(2)) via the helper function `claim_event_ring_file`.
-//      That function opens the file with O_RDONLY, to avoid triggering anyone
-//      watching with `monad_event_ring_find_writer_pids`. It places a LOCK_EX
-//      flock(2) to claim ownership of the file initialization process, and
-//      returns EWOULDBLOCK if it appears another process owns the file. If we
-//      claim the file, then (1) it existed and (2) was un-owned and was
-//      therefore a zombie from a crashed process. We destroy it.
+//      It places a LOCK_EX flock(2) to claim ownership of the initialization
+//      process, and returns EWOULDBLOCK if it appears another process already
+//      owns the file. If we claim the file, then (1) it existed and (2) was
+//      un-owned and was therefore a zombie from a crashed process. We destroy
+//      it.
 //
 //   2. Next, we use the helper function `allocate_event_ring_file` to create
 //      the real file (called the "init" file) with the temporary file name

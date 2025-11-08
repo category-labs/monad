@@ -13,27 +13,45 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# This cmake project can be used to build the client part of the monad event
-# library without building all of libmonad_core.a or using the rest of the CMake
-# build system, i.e., this can be used a top-level source directory to just
-# build these components. This is useful for external third-party clients, and
-# for the Rust build system.
+# This cmake project can be used to build just the execution event SDK library
+# (as `libmonad_event.a`) without building all of the monolithic
+# libmonad_execution.a or including the rest of the CMake build system. This
+# is useful for external third-party clients, and for the Rust build system.
 
-project(monad_event)
+cmake_minimum_required(VERSION 3.23)
 
-option(MONAD_EVENT_DISABLE_LIBHUGETLBFS
-  "Disable the default value in the `monad_event_open_hugetlbfs_dir_fd` API function (removes dependency on libhugetlbfs)" OFF)
+project(monad_event LANGUAGES C)
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  set(MONAD_EVENT_HUGETLBFS_DEFAULT ON)
+else()
+  set(MONAD_EVENT_HUGETLBFS_DEFAULT OFF)
+endif()
+
+option(MONAD_EVENT_USE_LIBHUGETLBFS
+  "Build with libhugetlbfs support (enables the `monad_event_open_hugetlbfs_dir_fd` API function)"
+  ${MONAD_EVENT_HUGETLBFS_DEFAULT})
 
 add_library(
   monad_event
   "../core/assert.c"
-  "../core/assert.h"
   "../core/cleanup.c"
-  "../core/cleanup.h"
   "../core/format_err.c"
+  "../core/path_util.c"
+  "../core/event/event_ring.c"
+  "../core/event/event_ring_util.c"
+  "../core/event/test_event_ctypes_metadata.c"
+  "../execution/ethereum/event/exec_event_ctypes_metadata.c")
+
+target_sources(monad_event PUBLIC
+  FILE_SET event_headers
+  TYPE HEADERS
+  BASE_DIRS ".."
+  FILES
+  "../core/assert.h"
+  "../core/cleanup.h"
   "../core/format_err.h"
   "../core/likely.h"
-  "../core/path_util.c"
   "../core/path_util.h"
   "../core/srcloc.h"
   "../core/event/event_iterator.h"
@@ -41,16 +59,20 @@ add_library(
   "../core/event/event_metadata.h"
   "../core/event/event_recorder.h"
   "../core/event/event_recorder_inline.h"
-  "../core/event/event_ring.c"
   "../core/event/event_ring.h"
-  "../core/event/event_ring_util.c"
   "../core/event/event_ring_util.h"
+  "../core/event/test_event_ctypes.h"
   "../core/mem/align.h"
   "../execution/ethereum/core/base_ctypes.h"
   "../execution/ethereum/core/eth_ctypes.h"
   "../execution/ethereum/event/exec_event_ctypes.h"
-  "../execution/ethereum/event/exec_event_ctypes_metadata.c"
-  "../execution/ethereum/event/exec_iter_help.h")
+  "../execution/ethereum/event/exec_iter_help.h"
+  "../execution/ethereum/event/exec_iter_help_inline.h"
+  "../execution/monad/core/monad_ctypes.h")
+
+target_include_directories(monad_event PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
+    $<INSTALL_INTERFACE:include>)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   target_sources(monad_event PRIVATE "../core/event/event_ring_util_linux.c")
@@ -58,25 +80,47 @@ else()
   target_sources(monad_event PRIVATE "../core/event/event_ring_util_posix.c")
 endif()
 
-target_include_directories(monad_event PUBLIC "../..")
 target_compile_definitions(monad_event PUBLIC _GNU_SOURCE)
 target_compile_features(monad_event PUBLIC c_std_23)
 target_compile_options(monad_event PRIVATE -Wall -Wextra -Wconversion -Werror)
 
-if(MONAD_EVENT_DISABLE_LIBHUGETLBFS)
-  target_compile_definitions(monad_event PRIVATE MONAD_EVENT_DISABLE_LIBHUGETLBFS)
-else()
+if(MONAD_EVENT_USE_LIBHUGETLBFS)
   find_library(libhugetlbfs NAMES hugetlbfs REQUIRED)
   target_sources(monad_event PRIVATE
     "../core/mem/hugetlb_path.c"
     "../core/mem/hugetlb_path.h")
   target_link_libraries(monad_event PRIVATE hugetlbfs)
+else()
+  target_compile_definitions(monad_event PRIVATE MONAD_EVENT_DISABLE_LIBHUGETLBFS)
 endif()
 
 option(MONAD_EVENT_BUILD_EXAMPLE
     "Build the example program that shows how to use the API" ON)
 
 if (MONAD_EVENT_BUILD_EXAMPLE)
-    add_executable(eventwatch "example/eventwatch.c")
-    target_link_libraries(eventwatch PRIVATE monad_event)
+  add_executable(eventwatch "example/eventwatch.c")
+  target_compile_options(eventwatch PRIVATE -Wall -Wextra -Wconversion -Werror)
+  target_link_libraries(eventwatch PRIVATE monad_event)
 endif()
+
+install(TARGETS monad_event
+        EXPORT monad_exec_events_sdk
+        FILE_SET event_headers DESTINATION include/category)
+
+install(EXPORT monad_exec_events_sdk
+        FILE monad_exec_events_sdk.cmake
+        DESTINATION lib/cmake/category-labs)
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/monad_exec_events_sdk-config.cmake"
+  INSTALL_DESTINATION "lib/cmake/category-labs"
+  NO_SET_AND_CHECK_MACRO
+  NO_CHECK_REQUIRED_COMPONENTS_MACRO)
+
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/monad_exec_events_sdk-config.cmake"
+  DESTINATION lib/cmake/category-labs)
+
+export(EXPORT monad_exec_events_sdk
+  FILE "${CMAKE_CURRENT_BINARY_DIR}/monad_exec_events_sdk.cmake")

@@ -330,6 +330,8 @@ namespace
         std::optional<GeneratorFocus> focus = std::nullopt;
         // Disable compiler hook introducing randomness in compilation
         bool deterministic_compilation = false;
+        // When shrinking a contract, do not change the compiler hook seed
+        bool shrink_contract_seed = false;
         std::size_t run_shrinking_attempts = 100;
         std::size_t contract_shrinking_attempts = 100;
 
@@ -397,6 +399,11 @@ static arguments parse_args(int const argc, char **const argv)
         "--deterministic-compilation",
         args.deterministic_compilation,
         "Enable deterministic compilation (no randomness)");
+
+    app.add_flag(
+        "--shrink-contract-seed",
+        args.shrink_contract_seed,
+        "Try with different the compiler hook seed when shrinking a contract");
 
     app.add_option(
         "--run-shrinking-attempts",
@@ -1091,9 +1098,40 @@ static Run shrink_steps(arguments const &args, Engine &engine, Run const &run)
                 [&](DeployContract const &d) {
                     if (auto new_contract = shrink_run_contract(
                             args, engine, current_run, element_to_shrink)) {
-                        // 10% chance to change the seed
+                        // As instructions are removed from the contract, the
+                        // state of the compiler hook RNG shifts, potentially
+                        // changing its effects on instructions following the
+                        // remove instructions. This can lead to false negatives
+                        // when shrinking, where the shrinker thinks the smaller
+                        // contract does not reproduce the failure, when in fact
+                        // it would if the hook RNG state was the same.
+                        //
+                        // As a example, consider the following pseudo code:
+                        //
+                        // /--------------
+                        // | Block:      |
+                        // |   push N    |
+                        // |   push M    |
+                        // |   instr_A   |
+                        // |   instr_B   |
+                        // ---------------/
+                        //
+                        // Where instr_A is not relevant to the counter-example,
+                        // but instr_B is and depends on the compiler hook
+                        // state. instr_A cannot be removed without changing the
+                        // hook state for instr_B, and so will never be removed.
+                        //
+                        // To mitigate this, we randomly try different seeds
+                        // when shrinking the contract with a 5% change. Most
+                        // counter-examples can be shrunk without this, so this
+                        // feature is off by default.
+                        //
+                        // Idea: Try to shrink without this first, and have a
+                        //       second shrinking pass with this enabled?
                         auto const new_seed =
-                            toss(engine, 0.1) ? engine() : d.contract_hook_seed;
+                            toss(engine, args.shrink_contract_seed ? 0.05 : 0)
+                            ? engine() : d.contract_hook_seed;
+
                         current_run[element_to_shrink] = DeployContract{
                             new_seed, d.contract_address, new_contract.value()};
                         iteration_count = 0;

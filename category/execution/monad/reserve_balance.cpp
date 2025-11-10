@@ -57,11 +57,13 @@ bool dipped_into_reserve(
 
         // Skip if not EOA
         if (orig_code_hash != NULL_HASH) {
-            vm::SharedIntercode const intercode =
-                state.read_code(orig_code_hash)->intercode();
-            if (!monad::vm::evm::is_delegated(
-                    {intercode->code(), intercode->size()})) {
-                continue;
+            if (!orig.at(addr).account_->inline_delegated_code()) {
+                vm::SharedIntercode const intercode =
+                    state.read_code(orig_code_hash)->intercode();
+                if (!monad::vm::evm::is_delegated(
+                        {intercode->code(), intercode->size()})) {
+                    continue;
+                }
             }
         }
 

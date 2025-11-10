@@ -1004,11 +1004,12 @@ namespace monad::vm::fuzzing
                                 }
                             },
                             [&](SmallConstant const &sc) {
-                                std::uint32_t val = sc.value;
+                                auto const *val =
+                                    reinterpret_cast<uint8_t const *>(
+                                        &sc.value);
                                 program.push_back(PUSH4);
-                                for (auto i = 0; i < 4; ++i) {
-                                    program.push_back(val & 0xFF);
-                                    val >>= 8;
+                                for (auto i = 3; i >= 0; --i) {
+                                    program.push_back(val[i]);
                                 }
                             },
                             [&](ReturnInstead const &) {

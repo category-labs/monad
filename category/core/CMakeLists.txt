@@ -143,6 +143,9 @@ add_library(
   # rlp
   "rlp/config.hpp"
   "rlp/encode.hpp"
+  # runtime
+  "runtime/uint256.cpp"
+  "runtime/uint256.hpp"
   # test
   "test_util/gtest_signal_stacktrace_printer.hpp"
   # util

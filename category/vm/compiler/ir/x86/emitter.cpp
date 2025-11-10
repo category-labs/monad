@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -24,7 +25,6 @@
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 #include <category/vm/utils/debug.hpp>
 
 #include <asmjit/core/api-config.h>

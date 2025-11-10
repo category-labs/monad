@@ -15,9 +15,9 @@
 
 #include "fixture.hpp"
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/math.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.h>
 

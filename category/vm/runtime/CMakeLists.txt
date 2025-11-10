@@ -44,8 +44,6 @@ target_sources(monad-vm-runtime PRIVATE
     "transmute.S"
     "transmute.hpp"
     "types.hpp"
-    "uint256.cpp"
-    "uint256.hpp"
 )
 
 monad_compile_options(monad-vm-runtime)

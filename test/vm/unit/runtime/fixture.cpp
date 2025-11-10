@@ -15,11 +15,11 @@
 
 #include "fixture.hpp"
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/keccak.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>

@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/runtime/uint256.hpp>
+#include <category/core/runtime/uint256.hpp>
 
 #include <bit>
 

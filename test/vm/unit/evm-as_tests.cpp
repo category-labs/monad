@@ -14,9 +14,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "asmjit/core/jitruntime.h"
+#include "category/core/runtime/uint256.hpp"
 #include "category/vm/compiler/ir/x86/types.hpp"
 #include "category/vm/runtime//types.hpp"
-#include "category/vm/runtime//uint256.hpp"
 #include "category/vm/utils/evm-as/compiler.hpp"
 #include "evmc/evmc.hpp"
 #include <category/vm/compiler/ir/basic_blocks.hpp>

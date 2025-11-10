@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <gtest/gtest.h>

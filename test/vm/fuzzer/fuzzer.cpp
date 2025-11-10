@@ -230,7 +230,7 @@ static void deploy_contract(
 {
     auto code = bytes{code_.data(), code_.size()};
 
-    MONAD_VM_DEBUG_ASSERT(state.find(to) == nullptr);
+    FUZZER_ASSERT(state.find(to) == nullptr);
 
     state.insert(
         to,
@@ -1130,7 +1130,8 @@ static Run shrink_steps(arguments const &args, Engine &engine, Run const &run)
                         //       second shrinking pass with this enabled?
                         auto const new_seed =
                             toss(engine, args.shrink_contract_seed ? 0.05 : 0)
-                            ? engine() : d.contract_hook_seed;
+                                ? engine()
+                                : d.contract_hook_seed;
 
                         current_run[element_to_shrink] = DeployContract{
                             new_seed, d.contract_address, new_contract.value()};
@@ -1163,8 +1164,8 @@ static Run shrink_complete_run(
             1,
         current_run.end());
 
-    // // Make sure the final shrunken run still fails
-    FUZZER_ASSERT(try_run(args, run));
+    // Make sure the final shrunken run still fails
+    FUZZER_ASSERT(try_run(args, current_run));
 
     print_run_summary(current_run);
     current_run = shrink_remove_steps(args, engine, current_run);
@@ -1177,7 +1178,7 @@ static Run shrink_complete_run(
     }
 
     // Make sure the final shrunken run still fails
-    FUZZER_ASSERT(try_run(args, run));
+    FUZZER_ASSERT(try_run(args, current_run));
 
     return current_run;
 }
@@ -1274,7 +1275,7 @@ static void run_loop(int argc, char **argv)
 
             auto const reason = try_run(args, shrunk_run);
             if (reason) {
-                std::cerr << "Final failure reason" << std::endl;
+                std::cerr << "Final failure reason:\n";
                 std::cerr << std::format(
                     "  Assertion failed: {}\n", reason->what());
             }

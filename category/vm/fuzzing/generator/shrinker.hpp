@@ -66,6 +66,9 @@ namespace monad::vm::fuzzing
             // Invalid p, just remove a single element
             return erase_element(engine, std::move(vec)).first;
         }
+        else if (vec.size() == 1) {
+            return {}; // only one element, remove it
+        }
         else {
             auto range_size_dist = std::geometric_distribution<std::size_t>(p);
             auto range_size = std::min<std::size_t>(

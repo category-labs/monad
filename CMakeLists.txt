@@ -156,7 +156,7 @@ target_include_directories(komihash INTERFACE "third_party/komihash")
 # Because LLVM is a large dependency, we only try to find it if it's
 # explicitly enabled as part of the VM build: regular client builds don't need
 # to use it.
-if(UTILS_CLANG_TIDY_AUTO_CONST_CORRECTNESS OR MONAD_COMPILER_LLVM)
+if(UTILS_CLANG_TIDY_AUTO_CONST OR MONAD_COMPILER_LLVM)
   include(cmake/LinkLLVM.cmake)
   find_package(LLVM 19.1.7 REQUIRED CONFIG)
 endif()

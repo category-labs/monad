@@ -700,11 +700,7 @@ TEST(uint256, load_store)
         ASSERT_EQ(0, std::memcmp(le_bytes, le_stored, 32));
         ASSERT_EQ(x, uint256_t::load_le(le_stored));
 
-        auto x_be = uint256_t{
-            std::byteswap(x[3]),
-            std::byteswap(x[2]),
-            std::byteswap(x[1]),
-            std::byteswap(x[0])};
+        auto const x_be = x.to_be();
 
         auto *be_bytes = std::bit_cast<uint8_t(*)[32]>(x_be.as_bytes());
         ASSERT_EQ(x, uint256_t::load_be_unsafe(x_be.as_bytes()));

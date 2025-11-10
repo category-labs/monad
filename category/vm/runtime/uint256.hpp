@@ -26,6 +26,7 @@
 #include <immintrin.h>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 
 #ifndef __AVX2__
     #error "Target architecture must support AVX2"
@@ -49,6 +50,8 @@
 
 namespace monad::vm::runtime
 {
+    struct uint256_t;
+
     [[gnu::always_inline]] constexpr inline uint64_t
     force(uint64_t expr) noexcept
     {
@@ -251,6 +254,8 @@ namespace monad::vm::runtime
             return div_intrinsic(u_hi, u_lo, v);
         }
     }
+
+    inline constexpr uint256_t byteswap(uint256_t const &x) noexcept;
 
     struct uint256_t
     {
@@ -611,11 +616,10 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         inline constexpr uint256_t to_be() const noexcept
         {
-            return uint256_t{
-                std::byteswap(words_[3]),
-                std::byteswap(words_[2]),
-                std::byteswap(words_[1]),
-                std::byteswap(words_[0])};
+            static_assert(
+                std::endian::native == std::endian::little,
+                "to_be only supported on little-endian platforms");
+            return byteswap(*this);
         }
 
         [[gnu::always_inline]]
@@ -683,6 +687,8 @@ namespace monad::vm::runtime
             return from_string(s.c_str());
         }
     };
+
+    static_assert(std::is_trivially_copyable_v<uint256_t>);
 
     uint256_t signextend(uint256_t const &byte_index, uint256_t const &x);
     uint256_t byte(uint256_t const &byte_index, uint256_t const &x);
@@ -1346,6 +1352,16 @@ namespace monad::vm::runtime
             }
         }
         return result;
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t
+    byteswap(uint256_t const &x) noexcept
+    {
+        return uint256_t{
+            std::byteswap(x[3]),
+            std::byteswap(x[2]),
+            std::byteswap(x[1]),
+            std::byteswap(x[0])};
     }
 
     consteval uint256_t operator""_u256(char const *s)

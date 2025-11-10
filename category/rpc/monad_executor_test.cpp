@@ -2581,3 +2581,229 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
 
     monad_executor_destroy(executor);
 }
+
+TEST_F(EthCallFixture, prestate_trace_near_genesis)
+{
+    static constexpr Address ADDR_A =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+
+    auto const next_sig = [&]() -> SignatureAndChain {
+        static uint64_t r = 1;
+        MonadDevnet const devnet;
+        return SignatureAndChain{r++, 1, devnet.get_chain_id(), 1};
+    };
+
+    Transaction const block1_tx{
+        .sc = next_sig(),
+        .nonce = 1,
+        .gas_limit = 21000,
+        .value = uint256_t{uint64_t{0x01}},
+        .to = ADDR_A,
+    };
+
+    Transaction const block2_tx{
+        .sc = next_sig(),
+        .nonce = 1,
+        .gas_limit = 42000,
+        .value = uint256_t{uint64_t{0xAA}},
+        .to = ADDR_A,
+    };
+
+    auto const block1_tx_sender = recover_sender(block1_tx).value();
+    auto const block2_tx_sender = recover_sender(block2_tx).value();
+
+    {
+        // Initial state.
+        StateDeltas const deltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{uint64_t{0x01}}, .nonce = 1}}}},
+            {block1_tx_sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .nonce = block1_tx.nonce}}}},
+            {block2_tx_sender,
+             StateDelta{
+                 .account = {
+                     std::nullopt,
+                     Account{
+                         .balance =
+                             uint256_t{std::numeric_limits<uint64_t>::max()},
+                         .nonce = block2_tx.nonce}}}}};
+
+        commit_sequential(tdb, deltas, {}, BlockHeader{.number = 0});
+    }
+
+    // Genesis block
+    BlockHeader const header{.number = 0};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+    auto const rlp_parent_id = to_vec(rlp::encode_bytes32(bytes32_t{}));
+    auto const rlp_grandparent_id = to_vec(rlp::encode_bytes32(bytes32_t{}));
+
+    auto *executor = create_executor(dbname.string());
+
+    struct callback_context genesis_prestate_ctx;
+    {
+        boost::fibers::future<void> f =
+            genesis_prestate_ctx.promise.get_future();
+        monad_executor_run_transactions(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_header.data(),
+            rlp_header.size(),
+            0,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_parent_id.data(),
+            rlp_parent_id.size(),
+            rlp_grandparent_id.data(),
+            rlp_grandparent_id.size(),
+            -1,
+            complete_callback,
+            (void *)&genesis_prestate_ctx,
+            PRESTATE_TRACER);
+        f.get();
+
+        ASSERT_TRUE(genesis_prestate_ctx.result->status_code == EVMC_REJECTED);
+
+        char const *const expected_message = "cannot trace genesis block";
+
+        EXPECT_TRUE(
+            std::strcmp(
+                genesis_prestate_ctx.result->message, expected_message) == 0);
+    }
+
+    // Block 1
+    struct callback_context block1_prestate_ctx;
+    {
+        std::vector<Transaction> const transactions = {block1_tx};
+        std::vector<Address> const senders = {block1_tx_sender};
+        std::vector<Receipt> const receipts = {{}};
+        std::vector<std::vector<CallFrame>> const call_frames = {{}};
+
+        BlockHeader const header{.number = 1};
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+
+        commit_sequential(
+            tdb, {}, {}, header, receipts, call_frames, senders, transactions);
+
+        boost::fibers::future<void> f =
+            block1_prestate_ctx.promise.get_future();
+        monad_executor_run_transactions(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_header.data(),
+            rlp_header.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_parent_id.data(),
+            rlp_parent_id.size(),
+            rlp_grandparent_id.data(),
+            rlp_grandparent_id.size(),
+            0,
+            complete_callback,
+            (void *)&block1_prestate_ctx,
+            PRESTATE_TRACER);
+        f.get();
+
+        ASSERT_TRUE(block1_prestate_ctx.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_pre_state_trace(
+            block1_prestate_ctx.result->encoded_trace,
+            block1_prestate_ctx.result->encoded_trace +
+                block1_prestate_ctx.result->encoded_trace_len);
+
+        auto const *const expected = R"({
+            "result": {
+                "0x0000000000000000000000000000000000000000": {
+                    "balance": "0x0"
+                },
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0x1",
+                    "nonce": 1
+                },
+                "0xbedcab535cc48a9bd659ac448f092d02ba23a05a": {
+                    "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    "nonce":1
+                }
+            },
+            "txHash": "0x1618c6e833ab2d6a9574982709de8c7d88da1851c5bd2ca8e31c0e43ead8647b"
+        })";
+        EXPECT_EQ(
+            nlohmann::json::parse(expected),
+            nlohmann::json::from_cbor(encoded_pre_state_trace));
+    }
+
+    // Block 2
+    struct callback_context block2_prestate_ctx;
+    {
+        std::vector<Transaction> const transactions = {block2_tx};
+        std::vector<Address> const senders = {block2_tx_sender};
+        std::vector<Receipt> const receipts = {{}};
+        std::vector<std::vector<CallFrame>> const call_frames = {{}};
+
+        BlockHeader const header{.number = 2};
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+
+        commit_sequential(
+            tdb, {}, {}, header, receipts, call_frames, senders, transactions);
+
+        boost::fibers::future<void> f =
+            block2_prestate_ctx.promise.get_future();
+        monad_executor_run_transactions(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_header.data(),
+            rlp_header.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_parent_id.data(),
+            rlp_parent_id.size(),
+            rlp_grandparent_id.data(),
+            rlp_grandparent_id.size(),
+            0,
+            complete_callback,
+            (void *)&block2_prestate_ctx,
+            PRESTATE_TRACER);
+        f.get();
+
+        ASSERT_TRUE(block2_prestate_ctx.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_pre_state_trace(
+            block2_prestate_ctx.result->encoded_trace,
+            block2_prestate_ctx.result->encoded_trace +
+                block2_prestate_ctx.result->encoded_trace_len);
+
+        auto const *const expected = R"({
+            "result": {
+                "0x0000000000000000000000000000000000000000": {
+                    "balance": "0x0"
+                },
+                "0xa6b8a0d6cbd7623be3a45d2164c436e6d3462d99": {
+                    "balance": "0xffffffffffffffff",
+                    "nonce": 1
+                },
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0x1",
+                    "nonce":1
+                }
+            },
+            "txHash": "0x5ad20e534dea3f56f0aa84f55e364a2a9ac8b9b36ba0ff93c74fd98859955d21"
+        })";
+
+        EXPECT_EQ(
+            nlohmann::json::parse(expected),
+            nlohmann::json::from_cbor(encoded_pre_state_trace));
+    }
+
+    monad_executor_destroy(executor);
+}

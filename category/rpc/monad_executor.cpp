@@ -19,6 +19,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/lru/static_lru_cache.hpp>
@@ -71,7 +72,6 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
-#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -98,14 +98,16 @@ struct monad_state_override
 {
     struct monad_state_override_object
     {
-        std::optional<byte_string> balance{std::nullopt};
+        std::optional<uint256_t> balance{std::nullopt};
         std::optional<uint64_t> nonce{std::nullopt};
         std::optional<byte_string> code{std::nullopt};
-        std::map<byte_string, byte_string> state{};
-        std::map<byte_string, byte_string> state_diff{};
+        ankerl::unordered_dense::segmented_map<bytes32_t, bytes32_t> state{};
+        ankerl::unordered_dense::segmented_map<bytes32_t, bytes32_t>
+            state_diff{};
     };
 
-    std::map<byte_string, monad_state_override_object> override_sets;
+    ankerl::unordered_dense::segmented_map<Address, monad_state_override_object>
+        override_sets;
 };
 
 namespace
@@ -201,12 +203,11 @@ namespace
         enriched_txn.sc.r = 1;
         enriched_txn.sc.s = 1;
 
-        BOOST_OUTCOME_TRY(
-            static_validate_transaction<traits>(
-                enriched_txn,
-                header.base_fee_per_gas,
-                header.excess_blob_gas,
-                chain.get_chain_id()));
+        BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
+            enriched_txn,
+            header.base_fee_per_gas,
+            header.excess_blob_gas,
+            chain.get_chain_id()));
 
         tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};
@@ -215,12 +216,8 @@ namespace
         {
             State state{block_state, incarnation};
 
-            for (auto const &[addr, state_delta] :
+            for (auto const &[address, state_delta] :
                  state_overrides.override_sets) {
-                // address
-                Address address{};
-                std::memcpy(address.bytes, addr.data(), sizeof(Address));
-
                 // This would avoid seg-fault on storage override for
                 // non-existing accounts
                 auto const &account = state.recent_account(address);
@@ -229,24 +226,16 @@ namespace
                 }
 
                 if (state_delta.balance.has_value()) {
-                    auto const balance = intx::be::unsafe::load<uint256_t>(
-                        state_delta.balance.value().data());
-                    if (balance >
-                        intx::be::load<uint256_t>(
-                            state.get_current_balance_pessimistic(address))) {
+                    auto const balance = state_delta.balance.value();
+                    auto const pessimistic_balance = intx::be::load<uint256_t>(
+                        state.get_current_balance_pessimistic(address));
+                    if (balance > pessimistic_balance) {
                         state.add_to_balance(
-                            address,
-                            balance - intx::be::load<uint256_t>(
-                                          state.get_current_balance_pessimistic(
-                                              address)));
+                            address, balance - pessimistic_balance);
                     }
                     else {
                         state.subtract_from_balance(
-                            address,
-                            intx::be::load<uint256_t>(
-                                state.get_current_balance_pessimistic(
-                                    address)) -
-                                balance);
+                            address, pessimistic_balance - balance);
                     }
                 }
 
@@ -255,28 +244,15 @@ namespace
                 }
 
                 if (state_delta.code.has_value()) {
-                    byte_string const code{
-                        state_delta.code.value().data(),
-                        state_delta.code.value().size()};
-                    state.set_code(address, code);
+                    state.set_code(address, state_delta.code.value());
                 }
 
                 auto const update_state =
-                    [&](std::map<byte_string, byte_string> const &diff) {
+                    [&address = address, &state = state](
+                        ankerl::unordered_dense::
+                            segmented_map<bytes32_t, bytes32_t> const &diff) {
                         for (auto const &[key, value] : diff) {
-                            bytes32_t storage_key;
-                            bytes32_t storage_value;
-                            std::memcpy(
-                                storage_key.bytes,
-                                key.data(),
-                                sizeof(bytes32_t));
-                            std::memcpy(
-                                storage_value.bytes,
-                                value.data(),
-                                sizeof(bytes32_t));
-
-                            state.set_storage(
-                                address, storage_key, storage_value);
+                            state.set_storage(address, key, value);
                         }
                     };
 
@@ -583,7 +559,8 @@ void add_override_address(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
 
     MONAD_ASSERT(m->override_sets.find(address) == m->override_sets.end());
     m->override_sets.emplace(address, StateOverrideObj{});
@@ -598,12 +575,14 @@ void set_override_balance(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(balance);
     MONAD_ASSERT(balance_len == sizeof(uint256_t));
-    m->override_sets[address].balance = {balance, balance + balance_len};
+    m->override_sets[address].balance =
+        intx::be::unsafe::load<uint256_t>(balance);
 }
 
 void set_override_nonce(
@@ -614,7 +593,8 @@ void set_override_nonce(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     m->override_sets[address].nonce = nonce;
@@ -628,7 +608,8 @@ void set_override_code(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(code);
@@ -644,18 +625,23 @@ void set_override_state_diff(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(key);
     MONAD_ASSERT(key_len == sizeof(bytes32_t));
-    byte_string const k{key, key + key_len};
+    bytes32_t k;
+    std::memcpy(k.bytes, key, sizeof(bytes32_t));
 
     MONAD_ASSERT(value);
+    MONAD_ASSERT(value_len == sizeof(bytes32_t));
+    bytes32_t v;
+    std::memcpy(v.bytes, value, sizeof(bytes32_t));
 
     auto &state_object = m->override_sets[address].state_diff;
     MONAD_ASSERT(state_object.find(k) == state_object.end());
-    state_object.emplace(k, byte_string{value, value + value_len});
+    state_object.emplace(k, v);
 }
 
 void set_override_state(
@@ -667,18 +653,23 @@ void set_override_state(
 
     MONAD_ASSERT(addr);
     MONAD_ASSERT(addr_len == sizeof(Address));
-    byte_string const address{addr, addr + addr_len};
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
     MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
 
     MONAD_ASSERT(key);
     MONAD_ASSERT(key_len == sizeof(bytes32_t));
-    byte_string const k{key, key + key_len};
+    bytes32_t k;
+    std::memcpy(k.bytes, key, sizeof(bytes32_t));
 
     MONAD_ASSERT(value);
+    MONAD_ASSERT(value_len == sizeof(bytes32_t));
+    bytes32_t v;
+    std::memcpy(v.bytes, value, sizeof(bytes32_t));
 
     auto &state_object = m->override_sets[address].state;
     MONAD_ASSERT(state_object.find(k) == state_object.end());
-    state_object.emplace(k, byte_string{value, value + value_len});
+    state_object.emplace(k, v);
 }
 
 void monad_executor_result_release(monad_executor_result *const result)

@@ -16,6 +16,7 @@
 #include "event.hpp"
 #include "runloop_ethereum.hpp"
 #include "runloop_monad.hpp"
+#include "runloop_monad_ethblocks.hpp"
 
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
@@ -127,6 +128,7 @@ try {
     unsigned nfibers = 256;
     bool no_compaction = false;
     bool trace_calls = false;
+    bool as_eth_blocks = false;
     std::string exec_event_ring_config;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     std::optional<unsigned> ro_sq_thread_cpu;
@@ -174,6 +176,8 @@ try {
         dump_snapshot,
         "directory to dump state to at the end of run");
     cli.add_flag("--trace_calls", trace_calls, "enable call tracing");
+    cli.add_flag(
+        "--as_eth_blocks", as_eth_blocks, "ingest monad blocks in evm format");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group
@@ -434,18 +438,33 @@ try {
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
         case CHAIN_CONFIG_MONAD_MAINNET:
-            return runloop_monad(
-                dynamic_cast<MonadChain const &>(*chain),
-                block_db_path,
-                db,
-                db_cache,
-                vm,
-                block_hash_buffer,
-                priority_pool,
-                block_num,
-                end_block_num,
-                stop,
-                trace_calls);
+            if (as_eth_blocks) {
+                return runloop_monad_ethblocks(
+                    dynamic_cast<MonadChain const &>(*chain),
+                    block_db_path,
+                    db_cache,
+                    vm,
+                    block_hash_buffer,
+                    priority_pool,
+                    block_num,
+                    end_block_num,
+                    stop,
+                    trace_calls);
+            }
+            else {
+                return runloop_monad(
+                    dynamic_cast<MonadChain const &>(*chain),
+                    block_db_path,
+                    db,
+                    db_cache,
+                    vm,
+                    block_hash_buffer,
+                    priority_pool,
+                    block_num,
+                    end_block_num,
+                    stop,
+                    trace_calls);
+            }
         }
         MONAD_ABORT_PRINTF("Unsupported chain");
     }();

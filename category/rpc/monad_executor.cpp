@@ -434,19 +434,6 @@ namespace
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
         state_tracers.reserve(transactions_size);
 
-        // Helper to create a trace log entry of the form:
-        //   {"result": { execution trace goes here }, "txHash": "0x..."}
-        auto const trace_entry =
-            [&transactions](
-                uint64_t const transaction_index) -> nlohmann::json {
-            bytes32_t const tx_hash = to_bytes(keccak256(
-                rlp::encode_transaction(transactions[transaction_index])));
-            nlohmann::json entry{
-                {"result", nlohmann::json{}},
-                {"txHash", std::format("0x{}", evmc::hex(tx_hash))}};
-            return entry;
-        };
-
         std::vector<std::unique_ptr<CallTracerBase>> noop_call_tracers{};
         noop_call_tracers.reserve(transactions_size);
 
@@ -466,13 +453,13 @@ namespace
                     std::make_unique<trace::StateTracer>(std::monostate{}));
             }
 
-            nlohmann::json trace = trace_entry(transaction_index);
+            nlohmann::json trace{};
             state_tracers.emplace_back(
                 tracer_config == PRESTATE_TRACER
                     ? std::make_unique<trace::StateTracer>(
-                          trace::PrestateTracer{trace["result"]})
+                          trace::PrestateTracer{trace})
                     : std::make_unique<trace::StateTracer>(
-                          trace::StateDiffTracer{trace["result"]}));
+                          trace::StateDiffTracer{trace}));
 
             std::span<std::unique_ptr<trace::StateTracer>> const
                 state_tracers_view{state_tracers.data(), transactions_size};
@@ -493,6 +480,19 @@ namespace
             return Result<nlohmann::json>{std::move(trace)};
         }
         else {
+            // Helper to create a trace log entry of the form:
+            //   {"result": { execution trace goes here }, "txHash": "0x..."}
+            auto const trace_entry =
+                [&transactions](
+                    uint64_t const transaction_index) -> nlohmann::json {
+                bytes32_t const tx_hash = to_bytes(keccak256(
+                    rlp::encode_transaction(transactions[transaction_index])));
+                nlohmann::json entry{
+                    {"result", nlohmann::json{}},
+                    {"txHash", std::format("0x{}", evmc::hex(tx_hash))}};
+                return entry;
+            };
+
             // Trace an entire block
             std::vector<nlohmann::json> traces{};
             traces.reserve(transactions_size);

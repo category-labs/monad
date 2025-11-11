@@ -2158,23 +2158,19 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             prestate_ctx_1.result->encoded_trace +
                 prestate_ctx_1.result->encoded_trace_len);
 
-        auto const *const expected_1 = R"(
-            {
-                "result": {
-                    "0x0000000000000000000000000000000000000000": {
-                        "balance": "0x0"
-                    },
-                    "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
-                        "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-                        "nonce": 1
-                    },
-                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
-                        "balance": "0x1",
-                        "nonce": 1
-                    }
-                },
-                "txHash": "0x659b50d5b5c543fb681ace210eb175938d5b829297bcf579bc186ac0ea0874dd"
-            })";
+        auto const *const expected_1 = R"({
+            "0x0000000000000000000000000000000000000000": {
+                "balance": "0x0"
+            },
+            "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
+                "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "nonce": 1
+            },
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                "balance": "0x1",
+                "nonce": 1
+            }
+        })";
 
         EXPECT_EQ(
             nlohmann::json::parse(expected_1),
@@ -2206,24 +2202,20 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             prestate_ctx_2.result->encoded_trace +
                 prestate_ctx_2.result->encoded_trace_len);
 
-        auto const *const expected_2 = R"(
-        {
-                "result": {
-                    "0x0000000000000000000000000000000000000000": {
-                        "balance": "0x0"
-                    },
-                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
-                        "balance": "0xabbb",
-                        "nonce": 1
-                    },
-                    "0xc48513273d60b70ee2f25d5c4256612a91573e1e": {
-                        "balance":
-                        "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-                        "nonce": 2
-                    }
-                },
-                "txHash": "0x0b391cd83e5ebd2a5d5c0223c4258eaa364737cc6cb9f88c83eced5eb2543e8b"
-            })";
+        auto const *const expected_2 = R"({
+            "0x0000000000000000000000000000000000000000": {
+                "balance": "0x0"
+            },
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                "balance": "0xabbb",
+                "nonce": 1
+            },
+            "0xc48513273d60b70ee2f25d5c4256612a91573e1e": {
+                "balance":
+                "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "nonce": 2
+            }
+        })";
         EXPECT_EQ(
             nlohmann::json::parse(expected_2),
             nlohmann::json::from_cbor(encoded_pre_state_trace_2));
@@ -2258,31 +2250,28 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
                 statediff_ctx_1.result->encoded_trace_len);
 
         auto const *const expected_1 = R"({
-                "result": {
-                    "post": {
-                        "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
-                            "balance":
-                            "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff5445",
-                            "nonce": 2
-                        },
-                        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
-                            "balance": "0xabbb"
-                        }
-                    },
-                    "pre": {
-                        "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
-                            "balance":
-                            "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-                            "nonce": 1
-                        },
-                        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
-                            "balance": "0x1",
-                            "nonce": 1
-                        }
-                    }
+            "post": {
+                "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
+                    "balance":
+                    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff5445",
+                    "nonce": 2
                 },
-                "txHash": "0x659b50d5b5c543fb681ace210eb175938d5b829297bcf579bc186ac0ea0874dd"
-            })";
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0xabbb"
+                }
+            },
+            "pre": {
+                "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
+                    "balance":
+                    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    "nonce": 1
+                },
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0x1",
+                    "nonce": 1
+                }
+            }
+        })";
 
         EXPECT_EQ(
             nlohmann::json::parse(expected_1),
@@ -2315,31 +2304,27 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
                 statediff_ctx_2.result->encoded_trace_len);
 
         auto const *const expected_2 = R"({
-            "result": {
-                "post": {
-                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
-                        "balance": "0x15775"
-                    },
-                    "0xc48513273d60b70ee2f25d5c4256612a91573e1e": {
-                        "balance":
-                        "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff5445",
-                        "nonce": 3
-                    }
+            "post": {
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0x15775"
                 },
-                "pre": {
-                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
-                        "balance": "0xabbb",
-                        "nonce": 1
-                    },
-                    "0xc48513273d60b70ee2f25d5c4256612a91573e1e": {
-                        "balance":
-                        "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-                        "nonce": 2
-                    }
+                "0xc48513273d60b70ee2f25d5c4256612a91573e1e": {
+                    "balance":
+                    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff5445",
+                    "nonce": 3
                 }
             },
-            "txHash":
-            "0x0b391cd83e5ebd2a5d5c0223c4258eaa364737cc6cb9f88c83eced5eb2543e8b"
+            "pre": {
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0xabbb",
+                    "nonce": 1
+                },
+                "0xc48513273d60b70ee2f25d5c4256612a91573e1e": {
+                    "balance":
+                    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    "nonce": 2
+                }
+            }
         })";
 
         EXPECT_EQ(
@@ -2558,21 +2543,18 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
                 statediff_ctx_1.result->encoded_trace_len);
 
         auto const *const expected_1 = R"({
-            "result": {
-                "post": {
-                    "0x4ae670ab7f6f092aae0411169e47c482a1fd262b": {
-                        "balance": "0x6f05b59d3b200000",
-                        "nonce": 2
-                    }
-                },
-                "pre": {
-                    "0x4ae670ab7f6f092aae0411169e47c482a1fd262b": {
-                        "balance": "0x8ac7230489e80000",
-                        "nonce": 1
-                    }
+            "post": {
+                "0x4ae670ab7f6f092aae0411169e47c482a1fd262b": {
+                    "balance": "0x6f05b59d3b200000",
+                    "nonce": 2
                 }
             },
-            "txHash": "0x5b341e8b3055bb33a13628668721a76a1829197e37c34c299fe77dbf7e877423"
+            "pre": {
+                "0x4ae670ab7f6f092aae0411169e47c482a1fd262b": {
+                    "balance": "0x8ac7230489e80000",
+                    "nonce": 1
+                }
+            }
         })";
 
         EXPECT_EQ(
@@ -2723,20 +2705,17 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
                 block1_prestate_ctx.result->encoded_trace_len);
 
         auto const *const expected = R"({
-            "result": {
-                "0x0000000000000000000000000000000000000000": {
-                    "balance": "0x0"
-                },
-                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
-                    "balance": "0x1",
-                    "nonce": 1
-                },
-                "0xbedcab535cc48a9bd659ac448f092d02ba23a05a": {
-                    "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-                    "nonce":1
-                }
+            "0x0000000000000000000000000000000000000000": {
+                "balance": "0x0"
             },
-            "txHash": "0x1618c6e833ab2d6a9574982709de8c7d88da1851c5bd2ca8e31c0e43ead8647b"
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                "balance": "0x1",
+                "nonce": 1
+            },
+            "0xbedcab535cc48a9bd659ac448f092d02ba23a05a": {
+                "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "nonce":1
+            }
         })";
         EXPECT_EQ(
             nlohmann::json::parse(expected),
@@ -2785,20 +2764,17 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
                 block2_prestate_ctx.result->encoded_trace_len);
 
         auto const *const expected = R"({
-            "result": {
-                "0x0000000000000000000000000000000000000000": {
-                    "balance": "0x0"
-                },
-                "0xa6b8a0d6cbd7623be3a45d2164c436e6d3462d99": {
-                    "balance": "0xffffffffffffffff",
-                    "nonce": 1
-                },
-                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
-                    "balance": "0x1",
-                    "nonce":1
-                }
+            "0x0000000000000000000000000000000000000000": {
+                "balance": "0x0"
             },
-            "txHash": "0x5ad20e534dea3f56f0aa84f55e364a2a9ac8b9b36ba0ff93c74fd98859955d21"
+            "0xa6b8a0d6cbd7623be3a45d2164c436e6d3462d99": {
+                "balance": "0xffffffffffffffff",
+                "nonce": 1
+            },
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                "balance": "0x1",
+                "nonce":1
+            }
         })";
 
         EXPECT_EQ(

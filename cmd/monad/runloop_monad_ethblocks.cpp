@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "runloop_ethereum.hpp"
+#include "runloop_monad_ethblocks.hpp"
 
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
@@ -22,7 +22,6 @@
 #include <category/core/keccak.hpp>
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
-#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
@@ -34,8 +33,12 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/validate_monad_block.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <boost/outcome/try.hpp>
 #include <quill/Quill.h>
@@ -46,6 +49,16 @@
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+struct BlockCacheEntry
+{
+    uint64_t block_number;
+    bytes32_t parent_id;
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+};
+
+using BlockCache =
+    ankerl::unordered_dense::segmented_map<bytes32_t, BlockCacheEntry>;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
@@ -77,22 +90,25 @@ void log_tps(
 
 #pragma GCC diagnostic pop
 
-// Process a single historical Ethereum block
+// Process a single Monad block stored in Ethereum format
 template <Traits traits>
-Result<void> process_ethereum_block(
-    Chain const &chain, Db &db, vm::VM &vm,
-    BlockHashBufferFinalized &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
-    bytes32_t const &parent_block_id, bool const enable_tracing)
+Result<void> process_monad_block(
+    MonadChain const &chain, Db &db, vm::VM &vm,
+    BlockHashChain &block_hash_chain, fiber::PriorityPool &priority_pool,
+    Block &block, bytes32_t const &block_id, bytes32_t const &parent_block_id,
+    bool const enable_tracing, BlockCache &block_cache,
+    bool const is_first_block)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
+    auto const &block_hash_buffer =
+        block_hash_chain.find_chain(parent_block_id);
 
     // Block input validation
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
     BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
 
-    // Sender and authority recovery
+    // Sender and EIP-7702 authorities recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
     auto const recovered_senders =
         recover_senders(block.transactions, priority_pool);
@@ -110,8 +126,31 @@ Result<void> process_ethereum_block(
             return TransactionError::MissingSender;
         }
     }
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    for (Address const &sender : senders) {
+        senders_and_authorities.insert(sender);
+    }
+    for (std::vector<std::optional<Address>> const &authorities :
+         recovered_authorities) {
+        for (std::optional<Address> const &authority : authorities) {
+            if (authority.has_value()) {
+                senders_and_authorities.insert(authority.value());
+            }
+        }
+    }
+    LOG_ERROR("Adding block {} to cache", block.header.number);
+    MONAD_ASSERT(block_cache
+                     .emplace(
+                         block_id,
+                         BlockCacheEntry{
+                             .block_number = block.header.number,
+                             .parent_id = parent_block_id,
+                             .senders_and_authorities =
+                                 std::move(senders_and_authorities)})
+                     .second);
+    BOOST_OUTCOME_TRY(static_validate_monad_senders<traits>(senders));
 
-    // Call tracer initialization
+    // Create call frames vectors for tracers
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
@@ -128,9 +167,40 @@ Result<void> process_ethereum_block(
             std::make_unique<trace::StateTracer>(std::monostate{})};
     }
 
+    MonadChainContext chain_context{
+        .grandparent_senders_and_authorities = nullptr,
+        .parent_senders_and_authorities = nullptr,
+        .senders_and_authorities =
+            block_cache.at(block_id).senders_and_authorities,
+        .senders = senders,
+        .authorities = recovered_authorities};
+
+    if (block.header.number > 1) {
+        LOG_ERROR(
+            "Getting parent block {} from cache", evmc::hex(parent_block_id));
+        MONAD_ASSERT(block_cache.contains(parent_block_id));
+        BlockCacheEntry const &parent_entry = block_cache.at(parent_block_id);
+        chain_context.parent_senders_and_authorities =
+            &parent_entry.senders_and_authorities;
+        if (block.header.number > 2) {
+            bytes32_t const &grandparent_id = parent_entry.parent_id;
+            if (block_cache.contains(grandparent_id)) {
+                BlockCacheEntry const &grandparent_entry =
+                    block_cache.at(grandparent_id);
+                chain_context.grandparent_senders_and_authorities =
+                    &grandparent_entry.senders_and_authorities;
+            }
+        }
+    }
+
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
-    db.set_block_and_prefix(block.header.number - 1, parent_block_id);
+    db.set_block_and_prefix(
+        block.header.number - 1,
+        is_first_block ? bytes32_t{} : parent_block_id);
+    block.header.parent_hash =
+        to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
+
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
     BOOST_OUTCOME_TRY(
@@ -145,13 +215,28 @@ Result<void> process_ethereum_block(
             priority_pool,
             block_metrics,
             call_tracers,
-            state_tracers));
+            state_tracers,
+            [&chain, &block, &chain_context](
+                Address const &sender,
+                Transaction const &tx,
+                uint64_t const i,
+                State &state) {
+                return chain.revert_transaction(
+                    block.header.number,
+                    block.header.timestamp,
+                    sender,
+                    tx,
+                    block.header.base_fee_per_gas.value_or(0),
+                    i,
+                    state,
+                    chain_context);
+            }));
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
     block_state.commit(
-        bytes32_t{block.header.number},
+        block_id,
         block.header,
         receipts,
         call_frames,
@@ -168,6 +253,7 @@ Result<void> process_ethereum_block(
             block.header.number,
             commit_time);
     }
+
     // Post-commit validation of header, with Merkle root fields filled in
     auto const output_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
@@ -179,7 +265,9 @@ Result<void> process_ethereum_block(
     db.update_verified_block(block.header.number);
     auto const eth_block_hash =
         to_bytes(keccak256(rlp::encode_block_header(output_header)));
-    block_hash_buffer.set(block.header.number, eth_block_hash);
+    block_hash_chain.propose(
+        eth_block_hash, block.header.number, block_id, parent_block_id);
+    block_hash_chain.finalize(block_id);
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
@@ -222,9 +310,9 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
-    Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
+    MonadChain const &chain, std::filesystem::path const &ledger_dir, Db &db,
     vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, uint64_t &block_num,
+    fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing)
 {
@@ -237,8 +325,62 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
 
+    BlockHashChain block_hash_chain(block_hash_buffer);
     BlockDb block_db(ledger_dir);
+    BlockCache block_cache;
     bytes32_t parent_block_id{};
+    uint64_t block_num = finalized_block_num;
+    bool is_first_block = (block_num == 0);
+
+    // Pre-populate cache with parent and grandparent blocks if starting from
+    // non-zero block
+    if (block_num > 0) {
+        uint64_t const start_cache_block = block_num > 2 ? block_num - 2 : 0;
+        for (uint64_t i = start_cache_block; i < block_num; ++i) {
+            Block block;
+            MONAD_ASSERT_PRINTF(
+                block_db.get(i, block),
+                "Could not query %lu from blockdb for cache",
+                i);
+            bytes32_t const block_id = bytes32_t{block.header.number};
+            bytes32_t const prev_parent_id =
+                i > 0 ? bytes32_t{i - 1} : bytes32_t{};
+
+            auto const recovered_senders =
+                recover_senders(block.transactions, priority_pool);
+            auto const recovered_authorities =
+                recover_authorities(block.transactions, priority_pool);
+            std::vector<Address> senders(block.transactions.size());
+            for (unsigned j = 0; j < recovered_senders.size(); ++j) {
+                if (recovered_senders[j].has_value()) {
+                    senders[j] = recovered_senders[j].value();
+                }
+            }
+            ankerl::unordered_dense::segmented_set<Address>
+                senders_and_authorities;
+            for (Address const &sender : senders) {
+                senders_and_authorities.insert(sender);
+            }
+            for (std::vector<std::optional<Address>> const &authorities :
+                 recovered_authorities) {
+                for (std::optional<Address> const &authority : authorities) {
+                    if (authority.has_value()) {
+                        senders_and_authorities.insert(authority.value());
+                    }
+                }
+            }
+
+            block_cache.emplace(
+                block_id,
+                BlockCacheEntry{
+                    .block_number = block.header.number,
+                    .parent_id = prev_parent_id,
+                    .senders_and_authorities =
+                        std::move(senders_and_authorities)});
+        }
+        parent_block_id = bytes32_t{block_num - 1};
+    }
+
     while (block_num <= end_block_num && stop == 0) {
         Block block;
         MONAD_ASSERT_PRINTF(
@@ -247,21 +389,23 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
             block_num);
 
         bytes32_t const block_id = bytes32_t{block.header.number};
-        evmc_revision const rev =
-            chain.get_revision(block.header.number, block.header.timestamp);
+        monad_revision const rev =
+            chain.get_monad_revision(block.header.timestamp);
 
         BOOST_OUTCOME_TRY([&] {
-            SWITCH_EVM_TRAITS(
-                process_ethereum_block,
+            SWITCH_MONAD_TRAITS(
+                process_monad_block,
                 chain,
                 db,
                 vm,
-                block_hash_buffer,
+                block_hash_chain,
                 priority_pool,
                 block,
                 block_id,
                 parent_block_id,
-                enable_tracing);
+                enable_tracing,
+                block_cache,
+                is_first_block);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 
@@ -283,13 +427,25 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
             batch_gas = 0;
             batch_begin = std::chrono::steady_clock::now();
         }
+
+        if (block_num > 2 && block_num % batch_size == 0) {
+            std::erase_if(
+                block_cache,
+                [block_num](
+                    std::pair<bytes32_t, BlockCacheEntry> const &entry) {
+                    return entry.second.block_number < block_num - 2;
+                });
+        }
+
         parent_block_id = block_id;
+        is_first_block = false;
         ++block_num;
     }
     if (batch_num_blocks > 0) {
         log_tps(
             block_num, batch_num_blocks, batch_num_txs, batch_gas, batch_begin);
     }
+    finalized_block_num = block_num;
     return {ntxs, total_gas};
 }
 

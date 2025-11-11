@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/vm/vm.hpp>
 
 #include <cstdint>
@@ -27,7 +28,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct Chain;
+struct MonadChain;
 struct Db;
 class BlockHashBufferFinalized;
 
@@ -37,7 +38,7 @@ namespace fiber
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
-    Chain const &, std::filesystem::path const &, Db &, vm::VM &,
+    MonadChain const &, std::filesystem::path const &, Db &, vm::VM &,
     BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
     sig_atomic_t const volatile &, bool enable_tracing);
 

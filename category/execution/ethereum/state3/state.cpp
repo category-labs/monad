@@ -338,7 +338,7 @@ void State::subtract_from_balance(
         account = Account{.incarnation = incarnation_};
     }
 
-    MONAD_ASSERT(delta <= account.value().balance);
+    MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
 
     account.value().balance -= delta;
     account_state.touch();

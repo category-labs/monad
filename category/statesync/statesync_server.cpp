@@ -164,6 +164,13 @@ bool send_deletion(
 
     for (uint64_t i = rq.old_target + 1; i <= rq.target; ++i) {
         if (!ctx.deletions.for_each(i, fn)) {
+            LOG_INFO(
+                "Request failed: deletion not found for block={} "
+                "(old_target={}, "
+                "target={})",
+                i,
+                rq.old_target,
+                rq.target);
             return false;
         }
     }
@@ -330,6 +337,8 @@ bool statesync_server_handle_request(
     auto &db = *ctx->ro;
     NodeCursor const root{db.load_root_for_version(rq.target)};
     if (!root.is_valid()) {
+        LOG_INFO(
+            "Request failed: target root not found for target={}", rq.target);
         return false;
     }
 
@@ -338,11 +347,17 @@ bool statesync_server_handle_request(
         auto const version = rq.target - rq.prefix - 1;
         NodeCursor const root{db.load_root_for_version(version)};
         if (!root.is_valid()) {
+            LOG_INFO(
+                "Request failed: header root not found for version={}",
+                version);
             return false;
         }
         auto const res = db.find(
             root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), version);
         if (res.has_error() || !res.value().is_valid()) {
+            LOG_INFO(
+                "Request failed: block header not found for version={}",
+                version);
             return false;
         }
         auto const &val = res.value().node->value();
@@ -365,11 +380,22 @@ bool statesync_server_handle_request(
     auto const bytes = from_prefix(rq.prefix, rq.prefix_bytes);
     auto const finalized_root_res = db.find(root, finalized_nibbles, rq.target);
     if (!finalized_root_res.has_value()) {
+        LOG_INFO(
+            "Request failed: finalized root not found for target={}",
+            rq.target);
         return false;
     }
     auto const &finalized_root = finalized_root_res.value();
-    if (db.find(finalized_root, state_nibbles, rq.target).has_error() ||
-        db.find(finalized_root, code_nibbles, rq.target).has_error()) {
+    auto const state_res = db.find(finalized_root, state_nibbles, rq.target);
+    if (state_res.has_error()) {
+        LOG_INFO(
+            "Request failed: state tree not found for target={}", rq.target);
+        return false;
+    }
+    auto const code_res = db.find(finalized_root, code_nibbles, rq.target);
+    if (code_res.has_error()) {
+        LOG_INFO(
+            "Request failed: code tree not found for target={}", rq.target);
         return false;
     }
 
@@ -382,6 +408,12 @@ bool statesync_server_handle_request(
         &num_upserts,
         &upsert_bytes);
     if (!db.traverse(finalized_root, traverse, rq.target)) {
+        LOG_INFO(
+            "Request failed: traverse failed for target={} prefix={} "
+            "prefix_bytes={}",
+            rq.target,
+            rq.prefix,
+            rq.prefix_bytes);
         return false;
     }
     [[maybe_unused]] auto const end = std::chrono::steady_clock::now();

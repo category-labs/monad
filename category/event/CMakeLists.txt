@@ -107,6 +107,8 @@ target_sources(monad_event PUBLIC
   "../execution/ethereum/event/exec_event_ctypes_fmt.hpp"
   "../execution/ethereum/event/exec_iter_help.h"
   "../execution/ethereum/event/exec_iter_help_inline.h"
+  "../execution/ethereum/event/exec_iter_help_inline_c_generic.h"
+  "../execution/ethereum/event/exec_iter_help_inline_cxx.hpp"
   "../execution/monad/core/fmt/monad_ctypes_fmt.hpp"
   "../execution/monad/core/monad_ctypes.h")
 

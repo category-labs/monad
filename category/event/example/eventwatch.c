@@ -53,6 +53,7 @@ constexpr bool PLATFORM_LINUX = false;
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_iter.h>
 #include <category/core/event/event_ring_util.h>
+#include <category/core/event/event_source.h>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_iter_help.h>
 
@@ -130,12 +131,11 @@ static bool process_has_exited(int pidfd)
 
 static void hexdump_event_payload(
     struct monad_event_ring const *event_ring,
-    struct monad_event_descriptor const *event, FILE *out)
+    struct monad_event_descriptor const *event, uint8_t const *payload,
+    FILE *out)
 {
     static char hexdump_buf[1 << 25];
     char *o = hexdump_buf;
-    uint8_t const *const payload =
-        monad_event_ring_payload_peek(event_ring, event);
     uint8_t const *const payload_end = payload + event->payload_size;
     for (uint8_t const *line = payload; line < payload_end; line += 16) {
         // Print one line of the dump, which is 16 bytes, in the form:
@@ -181,6 +181,8 @@ static void print_event(
 
     struct monad_event_metadata const *event_md =
         &g_monad_exec_event_metadata[event->event_type];
+    uint8_t const *const payload =
+        monad_event_ring_payload_peek(event_ring, event);
 
     // An optimization to only do the string formatting of the %H:%M:%S part
     // of the time each second when it changes, because strftime(3) is slow
@@ -213,24 +215,23 @@ static void print_event(
         // is set to the sequence number of the MONAD_EXEC_BLOCK_START event
         // that started the block that this event is part of. This code tries
         // to read the payload of that event, to print the block number.
-        struct monad_event_descriptor start_block_event;
-        struct monad_exec_block_start const *block_start = nullptr;
-        if (monad_event_ring_try_copy(
-                event_ring,
-                event->content_ext[MONAD_FLOW_BLOCK_SEQNO],
-                &start_block_event) == MONAD_EVENT_RING_SUCCESS) {
-            block_start =
-                monad_event_ring_payload_peek(event_ring, &start_block_event);
+        //
+        // The reason we checked that the sequence number was not zero first
+        // (rather than just printing whenever is returned, when this function
+        // returns true) is that the function `monad_exec_ring_get_block_number`
+        // returns "the block number associated with an event." The consensus
+        // events, for example, are "associated with" a proposed block having
+        // that block number (and that is what the function returns) even
+        // though those events themselves are not members of a block. This is
+        // potentially confusing in the output; we want the consensus events
+        // to print nothing.
+        uint64_t block_number;
+        if (monad_exec_get_block_number(
+                event_ring, event, payload, &block_number)) {
+            o += sprintf(o, " BLK: %lu", (unsigned long)block_number);
         }
-        if (block_start) {
-            uint64_t const block_number = block_start->eth_block_input.number;
-            if (monad_event_ring_payload_check(
-                    event_ring, &start_block_event)) {
-                o += sprintf(o, " BLK: %lu", (unsigned long)block_number);
-            }
-            else {
-                o += sprintf(o, " BLK: <LOST>");
-            }
+        else {
+            o += sprintf(o, " BLK: <LOST>");
         }
     }
     if (event->content_ext[MONAD_FLOW_TXN_ID] != 0) {
@@ -261,7 +262,7 @@ static void print_event(
     // has C++20 std::formatter specializations that can format the fields of
     // payload types. The Rust `eventwatch` example program can also do this,
     // by virtue of the #[derive(Debug)] attribute.
-    hexdump_event_payload(event_ring, event, out);
+    hexdump_event_payload(event_ring, event, payload, out);
 }
 
 // The main event processing loop of the application
@@ -273,9 +274,9 @@ static void event_loop(struct monad_event_ring_iter *iter, int pidfd, FILE *out)
     while (g_should_stop == 0) {
         switch (monad_event_ring_iter_try_next(iter, &event)) {
         case MONAD_EVENT_RING_NOT_READY:
-            if ((not_ready_count++ & ((1U << 25) - 1)) == 0) {
+            if ((not_ready_count++ & ((1UL << 25) - 1)) == 0) {
                 // The above guard prevents us from calling process_has_exited
-                // too often, as it is orders of magnitude slower than the cost
+                // too often: it is orders of magnitude slower than the cost
                 // of an event ring poll
                 fflush(out);
                 if (process_has_exited(pidfd)) {
@@ -332,7 +333,8 @@ static void find_initial_iteration_point(struct monad_event_ring_iter *iter)
     //
     // The event ring typically holds hundreds of blocks, so moving backward
     // doesn't materially increase the risk that we'll fall behind and gap.
-    (void)monad_exec_iter_consensus_prev(iter, MONAD_EXEC_BLOCK_START, nullptr);
+    (void)monad_exec_iter_consensus_prev(
+        iter, MONAD_EXEC_BLOCK_START, nullptr, nullptr);
 }
 
 int main(int argc, char **argv)

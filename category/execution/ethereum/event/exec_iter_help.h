@@ -27,8 +27,10 @@
  * event" because it represents the first state transition (to "proposed")
  */
 
-#include <category/execution/ethereum/core/base_ctypes.h>
 #include <stdint.h>
+
+#include <category/core/event/event_source.h>
+#include <category/execution/ethereum/core/base_ctypes.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -38,53 +40,117 @@ extern "C"
 enum monad_exec_event_type : uint16_t;
 
 struct monad_event_descriptor;
-struct monad_event_ring_iter;
 struct monad_event_ring;
+struct monad_evsrc;
+struct monad_evsrc_iterator;
 struct monad_exec_block_tag;
 
-/// Extract the block number associated with an execution event; returns false
-/// if the payload has expired or if there is no associated block number
-static bool monad_exec_ring_get_block_number(
-    struct monad_event_ring const *, struct monad_event_descriptor const *,
-    uint64_t *block_number);
+/*
+ * bool monad_exec_get_block_number(
+ *     GENERIC_SOURCE, struct monad_event_descriptor const *,
+ *     void const *payload, uint64_t *block_number)
+ *
+ * Extract the block number associated with an execution event; returns false
+ * if the payload has expired or if there is no associated block number
+ */
 
-/// Return true if the execution event with the given descriptor relates to the
-/// block with the given id
-static bool monad_exec_ring_block_id_matches(
-    struct monad_event_ring const *, struct monad_event_descriptor const *,
-    monad_c_bytes32 const *);
+MONAD_SDK_EVSRC_DECL(
+    bool, monad_exec_get_block_number, struct monad_event_descriptor const *,
+    void const *payload, uint64_t *block_number)
 
-/// Rewind the event ring iterator so that the next event produced by
-/// `monad_event_ring_iter_try_next` will be the most recent consensus event
-/// of the filter type, or `NONE` for any type; also copies out this previous
-/// event's descriptor, i.e., behaves like `*--i`; if false is returned, the
-/// iterator is not moved and the copied out event descriptor is not valid
-static bool monad_exec_iter_consensus_prev(
-    struct monad_event_ring_iter *, enum monad_exec_event_type filter,
-    struct monad_event_descriptor *);
+/*
+ * bool monad_exec_get_block_id(
+ *     GENERIC_SOURCE, struct monad_event_descriptor const *,
+ *     void const *payload, monad_c_bytes32 *)
+ *
+ * Extract the block id associated with an execution event; returns false
+ * if the payload has expired or if there is no associated block id
+ */
 
-/// Rewind the event ring iterator, as if by repeatedly calling
-/// `monad_exec_iter_consensus_prev`, stopping only when the block number
-/// associated with the event matches the specified block number
-static bool monad_exec_iter_block_number_prev(
-    struct monad_event_ring_iter *, uint64_t block_number,
-    enum monad_exec_event_type filter, struct monad_event_descriptor *);
+MONAD_SDK_EVSRC_DECL(
+    bool, monad_exec_get_block_id, struct monad_event_descriptor const *,
+    void const *payload, monad_c_bytes32 *)
 
-/// Rewind the event ring iterator, as if by repeatedly calling
-/// `monad_exec_iter_consensus_prev`, stopping only when the block ID
-/// associated with the event matches the specified block ID; BLOCK_VERIFIED
-/// is not an allowed filter type, because block IDs are not recorded for
-/// these events
-static bool monad_exec_iter_block_id_prev(
-    struct monad_event_ring_iter *, monad_c_bytes32 const *,
-    enum monad_exec_event_type filter, struct monad_event_descriptor *);
+/*
+ * bool monad_exec_iter_consensus_prev(
+ *     GENERIC_ITER, enum monad_exec_event_type filter,
+ *     struct monad_event_descriptor *, void const **payload)
+ *
+ * Rewind the event ring iterator so that the next event produced by
+ * `monad_evsrc_iter_try_next` will be the most recent consensus event of the
+ * filter type, or `NONE` for any type; also copies out this previous event's
+ * event's descriptor, i.e., behaves like `*--i`; if false is returned, the
+ * iterator is not moved and the copied out event descriptor is not valid
+ */
 
-/// Rewind the event ring iterator, following the "simple replay strategy",
-/// which is to replay all events that you may not have seen, if the last
-/// finalized block you definitely saw is `block_number`
-static bool monad_exec_iter_rewind_for_simple_replay(
-    struct monad_event_ring_iter *, uint64_t block_number,
-    struct monad_event_descriptor *);
+MONAD_SDK_EVSRC_ITER_DECL(
+    bool, monad_exec_iter_consensus_prev, enum monad_exec_event_type,
+    struct monad_event_descriptor *, void const **)
+
+/*
+ * bool monad_exec_iter_block_number_prev(
+ *      GENERIC_ITER, uint64_t block_number, enum monad_exec_event_type filter,
+ *      struct monad_event_descriptor *, void const **payload);
+ *
+ * Rewind the event ring iterator, as if by repeatedly calling
+ * `monad_exec_iter_consensus_prev`, stopping only when the block number
+ * associated with the event matches the specified block number
+ */
+
+MONAD_SDK_EVSRC_ITER_DECL(
+    bool, monad_exec_iter_block_number_prev, uint64_t,
+    enum monad_exec_event_type, struct monad_event_descriptor *, void const **)
+
+/*
+ * bool monad_exec_iter_block_id_prev(
+ *     GENERIC_ITER, monad_c_bytes32 const *, enum monad_exec_event_type filter,
+ *     struct monad_event_descriptor *, void const **payload);
+ *
+ * Rewind the event ring iterator, as if by repeatedly calling
+ * `monad_exec_iter_consensus_prev`, stopping only when the block ID
+ * associated with the event matches the specified block ID; BLOCK_VERIFIED
+ * is not an allowed filter type, because block IDs are not recorded for
+ * these events
+ */
+
+MONAD_SDK_EVSRC_ITER_DECL(
+    bool, monad_exec_iter_block_id_prev, monad_c_bytes32 const *,
+    enum monad_exec_event_type, struct monad_event_descriptor *, void const **)
+
+/*
+ * bool monad_exec_iter_rewind_for_simple_replay(
+ *     GENERIC_ITER, uint64_t block_number, struct monad_event_descriptor *,
+ *     void const **payload);
+ *
+ * Rewind the event ring iterator, following the "simple replay strategy",
+ * which is to replay all events that you may not have seen, if the last
+ * finalized block you definitely saw is `block_number`. This will replay
+ * all events that occur _after_ the original proposal of the finalized
+ * block, i.e., all events after the `BLOCK_END` of the block that was
+ * ultimately finalized. In particular, you may see the BLOCK_QC and
+ * BLOCK_FINALIZED event of the finalized block a second time.
+ */
+
+MONAD_SDK_EVSRC_ITER_DECL(
+    bool, monad_exec_iter_rewind_for_simple_replay, uint64_t,
+    struct monad_event_descriptor *, void const **)
+
+/*
+ * Non-generic functions - these make sense only for certain kind of events
+ * sources
+ */
+
+/// Return the number of most recently finalized block, for which the full
+/// proposal's events are also still available. This is used as part of the
+/// simple replay strategy, when a large number of blocks are missing.
+///
+/// The typical approach involves constructing the range
+/// (last_known_finalized, most_recent_finalized] which must be replayed from
+/// event captures, prior to switching back over to the live ring to obtain
+/// everything _after_ `most_recent_finalized`, which is done via the function
+/// monad_exec_iter_rewind_for_simple_replay
+static bool monad_exec_get_most_recent_finalized(
+    struct monad_event_ring const *, uint64_t *block_number);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -92,4 +158,11 @@ static bool monad_exec_iter_rewind_for_simple_replay(
 
 #define MONAD_EXEC_ITER_HELP_INTERNAL
 #include "exec_iter_help_inline.h"
+
+#ifdef __cplusplus
+    #include "exec_iter_help_inline_cxx.hpp"
+#else
+    #include "exec_iter_help_inline_c_generic.h"
+#endif
+
 #undef MONAD_EXEC_ITER_HELP_INTERNAL

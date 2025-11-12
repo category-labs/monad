@@ -24,6 +24,7 @@
 #include <category/core/config.hpp>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_iter.h>
+#include <category/core/event/event_source.h>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
@@ -547,7 +548,11 @@ void BlockchainTest::TestBody()
                     exec_recorder->get_event_ring();
                 ASSERT_EQ(monad_event_ring_init_iterator(exec_ring, &iter), 0);
                 ASSERT_TRUE(monad_exec_iter_block_number_prev(
-                    &iter, curr_block_number, MONAD_EXEC_BLOCK_START, nullptr));
+                    &iter,
+                    curr_block_number,
+                    MONAD_EXEC_BLOCK_START,
+                    nullptr,
+                    nullptr));
                 find_execution_events(&iter, &exec_events);
                 check_exec_events = true;
             }

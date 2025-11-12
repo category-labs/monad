@@ -14,6 +14,7 @@ packages=(
   libgtest-dev
   libhugetlbfs-dev
   libmagicenum-dev
+  libssl-dev
   libtbb-dev
   liburing-dev
   libzstd-dev

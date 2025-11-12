@@ -38,6 +38,7 @@ class BlockState final
     Db &db_;
     vm::VM &vm_;
     std::unique_ptr<StateDeltas> state_;
+    std::unique_ptr<StateDeltas> final_state_;
     Code code_;
 
 public:

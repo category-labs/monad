@@ -56,15 +56,15 @@ namespace trace
     }
 
     StorageDeltas StateDiffTracer::generate_storage_deltas(
-        AccountState::StorageMap const &original,
-        AccountState::StorageMap const &current)
+        Map<bytes32_t, bytes32_t> const &original,
+        Map<bytes32_t, bytes32_t> const &current)
     {
         StorageDeltas deltas{};
         for (auto const &[key, value] : current) {
-            auto const *it = original.find(key);
-            MONAD_ASSERT(it != nullptr);
-            if (value != *it) {
-                deltas.emplace(key, std::make_pair(*it, value));
+            auto const it = original.find(key);
+            MONAD_ASSERT(it != original.end());
+            if (value != it->second) {
+                deltas.emplace(key, std::make_pair(it->second, value));
             }
         }
         return deltas;
@@ -190,7 +190,7 @@ namespace trace
     EXPLICIT_TRAITS(run_tracer);
 
     // Json serialization
-    json storage_to_json(AccountState::StorageMap const &storage)
+    json storage_to_json(Map<bytes32_t, bytes32_t> const &storage)
     {
         json res = json::object();
         for (auto const &[key, value] : storage) {

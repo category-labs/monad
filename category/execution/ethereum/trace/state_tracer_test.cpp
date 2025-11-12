@@ -74,9 +74,9 @@ TEST(PrestateTracer, pre_state_to_json)
 {
     Account const a{.balance = 1000, .code_hash = A_CODE_HASH, .nonce = 1};
     OriginalAccountState as{a};
-    as.storage_ = as.storage_.insert({key1, value1});
-    as.storage_ = as.storage_.insert({key2, value2});
-    as.storage_ = as.storage_.insert({key3, value3});
+    as.storage_.emplace(key1, value1);
+    as.storage_.emplace(key2, value2);
+    as.storage_.emplace(key3, value3);
 
     trace::Map<Address, OriginalAccountState> prestate{};
     prestate.emplace(ADDR_A, as);
@@ -439,10 +439,10 @@ TEST(PrestateTracer, geth_example_prestate)
     // because the code in the Geth example is truncated.
     Account const a{.balance = 0, .code_hash = A_CODE_HASH, .nonce = 1};
     OriginalAccountState as{a};
-    as.storage_ = as.storage_.insert({key4, value4});
-    as.storage_ = as.storage_.insert({key5, value5});
-    as.storage_ = as.storage_.insert({key6, value6});
-    as.storage_ = as.storage_.insert({key7, value7});
+    as.storage_.emplace(key4, value4);
+    as.storage_.emplace(key5, value5);
+    as.storage_.emplace(key6, value6);
+    as.storage_.emplace(key7, value7);
 
     Account const b{
         .balance = 0x7a48734599f7284, .code_hash = NULL_HASH, .nonce = 1133};

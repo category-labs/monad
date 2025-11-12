@@ -22,7 +22,7 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
-#include <immer/map.hpp>
+
 #include <nlohmann/json.hpp>
 
 #include <span>
@@ -78,7 +78,8 @@ namespace trace
 
     private:
         StorageDeltas generate_storage_deltas(
-            AccountState::StorageMap const &, AccountState::StorageMap const &);
+            Map<bytes32_t, bytes32_t> const &,
+            Map<bytes32_t, bytes32_t> const &);
         nlohmann::json &storage_;
     };
 

@@ -251,14 +251,15 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
         auto &storage = account_state.storage_;
-        if (auto const *const it3 = storage.find(key); it3) {
-            return *it3;
-        }
-        else {
+        auto const *const it3 = storage.find(key);
+        if (!it3) {
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
             storage = storage.insert({key, value});
             return value;
+        }
+        else {
+            return *it3;
         }
     }
     else {
@@ -279,14 +280,15 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
             return {};
         }
         auto &original_storage = original_account_state.storage_;
-        if (auto const *const it3 = original_storage.find(key); it3) {
-            return *it3;
-        }
-        else {
+        auto const *const it3 = original_storage.find(key);
+        if (!it3) {
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
             original_storage = original_storage.insert({key, value});
             return value;
+        }
+        else {
+            return *it3;
         }
     }
 }
@@ -361,15 +363,16 @@ evmc_storage_status State::set_storage(
     {
         auto &orig_account_state = original_account_state(address);
         auto &storage = orig_account_state.storage_;
-        if (auto const *const it = storage.find(key); it) {
-            original_value = *it;
-        }
-        else {
+        auto const *it = storage.find(key);
+        if (it == nullptr) {
             Incarnation const incarnation = account_state.account_->incarnation;
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
             storage = storage.insert({key, value});
             original_value = value;
+        }
+        else {
+            original_value = *it;
         }
     }
     // state

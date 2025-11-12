@@ -27,7 +27,6 @@
 
 #include <intx/intx.hpp>
 
-// TODO immer known to trigger incorrect warning
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #include <immer/map.hpp>
@@ -102,7 +101,7 @@ public:
 
     [[nodiscard]] bytes32_t get_code_hash() const
     {
-        if (MONAD_LIKELY(account_.has_value())) {
+        if (account_.has_value()) {
             return account_->code_hash;
         }
         return NULL_HASH;
@@ -110,7 +109,7 @@ public:
 
     [[nodiscard]] uint64_t get_nonce() const
     {
-        if (MONAD_LIKELY(account_.has_value())) {
+        if (account_.has_value()) {
             return account_->nonce;
         }
         return 0;
@@ -118,7 +117,7 @@ public:
 
     [[nodiscard]] std::optional<Incarnation> get_incarnation() const
     {
-        if (MONAD_LIKELY(account_.has_value())) {
+        if (account_.has_value()) {
             return account_->incarnation;
         }
         return std::nullopt;
@@ -126,8 +125,8 @@ public:
 
     bytes32_t get_transient_storage(bytes32_t const &key) const
     {
-        if (auto const *const it = transient_storage_.find(key);
-            MONAD_LIKELY(it)) {
+        auto const *const it = transient_storage_.find(key);
+        if (MONAD_LIKELY(it != nullptr)) {
             return *it;
         }
         return {};
@@ -139,7 +138,8 @@ public:
     {
         bytes32_t current_value = original_value;
         {
-            if (auto const *const it = storage_.find(key); it) {
+            auto const *const it = storage_.find(key);
+            if (it != nullptr) {
                 current_value = *it;
             }
         }

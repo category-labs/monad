@@ -20,7 +20,6 @@
 
 #include <evmc/evmc.h>
 
-// TODO immer known to trigger incorrect warning
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #include <immer/set.hpp>

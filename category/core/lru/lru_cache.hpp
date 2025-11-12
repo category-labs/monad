@@ -96,8 +96,8 @@ public:
             return false;
         }
         STATS_EVENT_FIND_HIT();
-        ListNode *const node = acc->second.node_;
-        try_update_lru(node);
+        // ListNode *const node = acc->second.node_;
+        // try_update_lru(node);
         return true;
     }
 
@@ -109,7 +109,7 @@ public:
             STATS_EVENT_INSERT_FOUND();
             acc->second.value_ = value;
             ListNode *const node = acc->second.node_;
-            try_update_lru(node);
+            update_lru(node);
             return false;
         }
         ListNode *const node = pool_.new_obj(key);
@@ -132,6 +132,13 @@ public:
     }
 
 private:
+    void update_lru(ListNode *node)
+    {
+        std::unique_lock const l(mutex_);
+        STATS_EVENT_UPDATE_LRU();
+        lru_.update_lru(node);
+    }
+
     void try_update_lru(ListNode *node)
     {
         if (node->check_lru_time()) {

@@ -43,8 +43,11 @@ namespace trace
 
     struct PrestateTracer
     {
-        explicit PrestateTracer(nlohmann::json &storage)
+        explicit PrestateTracer(
+            nlohmann::json &storage,
+            std::optional<Address> const &beneficiary = std::nullopt)
             : storage_(storage)
+            , beneficiary_(beneficiary)
         {
         }
 
@@ -55,21 +58,27 @@ namespace trace
         account_state_to_json(OriginalAccountState const &, State &);
         static void state_to_json(
             Map<Address, OriginalAccountState> const &, State &,
-            nlohmann::json &);
-        static nlohmann::json
-        state_to_json(Map<Address, OriginalAccountState> const &, State &);
+            std::optional<Address> const &, nlohmann::json &);
+        static nlohmann::json state_to_json(
+            Map<Address, OriginalAccountState> const &, State &,
+            std::optional<Address> const &);
         friend void state_to_json(
             Map<Address, OriginalAccountState> const &, State &,
-            nlohmann::json &);
-        friend nlohmann::json
-        state_to_json(Map<Address, OriginalAccountState> const &, State &);
+            std::optional<Address> const &, nlohmann::json &);
+        friend nlohmann::json state_to_json(
+            Map<Address, OriginalAccountState> const &, State &,
+            std::optional<Address> const &);
         nlohmann::json &storage_;
+        std::optional<Address> const &beneficiary_;
     };
 
     struct StateDiffTracer
     {
-        explicit StateDiffTracer(nlohmann::json &storage)
+        explicit StateDiffTracer(
+            nlohmann::json &storage,
+            std::optional<Address> const &beneficiary = std::nullopt)
             : storage_(storage)
+            , beneficiary_(beneficiary)
         {
         }
 
@@ -80,6 +89,7 @@ namespace trace
         StorageDeltas generate_storage_deltas(
             AccountState::StorageMap const &, AccountState::StorageMap const &);
         nlohmann::json &storage_;
+        std::optional<Address> const &beneficiary_;
     };
 
     struct AccessListTracer
@@ -106,10 +116,12 @@ namespace trace
     template <Traits traits>
     void run_tracer(StateTracer &tracer, State &state);
 
-    nlohmann::json
-    state_to_json(Map<Address, OriginalAccountState> const &, State &);
+    nlohmann::json state_to_json(
+        Map<Address, OriginalAccountState> const &, State &,
+        std::optional<Address> const &);
     void state_to_json(
-        Map<Address, OriginalAccountState> const &, State &, nlohmann::json &);
+        Map<Address, OriginalAccountState> const &, State &,
+        std::optional<Address> const &, nlohmann::json &);
     nlohmann::json state_deltas_to_json(StateDeltas const &, State &);
     void state_deltas_to_json(StateDeltas const &, State &, nlohmann::json &);
 }

@@ -457,9 +457,9 @@ namespace
             state_tracers.emplace_back(
                 tracer_config == PRESTATE_TRACER
                     ? std::make_unique<trace::StateTracer>(
-                          trace::PrestateTracer{trace})
+                          trace::PrestateTracer{trace, header.beneficiary})
                     : std::make_unique<trace::StateTracer>(
-                          trace::StateDiffTracer{trace}));
+                          trace::StateDiffTracer{trace, header.beneficiary}));
 
             std::span<std::unique_ptr<trace::StateTracer>> const
                 state_tracers_view{state_tracers.data(), transactions_size};
@@ -501,12 +501,14 @@ namespace
                 if (tracer_config == PRESTATE_TRACER) {
                     state_tracers.emplace_back(
                         std::make_unique<trace::StateTracer>(
-                            trace::PrestateTracer{traces[i]["result"]}));
+                            trace::PrestateTracer{
+                                traces[i]["result"], header.beneficiary}));
                 }
                 else {
                     state_tracers.emplace_back(
                         std::make_unique<trace::StateTracer>(
-                            trace::StateDiffTracer{traces[i]["result"]}));
+                            trace::StateDiffTracer{
+                                traces[i]["result"], header.beneficiary}));
                 }
             }
 
@@ -942,9 +944,11 @@ struct monad_executor
                         case CALL_TRACER:
                             return std::monostate{};
                         case PRESTATE_TRACER:
-                            return trace::PrestateTracer{state_trace};
+                            return trace::PrestateTracer{
+                                state_trace, block_header.beneficiary};
                         case STATEDIFF_TRACER:
-                            return trace::StateDiffTracer{state_trace};
+                            return trace::StateDiffTracer{
+                                state_trace, block_header.beneficiary};
                         case ACCESS_LIST_TRACER:
                             return trace::AccessListTracer{
                                 state_trace,

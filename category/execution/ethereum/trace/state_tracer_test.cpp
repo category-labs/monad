@@ -111,7 +111,9 @@ TEST(PrestateTracer, pre_state_to_json)
         
     })";
 
-    EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_to_json(prestate, s, std::nullopt),
+        nlohmann::json::parse(json_str));
 }
 
 TEST(PrestateTracer, zero_nonce)
@@ -141,7 +143,9 @@ TEST(PrestateTracer, zero_nonce)
         
     })";
 
-    EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_to_json(prestate, s, std::nullopt),
+        nlohmann::json::parse(json_str));
 }
 
 TEST(PrestateTracer, state_deltas_to_json)
@@ -501,7 +505,9 @@ TEST(PrestateTracer, geth_example_prestate)
         }
     })";
 
-    EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_to_json(prestate, s, std::nullopt),
+        nlohmann::json::parse(json_str));
 }
 
 TEST(PrestateTracer, geth_example_statediff)
@@ -562,7 +568,9 @@ TEST(PrestateTracer, prestate_empty)
 
     auto const json_str = R"({})";
 
-    EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_to_json(prestate, s, std::nullopt),
+        nlohmann::json::parse(json_str));
 }
 
 TEST(PrestateTracer, statediff_empty)

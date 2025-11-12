@@ -52,7 +52,7 @@ namespace trace
     void PrestateTracer::encode(
         Map<Address, OriginalAccountState> const &prestate, State &state)
     {
-        state_to_json(prestate, state, storage_);
+        state_to_json(prestate, state, beneficiary_, storage_);
     }
 
     StorageDeltas StateDiffTracer::generate_storage_deltas(
@@ -80,6 +80,11 @@ namespace trace
         for (auto const &[address, current_stack] : current) {
             auto const it = original.find(address);
             MONAD_ASSERT(it != original.end());
+
+            // Skip beneficiary account
+            if (beneficiary_.has_value() && address == beneficiary_.value()) {
+                continue;
+            }
 
             // Possible diff.
             auto const &current_account_state = current_stack.recent();
@@ -239,9 +244,13 @@ namespace trace
 
     void PrestateTracer::state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
-        json &result)
+        std::optional<Address> const &beneficiary, json &result)
     {
         for (auto const &[address, account_state] : trace) {
+            // Skip beneficiary account
+            if (beneficiary.has_value() && address == beneficiary.value()) {
+                continue;
+            }
             // TODO: Because this address is "touched". Should we keep this for
             // monad?
             if (MONAD_UNLIKELY(address == monad::ripemd_address)) {
@@ -253,24 +262,26 @@ namespace trace
     }
 
     json PrestateTracer::state_to_json(
-        Map<Address, OriginalAccountState> const &trace, State &state)
+        Map<Address, OriginalAccountState> const &trace, State &state,
+        std::optional<Address> const &beneficiary)
     {
         json result = json::object();
-        state_to_json(trace, state, result);
+        state_to_json(trace, state, beneficiary, result);
         return result;
     }
 
     void state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
-        json &result)
+        std::optional<Address> const &beneficiary, json &result)
     {
-        PrestateTracer::state_to_json(trace, state, result);
+        PrestateTracer::state_to_json(trace, state, beneficiary, result);
     }
 
-    json
-    state_to_json(Map<Address, OriginalAccountState> const &trace, State &state)
+    json state_to_json(
+        Map<Address, OriginalAccountState> const &trace, State &state,
+        std::optional<Address> const &beneficiary)
     {
-        return PrestateTracer::state_to_json(trace, state);
+        return PrestateTracer::state_to_json(trace, state, beneficiary);
     }
 
     void state_deltas_to_json(

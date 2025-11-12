@@ -1610,7 +1610,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         }
 
         EXPECT_EQ(
-            state_to_json(expected, s),
+            state_to_json(expected, s, std::nullopt),
             nlohmann::json::from_cbor(encoded_pre_state_trace));
     }
 
@@ -1917,9 +1917,6 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
         auto const *const expected = R"([
             {
                 "result": {
-                    "0x0000000000000000000000000000000000000000": {
-                        "balance": "0x0"
-                    },
                     "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
                         "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                         "nonce": 1
@@ -1933,9 +1930,6 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             },
             {
                 "result": {
-                    "0x0000000000000000000000000000000000000000": {
-                        "balance": "0x0"
-                    },
                     "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                         "balance": "0xabbb",
                         "nonce": 1
@@ -2159,9 +2153,6 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
                 prestate_ctx_1.result->encoded_trace_len);
 
         auto const *const expected_1 = R"({
-            "0x0000000000000000000000000000000000000000": {
-                "balance": "0x0"
-            },
             "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
                 "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                 "nonce": 1
@@ -2203,9 +2194,6 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
                 prestate_ctx_2.result->encoded_trace_len);
 
         auto const *const expected_2 = R"({
-            "0x0000000000000000000000000000000000000000": {
-                "balance": "0x0"
-            },
             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                 "balance": "0xabbb",
                 "nonce": 1
@@ -2705,9 +2693,6 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
                 block1_prestate_ctx.result->encoded_trace_len);
 
         auto const *const expected = R"({
-            "0x0000000000000000000000000000000000000000": {
-                "balance": "0x0"
-            },
             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                 "balance": "0x1",
                 "nonce": 1
@@ -2764,9 +2749,6 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
                 block2_prestate_ctx.result->encoded_trace_len);
 
         auto const *const expected = R"({
-            "0x0000000000000000000000000000000000000000": {
-                "balance": "0x0"
-            },
             "0xa6b8a0d6cbd7623be3a45d2164c436e6d3462d99": {
                 "balance": "0xffffffffffffffff",
                 "nonce": 1

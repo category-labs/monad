@@ -264,25 +264,35 @@ bool storage_pool::chunk_t::try_trim_contents(uint32_t bytes)
         // /sys/block/nvmeXXX/queue/discard_max_bytes and adjust accordingly,
         // however every NVMe SSD I'm aware of has 512 and 2Tb. If we ran on MMC
         // or legacy SATA SSDs this would be very different, but we never will.
-        auto *const buffer = reinterpret_cast<std::byte *>(
-            aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE));
-        auto const unbuffer =
-            make_scope_exit([&]() noexcept { ::free(buffer); });
         auto const remainder = offset_ + bytes - range[0];
-        // Copy any fragment of DISK_PAGE_SIZE about to get TRIMed to a
-        // temporary buffer
-        auto const bytesread = (remainder == 0)
-                                   ? 0
-                                   : ::pread(
-                                         read_fd_,
-                                         buffer,
-                                         DISK_PAGE_SIZE,
-                                         static_cast<off_t>(range[0]));
-        MONAD_ASSERT_PRINTF(
-            bytesread != -1, "pread failed due to %s", std::strerror(errno));
-        // As writes must be in DISK_PAGE_SIZE units, no point in TRIMing a
-        // block only to immediately overwrite it
+        MONAD_ASSERT(remainder < DISK_PAGE_SIZE);
         if (remainder > 0) {
+            auto *const buffer = reinterpret_cast<std::byte *>(
+                aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE));
+            auto const unbuffer =
+                make_scope_exit([&]() noexcept { ::free(buffer); });
+            // Copy any fragment of DISK_PAGE_SIZE about to get TRIMed to a
+            // temporary buffer
+            MONAD_ASSERT_PRINTF(
+                -1 != ::pread(
+                          read_fd_,
+                          buffer,
+                          DISK_PAGE_SIZE,
+                          static_cast<off_t>(range[0])),
+                "failed due to %s",
+                std::strerror(errno));
+            // Overwrite the first DISK_PAGE_SIZE unit with all bits after
+            // truncation point set to zero
+            memset(buffer + remainder, 0, DISK_PAGE_SIZE - remainder);
+            MONAD_ASSERT_PRINTF(
+                -1 != ::pwrite(
+                          write_fd_,
+                          buffer,
+                          DISK_PAGE_SIZE,
+                          static_cast<off_t>(range[0])),
+                "failed due to %s",
+                std::strerror(errno));
+            // TRIM only the remaining DISK_PAGE_SIZE-aligned bytes
             range[0] += DISK_PAGE_SIZE;
             range[1] -= DISK_PAGE_SIZE;
         }
@@ -292,19 +302,6 @@ bool storage_pool::chunk_t::try_trim_contents(uint32_t bytes)
             MONAD_ASSERT((range[1] & (DISK_PAGE_SIZE - 1)) == 0);
             MONAD_ASSERT_PRINTF(
                 !ioctl(write_fd_, _IO(0x12, 119) /*BLKDISCARD*/, &range),
-                "failed due to %s",
-                std::strerror(errno));
-        }
-        if (remainder > 0) {
-            // Overwrite the final DISK_PAGE_SIZE unit with all bits after
-            // truncation point set to zero
-            memset(buffer + remainder, 0, DISK_PAGE_SIZE - remainder);
-            MONAD_ASSERT_PRINTF(
-                -1 != ::pwrite(
-                          write_fd_,
-                          buffer,
-                          DISK_PAGE_SIZE,
-                          static_cast<off_t>(range[0])),
                 "failed due to %s",
                 std::strerror(errno));
         }

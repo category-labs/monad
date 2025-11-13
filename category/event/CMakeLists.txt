@@ -23,12 +23,17 @@ cmake_minimum_required(VERSION 3.23)
 project(monad_event LANGUAGES C CXX)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  set(MONAD_EVENT_BUILD_BLOCKCAPD_DEFAULT ON)
   set(MONAD_EVENT_HUGETLBFS_DEFAULT ON)
   set(MONAD_EVENT_USE_O_TMPFILE_DEFAULT OFF) # OFF until Ubuntu 26.04 LTS
 else()
+  set(MONAD_EVENT_BUILD_BLOCKCAPD_DEFAULT OFF)
   set(MONAD_EVENT_HUGETLBFS_DEFAULT OFF)
   set(MONAD_EVENT_USE_O_TMPFILE_DEFAULT OFF)
 endif()
+
+option(MONAD_EVENT_BUILD_BLOCKCAPD "Build the block capture daemon"
+    ${MONAD_EVENT_BUILD_BLOCKCAPD_DEFAULT})
 
 # This requires more advanced compiler support than the execution daemon does;
 # for now the execution build system won't build it
@@ -182,6 +187,10 @@ endif()
 
 option(MONAD_EVENT_BUILD_EXAMPLES
     "Build the example programs that show how to use the API" ON)
+
+if(MONAD_EVENT_BUILD_BLOCKCAPD)
+  add_subdirectory(tools/blockcapd)
+endif()
 
 if(MONAD_EVENT_BUILD_CLI)
   add_subdirectory(tools/event-cli)

@@ -183,28 +183,26 @@ Result<BlockExecOutput> propose_block(
             return TransactionError::MissingSender;
         }
     }
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+
+    BOOST_OUTCOME_TRY(static_validate_monad_senders<traits>(senders));
+    auto [entry, success] = block_cache.emplace(
+        block_id,
+        BlockCacheEntry{
+            .block_number = block.header.number,
+            .parent_id = consensus_header.parent_id(),
+            .senders_and_authorities = {}});
+    MONAD_ASSERT(success, "should never be processing duplicate block");
     for (Address const &sender : senders) {
-        senders_and_authorities.insert(sender);
+        entry->second.senders_and_authorities.insert(sender);
     }
     for (std::vector<std::optional<Address>> const &authorities :
          recovered_authorities) {
         for (std::optional<Address> const &authority : authorities) {
             if (authority.has_value()) {
-                senders_and_authorities.insert(authority.value());
+                entry->second.senders_and_authorities.insert(authority.value());
             }
         }
     }
-    MONAD_ASSERT(block_cache
-                     .emplace(
-                         block_id,
-                         BlockCacheEntry{
-                             .block_number = block.header.number,
-                             .parent_id = consensus_header.parent_id(),
-                             .senders_and_authorities =
-                                 std::move(senders_and_authorities)})
-                     .second);
-    BOOST_OUTCOME_TRY(static_validate_monad_senders<traits>(senders));
 
     // Create call frames vectors for tracers
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};

@@ -109,7 +109,7 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
             pool_options};
     }()}
     , read_ring{monad::io::RingConfig{
-          options.uring_entries, false, options.sq_thread_cpu}}
+          options.uring_entries, options.sq_thread_cpu}}
     , buffers{io::make_buffers_for_read_only(
           read_ring, options.rd_buffers,
           async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
@@ -147,7 +147,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
             options.append ? async::storage_pool::mode::open_existing
                            : async::storage_pool::mode::truncate};
     }()}
-    , read_ring{{options.uring_entries, options.enable_io_polling, options.sq_thread_cpu}}
+    , read_ring{{options.uring_entries, options.sq_thread_cpu}}
     , write_ring{io::RingConfig{options.wr_buffers}}
     , buffers{io::make_buffers_for_segregated_read_write(
           read_ring, *write_ring, options.rd_buffers, options.wr_buffers,

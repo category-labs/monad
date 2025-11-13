@@ -305,7 +305,6 @@ int main(int argc, char *argv[])
     bool realistic_corpus = false;
     bool random_keys = false;
     bool compaction = false;
-    bool use_iopoll = false;
     int file_size_db = 512; // truncate to 512 gb by default
     unsigned random_read_benchmark_threads = 0;
     unsigned concurrent_read_io_limit = 0;
@@ -348,7 +347,6 @@ int main(int argc, char *argv[])
         cli.add_flag(
             "--random-keys", random_keys, "generate random integers as keys");
         cli.add_flag("--compaction", compaction, "perform compaction on disk");
-        cli.add_flag("--use-iopoll", use_iopoll, "use i/o polling in io_uring");
         cli.add_option(
             "--file-size-gb",
             file_size_db,
@@ -475,8 +473,7 @@ int main(int argc, char *argv[])
                     : MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate};
 
             // init uring
-            monad::io::Ring ring1(
-                monad::io::RingConfig{512, use_iopoll, sq_thread_cpu});
+            monad::io::Ring ring1(monad::io::RingConfig{512, sq_thread_cpu});
             monad::io::Ring ring2(monad::io::RingConfig{16}
                                   /* max concurrent write buffers in use <= 6 */
             );
@@ -658,7 +655,7 @@ int main(int argc, char *argv[])
             }
             // read only
             // init uring
-            monad::io::Ring ring({512, use_iopoll, sq_thread_cpu});
+            monad::io::Ring ring({512, sq_thread_cpu});
 
             // init buffer
             monad::io::Buffers rwbuf = make_buffers_for_read_only(

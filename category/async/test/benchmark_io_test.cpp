@@ -298,12 +298,6 @@ set it to the desired size beforehand).
                 ringconfig.entries,
                 "how many submission entries io_uring should have. Default is "
                 "128.");
-            cli.add_flag(
-                "--enable-io-polling",
-                ringconfig.enable_io_polling,
-                "whether to enable i/o polling within the kernel. Default is "
-                "no "
-                "i/o polling.");
             cli.add_option(
                 "--kernel-poll-thread",
                 ringconfig.sq_thread_cpu,

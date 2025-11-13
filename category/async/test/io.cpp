@@ -200,7 +200,6 @@ namespace
         monad::io::Ring testring1(monad::io::RingConfig{4});
         monad::io::Ring testring2(
             {sqe_exhaustion_does_not_reorder_writes_receiver::COUNT,
-             false,
              std::nullopt});
         monad::io::Buffers testrwbuf =
             monad::io::make_buffers_for_segregated_read_write(

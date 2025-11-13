@@ -29,7 +29,6 @@ struct OnDiskDbConfig
 {
     bool append{false};
     bool compaction{false};
-    bool enable_io_polling{false};
     bool capture_io_latencies{false};
     bool eager_completions{false};
     bool rewind_to_latest_finalized{false};

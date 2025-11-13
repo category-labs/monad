@@ -34,7 +34,7 @@ namespace monad::test
         {
             static monad::io::Ring make_ring()
             {
-                return monad::io::Ring({MAX_CONCURRENCY, false, 0});
+                return monad::io::Ring({MAX_CONCURRENCY, 0});
             }
 
             static monad::io::Buffers make_buffers(monad::io::Ring &ring)

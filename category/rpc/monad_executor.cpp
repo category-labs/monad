@@ -427,8 +427,8 @@ namespace
                 chain_context.authorities.data(), transactions_size};
 
         // Execute block header
-        execute_block_header<traits>(chain, block_state, header);
         BlockMetrics metrics{};
+        execute_block_header<traits>(chain, block_state, header, metrics);
 
         // Prepare state tracers and auxiliary noop call tracers.
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};

@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -57,6 +58,8 @@ public:
     bool can_merge(State &) const;
 
     void merge(State const &);
+
+    void merge(State const &, BlockMetrics &);
 
     void commit(
         bytes32_t const &block_id, BlockHeader const &,

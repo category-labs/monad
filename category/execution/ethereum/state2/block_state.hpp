@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -51,13 +52,21 @@ public:
 
     std::optional<Account> read_account(Address const &);
 
+    std::pair<std::optional<Account>, bool>
+    read_account_and_status(Address const &address);
+
     bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
+
+    std::pair<bytes32_t, bool>
+    read_storage_and_status(Address const &, Incarnation, bytes32_t const &key);
 
     vm::SharedVarcode read_code(bytes32_t const &);
 
     bool can_merge(State &) const;
 
     void merge(State const &);
+
+    void merge(State const &, BlockMetrics &);
 
     void commit(
         bytes32_t const &block_id, BlockHeader const &,

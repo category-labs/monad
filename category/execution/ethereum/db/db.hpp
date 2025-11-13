@@ -38,8 +38,20 @@ struct Db
 {
     virtual std::optional<Account> read_account(Address const &) = 0;
 
+    virtual std::pair<std::optional<Account>, bool>
+    read_account_and_status(Address const &address)
+    {
+        return {read_account(address), false};
+    }
+
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
+
+    virtual std::pair<bytes32_t, bool> read_storage_and_status(
+        Address const &address, Incarnation incarnation, bytes32_t const &key)
+    {
+        return {read_storage(address, incarnation, key), false};
+    }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 

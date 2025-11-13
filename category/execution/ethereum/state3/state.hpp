@@ -45,6 +45,8 @@ class BlockState;
 
 class State
 {
+    static constexpr bool ENABLE_MULTI_BLOCK_CACHE = false;
+
     template <typename K, typename V>
     using Map = ankerl::unordered_dense::segmented_map<K, V>;
 

@@ -178,7 +178,8 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
 
 template <Traits traits>
 void execute_block_header(
-    Chain const &chain, BlockState &block_state, BlockHeader const &header)
+    Chain const &chain, BlockState &block_state, BlockHeader const &header,
+    BlockMetrics &block_metrics)
 {
     State state{block_state, Incarnation{header.number, 0}};
 
@@ -204,7 +205,7 @@ void execute_block_header(
     }
 
     MONAD_ASSERT(block_state.can_merge(state));
-    block_state.merge(state);
+    block_state.merge(state, block_metrics);
     record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_PROLOGUE, state);
 }
 
@@ -341,7 +342,8 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
 
-    execute_block_header<traits>(chain, block_state, block.header);
+    execute_block_header<traits>(
+        chain, block_state, block.header, block_metrics);
 
     BOOST_OUTCOME_TRY(
         auto const retvals,

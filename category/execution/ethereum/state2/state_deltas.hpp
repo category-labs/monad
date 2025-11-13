@@ -58,9 +58,11 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+    bool account_is_warm{false};
+    ankerl::unordered_dense::segmented_set<bytes32_t> warm_keys{};
 };
 
-static_assert(sizeof(StateDelta) == 752);
+static_assert(sizeof(StateDelta) == 824);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<

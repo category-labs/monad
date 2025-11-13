@@ -25,6 +25,7 @@ class BlockMetrics
 {
     uint32_t n_retries_{0};
     std::chrono::microseconds tx_exec_time_{1};
+    uint64_t gas_saved_{0};
 
 public:
     void inc_retries()
@@ -35,6 +36,16 @@ public:
     uint32_t num_retries() const
     {
         return n_retries_;
+    }
+
+    void add_gas_saved(uint64_t const gas)
+    {
+        gas_saved_ += gas;
+    }
+
+    uint64_t gas_saved() const
+    {
+        return gas_saved_;
     }
 
     void set_tx_exec_time(std::chrono::microseconds const exec_time)

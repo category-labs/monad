@@ -91,6 +91,24 @@ public:
         return db_.read_account(address);
     }
 
+    virtual std::pair<std::optional<Account>, bool>
+    read_account_and_status(Address const &address) override
+    {
+        bool truncated = false; // ancestors truncated
+        std::optional<Account> result;
+        if (proposals_.try_read_account(address, result, truncated)) {
+            // TODO: tentatively assume proposals are always in cache
+            return {result, true};
+        }
+        if (!truncated) {
+            AccountsCache::ConstAccessor acc{};
+            if (accounts_.find(acc, address)) {
+                return {acc->second.value_, true};
+            }
+        }
+        return {db_.read_account(address), false};
+    }
+
     virtual bytes32_t read_storage(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
@@ -109,6 +127,27 @@ public:
             }
         }
         return db_.read_storage(address, incarnation, key);
+    }
+
+    virtual std::pair<bytes32_t, bool> read_storage_and_status(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key) override
+    {
+        bool truncated = false;
+        bytes32_t result;
+        if (proposals_.try_read_storage(
+                address, incarnation, key, result, truncated)) {
+            // TODO: tentatively assume proposals are always in cache
+            return {result, true};
+        }
+        if (!truncated) {
+            StorageKey const skey{address, incarnation, key};
+            StorageCache::ConstAccessor acc{};
+            if (storage_.find(acc, skey)) {
+                return {acc->second.value_, true};
+            }
+        }
+        return {db_.read_storage(address, incarnation, key), false};
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override

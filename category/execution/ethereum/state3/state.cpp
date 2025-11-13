@@ -57,8 +57,14 @@ OriginalAccountState &State::original_account_state(Address const &address)
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
-        auto const account = block_state_.read_account(address);
+        auto const [account, status] =
+            block_state_.read_account_and_status(address);
         it = original_.try_emplace(address, account).first;
+        if constexpr (ENABLE_MULTI_BLOCK_CACHE) {
+            if (status) {
+                it->second.access();
+            }
+        }
     }
     return it->second;
 }
@@ -255,9 +261,14 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
             return *it3;
         }
         else {
-            bytes32_t const value = block_state_.read_storage(
+            auto const [value, status] = block_state_.read_storage_and_status(
                 address, account.value().incarnation, key);
             storage = storage.insert({key, value});
+            if constexpr (ENABLE_MULTI_BLOCK_CACHE) {
+                if (status) {
+                    account_state.access_storage(key);
+                }
+            }
             return value;
         }
     }
@@ -283,9 +294,14 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
             return *it3;
         }
         else {
-            bytes32_t const value = block_state_.read_storage(
+            auto const [value, status] = block_state_.read_storage_and_status(
                 address, account.value().incarnation, key);
             original_storage = original_storage.insert({key, value});
+            if constexpr (ENABLE_MULTI_BLOCK_CACHE) {
+                if (status) {
+                    original_account_state.access_storage(key);
+                }
+            }
             return value;
         }
     }
@@ -366,9 +382,14 @@ evmc_storage_status State::set_storage(
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
-            bytes32_t const value =
-                block_state_.read_storage(address, incarnation, key);
+            auto const [value, status] =
+                block_state_.read_storage_and_status(address, incarnation, key);
             storage = storage.insert({key, value});
+            if constexpr (ENABLE_MULTI_BLOCK_CACHE) {
+                if (status) {
+                    orig_account_state.access_storage(key);
+                }
+            }
             original_value = value;
         }
     }

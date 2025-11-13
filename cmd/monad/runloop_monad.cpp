@@ -155,7 +155,7 @@ Result<BlockExecOutput> propose_block(
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
     bool const enable_tracing, BlockCache &block_cache)
 {
-    [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
+    [[maybe_unused]] auto const block_start = std::chrono::steady_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
     auto const &block_hash_buffer =
         block_hash_chain.find_chain(consensus_header.parent_id());

@@ -85,7 +85,7 @@ Result<void> process_ethereum_block(
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing)
 {
-    [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
+    [[maybe_unused]] auto const block_start = std::chrono::steady_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
 
     // Block input validation
@@ -189,7 +189,8 @@ Result<void> process_ethereum_block(
         "__exec_block,bl={:8},ts={}"
         ",tx={:5},rt={:4},rtp={:5.2f}%"
         ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
-        ",gas={:9},gpse={:4},gps={:3}{}{}{}",
+        ",gas={:9},gpse={:4},gps={:3},at={},am={},st={},sm={}"
+        "{}{}{}",
         block.header.number,
         std::chrono::duration_cast<std::chrono::milliseconds>(
             block_start.time_since_epoch())
@@ -210,6 +211,10 @@ Result<void> process_ethereum_block(
         output_header.gas_used /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
         output_header.gas_used / (uint64_t)std::max(1L, block_time.count()),
+        block_metrics.num_account_touched(),
+        block_metrics.num_account_changed(),
+        block_metrics.num_storage_touched(),
+        block_metrics.num_storage_changed(),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());

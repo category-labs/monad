@@ -41,7 +41,8 @@ struct Block;
 struct Chain;
 
 template <Traits traits>
-void execute_block_header(Chain const &, BlockState &, BlockHeader const &);
+void execute_block_header(
+    Chain const &, BlockState &, BlockHeader const &, BlockMetrics &);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(

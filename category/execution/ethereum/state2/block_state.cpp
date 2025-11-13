@@ -236,6 +236,65 @@ void BlockState::merge(State const &state)
     }
 }
 
+void BlockState::merge(State const &state, BlockMetrics &block_metrics)
+{
+    ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
+
+    auto const &current = state.current();
+    for (auto const &[address, stack] : current) {
+        MONAD_ASSERT(stack.size() == 1);
+        MONAD_ASSERT(stack.version() == 0);
+        auto const &account_state = stack.recent();
+        auto const &account = account_state.account_;
+        if (account.has_value()) {
+            code_hashes.insert(account.value().code_hash);
+        }
+    }
+
+    auto const &code = state.code();
+    for (auto const &code_hash : code_hashes) {
+        auto const it = code.find(code_hash);
+        if (it == code.end()) {
+            continue;
+        }
+        code_.emplace(code_hash, it->second->intercode()); // TODO try_emplace
+    }
+
+    MONAD_ASSERT(state_);
+    for (auto const &[address, stack] : current) {
+        auto const &account_state = stack.recent();
+        auto const &account = account_state.account_;
+        auto const &storage = account_state.storage_;
+        StateDeltas::accessor it{};
+        MONAD_ASSERT(state_->find(it, address));
+        it->second.account.second = account;
+        if (account.has_value()) {
+            block_metrics.add_account_touched(1);
+            if (it->second.account.first != account) {
+                block_metrics.add_account_changed(1);
+            }
+            for (auto const &[key, value] : storage) {
+                StorageDeltas::accessor it2{};
+                block_metrics.add_storage_touched(1);
+                if (it->second.storage.find(it2, key)) {
+                    it2->second.second = value;
+                    if (it2->second.first != value) {
+                        block_metrics.add_storage_changed(1);
+                    }
+                }
+                else {
+                    it->second.storage.emplace(
+                        key, std::make_pair(bytes32_t{}, value));
+                    block_metrics.add_storage_changed(1);
+                }
+            }
+        }
+        else {
+            it->second.storage.clear();
+        }
+    }
+}
+
 void BlockState::commit(
     bytes32_t const &block_id, BlockHeader const &header,
     std::vector<Receipt> const &receipts,

@@ -129,7 +129,7 @@ try {
     bool trace_calls = false;
     std::string exec_event_ring_config;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
-    unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
+    std::optional<unsigned> ro_sq_thread_cpu;
     std::vector<fs::path> dbname_paths;
     fs::path snapshot;
     fs::path dump_snapshot;
@@ -161,7 +161,8 @@ try {
     cli.add_option(
         "--ro_sq_thread_cpu",
         ro_sq_thread_cpu,
-        "sq_thread_cpu for the read only db");
+        "sq_thread_cpu for the read only db (optional, disables SQPOLL if not "
+        "specified)");
     cli.add_option(
         "--db",
         dbname_paths,

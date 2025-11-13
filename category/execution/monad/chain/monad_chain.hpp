@@ -68,7 +68,7 @@ struct MonadChain : Chain
     bool revert_transaction(
         uint64_t block_number, uint64_t timestamp, Address const &sender,
         Transaction const &, uint256_t const &base_fee_per_gas, uint64_t i,
-        State &, MonadChainContext const &) const;
+        State &, MonadChainContext const &, bool forbid_dip = false) const;
 };
 
 MONAD_NAMESPACE_END

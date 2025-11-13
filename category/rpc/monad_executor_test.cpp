@@ -184,7 +184,8 @@ namespace
                      .account =
                          {std::nullopt,
                           Account{
-                              .balance = 20'000'000u,
+                              .balance =
+                                  uint256_t{1'000'000'000'000'000'000} * 20,
                               .code_hash = NULL_HASH,
                               .nonce = 0x0}}}},
                 {ADDR_B,
@@ -1529,8 +1530,11 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
 
     BlockHeader const header{.number = 256};
 
+    static constexpr uint256_t initial_balance =
+        uint256_t{1'000'000'000'000'000'000} * 20;
+
     Account const acct_from{
-        .balance = 0x200000,
+        .balance = initial_balance,
         .code_hash = NULL_HASH,
         .nonce = 0x0,
     };
@@ -1649,9 +1653,9 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             {ADDR_A,
              StateDelta{
                  .account =
-                     {Account{.balance = 0x200000, .nonce = 0},
+                     {Account{.balance = initial_balance, .nonce = 0},
                       Account{
-                          .balance = 0x200000 - 0x10000 - 500'000u,
+                          .balance = initial_balance - 0x10000 - 500'000u,
                           .nonce = 1}}}},
             {ADDR_B,
              StateDelta{
@@ -2501,7 +2505,8 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
             BASE_FEE_PER_GAS,
             0, // transaction index
             state,
-            chain_context);
+            chain_context,
+            false /* allow dips if possible */);
         EXPECT_TRUE(should_revert);
     }
 
@@ -3480,4 +3485,227 @@ TEST_F(EthCallFixture, prestate_override_state)
     }
 
     monad_executor_destroy(executor);
+}
+
+// Set up a transaction that would be emptying + reverting under normal block
+// execution, then simulate it with eth_call to check that eth_call properly
+// simulates.
+TEST_F(EthCallFixture, eth_call_emptying)
+{
+    // This test is ported from `test_monad_chain.cpp` (reserve balance). It
+    // triggers the case where the sender is both in the parent block and the
+    // current block, with an emptying transaction.
+    static constexpr uint256_t BASE_FEE_PER_GAS = 10;
+
+    // Parameters
+    uint64_t const initial_balance_mon = 10;
+    uint64_t const gas_fee_mon = 2;
+    uint64_t const value_mon = 1;
+    uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
+    uint256_t const gas_fee = uint256_t{gas_fee_mon} * 1000000000000000000ULL;
+    uint256_t const gas_limit_ = gas_fee / BASE_FEE_PER_GAS;
+    ASSERT_TRUE((gas_fee % BASE_FEE_PER_GAS) == 0);
+    ASSERT_TRUE(gas_limit_ <= std::numeric_limits<uint64_t>::max());
+    uint64_t const gas_limit = static_cast<uint64_t>(gas_limit_);
+
+    // We need transactions to validate, hence we need an address and a
+    // signature. We can retrieve the former from the latter by first
+    // constructing the transaction, sign it, and then run `recover_sender` on
+    // it.
+    auto const sig = [&]() -> SignatureAndChain {
+        MonadDevnet const devnet;
+        return SignatureAndChain{1, 1, devnet.get_chain_id(), 1};
+    }();
+
+    Transaction const tx{
+        .sc = sig,
+        .nonce = 1,
+        .max_fee_per_gas = BASE_FEE_PER_GAS,
+        .gas_limit = gas_limit,
+        .value = value,
+        .type = TransactionType::legacy,
+        .max_priority_fee_per_gas = 0,
+    };
+
+    Address const sender = recover_sender(tx).value();
+    Account const sender_acc{
+        .balance = uint256_t{initial_balance_mon} * 1000000000000000000ULL,
+        .nonce = 1};
+    {
+        // Initial state.
+        StateDeltas const deltas{
+            {
+                sender,
+                StateDelta{.account = {std::nullopt, sender_acc}},
+            },
+        };
+
+        commit_sequential(tdb, deltas, {}, BlockHeader{.number = 0});
+    }
+
+    // Advance to block 255
+    for (uint64_t i = 1; i < 254; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    // Setup parent block transactions.
+    Account sender_acc2 = sender_acc;
+    sender_acc2.nonce = 1;
+    {
+        Transaction const tx0{
+            .sc = sig,
+            .nonce = 1,
+            .max_fee_per_gas = BASE_FEE_PER_GAS,
+            .gas_limit = gas_limit,
+            .value = value,
+            .type = TransactionType::legacy,
+            .max_priority_fee_per_gas = 0,
+        };
+
+        ASSERT_EQ(sender, recover_sender(tx0).value());
+
+        std::vector<Transaction> const transactions = {tx0};
+        std::vector<Address> const senders = {sender};
+        std::vector<std::vector<std::optional<Address>>> const authorities = {
+            {}};
+        std::vector<Receipt> const receipts = {{}};
+        std::vector<std::vector<CallFrame>> const call_frames = {{}};
+
+        BlockHeader const header{
+            .number = 254,
+            .timestamp = MONAD_NEXT,
+            .base_fee_per_gas = BASE_FEE_PER_GAS};
+
+        commit_sequential(
+            tdb,
+            StateDeltas{
+                {
+                    sender,
+                    StateDelta{.account = {sender_acc, sender_acc2}},
+                },
+            },
+            {},
+            header,
+            receipts,
+            call_frames,
+            senders,
+            transactions);
+    }
+    // Setup target block transactions.
+    std::vector<Transaction> const transactions = {tx};
+    std::vector<Address> const senders = {sender};
+    std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
+    std::vector<Receipt> const receipts = {{}};
+    std::vector<std::vector<CallFrame>> const call_frames = {{}};
+
+    BlockHeader const header{
+        .number = 255,
+        .timestamp = MONAD_NEXT,
+        .base_fee_per_gas = BASE_FEE_PER_GAS};
+
+    Account sender_acc3 = sender_acc2;
+    sender_acc3.nonce += 1;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {
+                sender,
+                StateDelta{.account = {sender_acc2, sender_acc3}},
+            },
+        },
+        {},
+        header,
+        receipts,
+        call_frames,
+        senders,
+        transactions);
+
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+    auto const rlp_parent_id = to_vec(rlp::encode_bytes32(bytes32_t{}));
+    auto const rlp_grandparent_id = to_vec(rlp::encode_bytes32(bytes32_t{}));
+
+    {
+        // Simulate the transaction to verify that it indeed should revert.
+        ankerl::unordered_dense::segmented_set<Address> const
+            grandparent_senders_and_authorities;
+        ankerl::unordered_dense::segmented_set<Address> const
+            parent_senders_and_authorities = {sender};
+        ankerl::unordered_dense::segmented_set<Address> const
+            senders_and_authorities = {sender};
+        MonadChainContext const chain_context{
+            .grandparent_senders_and_authorities =
+                &grandparent_senders_and_authorities,
+            .parent_senders_and_authorities = &parent_senders_and_authorities,
+            .senders_and_authorities = senders_and_authorities,
+            .senders = senders,
+            .authorities = authorities};
+
+        BlockState block_state{tdb, vm};
+        State state{
+            block_state, Incarnation{header.number - 1, Incarnation::LAST_TX}};
+        state.subtract_from_balance(sender, gas_fee);
+        state.subtract_from_balance(sender, value);
+        EXPECT_TRUE(block_state.can_merge(state));
+        bool const should_revert = revert_monad_transaction(
+            MONAD_NEXT,
+            EVMC_PRAGUE,
+            sender,
+            tx,
+            BASE_FEE_PER_GAS,
+            0, // transaction index
+            state,
+            chain_context,
+            false /* allow dips if possible */);
+        EXPECT_TRUE(should_revert);
+    }
+
+    {
+        Transaction const sim_tx{
+            .max_fee_per_gas = tx.max_fee_per_gas,
+            .gas_limit = tx.gas_limit,
+            .value = tx.value,
+            .to = tx.to,
+            .data = tx.data,
+        };
+        BlockHeader const header{.number = 256};
+        commit_sequential(tdb, {}, {}, header);
+
+        auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+        auto const rlp_sender =
+            to_vec(rlp::encode_address(std::make_optional(sender)));
+        auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+        auto *executor = create_executor(dbname.string());
+        auto *state_override = monad_state_override_create();
+
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        f.get();
+
+        EXPECT_EQ(ctx.result->status_code, EVMC_REVERT);
+
+        monad_state_override_destroy(state_override);
+        monad_executor_destroy(executor);
+    }
 }

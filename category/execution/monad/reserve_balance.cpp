@@ -42,7 +42,7 @@ bool dipped_into_reserve(
     monad_revision const monad_rev, evmc_revision const rev,
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i,
-    MonadChainContext const &ctx, State &state)
+    MonadChainContext const &ctx, State &state, bool const forbid_dip)
 {
     MONAD_ASSERT(i < ctx.senders.size());
     MONAD_ASSERT(i < ctx.authorities.size());
@@ -85,8 +85,11 @@ bool dipped_into_reserve(
         if (!violation_threshold.has_value() ||
             curr_balance < violation_threshold.value()) {
             if (addr == sender) {
-                if (!can_sender_dip_into_reserve(
-                        sender, i, orig_code_hash, ctx)) {
+                bool const dip_permitted =
+                    can_sender_dip_into_reserve(
+                        sender, i, orig_code_hash, ctx) &&
+                    !forbid_dip;
+                if (!dip_permitted) {
                     MONAD_ASSERT(
                         violation_threshold.has_value(),
                         "gas fee greater than reserve for non-dipping "
@@ -112,11 +115,20 @@ bool revert_monad_transaction(
     monad_revision const monad_rev, evmc_revision const rev,
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
-    MonadChainContext const &ctx)
+    MonadChainContext const &ctx, bool const forbid_dip)
 {
+    (void)forbid_dip;
     if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
         return dipped_into_reserve(
-            monad_rev, rev, sender, tx, base_fee_per_gas, i, ctx, state);
+            monad_rev,
+            rev,
+            sender,
+            tx,
+            base_fee_per_gas,
+            i,
+            ctx,
+            state,
+            forbid_dip);
     }
     else if (monad_rev >= MONAD_ZERO) {
         return false;

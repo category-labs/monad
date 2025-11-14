@@ -51,14 +51,14 @@ bool dipped_into_reserve(
     uint256_t const gas_fees =
         uint256_t{tx.gas_limit} * gas_price(rev, tx, base_fee_per_gas);
     auto const &orig = state.original();
-    for (auto const &[addr, _] : state.current()) {
+    for (auto const &[addr, cur_account] : state.current()) {
         MONAD_ASSERT(orig.contains(addr));
-        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
+        bytes32_t const cur_code_hash = cur_account.recent().get_code_hash();
 
         // Skip if not EOA
-        if (orig_code_hash != NULL_HASH) {
+        if (cur_code_hash != NULL_HASH) {
             vm::SharedIntercode const intercode =
-                state.read_code(orig_code_hash)->intercode();
+                state.read_code(cur_code_hash)->intercode();
             if (!monad::vm::evm::is_delegated(
                     {intercode->code(), intercode->size()})) {
                 continue;
@@ -86,7 +86,7 @@ bool dipped_into_reserve(
             curr_balance < violation_threshold.value()) {
             if (addr == sender) {
                 if (!can_sender_dip_into_reserve(
-                        sender, i, orig_code_hash, ctx)) {
+                        sender, i, cur_code_hash, ctx)) {
                     MONAD_ASSERT(
                         violation_threshold.has_value(),
                         "gas fee greater than reserve for non-dipping "

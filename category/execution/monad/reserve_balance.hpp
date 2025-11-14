@@ -37,7 +37,7 @@ bool revert_monad_transaction(
     MonadChainContext const &);
 
 bool can_sender_dip_into_reserve(
-    Address const &sender, uint64_t i, bytes32_t const &orig_code_hash,
+    Address const &sender, uint64_t i, bool sender_is_delegated,
     MonadChainContext const &);
 
 uint256_t get_max_reserve(monad_revision, Address const &);

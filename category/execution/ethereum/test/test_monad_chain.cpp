@@ -360,7 +360,7 @@ TEST(MonadChain, can_sender_dip_into_reserve)
             .authorities = authorities,
         };
         EXPECT_FALSE(
-            can_sender_dip_into_reserve(Address{1}, 1, NULL_HASH, context));
+            can_sender_dip_into_reserve(Address{1}, 1, false, context));
     }
 
     // False because of authority
@@ -378,7 +378,82 @@ TEST(MonadChain, can_sender_dip_into_reserve)
             .authorities = authorities,
         };
         EXPECT_FALSE(
-            can_sender_dip_into_reserve(Address{1}, 1, NULL_HASH, context));
+            can_sender_dip_into_reserve(Address{1}, 1, false, context));
+    }
+}
+
+TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
+{
+    using traits = typename TestFixture::Trait;
+    constexpr Address SENDER{1};
+    constexpr Address NEW_CONTRACT{2};
+    constexpr uint64_t BASE_FEE_PER_GAS = 10;
+    auto const to_wei = [](uint64_t mon) {
+        return uint256_t{mon} * 1000000000000000000ULL;
+    };
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+
+    {
+        State init_state{bs, Incarnation{0, 0}};
+        init_state.add_to_balance(SENDER, to_wei(20));
+        init_state.add_to_balance(NEW_CONTRACT, to_wei(3));
+        MONAD_ASSERT(bs.can_merge(init_state));
+        bs.merge(init_state);
+    }
+
+    Transaction const tx{
+        .max_fee_per_gas = BASE_FEE_PER_GAS,
+        .gas_limit = 1,
+        .type = TransactionType::legacy,
+        .max_priority_fee_per_gas = 0,
+    };
+    uint256_t const gas_cost =
+        uint256_t{BASE_FEE_PER_GAS} * uint256_t{tx.gas_limit};
+
+    std::vector<Address> const senders = {SENDER};
+    std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    senders_and_authorities.insert(SENDER);
+    MonadChainContext const context{
+        .grandparent_senders_and_authorities = nullptr,
+        .parent_senders_and_authorities = nullptr,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities};
+
+    auto const prepare_state = [&](State &state) {
+        state.subtract_from_balance(SENDER, gas_cost);
+        state.subtract_from_balance(NEW_CONTRACT, to_wei(3));
+        byte_string const contract_code{0x60, 0x00};
+        state.set_code(NEW_CONTRACT, contract_code);
+    };
+
+    State state{bs, Incarnation{1, 1}};
+    prepare_state(state);
+
+    bool const should_revert = revert_monad_transaction(
+        traits::monad_rev(),
+        traits::evm_rev(),
+        SENDER,
+        tx,
+        BASE_FEE_PER_GAS,
+        0,
+        state,
+        context);
+
+    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+        EXPECT_FALSE(should_revert);
+    }
+    else if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+        EXPECT_FALSE(should_revert);
+    }
+    else {
+        EXPECT_TRUE(should_revert);
     }
 }
 

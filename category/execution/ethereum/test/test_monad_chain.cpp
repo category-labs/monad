@@ -251,7 +251,8 @@ void run_revert_transaction_test(
             BASE_FEE_PER_GAS,
             1, // transaction index
             state,
-            chain_context);
+            chain_context,
+            false);
 
         EXPECT_EQ(should_revert, expected)
             << std::bitset<64>{prevent_dip_bitset};

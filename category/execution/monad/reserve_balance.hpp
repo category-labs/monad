@@ -34,7 +34,7 @@ struct Transaction;
 bool revert_monad_transaction(
     monad_revision, evmc_revision, Address const &sender, Transaction const &,
     uint256_t const &base_fee_per_gas, uint64_t i, State &,
-    MonadChainContext const &);
+    MonadChainContext const &, bool forbid_dip);
 
 bool can_sender_dip_into_reserve(
     Address const &sender, uint64_t i, bytes32_t const &orig_code_hash,

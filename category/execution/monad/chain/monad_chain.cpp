@@ -86,12 +86,20 @@ bool MonadChain::revert_transaction(
     uint64_t const block_number, uint64_t const timestamp,
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
-    MonadChainContext const &ctx) const
+    MonadChainContext const &ctx, bool const forbid_dip) const
 {
     monad_revision const monad_rev = get_monad_revision(timestamp);
     evmc_revision const rev = get_revision(block_number, timestamp);
     return revert_monad_transaction(
-        monad_rev, rev, sender, tx, base_fee_per_gas, i, state, ctx);
+        monad_rev,
+        rev,
+        sender,
+        tx,
+        base_fee_per_gas,
+        i,
+        state,
+        ctx,
+        forbid_dip);
 }
 
 MONAD_NAMESPACE_END

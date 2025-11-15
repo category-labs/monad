@@ -382,8 +382,10 @@ TEST(MonadChain, can_sender_dip_into_reserve)
     }
 }
 
-TEST(MonadChain, reserve_checks_use_final_code_hash_starting_with_next)
+TYPED_TEST(
+    MonadTraitsTest, reserve_checks_use_final_code_hash_starting_with_next)
 {
+    using traits = typename TestFixture::Trait;
     constexpr Address SENDER{1};
     constexpr Address NEW_CONTRACT{2};
     constexpr uint64_t BASE_FEE_PER_GAS = 10;
@@ -432,32 +434,27 @@ TEST(MonadChain, reserve_checks_use_final_code_hash_starting_with_next)
         state.set_code(NEW_CONTRACT, contract_code);
     };
 
-    {
-        State state{bs, Incarnation{1, 1}};
-        prepare_state(state);
-        EXPECT_FALSE(revert_monad_transaction(
-            MONAD_NEXT,
-            EVMC_PRAGUE,
-            SENDER,
-            tx,
-            BASE_FEE_PER_GAS,
-            0,
-            state,
-            context));
-    }
+    State state{bs, Incarnation{1, 1}};
+    prepare_state(state);
 
-    {
-        State state{bs, Incarnation{1, 1}};
-        prepare_state(state);
-        EXPECT_TRUE(revert_monad_transaction(
-            MONAD_SIX,
-            EVMC_PRAGUE,
-            SENDER,
-            tx,
-            BASE_FEE_PER_GAS,
-            0,
-            state,
-            context));
+    bool const should_revert = revert_monad_transaction(
+        traits::monad_rev(),
+        traits::evm_rev(),
+        SENDER,
+        tx,
+        BASE_FEE_PER_GAS,
+        0,
+        state,
+        context);
+
+    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+        EXPECT_FALSE(should_revert);
+    }
+    else if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+        EXPECT_FALSE(should_revert);
+    }
+    else {
+        EXPECT_TRUE(should_revert);
     }
 }
 

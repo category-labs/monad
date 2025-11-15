@@ -33,7 +33,7 @@ namespace monad::vm::fuzzing
      * different locations.
      */
     template <typename Engine>
-    auto compiler_emit_hook(Engine &engine)
+    auto compiler_emit_hook(Engine &engine, Engine *hook_engine)
     {
         static constexpr std::array<double, 2> artificial_swap_probs = {
             0, 0.50};
@@ -63,9 +63,11 @@ namespace monad::vm::fuzzing
                 artificial_avx_prob,
                 artificial_general_prob,
                 artificial_top2_prob,
-                &engine](vm::compiler::native::Emitter &emit) {
+                hook_engine](vm::compiler::native::Emitter &emit) {
             using monad::vm::compiler::native::GENERAL_REG_COUNT;
             using monad::vm::compiler::native::GeneralReg;
+
+            auto &engine = *hook_engine;
 
             auto &stack = emit.get_stack();
             if (stack.top_index() < stack.min_delta()) {

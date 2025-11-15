@@ -87,11 +87,6 @@ private:
     chunk_ref_ cnv_chunk_;
     std::vector<chunk_ref_> seq_chunks_;
 
-    struct
-    {
-        int msgread, msgwrite;
-    } fds_;
-
     monad::io::Ring &uring_, *wr_uring_{nullptr};
     monad::io::Buffers &rwbuf_;
     monad::io::BufferPool rd_pool_;
@@ -230,11 +225,6 @@ public:
     }
 
     unsigned deferred_initiations_in_flight() const noexcept;
-
-    unsigned threadsafeops_in_flight() const noexcept
-    {
-        return records_.inflight_ts.load(std::memory_order_relaxed);
-    }
 
     uint64_t total_reads_submitted() const noexcept
     {
@@ -673,7 +663,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 296);
+static_assert(sizeof(AsyncIO) == 288);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

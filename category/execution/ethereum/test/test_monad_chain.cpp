@@ -360,7 +360,7 @@ TEST(MonadChain, can_sender_dip_into_reserve)
             .authorities = authorities,
         };
         EXPECT_FALSE(
-            can_sender_dip_into_reserve(Address{1}, 1, NULL_HASH, context));
+            can_sender_dip_into_reserve(Address{1}, 1, false, context));
     }
 
     // False because of authority
@@ -378,7 +378,7 @@ TEST(MonadChain, can_sender_dip_into_reserve)
             .authorities = authorities,
         };
         EXPECT_FALSE(
-            can_sender_dip_into_reserve(Address{1}, 1, NULL_HASH, context));
+            can_sender_dip_into_reserve(Address{1}, 1, false, context));
     }
 }
 

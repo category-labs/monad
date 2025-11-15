@@ -58,13 +58,15 @@ bool dipped_into_reserve(
         bytes32_t const effective_code_hash =
             (monad_rev >= MONAD_NEXT) ? cur_account.recent().get_code_hash()
                                       : orig_code_hash;
+        bool effective_is_delegated = false;
 
         // Skip if not EOA
         if (effective_code_hash != NULL_HASH) {
             vm::SharedIntercode const intercode =
                 state.read_code(effective_code_hash)->intercode();
-            if (!monad::vm::evm::is_delegated(
-                    {intercode->code(), intercode->size()})) {
+            effective_is_delegated = monad::vm::evm::is_delegated(
+                {intercode->code(), intercode->size()});
+            if (!effective_is_delegated) {
                 continue;
             }
         }
@@ -90,7 +92,7 @@ bool dipped_into_reserve(
             curr_balance < violation_threshold.value()) {
             if (addr == sender) {
                 if (!can_sender_dip_into_reserve(
-                        sender, i, effective_code_hash, ctx)) {
+                        sender, i, effective_is_delegated, ctx)) {
                     MONAD_ASSERT(
                         violation_threshold.has_value(),
                         "gas fee greater than reserve for non-dipping "
@@ -131,10 +133,10 @@ bool revert_monad_transaction(
 }
 
 bool can_sender_dip_into_reserve(
-    Address const &sender, uint64_t const i, bytes32_t const &orig_code_hash,
+    Address const &sender, uint64_t const i, bool const sender_is_delegated,
     MonadChainContext const &ctx)
 {
-    if (orig_code_hash != NULL_HASH) { // check delegated
+    if (sender_is_delegated) { // delegated accounts cannot dip
         return false;
     }
 

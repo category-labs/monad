@@ -22,6 +22,7 @@
 #include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/interpreter/intercode.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -53,12 +54,15 @@ bool dipped_into_reserve(
     auto const &orig = state.original();
     for (auto const &[addr, cur_account] : state.current()) {
         MONAD_ASSERT(orig.contains(addr));
-        bytes32_t const cur_code_hash = cur_account.recent().get_code_hash();
+        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
+        bytes32_t const effective_code_hash =
+            (monad_rev >= MONAD_NEXT) ? cur_account.recent().get_code_hash()
+                                      : orig_code_hash;
 
         // Skip if not EOA
-        if (cur_code_hash != NULL_HASH) {
+        if (effective_code_hash != NULL_HASH) {
             vm::SharedIntercode const intercode =
-                state.read_code(cur_code_hash)->intercode();
+                state.read_code(effective_code_hash)->intercode();
             if (!monad::vm::evm::is_delegated(
                     {intercode->code(), intercode->size()})) {
                 continue;
@@ -86,7 +90,7 @@ bool dipped_into_reserve(
             curr_balance < violation_threshold.value()) {
             if (addr == sender) {
                 if (!can_sender_dip_into_reserve(
-                        sender, i, cur_code_hash, ctx)) {
+                        sender, i, effective_code_hash, ctx)) {
                     MONAD_ASSERT(
                         violation_threshold.has_value(),
                         "gas fee greater than reserve for non-dipping "

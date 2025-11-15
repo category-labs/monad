@@ -75,8 +75,6 @@ enum class operation_type : uint8_t
     unknown,
     read,
     write,
-    timeout,
-    threadsafeop,
     read_scatter
 };
 
@@ -542,16 +540,6 @@ public:
         return operation_type_ == operation_type::write;
     }
 
-    bool is_timeout() const noexcept
-    {
-        return operation_type_ == operation_type::timeout;
-    }
-
-    bool is_threadsafeop() const noexcept
-    {
-        return operation_type_ == operation_type::threadsafeop;
-    }
-
     bool is_currently_being_executed() const noexcept
     {
         return being_executed_;
@@ -612,10 +600,7 @@ public:
         //
         // It is safe to not defer write op, because no write receivers do
         // recursion in current use cases thus no risk of stack exhaustion.
-        // The threadsafe op is special, it isn't for this AsyncIO
-        // instance and therefore never needs deferring
-        return do_possibly_deferred_initiate_(
-            is_write() || is_threadsafeop(), false);
+        return do_possibly_deferred_initiate_(is_write(), false);
     }
 
     //! Invoke re-initiation after temporary failutre, sending any failure to

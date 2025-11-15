@@ -46,8 +46,6 @@ struct IORecord
     unsigned inflight_rd{0};
     unsigned inflight_rd_scatter{0};
     unsigned inflight_wr{0};
-    unsigned inflight_tm{0};
-    std::atomic<unsigned> inflight_ts{0};
 
     unsigned max_inflight_rd{0};
     unsigned max_inflight_rd_scatter{0};
@@ -61,9 +59,6 @@ struct IORecord
 
 class AsyncIO final
 {
-public:
-    struct timed_invocation_state;
-
 private:
     friend class read_single_buffer_sender;
     using _storage_pool = class storage_pool;
@@ -86,11 +81,6 @@ private:
     class storage_pool *storage_pool_{nullptr};
     chunk_ref_ cnv_chunk_;
     std::vector<chunk_ref_> seq_chunks_;
-
-    struct
-    {
-        int msgread, msgwrite;
-    } fds_;
 
     monad::io::Ring &uring_, *wr_uring_{nullptr};
     monad::io::Buffers &rwbuf_;
@@ -128,7 +118,6 @@ private:
     void submit_request_sqe_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
-    void submit_request_(timed_invocation_state *state, void *uring_data);
 
     void account_read_(size_t size);
 
@@ -188,8 +177,6 @@ public:
         return records_.inflight_rd +
                static_cast<unsigned>(concurrent_read_ios_pending_.size()) +
                records_.inflight_rd_scatter + records_.inflight_wr +
-               records_.inflight_tm +
-               records_.inflight_ts.load(std::memory_order_relaxed) +
                deferred_initiations_in_flight();
     }
 
@@ -224,17 +211,7 @@ public:
         return records_.max_inflight_wr;
     }
 
-    unsigned timers_in_flight() const noexcept
-    {
-        return records_.inflight_tm;
-    }
-
     unsigned deferred_initiations_in_flight() const noexcept;
-
-    unsigned threadsafeops_in_flight() const noexcept
-    {
-        return records_.inflight_ts.load(std::memory_order_relaxed);
-    }
 
     uint64_t total_reads_submitted() const noexcept
     {
@@ -673,7 +650,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 296);
+static_assert(sizeof(AsyncIO) == 280);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

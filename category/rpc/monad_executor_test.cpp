@@ -3481,3 +3481,395 @@ TEST_F(EthCallFixture, prestate_override_state)
 
     monad_executor_destroy(executor);
 }
+
+// Google recommends using the "DeathTest" prefix (c.f.
+// https://google.github.io/googletest/advanced.html#death-test-naming); such
+// tests are specially recognized by the Gtest framework to run before any other
+// tests within the same suite because they're implemented using fork(), and as
+// such, don't play nicely in a multi-threaded environment.
+using EthCallFixtureDeathTest = EthCallFixture;
+
+TEST_F(EthCallFixtureDeathTest, state_override_garbage)
+{
+    static constexpr Address ADDR_A =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+    static constexpr Address ADDR_B =
+        0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_address;
+
+    auto *state_override = monad_state_override_create();
+
+    // Test 0: Null state override object
+    EXPECT_DEATH(
+        add_override_address(nullptr, ADDR_A.bytes, sizeof(Address)),
+        "Assertion 'm' failed");
+
+    // Test 1: Null address
+    EXPECT_DEATH(
+        add_override_address(state_override, nullptr, sizeof(Address)),
+        "Assertion 'addr' failed");
+
+    EXPECT_DEATH(
+        set_override_balance(
+            state_override,
+            nullptr,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'addr' failed");
+
+    EXPECT_DEATH(
+        set_override_nonce(state_override, nullptr, sizeof(Address), 42),
+        "Assertion 'addr' failed");
+
+    {
+        evmc::bytes const code = evmc::from_hex("0x00").value();
+        EXPECT_DEATH(
+            set_override_code(
+                state_override,
+                nullptr,
+                sizeof(Address),
+                code.data(),
+                code.size()),
+            "Assertion 'addr' failed");
+    }
+
+    EXPECT_DEATH(
+        set_override_state(
+            state_override,
+            nullptr,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t),
+            (0x1234_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'addr' failed");
+
+    EXPECT_DEATH(
+        set_override_state_diff(
+            state_override,
+            nullptr,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t),
+            (0x1234_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'addr' failed");
+
+    // Test 2: Bad address length
+    {
+        evmc::bytes const code = evmc::from_hex("0x00").value();
+        for (size_t len = 1; len < 1024; len *= 2) {
+            uint8_t *bad_address = new uint8_t[len];
+
+            EXPECT_DEATH(
+                add_override_address(state_override, bad_address, len),
+                "Assertion 'addr_len == sizeof\\(Address\\)' failed");
+
+            EXPECT_DEATH(
+                set_override_balance(
+                    state_override,
+                    bad_address,
+                    len,
+                    (0xABCD_bytes32).bytes,
+                    sizeof(bytes32_t)),
+                "Assertion 'addr_len == sizeof\\(Address\\)' failed");
+
+            EXPECT_DEATH(
+                set_override_nonce(state_override, bad_address, len, 42),
+                "Assertion 'addr_len == sizeof\\(Address\\)' failed");
+
+            EXPECT_DEATH(
+                set_override_code(
+                    state_override, bad_address, len, code.data(), code.size()),
+                "Assertion 'addr_len == sizeof\\(Address\\)' failed");
+
+            EXPECT_DEATH(
+                set_override_state(
+                    state_override,
+                    bad_address,
+                    len,
+                    (0xABCD_bytes32).bytes,
+                    sizeof(bytes32_t),
+                    (0x1234_bytes32).bytes,
+                    sizeof(bytes32_t)),
+                "Assertion 'addr_len == sizeof\\(Address\\)' failed");
+
+            EXPECT_DEATH(
+                set_override_state_diff(
+                    state_override,
+                    bad_address,
+                    len,
+                    (0xABCD_bytes32).bytes,
+                    sizeof(bytes32_t),
+                    (0x1234_bytes32).bytes,
+                    sizeof(bytes32_t)),
+                "Assertion 'addr_len == sizeof\\(Address\\)' failed");
+
+            delete[] bad_address;
+        }
+    }
+
+    add_override_address(state_override, ADDR_A.bytes, sizeof(Address));
+
+    // Test 3: Null balance pointer
+    EXPECT_DEATH(
+        set_override_balance(
+            state_override,
+            ADDR_A.bytes,
+            sizeof(Address),
+            nullptr,
+            sizeof(bytes32_t)),
+        "Assertion 'balance' failed");
+
+    // Test 4: Bad balance length
+    for (size_t len = 1; len < 1024; len *= 2) {
+        if (len == sizeof(uint256_t)) {
+            continue;
+        }
+        uint8_t *balance = new uint8_t[len];
+        EXPECT_DEATH(
+            set_override_balance(
+                state_override, ADDR_A.bytes, sizeof(Address), balance, len),
+            "Assertion 'balance_len == sizeof\\(uint256_t\\)' failed");
+        delete[] balance;
+    }
+
+    // Test 5: set balance on nonexistent address
+    EXPECT_DEATH(
+        set_override_balance(
+            state_override,
+            ADDR_B.bytes,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'm->override_sets\\.find\\(address\\) != "
+        "m->override_sets\\.end\\(\\)' failed");
+
+    // Test 6: set nonce on nonexistent address
+    EXPECT_DEATH(
+        set_override_nonce(state_override, ADDR_B.bytes, sizeof(Address), 42),
+        "Assertion 'm->override_sets\\.find\\(address\\) != "
+        "m->override_sets\\.end\\(\\)' failed");
+
+    // Test 7: set code on nonexistent address
+    {
+        evmc::bytes const code = evmc::from_hex("0x00").value();
+        EXPECT_DEATH(
+            set_override_code(
+                state_override,
+                ADDR_B.bytes,
+                sizeof(Address),
+                code.data(),
+                code.size()),
+            "Assertion 'm->override_sets\\.find\\(address\\) != "
+            "m->override_sets\\.end\\(\\)' failed");
+    }
+
+    // Test 8: Null code pointer
+    EXPECT_DEATH(
+        set_override_code(
+            state_override, ADDR_A.bytes, sizeof(Address), nullptr, 2),
+        "Assertion 'code' failed");
+
+    // Test 9: set state diff on nonexistent address
+    EXPECT_DEATH(
+        set_override_state_diff(
+            state_override,
+            ADDR_B.bytes,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t),
+            (0x1234_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'm->override_sets\\.find\\(address\\) != "
+        "m->override_sets\\.end\\(\\)' failed");
+
+    // Test 10: set state diff null key pointer
+    EXPECT_DEATH(
+        set_override_state_diff(
+            state_override,
+            ADDR_A.bytes,
+            sizeof(Address),
+            nullptr,
+            sizeof(bytes32_t),
+            (0x1234_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'key' failed");
+
+    // Test 11: set state diff null value pointer
+    EXPECT_DEATH(
+        set_override_state_diff(
+            state_override,
+            ADDR_A.bytes,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t),
+            nullptr,
+            sizeof(bytes32_t)),
+        "Assertion 'value' failed");
+
+    // Test 12: set state diff bad key length
+    for (size_t len = 1; len < 1024; len *= 2) {
+        if (len == sizeof(bytes32_t)) {
+            continue;
+        }
+        uint8_t *key = new uint8_t[len];
+        EXPECT_DEATH(
+            set_override_state_diff(
+                state_override,
+                ADDR_A.bytes,
+                sizeof(Address),
+                key,
+                len,
+                (0x1234_bytes32).bytes,
+                sizeof(bytes32_t)),
+            "Assertion 'key_len == sizeof\\(bytes32_t\\)' failed");
+        delete[] key;
+    }
+
+    // Test 13: set state diff bad value length
+    for (size_t len = 1; len < 1024; len *= 2) {
+        if (len == sizeof(bytes32_t)) {
+            continue;
+        }
+        uint8_t *value = new uint8_t[len];
+        EXPECT_DEATH(
+            set_override_state_diff(
+                state_override,
+                ADDR_A.bytes,
+                sizeof(Address),
+                (0xABCD_bytes32).bytes,
+                sizeof(bytes32_t),
+                value,
+                len),
+            "Assertion 'value_len == sizeof\\(bytes32_t\\)' failed");
+        delete[] value;
+    }
+
+    // Test 14: set state diff overwrite existing key overwrite
+    set_override_state_diff(
+        state_override,
+        ADDR_A.bytes,
+        sizeof(Address),
+        (0xABCD_bytes32).bytes,
+        sizeof(bytes32_t),
+        (0x1234_bytes32).bytes,
+        sizeof(bytes32_t));
+
+    EXPECT_DEATH(
+        set_override_state_diff(
+            state_override,
+            ADDR_A.bytes,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t),
+            (0x5678_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'state_object.find\\(k\\) == state_object.end\\(\\)' "
+        "failed");
+
+    // Test 15: set state on nonexistent address
+    EXPECT_DEATH(
+        set_override_state(
+            state_override,
+            ADDR_B.bytes,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t),
+            (0x1234_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'm->override_sets\\.find\\(address\\) != "
+        "m->override_sets\\.end\\(\\)' failed");
+
+    // Test 16: set state null key pointer
+    EXPECT_DEATH(
+        set_override_state(
+            state_override,
+            ADDR_A.bytes,
+            sizeof(Address),
+            nullptr,
+            sizeof(bytes32_t),
+            (0x1234_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'key' failed");
+
+    // Test 17: set state null value pointer
+    EXPECT_DEATH(
+        set_override_state(
+            state_override,
+            ADDR_A.bytes,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t),
+            nullptr,
+            sizeof(bytes32_t)),
+        "Assertion 'value' failed");
+
+    // Test 18: set state bad key length
+    for (size_t len = 1; len < 1024; len *= 2) {
+        if (len == sizeof(bytes32_t)) {
+            continue;
+        }
+        uint8_t *key = new uint8_t[len];
+        EXPECT_DEATH(
+            set_override_state(
+                state_override,
+                ADDR_A.bytes,
+                sizeof(Address),
+                key,
+                len,
+                (0x1234_bytes32).bytes,
+                sizeof(bytes32_t)),
+            "Assertion 'key_len == sizeof\\(bytes32_t\\)' failed");
+        delete[] key;
+    }
+
+    // Test 19: set state bad value length
+    for (size_t len = 1; len < 1024; len *= 2) {
+        if (len == sizeof(bytes32_t)) {
+            continue;
+        }
+        uint8_t *value = new uint8_t[len];
+        EXPECT_DEATH(
+            set_override_state(
+                state_override,
+                ADDR_A.bytes,
+                sizeof(Address),
+                (0xABCD_bytes32).bytes,
+                sizeof(bytes32_t),
+                value,
+                len),
+            "Assertion 'value_len == sizeof\\(bytes32_t\\)' failed");
+        delete[] value;
+    }
+
+    // Test 20: set state overwrite existing key overwrite
+    set_override_state(
+        state_override,
+        ADDR_A.bytes,
+        sizeof(Address),
+        (0xABCD_bytes32).bytes,
+        sizeof(bytes32_t),
+        (0x1234_bytes32).bytes,
+        sizeof(bytes32_t));
+
+    EXPECT_DEATH(
+        set_override_state(
+            state_override,
+            ADDR_A.bytes,
+            sizeof(Address),
+            (0xABCD_bytes32).bytes,
+            sizeof(bytes32_t),
+            (0x5678_bytes32).bytes,
+            sizeof(bytes32_t)),
+        "Assertion 'state_object.find\\(k\\) == state_object.end\\(\\)' "
+        "failed");
+
+    // Test 21: Re-add ADDR_A to the override set
+    EXPECT_DEATH(
+        add_override_address(state_override, ADDR_A.bytes, sizeof(Address)),
+        "Assertion 'm->override_sets\\.find\\(address\\) == "
+        "m->override_sets\\.end\\(\\)' failed");
+
+    monad_state_override_destroy(state_override);
+}

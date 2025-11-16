@@ -183,6 +183,11 @@ namespace
         "transaction out of bounds";
     using StateOverrideObj = monad_state_override::monad_state_override_object;
 
+    ankerl::unordered_dense::segmented_set<Address>
+    combine_senders_and_authorities(
+        std::vector<Address> const &senders,
+        std::vector<std::vector<std::optional<Address>>> const &authorities);
+
     template <Traits traits>
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
@@ -295,13 +300,68 @@ namespace
         // will always mark this transaction as coming from an EOA.
         BOOST_OUTCOME_TRY(validate_transaction<traits>(enriched_txn, eoa, {}));
 
+        auto const senders = std::vector{sender};
+        auto const authorities_vec =
+            std::vector<std::vector<std::optional<Address>>>{{authorities}};
+        auto const senders_and_authorities =
+            combine_senders_and_authorities(senders, authorities_vec);
+
+        auto const chain_context = MonadChainContext{
+            .grandparent_senders_and_authorities = nullptr,
+            .parent_senders_and_authorities = nullptr,
+            .senders_and_authorities = senders_and_authorities,
+            .senders = senders,
+            .authorities = authorities_vec,
+        };
+
         auto const tx_context = get_tx_context<traits>(
             enriched_txn, sender, header, chain.get_chain_id());
+
+        auto const revert_transaction = [&chain, &header, &chain_context](
+                                            Address const &sender,
+                                            Transaction const &tx,
+                                            uint64_t const i,
+                                            State &state) -> bool {
+            if constexpr (is_monad_trait_v<traits>) {
+                // If this cast doesn't succeed, then something has gone
+                // terribly wrong. It will throw an exception which we let
+                // the caller of `eth_trace_block_or_transaction_impl`Expand
+                // commentComment on line R328Code has comments. Press enter to
+                // view. handle.
+                return dynamic_cast<MonadChain const &>(chain)
+                    .revert_transaction(
+                        header.number,
+                        header.timestamp,
+                        sender,
+                        tx,
+                        header.base_fee_per_gas.value_or(0),
+                        i,
+                        state,
+                        chain_context);
+            }
+            else {
+                // Suppress unused parameter warnings
+                (void)chain;
+                (void)header;
+                (void)chain_context;
+                (void)sender;
+                (void)tx;
+                (void)i;
+                (void)state;
+                return false;
+            }
+        };
 
         // TODO: properly initialize revert_transaction?
         EvmcHost<traits> host{call_tracer, tx_context, buffer, state};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
-            chain, enriched_txn, sender, authorities, header, 0}(state, host);
+            chain,
+            enriched_txn,
+            sender,
+            authorities,
+            header,
+            0,
+            revert_transaction}(state, host);
 
         // compute gas_refund and gas_used
         auto const gas_refund = compute_gas_refund<traits>(

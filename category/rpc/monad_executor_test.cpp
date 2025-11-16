@@ -49,6 +49,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/rpc/monad_executor.h>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
@@ -3480,4 +3481,220 @@ TEST_F(EthCallFixture, prestate_override_state)
     }
 
     monad_executor_destroy(executor);
+}
+
+// Check that simulating a transaction that causes an EIP-7702-delegated account
+// to dip into its reserve balance would revert as it would during live block
+// execution.
+TEST_F(EthCallFixture, eth_call_reserve_balance)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    // Scenario:
+    // - sender is an EOA with 100 MON balance
+    // - delegated_eoa is an EOA delegated to the code at contract, with 7 MON
+    //   balance
+    // - the contract code is hard-coded to send 5 MON to recipient on any call
+    //
+    // Therefore, sender calling delegated_eoa with 3 MON call value should
+    // revert because delegated_eoa will finish the transaction with less than
+    // 10 MON and less than its original balance, failing the reserve balance
+    // checks.
+
+    static constexpr auto sender =
+        0x0000000000000000000000000000000011111111_address;
+
+    static constexpr auto delegated_eoa =
+        0x0000000000000000000000000000000022222222_address;
+
+    static constexpr auto contract =
+        0x0000000000000000000000000000000033333333_address;
+
+    static constexpr auto recipient =
+        0x0000000000000000000000000000000044444444_address;
+
+    // Delegate to contract
+    auto const delegated_eoa_code =
+        0xef01000000000000000000000000000000000033333333_bytes;
+    auto const delegated_eoa_code_hash =
+        to_bytes(keccak256(delegated_eoa_code));
+    auto const delegated_eoa_icode =
+        monad::vm::make_shared_intercode(delegated_eoa_code);
+
+    EXPECT_TRUE(vm::evm::is_delegated(delegated_eoa_code));
+
+    // Transfer 5 MON to receipient
+    auto const contract_code =
+        evmc::from_hex("0x5f5f5f5f674563918244f40000730000000000000000000000000"
+                       "0000000444444445af1")
+            .value();
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = monad::vm::make_shared_intercode(contract_code);
+
+    BlockHeader const header{.number = 256};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{1'000'000'000'000'000'000} * 100,
+                          .code_hash = NULL_HASH,
+                          .nonce = 0}}}},
+            {delegated_eoa,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{1'000'000'000'000'000'000} * 7,
+                          .code_hash = delegated_eoa_code_hash,
+                          .nonce = 0}}}},
+            {contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = contract_code_hash,
+                          .nonce = 0}}}},
+            {recipient,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = NULL_HASH, .nonce = 0}}}},
+        },
+        Code{
+            {contract_code_hash, contract_icode},
+            {delegated_eoa_code_hash, delegated_eoa_icode},
+        },
+        header);
+
+    Transaction const tx{
+        .gas_limit = 200000u,
+        .value = uint256_t{1'000'000'000'000'000'000} * 3,
+        .to = delegated_eoa,
+    };
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        NOOP_TRACER,
+        true);
+    f.get();
+
+    EXPECT_TRUE(ctx.result->status_code == EVMC_REVERT);
+
+    monad_executor_destroy(executor);
+    monad_state_override_destroy(state_override);
+}
+
+// Check that simulated transactions are permitted to be emptying (the sender of
+// the simulated transaction is allowed to decrease its balance below the
+// reserve threshold).
+TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto sender =
+        0x0000000000000000000000000000000011111111_address;
+
+    static constexpr auto recipient =
+        0x0000000000000000000000000000000044444444_address;
+
+    BlockHeader const header{.number = 256};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{1'000'000'000'000'000'000} * 12,
+                          .code_hash = NULL_HASH,
+                          .nonce = 0}}}},
+            {recipient,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = NULL_HASH, .nonce = 0}}}},
+        },
+        Code{},
+        header);
+
+    Transaction const tx{
+        .gas_limit = 200000u,
+        .value = uint256_t{1'000'000'000'000'000'000} * 5,
+        .to = recipient,
+    };
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        NOOP_TRACER,
+        true);
+    f.get();
+
+    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+
+    monad_executor_destroy(executor);
+    monad_state_override_destroy(state_override);
 }

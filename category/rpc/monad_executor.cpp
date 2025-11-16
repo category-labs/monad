@@ -189,6 +189,45 @@ namespace
         std::vector<std::vector<std::optional<Address>>> const &authorities);
 
     template <Traits traits>
+    auto make_revert_lambda(
+        Chain const &chain, BlockHeader const &header,
+        MonadChainContext const &chain_context)
+    {
+        return [&chain, &header, &chain_context](
+                   Address const &sender,
+                   Transaction const &tx,
+                   uint64_t const i,
+                   State &state) -> bool {
+            if constexpr (is_monad_trait_v<traits>) {
+                // If this cast doesn't succeed, then something has gone
+                // terribly wrong. It will throw an exception which we let
+                // the caller of this simulation / replay handle.
+                return dynamic_cast<MonadChain const &>(chain)
+                    .revert_transaction(
+                        header.number,
+                        header.timestamp,
+                        sender,
+                        tx,
+                        header.base_fee_per_gas.value_or(0),
+                        i,
+                        state,
+                        chain_context);
+            }
+            else {
+                // Suppress unused parameter warnings
+                (void)chain;
+                (void)header;
+                (void)chain_context;
+                (void)sender;
+                (void)tx;
+                (void)i;
+                (void)state;
+                return false;
+            }
+        };
+    }
+
+    template <Traits traits>
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, bytes32_t const &block_id,
@@ -306,6 +345,10 @@ namespace
         auto const senders_and_authorities =
             combine_senders_and_authorities(senders, authorities_vec);
 
+        // Note that the chain context constructed for a simulated transaction
+        // does not consider the parent and grandparent blocks. This means that
+        // every transaction simulated will be allowed to empty the sender's
+        // balance.
         auto const chain_context = MonadChainContext{
             .grandparent_senders_and_authorities = nullptr,
             .parent_senders_and_authorities = nullptr,
@@ -317,42 +360,6 @@ namespace
         auto const tx_context = get_tx_context<traits>(
             enriched_txn, sender, header, chain.get_chain_id());
 
-        auto const revert_transaction = [&chain, &header, &chain_context](
-                                            Address const &sender,
-                                            Transaction const &tx,
-                                            uint64_t const i,
-                                            State &state) -> bool {
-            if constexpr (is_monad_trait_v<traits>) {
-                // If this cast doesn't succeed, then something has gone
-                // terribly wrong. It will throw an exception which we let
-                // the caller of `eth_trace_block_or_transaction_impl`Expand
-                // commentComment on line R328Code has comments. Press enter to
-                // view. handle.
-                return dynamic_cast<MonadChain const &>(chain)
-                    .revert_transaction(
-                        header.number,
-                        header.timestamp,
-                        sender,
-                        tx,
-                        header.base_fee_per_gas.value_or(0),
-                        i,
-                        state,
-                        chain_context);
-            }
-            else {
-                // Suppress unused parameter warnings
-                (void)chain;
-                (void)header;
-                (void)chain_context;
-                (void)sender;
-                (void)tx;
-                (void)i;
-                (void)state;
-                return false;
-            }
-        };
-
-        // TODO: properly initialize revert_transaction?
         EvmcHost<traits> host{call_tracer, tx_context, buffer, state};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
             chain,
@@ -361,7 +368,8 @@ namespace
             authorities,
             header,
             0,
-            revert_transaction}(state, host);
+            make_revert_lambda<traits>(chain, header, chain_context),
+        }(state, host);
 
         // compute gas_refund and gas_used
         auto const gas_refund = compute_gas_refund<traits>(
@@ -434,40 +442,6 @@ namespace
         MONAD_ASSERT(transactions.size() == chain_context.senders.size());
         MONAD_ASSERT(transactions.size() == chain_context.authorities.size());
 
-        auto const revert_transaction = [&chain, &header, &chain_context](
-                                            Address const &sender,
-                                            Transaction const &tx,
-                                            uint64_t const i,
-                                            State &state) -> bool {
-            if constexpr (is_monad_trait_v<traits>) {
-                // If this cast doesn't succeed, then something has gone
-                // terribly wrong. It will throw an exception which we let
-                // the caller of `eth_trace_block_or_transaction_impl`
-                // handle.
-                return dynamic_cast<MonadChain const &>(chain)
-                    .revert_transaction(
-                        header.number,
-                        header.timestamp,
-                        sender,
-                        tx,
-                        header.base_fee_per_gas.value_or(0),
-                        i,
-                        state,
-                        chain_context);
-            }
-            else {
-                // Suppress unused parameter warnings
-                (void)chain;
-                (void)header;
-                (void)chain_context;
-                (void)sender;
-                (void)tx;
-                (void)i;
-                (void)state;
-                return false;
-            }
-        };
-
         size_t const transactions_size = [&]() {
             if (trace_transaction) {
                 MONAD_ASSERT(
@@ -502,6 +476,9 @@ namespace
         }
         std::span<std::unique_ptr<CallTracerBase>> const noop_call_tracers_view{
             noop_call_tracers.data(), transactions_size};
+
+        auto const revert_transaction =
+            make_revert_lambda<traits>(chain, header, chain_context);
 
         // Trace single transaction
         if (trace_transaction) {

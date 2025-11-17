@@ -290,6 +290,8 @@ inline void ExecutionEventRecorder::record_block_marker_event(
         monad_event_recorder_reserve(&exec_recorder_, 0, &seqno, &payload_buf);
     event->event_type = std::to_underlying(event_type);
     event->content_ext[MONAD_FLOW_BLOCK_SEQNO] = cur_block_start_seqno_;
+    event->content_ext[MONAD_FLOW_TXN_ID] = 0;
+    event->content_ext[MONAD_FLOW_ACCOUNT_INDEX] = 0;
     monad_event_recorder_commit(event, seqno);
 }
 
@@ -303,6 +305,7 @@ inline void ExecutionEventRecorder::record_txn_marker_event(
     event->event_type = std::to_underlying(event_type);
     event->content_ext[MONAD_FLOW_BLOCK_SEQNO] = cur_block_start_seqno_;
     event->content_ext[MONAD_FLOW_TXN_ID] = txn_num + 1;
+    event->content_ext[MONAD_FLOW_ACCOUNT_INDEX] = 0;
     monad_event_recorder_commit(event, seqno);
 }
 

@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/fmt/account_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/receipt_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/core/fmt/transaction_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
@@ -116,6 +117,8 @@ std::string_view table_as_string(unsigned char table_id)
         return "code";
     case RECEIPT_NIBBLE:
         return "receipt";
+    case TRANSACTION_NIBBLE:
+        return "transaction";
     default:
         return "invalid";
     }
@@ -293,7 +296,7 @@ struct DbStateMachine
         MONAD_ASSERT(curr_section_prefix.nibble_size() > 0);
 
         if (table_id == STATE_NIBBLE || table_id == CODE_NIBBLE ||
-            table_id == RECEIPT_NIBBLE) {
+            table_id == RECEIPT_NIBBLE || table_id == TRANSACTION_NIBBLE) {
             fmt::println(
                 "Setting cursor to version {}, table {} ...",
                 curr_version,
@@ -324,7 +327,7 @@ struct DbStateMachine
         }
         else {
             fmt::println("Invalid table id: choose table id from 0: state, "
-                         "1: code, 2: receipt.");
+                         "1: code, 2: receipt, 3: transaction.");
         }
     }
 
@@ -394,8 +397,10 @@ void print_help()
         "proposal [block_id] or finalized -- Set the section to query\n"
         "list sections                -- List any proposal or finalized "
         "section in current version\n"
-        "table [state/receipt/code]   -- Set the table to query\n"
+        "table [state/receipt/code/transaction] -- Set the table to query\n"
         "get [key [extradata]]        -- Get the value for the given key\n"
+        "get_transactions             -- Get all transactions in the current "
+        "version\n"
         "node_stats                   -- Print node statistics for the given "
         "table\n"
         "back                         -- Move back to the previous level\n"
@@ -442,6 +447,9 @@ void do_table(DbStateMachine &sm, std::string_view const table_name)
     }
     else if (table_name == "code") {
         table_nibble = CODE_NIBBLE;
+    }
+    else if (table_name == "transaction") {
+        table_nibble = TRANSACTION_NIBBLE;
     }
 
     if (table_nibble == INVALID_NIBBLE) {
@@ -579,6 +587,71 @@ void do_get_receipt(DbStateMachine &sm, std::string_view const receipt)
     }
     auto const decoded = receipt_res.value().first;
     print_receipt(decoded);
+}
+
+void do_get_transaction(DbStateMachine &sm, std::string_view const transaction)
+{
+    size_t transaction_id{};
+
+    if (transaction.starts_with("0x")) {
+        fmt::println("Transactions should be entered in base 10 and will be "
+                     "encoded for you.");
+        return;
+    }
+    auto [_, ec] = std::from_chars(
+        transaction.data(), transaction.data() + transaction.size(), transaction_id);
+    if (ec != std::errc()) {
+        fmt::println("Transaction must be an unsigned integer!");
+        return;
+    }
+    auto const transaction_id_encoded = rlp::encode_unsigned(transaction_id);
+    auto const transaction_query_res = sm.lookup(NibblesView{transaction_id_encoded});
+    if (!transaction_query_res) {
+        fmt::println(
+            "Could not find transaction {} -- {}",
+            transaction,
+            transaction_query_res.error().message().c_str());
+        return;
+    }
+    auto transaction_encoded = transaction_query_res.value().node->value();
+    auto const transaction_res = decode_transaction_db(transaction_encoded);
+    if (!transaction_res) {
+        fmt::println(
+            "Could not decode transaction -- {}",
+            transaction_res.error().message().c_str());
+        return;
+    }
+    auto const &tx = transaction_res.value().first;
+    auto const &sender = transaction_res.value().second;
+    fmt::println("Transaction[{}]:", transaction_id);
+    fmt::println("  Sender: {}", sender);
+    fmt::println("  {}\n", tx);
+}
+
+void do_get_all_transactions(DbStateMachine &sm)
+{
+    if (sm.state != DbStateMachine::DbState::proposal_or_finalize &&
+        sm.state != DbStateMachine::DbState::table) {
+        fmt::println("Error: must be at a proposal or finalized section to get "
+                     "transactions.");
+        return;
+    }
+
+    fmt::println("Fetching all transactions for version {} ...", sm.curr_version);
+    auto const txs_res = get_transactions(sm.db, sm.curr_version, sm.curr_block_id);
+    if (!txs_res) {
+        fmt::println(
+            "Could not get transactions -- {}",
+            txs_res.error().message().c_str());
+        return;
+    }
+
+    auto const &txs = txs_res.value();
+    fmt::println("Found {} transactions:\n", txs.size());
+    for (size_t i = 0; i < txs.size(); ++i) {
+        fmt::println("Transaction[{}]:", i);
+        fmt::println("  {}\n", txs[i]);
+    }
 }
 
 void do_node_stats(DbStateMachine &sm)
@@ -737,7 +810,7 @@ int interactive_impl(Db &db)
             }
             else {
                 fmt::println("Wrong format to set table, type 'table "
-                             "[state/code/receipt]'");
+                             "[state/code/receipt/transaction]'");
             }
         }
         else if (tokens[0] == "get") {
@@ -761,6 +834,12 @@ int interactive_impl(Db &db)
             else if (state_machine.curr_table_id == RECEIPT_NIBBLE) {
                 do_get_receipt(state_machine, tokens[1]);
             }
+            else if (state_machine.curr_table_id == TRANSACTION_NIBBLE) {
+                do_get_transaction(state_machine, tokens[1]);
+            }
+        }
+        else if (tokens[0] == "get_transactions") {
+            do_get_all_transactions(state_machine);
         }
         else if (tokens[0] == "node_stats") {
             if (state_machine.curr_table_id == INVALID_NIBBLE) {

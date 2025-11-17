@@ -858,19 +858,19 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     case PrecompileSelector::GET_DELEGATIONS:
         // [0,100,0,0,0,0,0]
         return {
-            &StakingContract::precompile_get_delegations,
+            &StakingContract::precompile_get_delegations<traits>,
             LINKED_LIST_GETTER_OP_COST};
     case PrecompileSelector::GET_DELEGATORS:
         // [0,100,0,0,0,0,0]
         return {
-            &StakingContract::precompile_get_delegators,
+            &StakingContract::precompile_get_delegators<traits>,
             LINKED_LIST_GETTER_OP_COST};
     default:
         return {&StakingContract::precompile_fallback, 40000};
     }
 }
 
-EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_dispatch)
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_dispatch);
 
 std::tuple<bool, u32_be, std::vector<u64_be>> StakingContract::get_valset(
     StorageArray<u64_be> const &valset, uint32_t const start_index,
@@ -985,8 +985,8 @@ Result<byte_string> StakingContract::get_valset(
         return StakingError::InternalError;
     }
 
-    auto const [done, next_index, valids] = get_valset(
-        valset, start_index.native(), limits::paginated_results_size());
+    auto const [done, next_index, valids] =
+        get_valset(valset, start_index.native(), limits::array_pagination());
     AbiEncoder encoder;
     encoder.add_bool(done);
     encoder.add_uint(next_index);
@@ -1019,6 +1019,7 @@ Result<byte_string> StakingContract::precompile_get_execution_valset(
     return get_valset(input, valset);
 }
 
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_get_delegations(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
@@ -1032,7 +1033,7 @@ Result<byte_string> StakingContract::precompile_get_delegations(
     }
 
     auto const [done, next_val_id, vals_page] = get_validators_for_delegator(
-        delegator, start_val_id, limits::paginated_results_size());
+        delegator, start_val_id, limits::linked_list_pagination<traits>());
 
     AbiEncoder encoder;
     encoder.add_bool(done);
@@ -1041,6 +1042,9 @@ Result<byte_string> StakingContract::precompile_get_delegations(
     return encoder.encode_final();
 }
 
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_get_delegations);
+
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_get_delegators(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
@@ -1055,7 +1059,9 @@ Result<byte_string> StakingContract::precompile_get_delegators(
     }
 
     auto const [done, next_del_addr, dels_page] = get_delegators_for_validator(
-        val_id, start_delegator_address, limits::paginated_results_size());
+        val_id,
+        start_delegator_address,
+        limits::linked_list_pagination<traits>());
 
     AbiEncoder encoder;
     encoder.add_bool(done);
@@ -1063,6 +1069,8 @@ Result<byte_string> StakingContract::precompile_get_delegators(
     encoder.add_address_array(dels_page);
     return encoder.encode_final();
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_get_delegators);
 
 Result<byte_string> StakingContract::precompile_get_epoch(
     byte_string_view const, evmc_address const &,
@@ -1322,7 +1330,7 @@ Result<void> StakingContract::delegate(
     return outcome::success();
 }
 
-EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::delegate)
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::delegate);
 
 template <Traits traits>
 Result<byte_string> StakingContract::precompile_delegate(
@@ -1341,7 +1349,7 @@ Result<byte_string> StakingContract::precompile_delegate(
     return byte_string{abi_encode_bool(true)};
 }
 
-EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_delegate)
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_delegate);
 
 template <Traits traits>
 Result<byte_string> StakingContract::precompile_undelegate(
@@ -1434,7 +1442,7 @@ Result<byte_string> StakingContract::precompile_undelegate(
     return byte_string{abi_encode_bool(true)};
 }
 
-EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_undelegate)
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_undelegate);
 
 // TODO: No compounds allowed if auth_address is under sufficent amount.
 template <Traits traits>
@@ -1467,7 +1475,7 @@ Result<byte_string> StakingContract::precompile_compound(
     return byte_string{abi_encode_bool(true)};
 }
 
-EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_compound)
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_compound);
 
 Result<byte_string> StakingContract::precompile_withdraw(
     byte_string_view input, evmc_address const &msg_sender,
@@ -1731,7 +1739,7 @@ Result<void> StakingContract::syscall_reward(
     return outcome::success();
 }
 
-EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::syscall_reward)
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::syscall_reward);
 
 Result<void> StakingContract::syscall_snapshot(
     byte_string_view const input, uint256_t const &value)

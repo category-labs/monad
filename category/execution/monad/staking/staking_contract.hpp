@@ -575,8 +575,10 @@ public:
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_get_execution_valset(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_get_delegations(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_get_delegators(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_get_epoch(

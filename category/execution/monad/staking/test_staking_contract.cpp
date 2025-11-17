@@ -97,8 +97,10 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     static constexpr uint256_t MAX_EXTERNAL_REWARD =
         limits::max_external_reward();
 
-    static constexpr uint64_t PAGINATED_RESULTS_SIZE =
-        limits::paginated_results_size();
+    static constexpr uint32_t ARRAY_PAGINATION = limits::array_pagination();
+
+    static constexpr uint32_t LINKED_LIST_PAGINATION =
+        limits::linked_list_pagination<Trait>();
 
     void SetUp() override
     {
@@ -713,10 +715,11 @@ TEST_F(StakeLatest, nonpayable_functions_revert)
         contract.precompile_get_execution_valset({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_get_delegations({}, {}, value).assume_error(),
+        contract.precompile_get_delegations<Trait>({}, {}, value)
+            .assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_get_delegators({}, {}, value).assume_error(),
+        contract.precompile_get_delegators<Trait>({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
         contract.precompile_get_epoch({}, {}, value).assume_error(),
@@ -4368,7 +4371,7 @@ TEST_F(StakeLatest, get_valset_paginated_reads)
         auto paginated_res = contract.get_valset(
             contract.vars.valset_execution,
             next_index.native(),
-            PAGINATED_RESULTS_SIZE);
+            ARRAY_PAGINATION);
         std::vector<u64_be> valset_page;
         std::tie(done2, next_index, valset_page) = std::move(paginated_res);
         valset_paginated.insert_range(valset_paginated.end(), valset_page);
@@ -4379,23 +4382,23 @@ TEST_F(StakeLatest, get_valset_paginated_reads)
     EXPECT_TRUE(valset_paginated == valset_one_read);
 }
 
-TEST_F(StakeLatest, get_delegators_for_validator_paginated_reads)
+TYPED_TEST(StakeAllRevisions, get_delegators_for_validator_paginated_reads)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto res = this->add_validator(auth_address, this->ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     for (uint32_t i = 0; i < 999; ++i) {
         // delegate twice to make sure dups are handled correctly
         auto const del = Address{i + 1};
-        ASSERT_FALSE(delegate(val.id, del, 100_u256 * MON).has_error());
-        ASSERT_FALSE(delegate(val.id, del, 100_u256 * MON).has_error());
+        ASSERT_FALSE(this->delegate(val.id, del, 100_u256 * MON).has_error());
+        ASSERT_FALSE(this->delegate(val.id, del, 100_u256 * MON).has_error());
     }
 
     // read all the delegators
     auto const [done1, _, delegators_one_read] =
-        contract.get_delegators_for_validator(
+        this->contract.get_delegators_for_validator(
             val.id, Address{}, std::numeric_limits<uint32_t>::max());
     EXPECT_TRUE(done1);
     EXPECT_EQ(
@@ -4407,8 +4410,8 @@ TEST_F(StakeLatest, get_delegators_for_validator_paginated_reads)
     Address next_delegator{};
     std::vector<Address> delegators_paginated;
     do {
-        auto paginated_res = contract.get_delegators_for_validator(
-            val.id, next_delegator, PAGINATED_RESULTS_SIZE);
+        auto paginated_res = this->contract.get_delegators_for_validator(
+            val.id, next_delegator, this->LINKED_LIST_PAGINATION);
         std::vector<Address> delegators_page;
         std::tie(done2, next_delegator, delegators_page) =
             std::move(paginated_res);

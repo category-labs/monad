@@ -85,11 +85,21 @@ namespace limits
         return 200;
     }
 
-    // Results for get_valset, get_delegators_for_validator, and
-    // get_validators_for_delegator are paginated
-    constexpr uint64_t paginated_results_size()
+    constexpr uint32_t array_pagination()
     {
         return 100;
+    };
+
+    template <Traits traits>
+    constexpr uint32_t linked_list_pagination()
+    {
+        if constexpr (traits::monad_rev() < MONAD_EIGHT) {
+            return 100;
+        }
+
+        // The relation to array pagination is each list node occupies two
+        // slots.
+        return 50;
     };
 
     constexpr uint64_t withdrawal_delay()

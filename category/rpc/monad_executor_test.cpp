@@ -321,8 +321,8 @@ TEST_F(EthCallFixture, simple_success_call)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
-    EXPECT_TRUE(ctx.result->encoded_trace_len == 0);
+    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 21000);
 
@@ -3612,7 +3612,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_REVERT);
+    EXPECT_EQ(ctx.result->status_code, EVMC_REVERT);
 
     monad_executor_destroy(executor);
     monad_state_override_destroy(state_override);
@@ -3693,7 +3693,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
 
     monad_executor_destroy(executor);
     monad_state_override_destroy(state_override);

@@ -186,19 +186,36 @@ namespace
     ankerl::unordered_dense::segmented_set<Address>
     combine_senders_and_authorities(
         std::vector<Address> const &senders,
-        std::vector<std::vector<std::optional<Address>>> const &authorities);
+        std::vector<std::vector<std::optional<Address>>> const &authorities)
+    {
+        ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+
+        for (Address const &sender : senders) {
+            senders_and_authorities.insert(sender);
+        }
+
+        for (auto const &authorities_ : authorities) {
+            for (std::optional<Address> const &authority : authorities_) {
+                if (authority.has_value()) {
+                    senders_and_authorities.insert(authority.value());
+                }
+            }
+        }
+
+        return senders_and_authorities;
+    }
 
     template <Traits traits>
     auto make_revert_lambda(
         Chain const &chain, BlockHeader const &header,
         MonadChainContext const &chain_context)
     {
-        return [&chain, &header, &chain_context](
-                   Address const &sender,
-                   Transaction const &tx,
-                   uint64_t const i,
-                   State &state) -> bool {
-            if constexpr (is_monad_trait_v<traits>) {
+        if constexpr (is_monad_trait_v<traits>) {
+            return [&chain, &header, &chain_context](
+                       Address const &sender,
+                       Transaction const &tx,
+                       uint64_t const i,
+                       State &state) -> bool {
                 // If this cast doesn't succeed, then something has gone
                 // terribly wrong. It will throw an exception which we let
                 // the caller of this simulation / replay handle.
@@ -212,19 +229,14 @@ namespace
                         i,
                         state,
                         chain_context);
-            }
-            else {
-                // Suppress unused parameter warnings
-                (void)chain;
-                (void)header;
-                (void)chain_context;
-                (void)sender;
-                (void)tx;
-                (void)i;
-                (void)state;
-                return false;
-            }
-        };
+            };
+        }
+        else {
+            return [](Address const &,
+                      Transaction const &,
+                      uint64_t const,
+                      State &) -> bool { return false; };
+        }
     }
 
     template <Traits traits>
@@ -347,8 +359,8 @@ namespace
 
         // Note that the chain context constructed for a simulated transaction
         // does not consider the parent and grandparent blocks. This means that
-        // every transaction simulated will be allowed to empty the sender's
-        // balance.
+        // every transaction simulated will be allowed to empty an undelegated
+        // sender's balance.
         auto const chain_context = MonadChainContext{
             .grandparent_senders_and_authorities = nullptr,
             .parent_senders_and_authorities = nullptr,
@@ -384,28 +396,6 @@ namespace
         trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
-    }
-
-    ankerl::unordered_dense::segmented_set<Address>
-    combine_senders_and_authorities(
-        std::vector<Address> const &senders,
-        std::vector<std::vector<std::optional<Address>>> const &authorities)
-    {
-        ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-
-        for (Address const &sender : senders) {
-            senders_and_authorities.insert(sender);
-        }
-
-        for (auto const &authorities_ : authorities) {
-            for (std::optional<Address> const &authority : authorities_) {
-                if (authority.has_value()) {
-                    senders_and_authorities.insert(authority.value());
-                }
-            }
-        }
-
-        return senders_and_authorities;
     }
 
     std::pair<

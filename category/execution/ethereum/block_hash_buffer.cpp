@@ -49,13 +49,13 @@ uint64_t BlockHashBufferFinalized::n() const
 
 bytes32_t const &BlockHashBufferFinalized::get(uint64_t const n) const
 {
-    MONAD_ASSERT(n < n_ && n + N >= n_);
+    MONAD_ASSERT_PRINTF(n < n_ && n + N >= n_, "n_=%lu, n=%lu", n_, n);
     return b_[n % N];
 }
 
 void BlockHashBufferFinalized::set(uint64_t const n, bytes32_t const &h)
 {
-    MONAD_ASSERT(!n_ || n == n_);
+    MONAD_ASSERT_PRINTF(!n_ || n == n_, "n_=%lu, n=%lu", n_, n);
     b_[n % N] = h;
     n_ = n + 1;
 }
@@ -73,7 +73,8 @@ BlockHashBufferProposal::BlockHashBufferProposal(
     : n_{parent.n_ + 1}
     , buf_{parent.buf_}
 {
-    MONAD_ASSERT(n_ > 0 && n_ > buf_->n());
+    MONAD_ASSERT_PRINTF(
+        n_ > 0 && n_ > buf_->n(), "n_=%lu, n=%lu", n_, buf_->n());
     deltas_.push_back(h);
     deltas_.insert(deltas_.end(), parent.deltas_.begin(), parent.deltas_.end());
     deltas_.resize(n_ - buf_->n());
@@ -86,7 +87,7 @@ uint64_t BlockHashBufferProposal::n() const
 
 bytes32_t const &BlockHashBufferProposal::get(uint64_t const n) const
 {
-    MONAD_ASSERT(n < n_ && n + N >= n_);
+    MONAD_ASSERT_PRINTF(n < n_ && n + N >= n_, "n_=%lu, n=%lu", n_, n);
     size_t const idx = n_ - n - 1;
     if (idx < deltas_.size()) {
         return deltas_.at(idx);

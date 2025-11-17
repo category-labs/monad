@@ -144,7 +144,7 @@ namespace
 
         bytes32_t const &get(uint64_t const n) const override
         {
-            MONAD_ASSERT(n < n_ && n + N >= n_);
+            MONAD_ASSERT_PRINTF(n < n_ && n + N >= n_, "n_=%lu, n=%lu", n_, n);
             if (Cache::ConstAccessor acc; blockhash_cache_.find(acc, n)) {
                 return acc->second->val;
             }

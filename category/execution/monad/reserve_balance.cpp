@@ -56,8 +56,8 @@ bool dipped_into_reserve(
         MONAD_ASSERT(orig.contains(addr));
         bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
         bytes32_t const effective_code_hash =
-            (monad_rev >= MONAD_NEXT) ? cur_account.recent().get_code_hash()
-                                      : orig_code_hash;
+            (monad_rev >= MONAD_EIGHT) ? cur_account.recent().get_code_hash()
+                                       : orig_code_hash;
         bool effective_is_delegated = false;
 
         // Skip if not EOA

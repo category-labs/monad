@@ -30,7 +30,8 @@ enum monad_revision
     MONAD_FIVE = 5,
     MONAD_SIX = 6,
     MONAD_SEVEN = 7,
-    MONAD_NEXT = 8
+    MONAD_EIGHT = 8,
+    MONAD_NEXT = 9
 };
 
 inline char const *monad_revision_to_string(enum monad_revision const rev)
@@ -52,6 +53,8 @@ inline char const *monad_revision_to_string(enum monad_revision const rev)
         return "MONAD_SIX";
     case MONAD_SEVEN:
         return "MONAD_SEVEN";
+    case MONAD_EIGHT:
+        return "MONAD_EIGHT";
     case MONAD_NEXT:
         return "MONAD_NEXT";
     }

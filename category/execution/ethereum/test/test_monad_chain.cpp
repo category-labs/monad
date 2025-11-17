@@ -449,7 +449,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     if constexpr (traits::monad_rev() < MONAD_FOUR) {
         EXPECT_FALSE(should_revert);
     }
-    else if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+    else if constexpr (traits::monad_rev() >= MONAD_EIGHT) {
         EXPECT_FALSE(should_revert);
     }
     else {

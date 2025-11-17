@@ -21,6 +21,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/unaligned.hpp>
+#include <category/core/util/stopwatch.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/state_machine.hpp>
@@ -1163,7 +1164,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         {}, compact_offsets_bytes, false, std::move(updates), version);
     root_updates.push_front(root_update);
 
-    auto upsert_begin = std::chrono::steady_clock::now();
+    Stopwatch<std::chrono::microseconds> upsert_timer;
     auto root = upsert(
         *this,
         version,
@@ -1173,8 +1174,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         write_root);
     set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
 
-    auto const duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - upsert_begin);
+    auto const upsert_duration = upsert_timer.elapsed();
     if (compaction) {
         update_disk_growth_data();
         // log stats
@@ -1191,7 +1191,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         "slow=%u",
         version,
         db_history_min_valid_version(),
-        duration.count(),
+        upsert_duration.count(),
         disk_usage(),
         num_chunks(chunk_list::fast),
         num_chunks(chunk_list::slow),
@@ -1247,6 +1247,8 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     constexpr double upper_bound = 0.8;
     constexpr double lower_bound = 0.6;
 
+    Stopwatch<std::chrono::microseconds> timer;
+
     // Shorten history length when disk usage is high
     auto const max_version = db_history_max_version();
     if (max_version == INVALID_BLOCK_NUM) {
@@ -1271,9 +1273,11 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
             disk_usage() <= upper_bound ||
             version_history_length() == MIN_HISTORY_LENGTH);
         LOG_INFO_CFORMAT(
-            "Adjust db history length down from %lu to %lu",
+            "Adjust db history length down from %lu to %lu. Time elapsed: %ld "
+            "us",
             history_length_before,
-            version_history_length());
+            version_history_length(),
+            timer.elapsed().count());
     }
     // Raise history length limit when disk usage falls low
     else if (auto const offsets = root_offsets();
@@ -1281,9 +1285,10 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
              version_history_length() < offsets.capacity()) {
         update_history_length_metadata(offsets.capacity());
         LOG_INFO_CFORMAT(
-            "Adjust db history length up from %lu to %lu",
+            "Adjust db history length up from %lu to %lu. Time elapsed: %ld us",
             history_length_before,
-            version_history_length());
+            version_history_length(),
+            timer.elapsed().count());
     }
 }
 
@@ -1467,6 +1472,7 @@ void UpdateAuxImpl::free_compacted_chunks()
                  idx = ci->index(db_metadata()),
                  count = (uint32_t)db_metadata()->at(idx)->insertion_count()) {
                 ci = ci->next(db_metadata()); // must be in this order
+                Stopwatch<std::chrono::microseconds> timer;
                 remove(idx);
                 io->storage_pool()
                     .chunk(monad::async::storage_pool::seq, idx)
@@ -1474,6 +1480,10 @@ void UpdateAuxImpl::free_compacted_chunks()
                 append(
                     UpdateAuxImpl::chunk_list::free,
                     idx); // append not prepend
+                LOG_INFO_CFORMAT(
+                    "Free compacted chunk id %u, time elapsed: %ld us",
+                    idx,
+                    timer.elapsed().count());
             }
         };
     MONAD_ASSERT(

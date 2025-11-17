@@ -17,8 +17,6 @@
 
 #include <category/core/config.hpp>
 
-#include <quill/Quill.h>
-
 #include <chrono>
 #include <cstdint>
 
@@ -27,26 +25,18 @@ MONAD_NAMESPACE_BEGIN
 template <typename Duration = std::chrono::nanoseconds>
 class Stopwatch final
 {
-    char const *const name_;
-    int64_t const min_;
     std::chrono::time_point<std::chrono::steady_clock> const begin_;
 
 public:
-    Stopwatch(char const *const name, int64_t const min = 0)
-        : name_{name}
-        , min_{min}
-        , begin_{std::chrono::steady_clock::now()}
+    Stopwatch()
+        : begin_{std::chrono::steady_clock::now()}
     {
     }
 
-    ~Stopwatch()
+    Duration elapsed() const
     {
-        auto const end = std::chrono::steady_clock::now();
-        auto const duration =
-            std::chrono::duration_cast<Duration>(end - begin_);
-        if (duration.count() >= min_) {
-            LOG_INFO("{} {}", name_, duration);
-        }
+        return std::chrono::duration_cast<Duration>(
+            std::chrono::steady_clock::now() - begin_);
     }
 };
 

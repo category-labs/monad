@@ -16,6 +16,7 @@
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
+#include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -60,8 +61,12 @@ static_validate_consensus_header(MonadConsensusBlockHeader const &header)
 EXPLICIT_MONAD_CONSENSUS_BLOCK_HEADER(static_validate_consensus_header);
 
 template <Traits traits>
-Result<void> static_validate_monad_senders(std::vector<Address> const &senders)
+Result<void> static_validate_monad_body(
+    std::span<Address const> const senders,
+    std::span<Transaction const> const txns)
 {
+    MONAD_ASSERT(senders.size() == txns.size());
+
     if constexpr (traits::monad_rev() < MONAD_FOUR) {
         return outcome::success();
     }
@@ -79,10 +84,34 @@ Result<void> static_validate_monad_senders(std::vector<Address> const &senders)
         return MonadBlockError::SystemTransactionNotFirstInBlock;
     }
 
+    auto const end_system_txn =
+        txns.begin() + std::distance(senders.begin(), first_user_sender);
+    auto const is_reward = [](Transaction const &tx) { return tx.value > 0; };
+
+    // Find first reward txn.
+    auto const first_reward_txn =
+        std::find_if(txns.begin(), end_system_txn, is_reward);
+    if (MONAD_UNLIKELY(first_reward_txn == end_system_txn)) {
+        return outcome::success();
+    }
+
+    // No other reward txn should come after it.
+    auto const another_reward =
+        std::find_if(std::next(first_reward_txn), end_system_txn, is_reward);
+    if (MONAD_UNLIKELY(another_reward != end_system_txn)) {
+        return MonadBlockError::MultipleRewardTransactions;
+    }
+
+    // Reward should not exceed 25 MON.
+    constexpr uint256_t MAXIMUM_BLOCK_REWARD = 25 * staking::MON;
+    if (MONAD_UNLIKELY(first_reward_txn->value > MAXIMUM_BLOCK_REWARD)) {
+        return MonadBlockError::InvalidRewardValue;
+    }
+
     return outcome::success();
 }
 
-EXPLICIT_MONAD_TRAITS(static_validate_monad_senders);
+EXPLICIT_MONAD_TRAITS(static_validate_monad_body);
 
 MONAD_NAMESPACE_END
 
@@ -101,6 +130,10 @@ quick_status_code_from_enum<monad::MonadBlockError>::value_mappings()
         {MonadBlockError::SystemTransactionNotFirstInBlock,
          "system transaction not first in block",
          {}},
+        {MonadBlockError::MultipleRewardTransactions,
+         "multiple reward transactions",
+         {}},
+        {MonadBlockError::InvalidRewardValue, "invalid reward value", {}},
     };
 
     return v;

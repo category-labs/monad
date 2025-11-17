@@ -17,10 +17,11 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 
-#include <vector>
+#include <span>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -33,12 +34,16 @@
 
 MONAD_NAMESPACE_BEGIN
 
+struct Transaction;
+
 enum class MonadBlockError
 {
     Success = 0,
     TimestampMismatch,
     BaseFeeMismatch,
     SystemTransactionNotFirstInBlock,
+    MultipleRewardTransactions,
+    InvalidRewardValue,
 };
 
 template <class MonadConsensusBlockHeader>
@@ -46,7 +51,8 @@ Result<void>
 static_validate_consensus_header(MonadConsensusBlockHeader const &);
 
 template <Traits traits>
-Result<void> static_validate_monad_senders(std::vector<Address> const &);
+Result<void> static_validate_monad_body(
+    std::span<Address const>, std::span<Transaction const>);
 
 MONAD_NAMESPACE_END
 

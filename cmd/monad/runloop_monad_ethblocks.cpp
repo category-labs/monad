@@ -132,7 +132,8 @@ Result<void> process_monad_block(
             }
         }
     }
-    BOOST_OUTCOME_TRY(static_validate_monad_senders<traits>(senders));
+    BOOST_OUTCOME_TRY(
+        static_validate_monad_body<traits>(senders, block.transactions));
 
     // Call tracer initialization
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};

@@ -1405,19 +1405,21 @@ void UpdateAuxImpl::advance_compact_offsets()
 
     Compaction offset update algo:
     The fast ring is compacted at a steady pace based on the average disk growth
-    observed over recent blocks. We define two disk usage thresholds:
-    `usage_limit_start_compact_slow` and `usage_limit`. When disk usage reaches
-    `usage_limit_start_compact_slow`, slow ring compaction begins, guided by the
-    slow ring garbage collection ratio from the last block. If disk usage
-    exceeds `usage_limit`, the system will start shortening the history until
-    disk usage is brought back within the threshold.
+    observed over recent blocks. And slow ring compaction begins when overall
+    disk usage reaches `usage_limit_start_compact_slow`, and slow list disk
+    usage reaches `slow_usage_limit_start_compact_slow`. The slow list
+    compaction range is adjusted according to the slow ring garbage collection
+    ratio from the last block.
     */
     MONAD_ASSERT(is_on_disk());
 
-    constexpr auto fast_usage_limit_start_compaction = 0.1;
-    auto const fast_disk_usage =
+    constexpr double fast_usage_limit_start_compaction = 0.1;
+    constexpr unsigned fast_chunk_count_limit_start_compaction = 800;
+    double const fast_disk_usage =
         num_chunks(chunk_list::fast) / (double)io->chunk_count();
-    if (fast_disk_usage < fast_usage_limit_start_compaction) {
+    if (fast_disk_usage < fast_usage_limit_start_compaction &&
+        num_chunks(chunk_list::fast) <
+            fast_chunk_count_limit_start_compaction) {
         return;
     }
 

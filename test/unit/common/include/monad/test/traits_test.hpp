@@ -19,6 +19,7 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
+#include <evmc/helpers.h>
 #include <gtest/gtest.h>
 
 #include <format>

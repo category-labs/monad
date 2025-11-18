@@ -77,7 +77,7 @@ inline char tty_ask_question(char const *msg, ...)
     char buffer[256];
     buffer[0] = -1;
     for (;;) {
-        auto readed = ::read(0, buffer, sizeof(buffer));
+        auto const readed = ::read(0, buffer, sizeof(buffer));
         if (readed < 0) {
             std::cerr << "FATAL: Somehow file descriptor 0 (stdin) is not "
                          "readable! Error was: "

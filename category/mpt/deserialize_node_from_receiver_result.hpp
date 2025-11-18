@@ -15,10 +15,10 @@
 
 #pragma once
 
-#include <category/mpt/config.hpp>
-
 #include <category/async/io_senders.hpp>
+#include <category/mpt/config.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/trie.hpp>
 
 MONAD_MPT_NAMESPACE_BEGIN
 

@@ -19,10 +19,12 @@
 #include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
-#include <category/core/small_prng.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/unaligned.hpp>
 #include <category/core/util/stopwatch.hpp>
 #include <category/mpt/config.hpp>
+#include <category/mpt/detail/collected_stats.hpp>
+#include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/trie.hpp>
@@ -41,17 +43,19 @@
 #include <cstdlib>
 #include <cstring>
 #include <format>
-#include <random>
+#include <functional>
+#include <iterator>
+#include <linux/fs.h>
+#include <optional>
 #include <ranges>
 #include <span>
-#include <stdexcept>
-#include <thread>
-#include <utility>
-#include <vector>
-
+#include <string>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <thread>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -73,6 +77,8 @@ namespace
     {
         MONAD_ASSERT(bytes.size() == 2 * sizeof(uint32_t));
         compact_offset_pair offsets;
+        // copy size is implicitly part of the `unaligned_load` call
+        // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
         offsets.fast.set_value(unaligned_load<uint32_t>(bytes.data()));
         offsets.slow.set_value(
             unaligned_load<uint32_t>(bytes.data() + sizeof(uint32_t)));
@@ -130,7 +136,7 @@ UpdateAuxImpl::chunk_list_and_age(uint32_t const idx) const noexcept
     return ret;
 }
 
-void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx) noexcept
+void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx)
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
@@ -149,8 +155,8 @@ void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx) noexcept
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
     if (list == chunk_list::free) {
-        auto &chunk = io->storage_pool().chunk(storage_pool::seq, idx);
-        auto capacity = chunk.capacity();
+        auto const &chunk = io->storage_pool().chunk(storage_pool::seq, idx);
+        auto const capacity = chunk.capacity();
         MONAD_ASSERT(chunk.size() == 0);
         db_metadata_[0].main->free_capacity_add_(capacity);
         db_metadata_[1].main->free_capacity_add_(capacity);
@@ -179,8 +185,8 @@ void UpdateAuxImpl::remove(uint32_t const idx) noexcept
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
     if (is_free_list) {
-        auto &chunk = io->storage_pool().chunk(storage_pool::seq, idx);
-        auto capacity = chunk.capacity();
+        auto const &chunk = io->storage_pool().chunk(storage_pool::seq, idx);
+        auto const capacity = chunk.capacity();
         MONAD_ASSERT(chunk.size() == 0);
         db_metadata_[0].main->free_capacity_sub_(capacity);
         db_metadata_[1].main->free_capacity_sub_(capacity);
@@ -208,7 +214,7 @@ void UpdateAuxImpl::append_root_offset(
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         root_offsets(m == db_metadata_[1].main).push(root_offset);
     };
     do_(db_metadata_[0].main);
@@ -220,7 +226,7 @@ void UpdateAuxImpl::update_root_offset(
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         auto ro = root_offsets(m == db_metadata_[1].main);
         ro.assign(i, root_offset);
         if (root_offset == INVALID_OFFSET && i == db_history_max_version() &&
@@ -238,7 +244,7 @@ void UpdateAuxImpl::fast_forward_next_version(
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         auto ro = root_offsets(m == db_metadata_[1].main);
         uint64_t curr_version = ro.max_version();
         MONAD_ASSERT(
@@ -264,7 +270,7 @@ void UpdateAuxImpl::update_history_length_metadata(
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         auto const ro = root_offsets(m == db_metadata_[1].main);
         MONAD_ASSERT(history_len > 0 && history_len <= ro.capacity());
         reinterpret_cast<std::atomic_uint64_t *>(&m->history_length)
@@ -323,7 +329,7 @@ void UpdateAuxImpl::set_latest_finalized_version(
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         reinterpret_cast<std::atomic_uint64_t *>(&m->latest_finalized_version)
             ->store(version, std::memory_order_release);
     };
@@ -335,7 +341,7 @@ void UpdateAuxImpl::set_latest_verified_version(uint64_t const version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         reinterpret_cast<std::atomic_uint64_t *>(&m->latest_verified_version)
             ->store(version, std::memory_order_release);
     };
@@ -349,7 +355,7 @@ void UpdateAuxImpl::set_latest_voted(
     MONAD_ASSERT(is_on_disk());
     for (auto const i : {0, 1}) {
         auto *const m = db_metadata_[i].main;
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         reinterpret_cast<std::atomic_uint64_t *>(&m->latest_voted_version)
             ->store(version, std::memory_order_release);
         m->latest_voted_block_id = block_id;
@@ -362,7 +368,7 @@ void UpdateAuxImpl::set_latest_proposed(
     MONAD_ASSERT(is_on_disk());
     for (auto const i : {0, 1}) {
         auto *const m = db_metadata_[i].main;
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         reinterpret_cast<std::atomic_uint64_t *>(&m->latest_proposed_version)
             ->store(version, std::memory_order_release);
         m->latest_proposed_block_id = block_id;
@@ -382,7 +388,7 @@ void UpdateAuxImpl::set_auto_expire_version_metadata(
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         reinterpret_cast<std::atomic_int64_t *>(&m->auto_expire_version)
             ->store(version, std::memory_order_release);
     };
@@ -496,7 +502,7 @@ void UpdateAuxImpl::clear_ondisk_db()
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         root_offsets(m == db_metadata_[1].main).reset_all(0);
     };
     do_(db_metadata_[0].main);
@@ -523,7 +529,7 @@ void UpdateAuxImpl::rewind_to_version(uint64_t const version)
         return;
     }
     auto do_ = [&](detail::db_metadata *m) {
-        auto g = m->hold_dirty();
+        auto const g = m->hold_dirty();
         root_offsets(m == db_metadata_[1].main).rewind_to_version(version);
     };
     do_(db_metadata_[0].main);
@@ -580,8 +586,8 @@ void UpdateAuxImpl::set_io(
         sizeof(detail::db_metadata) +
         chunk_count * sizeof(detail::db_metadata::chunk_info_t);
     auto &cnv_chunk = io->storage_pool().chunk(storage_pool::cnv, 0);
-    auto fdr = cnv_chunk.read_fd();
-    auto fdw = cnv_chunk.write_fd(0);
+    auto const fdr = cnv_chunk.read_fd();
+    auto const fdw = cnv_chunk.write_fd(0);
     /* We keep accidentally running MPT on 4Kb min granularity storage, so
     error out on that early to save everybody time and hassle.
 
@@ -629,7 +635,7 @@ void UpdateAuxImpl::set_io(
     bool const can_write_to_map =
         (!io->storage_pool().is_read_only() ||
          io->storage_pool().is_read_only_allow_dirty());
-    auto &fd = can_write_to_map ? fdw : fdr;
+    auto const &fd = can_write_to_map ? fdw : fdr;
     auto const prot = can_write_to_map ? (PROT_READ | PROT_WRITE) : (PROT_READ);
     auto const mapflags = io->storage_pool().is_read_only_allow_dirty()
                               ? MAP_PRIVATE
@@ -686,10 +692,10 @@ void UpdateAuxImpl::set_io(
                  db_metadata_[0].main->magic,
                  detail::db_metadata::MAGIC,
                  magic_prefix_len) &&
-        memcmp(
-            db_metadata_[0].main->magic + magic_prefix_len,
-            detail::db_metadata::MAGIC + magic_prefix_len,
-            magic_version_len)) {
+        0 != memcmp(
+                 db_metadata_[0].main->magic + magic_prefix_len,
+                 detail::db_metadata::MAGIC + magic_prefix_len,
+                 magic_version_len)) {
         MONAD_ABORT_PRINTF(
             "DB was generated with version %s. The current code base is on "
             "version %s. Please regenerate with the new DB version.",
@@ -779,9 +785,9 @@ void UpdateAuxImpl::set_io(
                 db_metadata()
                     ->root_offsets.storage_.cnv_chunks[n]
                     .cnv_chunk_id);
-            auto fdr = chunk.read_fd();
-            auto fdw = chunk.write_fd(0);
-            auto &fd = can_write_to_map ? fdw : fdr;
+            auto const fdr = chunk.read_fd();
+            auto const fdw = chunk.write_fd(0);
+            auto const &fd = can_write_to_map ? fdw : fdr;
             MONAD_ASSERT(
                 MAP_FAILED != ::mmap(
                                   reservation[0] + n * map_bytes_per_chunk,
@@ -805,6 +811,7 @@ void UpdateAuxImpl::set_io(
         db_metadata_[1].root_offsets = {
             start_lifetime_as<chunk_offset_t>((chunk_offset_t *)reservation[1]),
             db_version_history_storage_bytes / sizeof(chunk_offset_t)};
+        // NOLINTNEXTLINE(bugprone-lambda-function-name)
         LOG_INFO(
             "Database root offsets ring buffer is configured with {} "
             "chunks, can hold up to {} historical entries.",
@@ -821,7 +828,7 @@ void UpdateAuxImpl::set_io(
             "Neither copy of the DB metadata is valid, and not opened for "
             "writing so stopping now.");
         for (uint32_t n = 0; n < chunk_count; n++) {
-            auto &chunk = io->storage_pool().chunk(storage_pool::seq, n);
+            auto const &chunk = io->storage_pool().chunk(storage_pool::seq, n);
             MONAD_ASSERT(
                 chunk.size() == 0,
                 "Trying to initialise new DB but storage pool contains "
@@ -837,10 +844,11 @@ void UpdateAuxImpl::set_io(
         auto &chunk = io->storage_pool().chunk(storage_pool::cnv, 1);
         auto *tofill = aligned_alloc(DISK_PAGE_SIZE, chunk.capacity());
         MONAD_ASSERT(tofill != nullptr);
-        auto untofill = make_scope_exit([&]() noexcept { ::free(tofill); });
+        auto const untofill =
+            make_scope_exit([&]() noexcept { ::free(tofill); });
         memset(tofill, 0xff, chunk.capacity());
         {
-            auto fdw = chunk.write_fd(chunk.capacity());
+            auto const fdw = chunk.write_fd(chunk.capacity());
             MONAD_ASSERT(
                 -1 !=
                 ::pwrite(
@@ -861,7 +869,7 @@ void UpdateAuxImpl::set_io(
             "Number of cnv chunks for root offsets must be a power of two");
         for (uint32_t n = 2; n <= root_offsets_chunk_count; n++) {
             auto &chunk = io->storage_pool().chunk(storage_pool::cnv, n);
-            auto fdw = chunk.write_fd(chunk.capacity());
+            auto const fdw = chunk.write_fd(chunk.capacity());
             MONAD_ASSERT(
                 -1 !=
                 ::pwrite(
@@ -897,7 +905,7 @@ void UpdateAuxImpl::set_io(
         std::vector<uint32_t> chunks;
         chunks.reserve(chunk_count);
         for (uint32_t n = 0; n < chunk_count; n++) {
-            auto chunk = io->storage_pool().chunk(storage_pool::seq, n);
+            auto const chunk = io->storage_pool().chunk(storage_pool::seq, n);
             MONAD_ASSERT(chunk.zone_id().first == storage_pool::seq);
             MONAD_ASSERT(chunk.zone_id().second == n);
             MONAD_ASSERT(chunk.size() == 0); // chunks must actually be free
@@ -924,7 +932,7 @@ void UpdateAuxImpl::set_io(
             append(list, id);
             if (initial_insertion_count_on_pool_creation_ != 0) {
                 auto override_insertion_count = [&](detail::db_metadata *db) {
-                    auto g = db->hold_dirty();
+                    auto const g = db->hold_dirty();
                     auto *i = db->at_(id);
                     i->insertion_count0_ =
                         uint32_t(initial_insertion_count_on_pool_creation_) &
@@ -970,7 +978,7 @@ void UpdateAuxImpl::set_io(
 
         for (auto const i : {0, 1}) {
             auto *const m = db_metadata_[i].main;
-            auto g = m->hold_dirty();
+            auto const g = m->hold_dirty();
             memset(
                 m->future_variables_unused,
                 0xff,
@@ -1062,7 +1070,7 @@ void UpdateAuxImpl::reset_node_writers()
 {
     auto init_node_writer = [&](chunk_offset_t const node_writer_offset)
         -> node_writer_unique_ptr_type {
-        auto &chunk =
+        auto const &chunk =
             io->storage_pool().chunk(storage_pool::seq, node_writer_offset.id);
         MONAD_ASSERT(chunk.size() >= node_writer_offset.offset);
         size_t const bytes_to_write = std::min(
@@ -1139,7 +1147,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         {}, compact_offsets_bytes, false, std::move(updates), version);
     root_updates.push_front(root_update);
 
-    Stopwatch<std::chrono::microseconds> upsert_timer;
+    Stopwatch<std::chrono::microseconds> const upsert_timer;
     auto root = upsert(
         *this,
         version,
@@ -1186,7 +1194,7 @@ void UpdateAuxImpl::release_unreferenced_chunks()
     if (min_valid_version == INVALID_BLOCK_NUM) {
         return;
     }
-    auto min_valid_root = read_node_blocking(
+    auto const min_valid_root = read_node_blocking(
         *this,
         get_root_offset_at_version(min_valid_version),
         min_valid_version);
@@ -1229,7 +1237,7 @@ double UpdateAuxImpl::calculate_disk_usage_if_erased_up_to_and_including(
     while (!version_is_valid_ondisk(min_version_post_erase)) {
         min_version_post_erase++;
     }
-    auto min_valid_root_post_erase = read_node_blocking(
+    auto const min_valid_root_post_erase = read_node_blocking(
         *this,
         get_root_offset_at_version(min_version_post_erase),
         min_version_post_erase);
@@ -1256,7 +1264,7 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     constexpr double upper_bound = 0.8;
     constexpr double lower_bound = 0.6;
 
-    Stopwatch<std::chrono::microseconds> timer;
+    Stopwatch<std::chrono::microseconds> const timer;
 
     // Shorten history length when disk usage is high
     auto const max_version = db_history_max_version();
@@ -1555,7 +1563,7 @@ void UpdateAuxImpl::free_compacted_chunks()
                  idx = ci->index(db_metadata()),
                  count = (uint32_t)db_metadata()->at(idx)->insertion_count()) {
                 ci = ci->next(db_metadata()); // must be in this order
-                Stopwatch<std::chrono::microseconds> timer;
+                Stopwatch<std::chrono::microseconds> const timer;
                 remove(idx);
                 io->storage_pool()
                     .chunk(monad::async::storage_pool::seq, idx)
@@ -1563,6 +1571,7 @@ void UpdateAuxImpl::free_compacted_chunks()
                 append(
                     UpdateAuxImpl::chunk_list::free,
                     idx); // append not prepend
+                // NOLINTNEXTLINE(bugprone-lambda-function-name)
                 LOG_INFO_CFORMAT(
                     "Free compacted chunk id %u, time elapsed: %ld us",
                     idx,

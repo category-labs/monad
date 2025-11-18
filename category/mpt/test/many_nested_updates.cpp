@@ -19,10 +19,9 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
 #include <category/mpt/update.hpp>
-
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #if defined(__GNUC__) && !defined(__clang__)
     #pragma GCC diagnostic push
@@ -83,7 +82,7 @@ inline monad::byte_string const &to_byte_string(std::string_view s)
     if (it == storage.end()) {
         auto const res = monad::from_hex(s);
         MONAD_ASSERT(res.has_value());
-        it = storage.emplace(std::move(key), std::move(res.value())).first;
+        it = storage.emplace(std::move(key), res.value()).first;
     }
     return it->second;
 }

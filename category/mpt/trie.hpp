@@ -437,17 +437,17 @@ public:
     std::pair<chunk_list, detail::unsigned_20>
     chunk_list_and_age(uint32_t idx) const noexcept;
 
-    void append(chunk_list list, uint32_t idx) noexcept;
+    void append(chunk_list list, uint32_t idx);
     void remove(uint32_t idx) noexcept;
 
     template <typename Func, typename... Args>
         requires std::invocable<
             std::function<void(detail::db_metadata *, Args...)>,
             detail::db_metadata *, Args...>
-    void modify_metadata(Func func, Args &&...args) noexcept
+    void modify_metadata(Func func, Args const &...args) noexcept
     {
-        func(db_metadata_[0].main, std::forward<Args>(args)...);
-        func(db_metadata_[1].main, std::forward<Args>(args)...);
+        func(db_metadata_[0].main, args...);
+        func(db_metadata_[1].main, args...);
     }
 
     // This function should only be invoked after completing a upsert

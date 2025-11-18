@@ -36,14 +36,14 @@ struct Requests
 
     Requests() = default;
 
-    UpdateList const &operator[](size_t i) const & noexcept
+    UpdateList const &operator[](size_t i) const noexcept
     {
         return sublists[i];
     }
 
-    UpdateList &&operator[](size_t i) && noexcept
+    UpdateList &operator[](size_t i) noexcept
     {
-        return std::move(sublists[i]);
+        return sublists[i];
     }
 
     UpdateList const &at(size_t i) const &
@@ -85,6 +85,9 @@ struct Requests
     // - if multiple updates, prefix_index = one of key size, set
     //   opt_leaf, split the rest to sublists, n >= 1
     // clang-format: on
+#ifdef __clang__
+    [[clang::reinitializes]]
+#endif
     unsigned
     split_into_sublists(UpdateList &&updates, unsigned const prefix_index)
     {

@@ -19,9 +19,9 @@
 #include <category/async/config.hpp>
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/io_senders.hpp>
+#include <category/async/test/test_fixture.hpp>
 #include <category/async/util.hpp>
 #include <category/core/small_prng.hpp>
-
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <boost/fiber/future/async.hpp>
@@ -112,7 +112,7 @@ TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
         iostate->initiate();
         std::cout << "sender..." << std::endl;
 
-        auto bytesread = fut.get();
+        auto const bytesread = fut.get();
         // Return a copy of the registered buffer with lifetime held by fut
         return std::vector<std::byte>(bytesread.begin(), bytesread.end());
     };
@@ -131,6 +131,6 @@ TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
                fut.wait_for(std::chrono::seconds(0))) {
             shared_state_()->testio->poll_nonblocking(1);
         }
-        auto res = fut.get();
+        auto const res = fut.get();
     }
 }

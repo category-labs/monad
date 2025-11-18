@@ -15,8 +15,6 @@
 
 #pragma once
 
-#include <memory>
-
 #include <category/async/concepts.hpp>
 #include <category/async/config.hpp>
 #include <category/async/io.hpp>
@@ -33,6 +31,8 @@
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
+
+#include <memory>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -239,7 +239,7 @@ namespace detail
         }
 
         async::result<void>
-        operator()(async::erased_connected_operation *io_state) noexcept;
+        operator()(async::erased_connected_operation *io_state);
 
         result_type completed(
             async::erased_connected_operation *,

@@ -42,6 +42,7 @@
 #include <cstring>
 #include <format>
 #include <random>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <thread>
@@ -1242,6 +1243,40 @@ void UpdateAuxImpl::erase_versions_up_to_and_including(uint64_t const version)
     release_unreferenced_chunks();
 }
 
+double UpdateAuxImpl::calculate_disk_usage_if_erased_up_to_and_including(
+    uint64_t const version_to_erase) const
+{
+    MONAD_ASSERT(is_on_disk());
+    MONAD_ASSERT(db_history_max_version() != INVALID_BLOCK_NUM);
+    uint64_t min_version_post_erase = version_to_erase + 1;
+    MONAD_ASSERT(
+        min_version_post_erase < db_history_max_version(),
+        "Must have at least one valid version left after erase.");
+    while (!version_is_valid_ondisk(min_version_post_erase)) {
+        min_version_post_erase++;
+    }
+    auto min_valid_root_post_erase = read_node_blocking(
+        *this,
+        get_root_offset_at_version(min_version_post_erase),
+        min_version_post_erase);
+    auto const [min_offset_fast, min_offset_slow] =
+        deserialize_compaction_offsets(min_valid_root_post_erase->value());
+    MONAD_ASSERT(
+        min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
+        min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
+    auto const fast_list_max_count =
+        db_metadata()->fast_list_end()->insertion_count();
+    auto const slow_list_max_count =
+        db_metadata()->slow_list_end()->insertion_count();
+    MONAD_ASSERT(fast_list_max_count >= min_offset_fast.get_count());
+    MONAD_ASSERT(slow_list_max_count >= min_offset_slow.get_count());
+    auto const num_fast_chunks =
+        fast_list_max_count - min_offset_fast.get_count() + 1;
+    auto const num_slow_chunks =
+        slow_list_max_count - min_offset_slow.get_count() + 1;
+    return (num_fast_chunks + num_slow_chunks) / (double)io->chunk_count();
+}
+
 void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
 {
     constexpr double upper_bound = 0.8;
@@ -1259,24 +1294,40 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     auto const current_disk_usage = disk_usage();
     if (current_disk_usage > upper_bound &&
         history_length_before > MIN_HISTORY_LENGTH) {
-        while (disk_usage() > upper_bound &&
-               version_history_length() > MIN_HISTORY_LENGTH) {
-            auto const version_to_erase = db_history_min_valid_version();
-            MONAD_ASSERT(
-                version_to_erase != INVALID_BLOCK_NUM &&
-                version_to_erase < max_version);
-            erase_versions_up_to_and_including(version_to_erase);
-            update_history_length_metadata(
-                std::max(max_version - version_to_erase, MIN_HISTORY_LENGTH));
+        uint64_t const lo = db_history_min_valid_version();
+        uint64_t const hi = max_version - MIN_HISTORY_LENGTH;
+        MONAD_ASSERT(lo <= hi); // always true under the if condition
+        uint64_t best_version_to_erase = hi;
+        if (calculate_disk_usage_if_erased_up_to_and_including(hi) <
+            upper_bound) {
+            // Find the first version in range [lo, hi] where erasing up to it
+            // brings disk usage <= upper_bound
+            auto const versions = std::views::iota(lo, hi + 1);
+            auto const it = std::ranges::lower_bound(
+                versions,
+                upper_bound,
+                std::greater{},
+                [this](uint64_t const version) {
+                    return calculate_disk_usage_if_erased_up_to_and_including(
+                        version);
+                });
+
+            if (it != versions.end()) {
+                best_version_to_erase = *it;
+            }
         }
+        erase_versions_up_to_and_including(best_version_to_erase);
+        update_history_length_metadata(
+            std::max(max_version - best_version_to_erase, MIN_HISTORY_LENGTH));
         MONAD_ASSERT(
             disk_usage() <= upper_bound ||
             version_history_length() == MIN_HISTORY_LENGTH);
         LOG_INFO_CFORMAT(
-            "Adjust db history length down from %lu to %lu. Time elapsed: %ld "
-            "us",
+            "Adjust db history length down from %lu to %lu. Current disk "
+            "usage: %.4f, Time elapsed: %ld us",
             history_length_before,
             version_history_length(),
+            disk_usage(),
             timer.elapsed().count());
     }
     // Raise history length limit when disk usage falls low

@@ -15,7 +15,6 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
-#include <category/core/mem/allocators.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -28,6 +27,7 @@
 #include <limits>
 #include <optional>
 #include <stack>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -224,7 +224,7 @@ Node::SharedPtr copy_trie_impl(
             // there is a matched branch, go to next child
             parent = node.get();
             branch = nibble;
-            parents_and_indexes.emplace(std::make_pair(parent, index));
+            parents_and_indexes.emplace(parent, index);
             node = node->next(index);
             node_prefix_index = 0;
             ++prefix_index;
@@ -267,7 +267,7 @@ Node::SharedPtr copy_trie_impl(
         auto const child_index = parent->to_child_index(branch);
         // reset child at `branch` to the new_node
         parent->set_next(child_index, std::move(new_node));
-        parents_and_indexes.emplace(std::make_pair(parent, child_index));
+        parents_and_indexes.emplace(parent, child_index);
         // serialize nodes of insert path up until root (excludes root)
         while (!parents_and_indexes.empty()) {
             auto const &[p, i] = parents_and_indexes.top();
@@ -311,8 +311,8 @@ Node::SharedPtr copy_trie_to_dest(
         return impl();
     }
     else {
-        auto g(aux.unique_lock());
-        auto g2(aux.set_current_upsert_tid());
+        auto const g(aux.unique_lock());
+        auto const g2(aux.set_current_upsert_tid());
         return impl();
     }
 }

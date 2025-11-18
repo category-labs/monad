@@ -13,13 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/async/config.hpp>
-
 #include <category/async/concepts.hpp>
+#include <category/async/config.hpp>
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/io.hpp>
 #include <category/core/assert.h>
-#include <category/core/nibble.h>
 #include <category/core/tl_tid.h>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
@@ -38,8 +36,6 @@
 #include <limits>
 #include <memory>
 #include <utility>
-
-#include <unistd.h>
 
 #include "deserialize_node_from_receiver_result.hpp"
 
@@ -95,11 +91,11 @@ namespace
                     std::move(buffer_), buffer_off, io_state);
                 parent->set_next(branch_index, node);
             }
-            auto it = inflights.find(offset);
+            auto const it = inflights.find(offset);
             if (it != inflights.end()) {
-                auto pendings = std::move(it->second);
+                auto const pendings = std::move(it->second);
                 inflights.erase(it);
-                for (auto &cont : pendings) {
+                for (auto const &cont : pendings) {
                     MONAD_ASSERT(cont(NodeCursor{node}));
                 }
             }
@@ -158,17 +154,17 @@ namespace
                     NodeCache::ConstAccessor acc;
                     MONAD_ASSERT(node_cache.find(acc, virtual_offset) == false);
                 }
-                std::shared_ptr<Node> node =
+                std::shared_ptr<Node> const node =
                     detail::deserialize_node_from_receiver_result(
                         std::move(buffer_), buffer_off, io_state);
                 node_cache.insert(virtual_offset, node);
                 start_cursor = NodeCursor{node};
             }
-            auto it = inflights.find(virtual_offset);
+            auto const it = inflights.find(virtual_offset);
             MONAD_ASSERT(it != inflights.end());
-            auto pendings = std::move(it->second);
+            auto const pendings = std::move(it->second);
             inflights.erase(it);
-            for (auto &cont : pendings) {
+            for (auto const &cont : pendings) {
                 MONAD_ASSERT(cont(start_cursor));
             }
         }
@@ -187,8 +183,9 @@ namespace
                 {NodeCursor{}, find_result::need_to_continue_in_io_thread});
             return;
         }
-        if (auto lt = inflights.find(virtual_offset); lt != inflights.end()) {
-            lt->second.emplace_back(std::move(cont));
+        if (auto const lt = inflights.find(virtual_offset);
+            lt != inflights.end()) {
+            lt->second.emplace_back(std::forward<decltype(cont)>(cont));
             return;
         }
         inflights[virtual_offset].emplace_back(cont);
@@ -259,10 +256,10 @@ void find_notify_fiber_future(
         auto cont = [&aux, &inflights, &promise, next_key](
                         NodeCursor const &node_cursor) -> result<void> {
             find_notify_fiber_future(
-                aux, inflights, promise, std::move(node_cursor), next_key);
+                aux, inflights, promise, node_cursor, next_key);
             return success();
         };
-        if (auto lt = inflights.find(offset); lt != inflights.end()) {
+        if (auto const lt = inflights.find(offset); lt != inflights.end()) {
             lt->second.emplace_back(cont);
             return;
         }
@@ -296,7 +293,7 @@ void find_owning_notify_fiber_future(
     }
     unsigned prefix_index = 0;
     unsigned node_prefix_index = start.prefix_index;
-    auto node = start.node;
+    auto const node = start.node;
     for (; node_prefix_index < node->path_nibbles_len();
          ++node_prefix_index, ++prefix_index) {
         if (prefix_index >= key.nibble_size()) {
@@ -338,7 +335,7 @@ void find_owning_notify_fiber_future(
         // find in cache
         NodeCache::ConstAccessor acc;
         if (node_cache.find(acc, next_virtual_offset)) {
-            NodeCursor next_cursor{acc->second->val.first};
+            NodeCursor const next_cursor{acc->second->val.first};
             find_owning_notify_fiber_future(
                 aux,
                 node_cache,
@@ -398,7 +395,7 @@ void load_root_notify_fiber_future(
     }
     NodeCache::ConstAccessor acc;
     if (node_cache.find(acc, root_virtual_offset)) {
-        auto &root = acc->second->val.first;
+        auto const &root = acc->second->val.first;
         MONAD_ASSERT(root != nullptr);
         promise.set_value({NodeCursor{root}, find_result::success});
         return;

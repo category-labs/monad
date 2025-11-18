@@ -15,11 +15,10 @@
 
 #pragma once
 
-#include <category/mpt/compute.hpp>
-#include <category/mpt/trie.hpp>
-
 #include <category/core/assert.h>
 #include <category/core/small_prng.hpp>
+#include <category/mpt/compute.hpp>
+#include <category/mpt/trie.hpp>
 
 #include <array>
 #include <vector>
@@ -236,7 +235,7 @@ namespace monad::test
     using StateMachinePlainVarLen = StateMachineAlways<
         EmptyCompute, StateMachineConfig{.variable_length_start_depth = 0}>;
 
-    Node::SharedPtr upsert_vector(
+    inline Node::SharedPtr upsert_vector(
         UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
         std::vector<Update> &&update_vec, uint64_t const version = 0)
     {
@@ -511,7 +510,7 @@ namespace monad::test
 
             ~state_t()
             {
-                for (auto &device : pool.devices()) {
+                for (auto const &device : pool.devices()) {
                     auto const path = device.current_path();
                     if (std::filesystem::exists(path)) {
                         std::filesystem::remove(path);
@@ -521,7 +520,7 @@ namespace monad::test
 
             std::ostream &print(std::ostream &s)
             {
-                auto v = pool.devices().front().capacity();
+                auto const v = pool.devices().front().capacity();
                 std::cout << "\n   Storage pool capacity = " << v.first
                           << " consumed = " << v.second
                           << " chunks = " << pool.chunks(pool.seq);
@@ -538,8 +537,8 @@ namespace monad::test
                 for (auto const *ci = aux.db_metadata()->fast_list_begin();
                      ci != nullptr;
                      ci = ci->next(aux.db_metadata())) {
-                    auto idx = ci->index(aux.db_metadata());
-                    auto &chunk = pool.chunk(pool.seq, idx);
+                    auto const idx = ci->index(aux.db_metadata());
+                    auto const &chunk = pool.chunk(pool.seq, idx);
                     std::cout << "\n      Chunk " << idx
                               << " has capacity = " << chunk.capacity()
                               << " consumed = " << chunk.size();
@@ -548,8 +547,8 @@ namespace monad::test
                 for (auto const *ci = aux.db_metadata()->slow_list_begin();
                      ci != nullptr;
                      ci = ci->next(aux.db_metadata())) {
-                    auto idx = ci->index(aux.db_metadata());
-                    auto chunk = pool.chunk(pool.seq, idx);
+                    auto const idx = ci->index(aux.db_metadata());
+                    auto const chunk = pool.chunk(pool.seq, idx);
                     std::cout << "\n      Chunk " << idx
                               << " has capacity = " << chunk.capacity()
                               << " consumed = " << chunk.size();
@@ -588,7 +587,7 @@ namespace monad::test
                                 aux.get_latest_root_offset().id);
                         }
                         updates.push_back(make_update(
-                            keys.back().first, keys.back().first, 0));
+                            keys.back().first, keys.back().first, false));
                         update_ls.push_front(updates.back());
                     }
                     root = aux.do_update(

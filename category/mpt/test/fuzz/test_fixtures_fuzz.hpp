@@ -82,7 +82,7 @@ namespace monad::test
         }
 
     public:
-        constexpr fuzztest_input_filler(std::span<uint8_t const> input)
+        explicit constexpr fuzztest_input_filler(std::span<uint8_t const> input)
             : input_(input)
             , cursor_(input_.begin())
         {
@@ -153,7 +153,7 @@ namespace monad::test
                     count.second = get<size_t>(count.first, count.second);
                 }
                 for (size_t n = 0; n < count.second; n++) {
-                    uint8_t length;
+                    uint8_t length{0};
                     fill_(length, length_min, length_max);
                     key_type key{};
                     if constexpr (std::
@@ -250,6 +250,7 @@ namespace monad::test
             if (!mods.empty()) {
                 // Fix the trie so that the root hashes are back to normal
                 std::vector<Update> correct;
+                correct.reserve(mods.size());
                 for (auto const &[i, _] : mods) {
                     correct.emplace_back(make_update(
                         one_hundred_updates[i].first,
@@ -275,6 +276,7 @@ namespace monad::test
             MONAD_DEBUG_ASSERT(this->root.get() == nullptr);
             std::vector<std::pair<monad::byte_string, monad::byte_string>>
                 transformed;
+            transformed.reserve(kv.size());
             for (auto const &p : kv) {
                 transformed.emplace_back(
                     [&]() {

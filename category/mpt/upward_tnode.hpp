@@ -185,6 +185,9 @@ struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
     bool const cache_node{false};
     Node::SharedPtr node{nullptr};
 
+    // NOLINTBEGIN(clang-analyzer-optin.cplusplus.UninitializedObject)
+    // bug in analyzer fixed in version 18.
+    // see https://github.com/llvm/llvm-project/issues/50658
     template <any_tnode Parent>
     CompactTNode(
         Parent *const parent, unsigned const index, Node::SharedPtr ptr)
@@ -197,6 +200,8 @@ struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
     {
         MONAD_ASSERT(parent != nullptr);
     }
+
+    // NOLINTEND(clang-analyzer-optin.cplusplus.UninitializedObject)
 
     void update_after_async_read(Node::SharedPtr ptr)
     {
@@ -249,6 +254,9 @@ struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
     uint16_t cache_mask{0};
     Node::SharedPtr node{nullptr};
 
+    // NOLINTBEGIN(clang-analyzer-optin.cplusplus.UninitializedObject)
+    // bug in analyzer fixed in version 18.
+    // see https://github.com/llvm/llvm-project/issues/50658
     template <update_or_expire_tnode Parent>
     ExpireTNode(
         Parent *const parent, unsigned const branch, unsigned const index,
@@ -263,6 +271,8 @@ struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
     {
         MONAD_ASSERT(parent != nullptr);
     }
+
+    // NOLINTEND(clang-analyzer-optin.cplusplus.UninitializedObject)
 
     void update_after_async_read(Node::SharedPtr ptr)
     {

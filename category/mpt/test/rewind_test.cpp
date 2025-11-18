@@ -15,10 +15,10 @@
 
 #include "test_fixtures_gtest.hpp"
 
-#include <category/mpt/node.hpp>
-#include <category/mpt/trie.hpp>
-
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/mpt/test/test_fixtures_base.hpp>
+#include <category/mpt/trie.hpp>
+#include <category/mpt/util.hpp>
 
 #include <iostream>
 #include <ostream>

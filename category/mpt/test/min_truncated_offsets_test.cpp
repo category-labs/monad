@@ -19,16 +19,14 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/small_prng.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/node.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
-
 #include <algorithm>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>

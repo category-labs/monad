@@ -194,7 +194,7 @@ struct MerkleComputeBase : Compute
         MONAD_DEBUG_ASSERT(node.number_of_children() > 1);
         if (node.has_path()) {
             unsigned char reference[KECCAK256_SIZE];
-            unsigned len = compute_branch_reference_(reference, node);
+            unsigned const len = compute_branch_reference_(reference, node);
             return encode_two_pieces(
                 buffer, node.path_nibble_view(), {reference, len}, false);
         }

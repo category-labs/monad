@@ -13,25 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "gtest/gtest.h"
-
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
 #include <category/core/byte_string.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
-#include <category/mpt/util.hpp>
 
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <iterator>
 #include <memory>
-#include <optional>
 #include <utility>
 #include <vector>
 
@@ -415,8 +412,8 @@ TYPED_TEST(TrieTest, nested_fixed_length_tries)
 
     // update first trie mid leaf data
     // with nested storage changes but doesn't change any value
-    auto acc1 = kv[0].first;
-    auto new_val = 0x1234_bytes;
+    auto const acc1 = kv[0].first;
+    auto const new_val = 0x1234_bytes;
     storage.clear(); // NOLINT
     storage.push_front(a);
     this->root = upsert_updates(
@@ -540,7 +537,7 @@ TYPED_TEST(TrieTest, verify_correct_compute_at_section_edge)
     EXPECT_EQ(this->root->child_data_len(), 0);
 
     // leaf is the end of prefix2 section, also root of account trie
-    auto &prefix2_leaf = this->root->next(1);
+    auto const &prefix2_leaf = this->root->next(1);
     EXPECT_EQ(prefix2_leaf->has_value(), true);
     EXPECT_EQ(prefix2_leaf->path_nibbles_len(), 0);
     EXPECT_EQ(prefix2_leaf->child_data_len(0), 10);
@@ -577,6 +574,8 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
     uint64_t const start_block_id = 0x123;
 
     auto upsert_same_kv_once = [&](uint64_t const block_id) {
+        // appears to be a bug in the checker
+        // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
         auto u1 = make_update(kv[0].first, kv[0].second);
         auto u2 = make_update(kv[1].first, kv[1].second);
         UpdateList ul;

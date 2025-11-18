@@ -19,11 +19,10 @@
 #include <category/async/erased_connected_operation.hpp>
 #include <category/core/assert.h>
 #include <category/mpt/config.hpp>
+#include <category/mpt/deserialize_node_from_receiver_result.hpp>
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
-
-#include "deserialize_node_from_receiver_result.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -116,7 +115,7 @@ public:
     }
 
     MONAD_ASYNC_NAMESPACE::result<void>
-    operator()(MONAD_ASYNC_NAMESPACE::erased_connected_operation *) noexcept;
+    operator()(MONAD_ASYNC_NAMESPACE::erased_connected_operation *);
 
     result_type completed(
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
@@ -190,8 +189,8 @@ struct find_request_sender<T>::find_receiver
                 std::move(buffer_), buffer_off, io_state);
             sender->node_cache_.insert(virt_offset, sp);
         }
-        auto key = std::pair(this->virt_offset, sender->root_.node.get());
-        auto it = sender->inflights_.find(key);
+        auto const key = std::pair(this->virt_offset, sender->root_.node.get());
+        auto const it = sender->inflights_.find(key);
         if (it != sender->inflights_.end()) {
             auto const pendings = std::move(it->second);
             sender->inflights_.erase(it);
@@ -204,7 +203,7 @@ struct find_request_sender<T>::find_receiver
 
 template <return_type T>
 inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
-    MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state) noexcept
+    MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state)
 {
     /* This is slightly bold, we basically repeatedly self reenter the Sender's
     initiation function until we complete. It is legal and it is allowed,
@@ -278,7 +277,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
                 return this->resume_(io_state, root);
             };
             auto const offset_node = std::pair(virt_offset, node);
-            if (auto lt = inflights_.find(offset_node);
+            if (auto const lt = inflights_.find(offset_node);
                 lt != inflights_.end()) {
                 lt->second.emplace_back(cont);
                 return success();

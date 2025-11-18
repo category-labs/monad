@@ -786,6 +786,76 @@ static bool toss(Engine &engine, double p)
     return dist(engine);
 }
 
+
+inline std::string print(const evmone::state::Transaction& tx)
+{
+    std::ostringstream out;
+    out << "Transaction {\n"
+        // << "  chain_id:              " << tx.chain_id << "\n"
+    //     << "  nonce:                 " << tx.nonce << "\n"
+        << "  gas_limit:             " << tx.gas_limit << "\n"
+    //     << "  max_priority_gas_price:" << tx.max_priority_gas_price << "\n"
+        // << "  max_gas_price:         " << tx.max_gas_price << "\n"
+        << "  sender:                " << hex(tx.sender) << "\n"
+        << "  to:                    ";
+    if (tx.to)
+        out << hex(*tx.to) << "\n";
+    else
+        out << "(contract creation)\n";
+
+    out << "  value:                 " << hex(tx.value) << "\n"
+        << "  data:                  " << hex(tx.data) << "\n"
+        << "}";
+    return out.str();
+}
+
+
+template <typename ByteStr>
+std::string pretty_print_evm(const ByteStr& code)
+{
+    std::ostringstream out;
+
+    size_t pc = 0;
+    while (pc < code.size())
+    {
+        uint8_t opcode = code[pc];
+        const auto& info = monad::vm::compiler::opcode_table<EvmTraits<EVMC_PRAGUE>>[opcode];
+
+        out << std::setw(4) << pc << ":  ";              // PC column
+
+        // Print opcode byte
+        out << "0x" << std::hex << std::setw(2) << std::setfill('0')
+            << static_cast<int>(opcode) << std::dec << "    ";
+
+        // Opcode mnemonic
+        out << info.name;
+        
+
+        // Handle PUSH1..PUSH32 immediate bytes
+        if (monad::vm::compiler::is_push_opcode(opcode))
+        {
+            const size_t push_len = opcode - PUSH0 + 1;
+
+            out << "  0x";  // immediate prefix
+            // print immediate data bytes
+            for (size_t i = 0; i < push_len && pc + 1 + i < code.size(); ++i)
+                out << std::hex << std::setw(2) << std::setfill('0')
+                    << static_cast<int>(code[pc + 1 + i]);
+
+            pc += 1 + push_len;
+        }
+        else
+        {
+            pc += 1;
+        }
+
+        out << "\n";
+    }
+
+    return out.str();
+}
+
+
 static void do_run(std::size_t const run_index, arguments const &args)
 {
     auto const rev = args.revision;
@@ -911,6 +981,12 @@ static void do_run(std::size_t const run_index, arguments const &args)
                         return nonce;
                     });
                 ++total_messages;
+
+                std::cerr << print(tx);
+                if(tx.to){
+                    std::cerr << pretty_print_evm(initial_state_.get_account_code(*tx.to));
+                }
+                
 
                 auto const ec = execute_transaction(
                     i,

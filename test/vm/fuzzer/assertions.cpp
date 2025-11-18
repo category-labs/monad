@@ -83,10 +83,12 @@ namespace monad::vm::fuzzing
         // TODO we don't check for size of both states so the monadstate could potentially contain more?
         for (auto const& [addr, acc] : evmone)
         {
-            // std::cerr << "checking " << evmc::hex(addr) << std::endl;
+            std::cerr << "checking " << evmc::hex(addr) << std::endl;
             auto const macc = monad.read_account(addr);
 
             MONAD_VM_ASSERT(!!macc);
+                            std::cerr << std::format("acc.balance: {} macc.balance: {}\n", hex(acc.balance), hex(macc->balance));
+
             MONAD_VM_ASSERT(macc->balance == acc.balance);
             MONAD_VM_ASSERT(macc->nonce == acc.nonce);
             MONAD_VM_ASSERT(macc->code_hash == evmone::keccak256(acc.code));

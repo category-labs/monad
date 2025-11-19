@@ -238,7 +238,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
     BlockDb block_db(ledger_dir);
     bytes32_t parent_block_id{};
-    while (block_num <= end_block_num && stop == 0) {
+    while (block_num < end_block_num && stop == 0) {
+        ++block_num;
         Block block;
         MONAD_ASSERT_PRINTF(
             block_db.get(block_num, block),
@@ -283,7 +284,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             batch_begin = std::chrono::steady_clock::now();
         }
         parent_block_id = block_id;
-        ++block_num;
     }
     if (batch_num_blocks > 0) {
         log_tps(

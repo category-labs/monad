@@ -289,7 +289,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     uint64_t ntxs = 0;
 
     BlockDb block_db(ledger_dir);
-    bytes32_t parent_block_id{};
+    bytes32_t parent_block_id{finalized_block_num};
     uint64_t block_num = finalized_block_num;
 
     std::optional<ankerl::unordered_dense::segmented_set<Address>>
@@ -297,12 +297,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     std::optional<ankerl::unordered_dense::segmented_set<Address>>
         grandparent_senders_and_authorities;
 
-    if (block_num > 1) {
+    if (block_num > 0) {
         Block parent_block;
         MONAD_ASSERT_PRINTF(
-            block_db.get(block_num - 1, parent_block),
+            block_db.get(block_num, parent_block),
             "Could not query %lu from blockdb for parent",
-            block_num - 1);
+            block_num);
         auto const recovered_senders =
             recover_senders(parent_block.transactions, priority_pool);
         auto const recovered_authorities =
@@ -327,12 +327,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         }
         parent_senders_and_authorities = std::move(parent_set);
 
-        if (block_num > 2) {
+        if (block_num > 1) {
             Block grandparent_block;
             MONAD_ASSERT_PRINTF(
-                block_db.get(block_num - 2, grandparent_block),
+                block_db.get(block_num - 1, grandparent_block),
                 "Could not query %lu from blockdb for grandparent",
-                block_num - 2);
+                block_num - 1);
             auto const grandparent_recovered_senders =
                 recover_senders(grandparent_block.transactions, priority_pool);
             auto const grandparent_recovered_authorities = recover_authorities(
@@ -362,7 +362,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         }
     }
 
-    while (block_num <= end_block_num && stop == 0) {
+    while (block_num < end_block_num && stop == 0) {
+        ++block_num;
         Block block;
         MONAD_ASSERT_PRINTF(
             block_db.get(block_num, block),
@@ -420,7 +421,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         parent_senders_and_authorities = std::move(senders_and_authorities);
 
         parent_block_id = block_id;
-        ++block_num;
     }
     if (batch_num_blocks > 0) {
         log_tps(

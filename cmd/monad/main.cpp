@@ -392,11 +392,11 @@ try {
     signal(SIGTERM, signal_handler);
     stop = 0;
 
-    uint64_t block_num = start_block_num;
+    uint64_t block_num = init_block_num;
     uint64_t const end_block_num =
-        (std::numeric_limits<uint64_t>::max() - block_num + 1) <= nblocks
+        (std::numeric_limits<uint64_t>::max() - block_num) <= nblocks
             ? std::numeric_limits<uint64_t>::max()
-            : block_num + nblocks - 1;
+            : block_num + nblocks;
 
     // If call tracing is enabled, we need to correspondingly disable native
     // compilation: the compiler does not expose the full fidelity of error exit

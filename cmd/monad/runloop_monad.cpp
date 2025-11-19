@@ -531,7 +531,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
         });
 
     uint64_t total_gas = 0;
-    uint64_t ntxs = 0;
+    uint64_t total_ntxs = 0;
 
     struct ToExecute
     {
@@ -624,7 +624,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              chain_id,
              start_block_num,
              enable_tracing,
-             &block_cache](
+             &block_cache,
+             &total_ntxs,
+             &total_gas](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
             auto const block_time_start = std::chrono::steady_clock::now();
@@ -694,6 +696,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 exec_output.eth_header.gas_used,
                 block_time_start);
 
+            total_ntxs += ntxns;
+            total_gas += exec_output.eth_header.gas_used;
+
             return outcome::success();
         };
 
@@ -733,7 +738,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
         }
     }
 
-    return {ntxs, total_gas};
+    return {total_ntxs, total_gas};
 }
 
 MONAD_NAMESPACE_END

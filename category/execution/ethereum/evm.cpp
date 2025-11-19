@@ -51,13 +51,6 @@ bool sender_has_balance(State &state, evmc_message const &msg) noexcept
     return state.record_balance_constraint_for_debit(msg.sender, value);
 }
 
-void transfer_balances(State &state, evmc_message const &msg, Address const &to)
-{
-    uint256_t const value = intx::be::load<uint256_t>(msg.value);
-    state.subtract_from_balance(msg.sender, value);
-    state.add_to_balance(to, value);
-}
-
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
@@ -111,7 +104,8 @@ evmc::Result deploy_contract_code(
 EXPLICIT_TRAITS(deploy_contract_code);
 
 template <Traits traits>
-std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
+std::optional<evmc::Result>
+pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
 {
     state.push();
 
@@ -123,7 +117,7 @@ std::optional<evmc::Result> pre_call(evmc_message const &msg, State &state)
             return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         }
         else if (!static_call) {
-            transfer_balances(state, msg, msg.recipient);
+            host.transfer_balances(msg, msg.recipient);
         }
     }
 
@@ -234,7 +228,7 @@ create(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
     constexpr auto starting_nonce =
         traits::evm_rev() >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
     state.set_nonce(contract_address, starting_nonce);
-    transfer_balances(state, msg, contract_address);
+    host->transfer_balances(msg, contract_address);
 
     evmc_message const m_call{
         .kind = EVMC_CALL,
@@ -307,7 +301,7 @@ call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
-    if (auto result = pre_call<traits>(msg, state); result.has_value()) {
+    if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
         call_tracer.on_exit(result.value());
         return std::move(result.value());
     }

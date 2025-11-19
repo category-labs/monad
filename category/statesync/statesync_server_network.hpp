@@ -21,7 +21,10 @@
 
 #include <quill/Quill.h>
 
+#include <array>
 #include <chrono>
+#include <poll.h>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <thread>
@@ -30,6 +33,7 @@
 struct monad_statesync_server_network
 {
     int fd;
+    int shutdown_eventfd;
     monad::byte_string obuf;
     std::string path;
 
@@ -42,19 +46,50 @@ struct monad_statesync_server_network
         memset(&addr, 0, sizeof(addr));
         addr.sun_family = AF_UNIX;
         strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+
         while (::connect(fd, (sockaddr *)&addr, sizeof(addr)) != 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            // Check if shutdown was requested before sleeping
+            std::array<pollfd, 1> pfds{};
+            pfds[0].fd = shutdown_eventfd;
+            pfds[0].events = POLLIN;
+
+            // Poll with short timeout to check for shutdown signal
+            int const poll_ret = poll(pfds.data(), pfds.size(), 1);
+
+            if (poll_ret > 0 && (pfds[0].revents & POLLIN)) {
+                // Shutdown requested, abort connection attempt
+                LOG_WARNING("Connect aborted due to shutdown request");
+                return;
+            }
+        }
+    }
+
+    void signal_shutdown()
+    {
+        uint64_t const val = 1;
+        ssize_t const res = write(shutdown_eventfd, &val, sizeof(val));
+        if (res != sizeof(val)) {
+            LOG_WARNING(
+                "Failed to signal shutdown eventfd: {}", strerror(errno));
         }
     }
 
     monad_statesync_server_network(char const *const path)
         : path{path}
     {
+        shutdown_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+        MONAD_ASSERT_PRINTF(
+            shutdown_eventfd >= 0,
+            "failed to create eventfd: %s",
+            strerror(errno));
         connect();
     }
 
     ~monad_statesync_server_network()
     {
+        if (shutdown_eventfd >= 0) {
+            close(shutdown_eventfd);
+        }
         if (fd >= 0) {
             close(fd);
         }
@@ -92,33 +127,76 @@ namespace
     }
 }
 
-ssize_t statesync_server_recv(
+inline ssize_t statesync_server_recv(
     monad_statesync_server_network *const net, unsigned char *buf, size_t n)
 {
-    while (true) {
-        ssize_t ret = recv(net->fd, buf, n, MSG_DONTWAIT);
-        if (ret == 0 ||
-            (ret < 0 && (errno == ECONNRESET || errno == ENOTCONN))) {
-            LOG_WARNING("connection closed, reconnecting");
+    size_t total_received = 0;
+
+    while (total_received < n) {
+        std::array<pollfd, 2> pfds{};
+        pfds[0].fd = net->fd;
+        pfds[0].events = POLLIN;
+
+        pfds[1].fd = net->shutdown_eventfd;
+        pfds[1].events = POLLIN;
+
+        int const poll_ret = poll(pfds.data(), pfds.size(), -1);
+
+        if (poll_ret < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            LOG_ERROR("poll error: {}", strerror(errno));
+            return -1;
+        }
+
+        if (pfds[1].revents & POLLIN) {
+            return -1;
+        }
+
+        if (pfds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            LOG_WARNING("socket error event, reconnecting");
             if (close(net->fd) < 0) {
                 LOG_ERROR("failed to close socket: {}", strerror(errno));
             }
             net->fd = -1;
             net->connect();
-        }
-        else if (
-            ret < 0 &&
-            (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
-            LOG_ERROR("recv error: {}", strerror(errno));
             return -1;
         }
-        else {
-            return ret;
+
+        if (pfds[0].revents & POLLIN) {
+            ssize_t const ret = recv(
+                net->fd,
+                buf + total_received,
+                n - total_received,
+                MSG_DONTWAIT);
+
+            if (ret == 0 ||
+                (ret < 0 && (errno == ECONNRESET || errno == ENOTCONN))) {
+                LOG_WARNING("connection closed, reconnecting");
+                if (close(net->fd) < 0) {
+                    LOG_ERROR("failed to close socket: {}", strerror(errno));
+                }
+                net->fd = -1;
+                net->connect();
+                return -1;
+            }
+            else if (
+                ret < 0 &&
+                (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+                LOG_ERROR("recv error: {}", strerror(errno));
+                return -1;
+            }
+            else if (ret > 0) {
+                total_received += static_cast<size_t>(ret);
+            }
         }
     }
+
+    return static_cast<ssize_t>(n);
 }
 
-void statesync_server_send_upsert(
+inline void statesync_server_send_upsert(
     monad_statesync_server_network *const net, monad_sync_type const type,
     unsigned char const *const v1, uint64_t const size1,
     unsigned char const *const v2, uint64_t const size2)
@@ -152,15 +230,15 @@ void statesync_server_send_upsert(
     LOG_DEBUG(
         "sending upsert type={} {} ns={}",
         std::to_underlying(type),
-        fmt::format(
+        fmtquill::format(
             "v1=0x{:02x} v2=0x{:02x}",
-            fmt::join(std::as_bytes(std::span(v1, size1)), ""),
-            fmt::join(std::as_bytes(std::span(v2, size2)), "")),
+            fmtquill::join(std::as_bytes(std::span(v1, size1)), ""),
+            fmtquill::join(std::as_bytes(std::span(v2, size2)), "")),
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - start));
 }
 
-void statesync_server_send_done(
+inline void statesync_server_send_done(
     monad_statesync_server_network *const net, monad_sync_done const msg)
 {
     [[maybe_unused]] auto const start = std::chrono::steady_clock::now();

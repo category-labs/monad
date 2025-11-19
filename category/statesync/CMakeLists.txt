@@ -34,7 +34,8 @@ add_library(
   "statesync_server.h"
   "statesync_server_context.cpp"
   "statesync_server_context.hpp"
-  "statesync_server_context.hpp"
+  "statesync_thread.cpp"
+  "statesync_thread.hpp"
   "statesync_version.cpp"
   "statesync_version.h")
 

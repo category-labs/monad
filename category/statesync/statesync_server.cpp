@@ -517,15 +517,10 @@ void monad_statesync_server_run_once(struct monad_statesync_server *const sync)
         return;
     }
     MONAD_ASSERT(buf[0] == SYNC_TYPE_REQUEST);
-    unsigned char *ptr = buf;
-    uint64_t n = sizeof(monad_sync_request);
-    while (n != 0) {
-        auto const res = sync->statesync_server_recv(sync->net, ptr, n);
-        if (res == -1) {
-            continue;
-        }
-        ptr += res;
-        n -= static_cast<size_t>(res);
+    if (sync->statesync_server_recv(
+            sync->net, buf, sizeof(monad_sync_request)) !=
+        static_cast<ssize_t>(sizeof(monad_sync_request))) {
+        return;
     }
     auto const &rq = unaligned_load<monad_sync_request>(buf);
     monad_statesync_server_handle_request(sync, rq);

@@ -44,9 +44,8 @@
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
-#include <category/statesync/statesync_server.h>
-#include <category/statesync/statesync_server_context.hpp>
 #include <category/statesync/statesync_server_network.hpp>
+#include <category/statesync/statesync_thread.hpp>
 #include <category/vm/vm.hpp>
 
 #include <CLI/CLI.hpp>
@@ -336,29 +335,13 @@ try {
         return triedb.get_block_number();
     }();
 
-    std::unique_ptr<monad_statesync_server_context> ctx;
-    std::jthread sync_thread;
-    monad_statesync_server *sync = nullptr;
+    std::unique_ptr<monad::StateSyncServer> sync_server;
     if (!statesync.empty()) {
-        ctx = std::make_unique<monad_statesync_server_context>(triedb);
-        sync = monad_statesync_server_create(
-            ctx.get(),
-            &net.value(),
-            &statesync_server_recv,
-            &statesync_server_send_upsert,
-            &statesync_server_send_done);
-        sync_thread = std::jthread([&](std::stop_token const token) {
-            pthread_setname_np(pthread_self(), "statesync thread");
-            mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
-                .sq_thread_cpu = ro_sq_thread_cpu,
-                .dbname_paths = dbname_paths}};
-            mpt::Db ro{io_ctx};
-            ctx->ro = &ro;
-            while (!token.stop_requested()) {
-                monad_statesync_server_run_once(sync);
-            }
-            ctx->ro = nullptr;
-        });
+        sync_server = monad::make_statesync_server(monad::StateSyncServerConfig{
+            .triedb = &triedb,
+            .network = &net.value(),
+            .ro_sq_thread_cpu = ro_sq_thread_cpu,
+            .dbname_paths = dbname_paths});
     }
 
     LOG_INFO(
@@ -420,7 +403,8 @@ try {
     // codes that are required to serve RPC responses that include call traces.
     vm::VM vm{!trace_calls};
 
-    DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
+    DbCache db_cache =
+        sync_server ? DbCache{*sync_server->ctx} : DbCache{triedb};
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -498,11 +482,7 @@ try {
             vm.print_total_counts());
     }
 
-    if (sync != nullptr) {
-        sync_thread.request_stop();
-        sync_thread.join();
-        monad_statesync_server_destroy(sync);
-    }
+    sync_server.reset();
 
     if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", block_num);

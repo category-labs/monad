@@ -443,3 +443,92 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
         EXPECT_TRUE(frame.logs.has_value());
     }
 }
+
+TYPED_TEST(TraitsTest, simulate_v1_trace)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max()}}}},
+            {ADDR_B,
+             StateDelta{.account = {std::nullopt, Account{.balance = 0}}}}},
+        Code{},
+        BlockHeader{});
+
+    BlockState bs{tdb, vm};
+    Incarnation const incarnation{0, 0};
+    State s{bs, incarnation};
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 1'000'000,
+        .value = 1'000'000,
+        .to = ADDR_B,
+    };
+
+    auto const &sender = ADDR_A;
+    auto const &beneficiary = ADDR_A;
+
+    evmc_tx_context const tx_context{};
+    BlockHashBufferFinalized buffer{};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+    EvmcHost<typename TestFixture::Trait> host{
+        call_tracer,
+        tx_context,
+        buffer,
+        s,
+        [](auto &&...) { return false; },
+        true, // enable simulate_v1 tracing
+    };
+
+    auto const result =
+        ExecuteTransactionNoValidation<typename TestFixture::Trait>(
+            EthereumMainnet{},
+            tx,
+            sender,
+            authorities_empty,
+            BlockHeader{.beneficiary = beneficiary},
+            0)(s, host);
+
+    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_EQ(call_frames.size(), 1);
+
+    CallFrame const expected{
+        .type = CallType::CALL,
+        .flags = 0,
+        .from = sender,
+        .to = ADDR_B,
+        .value = 1'000'000,
+        .gas = 1'000'000,
+        .gas_used = 21'000,
+        .status = EVMC_SUCCESS,
+        .depth = 0,
+        .logs = std::vector<CallFrame::Log>{{
+            {
+                .data = byte_string{intx::be::store<bytes32_t, uint256_t>(
+                    1'000'000)},
+                .topics =
+                    std::vector{
+                        0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                        0x0000000000000000000000000000000000000000000000000000000000000100_bytes32,
+                        0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
+                    },
+                .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+            },
+            0,
+        }},
+    };
+
+    EXPECT_EQ(call_frames[0], expected);
+}

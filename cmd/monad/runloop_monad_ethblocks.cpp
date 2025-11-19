@@ -298,74 +298,68 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     std::optional<ankerl::unordered_dense::segmented_set<Address>>
         grandparent_senders_and_authorities;
 
-    if (block_num > 0) {
-        parent_block_id = bytes32_t{block_num - 1};
-        if (block_num > 1) {
-            Block parent_block;
-            MONAD_ASSERT_PRINTF(
-                block_db.get(block_num - 1, parent_block),
-                "Could not query %lu from blockdb for parent",
-                block_num - 1);
-            auto const recovered_senders =
-                recover_senders(parent_block.transactions, priority_pool);
-            auto const recovered_authorities =
-                recover_authorities(parent_block.transactions, priority_pool);
-            std::vector<Address> senders(parent_block.transactions.size());
-            for (unsigned j = 0; j < recovered_senders.size(); ++j) {
-                if (recovered_senders[j].has_value()) {
-                    senders[j] = recovered_senders[j].value();
+    if (block_num > 1) {
+        Block parent_block;
+        MONAD_ASSERT_PRINTF(
+            block_db.get(block_num - 1, parent_block),
+            "Could not query %lu from blockdb for parent",
+            block_num - 1);
+        auto const recovered_senders =
+            recover_senders(parent_block.transactions, priority_pool);
+        auto const recovered_authorities =
+            recover_authorities(parent_block.transactions, priority_pool);
+        std::vector<Address> senders(parent_block.transactions.size());
+        for (unsigned j = 0; j < recovered_senders.size(); ++j) {
+            if (recovered_senders[j].has_value()) {
+                senders[j] = recovered_senders[j].value();
+            }
+        }
+        ankerl::unordered_dense::segmented_set<Address> parent_set;
+        for (Address const &sender : senders) {
+            parent_set.insert(sender);
+        }
+        for (std::vector<std::optional<Address>> const &authorities :
+             recovered_authorities) {
+            for (std::optional<Address> const &authority : authorities) {
+                if (authority.has_value()) {
+                    parent_set.insert(authority.value());
                 }
             }
-            ankerl::unordered_dense::segmented_set<Address> parent_set;
-            for (Address const &sender : senders) {
-                parent_set.insert(sender);
+        }
+        parent_senders_and_authorities = std::move(parent_set);
+
+        if (block_num > 2) {
+            Block grandparent_block;
+            MONAD_ASSERT_PRINTF(
+                block_db.get(block_num - 2, grandparent_block),
+                "Could not query %lu from blockdb for grandparent",
+                block_num - 2);
+            auto const grandparent_recovered_senders =
+                recover_senders(grandparent_block.transactions, priority_pool);
+            auto const grandparent_recovered_authorities = recover_authorities(
+                grandparent_block.transactions, priority_pool);
+            std::vector<Address> grandparent_senders(
+                grandparent_block.transactions.size());
+            for (unsigned j = 0; j < grandparent_recovered_senders.size();
+                 ++j) {
+                if (grandparent_recovered_senders[j].has_value()) {
+                    grandparent_senders[j] =
+                        grandparent_recovered_senders[j].value();
+                }
+            }
+            ankerl::unordered_dense::segmented_set<Address> grandparent_set;
+            for (Address const &sender : grandparent_senders) {
+                grandparent_set.insert(sender);
             }
             for (std::vector<std::optional<Address>> const &authorities :
-                 recovered_authorities) {
+                 grandparent_recovered_authorities) {
                 for (std::optional<Address> const &authority : authorities) {
                     if (authority.has_value()) {
-                        parent_set.insert(authority.value());
+                        grandparent_set.insert(authority.value());
                     }
                 }
             }
-            parent_senders_and_authorities = std::move(parent_set);
-
-            if (block_num > 2) {
-                Block grandparent_block;
-                MONAD_ASSERT_PRINTF(
-                    block_db.get(block_num - 2, grandparent_block),
-                    "Could not query %lu from blockdb for grandparent",
-                    block_num - 2);
-                auto const grandparent_recovered_senders = recover_senders(
-                    grandparent_block.transactions, priority_pool);
-                auto const grandparent_recovered_authorities =
-                    recover_authorities(
-                        grandparent_block.transactions, priority_pool);
-                std::vector<Address> grandparent_senders(
-                    grandparent_block.transactions.size());
-                for (unsigned j = 0; j < grandparent_recovered_senders.size();
-                     ++j) {
-                    if (grandparent_recovered_senders[j].has_value()) {
-                        grandparent_senders[j] =
-                            grandparent_recovered_senders[j].value();
-                    }
-                }
-                ankerl::unordered_dense::segmented_set<Address> grandparent_set;
-                for (Address const &sender : grandparent_senders) {
-                    grandparent_set.insert(sender);
-                }
-                for (std::vector<std::optional<Address>> const &authorities :
-                     grandparent_recovered_authorities) {
-                    for (std::optional<Address> const &authority :
-                         authorities) {
-                        if (authority.has_value()) {
-                            grandparent_set.insert(authority.value());
-                        }
-                    }
-                }
-                grandparent_senders_and_authorities =
-                    std::move(grandparent_set);
-            }
+            grandparent_senders_and_authorities = std::move(grandparent_set);
         }
     }
 

@@ -1223,9 +1223,6 @@ void UpdateAuxImpl::erase_versions_up_to_and_including(uint64_t const version)
 
 void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
 {
-    constexpr double upper_bound = 0.8;
-    constexpr double lower_bound = 0.6;
-
     // Shorten history length when disk usage is high
     auto const max_version = db_history_max_version();
     if (max_version == INVALID_BLOCK_NUM) {
@@ -1234,9 +1231,9 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     auto const history_length_before =
         max_version - db_history_min_valid_version() + 1;
     auto const current_disk_usage = disk_usage();
-    if (current_disk_usage > upper_bound &&
+    if (current_disk_usage > disk_usage_upper_bound &&
         history_length_before > MIN_HISTORY_LENGTH) {
-        while (disk_usage() > upper_bound &&
+        while (disk_usage() > disk_usage_upper_bound &&
                version_history_length() > MIN_HISTORY_LENGTH) {
             auto const version_to_erase = db_history_min_valid_version();
             MONAD_ASSERT(
@@ -1247,7 +1244,7 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
                 std::max(max_version - version_to_erase, MIN_HISTORY_LENGTH));
         }
         MONAD_ASSERT(
-            disk_usage() <= upper_bound ||
+            disk_usage() <= disk_usage_upper_bound ||
             version_history_length() == MIN_HISTORY_LENGTH);
         LOG_INFO_CFORMAT(
             "Adjust db history length down from %lu to %lu",
@@ -1256,7 +1253,7 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     }
     // Raise history length limit when disk usage falls low
     else if (auto const offsets = root_offsets();
-             current_disk_usage < lower_bound &&
+             current_disk_usage < disk_usage_lower_bound &&
              version_history_length() < offsets.capacity()) {
         update_history_length_metadata(offsets.capacity());
         LOG_INFO_CFORMAT(
@@ -1358,23 +1355,45 @@ void UpdateAuxImpl::advance_compact_offsets()
     }
     constexpr double usage_limit_start_compact_slow = 0.6;
     constexpr double slow_usage_limit_start_compact_slow = 0.2;
-    auto const slow_list_usage =
+    double const slow_disk_usage =
         num_chunks(chunk_list::slow) / (double)io->chunk_count();
-    // we won't start compacting slow list when slow list usage is low or total
-    // usage is below 60%
-    if (disk_usage() > usage_limit_start_compact_slow &&
-        slow_list_usage > slow_usage_limit_start_compact_slow) {
-        // Compact slow ring: the offset is based on slow list garbage
-        // collection ratio of last block
-        compact_offset_range_slow_.set_value(
-            (stats.compacted_bytes_in_slow != 0 &&
-             compact_offset_range_slow_ != 0)
-                ? std::min(
-                      (uint32_t)last_block_disk_growth_slow_ + 1,
-                      (uint32_t)std::round(
-                          double(compact_offset_range_slow_ << 16) /
-                          stats.compacted_bytes_in_slow))
-                : 1);
+    double const total_disk_usage = fast_disk_usage + slow_disk_usage;
+    // Don't compact the slow list if its usage is low or total usage is below
+    // 60%
+    if (total_disk_usage > usage_limit_start_compact_slow &&
+        slow_disk_usage > slow_usage_limit_start_compact_slow) {
+        if (total_disk_usage > disk_usage_upper_bound) {
+            // when total disk usage is too high, we speed up slow list
+            // compaction to the same as fast list compaction range
+            compact_offset_range_slow_.set_value(compact_offset_range_fast_);
+        }
+        else {
+            // Compact slow ring: the offset is based on slow list garbage
+            // collection ratio of last block. We use the ratio of compacted
+            // bytes to determine how aggressively to advance the compaction
+            // offset.
+            bool const has_valid_compaction_data =
+                (stats.compacted_bytes_in_slow != 0 &&
+                 compact_offset_range_slow_ != 0);
+
+            if (has_valid_compaction_data) {
+                // Calculate new range based on garbage collection efficiency
+                // Higher compacted_bytes_in_slow means lower GC efficiency,
+                // so we need to advance more slowly
+                uint32_t const gc_efficiency = static_cast<uint32_t>(std::round(
+                    double(compact_offset_range_slow_ << 16) /
+                    stats.compacted_bytes_in_slow));
+                // Cap at last block's growth + 1 to avoid advancing too fast
+                uint32_t const new_range = std::min(
+                    static_cast<uint32_t>(last_block_disk_growth_slow_ + 1),
+                    gc_efficiency);
+                compact_offset_range_slow_.set_value(new_range);
+            }
+            else {
+                // No valid data, use minimum progress
+                compact_offset_range_slow_.set_value(1);
+            }
+        }
         compact_offset_slow += compact_offset_range_slow_;
     }
     else {

@@ -182,6 +182,9 @@ replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
 // \class Auxiliaries for triedb update
 class UpdateAuxImpl
 {
+    static constexpr double disk_usage_upper_bound = 0.8;
+    static constexpr double disk_usage_lower_bound = 0.6;
+
     uint32_t initial_insertion_count_on_pool_creation_{0};
     bool enable_dynamic_history_length_{true};
 

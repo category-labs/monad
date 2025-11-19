@@ -45,9 +45,6 @@ struct Chain
 
     virtual Result<void> static_validate_header(BlockHeader const &) const;
 
-    virtual Result<void> validate_output_header(
-        BlockHeader const &input, BlockHeader const &output) const = 0;
-
     virtual GenesisState get_genesis_state() const = 0;
 
     virtual Result<void> validate_transaction(

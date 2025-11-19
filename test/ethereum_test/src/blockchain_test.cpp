@@ -340,7 +340,7 @@ Result<BlockExecOutput> BlockchainTest::execute(
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
 
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, exec_output.eth_header));
+        validate_output_header(block.header, exec_output.eth_header));
 
     return exec_output;
 }

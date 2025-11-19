@@ -46,9 +46,6 @@ struct EthereumMainnet : Chain
     virtual Result<void>
     static_validate_header(BlockHeader const &) const override;
 
-    virtual Result<void> validate_output_header(
-        BlockHeader const &input, BlockHeader const &output) const override;
-
     virtual GenesisState get_genesis_state() const override;
 
     virtual Result<void> validate_transaction(

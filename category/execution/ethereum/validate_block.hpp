@@ -73,6 +73,9 @@ Result<void> static_validate_block(Block const &);
 
 Result<void> static_validate_block(evmc_revision, Block const &);
 
+Result<void>
+validate_output_header(BlockHeader const &input, BlockHeader const &output);
+
 MONAD_NAMESPACE_END
 
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN

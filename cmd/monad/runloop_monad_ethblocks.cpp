@@ -222,8 +222,7 @@ Result<void> process_monad_block(
     }
     // Post-commit validation of header, with Merkle root fields filled in
     auto const output_header = db.read_eth_header();
-    BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
+    BOOST_OUTCOME_TRY(validate_output_header(block.header, output_header));
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer

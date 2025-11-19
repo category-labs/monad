@@ -147,6 +147,26 @@ bool validate_delayed_execution_results(
     return true;
 }
 
+Result<void> validate_live_execution_outputs(
+    BlockHeader const &input, BlockHeader const &output)
+{
+    if (MONAD_UNLIKELY(input.ommers_hash != output.ommers_hash)) {
+        return BlockError::WrongOmmersHash;
+    }
+    if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root)) {
+        return BlockError::WrongMerkleRoot;
+    }
+    if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
+        return BlockError::WrongMerkleRoot;
+    }
+
+    // YP eq. 56
+    if (MONAD_UNLIKELY(output.gas_used > output.gas_limit)) {
+        return BlockError::GasAboveLimit;
+    }
+    return outcome::success();
+}
+
 template <Traits traits, class MonadConsensusBlockHeader>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
@@ -315,7 +335,7 @@ Result<BlockExecOutput> propose_block(
     // Post-commit validation of header, with Merkle root fields filled in
     exec_output.eth_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, exec_output.eth_header));
+        validate_live_execution_outputs(block.header, exec_output.eth_header));
 
     // Commit prologue: computation of the Ethereum block hash to append to
     // the circular hash buffer

@@ -173,7 +173,6 @@ namespace monad::vm::llvm
         void unreachable()
         {
             ir.CreateUnreachable();
-            ret_void();
         };
 
         void ret(Value *r)
@@ -305,6 +304,12 @@ namespace monad::vm::llvm
             return call(bswap_f, {val}, "bswap");
         };
 
+        Value *memcpy_(Value *dst, Value *src, Value *sz)
+        {
+            return ir.CreateMemCpy(dst, Align(1), src, Align(1), sz, false);
+            // only need byte alignment
+        };
+
         Value *addr_to_word(Value *val)
         {
             return shr(bswap(cast_word(val)), lit_word(96));
@@ -334,14 +339,14 @@ namespace monad::vm::llvm
             return ir.CreateSwitch(v, dflt, n);
         };
 
-        Value *cast_word(Value *a)
-        {
-            return ir.CreateIntCast(a, int_ty(256), false, "cast_word");
-        };
-
         Value *cast_bool(Value *a)
         {
             return ir.CreateIntCast(a, int_ty(1), false, "cast_bool");
+        };
+
+        Value *trunc_8(Value *a)
+        {
+            return ir.CreateTrunc(a, int_ty(8), "trunc_8");
         };
 
         Value *cast_32(Value *a)
@@ -352,6 +357,11 @@ namespace monad::vm::llvm
         Value *cast_64(Value *a)
         {
             return ir.CreateIntCast(a, int_ty(64), false, "cast_64");
+        };
+
+        Value *cast_word(Value *a)
+        {
+            return ir.CreateIntCast(a, int_ty(256), false, "cast_word");
         };
 
         Value *not_(Value *a)
@@ -517,6 +527,11 @@ namespace monad::vm::llvm
             return ConstantInt::get(int_ty(32), x);
         };
 
+        Constant *u8(int x)
+        {
+            return ConstantInt::get(int_ty(8), static_cast<uint8_t>(x));
+        };
+
         Constant *i32(int32_t x)
         {
             return u32(static_cast<uint32_t>(x));
@@ -536,6 +551,19 @@ namespace monad::vm::llvm
                 x[3],
             };
             return ConstantInt::get(context, APInt(256, words));
+        };
+
+        Value *lit_string(std::string const &s)
+        {
+            Constant *c = ConstantDataArray::getString(context, s);
+            Value *g = new GlobalVariable(
+                *llvm_module,
+                c->getType(),
+                true,
+                GlobalValue::PrivateLinkage,
+                c,
+                "string");
+            return g;
         };
 
         Function *declare_function(
@@ -568,6 +596,8 @@ namespace monad::vm::llvm
             std::string_view nm, Type *ty, std::vector<Type *> const &tys)
         {
             Function *f = declare_function(nm, ty, tys, false);
+            f->addFnAttr(Attribute::AlwaysInline);
+
             auto const params = function_definition_params(f, tys);
 
             return std::make_tuple(f, params);

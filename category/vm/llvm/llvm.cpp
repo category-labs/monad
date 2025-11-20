@@ -19,24 +19,21 @@
 #include <category/vm/llvm/llvm_state.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
+#include <category/vm/utils/evmc_utils.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <vector>
-
-#ifdef MONAD_VM_LLVM_DEBUG
-    #include <category/vm/utils/evmc_utils.hpp>
-    #include <cstdlib>
-    #include <format>
-    #include <string>
-#endif
 
 namespace monad::vm::llvm
 {
@@ -95,16 +92,12 @@ namespace monad::vm::llvm
             return item->second;
         }
 
-#ifdef MONAD_VM_LLVM_DEBUG
         auto const *isq = std::getenv("MONAD_VM_LLVM_DEBUG");
         auto code_hash_str = monad::vm::utils::hex_string(code_hash);
         std::string const hash_str =
             std::format(".{}.{}", (int)rev, code_hash_str);
         std::string const dbg_nm = isq ? "t" + hash_str : "";
         auto ptr = monad::vm::llvm::compile(rev, {code, code_size}, dbg_nm);
-#else
-        auto ptr = monad::vm::llvm::compile(rev, {code, code_size});
-#endif
 
         cached_llvm_code_[rev].insert({code_hash, ptr});
 

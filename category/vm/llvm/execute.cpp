@@ -78,6 +78,22 @@ namespace monad::vm::llvm
     {
         auto ptr = make_shared_llvm_state();
         LLVMState &llvm = *ptr;
+
+        llvm.insert_symbol(
+            "ffi_context_expand_memory", (void *)context_expand_memory);
+
+        llvm.insert_symbol(
+            "ffi_llvm_runtime_debug", (void *)llvm_runtime_debug);
+        llvm.insert_symbol(
+            "ffi_llvm_runtime_debug_pointer",
+            (void *)llvm_runtime_debug_pointer);
+        llvm.insert_symbol(
+            "ffi_llvm_runtime_debug_string", (void *)llvm_runtime_debug_string);
+        llvm.insert_symbol(
+            "ffi_llvm_runtime_debug_word", (void *)llvm_runtime_debug_word);
+        llvm.insert_symbol(
+            "ffi_llvm_runtime_debug_i32", (void *)llvm_runtime_debug_i32);
+
         llvm.insert_symbol("ffi_SSTORE", (void *)sstore<traits>);
         llvm.insert_symbol("ffi_CREATE", (void *)create<traits>);
         llvm.insert_symbol("ffi_CREATE2", (void *)create2<traits>);
@@ -92,15 +108,11 @@ namespace monad::vm::llvm
         llvm.insert_symbol("ffi_SLOAD", (void *)sload<traits>);
         llvm.insert_symbol("ffi_BLOBHASH", (void *)blobhash);
         llvm.insert_symbol("ffi_BLOCKHASH", (void *)blockhash);
-        llvm.insert_symbol("ffi_CALLDATALOAD", (void *)calldataload);
-        llvm.insert_symbol("ffi_MLOAD", (void *)mload);
         llvm.insert_symbol("ffi_TLOAD", (void *)tload);
         llvm.insert_symbol("ffi_EXP", (void *)exp<traits>);
 
         llvm.insert_symbol("ffi_KECCAK256", (void *)sha3);
 
-        llvm.insert_symbol("ffi_MSTORE", (void *)mstore);
-        llvm.insert_symbol("ffi_MSTORE8", (void *)mstore8);
         llvm.insert_symbol("ffi_TSTORE", (void *)tstore);
         llvm.insert_symbol("ffi_CALLDATACOPY", (void *)calldatacopy);
         llvm.insert_symbol("ffi_CODECOPY", (void *)codecopy);
@@ -147,7 +159,6 @@ namespace monad::vm::llvm
         Emitter<traits> emitter{llvm, dep_ir};
 
         emitter.emit_contract();
-
         if (!dbg_nm.empty()) {
             llvm.dump_module(std::format("{}.ll", dbg_nm));
         }

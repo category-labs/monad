@@ -444,7 +444,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     }
 }
 
-TYPED_TEST(TraitsTest, simulate_v1_trace)
+TYPED_TEST(TraitsTest, simulate_v1_trace_native_transfer)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -531,4 +531,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     };
 
     EXPECT_EQ(call_frames[0], expected);
+}
+
+TYPED_TEST(TraitsTest, simulate_v1_trace_call)
+{
+    static constexpr auto recipient =
+        0x00000000000000000000000000000000cccccccc_address;
 }

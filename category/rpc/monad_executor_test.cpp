@@ -3704,3 +3704,118 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
     monad_executor_destroy(executor);
     monad_state_override_destroy(state_override);
 }
+
+// Check that gas < reserve assertion in reserve balance implementation doesn't
+// crash the RPC process
+TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto sender =
+        0x0000000000000000000000000000000011111111_address;
+
+    static constexpr auto contract =
+        0x0000000000000000000000000000000022222222_address;
+
+    static constexpr auto recipient =
+        0x0000000000000000000000000000000044444444_address;
+
+    // No-op delegation target
+    auto const contract_code = 0x00_bytes;
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = monad::vm::make_shared_intercode(contract_code);
+
+    // Delegate to contract
+    auto const delegated_eoa_code =
+        0xef01000000000000000000000000000000000022222222_bytes;
+    auto const delegated_eoa_code_hash =
+        to_bytes(keccak256(delegated_eoa_code));
+    auto const delegated_eoa_icode =
+        monad::vm::make_shared_intercode(delegated_eoa_code);
+
+    EXPECT_TRUE(vm::evm::is_delegated(delegated_eoa_code));
+
+    BlockHeader const header{
+        .number = 256,
+        .base_fee_per_gas = 100'000'000'000,
+    };
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{1'000'000'000'000'000'000} * 12,
+                          .code_hash = delegated_eoa_code_hash,
+                          .nonce = 0}}}},
+            {contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = contract_code_hash,
+                          .nonce = 0}}}},
+            {recipient,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = NULL_HASH, .nonce = 0}}}},
+        },
+        Code{
+            {delegated_eoa_code_hash, delegated_eoa_icode},
+            {contract_code_hash, contract_icode},
+        },
+        header);
+
+    Transaction const tx{
+        .max_fee_per_gas = 100'000'000'000'001,
+        .gas_limit = 100'000u,
+        .to = recipient,
+    };
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        NOOP_TRACER,
+        true);
+    f.get();
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_EQ(
+        std::string_view{ctx.result->message},
+        "gas fee greater than reserve for non-dipping transaction");
+
+    monad_executor_destroy(executor);
+    monad_state_override_destroy(state_override);
+}

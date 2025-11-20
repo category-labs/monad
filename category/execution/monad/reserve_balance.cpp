@@ -15,6 +15,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -93,7 +94,9 @@ bool dipped_into_reserve(
             if (addr == sender) {
                 if (!can_sender_dip_into_reserve(
                         sender, i, effective_is_delegated, ctx)) {
-                    MONAD_ASSERT(
+                    // Safety: this assertion is recoverable because it can be
+                    // triggered via RPC parameter setting.
+                    MONAD_ASSERT_THROW(
                         violation_threshold.has_value(),
                         "gas fee greater than reserve for non-dipping "
                         "transaction");
@@ -102,6 +105,10 @@ bool dipped_into_reserve(
                 // Skip if allowed to dip into reserve
             }
             else {
+                // Safety: this assertion should not be a recoverable one, as it
+                // indicates a logic error in the surrounding code: the
+                // violation threshold can only be nullopt when addr == sender,
+                // which is not the case in this branch.
                 MONAD_ASSERT(violation_threshold.has_value());
                 return true;
             }

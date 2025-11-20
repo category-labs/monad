@@ -108,11 +108,6 @@ State::Map<Address, OriginalAccountState> const &State::original() const
     return original_;
 }
 
-State::Map<Address, OriginalAccountState> &State::original()
-{
-    return original_;
-}
-
 State::Map<Address, VersionStack<AccountState>> const &State::current() const
 {
     return current_;
@@ -622,9 +617,11 @@ void State::set_to_state_incarnation(Address const &address)
 // if original and current can be adjusted to satisfy min balance, adjust
 // both values for merge
 bool State::try_fix_account_mismatch(
-    Address const &address, OriginalAccountState &original_state,
-    std::optional<Account> const &actual)
+    Address const &address, std::optional<Account> const &actual)
 {
+    auto const original_it = original_.find(address);
+    MONAD_ASSERT(original_it != original_.end());
+    OriginalAccountState &original_state = original_it->second;
     auto &original = original_state.account_;
     // verify original used and original found are otherwise the same
     if (is_dead(original)) {
@@ -655,10 +652,10 @@ bool State::try_fix_account_mismatch(
         return false;
     }
     // adjust balances
-    auto it = current_.find(address);
-    if (it != current_.end()) {
-        MONAD_ASSERT(it->second.size() == 1);
-        auto &recent_state = it->second.recent();
+    auto const current_it = current_.find(address);
+    if (current_it != current_.end()) {
+        MONAD_ASSERT(current_it->second.size() == 1);
+        auto &recent_state = current_it->second.recent();
         auto &recent = recent_state.account_;
         if (!recent) {
             return false;

@@ -89,8 +89,6 @@ public:
 
     Map<Address, OriginalAccountState> const &original() const;
 
-    Map<Address, OriginalAccountState> &original();
-
     Map<Address, VersionStack<AccountState>> const &current() const;
 
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
@@ -208,8 +206,7 @@ public:
     // if original and current can be adjusted to satisfy min balance, adjust
     // both values for merge
     bool try_fix_account_mismatch(
-        Address const &, OriginalAccountState &,
-        std::optional<Account> const &actual);
+        Address const &, std::optional<Account> const &actual);
 
     /**
      * Checks whether the account currently has enough balance to cover `debit`

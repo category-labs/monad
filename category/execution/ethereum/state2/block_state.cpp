@@ -151,10 +151,10 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
 bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);
-    auto &original = state.original();
+    auto const &original = state.original();
     for (auto &kv : original) {
         Address const &address = kv.first;
-        OriginalAccountState &account_state = kv.second;
+        OriginalAccountState const &account_state = kv.second;
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::const_accessor it{};
@@ -164,7 +164,7 @@ bool BlockState::can_merge(State &state) const
             // try to fix original and current in `state` to match the block
             // state up until this transaction
             if (!state.try_fix_account_mismatch(
-                    address, account_state, it->second.account.second)) {
+                    address, it->second.account.second)) {
                 return false;
             }
         }

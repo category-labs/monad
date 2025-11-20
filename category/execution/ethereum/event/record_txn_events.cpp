@@ -196,7 +196,7 @@ void record_account_events(
     initial_state.nonce = prestate_valid ? prestate_account->nonce : 0;
     initial_state.balance = prestate_valid ? prestate_account->balance : 0;
     initial_state.code_hash =
-        prestate_valid ? prestate_account->code_hash : NULL_HASH;
+        prestate_valid ? prestate_account->get_code_hash() : NULL_HASH;
 
     auto const [modified_balance, is_balance_modified] =
         account_info.get_balance_modification();

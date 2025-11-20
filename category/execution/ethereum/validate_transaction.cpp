@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -231,10 +232,12 @@ Result<void> validate_transaction(
     }
 
     // YP (71)
-    bool sender_is_eoa = sender_account->code_hash == NULL_HASH;
+    bool sender_is_eoa = !sender_account->has_code();
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         // EIP-7702
-        sender_is_eoa = sender_is_eoa || vm::evm::is_delegated(code);
+        sender_is_eoa = sender_is_eoa ||
+                        sender_account->inline_delegated_code() ||
+                        vm::evm::is_delegated(code);
     }
 
     if (MONAD_UNLIKELY(!sender_is_eoa)) {

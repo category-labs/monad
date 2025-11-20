@@ -30,5 +30,5 @@ namespace monad::vm::llvm
 
     std::shared_ptr<LLVMState> compile(
         evmc_revision rev, std::span<uint8_t const> code,
-        std::string const &dbg_nm = "");
+        std::string const &dbg_nm);
 }

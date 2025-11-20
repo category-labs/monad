@@ -16,12 +16,15 @@
 #pragma once
 
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/llvm/llvm_state.hpp>
 #include <category/vm/runtime/types.hpp>
 
 namespace monad::vm::llvm
 {
     using namespace monad::vm::runtime;
+    using namespace monad::vm::compiler::basic_blocks;
 
     void execute(LLVMState &llvm, Context &, uint256_t *);
 
@@ -31,4 +34,9 @@ namespace monad::vm::llvm
     std::shared_ptr<LLVMState> compile(
         evmc_revision rev, std::span<uint8_t const> code,
         std::string const &dbg_nm);
+
+    template <Traits traits>
+    std::shared_ptr<LLVMState> compile_basicblocks_impl(
+        BasicBlocksIR const &ir, std::string const &dbg_nm = "");
+
 }

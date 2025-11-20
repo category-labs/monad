@@ -225,9 +225,18 @@ namespace
         }
     }
 
+    static BlockchainTestVM::Implementation const all_impls[] = {
+        Compiler,
+        Interpreter,
+        Evmone,
+#ifdef MONAD_COMPILER_LLVM
+        LLVM,
+#endif
+    };
+
     void register_benchmark(std::string_view const name, evmc_message const msg)
     {
-        for (auto const impl : {Interpreter, Compiler, LLVM, Evmone}) {
+        for (auto const impl : all_impls) {
             benchmark::RegisterBenchmark(
                 std::format(
                     "execute/{}/{}", name, BlockchainTestVM::impl_name(impl)),
@@ -301,8 +310,7 @@ namespace
                             failure_tests.end(),
                             test.name) == failure_tests.end();
 
-                    for (auto const impl :
-                         {Interpreter, Compiler, LLVM, Evmone}) {
+                    for (auto const impl : all_impls) {
                         benchmark::RegisterBenchmark(
                             std::format(
                                 "execute/{}/{}/{}/{}",

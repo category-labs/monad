@@ -39,4 +39,10 @@ target_link_libraries(mce
   PRIVATE nlohmann_json::nlohmann_json
 )
 
+if(MONAD_COMPILER_LLVM)
+    target_link_libraries(mce
+        PRIVATE monad-vm::monad-vm-llvm
+    )
+endif()
+
 monad_compile_options(mce)

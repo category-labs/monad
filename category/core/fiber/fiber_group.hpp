@@ -63,9 +63,11 @@ public:
 
     ~FiberGroup();
 
-    void submit(uint64_t const priority, std::function<void()> task)
+    template <typename F>
+    void submit(uint64_t const priority, F &&task)
     {
-        channel_.push({priority, std::move(task)});
+        channel_.push(
+            {priority, std::move_only_function<void()>(std::forward<F>(task))});
     }
 
     unsigned num_fibers() const

@@ -55,9 +55,10 @@ public:
         return thread_pool_->num_threads();
     }
 
-    void submit(uint64_t const priority, std::function<void()> task)
+    template <typename F>
+    void submit(uint64_t const priority, F &&task)
     {
-        fiber_group_->submit(priority, std::move(task));
+        fiber_group_->submit(priority, std::forward<F>(task));
     }
 
     FiberGroup &fiber_group()

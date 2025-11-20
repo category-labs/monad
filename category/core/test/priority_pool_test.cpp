@@ -24,7 +24,9 @@
 #include <cstddef>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
 /* On Niall's machine, for reference:
@@ -124,4 +126,24 @@ TEST(PriorityPool, benchmark)
         << "\nThis makes PriorityPool " << (ops_per_sec1 / ops_per_sec2)
         << " times faster than a single CPU core. Hardware concurrency is "
         << std::thread::hardware_concurrency() << std::endl;
+}
+
+TEST(PriorityPool, move_only_functor)
+{
+    monad::fiber::PriorityPool ppool(2, 4);
+
+    std::atomic<int> result{0};
+    std::atomic<bool> done{false};
+
+    auto ptr = std::make_unique<int>(42);
+    ppool.submit(1, [&result, &done, p = std::move(ptr)]() {
+        result.store(*p, std::memory_order_release);
+        done.store(true, std::memory_order_release);
+    });
+
+    while (!done.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    EXPECT_EQ(result.load(std::memory_order_acquire), 42);
 }

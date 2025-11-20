@@ -18,13 +18,21 @@
 
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/core/cases.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
+
+#ifdef MONAD_COMPILER_LLVM
+    #include <category/vm/llvm/llvm.hpp>
+#endif
+
+#include <cmd/vm/mce/src/instrumentable_compiler.hpp>
 
 #include <asmjit/x86.h>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 #include <evmone/evmone.h>
+#include <quill/Quill.h>
 #include <valgrind/cachegrind.h>
 
 #include "host.hpp"
@@ -33,11 +41,14 @@
 
 #include <cstdint>
 #include <iostream>
+#include <variant>
 #include <vector>
 
 using namespace monad;
+using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace evmc::literals;
+using namespace monad::vm::compiler::native;
 
 namespace abi_compat
 {
@@ -67,8 +78,7 @@ public:
     }
 
     template <monad::Traits traits>
-    evmc::Result
-    execute(native::entrypoint_t entry, InstrumentationDevice const device)
+    evmc::Result execute(Binary &entry, InstrumentationDevice const device)
     {
         switch (device) {
         case InstrumentationDevice::Cachegrind:
@@ -80,9 +90,8 @@ public:
     }
 
     template <monad::Traits traits, InstrumentationDevice device>
-    evmc::Result execute(native::entrypoint_t entry)
+    evmc::Result execute(Binary &entry)
     {
-        MONAD_VM_ASSERT(entry != nullptr);
         using namespace evmone::state;
 
         auto msg = new evmc_message{
@@ -125,22 +134,48 @@ public:
         if constexpr (instrument) {
             if constexpr (device == InstrumentationDevice::Cachegrind) {
                 CACHEGRIND_START_INSTRUMENTATION;
-                entry(&ctx, stack_ptr.get());
+                dispatch_execute(entry, &ctx, stack_ptr.get());
                 CACHEGRIND_STOP_INSTRUMENTATION;
             }
             else {
                 timer.start();
-                entry(&ctx, stack_ptr.get());
+                dispatch_execute(entry, &ctx, stack_ptr.get());
                 timer.pause();
             }
         }
         else {
-            entry(&ctx, stack_ptr.get());
+            dispatch_execute(entry, &ctx, stack_ptr.get());
         }
 
         delete msg;
 
         return ctx.copy_to_evmc_result();
+    }
+
+    void dispatch_execute(
+        Binary &entry, monad::vm::runtime::Context *ctx, uint8_t *stck)
+    {
+        std::visit(
+            Cases{
+                [&](struct CompilerBinary &b) {
+                    entrypoint_t ep = b.ncode->entrypoint();
+                    ep(ctx, stck);
+                },
+
+                [&]([[maybe_unused]] struct LLVMBinary &b) {
+#ifdef MONAD_COMPILER_LLVM
+                    execute_compiled_llvm(b.llvm_code, ctx, stck);
+#else
+                    LOG_ERROR(
+                        "Unable to execute with LLVM.  LLVM not configured in "
+                        "build.  To use the LLVM backend, rebuild with "
+                        "-DMONAD_COMPILER_LLVM=On");
+                    quill::flush();
+                    abort();
+#endif
+                },
+            },
+            entry);
     }
 
     evmc_capabilities_flagset get_capabilities() const

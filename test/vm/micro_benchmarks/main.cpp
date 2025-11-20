@@ -277,19 +277,22 @@ static void run_implementation_benchmark(
     }
 }
 
+using enum BlockchainTestVM::Implementation;
+
+static BlockchainTestVM::Implementation const all_impls[] = {
+    Interpreter,
+    BlockchainTestVM::Implementation::Compiler,
+    Evmone,
+#ifdef MONAD_COMPILER_LLVM
+    LLVM,
+#endif
+};
+
 static void run_benchmark(CommandArguments const &args, Benchmark const &bench)
 {
-    using enum BlockchainTestVM::Implementation;
-
     if (!filter_search(bench.title, args.title_filters)) {
         return;
     }
-
-#ifdef MONAD_COMPILER_LLVM
-    static constexpr auto all_impls = {Interpreter, Compiler, LLVM, Evmone};
-#else
-    static constexpr auto all_impls = {Interpreter, Compiler, Evmone};
-#endif
     for (auto const impl : all_impls) {
         run_implementation_benchmark(args, impl, bench);
     }

@@ -15,7 +15,13 @@
 
 #pragma once
 
+#include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
+
+#include <cstdint>
+#include <memory>
+#include <string>
 
 namespace monad::vm::llvm
 {
@@ -49,4 +55,14 @@ namespace monad::vm::llvm
     private:
         void load_llvm_file_cache();
     };
+
+    template <Traits traits>
+    std::shared_ptr<LLVMState> compile_basicblocks_llvm(
+        compiler::basic_blocks::BasicBlocksIR const &ir,
+        std::string const &dbg_nm);
+
+    void execute_compiled_llvm(
+        std::shared_ptr<LLVMState> llvm, runtime::Context *ctx,
+        uint8_t *evm_stack);
+
 }

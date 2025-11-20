@@ -85,12 +85,6 @@ namespace
                               "BlockchainTests" / "GeneralStateTests" /
                               "VMTests" / "vmPerformance";
 
-#ifdef MONAD_COMPILER_LLVM
-    static constexpr auto all_impls = {Interpreter, Compiler, LLVM, Evmone};
-#else
-    static constexpr auto all_impls = {Interpreter, Compiler, Evmone};
-#endif
-
     auto make_benchmark(
         std::string const &name, std::span<std::uint8_t const> code,
         std::span<std::uint8_t const> input)
@@ -230,6 +224,15 @@ namespace
             }
         }
     }
+
+    static BlockchainTestVM::Implementation const all_impls[] = {
+        Interpreter,
+        Compiler,
+        Evmone,
+#ifdef MONAD_COMPILER_LLVM
+        LLVM,
+#endif
+    };
 
     void register_benchmark(std::string_view const name, evmc_message const msg)
     {

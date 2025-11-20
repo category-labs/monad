@@ -14,9 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/llvm/execute.hpp>
 #include <category/vm/llvm/llvm.hpp>
-#include <category/vm/llvm/llvm_state.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/evmc_utils.hpp>
@@ -121,5 +123,23 @@ namespace monad::vm::llvm
 
         return ctx.copy_to_evmc_result();
     }
+
+    void execute_compiled_llvm(
+        std::shared_ptr<LLVMState> llvm, runtime::Context *ctx,
+        uint8_t *evm_stack)
+    {
+        monad::vm::llvm::execute(
+            *llvm, *ctx, reinterpret_cast<runtime::uint256_t *>(evm_stack));
+    }
+
+    template <Traits traits>
+    std::shared_ptr<LLVMState> compile_basicblocks_llvm(
+        compiler::basic_blocks::BasicBlocksIR const &ir,
+        std::string const &dbg_nm)
+    {
+        return monad::vm::llvm::compile_basicblocks_impl<traits>(ir, dbg_nm);
+    }
+
+    EXPLICIT_TRAITS(compile_basicblocks_llvm);
 
 }

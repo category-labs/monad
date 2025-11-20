@@ -70,24 +70,15 @@ std::string try_parse_int_token(std::string_view s, I *i)
     return {};
 }
 
-// Create event ring files with rw-rw-r--
-constexpr mode_t CreateMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
-
-int claim_event_ring_file(
-    int const dir_fd, char const *const file_name, char const *const full_path,
-    int *const ring_fd)
+int claim_event_ring_file(fs::path const &ring_path)
 {
-    *ring_fd = openat(dir_fd, file_name, O_RDONLY | O_CREAT, CreateMode);
-    if (*ring_fd == -1) {
-        int const rc = errno;
-        LOG_ERROR(
-            "openat failed for event ring file `{}`: {} [{}]",
-            full_path,
-            strerror(rc),
-            rc);
-        return rc;
+    int ring_fd [[gnu::cleanup(cleanup_close)]] =
+        open(ring_path.c_str(), O_RDONLY);
+    if (ring_fd == -1) {
+        // Inability to open is normal: it means there's no zombie to clean up
+        return 0;
     }
-    if (flock(*ring_fd, LOCK_EX | LOCK_NB) == -1) {
+    if (flock(ring_fd, LOCK_EX | LOCK_NB) == -1) {
         int const saved_errno = errno;
         if (saved_errno == EWOULDBLOCK) {
             pid_t owner_pid = 0;
@@ -95,60 +86,49 @@ int claim_event_ring_file(
 
             // Another process has an exclusive lock; find out who it is
             (void)monad_event_ring_find_writer_pids(
-                *ring_fd, &owner_pid, &owner_pid_size);
+                ring_fd, &owner_pid, &owner_pid_size);
             if (owner_pid == 0) {
                 LOG_ERROR(
                     "event ring file `{}` is owned by an unknown other process",
-                    full_path);
+                    ring_path.c_str());
             }
             else {
                 LOG_ERROR(
                     "event ring file `{}` is owned by pid {}",
-                    full_path,
+                    ring_path.c_str(),
                     owner_pid);
             }
-            return saved_errno;
+            return EWOULDBLOCK;
         }
         LOG_ERROR(
             "flock on event ring file `{}` failed: {} ({})",
-            full_path,
+            ring_path.c_str(),
             strerror(saved_errno),
             saved_errno);
         return saved_errno;
     }
-    // Note: truncate(2) not ftruncate(2), because we deliberately opened the
-    // fd with O_RDONLY; even though we're going to destroy this file soon
-    // anyway, we explicitly truncate to zero so that space-constrained
-    // filesystems like hugetlbfs can drop the committed pages if they're not
-    // mapped anywhere. We will initialize the replacement for this file before
-    // destroying it, so for a moment both will exist.
-    if (truncate(full_path, 0) == -1) {
-        int const saved_errno = errno;
-        LOG_ERROR(
-            "truncate to zero failed for event ring file `{}` ({})",
-            full_path,
-            strerror(saved_errno),
-            saved_errno);
-        return saved_errno;
-    }
+    (void)unlink(ring_path.c_str()); // what we now own is a zombie; destroy it
     return 0;
 }
 
 int allocate_event_ring_file(
-    monad_event_ring_simple_config const *const simple_cfg, int const dir_fd,
-    char const *const file_name, char const *const full_path,
-    int *const init_ring_fd)
+    monad_event_ring_simple_config const &simple_cfg, fs::path const &init_path,
+    fs::path const &ring_path, int *const init_ring_fd)
 {
+    // Create event ring files with rw-rw-r--
+    constexpr mode_t CreateMode =
+        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
+
     *init_ring_fd =
-        openat(dir_fd, file_name, O_RDWR | O_CREAT | O_EXCL, CreateMode);
+        open(init_path.c_str(), O_RDWR | O_CREAT | O_EXCL, CreateMode);
     if (*init_ring_fd == -1) {
         int const rc = errno;
         LOG_ERROR(
             "could not create event ring temporary initialization file `{}` "
             "(for {}): "
             "{} [{}]",
-            file_name,
-            full_path,
+            init_path.c_str(),
+            ring_path.c_str(),
             strerror(rc),
             rc);
         return rc;
@@ -158,14 +138,14 @@ int allocate_event_ring_file(
         LOG_ERROR(
             "flock on event ring file temporary initialization file `{}` (for "
             "{}) failed: {} ({})",
-            file_name,
-            full_path,
+            init_path.c_str(),
+            ring_path.c_str(),
             strerror(saved_errno),
             saved_errno);
         return saved_errno;
     }
     if (int const rc = monad_event_ring_init_simple(
-            simple_cfg, *init_ring_fd, 0, full_path)) {
+            &simple_cfg, *init_ring_fd, 0, init_path.c_str())) {
         LOG_ERROR(
             "event library error -- {}", monad_event_ring_get_last_error());
         return rc;
@@ -180,96 +160,69 @@ int allocate_event_ring_file(
 // which gives confusing errors.
 //
 // This will create a new locked file that is fully initialized, and then
-// atomically replaces the original file using Linux's renameat2(2)
-// RENAME_EXCHANGE feature, which can atomically swap two paths.
+// rename it to the correct name using Linux's renameat2(2) RENAME_NOREPLACE
+// feature.
 //
-//   1. First we take possession of the file's name (on an advisory basis using
-//      flock(2)) via the helper function `claim_event_ring_file`. That function
-//      opens the file with O_RDONLY, to avoid triggering anyone watching with
-//      `monad_event_ring_find_writer_pids` (the file will still appear to be
-//      a zombie). It places a LOCK_EX flock(2) to claim ownership of the file
-//      initialization process, so that the rest of the steps can deal with
-//      another daemon racing against us. Note that we do this _even though_
-//      we're only open with O_RDONLY, which Linux allows.
+//   1. First we try to take possession of the file's name (on an advisory
+//      basis using flock(2)) via the helper function `claim_event_ring_file`.
+//      That function opens the file with O_RDONLY, to avoid triggering anyone
+//      watching with `monad_event_ring_find_writer_pids`. It places a LOCK_EX
+//      flock(2) to claim ownership of the file initialization process, and
+//      returns EWOULDBLOCK if it appears another process owns the file. If we
+//      claim the file, then (1) it existed and (2) was un-owned and was
+//      therefore a zombie from a crashed process. We destroy it.
 //
 //   2. Next, we use the helper function `allocate_event_ring_file` to create
 //      the real file (called the "init" file) with the temporary file name
 //      `<file-name>.<our-pid>`; when this returns successfully, the file is
 //      advisory-locked and initialized
 //
-//   3. Finally, we atomically exchange the two filenames in the filesystem,
-//      then delete the "init" file's name (which now refers to the truncated
-//      "name-reservation" file)
-//
-// These functions use dir_fd relative functions like openat(2), linkat(2),
-// etc., because renameat2(2) is the only syscall that can use RENAME_EXCHANGE
+//   3. Finally, we rename the init file to its correct filename
 int create_owned_event_ring(
     fs::path const &ring_file_path,
-    monad_event_ring_simple_config const *simple_cfg, int *ring_fd)
+    monad_event_ring_simple_config const &simple_cfg, int *ring_fd)
 {
-    std::string const file_name = ring_file_path.filename().string();
-    std::string const init_file_name =
-        std::format("{}.{}", file_name, getpid());
+    fs::path init_file_path = ring_file_path;
+    init_file_path.replace_filename(
+        std::format("{}.{}", ring_file_path.filename().c_str(), getpid()));
 
-    int dir_fd [[gnu::cleanup(cleanup_close)]] =
-        ring_file_path.has_parent_path()
-            ? open(ring_file_path.parent_path().c_str(), O_DIRECTORY | O_PATH)
-            : AT_FDCWD;
-    if (dir_fd == -1) {
-        int const rc = errno;
-        LOG_ERROR(
-            "open of event ring file parent directory {} failed",
-            ring_file_path.parent_path().c_str());
-        return rc;
-    }
-    if (int const rc = claim_event_ring_file(
-            dir_fd, file_name.c_str(), ring_file_path.c_str(), ring_fd)) {
+    if (int const rc = claim_event_ring_file(ring_file_path)) {
         return rc;
     }
 
-    int init_ring_fd [[gnu::cleanup(cleanup_close)]] = -1;
     if (int const rc = allocate_event_ring_file(
-            simple_cfg,
-            dir_fd,
-            init_file_name.c_str(),
-            ring_file_path.c_str(),
-            &init_ring_fd)) {
-        (void)unlinkat(dir_fd, file_name.c_str(), 0);
-        (void)unlinkat(dir_fd, init_file_name.c_str(), 0);
+            simple_cfg, init_file_path, ring_file_path, ring_fd)) {
+        (void)unlink(init_file_path.c_str());
         return rc;
     }
 
     if (renameat2(
-            dir_fd,
-            init_file_name.c_str(),
-            dir_fd,
-            file_name.c_str(),
-            RENAME_EXCHANGE) == -1) {
+            AT_FDCWD,
+            init_file_path.c_str(),
+            AT_FDCWD,
+            ring_file_path.c_str(),
+            RENAME_NOREPLACE) == -1) {
         int const rc = errno;
-        (void)unlinkat(dir_fd, file_name.c_str(), 0);
-        (void)unlinkat(dir_fd, init_file_name.c_str(), 0);
+        (void)unlink(init_file_path.c_str());
         LOG_ERROR(
-            "atomic exchange of {}/{} -> {}/{} failed: {} [{}]",
-            ring_file_path.parent_path().c_str(),
-            init_file_name,
-            ring_file_path.parent_path().c_str(),
-            file_name,
+            "rename of {} -> {} failed: {} [{}]",
+            init_file_path.c_str(),
+            ring_file_path.c_str(),
             strerror(rc),
             rc);
         return rc;
     }
-    (void)unlinkat(dir_fd, init_file_name.c_str(), 0);
-    std::swap(*ring_fd, init_ring_fd);
+
     return 0;
 }
 
 // Call create_owned_event_ring, but with SIGTERM and SIGINT blocked while it
-// runs so we don't have any junk files lying around; those signals will be
-// unblocked again (if they were before) to receive any pending signals prior
-// to returning
+// runs so we can't be killed, which would leave junk files lying around; those
+// signals will be unblocked again (if they were before) to receive any pending
+// signals prior to returning
 int create_owned_event_ring_nointr(
     fs::path const &ring_file_path,
-    monad_event_ring_simple_config const *simple_cfg, int *ring_fd)
+    monad_event_ring_simple_config const &simple_cfg, int *ring_fd)
 {
     sigset_t to_block;
     sigset_t old_mask;
@@ -381,7 +334,7 @@ int init_execution_event_recorder(EventRingConfig ring_config)
 
     int ring_fd [[gnu::cleanup(cleanup_close)]] = -1;
     if (int const rc = create_owned_event_ring_nointr(
-            ring_config.event_ring_spec, &simple_cfg, &ring_fd)) {
+            ring_config.event_ring_spec, simple_cfg, &ring_fd)) {
         return rc;
     }
 

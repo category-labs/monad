@@ -44,6 +44,7 @@
 #include <quill/Quill.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -81,6 +82,50 @@ void log_tps(
 
 #pragma GCC diagnostic pop
 
+struct RecoveredSendersAndAuthorities
+{
+    std::vector<Address> senders;
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    std::vector<std::vector<std::optional<Address>>> authorities;
+};
+
+// Recover senders and authorities from a block
+Result<RecoveredSendersAndAuthorities> recover_senders_and_authorities(
+    std::vector<Transaction> const &transactions,
+    fiber::PriorityPool &priority_pool, bool require_all_senders)
+{
+    auto const recovered_senders = recover_senders(transactions, priority_pool);
+    auto const recovered_authorities =
+        recover_authorities(transactions, priority_pool);
+    std::vector<Address> senders(transactions.size());
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        if (recovered_senders[i].has_value()) {
+            senders[i] = recovered_senders[i].value();
+        }
+        else if (require_all_senders) {
+            return TransactionError::MissingSender;
+        }
+    }
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+        if (recovered_senders[i].has_value()) {
+            senders_and_authorities.insert(recovered_senders[i].value());
+        }
+    }
+    for (std::vector<std::optional<Address>> const &authorities :
+         recovered_authorities) {
+        for (std::optional<Address> const &authority : authorities) {
+            if (authority.has_value()) {
+                senders_and_authorities.insert(authority.value());
+            }
+        }
+    }
+    return RecoveredSendersAndAuthorities{
+        .senders = std::move(senders),
+        .senders_and_authorities = std::move(senders_and_authorities),
+        .authorities = std::move(recovered_authorities)};
+}
+
 // Process a single Monad block stored in Ethereum format
 template <Traits traits>
 Result<void> process_monad_block(
@@ -88,10 +133,10 @@ Result<void> process_monad_block(
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *grandparent_senders_and_authorities,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *parent_senders_and_authorities,
+    uint64_t const block_num,
+    std::array<
+        std::optional<ankerl::unordered_dense::segmented_set<Address>>, 3> const
+        &block_senders_and_authorities,
     ankerl::unordered_dense::segmented_set<Address>
         &senders_and_authorities_out)
 {
@@ -104,36 +149,15 @@ Result<void> process_monad_block(
 
     // Sender and authority recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
-    auto const recovered_senders =
-        recover_senders(block.transactions, priority_pool);
-    auto const recovered_authorities =
-        recover_authorities(block.transactions, priority_pool);
+    BOOST_OUTCOME_TRY(
+        auto const recovered,
+        recover_senders_and_authorities(
+            block.transactions, priority_pool, true));
     [[maybe_unused]] auto const sender_recovery_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - sender_recovery_begin);
-    std::vector<Address> senders(block.transactions.size());
-    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
-        if (recovered_senders[i].has_value()) {
-            senders[i] = recovered_senders[i].value();
-        }
-        else {
-            return TransactionError::MissingSender;
-        }
-    }
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    for (Address const &sender : senders) {
-        senders_and_authorities.insert(sender);
-    }
-    for (std::vector<std::optional<Address>> const &authorities :
-         recovered_authorities) {
-        for (std::optional<Address> const &authority : authorities) {
-            if (authority.has_value()) {
-                senders_and_authorities.insert(authority.value());
-            }
-        }
-    }
-    BOOST_OUTCOME_TRY(
-        static_validate_monad_body<traits>(senders, block.transactions));
+    BOOST_OUTCOME_TRY(static_validate_monad_body<traits>(
+        recovered.senders, block.transactions));
 
     // Call tracer initialization
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
@@ -152,15 +176,24 @@ Result<void> process_monad_block(
             std::make_unique<trace::StateTracer>(std::monostate{})};
     }
 
-    senders_and_authorities_out = senders_and_authorities;
+    senders_and_authorities_out = recovered.senders_and_authorities;
 
+    auto const grandparent_idx = (block_num - 2) % 3;
+    auto const parent_idx = (block_num - 1) % 3;
     MonadChainContext chain_context{
         .grandparent_senders_and_authorities =
-            grandparent_senders_and_authorities,
-        .parent_senders_and_authorities = parent_senders_and_authorities,
-        .senders_and_authorities = senders_and_authorities,
-        .senders = senders,
-        .authorities = recovered_authorities};
+            (block_num > 2 &&
+             block_senders_and_authorities[grandparent_idx].has_value())
+                ? &block_senders_and_authorities[grandparent_idx].value()
+                : nullptr,
+        .parent_senders_and_authorities =
+            (block_num > 1 &&
+             block_senders_and_authorities[parent_idx].has_value())
+                ? &block_senders_and_authorities[parent_idx].value()
+                : nullptr,
+        .senders_and_authorities = recovered.senders_and_authorities,
+        .senders = recovered.senders,
+        .authorities = recovered.authorities};
 
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
@@ -175,8 +208,8 @@ Result<void> process_monad_block(
         execute_block<traits>(
             chain,
             block,
-            senders,
-            recovered_authorities,
+            recovered.senders,
+            recovered.authorities,
             block_state,
             block_hash_buffer,
             priority_pool.fiber_group(),
@@ -207,7 +240,7 @@ Result<void> process_monad_block(
         block.header,
         receipts,
         call_frames,
-        senders,
+        recovered.senders,
         block.transactions,
         block.ommers,
         block.withdrawals);
@@ -292,10 +325,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     bytes32_t parent_block_id{};
     uint64_t block_num = finalized_block_num;
 
-    std::optional<ankerl::unordered_dense::segmented_set<Address>>
-        parent_senders_and_authorities;
-    std::optional<ankerl::unordered_dense::segmented_set<Address>>
-        grandparent_senders_and_authorities;
+    std::
+        array<std::optional<ankerl::unordered_dense::segmented_set<Address>>, 3>
+            block_senders_and_authorities;
 
     if (block_num > 1) {
         Block parent_block;
@@ -303,29 +335,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
             block_db.get(block_num - 1, parent_block),
             "Could not query %lu from blockdb for parent",
             block_num - 1);
-        auto const recovered_senders =
-            recover_senders(parent_block.transactions, priority_pool);
-        auto const recovered_authorities =
-            recover_authorities(parent_block.transactions, priority_pool);
-        std::vector<Address> senders(parent_block.transactions.size());
-        for (unsigned j = 0; j < recovered_senders.size(); ++j) {
-            if (recovered_senders[j].has_value()) {
-                senders[j] = recovered_senders[j].value();
-            }
-        }
-        ankerl::unordered_dense::segmented_set<Address> parent_set;
-        for (Address const &sender : senders) {
-            parent_set.insert(sender);
-        }
-        for (std::vector<std::optional<Address>> const &authorities :
-             recovered_authorities) {
-            for (std::optional<Address> const &authority : authorities) {
-                if (authority.has_value()) {
-                    parent_set.insert(authority.value());
-                }
-            }
-        }
-        parent_senders_and_authorities = std::move(parent_set);
+        BOOST_OUTCOME_TRY(
+            auto const parent_recovered,
+            recover_senders_and_authorities(
+                parent_block.transactions, priority_pool, false));
+        block_senders_and_authorities[(block_num - 1) % 3] =
+            std::move(parent_recovered.senders_and_authorities);
 
         if (block_num > 2) {
             Block grandparent_block;
@@ -333,32 +348,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 block_db.get(block_num - 2, grandparent_block),
                 "Could not query %lu from blockdb for grandparent",
                 block_num - 2);
-            auto const grandparent_recovered_senders =
-                recover_senders(grandparent_block.transactions, priority_pool);
-            auto const grandparent_recovered_authorities = recover_authorities(
-                grandparent_block.transactions, priority_pool);
-            std::vector<Address> grandparent_senders(
-                grandparent_block.transactions.size());
-            for (unsigned j = 0; j < grandparent_recovered_senders.size();
-                 ++j) {
-                if (grandparent_recovered_senders[j].has_value()) {
-                    grandparent_senders[j] =
-                        grandparent_recovered_senders[j].value();
-                }
-            }
-            ankerl::unordered_dense::segmented_set<Address> grandparent_set;
-            for (Address const &sender : grandparent_senders) {
-                grandparent_set.insert(sender);
-            }
-            for (std::vector<std::optional<Address>> const &authorities :
-                 grandparent_recovered_authorities) {
-                for (std::optional<Address> const &authority : authorities) {
-                    if (authority.has_value()) {
-                        grandparent_set.insert(authority.value());
-                    }
-                }
-            }
-            grandparent_senders_and_authorities = std::move(grandparent_set);
+            BOOST_OUTCOME_TRY(
+                auto const grandparent_recovered,
+                recover_senders_and_authorities(
+                    grandparent_block.transactions, priority_pool, false));
+            block_senders_and_authorities[(block_num - 2) % 3] =
+                std::move(grandparent_recovered.senders_and_authorities);
         }
     }
 
@@ -386,12 +381,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 block_id,
                 parent_block_id,
                 enable_tracing,
-                grandparent_senders_and_authorities.has_value()
-                    ? &grandparent_senders_and_authorities.value()
-                    : nullptr,
-                parent_senders_and_authorities.has_value()
-                    ? &parent_senders_and_authorities.value()
-                    : nullptr,
+                block_num,
+                block_senders_and_authorities,
                 senders_and_authorities);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
@@ -415,9 +406,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
             batch_begin = std::chrono::steady_clock::now();
         }
 
-        grandparent_senders_and_authorities =
-            std::move(parent_senders_and_authorities);
-        parent_senders_and_authorities = std::move(senders_and_authorities);
+        block_senders_and_authorities[block_num % 3] =
+            std::move(senders_and_authorities);
 
         parent_block_id = block_id;
         ++block_num;

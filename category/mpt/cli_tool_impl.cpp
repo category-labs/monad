@@ -393,6 +393,7 @@ struct impl_t
     std::ostream &cerr;
     MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
     uint8_t chunk_capacity = flags.chunk_capacity;
+    uint32_t root_offsets_chunk_count = 2;
     bool allow_dirty = false;
     bool no_prompt = false;
     bool create_database = false;
@@ -1445,6 +1446,12 @@ opened.
                 "set chunk capacity during database creation (default is 28, "
                 "1<<28 "
                 "= 256Mb, max is 31).");
+            cli.add_option(
+                "--root-offsets-chunk-count",
+                impl.root_offsets_chunk_count,
+                "Number of chunks to allocate for storing root offsets. "
+                "Must be a power of 2. Default is 2. "
+                "Each chunk holds approximately 16.5M history entries.");
             cli.add_flag(
                 "--chunk-increasing",
                 impl.create_chunk_increasing,
@@ -1478,6 +1485,7 @@ opened.
             impl.flags.open_read_only = true;
             impl.flags.open_read_only_allow_dirty =
                 impl.allow_dirty || !impl.archive_database.empty();
+            impl.flags.num_cnv_chunks = impl.root_offsets_chunk_count + 1;
             if (!impl.restore_database.empty()) {
                 if (!impl.archive_database.empty()) {
                     impl.cli_ask_question(

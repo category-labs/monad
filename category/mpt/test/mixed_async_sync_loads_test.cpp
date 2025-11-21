@@ -56,7 +56,7 @@ namespace
 TEST_F(MixedAsyncSyncLoadsTest, works)
 {
     // Make a new empty DB
-    monad::test::UpdateAux<void> aux{&state()->io};
+    monad::test::UpdateAux<void> aux{state()->io};
     monad::test::StateMachineAlwaysMerkle sm;
     // Load its root
     auto const latest_version = aux.db_history_max_version();

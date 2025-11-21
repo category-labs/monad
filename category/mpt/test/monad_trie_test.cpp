@@ -530,8 +530,7 @@ int main(int argc, char *argv[])
                 }
             };
 
-            auto aux =
-                in_memory ? UpdateAux<>() : UpdateAux<>(&io, history_len);
+            auto aux = in_memory ? UpdateAux<>() : UpdateAux<>(io, history_len);
             monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
 
             Node::SharedPtr root{};
@@ -679,7 +678,7 @@ int main(int argc, char *argv[])
                 Node::SharedPtr &root = std::get<1>(*ret);
                 NodeCursor &state_start = std::get<2>(*ret);
                 if (!in_memory) {
-                    aux.set_io(&io, history_len);
+                    aux.set_io(io, history_len);
                 }
                 root = read_node_blocking(
                     aux,

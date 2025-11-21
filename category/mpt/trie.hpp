@@ -392,6 +392,9 @@ protected:
     };
 
 public:
+    // Allocate the first cnv chunk for db metadata copies
+    static constexpr unsigned cnv_chunks_for_db_metadata = 1;
+
     int64_t curr_upsert_auto_expire_version{0};
     compact_virtual_chunk_offset_t compact_offset_fast{
         MIN_COMPACT_VIRTUAL_OFFSET};

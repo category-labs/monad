@@ -122,10 +122,12 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
 
 AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     : pool{[&] -> async::storage_pool {
+        async::storage_pool::creation_flags pool_options;
+        pool_options.num_cnv_chunks = options.root_offsets_chunk_count + 1;
         auto len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
         if (options.dbname_paths.empty()) {
             return async::storage_pool{
-                async::use_anonymous_sized_inode_tag{}, len};
+                async::use_anonymous_sized_inode_tag{}, len, pool_options};
         }
         // initialize db file on disk
         for (auto const &dbname_path : options.dbname_paths) {
@@ -145,7 +147,8 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
         return async::storage_pool{
             options.dbname_paths,
             options.append ? async::storage_pool::mode::open_existing
-                           : async::storage_pool::mode::truncate};
+                           : async::storage_pool::mode::truncate,
+            pool_options};
     }()}
     , read_ring{{options.uring_entries, options.sq_thread_cpu}}
     , write_ring{io::RingConfig{options.wr_buffers}}

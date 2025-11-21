@@ -73,7 +73,7 @@ TEST(cli_tool, create)
     ::close(fd);
     auto untempfile =
         monad::make_scope_exit([&]() noexcept { unlink(temppath); });
-    if (-1 == truncate(temppath, 2ULL * 1024 * 1024 * 1024)) {
+    if (-1 == truncate(temppath, 6ULL * 1024 * 1024 * 1024)) {
         abort();
     }
     std::cout << "temp file being used: " << temppath << std::endl;
@@ -108,6 +108,8 @@ struct cli_tool_fixture
 {
     void run_test()
     {
+        constexpr unsigned default_num_cnv_chunks = 17;
+
         char temppath1[] = "cli_tool_test_XXXXXX";
         char dbpath2a[] = "cli_tool_test_XXXXXX";
         char dbpath2b[] = "cli_tool_test_XXXXXX";
@@ -152,7 +154,7 @@ struct cli_tool_fixture
         if (Config.interleave_multiple_sources) {
             if (-1 == truncate(
                           dbpath2a,
-                          (4 + Config.chunks_max / 2) *
+                          (default_num_cnv_chunks + Config.chunks_max / 2) *
                                   MONAD_ASYNC_NAMESPACE::AsyncIO::
                                       MONAD_IO_BUFFERS_WRITE_SIZE +
                               24576)) {
@@ -160,7 +162,7 @@ struct cli_tool_fixture
             }
             if (-1 == truncate(
                           dbpath2b,
-                          (4 + Config.chunks_max / 2) *
+                          (default_num_cnv_chunks + Config.chunks_max / 2) *
                                   MONAD_ASYNC_NAMESPACE::AsyncIO::
                                       MONAD_IO_BUFFERS_WRITE_SIZE +
                               24576)) {
@@ -170,12 +172,12 @@ struct cli_tool_fixture
             dbpath2.push_back(dbpath2b);
         }
         else {
-            if (-1 ==
-                truncate(
-                    dbpath2a,
-                    (3 + Config.chunks_max) * MONAD_ASYNC_NAMESPACE::AsyncIO::
-                                                  MONAD_IO_BUFFERS_WRITE_SIZE +
-                        24576)) {
+            if (-1 == truncate(
+                          dbpath2a,
+                          (default_num_cnv_chunks + Config.chunks_max) *
+                                  MONAD_ASYNC_NAMESPACE::AsyncIO::
+                                      MONAD_IO_BUFFERS_WRITE_SIZE +
+                              24576)) {
                 abort();
             }
             dbpath2.push_back(dbpath2a);
@@ -257,12 +259,12 @@ struct cli_tool_fixture
             if (-1 == fd) {
                 abort();
             }
-            if (-1 ==
-                ftruncate(
-                    fd,
-                    (3 + Config.chunks_max) * MONAD_ASYNC_NAMESPACE::AsyncIO::
-                                                  MONAD_IO_BUFFERS_WRITE_SIZE +
-                        24576)) {
+            if (-1 == ftruncate(
+                          fd,
+                          (default_num_cnv_chunks + Config.chunks_max) *
+                                  MONAD_ASYNC_NAMESPACE::AsyncIO::
+                                      MONAD_IO_BUFFERS_WRITE_SIZE +
+                              24576)) {
                 abort();
             }
             ::close(fd);

@@ -787,6 +787,11 @@ void UpdateAuxImpl::set_io(
                 start_lifetime_as<chunk_offset_t>(
                     (chunk_offset_t *)reservation[1]),
                 db_version_history_storage_bytes / sizeof(chunk_offset_t)};
+            LOG_INFO(
+                "Database root offsets ring buffer is configured with {} "
+                "chunks, can hold up to {} historical entries.",
+                db_metadata()->root_offsets.storage_.cnv_chunks_len,
+                root_offsets().capacity());
         }
     };
     if (0 != memcmp(
@@ -830,10 +835,17 @@ void UpdateAuxImpl::set_io(
             db_metadata_[0].main->using_chunks_for_root_offsets = true;
             db_metadata_[0].main->history_length =
                 chunk.capacity() / 2 / sizeof(chunk_offset_t);
-            // Gobble up all remaining cnv chunks
-            for (uint32_t n = 2;
-                 n < io->storage_pool().chunks(storage_pool::cnv);
-                 n++) {
+            // Allocate cnv chunks of the first device - 1 for root offsets,
+            // since chunk 0 is used for db_metadata
+            auto const root_offsets_chunk_count =
+                io->storage_pool().devices()[0].cnv_chunks() -
+                UpdateAuxImpl::cnv_chunks_for_db_metadata;
+            MONAD_ASSERT(
+                root_offsets_chunk_count > 0 &&
+                    (root_offsets_chunk_count &
+                     (root_offsets_chunk_count - 1)) == 0,
+                "Number of cnv chunks for root offsets must be a power of two");
+            for (uint32_t n = 2; n <= root_offsets_chunk_count; n++) {
                 auto &chunk = io->storage_pool().chunk(storage_pool::cnv, n);
                 auto fdw = chunk.write_fd(chunk.capacity());
                 MONAD_ASSERT(

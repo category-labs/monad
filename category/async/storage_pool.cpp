@@ -41,6 +41,8 @@
 
 #include <stdlib.h>
 
+#include <quill/Quill.h>
+
 #include <asm-generic/ioctl.h>
 #include <fcntl.h>
 #include <linux/falloc.h>
@@ -78,6 +80,12 @@ size_t storage_pool::device_t::chunks() const
 {
     MONAD_ASSERT(!is_zoned_device(), "zonefs support isn't implemented yet");
     return metadata_->chunks(size_of_file_);
+}
+
+size_t storage_pool::device_t::cnv_chunks() const
+{
+    MONAD_ASSERT(!is_zoned_device(), "zonefs support isn't implemented yet");
+    return metadata_->num_cnv_chunks;
 }
 
 std::pair<file_offset_t, file_offset_t> storage_pool::device_t::capacity() const
@@ -454,6 +462,7 @@ storage_pool::device_t storage_pool::make_device_(
             memcpy(metadata_footer->magic, "MND0", 4);
             metadata_footer->chunk_capacity =
                 static_cast<uint32_t>(chunk_capacity);
+            metadata_footer->num_cnv_chunks = flags.num_cnv_chunks;
             MONAD_ASSERT_PRINTF(
                 ::pwrite(
                     readwritefd,
@@ -465,6 +474,17 @@ storage_pool::device_t storage_pool::make_device_(
         }
         total_size =
             metadata_footer->total_size(static_cast<size_t>(stat.st_size));
+        if (flags.num_cnv_chunks > metadata_footer->num_cnv_chunks) {
+            LOG_WARNING(
+                "Flag-specified num_cnv_chunks ({}) is greater than the value "
+                "stored in metadata ({}). This setting will be ignored. "
+                "Existing databases cannot be reconfigured to use more chunks, "
+                "create a new database if you need a higher num_cnv_chunks.",
+                flags.num_cnv_chunks,
+                metadata_footer->num_cnv_chunks == 0
+                    ? 3
+                    : metadata_footer->num_cnv_chunks);
+        }
     }
     size_t const offset = round_down_align<CPU_PAGE_BITS>(
         static_cast<size_t>(stat.st_size) - total_size);
@@ -504,6 +524,13 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         fnv1a_hash<uint32_t>::add(
             hashshouldbe, uint32_t(device.unique_hash_ >> 32));
     }
+    // Backward compatibility: databases created before `num_cnv_chunks` was
+    // added have this field set to 0. Treat 0 as the legacy default of 3
+    // chunks.
+    uint32_t const cnv_chunks_count =
+        devices_[0].metadata_->num_cnv_chunks == 0
+            ? 3
+            : devices_[0].metadata_->num_cnv_chunks;
     std::vector<size_t> chunks;
     size_t total = 0;
     chunks.reserve(devices_.size());
@@ -511,14 +538,15 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         if (device.is_file() || device.is_block_device()) {
             auto const devicechunks = device.chunks();
             MONAD_ASSERT_PRINTF(
-                devicechunks >= 4,
-                "Device %s has %zu chunks the minimum allowed is four.",
+                devicechunks >= cnv_chunks_count + 1,
+                "Device %s has %zu chunks the minimum allowed is %u.",
                 device.current_path().c_str(),
-                devicechunks);
+                devicechunks,
+                cnv_chunks_count + 1);
             MONAD_ASSERT(devicechunks <= std::numeric_limits<uint32_t>::max());
-            // Take off three for the cnv chunks
-            chunks.push_back(devicechunks - 3);
-            total += devicechunks - 3;
+            // Take off cnv_chunks_count for the cnv chunks
+            chunks.push_back(devicechunks - cnv_chunks_count);
+            total += devicechunks - cnv_chunks_count;
             fnv1a_hash<uint32_t>::add(
                 hashshouldbe, static_cast<uint32_t>(devicechunks));
             fnv1a_hash<uint32_t>::add(
@@ -560,22 +588,17 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
     auto const zone_id = [this](int const chunk_type) {
         return static_cast<uint32_t>(chunks_[chunk_type].size());
     };
-    // First three blocks of each device goes to conventional, remainder go to
-    // sequential
-    chunks_[cnv].reserve(devices_.size() * 3);
+    // First cnv_chunks_count blocks of each device goes to conventional,
+    // remainder go to sequential
+    chunks_[cnv].reserve(devices_.size() * cnv_chunks_count);
     chunks_[seq].reserve(total);
     if (flags.interleave_chunks_evenly) {
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(
-                activate_chunk(storage_pool::cnv, device, 0, zone_id(cnv)));
-        }
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(
-                activate_chunk(storage_pool::cnv, device, 1, zone_id(cnv)));
-        }
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(
-                activate_chunk(storage_pool::cnv, device, 2, zone_id(cnv)));
+        for (uint32_t chunk_idx = 0; chunk_idx < cnv_chunks_count;
+             ++chunk_idx) {
+            for (auto &device : devices_) {
+                chunks_[cnv].emplace_back(activate_chunk(
+                    storage_pool::cnv, device, chunk_idx, zone_id(cnv)));
+            }
         }
         // We now need to evenly spread the sequential chunks such that if
         // device A has 20, device B has 10 and device C has 5, the interleaving
@@ -585,7 +608,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         for (size_t n = 0; n < chunks.size(); n++) {
             chunkratios[n] = double(total) / static_cast<double>(chunks[n]);
             chunkcounts[n] = chunkratios[n];
-            chunks[n] = 3;
+            chunks[n] = cnv_chunks_count;
         }
         while (chunks_[seq].size() < chunks_[seq].capacity()) {
             for (size_t n = 0; n < chunks.size(); n++) {
@@ -612,19 +635,18 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
     }
     else {
         for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(
-                activate_chunk(cnv, device, 0, zone_id(cnv)));
-            chunks_[cnv].emplace_back(
-                activate_chunk(cnv, device, 1, zone_id(cnv)));
-            chunks_[cnv].emplace_back(
-                activate_chunk(cnv, device, 2, zone_id(cnv)));
+            for (uint32_t chunk_idx = 0; chunk_idx < cnv_chunks_count;
+                 ++chunk_idx) {
+                chunks_[cnv].emplace_back(
+                    activate_chunk(cnv, device, chunk_idx, zone_id(cnv)));
+            }
         }
         for (size_t deviceidx = 0; deviceidx < chunks.size(); deviceidx++) {
             for (size_t n = 0; n < chunks[deviceidx]; n++) {
                 chunks_[seq].emplace_back(activate_chunk(
                     seq,
                     devices_[deviceidx],
-                    static_cast<uint32_t>(3 + n),
+                    static_cast<uint32_t>(cnv_chunks_count + n),
                     zone_id(seq)));
             }
         }

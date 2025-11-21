@@ -43,6 +43,10 @@ struct OnDiskDbConfig
     // fixed history length if contains value, otherwise rely on db to adjust
     // history length upon disk usage
     std::optional<uint64_t> fixed_history_length{std::nullopt};
+    // Number of chunks to allocate for root offsets when initializing the disk.
+    // Each chunk can hold 1 << 24 = 16777216 historical entries.
+    // This field must be power of 2.
+    uint32_t root_offsets_chunk_count{2};
 };
 
 struct ReadOnlyOnDiskDbConfig

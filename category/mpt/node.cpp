@@ -15,12 +15,8 @@
 
 #include <category/mpt/node.hpp>
 
-#include <category/async/config.hpp>
-#include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
-#include <category/core/keccak.h>
-#include <category/core/mem/allocators.hpp>
 #include <category/core/unaligned.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/config.hpp>
@@ -30,7 +26,6 @@
 #include <algorithm>
 #include <bit>
 #include <cassert>
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -40,7 +35,6 @@
 #include <memory>
 #include <optional>
 #include <span>
-#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -428,7 +422,7 @@ void CacheNode::set_next(unsigned const index, void *const ptr) noexcept
 {
     ptr ? memcpy(
               next_data_aligned() + index * sizeof(Node *),
-              &ptr,
+              static_cast<void const *>(ptr),
               sizeof(void *))
         : memset(
               next_data_aligned() + index * sizeof(Node *), 0, sizeof(void *));

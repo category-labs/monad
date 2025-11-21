@@ -13,9 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <CLI/CLI.hpp>
-
-#include "cli_tool_impl.hpp"
+#include <category/mpt/cli_tool_impl.hpp>
 
 #include <category/async/config.hpp>
 #include <category/async/detail/scope_polyfill.hpp>
@@ -29,14 +27,16 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/kbhit.hpp>
+#include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/trie.hpp>
 
 #include <quill/Quill.h>
 
+#include <CLI/CLI.hpp>
+
 #include <evmc/hex.hpp>
 
 #include <algorithm>
-#include <atomic>
 #include <bit>
 #include <cctype>
 #include <cerrno>
@@ -52,6 +52,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -125,7 +126,7 @@ static size_t const true_hardware_concurrency = [] {
     return v;
 }();
 static size_t const total_physical_memory_bytes = [] {
-    auto v = sysconf(_SC_PHYS_PAGES);
+    auto const v = sysconf(_SC_PHYS_PAGES);
     if (v == -1) {
         throw std::system_error(errno, std::system_category());
     }
@@ -422,7 +423,7 @@ public:
     void cli_ask_question(char const *msg)
     {
         if (!no_prompt) {
-            auto answer = tty_ask_question(msg);
+            auto const answer = tty_ask_question(msg);
             cout << std::endl;
             if (tolower(answer) != 'y') {
                 cout << "Aborting." << std::endl;
@@ -442,11 +443,12 @@ public:
             cout << "     " << name << ": 0 chunks" << std::endl;
             return 0;
         }
-        MONAD_ASYNC_NAMESPACE::file_offset_t total_capacity = 0, total_used = 0;
+        MONAD_ASYNC_NAMESPACE::file_offset_t total_capacity = 0;
+        MONAD_ASYNC_NAMESPACE::file_offset_t total_used = 0;
         uint32_t count = 0;
         auto const *item = item_;
         do {
-            auto chunkid = item->index(aux.db_metadata());
+            auto const chunkid = item->index(aux.db_metadata());
             count++;
             auto &chunk = pool->chunk(pool->seq, chunkid);
             MONAD_DEBUG_ASSERT(chunk.zone_id().second == chunkid);
@@ -469,7 +471,7 @@ public:
             std::cerr << "        ";
             item = item_;
             do {
-                auto chunkid = item->index(aux.db_metadata());
+                auto const chunkid = item->index(aux.db_metadata());
                 std::cerr << " " << chunkid << " ("
                           << uint32_t(item->insertion_count()) << ")";
                 item = item->next(aux.db_metadata());
@@ -539,7 +541,7 @@ public:
         unfd.reset();
 
         auto *in = archive_read_new();
-        auto unin =
+        auto const unin =
             monad::make_scope_exit([&]() noexcept { archive_read_free(in); });
         if (ARCHIVE_OK != archive_read_support_format_tar(in)) {
             std::stringstream ss;
@@ -734,7 +736,7 @@ public:
                 if (item == nullptr) {
                     break;
                 }
-                auto chunkid = item->index(aux.db_metadata());
+                auto const chunkid = item->index(aux.db_metadata());
                 MONAD_ASSERT(chunkid != UINT32_MAX);
                 aux.remove(chunkid);
                 chunks.push_back(chunkid);
@@ -744,7 +746,7 @@ public:
                 if (item == nullptr) {
                     break;
                 }
-                auto chunkid = item->index(aux.db_metadata());
+                auto const chunkid = item->index(aux.db_metadata());
                 MONAD_ASSERT(chunkid != UINT32_MAX);
                 aux.remove(chunkid);
                 chunks.push_back(chunkid);
@@ -754,7 +756,7 @@ public:
                 if (item == nullptr) {
                     break;
                 }
-                auto chunkid = item->index(aux.db_metadata());
+                auto const chunkid = item->index(aux.db_metadata());
                 MONAD_ASSERT(chunkid != UINT32_MAX);
                 aux.remove(chunkid);
                 chunks.push_back(chunkid);
@@ -818,11 +820,11 @@ public:
                     auto const *old_metadata =
                         (monad::mpt::detail::db_metadata const *)
                             i.nonchunkstorage.data();
-                    if (memcmp(
-                            old_metadata->magic,
-                            monad::mpt::detail::db_metadata::MAGIC,
-                            monad::mpt::detail::db_metadata::
-                                MAGIC_STRING_LEN)) {
+                    if (0 != memcmp(
+                                 old_metadata->magic,
+                                 monad::mpt::detail::db_metadata::MAGIC,
+                                 monad::mpt::detail::db_metadata::
+                                     MAGIC_STRING_LEN)) {
                         std::stringstream ss;
                         ss << "DB archive was generated with version "
                            << old_metadata->magic
@@ -845,7 +847,7 @@ public:
                     if (new_metadata_map == MAP_FAILED) {
                         throw std::system_error(errno, std::system_category());
                     }
-                    auto un_new_metadata_map =
+                    auto const un_new_metadata_map =
                         monad::make_scope_exit([&]() noexcept {
                             ::munmap(new_metadata_map, cnv_chunk.capacity());
                         });
@@ -980,7 +982,7 @@ public:
                monad::mpt::detail::unsigned_20 initial_insertion_count) {
                 MONAD_ASSERT(
                     type != monad::mpt::UpdateAuxImpl::chunk_list::free);
-                auto g = db->hold_dirty();
+                auto const g = db->hold_dirty();
                 auto *i =
                     const_cast<monad::mpt::detail::db_metadata::chunk_info_t *>(
                         type == monad::mpt::UpdateAuxImpl::chunk_list::fast
@@ -991,7 +993,7 @@ public:
                 i->insertion_count1_ =
                     uint32_t(initial_insertion_count >> 10) & 0x3ff;
             };
-        for (auto &i : todecompress) {
+        for (auto const &i : todecompress) {
             if (i.type == monad::async::storage_pool::seq) {
                 if (i.metadata.in_fast_list) {
                     aux.append(
@@ -1016,7 +1018,7 @@ public:
                     }
                 }
                 if (i.metadata.in_fast_list || i.metadata.in_slow_list) {
-                    auto it =
+                    auto const it =
                         std::find(chunks.begin(), chunks.end(), i.chunk_id);
                     MONAD_ASSERT(it != chunks.end());
                     *it = UINT32_MAX;
@@ -1031,7 +1033,7 @@ public:
             aux.append(
                 monad::mpt::UpdateAuxImpl::chunk_list::fast,
                 fast_list_begin_index);
-            auto it =
+            auto const it =
                 std::find(chunks.begin(), chunks.end(), fast_list_begin_index);
             MONAD_ASSERT(it != chunks.end());
             *it = UINT32_MAX;
@@ -1049,7 +1051,7 @@ public:
             aux.append(
                 monad::mpt::UpdateAuxImpl::chunk_list::slow,
                 slow_list_begin_index);
-            auto it =
+            auto const it =
                 std::find(chunks.begin(), chunks.end(), slow_list_begin_index);
             MONAD_ASSERT(it != chunks.end());
             *it = UINT32_MAX;
@@ -1063,7 +1065,7 @@ public:
             aux.db_metadata()->slow_list.begin == slow_list_begin_index);
         MONAD_ASSERT(aux.db_metadata()->slow_list.end == slow_list_end_index);
 
-        for (unsigned int &chunk : chunks) {
+        for (unsigned int const &chunk : chunks) {
             if (chunk != UINT32_MAX) {
                 aux.append(monad::mpt::UpdateAuxImpl::chunk_list::free, chunk);
             }
@@ -1092,9 +1094,10 @@ public:
         if (fd == -1) {
             throw std::system_error(errno, std::system_category());
         }
-        auto unfd1 = monad::make_scope_fail(
+        auto const unfd1 = monad::make_scope_fail(
             [&]() noexcept { ::unlink(archive_database.c_str()); });
-        auto unfd2 = monad::make_scope_exit([&]() noexcept { ::close(fd); });
+        auto const unfd2 =
+            monad::make_scope_exit([&]() noexcept { ::close(fd); });
 
         {
             struct statfs statfs;
@@ -1164,7 +1167,7 @@ public:
             if (out == nullptr) {
                 throw std::runtime_error("libarchive failed");
             }
-            auto unout = monad::make_scope_exit([&]() noexcept {
+            auto const unout = monad::make_scope_exit([&]() noexcept {
                 archive_write_close(out);
                 archive_write_free(out);
             });
@@ -1294,7 +1297,7 @@ public:
                         if (entry == nullptr) {
                             throw std::runtime_error("libarchive failed");
                         }
-                        auto unentry = monad::make_scope_exit(
+                        auto const unentry = monad::make_scope_exit(
                             [&]() noexcept { archive_entry_free(entry); });
                         std::string leafname;
                         auto const [chunktype, chunkid] =
@@ -1493,7 +1496,7 @@ opened.
                 std::stringstream ss;
                 ss << "WARNING: --create-empty will destroy all "
                       "existing data on";
-                for (auto &i : impl.storage_paths) {
+                for (auto const &i : impl.storage_paths) {
                     ss << " " << i;
                 }
                 ss << ". Are you sure?\n";
@@ -1512,7 +1515,7 @@ opened.
                 std::stringstream ss;
                 ss << "WARNING: --truncate will destroy all "
                       "existing data on";
-                for (auto &i : impl.storage_paths) {
+                for (auto const &i : impl.storage_paths) {
                     ss << " " << i;
                 }
                 ss << ". Are you sure?\n";
@@ -1567,7 +1570,7 @@ opened.
             auto const default_prec = int(cout.precision());
             std::fixed(cout);
             for (auto const &device : impl.pool->devices()) {
-                auto cap = device.capacity();
+                auto const cap = device.capacity();
                 cout << "\n   " << std::setw(15) << print_bytes(cap.first)
                      << std::setw(15) << print_bytes(cap.second) << std::setw(6)
                      << std::setprecision(2)

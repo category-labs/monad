@@ -15,20 +15,21 @@
 
 #include "gtest/gtest.h"
 
-#include <chrono>
-#include <thread>
-
 #include <category/async/config.hpp>
-#include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
-#include <category/async/util.hpp>
 #include <category/core/io/buffers.hpp>
-#include <category/core/io/config.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
+
+#include <atomic>
+#include <bits/chrono.h>
+#include <csignal>
+#include <cstdint>
+#include <stop_token>
+#include <thread>
 
 using namespace std::chrono_literals;
 
@@ -46,7 +47,7 @@ TEST(update_aux_test, set_io_reader_dirty)
 
     monad::mpt::UpdateAux aux_writer{};
     std::atomic<bool> io_set = false;
-    std::jthread rw_asyncio([&](std::stop_token token) {
+    std::jthread const rw_asyncio([&](std::stop_token token) {
         monad::io::Ring ring1;
         monad::io::Ring ring2;
         monad::io::Buffers testbuf =
@@ -84,7 +85,7 @@ TEST(update_aux_test, set_io_reader_dirty)
         monad::mpt::UpdateAux<> &write_aux;
         bool was_dirty{false};
 
-        TestAux(monad::mpt::UpdateAux<> &write_aux_)
+        explicit TestAux(monad::mpt::UpdateAux<> &write_aux_)
             : write_aux(write_aux_)
         {
         }

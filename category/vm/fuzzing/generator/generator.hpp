@@ -1097,7 +1097,6 @@ namespace monad::vm::fuzzing
         return return_buf;
     }
 
-
     template <typename Engine>
     evmc::bytes generate_input_bytes(
         GeneratorFocus const &focus, Engine &eng, std::size_t const size,
@@ -1205,61 +1204,23 @@ namespace monad::vm::fuzzing
         }};
     }
 
-
-
     ::intx::uint256 to_intx(monad::vm::runtime::uint256_t const &x)
     {
         return ::intx::uint256{x[0], x[1], x[2], x[3]};
     }
 
-
     /**
      * Generate a random evmone transaction.
-     *
-     * The `lookup :: Address -> Code` argument here is passed as
-     * a lambda to decouple the message generator from any particular concrete
-     * state representation. The fuzzer implementation is responsible for
-     * instantiating this lookup as appropriate.
      */
-    template <typename Engine, typename LookupFunc,  typename NonceFunc>
+    template <typename Engine, typename LookupFunc, typename NonceFunc>
     evmone::state::Transaction generate_transaction(
         GeneratorFocus const &focus, Engine &eng,
         std::vector<evmc::address> const &contract_addresses,
         std::vector<evmc::address> const &sender_addresses,
-        std::vector<evmc::address> const &known_eoas,
-        LookupFunc address_lookup, NonceFunc nonce_lookup) noexcept
+        std::vector<evmc::address> const &known_eoas, LookupFunc address_lookup,
+        NonceFunc nonce_lookup) noexcept
     {
-        // auto const kind = uniform_sample(
-        //     eng, std::array{EVMC_CALL, EVMC_DELEGATECALL, EVMC_CALLCODE});
-
-        // auto const static_flag = discrete_choice<evmc_flags>(
-        //     eng,
-        //     [](auto &) { return static_cast<evmc_flags>(0); },
-        //     Choice(0.02, [](auto &) { return EVMC_STATIC; }));
-        // auto const delegated_flag = discrete_choice<evmc_flags>(
-        //     eng,
-        //     [](auto &) { return static_cast<evmc_flags>(0); },
-        //     Choice(0.5, [](auto &) { return EVMC_DELEGATED; }));
-
-        // auto const flags =
-        //     static_cast<evmc_flags>(static_flag | delegated_flag);
-
-        // auto const depth =
-        //     std::uniform_int_distribution<decltype(evmc_message::depth)>(
-        //         0, 1023)(eng);
-
         auto const target = uniform_sample(eng, contract_addresses);
-
-        // auto const recipient =
-        //     (kind == EVMC_CALL)
-        //         ? target
-        //         : discrete_choice<evmc::address>(
-        //               eng,
-        //               [&](auto &g) {
-        //                   return uniform_sample(g, contract_addresses);
-        //               },
-        //               Choice(
-        //                   0.001, [&](auto &g) { return random_address(g); }));
 
         auto const eoa_prob = known_eoas.empty() ? 0.0 : 0.5;
         auto const sender = discrete_choice<evmc::address>(
@@ -1279,26 +1240,24 @@ namespace monad::vm::fuzzing
                 return random_constant<128>(g).value;
             }));
 
-        // auto const salt = random_constant(eng).value;
-
-        return evmone::state::Transaction{ 
-                .data = input_data,
-              .gas_limit = message_gas(eng, target, contract_addresses, address_lookup),
-               .max_gas_price = 10,
-               .max_priority_gas_price = 10,
-                .max_blob_gas_price = 0,
-                .sender = sender,
-                .to = target,
-                .value = to_intx(value),
-                .access_list = {},
-                .blob_hashes = {},
-                .chain_id = 20143, //monad devnet
-                .nonce = nonce_lookup(sender),
-                .r = 1,
-                .s = 1,
-                // uint8_t v = 0;
-                .authorization_list = {}
-            };
+        return evmone::state::Transaction{
+            .data = input_data,
+            .gas_limit =
+                message_gas(eng, target, contract_addresses, address_lookup),
+            .max_gas_price = 10,
+            .max_priority_gas_price = 10,
+            .max_blob_gas_price = 0,
+            .sender = sender,
+            .to = target,
+            .value = to_intx(value),
+            .access_list = {},
+            .blob_hashes = {},
+            .chain_id = 1, // ethereum mainnet 20143, //monad devnet
+            .nonce = nonce_lookup(sender),
+            .r = 1,
+            .s = 1,
+            // uint8_t v = 0;
+            .authorization_list = {}};
     }
 
 }

@@ -25,8 +25,8 @@
 #include <evmc/evmc.hpp>
 
 #include <algorithm>
-#include <span>
 #include <iostream>
+#include <span>
 
 using namespace evmone::state;
 
@@ -39,7 +39,8 @@ namespace monad::vm::fuzzing
         MONAD_VM_ASSERT(a.access_status == b.access_status);
     }
 
-    void assert_equal(evmone::state::Account const &a, evmone::state::Account const &b)
+    void assert_equal(
+        evmone::state::Account const &a, evmone::state::Account const &b)
     {
         MONAD_VM_ASSERT(
             a.transient_storage.size() == b.transient_storage.size());
@@ -65,7 +66,8 @@ namespace monad::vm::fuzzing
         MONAD_VM_ASSERT(a.access_status == b.access_status);
     }
 
-    void assert_equal(evmone::state::State const &a, evmone::state::State const &b)
+    void
+    assert_equal(evmone::state::State const &a, evmone::state::State const &b)
     {
         auto const &a_accs = a.get_modified_accounts();
         auto const &b_accs = b.get_modified_accounts();
@@ -78,29 +80,26 @@ namespace monad::vm::fuzzing
         }
     }
 
-    void assert_equal(evmone::test::TestState const &evmone, monad::BlockState &monad)
+    void assert_equal(
+        evmone::test::TestState const &evmone, monad::BlockState &monad)
     {
-        // TODO we don't check for size of both states so the monadstate could potentially contain more?
-        for (auto const& [addr, acc] : evmone)
-        {
-            std::cerr << "checking " << evmc::hex(addr) << std::endl;
+        // TODO we don't check for size of both states so the monad state could
+        // potentially contain more?
+        for (auto const &[addr, acc] : evmone) {
             auto const macc = monad.read_account(addr);
 
             MONAD_VM_ASSERT(!!macc);
-                            std::cerr << std::format("acc.balance: {} macc.balance: {}\n", hex(acc.balance), hex(macc->balance));
 
             MONAD_VM_ASSERT(macc->balance == acc.balance);
             MONAD_VM_ASSERT(macc->nonce == acc.nonce);
             MONAD_VM_ASSERT(macc->code_hash == evmone::keccak256(acc.code));
 
             auto incarnation = macc->incarnation;
-            for (auto const& [k, v] : acc.storage)
-            {
+            for (auto const &[k, v] : acc.storage) {
                 MONAD_VM_ASSERT(monad.read_storage(addr, incarnation, k) == v);
             }
         }
     }
-    
 
     void assert_equal(StateDiff::Entry const &a, StateDiff::Entry const &b)
     {
@@ -110,20 +109,18 @@ namespace monad::vm::fuzzing
 
         // Compare optional code
         MONAD_VM_ASSERT(a.code.has_value() == b.code.has_value());
-        if (a.code && b.code){
+        if (a.code && b.code) {
             MONAD_VM_ASSERT(*a.code == *b.code);
         }
         // Compare modified storage
         MONAD_VM_ASSERT(a.modified_storage.size() == b.modified_storage.size());
-        for (size_t i = 0; i < a.modified_storage.size(); ++i)
-        {
-            auto const& [key_a, val_a] = a.modified_storage[i];
-            auto const& [key_b, val_b] = b.modified_storage[i];
+        for (size_t i = 0; i < a.modified_storage.size(); ++i) {
+            auto const &[key_a, val_a] = a.modified_storage[i];
+            auto const &[key_b, val_b] = b.modified_storage[i];
             MONAD_VM_ASSERT(key_a == key_b);
             MONAD_VM_ASSERT(val_a == val_b);
         }
     }
-
 
     void assert_equal(StateDiff::Entry const &a, StateView::Account const &b)
     {
@@ -132,52 +129,54 @@ namespace monad::vm::fuzzing
         MONAD_VM_ASSERT(a.balance == b.balance);
 
         // Compare optional code hash
-        if (a.code){
+        if (a.code) {
             MONAD_VM_ASSERT(evmone::keccak256(*a.code) == b.code_hash);
         }
     }
 
-
-     void assert_equal_deleted_accounts(std::vector<address> const& a, std::vector<address> const& b, evmone::test::TestState const &initial)
+    void assert_equal_deleted_accounts(
+        std::vector<address> const &a, std::vector<address> const &b,
+        evmone::test::TestState const &initial)
     {
-        if(a.size() < b.size()) return assert_equal_deleted_accounts(b, a, initial);
-        for (auto const& addr_a : a)
-        {
+        if (a.size() < b.size()) {
+            return assert_equal_deleted_accounts(b, a, initial);
+        }
+        for (auto const &addr_a : a) {
             auto it = std::find(b.begin(), b.end(), addr_a);
-            if(it == b.end()){
+            if (it == b.end()) {
                 auto initial_b = initial.get_account(addr_a);
                 MONAD_VM_ASSERT(!initial_b);
             }
         }
     }
 
-
-    void assert_equal(StateDiff const& a, StateDiff const& b, evmone::test::TestState const &initial)
+    void assert_equal(
+        StateDiff const &a, StateDiff const &b,
+        evmone::test::TestState const &initial)
     {
-        if(a.modified_accounts.size() < b.modified_accounts.size()) return assert_equal(b, a, initial);
-        // Compare modified_accounts
-        // MONAD_VM_ASSERT(a.modified_accounts.size() == b.modified_accounts.size());
+        if (a.modified_accounts.size() < b.modified_accounts.size()) {
+            return assert_equal(b, a, initial);
+        }
 
-        for (auto const& entry_a : a.modified_accounts)
-        {
-            auto it = std::find_if(b.modified_accounts.begin(), b.modified_accounts.end(),
-                                [&](auto const& e) { return e.addr == entry_a.addr; });
-            // MONAD_VM_ASSERT(it != b.modified_accounts.end());
-            if (it != b.modified_accounts.end())
-            {
+        for (auto const &entry_a : a.modified_accounts) {
+            auto it = std::find_if(
+                b.modified_accounts.begin(),
+                b.modified_accounts.end(),
+                [&](auto const &e) { return e.addr == entry_a.addr; });
+            if (it != b.modified_accounts.end()) {
                 assert_equal(entry_a, *it);
             }
-            else
-            {
+            else {
                 auto const initial_b = initial.get_account(entry_a.addr);
-                
+
                 MONAD_VM_ASSERT(!!initial_b);
                 assert_equal(entry_a, *initial_b);
             }
         }
 
         // Compare deleted_accounts
-        assert_equal_deleted_accounts(a.deleted_accounts, b.deleted_accounts, initial);
+        assert_equal_deleted_accounts(
+            a.deleted_accounts, b.deleted_accounts, initial);
     }
 
     void assert_equal(
@@ -226,7 +225,8 @@ namespace monad::vm::fuzzing
     }
 
     void assert_equal(
-        evmone::state::TransactionReceipt const &evmone_result, evmone::state::TransactionReceipt const &compiler_result,
+        evmone::state::TransactionReceipt const &evmone_result,
+        evmone::state::TransactionReceipt const &compiler_result,
         evmone::test::TestState const &initial, bool const strict_out_of_gas)
     {
         MONAD_VM_ASSERT(evmone_result.gas_used == compiler_result.gas_used);
@@ -234,8 +234,7 @@ namespace monad::vm::fuzzing
         switch (evmone_result.status) {
         case EVMC_SUCCESS:
         case EVMC_REVERT:
-            MONAD_VM_ASSERT(
-                evmone_result.status == compiler_result.status);
+            MONAD_VM_ASSERT(evmone_result.status == compiler_result.status);
             break;
         case EVMC_OUT_OF_GAS: {
             if (strict_out_of_gas) {
@@ -259,7 +258,8 @@ namespace monad::vm::fuzzing
             break;
         }
 
-        assert_equal(evmone_result.state_diff, compiler_result.state_diff, initial);
+        assert_equal(
+            evmone_result.state_diff, compiler_result.state_diff, initial);
     }
 
 }

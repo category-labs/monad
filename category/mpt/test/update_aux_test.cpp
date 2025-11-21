@@ -58,7 +58,7 @@ TEST(update_aux_test, set_io_reader_dirty)
                 monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
                 monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
         monad::async::AsyncIO testio(pool, testbuf);
-        aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
+        aux_writer.set_io(testio, AUX_TEST_HISTORY_LENGTH);
         io_set = true;
 
         while (!token.stop_requested()) {
@@ -129,13 +129,13 @@ TEST(update_aux_test, set_io_reader_dirty)
     ASSERT_DEATH(
         ({
             monad::mpt::UpdateAux<> aux_reader{};
-            aux_reader.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
+            aux_reader.set_io(testio, AUX_TEST_HISTORY_LENGTH);
         }),
         "DB metadata was closed dirty, but not opened for healing");
 
     // TestAux adds instrumentation to turn off the dirty bit. Should not throw.
     TestAux aux_reader(aux_writer);
-    EXPECT_NO_THROW(aux_reader.set_io(&testio, AUX_TEST_HISTORY_LENGTH));
+    EXPECT_NO_THROW(aux_reader.set_io(testio, AUX_TEST_HISTORY_LENGTH));
     EXPECT_TRUE(aux_reader.was_dirty) << "target codepath not exercised";
 }
 
@@ -157,7 +157,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
     monad::async::AsyncIO testio(pool, testbuf);
     {
         monad::mpt::UpdateAux aux_writer{};
-        aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
+        aux_writer.set_io(testio, AUX_TEST_HISTORY_LENGTH);
 
         // Root offset at 0, fast list offset at 50. This is correct
         auto const start_offset =
@@ -174,7 +174,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
     {
         // verify set_io() succeeds
         monad::mpt::UpdateAux aux_writer{};
-        aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH);
+        aux_writer.set_io(testio, AUX_TEST_HISTORY_LENGTH);
         EXPECT_EQ(aux_writer.root_offsets().max_version(), 0);
 
         // Write version 1. However, append the new root offset without
@@ -192,7 +192,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
     { // Fail to reopen upon calling rewind_to_match_offsets()
         monad::mpt::UpdateAux aux_writer{};
         EXPECT_EXIT(
-            aux_writer.set_io(&testio, AUX_TEST_HISTORY_LENGTH),
+            aux_writer.set_io(testio, AUX_TEST_HISTORY_LENGTH),
             ::testing::KilledBySignal(SIGABRT),
             "Detected corruption");
     }

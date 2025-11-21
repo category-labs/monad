@@ -550,9 +550,9 @@ UpdateAuxImpl::~UpdateAuxImpl()
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
 void UpdateAuxImpl::set_io(
-    AsyncIO *io_, std::optional<uint64_t> const history_len)
+    AsyncIO &io_, std::optional<uint64_t> const history_len)
 {
-    io = io_;
+    io = &io_;
     auto const chunk_count = io->chunk_count();
     MONAD_ASSERT(chunk_count >= 3);
     auto const map_size =
@@ -629,7 +629,7 @@ void UpdateAuxImpl::set_io(
     been reset. Solve this by detecting when a pool has just been truncated
     and ensure all triedb structures are also reset.
     */
-    if (io_->storage_pool().is_newly_truncated()) {
+    if (io->storage_pool().is_newly_truncated()) {
         memset(
             db_metadata_[0].main->magic,
             0,

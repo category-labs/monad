@@ -53,7 +53,6 @@ namespace
     {
         static constexpr bool lifetime_managed_internally = true;
 
-        UpdateAuxImpl *aux;
         inflight_map_t &inflights;
         Node::SharedPtr parent;
         chunk_offset_t rd_offset; // required for sender
@@ -62,10 +61,9 @@ namespace
         unsigned const branch_index;
 
         find_receiver(
-            UpdateAuxImpl &aux, inflight_map_t &inflights,
-            Node::SharedPtr parent_, unsigned char const branch)
-            : aux(&aux)
-            , inflights(inflights)
+            inflight_map_t &inflights, Node::SharedPtr parent_,
+            unsigned char const branch)
+            : inflights(inflights)
             , parent(std::move(parent_))
             , rd_offset(0, 0)
             , branch_index(parent->to_child_index(branch))
@@ -112,7 +110,7 @@ namespace
     {
         static constexpr bool lifetime_managed_internally = true;
 
-        UpdateAuxImpl *aux;
+        UpdateAuxImpl &aux;
         NodeCache &node_cache;
         inflight_map_owning_t &inflights;
         chunk_offset_t offset;
@@ -125,7 +123,7 @@ namespace
             UpdateAuxImpl &aux, NodeCache &node_cache,
             inflight_map_owning_t &inflights, chunk_offset_t const offset,
             virtual_chunk_offset_t const virtual_offset)
-            : aux(&aux)
+            : aux(aux)
             , node_cache(node_cache)
             , inflights(inflights)
             , offset(offset)
@@ -154,7 +152,7 @@ namespace
             CacheNodeCursor start_cursor{};
             // verify the offset it read is still valid and has not been reused
             // to write new data.
-            auto const virtual_offset_after = aux->physical_to_virtual(offset);
+            auto const virtual_offset_after = aux.physical_to_virtual(offset);
             if (virtual_offset_after == virtual_offset) {
                 {
                     NodeCache::ConstAccessor acc;
@@ -270,7 +268,7 @@ void find_notify_fiber_future(
             return;
         }
         inflights[offset].emplace_back(cont);
-        find_receiver receiver(aux, inflights, std::move(node), branch);
+        find_receiver receiver(inflights, std::move(node), branch);
         detail::initiate_async_read_update(
             *aux.io, std::move(receiver), receiver.bytes_to_read);
     }

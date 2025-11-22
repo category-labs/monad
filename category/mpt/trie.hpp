@@ -205,6 +205,9 @@ class UpdateAuxImpl
     // clear all versions <= version, release unused disk space
     void erase_versions_up_to_and_including(uint64_t version);
 
+    double
+    calculate_disk_usage_if_erased_up_to_and_including(uint64_t version) const;
+
     /* Calculate the version up to which the database will automatically expire
     entries (referred to as "auto_expire" in code names).
 

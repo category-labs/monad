@@ -76,7 +76,7 @@ struct option const longopts[] = {
     {}
 };
 
-int parse_options(int argc, char **argv)
+static int parse_options(int argc, char **argv)
 {
     int ch;
 
@@ -98,7 +98,7 @@ int parse_options(int argc, char **argv)
 
 static sig_atomic_t g_should_stop;
 
-void handle_signal(int)
+static void handle_signal(int)
 {
     g_should_stop = 1;
 }
@@ -305,8 +305,8 @@ static void find_initial_iteration_point(
 
 int main(int argc, char **argv)
 {
-    char event_ring_path_buf[PATH_MAX];
-    char const *event_ring_path = MONAD_EVENT_DEFAULT_EXEC_FILE_NAME;
+    char event_ring_pathbuf[PATH_MAX];
+    char const *event_ring_input = MONAD_EVENT_DEFAULT_EXEC_FILE_NAME;
     int const pos_arg_idx = parse_options(argc, argv);
 
     if (argc - pos_arg_idx > 1) {
@@ -314,29 +314,22 @@ int main(int argc, char **argv)
         return EX_USAGE;
     }
     if (pos_arg_idx + 1 == argc) {
-        event_ring_path = argv[pos_arg_idx];
+        event_ring_input = argv[pos_arg_idx];
     }
 
-    if (strchr(event_ring_path, '/') == nullptr) {
-        // The event ring path does not contain a '/'; we assume this is a file
-        // name relative to the default hugetlbfs-resident event ring directory,
-        // which is computed by the function `monad_event_open_ring_dir_fd`
-        if (monad_event_open_ring_dir_fd(
-                nullptr, event_ring_path_buf, sizeof event_ring_path_buf) !=
-            0) {
-            goto Error;
-        }
-        strcat(event_ring_path_buf, "/");
-        if (strlcat(
-                event_ring_path_buf,
-                event_ring_path,
-                sizeof event_ring_path_buf) >= sizeof event_ring_path_buf) {
-            errx(
-                EX_USAGE,
-                "event ring file name `%s` is too long",
-                event_ring_path);
-        }
-        event_ring_path = event_ring_path_buf;
+    // Event ring shared memory files can be located anywhere, but there is a
+    // performance benefit to placing them on certain filesystems; consequently,
+    // there are several functions related to opening / creating event ring
+    // files at an optimal default location; a common pattern is to accept any
+    // filename, but with a default filename if nothing is specified (in this
+    // case, MONAD_EVENT_DEFAULT_EXEC_FILE_NAME); the below function will place
+    // "pure" file names (i.e., with no '/' in path) in the best subdirectory
+    if (monad_event_resolve_ring_file(
+            MONAD_EVENT_DEFAULT_HUGETLBFS,
+            event_ring_input,
+            event_ring_pathbuf,
+            sizeof event_ring_pathbuf) != 0) {
+        goto Error;
     }
 
     signal(SIGINT, handle_signal);
@@ -345,13 +338,14 @@ int main(int argc, char **argv)
     // segments into our process' address space. If this is successful, we'll
     // be able to create one or more iterators over that ring's events.
     struct monad_event_ring exec_ring;
-    int const ring_fd = open(event_ring_path, O_RDONLY);
+    int const ring_fd = open(event_ring_pathbuf, O_RDONLY);
     if (ring_fd == -1) {
-        err(EX_CONFIG, "open of event ring path `%s` failed", event_ring_path);
+        err(EX_CONFIG,
+            "open of event ring path `%s` failed",
+            event_ring_pathbuf);
     }
     if (monad_event_ring_mmap(
-            &exec_ring, PROT_READ, MAP_HUGETLB, ring_fd, 0, event_ring_path) !=
-        0) {
+            &exec_ring, PROT_READ, 0, ring_fd, 0, event_ring_pathbuf) != 0) {
         goto Error;
     }
 
@@ -381,7 +375,7 @@ int main(int argc, char **argv)
         errno = EOWNERDEAD;
         err(EX_SOFTWARE,
             "writer of event ring `%s` has exited",
-            event_ring_path);
+            event_ring_pathbuf);
     }
     int pidfd = (int)syscall(SYS_pidfd_open, writer_pid, 0);
     if (pidfd == -1) {

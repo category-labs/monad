@@ -69,6 +69,11 @@ class DbCache final : public Db
     StorageCache storage_{10'000'000};
     Proposals proposals_;
 
+    uint64_t num_account_touched_{0};
+    uint64_t num_account_changed_{0};
+    uint64_t num_storage_touched_{0};
+    uint64_t num_storage_changed_{0};
+
 public:
     DbCache(Db &db)
         : db_{db}
@@ -222,7 +227,7 @@ public:
     virtual std::string print_stats() override
     {
         return db_.print_stats() + ",ac=" + accounts_.print_stats() +
-               ",sc=" + storage_.print_stats();
+               ",sc=" + storage_.print_stats() + print_read_write_stats();
     }
 
     virtual uint64_t get_block_number() const override
@@ -230,25 +235,50 @@ public:
         return db_.get_block_number();
     }
 
+    std::string print_read_write_stats() const
+    {
+        std::string str = std::format(
+            ",at={},am={},st={},sm={}",
+            num_account_touched_,
+            num_account_changed_,
+            num_storage_touched_,
+            num_storage_changed_);
+        return str;
+    }
+
 private:
     void insert_in_lru_caches(StateDeltas const &state_deltas)
     {
+        num_account_touched_ = 0;
+        num_account_changed_ = 0;
+        num_storage_touched_ = 0;
+        num_storage_changed_ = 0;
         for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
             auto const &address = it->first;
             auto const &account_delta = it->second.account;
             accounts_.insert(address, account_delta.second);
             auto const &storage = it->second.storage;
             auto const &account = account_delta.second;
+            num_account_touched_++;
+            bool account_changed = account_delta.first != account;
             if (account.has_value()) {
                 for (auto it2 = storage.cbegin(); it2 != storage.cend();
                      ++it2) {
                     auto const &key = it2->first;
                     auto const &storage_delta = it2->second;
                     auto const incarnation = account->incarnation;
+                    num_storage_touched_++;
+                    if (storage_delta.first != storage_delta.second) {
+                        num_storage_changed_++;
+                        account_changed = true;
+                    }
                     storage_.insert(
                         StorageKey(address, incarnation, key),
                         storage_delta.second);
                 }
+            }
+            if (account_changed) {
+                num_account_changed_++;
             }
         }
     }

@@ -151,7 +151,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 template <Traits traits>
 evmc_message ExecuteSystemTransaction<traits>::to_message() const
 {
-    return evmc_message{
+    evmc_message msg{
         .kind = EVMC_CALL,
         .flags = 0,
         .depth = 0,
@@ -166,6 +166,8 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
         .code = nullptr,
         .code_size = 0,
     };
+    intx::be::store(msg.value.bytes, tx_.value);
+    return msg;
 }
 
 template <Traits traits>

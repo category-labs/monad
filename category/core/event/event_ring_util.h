@@ -22,10 +22,13 @@
  * but which are not part of the core API
  */
 
+#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include <sys/types.h>
+
+struct timespec;
 
 #ifdef __cplusplus
 extern "C"
@@ -83,6 +86,12 @@ int monad_event_ring_query_flocks(
 /// that writer; this is a convenience wrapper around the
 /// monad_event_ring_query_flocks function
 int monad_event_ring_query_excl_writer_pid(int ring_fd, pid_t *pid);
+
+/// Waits for the (currently non-existent) event ring file to be created, then
+/// opens it with the specified open_flags
+int monad_event_ring_wait_for_excl_writer(
+    char const *path, struct timespec const *timeout, sigset_t const *sigmask,
+    int open_flags, int *fd, pid_t *pid);
 
 /// Given a path to a file (which does not need to exist), check if the
 /// associated file system supports that file being mmap'ed with MAP_HUGETLB

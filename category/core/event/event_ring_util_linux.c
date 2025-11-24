@@ -1,13 +1,16 @@
 #include <errno.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
-#include <dirent.h>
 #include <fcntl.h>
 #include <linux/magic.h>
+#include <poll.h>
 #include <sys/file.h>
+#include <sys/inotify.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/vfs.h>
@@ -122,6 +125,104 @@ static bool check_flock_entry(
     return lock_ino == ring_ino;
 }
 
+static inline struct timespec
+timespec_sub(struct timespec lhs, struct timespec rhs)
+{
+    struct timespec r = {
+        .tv_sec = lhs.tv_sec - rhs.tv_sec,
+        .tv_nsec = lhs.tv_nsec - rhs.tv_nsec};
+    if (r.tv_nsec < 0) {
+        r.tv_sec -= 1;
+        r.tv_nsec += 1'000'000'000L;
+    }
+    return r;
+}
+
+static int wait_for_new_file(
+    int const inotify_fd, char const *const filename,
+    struct timespec const *timeout, sigset_t const *sigmask)
+{
+    int rc;
+    struct timespec poll_start_time;
+    struct timespec poll_end_time;
+    struct timespec residual_timeout;
+    bool const has_timeout = timeout != nullptr;
+
+    struct pollfd pfd = {
+        .fd = inotify_fd,
+        .events = POLLIN,
+    };
+
+    if (has_timeout) {
+        residual_timeout = *timeout;
+    }
+
+    do {
+        alignas(struct inotify_event) uint8_t event_buf[4096];
+        uint8_t *p = event_buf;
+        ssize_t n_read;
+
+        (void)clock_gettime(CLOCK_MONOTONIC, &poll_start_time);
+        rc = ppoll(&pfd, 1, has_timeout ? &residual_timeout : nullptr, sigmask);
+        (void)clock_gettime(CLOCK_MONOTONIC, &poll_end_time);
+        if (rc == -1) {
+            return FORMAT_ERRC(errno, "ppoll error, %s creation", filename);
+        }
+
+        n_read = read(inotify_fd, &event_buf, sizeof event_buf);
+        if (n_read == -1) {
+            return FORMAT_ERRC(
+                errno, "read of inotify_fd failed, %s creation", filename);
+        }
+
+        while (p < event_buf + (size_t)n_read) {
+            struct inotify_event const *const event =
+                (struct inotify_event const *)p;
+            if (event->len > 0 && strcmp(event->name, filename) == 0 &&
+                (event->mask & IN_ISDIR) == 0) {
+                return 0;
+            }
+            if (event->mask & IN_DELETE_SELF) {
+                return FORMAT_ERRC(ENOTDIR, "parent directory deleted");
+            }
+            p += sizeof *event + event->len;
+        }
+
+        if (has_timeout) {
+            struct timespec const poll_duration =
+                timespec_sub(poll_end_time, poll_start_time);
+            residual_timeout = timespec_sub(residual_timeout, poll_duration);
+        }
+    }
+    while (!has_timeout || residual_timeout.tv_sec >= 0);
+
+    return FORMAT_ERRC(ETIMEDOUT, "%s creation poll timed out", filename);
+}
+
+static int open_excl_writer_file(
+    char const *const path, int const open_flags, int *const out_fd,
+    pid_t *const out_pid)
+{
+    int rc;
+    int fd;
+    pid_t pid;
+
+    fd = open(path, open_flags);
+    if (fd == -1) {
+        return FORMAT_ERRC(errno, "open of %s failed", path);
+    }
+    rc = monad_event_ring_query_excl_writer_pid(fd, &pid);
+    if (out_pid != nullptr) {
+        *out_pid = pid;
+    }
+    if (rc != 0 || out_fd == nullptr) {
+        (void)close(fd);
+        return rc;
+    }
+    *out_fd = fd;
+    return 0;
+}
+
 int monad_event_ring_query_flocks(
     int ring_fd, struct monad_event_flock_info *flocks, size_t *size)
 {
@@ -148,6 +249,79 @@ int monad_event_ring_query_flocks(
         }
     }
     return 0;
+}
+
+int monad_event_ring_wait_for_excl_writer(
+    char const *const path, struct timespec const *const timeout,
+    sigset_t const *const sigmask, int const open_flags, int *const out_fd,
+    pid_t *const pid)
+{
+    constexpr uint32_t NotifyMask =
+        IN_CREATE | IN_MOVED_TO | IN_DELETE_SELF | IN_ONLYDIR;
+
+    char const *last_path_sep;
+    char const *filename;
+    struct stat path_stat;
+    int wd;
+    int rc;
+    int inotify_fd [[gnu::cleanup(cleanup_close)]] = -1;
+
+    if (out_fd != nullptr) {
+        *out_fd = -1;
+    }
+    if (pid != nullptr) {
+        *pid = 0;
+    }
+
+    inotify_fd = inotify_init1(IN_CLOEXEC);
+    if (inotify_fd == -1) {
+        return FORMAT_ERRC(errno, "inotify_init1 failed");
+    }
+
+    last_path_sep = strrchr(path, '/');
+    if (last_path_sep == nullptr) {
+        wd = inotify_add_watch(inotify_fd, ".", NotifyMask);
+        filename = path;
+    }
+    else {
+        size_t const dirname_len = (size_t)(last_path_sep - path);
+        char *dirname [[gnu::cleanup(cleanup_free)]] = malloc(dirname_len + 1);
+        *(char *)mempcpy(dirname, path, dirname_len) = '\0';
+        wd = inotify_add_watch(inotify_fd, dirname, NotifyMask);
+        filename = last_path_sep + 1;
+    }
+    if (wd == -1) {
+        return FORMAT_ERRC(
+            errno, "inotify_add_watch failed for parent dir of %s", path);
+    }
+
+    // Before waiting for the file to be created, check if it's already there
+    rc = stat(path, &path_stat);
+    if (rc == -1 && errno != ENOENT) {
+        return FORMAT_ERRC(errno, "stat of %s failed", path);
+    }
+    if (rc == 0) {
+        if ((path_stat.st_mode & S_IFMT) != S_IFREG) {
+            // The use of EACCES to mean "not a regular file" is unusual, but
+            // matches the execve(2) behavior; in the directory case, use EISDIR
+            int const error_code =
+                path_stat.st_mode == S_IFDIR ? EISDIR : EACCES;
+            return FORMAT_ERRC(error_code, "%s is not a regular file", path);
+        }
+        goto FileReady;
+    }
+
+    // ENOENT case: if it's created at any point after the above check, it will
+    // create an inotify event; wait for it to appear
+    rc = wait_for_new_file(inotify_fd, filename, timeout, sigmask);
+    if (rc != 0) {
+        return rc;
+    }
+
+FileReady:
+    return out_fd != nullptr || pid != nullptr
+               ? open_excl_writer_file(path, open_flags, out_fd, pid)
+               : 0;
 }
 
 int monad_check_path_supports_map_hugetlb(char const *path, bool *supported)

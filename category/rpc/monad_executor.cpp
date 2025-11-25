@@ -1628,3 +1628,16 @@ void monad_executor_run_transactions(
         user,
         tracer_config);
 }
+
+void monad_executor_eth_simulate_submit(
+    struct monad_executor *, enum monad_chain_config, size_t n_blocks,
+    uint8_t const *rlp_calls, size_t rlp_calls_len,
+    struct monad_state_override const *,
+    void (*complete)(monad_executor_result *, void *user), void *user)
+{
+    (void)n_blocks;
+    (void)rlp_calls;
+    (void)rlp_calls_len;
+    (void)complete;
+    (void)user;
+}

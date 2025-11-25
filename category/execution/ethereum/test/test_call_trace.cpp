@@ -537,4 +537,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_call)
 {
     static constexpr auto recipient =
         0x00000000000000000000000000000000cccccccc_address;
+
+    (void)recipient;
 }

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -21,6 +22,9 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstring>
+#include <memory>
+#include <utility>
 
 using namespace monad::mpt;
 using namespace monad::literals;
@@ -33,7 +37,7 @@ TEST(NodeCache, works)
     auto make_node = [&](uint32_t v) {
         monad::byte_string value(84, 0);
         memcpy(value.data(), &v, 4);
-        auto temp_node =
+        auto const temp_node =
             monad::mpt::make_node(0, {}, {}, std::move(value), 0, 0);
         std::shared_ptr<CacheNode> node = copy_node<CacheNode>(temp_node.get());
         MONAD_ASSERT(node->get_mem_size() == NodeCache::AVERAGE_NODE_SIZE);
@@ -79,11 +83,11 @@ TEST(NodeCache, works)
 
     monad::byte_string large_value(84 * 3, 0);
     memcpy(large_value.data(), "hihi", 4);
-    auto temp_large_node =
+    auto const temp_large_node =
         monad::mpt::make_node(0, {}, {}, std::move(large_value), 0, 0);
-    auto node = copy_node<CacheNode>(temp_large_node.get());
+    auto const node = copy_node<CacheNode>(temp_large_node.get());
     EXPECT_EQ(node->get_mem_size(), 272);
-    node_cache.insert(virtual_chunk_offset_t(6, 0, 1), std::move(node));
+    node_cache.insert(virtual_chunk_offset_t(6, 0, 1), node);
     // Everything else should get evicted
     EXPECT_EQ(node_cache.size(), 1);
     ASSERT_TRUE(node_cache.find(acc, virtual_chunk_offset_t(6, 0, 1)));

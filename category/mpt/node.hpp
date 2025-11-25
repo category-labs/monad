@@ -383,7 +383,7 @@ public:
     template <class... Args>
     static SharedPtr make_shared(size_t bytes, Args &&...args)
     {
-        allocators::variable_size_allocator<CacheNode> alloc(bytes);
+        allocators::variable_size_allocator<CacheNode> const alloc(bytes);
         return std::allocate_shared<CacheNode>(
             alloc,
             prevent_public_construction_tag{},

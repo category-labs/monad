@@ -13,6 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/small_prng.hpp>
+
+#include <ankerl/unordered_dense.h>
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -22,10 +26,6 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
-
-#include <category/core/small_prng.hpp>
-
-#include <ankerl/unordered_dense.h>
 
 /*
 We know from analysing Ethereum chain history that:
@@ -65,42 +65,64 @@ static double const MAX_RAND = double(monad::small_prng::max());
 
 int main()
 {
-    std::vector<uint32_t> arr;
-    if (!std::filesystem::exists("array_sorted.bin") &&
-        !std::filesystem::exists("array_unsorted.bin")) {
-        ankerl::unordered_dense::segmented_map<uint32_t, uint32_t> map;
-        ankerl::unordered_dense::segmented_set<uint32_t> seen;
-        std::cout << "Generating map ..." << std::endl;
-        monad::small_prng rand;
-        for (uint32_t x = 0; x < SLICES; x++) {
-            seen.clear();
-            for (uint64_t y = 0; y < SLICE_LEN; y++) {
-                double r = double(rand()) / MAX_RAND;
-                r = pow(MULTIPLIER, MULTIPLIER * r) / DIVISOR;
-                uint32_t const j = uint32_t(double(TOTAL_KEYS) * r);
-                if (!seen.contains(j)) {
-                    auto &v = map[j];
-                    v += 1;
-                    seen.insert(j);
+    try {
+        std::vector<uint32_t> arr;
+        if (!std::filesystem::exists("array_sorted.bin") &&
+            !std::filesystem::exists("array_unsorted.bin")) {
+            ankerl::unordered_dense::segmented_map<uint32_t, uint32_t> map;
+            ankerl::unordered_dense::segmented_set<uint32_t> seen;
+            std::cout << "Generating map ..." << std::endl;
+            monad::small_prng rand;
+            for (uint32_t x = 0; x < SLICES; x++) {
+                seen.clear();
+                for (uint64_t y = 0; y < SLICE_LEN; y++) {
+                    double r = double(rand()) / MAX_RAND;
+                    r = pow(MULTIPLIER, MULTIPLIER * r) / DIVISOR;
+                    uint32_t const j = uint32_t(double(TOTAL_KEYS) * r);
+                    if (!seen.contains(j)) {
+                        auto &v = map[j];
+                        v += 1;
+                        seen.insert(j);
+                    }
                 }
             }
+            std::cout << "Generating array from map ..." << std::endl;
+            arr.reserve(map.size());
+            for (auto const &i : map) {
+                arr.push_back(i.second);
+            }
+            map.clear();
+            std::cout << "Writing into 'array_unsorted.bin' ..." << std::endl;
+            std::ofstream s("array_unsorted.bin");
+            s.write(
+                (char const *)arr.data(),
+                std::streamsize(arr.size() * sizeof(uint32_t)));
         }
-        std::cout << "Generating array from map ..." << std::endl;
-        arr.reserve(map.size());
-        for (auto &i : map) {
-            arr.push_back(i.second);
-        }
-        map.clear();
-        std::cout << "Writing into 'array_unsorted.bin' ..." << std::endl;
-        std::ofstream s("array_unsorted.bin");
-        s.write(
-            (char const *)arr.data(),
-            std::streamsize(arr.size() * sizeof(uint32_t)));
-    }
 
-    if (!std::filesystem::exists("array_sorted.bin")) {
+        if (!std::filesystem::exists("array_sorted.bin")) {
+            if (arr.empty()) {
+                std::ifstream s("array_unsorted.bin");
+                s.seekg(0, std::ios::end);
+                arr.resize(size_t(s.tellg()) / sizeof(uint32_t));
+                s.seekg(0, std::ios::beg);
+                s.read(
+                    (char *)arr.data(),
+                    std::streamsize(arr.size() * sizeof(uint32_t)));
+            }
+            std::cout << "Starting array sort of " << arr.size()
+                      << " integers, this is the slowest part ..." << std::endl;
+            std::sort(arr.begin(), arr.end());
+            std::cout << "\n"
+                      << arr.size() << " " << (SLICE_LEN * SLICES) << std::endl;
+            std::cout << "Writing into 'array_sorted.bin' ..." << std::endl;
+            std::ofstream s("array_sorted.bin");
+            s.write(
+                (char const *)arr.data(),
+                std::streamsize(arr.size() * sizeof(uint32_t)));
+            std::filesystem::remove("array_unsorted.bin");
+        }
         if (arr.empty()) {
-            std::ifstream s("array_unsorted.bin");
+            std::ifstream s("array_sorted.bin");
             s.seekg(0, std::ios::end);
             arr.resize(size_t(s.tellg()) / sizeof(uint32_t));
             s.seekg(0, std::ios::beg);
@@ -108,90 +130,79 @@ int main()
                 (char *)arr.data(),
                 std::streamsize(arr.size() * sizeof(uint32_t)));
         }
-        std::cout << "Starting array sort of " << arr.size()
-                  << " integers, this is the slowest part ..." << std::endl;
-        std::sort(arr.begin(), arr.end());
-        std::cout << "\n"
-                  << arr.size() << " " << (SLICE_LEN * SLICES) << std::endl;
-        std::cout << "Writing into 'array_sorted.bin' ..." << std::endl;
-        std::ofstream s("array_sorted.bin");
-        s.write(
-            (char const *)arr.data(),
-            std::streamsize(arr.size() * sizeof(uint32_t)));
-        std::filesystem::remove("array_unsorted.bin");
-    }
-    if (arr.empty()) {
-        std::ifstream s("array_sorted.bin");
-        s.seekg(0, std::ios::end);
-        arr.resize(size_t(s.tellg()) / sizeof(uint32_t));
-        s.seekg(0, std::ios::beg);
-        s.read(
-            (char *)arr.data(), std::streamsize(arr.size() * sizeof(uint32_t)));
-    }
-    uint32_t largest = 0;
-    for (auto &i : arr) {
-        if (i > largest) {
-            largest = i;
-        }
-    }
-    std::cout << "highest frequency = " << largest << std::endl;
-    std::vector<uint32_t> counts(largest);
-    {
-        uint64_t sum = 0;
-        for (auto &i : arr) {
-            counts[i - 1]++;
-            sum++;
-        }
-        for (auto &i : counts) {
-            std::cout << (100.0 * double(&i - counts.data() + 1) /
-                          double(counts.size()))
-                      << "%: " << i << " " << (100.0 * i / double(sum))
-                      << "%\n";
-        }
-        std::cout << "\nNormalised to 5% bucket increments:\n" << std::flush;
-    }
-    // Need to normalise the histogram so they become comparable
-    std::vector<float> histogram(1000000);
-    for (size_t n = 0, step = histogram.size() / counts.size();
-         n < counts.size();
-         n++) {
-        histogram[n * step] = float(counts[n]);
-    }
-    size_t sidx = 0;
-    size_t eidx = 0;
-    for (bool done = false; !done;) {
-        done = true;
-        for (;;) {
-            while (histogram[eidx] != 0 && eidx < histogram.size()) {
-                eidx++;
+        uint32_t largest = 0;
+        for (auto const &i : arr) {
+            if (i > largest) {
+                largest = i;
             }
-            sidx = eidx - 1;
-            while (histogram[eidx] == 0 && eidx < histogram.size()) {
-                eidx++;
+        }
+        std::cout << "highest frequency = " << largest << std::endl;
+        std::vector<uint32_t> counts(largest);
+        {
+            uint64_t sum = 0;
+            for (auto const &i : arr) {
+                counts[i - 1]++;
+                sum++;
             }
-            if (eidx == histogram.size()) {
-                eidx--;
-                if (eidx - sidx < 2) {
-                    sidx = eidx = 0;
-                    break;
+            for (auto &i : counts) {
+                std::cout << (100.0 * double(&i - counts.data() + 1) /
+                              double(counts.size()))
+                          << "%: " << i << " " << (100.0 * i / double(sum))
+                          << "%\n";
+            }
+            std::cout << "\nNormalised to 5% bucket increments:\n"
+                      << std::flush;
+        }
+        // Need to normalise the histogram so they become comparable
+        std::vector<float> histogram(1000000);
+        for (size_t n = 0, step = histogram.size() / counts.size();
+             n < counts.size();
+             n++) {
+            histogram[n * step] = float(counts[n]);
+        }
+        size_t sidx = 0;
+        size_t eidx = 0;
+        for (bool done = false; !done;) {
+            done = true;
+            for (;;) {
+                while (histogram[eidx] != 0 && eidx < histogram.size()) {
+                    eidx++;
+                }
+                sidx = eidx - 1;
+                while (histogram[eidx] == 0 && eidx < histogram.size()) {
+                    eidx++;
+                }
+                if (eidx == histogram.size()) {
+                    eidx--;
+                    if (eidx - sidx < 2) {
+                        eidx = 0;
+                        break;
+                    }
+                }
+                if (eidx - sidx > 1) {
+                    histogram[(sidx + eidx) / 2] =
+                        (histogram[sidx] + histogram[eidx]) / 2;
+                    done = false;
                 }
             }
-            if (eidx - sidx > 1) {
-                histogram[(sidx + eidx) / 2] =
-                    (histogram[sidx] + histogram[eidx]) / 2;
-                done = false;
-            }
-            sidx = eidx;
         }
+        float sum = 0;
+        for (size_t n = 0; n < histogram.size();
+             n += histogram.size() / BUCKETS) {
+            sum += histogram[n];
+        }
+        for (size_t n = 0; n < histogram.size();
+             n += histogram.size() / BUCKETS) {
+            std::cout << "\n"
+                      << histogram[n] << " " << (100.0 * histogram[n] / sum)
+                      << "%";
+        }
+        std::cout << std::endl;
     }
-    float sum = 0;
-    for (size_t n = 0; n < histogram.size(); n += histogram.size() / BUCKETS) {
-        sum += histogram[n];
+    catch (...) {
+        std::cerr << "test failure\n";
+        return 1;
     }
-    for (size_t n = 0; n < histogram.size(); n += histogram.size() / BUCKETS) {
-        std::cout << "\n"
-                  << histogram[n] << " " << (100.0 * histogram[n] / sum) << "%";
-    }
-    std::cout << std::endl;
+
     return 0;
 }

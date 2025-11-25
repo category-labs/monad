@@ -246,15 +246,15 @@ class UpdateAuxImpl
 
     virtual void lock_unique_() const = 0;
 
-    virtual void unlock_unique_() const noexcept = 0;
+    virtual void unlock_unique_() const = 0;
 
     virtual void lock_shared_() const = 0;
 
-    virtual void unlock_shared_() const noexcept = 0;
+    virtual void unlock_shared_() const = 0;
 
-    virtual bool upgrade_shared_to_unique_() const noexcept = 0;
+    virtual bool upgrade_shared_to_unique_() const = 0;
 
-    virtual bool downgrade_unique_to_shared_() const noexcept = 0;
+    virtual bool downgrade_unique_to_shared_() const = 0;
 
     virtual void on_read_only_init_with_dirty_bit() noexcept {};
 
@@ -722,10 +722,10 @@ public:
         requires std::invocable<
             std::function<void(detail::db_metadata *, Args...)>,
             detail::db_metadata *, Args...>
-    void modify_metadata(Func func, Args &&...args) noexcept
+    void modify_metadata(Func func, Args const &...args) noexcept
     {
-        func(db_metadata_[0].main, std::forward<Args>(args)...);
-        func(db_metadata_[1].main, std::forward<Args>(args)...);
+        func(db_metadata_[0].main, args...);
+        func(db_metadata_[1].main, args...);
     }
 
     // This function should only be invoked after completing a upsert
@@ -874,7 +874,7 @@ class UpdateAux final : public UpdateAuxImpl
         lock_.lock();
     }
 
-    virtual void unlock_unique_() const noexcept override
+    virtual void unlock_unique_() const override
     {
         MONAD_ASSERT(!is_current_thread_concurrent_to_upsert());
         lock_.unlock();
@@ -893,7 +893,7 @@ class UpdateAux final : public UpdateAuxImpl
         }
     }
 
-    virtual void unlock_shared_() const noexcept override
+    virtual void unlock_shared_() const override
     {
         if (!is_current_thread_upserting()) {
             MONAD_ASSERT(!is_current_thread_concurrent_to_upsert());
@@ -906,7 +906,7 @@ class UpdateAux final : public UpdateAuxImpl
         }
     }
 
-    virtual bool upgrade_shared_to_unique_() const noexcept override
+    virtual bool upgrade_shared_to_unique_() const override
     {
         MONAD_ASSERT(!is_current_thread_concurrent_to_upsert());
         if constexpr (requires(LockType x) {
@@ -920,7 +920,7 @@ class UpdateAux final : public UpdateAuxImpl
         }
     }
 
-    virtual bool downgrade_unique_to_shared_() const noexcept override
+    virtual bool downgrade_unique_to_shared_() const override
     {
         MONAD_ASSERT(!is_current_thread_concurrent_to_upsert());
         if constexpr (requires(LockType x) {

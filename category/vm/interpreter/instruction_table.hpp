@@ -128,7 +128,7 @@ namespace monad::vm::interpreter
             since(EVMC_CONSTANTINOPLE, shl<traits>), // 0x1B,
             since(EVMC_CONSTANTINOPLE, shr<traits>), // 0x1C,
             since(EVMC_CONSTANTINOPLE, sar<traits>), // 0x1D,
-            invalid, //
+            since(EVMC_OSAKA, clz<traits>), // 0x1E,
             invalid, //
 
             sha3<traits>, // 0x20,
@@ -795,6 +795,26 @@ namespace monad::vm::interpreter
         value = runtime::sar(shift, value);
 
         MONAD_VM_NEXT(SAR);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void
+    clz(runtime::Context &ctx, Intercode const &analysis,
+        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
+        std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
+    {
+        check_requirements<CLZ, traits>(
+            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+
+        auto &value = stack_top[0];
+
+        if(value == 0) {
+            value = 256;
+        } else {
+            value = runtime::countl_zero(value);
+        }
+
+        MONAD_VM_NEXT(CLZ);
     }
 
     // Data

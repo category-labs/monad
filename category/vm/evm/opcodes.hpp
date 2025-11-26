@@ -127,6 +127,7 @@ namespace monad::vm::compiler
         SHL = 0x1B,
         SHR = 0x1C,
         SAR = 0x1D,
+        CLZ = 0x1E,
         SHA3 = 0x20,
         ADDRESS = 0x30,
         BALANCE = 0x31,
@@ -760,8 +761,13 @@ namespace monad::vm::compiler
     consteval std::array<OpCodeInfo, 256>
     make_opcode_table<EvmTraits<EVMC_OSAKA>>()
     {
-        return make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_OSAKA)>>();
+        auto table =  
+            make_opcode_table<EvmTraits<previous_evm_revision(EVMC_OSAKA)>>();
+
+        // EIP-7939
+        add_opcode(0x1E, table, {"CLZ", 0, 1, 1, false, 5, 0});
+
+        return table;
     }
 
     template <>

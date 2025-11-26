@@ -94,6 +94,9 @@ namespace monad::vm::fuzzing
         // and 4% probability of just 1 basic block.
         double block_dist_p2 = 0.04;
         double block_dist_p3 = 0.10;
+
+        double precompile_address_create_prob = 0.001;
+        double precompile_address_prob = 0.03;
     };
 
     static constexpr auto generic_focus = GeneratorFocus{
@@ -646,7 +649,7 @@ namespace monad::vm::fuzzing
         else if (rev == EVMC_CANCUN) {
             return 10;
         }
-        else if (rev == EVMC_PRAGUE) {
+        else if (rev == EVMC_PRAGUE || rev == EVMC_MONAD) {
             return 17;
         }
         else if (rev == EVMC_OSAKA) {
@@ -670,7 +673,8 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     void compile_address(
         Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
-        std::vector<evmc::address> const &valid_addresses)
+        std::vector<evmc::address> const &valid_addresses,
+        double precompile_address_prob)
     {
         auto const &addr = [&] {
             if (valid_addresses.empty()) {
@@ -679,7 +683,7 @@ namespace monad::vm::fuzzing
             return discrete_choice<evmc::address>(
                 eng,
                 [&](auto &g) { return uniform_sample(g, valid_addresses); },
-                Choice(0.001, [rev](auto &g) {
+                Choice(precompile_address_prob, [rev](auto &g) {
                     return generate_precompile_address(g, rev);
                 }));
         }();
@@ -728,8 +732,9 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     void compile_create(
-        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
-        Create const &c, std::vector<evmc::address> const &valid_addresses)
+        GeneratorFocus const &focus, Engine &eng, evmc_revision rev,
+        std::vector<std::uint8_t> &program, Create const &c,
+        std::vector<evmc::address> const &valid_addresses)
     {
         if (!c.isTrivial) {
             if (c.opcode == CREATE2) {
@@ -737,7 +742,12 @@ namespace monad::vm::fuzzing
             }
             // -> [salt (CREATE2)]
 
-            compile_address(eng, rev, program, valid_addresses);
+            compile_address(
+                eng,
+                rev,
+                program,
+                valid_addresses,
+                focus.precompile_address_create_prob);
             // -> [address, salt (CREATE2)]
             program.push_back(DUP1);
             // -> [address, address, salt (CREATE2)]
@@ -769,8 +779,9 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     void compile_call(
-        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
-        Call const &call, std::vector<evmc::address> const &valid_addresses)
+        GeneratorFocus const &focus, Engine &eng, evmc_revision rev,
+        std::vector<std::uint8_t> &program, Call const &call,
+        std::vector<evmc::address> const &valid_addresses)
     {
         bool isTrivial = call.isTrivial;
 
@@ -785,7 +796,12 @@ namespace monad::vm::fuzzing
                 compile_percent(program, call.balancePct);
             }
 
-            compile_address(eng, rev, program, valid_addresses);
+            compile_address(
+                eng,
+                rev,
+                program,
+                valid_addresses,
+                focus.precompile_address_prob);
 
             // send some percentage of available gas
             program.push_back(GAS);
@@ -847,7 +863,8 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     void compile_block(
-        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
+        GeneratorFocus const &focus, Engine &eng, evmc_revision rev,
+        std::vector<std::uint8_t> &program,
         std::vector<Instruction> const &block,
         std::vector<evmc::address> const &valid_addresses,
         std::vector<std::uint32_t> &valid_jumpdests,
@@ -893,13 +910,15 @@ namespace monad::vm::fuzzing
                             eng, program, p, valid_addresses, jumpdest_patches);
                     },
                     [&](Call const &c) {
-                        compile_call(eng, rev, program, c, valid_addresses);
+                        compile_call(
+                            focus, eng, rev, program, c, valid_addresses);
                     },
                     [&](ReturnDataCopy const &r) {
                         compile_returndatacopy(program, r);
                     },
                     [&](Create const &c) {
-                        compile_create(eng, rev, program, c, valid_addresses);
+                        compile_create(
+                            focus, eng, rev, program, c, valid_addresses);
                     },
                 },
                 inst);
@@ -1004,6 +1023,7 @@ namespace monad::vm::fuzzing
             auto const block = generate_block(focus, eng, is_exit, is_main);
 
             compile_block(
+                focus,
                 eng,
                 rev,
                 prog,

@@ -1,0 +1,2 @@
+This package contains the library and the associated utilities.
+For details, see the SDK documentation at https://docs.monad.xyz/execution-events

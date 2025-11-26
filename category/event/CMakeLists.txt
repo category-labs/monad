@@ -20,7 +20,7 @@
 
 cmake_minimum_required(VERSION 3.23)
 
-project(monad_event LANGUAGES C CXX)
+project(monad_event LANGUAGES C CXX VERSION 1.1)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   set(MONAD_EVENT_BUILD_BLOCKCAPD_DEFAULT ON)
@@ -238,3 +238,17 @@ install(FILES
 
 export(EXPORT monad_exec_events_sdk
   FILE "${CMAKE_CURRENT_BINARY_DIR}/monad_exec_events_sdk.cmake")
+
+
+set(CPACK_PACKAGE_NAME monad-exec-events-sdk)
+set(CPACK_PACKAGE_VENDOR "Category Labs")
+set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/package-description.txt")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "C/C++ SDK for consuming the real-time EVM updates from a Monad execution node")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://docs.monad.xyz/execution-events")
+set(CPACK_PACKAGE_CONTACT "kcamann@category.xyz")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS libzstd-dev libhugetlbfs-dev)
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+
+include(CPack)

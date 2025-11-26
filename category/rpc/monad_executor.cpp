@@ -1635,6 +1635,19 @@ void monad_executor_eth_simulate_submit(
     struct monad_state_override const *,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
+    byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
+    auto const maybe_payload = rlp::parse_list_metadata(rlp_calls_view);
+    MONAD_ASSERT(!maybe_payload.has_error());
+    auto payload = maybe_payload.value();
+
+    int i = 0;
+    while (!payload.empty()) {
+        auto const maybe_inner_payload = rlp::parse_list_metadata(payload);
+        MONAD_ASSERT(!maybe_inner_payload.has_error());
+        auto inner_payload = maybe_inner_payload.value();
+        LOG_DEBUG("Simulate block {}: {} bytes", i++, inner_payload.size());
+    }
+
     (void)n_blocks;
     (void)rlp_calls;
     (void)rlp_calls_len;

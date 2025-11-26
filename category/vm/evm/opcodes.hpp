@@ -761,7 +761,7 @@ namespace monad::vm::compiler
     consteval std::array<OpCodeInfo, 256>
     make_opcode_table<EvmTraits<EVMC_OSAKA>>()
     {
-        auto table =  
+        auto table =
             make_opcode_table<EvmTraits<previous_evm_revision(EVMC_OSAKA)>>();
 
         // EIP-7939

@@ -806,11 +806,12 @@ namespace monad::vm::interpreter
         check_requirements<CLZ, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
-        auto &value = stack_top[0];
+        auto &value = *stack_top;
 
-        if(value == 0) {
+        if (value == 0) {
             value = 256;
-        } else {
+        }
+        else {
             value = runtime::countl_zero(value);
         }
 

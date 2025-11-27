@@ -2589,7 +2589,7 @@ namespace monad::vm::compiler::native
     // Discharge
     void Emitter::clz()
     {
-        auto elem = stack_.pop();
+        auto const elem = stack_.pop();
 
         if (elem->literal()) {
             auto const &x = elem->literal()->value;

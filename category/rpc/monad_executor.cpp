@@ -75,6 +75,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <span>
@@ -1640,12 +1641,15 @@ void monad_executor_eth_simulate_submit(
     MONAD_ASSERT(!maybe_payload.has_error());
     auto payload = maybe_payload.value();
 
+    std::cout << std::format("Payload: {}", payload.size()) << std::endl;
+
     int i = 0;
     while (!payload.empty()) {
         auto const maybe_inner_payload = rlp::parse_list_metadata(payload);
         MONAD_ASSERT(!maybe_inner_payload.has_error());
         auto inner_payload = maybe_inner_payload.value();
-        LOG_DEBUG("Simulate block {}: {} bytes", i++, inner_payload.size());
+        std::cout << std::format(
+            "Simulate block {}: {} bytes\n", i++, inner_payload.size());
     }
 
     (void)n_blocks;

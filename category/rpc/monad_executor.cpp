@@ -1636,31 +1636,57 @@ void monad_executor_run_transactions(
         tracer_config);
 }
 
+namespace
+{
+    template <auto Decoder>
+    using decoder_value_t = typename decltype(Decoder(
+        std::declval<byte_string_view &>()))::value_type;
+
+    template <auto Decoder>
+    auto decode_nested_items(byte_string_view &input)
+        -> Result<std::vector<std::vector<decoder_value_t<Decoder>>>>
+    {
+        using Item = decoder_value_t<Decoder>;
+        auto ret = std::vector<std::vector<Item>>{};
+
+        BOOST_OUTCOME_TRY(auto outer_payload, rlp::parse_list_metadata(input));
+        while (!outer_payload.empty()) {
+            ret.emplace_back();
+
+            BOOST_OUTCOME_TRY(
+                auto inner_payload, rlp::parse_list_metadata(outer_payload));
+
+            while (!inner_payload.empty()) {
+                BOOST_OUTCOME_TRY(Item item, Decoder(inner_payload));
+                ret.back().emplace_back(std::move(item));
+            }
+        }
+
+        return ret;
+    }
+}
+
 void monad_executor_eth_simulate_submit(
-    struct monad_executor *, enum monad_chain_config, size_t n_blocks,
+    struct monad_executor *, enum monad_chain_config,
+    uint8_t const *rlp_senders, size_t rlp_senders_len,
     uint8_t const *rlp_calls, size_t rlp_calls_len,
     struct monad_state_override const *,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
+    byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
+    auto const maybe_senders =
+        decode_nested_items<rlp::decode_address>(rlp_senders_view);
+    MONAD_ASSERT(maybe_senders.has_value());
+    auto const senders = maybe_senders.assume_value();
+
     byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
-    auto const maybe_payload = rlp::parse_list_metadata(rlp_calls_view);
-    MONAD_ASSERT(!maybe_payload.has_error());
-    auto payload = maybe_payload.value();
+    auto const maybe_txns =
+        decode_nested_items<rlp::decode_transaction>(rlp_calls_view);
+    MONAD_ASSERT(maybe_txns.has_value());
+    auto const txns = maybe_txns.assume_value();
 
-    std::cout << std::format("Payload: {}", payload.size()) << std::endl;
+    MONAD_ASSERT(senders.size() == txns.size());
 
-    int i = 0;
-    while (!payload.empty()) {
-        auto const maybe_inner_payload = rlp::parse_list_metadata(payload);
-        MONAD_ASSERT(!maybe_inner_payload.has_error());
-        auto inner_payload = maybe_inner_payload.value();
-        std::cout << std::format(
-            "Simulate block {}: {} bytes\n", i++, inner_payload.size());
-    }
-
-    (void)n_blocks;
-    (void)rlp_calls;
-    (void)rlp_calls_len;
     (void)complete;
     (void)user;
 }

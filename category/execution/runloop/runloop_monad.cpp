@@ -172,14 +172,15 @@ Result<void> validate_live_execution_outputs(
     return outcome::success();
 }
 
-template <Traits traits, class MonadConsensusBlockHeader>
+template <Traits traits, class MonadConsensusBlockHeader, bool is_testing>
     requires is_monad_trait_v<traits>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
-    bool const enable_tracing, BlockCache &block_cache)
+    bool const enable_tracing, BlockCache &block_cache,
+    RunloopMonadTestConfig<is_testing> const &runloop_test_config)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -316,6 +317,10 @@ Result<BlockExecOutput> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code, _] = std::move(block_state).release();
     MONAD_ASSERT(state);
+
+    if constexpr (is_testing) {
+        runloop_test_config.preprocess_state_deltas(&state);
+    }
 
     CommitBuilder builder(block.header.number);
     builder.add_state_deltas(*state)
@@ -479,16 +484,21 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
+template <bool is_testing>
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &chain, std::filesystem::path const &ledger_dir,
     mpt::Db &raw_db, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing, bool const is_first_run)
+    bool const enable_tracing,
+    RunloopMonadTestConfig<is_testing> const &runloop_test_config)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
-    bool is_first_block = is_first_run;
+    bool is_first_block = false;
+    if constexpr (is_testing) {
+        is_first_block = runloop_test_config.is_first_run();
+    }
     uint256_t const chain_id = chain.get_chain_id();
     BlockHashChain block_hash_chain(block_hash_buffer);
 
@@ -636,7 +646,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              chain_id,
              &is_first_block,
              enable_tracing,
-             &block_cache](
+             &block_cache,
+             &runloop_test_config](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
             auto const block_time_start = std::chrono::steady_clock::now();
@@ -691,7 +702,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     priority_pool,
                     is_first_block,
                     enable_tracing,
-                    block_cache);
+                    block_cache,
+                    runloop_test_config);
                 MONAD_ABORT_PRINTF("handled rev value %d", rev);
             };
             BOOST_OUTCOME_TRY(
@@ -753,5 +765,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 
     return {ntxs, total_gas};
 }
+
+template decltype(runloop_monad<false>) runloop_monad<false>;
+template decltype(runloop_monad<true>) runloop_monad<true>;
 
 MONAD_NAMESPACE_END

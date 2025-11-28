@@ -490,9 +490,15 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                    records_.inflight_rd < concurrent_read_io_limit_ &&
                    io_uring_sq_space_left(other_ring) != 0) {
                 auto const &read = concurrent_read_ios_pending_.front();
-                submit_request_sqe_(
-                    read.buffer, read.offset, read.op, read.op->io_priority());
-                account_read_(read.buffer.size());
+
+                submit_request_(
+                    std::span<const struct iovec>(read.iovecs),
+                    read.offset,
+                    read.op,
+                    read.op->io_priority());
+
+                account_read_(iov_length(read.iovecs));
+
                 concurrent_read_ios_pending_.pop_front();
             }
         }
@@ -604,10 +610,11 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
             is_read_or_write = true;
         }
         else if (state->is_read_scatter()) {
-            --records_.inflight_rd_scatter;
+            --records_.inflight_rd;
             if (retry_operation_if_temporary_failure()) {
                 return true;
             }
+            dequeue_concurrent_read_ios_pending();
         }
 #ifndef NDEBUG
         else {

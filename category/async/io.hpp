@@ -43,12 +43,10 @@ class read_single_buffer_sender;
 // helper struct that records IO stats
 struct IORecord
 {
-    unsigned inflight_rd{0};
-    unsigned inflight_rd_scatter{0};
+    unsigned inflight_rd{0}; // Both single buffer and scatter reads
     unsigned inflight_wr{0};
 
     unsigned max_inflight_rd{0};
-    unsigned max_inflight_rd_scatter{0};
     unsigned max_inflight_wr{0};
 
     uint64_t nreads{0};
@@ -93,16 +91,9 @@ private:
     IORecord records_;
     unsigned concurrent_read_io_limit_{0};
 
-    struct deferred_read
-    {
-        erased_connected_operation *op;
-        std::span<std::byte> buffer;
-        chunk_offset_t offset;
-    };
-
     // Reads which could not be submitted immediately because the limit on
-    // concurrent reads was reached.
-    std::deque<deferred_read> concurrent_read_ios_pending_;
+    // concurrent reads was reached. Each entry is a fully prepared SQE.
+    std::deque<struct io_uring_sqe> concurrent_read_ios_pending_;
 
     void submit_request_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
@@ -118,6 +109,16 @@ private:
     void submit_request_sqe_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
+
+    // Prepare SQE for read operation (without submitting)
+    void prepare_read_sqe_(
+        struct io_uring_sqe *sqe, std::span<std::byte> buffer,
+        chunk_offset_t chunk_and_offset, void *uring_data,
+        enum erased_connected_operation::io_priority prio);
+    void prepare_read_sqe_(
+        struct io_uring_sqe *sqe, std::span<const struct iovec> buffers,
+        chunk_offset_t chunk_and_offset, void *uring_data,
+        enum erased_connected_operation::io_priority prio);
 
     void account_read_(size_t size);
 
@@ -176,8 +177,7 @@ public:
     {
         return records_.inflight_rd +
                static_cast<unsigned>(concurrent_read_ios_pending_.size()) +
-               records_.inflight_rd_scatter + records_.inflight_wr +
-               deferred_initiations_in_flight();
+               records_.inflight_wr + deferred_initiations_in_flight();
     }
 
     unsigned reads_in_flight() const noexcept
@@ -189,16 +189,6 @@ public:
     unsigned max_reads_in_flight() const noexcept
     {
         return records_.max_inflight_rd;
-    }
-
-    unsigned reads_scatter_in_flight() const noexcept
-    {
-        return records_.inflight_rd_scatter;
-    }
-
-    unsigned max_reads_scatter_in_flight() const noexcept
-    {
-        return records_.max_inflight_rd_scatter;
     }
 
     unsigned writes_in_flight() const noexcept
@@ -323,7 +313,6 @@ public:
     void reset_records()
     {
         records_.max_inflight_rd = 0;
-        records_.max_inflight_rd_scatter = 0;
         records_.max_inflight_wr = 0;
         records_.nreads = 0;
         records_.bytes_read = 0;
@@ -340,8 +329,9 @@ public:
 
         if (concurrent_read_io_limit_ > 0 &&
             records_.inflight_rd >= concurrent_read_io_limit_) {
-            concurrent_read_ios_pending_.emplace_back(
-                deferred_read{uring_data, buffer, offset});
+            auto &sqe = concurrent_read_ios_pending_.emplace_back();
+            prepare_read_sqe_(
+                &sqe, buffer, offset, uring_data, uring_data->io_priority());
             return size_t(-1); // we never complete immediately
         }
 
@@ -359,11 +349,17 @@ public:
         if (capture_io_latencies_) {
             uring_data->initiated = std::chrono::steady_clock::now();
         }
-        submit_request_(buffers, offset, uring_data, uring_data->io_priority());
-        if (++records_.inflight_rd_scatter > records_.max_inflight_rd_scatter) {
-            records_.max_inflight_rd_scatter = records_.inflight_rd_scatter;
+
+        if (concurrent_read_io_limit_ > 0 &&
+            records_.inflight_rd >= concurrent_read_io_limit_) {
+            auto &sqe = concurrent_read_ios_pending_.emplace_back();
+            prepare_read_sqe_(
+                &sqe, buffers, offset, uring_data, uring_data->io_priority());
+            return size_t(-1); // we never complete immediately
         }
-        ++records_.nreads;
+
+        submit_request_(buffers, offset, uring_data, uring_data->io_priority());
+        account_read_(iov_length(buffers));
         return size_t(-1); // we never complete immediately
     }
 
@@ -650,7 +646,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 280);
+static_assert(sizeof(AsyncIO) == 272);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

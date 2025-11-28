@@ -248,4 +248,67 @@ namespace
         }
         EXPECT_EQ(seq.back(), offset - monad::async::DISK_PAGE_SIZE);
     }
+
+    struct concurrent_read_limit_receiver
+    {
+        size_t &completed_count;
+        size_t expected_size;
+
+        void set_value(
+            monad::async::erased_connected_operation *,
+            monad::async::read_single_buffer_sender::result_type r)
+        {
+            MONAD_ASSERT(r);
+            EXPECT_EQ(r.assume_value().get().size(), expected_size);
+            completed_count++;
+        }
+    };
+
+    TEST(AsyncIO, concurrent_read_io_limit_defers_and_completes_reads)
+    {
+        monad::async::storage_pool pool(
+            monad::async::use_anonymous_inode_tag{});
+
+        {
+            auto chunk = pool.chunk(pool.seq, 0);
+            auto const fd = chunk.write_fd(monad::async::DISK_PAGE_SIZE);
+            std::vector<char> data(monad::async::DISK_PAGE_SIZE, 'A');
+            MONAD_ASSERT(
+                -1 != ::pwrite(
+                          fd.first,
+                          data.data(),
+                          monad::async::DISK_PAGE_SIZE,
+                          static_cast<off_t>(fd.second)));
+        }
+
+        monad::io::Ring testring;
+        monad::io::Buffers testrwbuf = monad::io::make_buffers_for_read_only(
+            testring, 10, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        monad::async::AsyncIO testio(pool, testrwbuf);
+
+        testio.set_concurrent_read_io_limit(2);
+        EXPECT_EQ(testio.concurrent_read_io_limit(), 2u);
+
+        size_t completed = 0;
+        constexpr size_t NUM_READS = 10;
+
+        // Issue NUM_READS concurrent reads, but only 2 can be in flight at once
+        for (size_t n = 0; n < NUM_READS; n++) {
+            auto state = testio.make_connected(
+                monad::async::read_single_buffer_sender(
+                    {0, 0}, monad::async::DISK_PAGE_SIZE),
+                concurrent_read_limit_receiver{
+                    completed, monad::async::DISK_PAGE_SIZE});
+
+            state->initiate();
+            (void)state.release();
+        }
+
+        testio.wait_until_done();
+
+        EXPECT_LE(testio.max_reads_in_flight(), 2u);
+
+        EXPECT_EQ(completed, NUM_READS);
+        EXPECT_EQ(testio.reads_in_flight(), 0u);
+    }
 }

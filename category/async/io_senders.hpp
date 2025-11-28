@@ -85,7 +85,7 @@ public:
         buffer_ = std::move(buffer);
     }
 
-    result<void> operator()(erased_connected_operation *io_state) noexcept
+    result<void> operator()(erased_connected_operation *io_state)
     {
         if (!buffer_) {
             buffer_.set_read_buffer(

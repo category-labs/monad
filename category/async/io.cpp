@@ -282,10 +282,12 @@ void AsyncIO::account_read_(size_t size)
     records_.bytes_read += size;
 }
 
-void AsyncIO::submit_request_sqe_(
-    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
-    void *uring_data, enum erased_connected_operation::io_priority prio)
+void AsyncIO::prepare_read_sqe_(
+    struct io_uring_sqe *sqe, std::span<std::byte> buffer,
+    chunk_offset_t chunk_and_offset, void *uring_data,
+    enum erased_connected_operation::io_priority prio)
 {
+    MONAD_ASSERT(sqe != nullptr);
     MONAD_ASSERT(uring_data != nullptr);
     MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
     MONAD_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
@@ -293,9 +295,6 @@ void AsyncIO::submit_request_sqe_(
 #ifndef NDEBUG
     memset(buffer.data(), 0xff, buffer.size());
 #endif
-
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
-    MONAD_ASSERT(sqe);
 
     auto const &ci = seq_chunks_[chunk_and_offset.id];
     io_uring_prep_read_fixed(
@@ -319,22 +318,14 @@ void AsyncIO::submit_request_sqe_(
     }
 
     io_uring_sqe_set_data(sqe, uring_data);
-    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
 }
 
-void AsyncIO::submit_request_(
-    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
-    void *uring_data, enum erased_connected_operation::io_priority prio)
+void AsyncIO::prepare_read_sqe_(
+    struct io_uring_sqe *sqe, std::span<const struct iovec> buffers,
+    chunk_offset_t chunk_and_offset, void *uring_data,
+    enum erased_connected_operation::io_priority prio)
 {
-    poll_uring_while_submission_queue_full_();
-
-    submit_request_sqe_(buffer, chunk_and_offset, uring_data, prio);
-}
-
-void AsyncIO::submit_request_(
-    std::span<const struct iovec> buffers, chunk_offset_t chunk_and_offset,
-    void *uring_data, enum erased_connected_operation::io_priority prio)
-{
+    MONAD_ASSERT(sqe != nullptr);
     MONAD_ASSERT(uring_data != nullptr);
     assert((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
 #ifndef NDEBUG
@@ -343,10 +334,6 @@ void AsyncIO::submit_request_(
         memset(buffer.iov_base, 0xff, buffer.iov_len);
     }
 #endif
-
-    poll_uring_while_submission_queue_full_();
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
-    MONAD_ASSERT(sqe);
 
     auto const &ci = seq_chunks_[chunk_and_offset.id];
     if (buffers.size() == 1) {
@@ -379,6 +366,37 @@ void AsyncIO::submit_request_(
     }
 
     io_uring_sqe_set_data(sqe, uring_data);
+}
+
+void AsyncIO::submit_request_sqe_(
+    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+    void *uring_data, enum erased_connected_operation::io_priority prio)
+{
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
+    MONAD_ASSERT(sqe);
+
+    prepare_read_sqe_(sqe, buffer, chunk_and_offset, uring_data, prio);
+    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
+}
+
+void AsyncIO::submit_request_(
+    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+    void *uring_data, enum erased_connected_operation::io_priority prio)
+{
+    poll_uring_while_submission_queue_full_();
+
+    submit_request_sqe_(buffer, chunk_and_offset, uring_data, prio);
+}
+
+void AsyncIO::submit_request_(
+    std::span<const struct iovec> buffers, chunk_offset_t chunk_and_offset,
+    void *uring_data, enum erased_connected_operation::io_priority prio)
+{
+    poll_uring_while_submission_queue_full_();
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
+    MONAD_ASSERT(sqe);
+
+    prepare_read_sqe_(sqe, buffers, chunk_and_offset, uring_data, prio);
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
 }
 
@@ -489,10 +507,34 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
             while (!concurrent_read_ios_pending_.empty() &&
                    records_.inflight_rd < concurrent_read_io_limit_ &&
                    io_uring_sq_space_left(other_ring) != 0) {
-                auto const &read = concurrent_read_ios_pending_.front();
-                submit_request_sqe_(
-                    read.buffer, read.offset, read.op, read.op->io_priority());
-                account_read_(read.buffer.size());
+                auto const &stored_sqe = concurrent_read_ios_pending_.front();
+
+                // Allocate new SQE and copy the stored one
+                struct io_uring_sqe *sqe = io_uring_get_sqe(other_ring);
+                MONAD_ASSERT(sqe);
+                *sqe = stored_sqe;
+
+                MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(other_ring));
+
+                // Calculate read size from the SQE
+                size_t read_size;
+                if (sqe->opcode == IORING_OP_READ_FIXED ||
+                    sqe->opcode == IORING_OP_READ) {
+                    read_size = sqe->len;
+                }
+                else if (sqe->opcode == IORING_OP_READV) {
+                    // For readv, read size is the total length of iovecs
+                    struct iovec const *iovecs =
+                        reinterpret_cast<struct iovec const *>(sqe->addr);
+                    read_size = iov_length(
+                        std::span<const struct iovec>(iovecs, sqe->len));
+                }
+                else {
+                    MONAD_ABORT("unexpected opcode in deferred read");
+                }
+
+                account_read_(read_size);
+
                 concurrent_read_ios_pending_.pop_front();
             }
         }
@@ -604,10 +646,11 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
             is_read_or_write = true;
         }
         else if (state->is_read_scatter()) {
-            --records_.inflight_rd_scatter;
+            --records_.inflight_rd;
             if (retry_operation_if_temporary_failure()) {
                 return true;
             }
+            dequeue_concurrent_read_ios_pending();
         }
 #ifndef NDEBUG
         else {

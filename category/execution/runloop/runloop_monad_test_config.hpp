@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,36 +15,21 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
-#include <category/core/result.hpp>
-#include <category/vm/vm.hpp>
-
-#include <cstdint>
-#include <filesystem>
-#include <utility>
-
-#include <signal.h>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
-struct MonadChain;
-class DbCache;
-class BlockHashBufferFinalized;
-
-namespace mpt
+template <bool is_testing>
+struct RunloopMonadTestConfig
 {
-    class Db;
-}
+};
 
-namespace fiber
+template <>
+struct RunloopMonadTestConfig<true>
 {
-    class PriorityPool;
-}
-
-Result<std::pair<uint64_t, uint64_t>> runloop_monad(
-    MonadChain const &, std::filesystem::path const &, mpt::Db &, DbCache &,
-    vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &,
-    uint64_t, sig_atomic_t const volatile &, bool enable_tracing,
-    bool is_first_run = true);
+    virtual bool is_first_run() const = 0;
+    virtual void
+    preprocess_state_deltas(std::unique_ptr<StateDeltas> *) const = 0;
+};
 
 MONAD_NAMESPACE_END

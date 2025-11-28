@@ -2586,6 +2586,47 @@ namespace monad::vm::compiler::native
             std::move(shift), std::move(value), live);
     }
 
+    // Discharge
+    void Emitter::clz()
+    {
+        auto const elem = stack_.pop();
+
+        if (elem->literal()) {
+            auto const &x = elem->literal()->value;
+            push(runtime::countl_zero(x));
+            return;
+        }
+
+        discharge_deferred_comparison();
+
+        if (elem->general_reg()) {
+            auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
+            std::array<asmjit::x86::Gpq, 4> const &gpq_r64 = {
+                gpq[0].r64(), gpq[1].r64(), gpq[2].r64(), gpq[3].r64()};
+            array_leading_zeros(gpq_r64);
+        }
+        else if (elem->stack_offset()) {
+            array_leading_zeros(stack_offset_to_mem256(*elem->stack_offset()));
+        }
+        else if (elem->avx_reg()) {
+            // There are no methods to compute CLZ directly from YMM registers
+            // without writing the data to memory. So we spill to the stack and
+            // use array_leading_zeros.
+            mov_stack_elem_to_stack_offset(elem);
+            array_leading_zeros(stack_offset_to_mem256(*elem->stack_offset()));
+        }
+
+        auto [dst, _] = alloc_general_reg();
+        Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
+        // mov eax into dst[0]
+        as_.mov(gpq[0].r32(), x86::eax);
+        // zero other parts
+        as_.xor_(gpq[1].r32(), gpq[1].r32());
+        as_.xor_(gpq[2].r32(), gpq[2].r32());
+        as_.xor_(gpq[3].r32(), gpq[3].r32());
+        stack_.push(dst);
+    }
+
     // Discharge through `and_` overload
     void Emitter::and_()
     {
@@ -7928,8 +7969,36 @@ namespace monad::vm::compiler::native
         }
     }
 
+    // Performs leading zeros operation on array of operands. Assumes that the
+    // operands are ordered from least significant to most significant.
+    // The current implementation optimizes for the case where the input value
+    // is uniformly distributed. When it's uniformly distributed, the chance
+    // that the most significant 64-bit word == 0 is 1 / 2^64. We take advantage
+    // of this with a branched approach that will only compute the bit width of
+    // the most significant word when it's non-zero (which the branch predictor
+    // will predict correctly most of the time).
+    template <typename T, size_t N>
+    void Emitter::array_leading_zeros(std::array<T, N> const &arr)
+    {
+        auto const end_lbl = as_.newLabel();
+        for (size_t i = N; i >= 1; --i) {
+            auto const word_offset = static_cast<int32_t>(64 * (N - i));
+            // Compute number of leading zeros. CF == 1 iff arr[i] == 0
+            as_.lzcnt(x86::rax, arr[i - 1]);
+            if (word_offset != 0) {
+                // Leave flags unchanged
+                as_.lea(x86::eax, x86::ptr(x86::eax, word_offset));
+            }
+            // If arr[i - 1] != 0, jump to end_lbl
+            as_.jnc(end_lbl);
+        }
+        as_.bind(end_lbl);
+    }
+
     // Performs byte_width operation on array of operands. Assumes that the
     // operands are ordered from least significant to most significant.
+    // This implementation assumes that the input value is biased towards
+    // smaller values.
     template <typename T, size_t N>
     void Emitter::array_byte_width(std::array<T, N> const &arr)
     {

@@ -326,6 +326,11 @@ namespace monad::vm::utils::evm_as
             return ins(compiler::EvmOpCode::SAR);
         }
 
+        EvmBuilder &clz() noexcept
+        {
+            return ins(compiler::EvmOpCode::CLZ);
+        }
+
         EvmBuilder &sha3() noexcept
         {
             return ins(compiler::EvmOpCode::SHA3);

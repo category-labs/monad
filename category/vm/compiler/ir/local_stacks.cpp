@@ -224,6 +224,11 @@ namespace
         case Sar:
             eval_binary_instruction(tok, stack, sar);
             break;
+        case Clz:
+            eval_unary_instruction(tok, stack, [](auto &x) {
+                return monad::vm::runtime::countl_zero(x);
+            });
+            break;
         case CodeSize:
             stack.emplace_front(ValueIs::LITERAL, uint256_t{codesize});
             break;

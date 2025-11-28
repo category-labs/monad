@@ -257,6 +257,19 @@ add_library(
   # monad/state2
   "monad/state2/proposal_state.hpp")
 
+add_library(
+  monad_execution_runloop OBJECT
+  runloop/file_io.hpp
+  runloop/file_io.cpp
+  runloop/runloop_ethereum.cpp
+  runloop/runloop_ethereum.hpp
+  runloop/runloop_interface_monad.cpp
+  runloop/runloop_interface_monad.h
+  runloop/runloop_monad.cpp
+  runloop/runloop_monad.hpp
+  runloop/runloop_monad_ethblocks.cpp
+  runloop/runloop_monad_ethblocks.hpp)
+
 target_include_directories(
   monad_execution_ethereum
   PUBLIC ${CATEGORY_MAIN_DIR}
@@ -278,6 +291,10 @@ target_compile_definitions(
 target_compile_definitions(
   monad_execution_native PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
                                 MONAD_CXX_CTYPES_USE_INTX)
+
+target_compile_definitions(
+  monad_execution_runloop PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
+                                 MONAD_CXX_CTYPES_USE_INTX)
 
 target_link_libraries(
   monad_execution_ethereum
@@ -313,6 +330,11 @@ target_link_libraries(
   PUBLIC magic_enum::magic_enum
   PUBLIC quill::quill)
 monad_compile_options(monad_execution_native)
+
+target_link_libraries(
+    monad_execution_runloop
+    PUBLIC monad_execution_native)
+monad_compile_options(monad_execution_runloop)
 
 # ##############################################################################
 # unit tests

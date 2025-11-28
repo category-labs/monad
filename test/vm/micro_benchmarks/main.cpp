@@ -497,6 +497,18 @@ int main(int argc, char **argv)
 
     BenchmarkBuilder(
         args,
+        {.title = "SELFBALANCE, throughput",
+         .num_inputs = 0,
+         .has_output = true,
+         .iteration_count = 100,
+         .subject_seqs = {KernelBuilder<traits>{}.selfbalance()}})
+        .make_calldata([](size_t) {
+            return std::vector<uint8_t>(10'000 * 32, 1);
+        })
+        .run_throughput_benchmark();
+
+    BenchmarkBuilder(
+        args,
         {.title = "BASIC_UNA_MATH, constant input",
          .num_inputs = 1,
          .has_output = true,

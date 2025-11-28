@@ -144,7 +144,6 @@ public:
         return storage_.print_stats();
     }
 
-private:
     void insert_in_lru_caches(StateDeltas const &state_deltas)
     {
         for (auto const &[address, delta] : state_deltas) {

@@ -43,8 +43,7 @@ namespace detail
         constexpr struct
         {
             uint64_t chunk_info_count : 20;
-            uint64_t using_chunks_for_root_offsets : 1;
-            uint64_t unused0_ : 35;
+            uint64_t unused0_ : 36;
             uint64_t reserved0_ : 8;
         } v{.reserved0_ = 1};
 
@@ -75,8 +74,7 @@ namespace detail
 
         char magic[MAGIC_STRING_LEN];
         uint64_t chunk_info_count : 20; // items in chunk_info below
-        uint64_t using_chunks_for_root_offsets : 1;
-        uint64_t unused0_ : 35; // next item MUST be on a byte boundary
+        uint64_t unused0_ : 36; // next item MUST be on a byte boundary
         uint64_t reserved_for_is_dirty_ : 8; // for is_dirty below
         // DO NOT INSERT ANYTHING IN HERE
         uint64_t capacity_in_free_list; // used to detect when free space is
@@ -91,32 +89,23 @@ namespace detail
         struct root_offsets_ring_t
         {
             static constexpr size_t SIZE_ = 65536;
-            static_assert(
-                (SIZE_ & (SIZE_ - 1)) == 0,
-                "root offsets must be a power of 2");
 
             uint64_t version_lower_bound_;
             uint64_t
                 next_version_; // all bits zero turns into INVALID_BLOCK_NUM
 
-            union
+            struct
             {
+                uint32_t high_bits_all_set; // All bits one to deliberately
+                                            // break older codebases
+                uint32_t cnv_chunks_len; // How long the following list is
+
                 struct
                 {
                     uint32_t high_bits_all_set; // All bits one to deliberately
                                                 // break older codebases
-                    uint32_t cnv_chunks_len; // How long the following list is
-
-                    struct
-                    {
-                        uint32_t
-                            high_bits_all_set; // All bits one to deliberately
-                                               // break older codebases
-                        uint32_t cnv_chunk_id; // The read-write chunk id
-                    } cnv_chunks[SIZE_ - 1];
-                };
-
-                chunk_offset_t arr[SIZE_];
+                    uint32_t cnv_chunk_id; // The read-write chunk id
+                } cnv_chunks[SIZE_ - 1];
             } storage_;
         } root_offsets;
 

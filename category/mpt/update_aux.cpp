@@ -733,74 +733,70 @@ void UpdateAuxImpl::set_io(
         }
     }
     auto map_root_offsets = [&] {
-        if (db_metadata()->using_chunks_for_root_offsets) {
-            // Map in the DB version history storage
-            // Firstly reserve address space for each copy
-            size_t const map_bytes_per_chunk = cnv_chunk.capacity() / 2;
-            size_t const db_version_history_storage_bytes =
-                db_metadata()->root_offsets.storage_.cnv_chunks_len *
-                map_bytes_per_chunk;
-            std::byte *reservation[2];
-            reservation[0] = (std::byte *)::mmap(
-                nullptr,
-                db_version_history_storage_bytes,
-                PROT_NONE,
-                MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
-                -1,
-                0);
-            MONAD_ASSERT(reservation[0] != MAP_FAILED);
-            reservation[1] = (std::byte *)::mmap(
-                nullptr,
-                db_version_history_storage_bytes,
-                PROT_NONE,
-                MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
-                -1,
-                0);
-            MONAD_ASSERT(reservation[1] != MAP_FAILED);
-            // For each chunk, map the first half into the first copy and the
-            // second half into the second copy
-            for (size_t n = 0;
-                 n < db_metadata()->root_offsets.storage_.cnv_chunks_len;
-                 n++) {
-                auto &chunk = io->storage_pool().chunk(
-                    storage_pool::cnv,
-                    db_metadata()
-                        ->root_offsets.storage_.cnv_chunks[n]
-                        .cnv_chunk_id);
-                auto fdr = chunk.read_fd();
-                auto fdw = chunk.write_fd(0);
-                auto &fd = can_write_to_map ? fdw : fdr;
-                MONAD_ASSERT(
-                    MAP_FAILED != ::mmap(
-                                      reservation[0] + n * map_bytes_per_chunk,
-                                      map_bytes_per_chunk,
-                                      prot,
-                                      mapflags | MAP_FIXED,
-                                      fd.first,
-                                      off_t(fdr.second)));
-                MONAD_ASSERT(
-                    MAP_FAILED != ::mmap(
-                                      reservation[1] + n * map_bytes_per_chunk,
-                                      map_bytes_per_chunk,
-                                      prot,
-                                      mapflags | MAP_FIXED,
-                                      fd.first,
-                                      off_t(fdr.second + map_bytes_per_chunk)));
-            }
-            db_metadata_[0].root_offsets = {
-                start_lifetime_as<chunk_offset_t>(
-                    (chunk_offset_t *)reservation[0]),
-                db_version_history_storage_bytes / sizeof(chunk_offset_t)};
-            db_metadata_[1].root_offsets = {
-                start_lifetime_as<chunk_offset_t>(
-                    (chunk_offset_t *)reservation[1]),
-                db_version_history_storage_bytes / sizeof(chunk_offset_t)};
-            LOG_INFO(
-                "Database root offsets ring buffer is configured with {} "
-                "chunks, can hold up to {} historical entries.",
-                db_metadata()->root_offsets.storage_.cnv_chunks_len,
-                root_offsets().capacity());
+        // Map in the DB version history storage
+        // Firstly reserve address space for each copy
+        size_t const map_bytes_per_chunk = cnv_chunk.capacity() / 2;
+        size_t const db_version_history_storage_bytes =
+            db_metadata()->root_offsets.storage_.cnv_chunks_len *
+            map_bytes_per_chunk;
+        std::byte *reservation[2];
+        reservation[0] = (std::byte *)::mmap(
+            nullptr,
+            db_version_history_storage_bytes,
+            PROT_NONE,
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
+            -1,
+            0);
+        MONAD_ASSERT(reservation[0] != MAP_FAILED);
+        reservation[1] = (std::byte *)::mmap(
+            nullptr,
+            db_version_history_storage_bytes,
+            PROT_NONE,
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
+            -1,
+            0);
+        MONAD_ASSERT(reservation[1] != MAP_FAILED);
+        // For each chunk, map the first half into the first copy and the
+        // second half into the second copy
+        for (size_t n = 0;
+             n < db_metadata()->root_offsets.storage_.cnv_chunks_len;
+             n++) {
+            auto &chunk = io->storage_pool().chunk(
+                storage_pool::cnv,
+                db_metadata()
+                    ->root_offsets.storage_.cnv_chunks[n]
+                    .cnv_chunk_id);
+            auto fdr = chunk.read_fd();
+            auto fdw = chunk.write_fd(0);
+            auto &fd = can_write_to_map ? fdw : fdr;
+            MONAD_ASSERT(
+                MAP_FAILED != ::mmap(
+                                  reservation[0] + n * map_bytes_per_chunk,
+                                  map_bytes_per_chunk,
+                                  prot,
+                                  mapflags | MAP_FIXED,
+                                  fd.first,
+                                  off_t(fdr.second)));
+            MONAD_ASSERT(
+                MAP_FAILED != ::mmap(
+                                  reservation[1] + n * map_bytes_per_chunk,
+                                  map_bytes_per_chunk,
+                                  prot,
+                                  mapflags | MAP_FIXED,
+                                  fd.first,
+                                  off_t(fdr.second + map_bytes_per_chunk)));
         }
+        db_metadata_[0].root_offsets = {
+            start_lifetime_as<chunk_offset_t>((chunk_offset_t *)reservation[0]),
+            db_version_history_storage_bytes / sizeof(chunk_offset_t)};
+        db_metadata_[1].root_offsets = {
+            start_lifetime_as<chunk_offset_t>((chunk_offset_t *)reservation[1]),
+            db_version_history_storage_bytes / sizeof(chunk_offset_t)};
+        LOG_INFO(
+            "Database root offsets ring buffer is configured with {} "
+            "chunks, can hold up to {} historical entries.",
+            db_metadata()->root_offsets.storage_.cnv_chunks_len,
+            root_offsets().capacity());
     };
     if (0 != memcmp(
                  db_metadata_[0].main->magic,
@@ -821,55 +817,45 @@ void UpdateAuxImpl::set_io(
         memset(db_metadata_[0].main, 0, map_size);
         MONAD_DEBUG_ASSERT((chunk_count & ~0xfffffU) == 0);
         db_metadata_[0].main->chunk_info_count = chunk_count & 0xfffffU;
-        if (io->storage_pool().chunks(storage_pool::cnv) > 1) {
-            auto &storage = db_metadata_[0].main->root_offsets.storage_;
-            memset(&storage, 0xff, sizeof(storage));
-            storage.cnv_chunks_len = 0;
-            auto &chunk = io->storage_pool().chunk(storage_pool::cnv, 1);
-            auto *tofill = aligned_alloc(DISK_PAGE_SIZE, chunk.capacity());
-            MONAD_ASSERT(tofill != nullptr);
-            auto untofill = make_scope_exit([&]() noexcept { ::free(tofill); });
-            memset(tofill, 0xff, chunk.capacity());
-            {
-                auto fdw = chunk.write_fd(chunk.capacity());
-                MONAD_ASSERT(
-                    -1 != ::pwrite(
-                              fdw.first,
-                              tofill,
-                              chunk.capacity(),
-                              (off_t)fdw.second));
-            }
-            storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = 1;
-            db_metadata_[0].main->using_chunks_for_root_offsets = true;
-            db_metadata_[0].main->history_length =
-                chunk.capacity() / 2 / sizeof(chunk_offset_t);
-            // Allocate cnv chunks of the first device - 1 for root offsets,
-            // since chunk 0 is used for db_metadata
-            auto const root_offsets_chunk_count =
-                io->storage_pool().devices()[0].cnv_chunks() -
-                UpdateAuxImpl::cnv_chunks_for_db_metadata;
+        MONAD_ASSERT(io->storage_pool().chunks(storage_pool::cnv) > 1);
+        auto &storage = db_metadata_[0].main->root_offsets.storage_;
+        memset(&storage, 0xff, sizeof(storage));
+        storage.cnv_chunks_len = 0;
+        auto &chunk = io->storage_pool().chunk(storage_pool::cnv, 1);
+        auto *tofill = aligned_alloc(DISK_PAGE_SIZE, chunk.capacity());
+        MONAD_ASSERT(tofill != nullptr);
+        auto untofill = make_scope_exit([&]() noexcept { ::free(tofill); });
+        memset(tofill, 0xff, chunk.capacity());
+        {
+            auto fdw = chunk.write_fd(chunk.capacity());
             MONAD_ASSERT(
-                root_offsets_chunk_count > 0 &&
-                    (root_offsets_chunk_count &
-                     (root_offsets_chunk_count - 1)) == 0,
-                "Number of cnv chunks for root offsets must be a power of two");
-            for (uint32_t n = 2; n <= root_offsets_chunk_count; n++) {
-                auto &chunk = io->storage_pool().chunk(storage_pool::cnv, n);
-                auto fdw = chunk.write_fd(chunk.capacity());
-                MONAD_ASSERT(
-                    -1 != ::pwrite(
-                              fdw.first,
-                              tofill,
-                              chunk.capacity(),
-                              (off_t)fdw.second));
-                storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = n;
-                db_metadata_[0].main->history_length +=
-                    chunk.capacity() / 2 / sizeof(chunk_offset_t);
-            }
+                -1 !=
+                ::pwrite(
+                    fdw.first, tofill, chunk.capacity(), (off_t)fdw.second));
         }
-        else {
-            db_metadata_[0].main->history_length =
-                detail::db_metadata::root_offsets_ring_t::SIZE_;
+        storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = 1;
+        db_metadata_[0].main->history_length =
+            chunk.capacity() / 2 / sizeof(chunk_offset_t);
+        // Allocate cnv chunks of the first device - 1 for root offsets,
+        // since chunk 0 is used for db_metadata
+        auto const root_offsets_chunk_count =
+            io->storage_pool().devices()[0].cnv_chunks() -
+            UpdateAuxImpl::cnv_chunks_for_db_metadata;
+        MONAD_ASSERT(
+            root_offsets_chunk_count > 0 &&
+                (root_offsets_chunk_count & (root_offsets_chunk_count - 1)) ==
+                    0,
+            "Number of cnv chunks for root offsets must be a power of two");
+        for (uint32_t n = 2; n <= root_offsets_chunk_count; n++) {
+            auto &chunk = io->storage_pool().chunk(storage_pool::cnv, n);
+            auto fdw = chunk.write_fd(chunk.capacity());
+            MONAD_ASSERT(
+                -1 !=
+                ::pwrite(
+                    fdw.first, tofill, chunk.capacity(), (off_t)fdw.second));
+            storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = n;
+            db_metadata_[0].main->history_length +=
+                chunk.capacity() / 2 / sizeof(chunk_offset_t);
         }
         memset(
             &db_metadata_[0].main->free_list,
@@ -963,10 +949,6 @@ void UpdateAuxImpl::set_io(
         // Mark as done, init root offset and history versions for the new
         // database as invalid
         advance_db_offsets_to(fast_offset, slow_offset);
-        if (!db_metadata_[0].main->using_chunks_for_root_offsets) {
-            root_offsets(0).reset_all(0);
-            root_offsets(1).reset_all(0);
-        }
         set_latest_finalized_version(INVALID_BLOCK_NUM);
         set_latest_verified_version(INVALID_BLOCK_NUM);
         set_latest_voted(INVALID_BLOCK_NUM, bytes32_t{});
@@ -982,12 +964,6 @@ void UpdateAuxImpl::set_io(
                 sizeof(m->future_variables_unused));
         }
 
-        // Set history length
-        if (history_len.has_value()) {
-            update_history_length_metadata(*history_len);
-            enable_dynamic_history_length_ = false;
-        }
-
         std::atomic_signal_fence(
             std::memory_order_seq_cst); // no compiler reordering here
         memcpy(
@@ -1000,6 +976,12 @@ void UpdateAuxImpl::set_io(
             detail::db_metadata::MAGIC_STRING_LEN);
 
         map_root_offsets();
+        // Set history length, MUST be after root offsets are mapped
+        if (history_len.has_value()) {
+            update_history_length_metadata(*history_len);
+            enable_dynamic_history_length_ = false;
+        }
+
         if (!io->is_read_only()) {
             // Default behavior: initialize node writers to start at the
             // start of available slow and fast list respectively. Make sure

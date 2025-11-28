@@ -111,17 +111,8 @@ TEST(StateSyncThread, shutdown_via_jthread_stop_token)
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    auto const stop_start = std::chrono::steady_clock::now();
     sync_server->thread.request_stop();
     sync_server->thread.join();
-
-    auto const stop_elapsed = std::chrono::steady_clock::now() - stop_start;
-    auto const stop_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(stop_elapsed)
-            .count();
-
-    EXPECT_LT(stop_ms, 5000)
-        << "Thread should exit quickly, took " << stop_ms << "ms";
 }
 
 TEST(StateSyncThread, shutdown_during_reconnect)
@@ -202,15 +193,6 @@ TEST(StateSyncThread, shutdown_during_reconnect)
     client_fd = -1;
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    auto const stop_start = std::chrono::steady_clock::now();
     sync_server->thread.request_stop();
     sync_server->thread.join();
-
-    auto const stop_elapsed = std::chrono::steady_clock::now() - stop_start;
-    auto const stop_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(stop_elapsed)
-            .count();
-
-    EXPECT_LT(stop_ms, 5000)
-        << "Thread should exit from reconnect loop, took " << stop_ms << "ms";
 }

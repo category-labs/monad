@@ -20,8 +20,10 @@
 #include <cassert>
 #include <compare>
 #include <cstdint>
+#include <span>
 
 #include <linux/types.h> // for __u64
+#include <sys/uio.h> // for struct iovec
 
 #define MONAD_ASYNC_NAMESPACE_BEGIN                                            \
     namespace monad                                                            \
@@ -190,6 +192,19 @@ static constexpr uint16_t DISK_PAGE_SIZE = (1U << DISK_PAGE_BITS);
 //! The DMA friendly page size and bits
 static constexpr uint16_t DMA_PAGE_BITS = 6;
 static constexpr uint16_t DMA_PAGE_SIZE = (1U << DMA_PAGE_BITS);
+
+//! Small vector optimization size for scatter/gather I/O operations
+static constexpr size_t SMALL_BUFFERS_COUNT = 4;
+
+//! Calculate total byte length from an array of iovec buffers
+inline size_t iov_length(std::span<const struct iovec> iovecs)
+{
+    size_t total = 0;
+    for (auto const &iov : iovecs) {
+        total += iov.iov_len;
+    }
+    return total;
+}
 
 MONAD_ASYNC_NAMESPACE_END
 

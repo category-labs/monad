@@ -393,6 +393,7 @@ struct impl_t
     std::ostream &cerr;
     MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
     uint8_t chunk_capacity = flags.chunk_capacity;
+    uint32_t root_offsets_chunk_count = 16;
     bool allow_dirty = false;
     bool no_prompt = false;
     bool create_database = false;
@@ -728,7 +729,7 @@ public:
                     MONAD_ASYNC_NAMESPACE::AsyncIO::
                         MONAD_IO_BUFFERS_WRITE_SIZE);
             auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
-            MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
+            MONAD_MPT_NAMESPACE::UpdateAux<> aux(io);
             for (;;) {
                 auto const *item = aux.db_metadata()->fast_list_begin();
                 if (item == nullptr) {
@@ -971,7 +972,7 @@ public:
             2,
             MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
-        MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
+        MONAD_MPT_NAMESPACE::UpdateAux<> aux(io);
         size_t slow_chunks_inserted = 0;
         size_t fast_chunks_inserted = 0;
         auto override_insertion_count =
@@ -1445,6 +1446,22 @@ opened.
                 "set chunk capacity during database creation (default is 28, "
                 "1<<28 "
                 "= 256Mb, max is 31).");
+            cli.add_option(
+                   "--root-offsets-chunk-count",
+                   impl.root_offsets_chunk_count,
+                   "Number of chunks to allocate for storing root offsets. "
+                   "Must be a positive number that is a power of 2. Default is "
+                   "16. Each chunk holds approx 16.5M history entries.")
+                ->check([](std::string const &s) {
+                    auto const v = std::stoll(s);
+                    if (v <= 0) {
+                        return "Value must be positive";
+                    }
+                    if ((v & (v - 1)) != 0) {
+                        return "Value must be a power of 2";
+                    }
+                    return "";
+                });
             cli.add_flag(
                 "--chunk-increasing",
                 impl.create_chunk_increasing,
@@ -1478,6 +1495,9 @@ opened.
             impl.flags.open_read_only = true;
             impl.flags.open_read_only_allow_dirty =
                 impl.allow_dirty || !impl.archive_database.empty();
+            impl.flags.num_cnv_chunks =
+                impl.root_offsets_chunk_count +
+                monad::mpt::UpdateAuxImpl::cnv_chunks_for_db_metadata;
             if (!impl.restore_database.empty()) {
                 if (!impl.archive_database.empty()) {
                     impl.cli_ask_question(
@@ -1558,7 +1578,7 @@ opened.
                       MONAD_ASYNC_NAMESPACE::AsyncIO::
                           MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*impl.pool, rwbuf};
-        MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
+        MONAD_MPT_NAMESPACE::UpdateAux<> aux(io);
 
         {
             cout << R"(MPT database on storages:
@@ -1604,7 +1624,7 @@ opened.
                     impl.cli_ask_question(ss.str().c_str());
                 }
                 aux.unset_io();
-                aux.set_io(&io, impl.reset_history_length);
+                aux.set_io(io, impl.reset_history_length);
                 cout << "Success! Done resetting history to "
                      << impl.reset_history_length.value() << ".\n";
                 impl.print_db_history_summary(aux);

@@ -310,7 +310,7 @@ evmc::Result call(
     }
     else {
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }
 

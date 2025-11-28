@@ -35,7 +35,7 @@ Result<void> validate_monad_transaction(
     std::span<std::optional<Address> const> const authorities)
 {
     auto const acct = state.recent_account(sender);
-    auto const &icode = state.get_code(sender)->intercode();
+    auto const icode = state.get_code(sender)->intercode();
     auto res = ::monad::validate_transaction(
         rev, tx, acct, {icode->code(), icode->size()});
     if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {

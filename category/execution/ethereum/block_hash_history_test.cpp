@@ -104,7 +104,7 @@ namespace
             .input_size = 32,
             .code_address = blockhash_opcode_addr};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         return state.vm().execute<Prague>(host, &msg, hash, code);
     }
 
@@ -246,7 +246,7 @@ TEST_F(BlockHistoryFixture, read_from_block_hash_history_contract)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result const result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         if (expect_success) {
@@ -305,7 +305,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result const result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
@@ -337,7 +337,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result const result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         if (expect_success) {
@@ -418,7 +418,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         if (expect_success) {
@@ -455,7 +455,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result const result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         if (expect_success) {

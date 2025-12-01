@@ -23,16 +23,22 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/magic.h>
-#include <stdint.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/types.h>
 #include <sys/vfs.h>
 #include <unistd.h>
 
+#if __has_include(<linux/limits.h>)
+    #include <linux/limits.h> // NOLINT(misc-include-cleaner)
+#else
+    #define PATH_MAX 4096
+#endif
+
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
 #include <category/core/format_err.h>
+#include <category/core/path_util.h>
 #include <category/core/srcloc.h>
 
 #if !MONAD_EVENT_DISABLE_LIBHUGETLBFS
@@ -48,6 +54,9 @@ extern thread_local char _g_monad_event_ring_error_buf[1024];
         sizeof(_g_monad_event_ring_error_buf),                                 \
         &MONAD_SOURCE_LOCATION_CURRENT(),                                      \
         __VA_ARGS__)
+
+// Create MONAD_EVENT_DEFAULT_RING_DIR or override subpaths with rwxrwxr-x
+constexpr mode_t DIR_CREATE_MODE = S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH;
 
 // Given a path which may not exist, walk backward until we find a parent path
 // that does exist; the caller must free(3) parent_path
@@ -236,10 +245,11 @@ int monad_event_ring_init_simple(
         return rc;
     }
     size_t const ring_bytes = monad_event_ring_calc_storage(&ring_size);
-    if (fallocate(ring_fd, 0, ring_offset, (off_t)ring_bytes) == -1) {
+    rc = posix_fallocate(ring_fd, ring_offset, (off_t)ring_bytes);
+    if (rc != 0) {
         return FORMAT_ERRC(
-            errno,
-            "fallocate failed for event ring file `%s`, size %lu",
+            rc,
+            "posix_fallocate failed for event ring file `%s`, size %lu",
             error_name,
             ring_bytes);
     }
@@ -321,24 +331,23 @@ Done:
 // by third parties using the SDK, it is optional
 #if MONAD_EVENT_DISABLE_LIBHUGETLBFS
 
-int monad_event_open_ring_dir_fd(int *, char *, size_t)
+int monad_event_open_hugetlbfs_dir_fd(int *, char *, size_t)
 {
     return FORMAT_ERRC(ENOSYS, "compiled without libhugetlbfs support");
 }
 
 #else
 
-int monad_event_open_ring_dir_fd(int *dirfd, char *namebuf, size_t namebuf_size)
+int monad_event_open_hugetlbfs_dir_fd(
+    int *dirfd, char *pathbuf, size_t pathbuf_size)
 {
-    // Create MONAD_EVENT_DEFAULT_RING_DIR with rwxrwxr-x
-    constexpr mode_t mode = S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH;
     struct monad_hugetlbfs_resolve_params const params = {
         .page_size = 1UL << 21,
         .path_suffix = MONAD_EVENT_DEFAULT_RING_DIR,
         .create_dirs = true,
-        .dir_create_mode = mode};
+        .dir_create_mode = DIR_CREATE_MODE};
     int const rc =
-        monad_hugetlbfs_open_dir_fd(&params, dirfd, namebuf, namebuf_size);
+        monad_hugetlbfs_open_dir_fd(&params, dirfd, pathbuf, pathbuf_size);
     if (rc != 0) {
         // Copy the error message directly, since we added nothing interesting
         strlcpy(
@@ -350,3 +359,65 @@ int monad_event_open_ring_dir_fd(int *dirfd, char *namebuf, size_t namebuf_size)
 }
 
 #endif
+
+int monad_event_resolve_ring_file(
+    char const *default_path, char const *file, char *pathbuf,
+    size_t pathbuf_size)
+{
+    int rc;
+
+    if (file == nullptr || pathbuf == nullptr) {
+        return FORMAT_ERRC(EFAULT, "file and pathbuf cannot be nullptr");
+    }
+    if (file == pathbuf) {
+        return FORMAT_ERRC(EINVAL, "file cannot alias pathbuf");
+    }
+    if (strchr(file, '/') != nullptr) {
+        // The event ring file contains a '/' character; this is resolved
+        // relative to the current working directory
+        if (strlcpy(pathbuf, file, pathbuf_size) >= pathbuf_size) {
+            return FORMAT_ERRC(
+                ENAMETOOLONG,
+                "file %s overflows %zu size pathbuf",
+                file,
+                pathbuf_size);
+        }
+        return 0;
+    }
+
+    // The event ring path does not contain a '/'; we assume this is a file
+    // name relative to the default event ring directory
+    if (default_path == MONAD_EVENT_DEFAULT_HUGETLBFS) {
+        rc = monad_event_open_hugetlbfs_dir_fd(nullptr, pathbuf, pathbuf_size);
+        if (rc != 0) {
+            return rc;
+        }
+    }
+    else {
+        rc = monad_path_open_subdir(
+            AT_FDCWD,
+            default_path,
+            DIR_CREATE_MODE,
+            nullptr,
+            pathbuf,
+            pathbuf_size);
+        if (rc != 0) {
+            return FORMAT_ERRC(
+                rc,
+                "monad_path_open_subdir of `%s` failed at `%s`",
+                default_path,
+                pathbuf);
+        }
+    }
+
+    size_t const default_dir_len = strlen(pathbuf);
+    char *append = pathbuf + default_dir_len;
+    pathbuf_size -= default_dir_len;
+    rc = monad_path_append(&append, file, &pathbuf_size);
+    if (rc != 0) {
+        return FORMAT_ERRC(
+            rc, "monad_path_append of %s failed; partial: %s", file, pathbuf);
+    }
+
+    return 0;
+}

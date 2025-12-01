@@ -145,7 +145,7 @@ namespace monad::vm::compiler::test
                     host_.to_context(),
                     TraitsTest<T>::Trait::evm_rev(),
                     msg_,
-                    evmone::baseline::analyze(evmc::bytes_view(code), false))};
+                    evmone::baseline::analyze(evmc::bytes_view(code)))};
             }
         }
 

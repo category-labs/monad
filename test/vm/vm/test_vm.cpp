@@ -154,7 +154,7 @@ evmone::baseline::CodeAnalysis const &BlockchainTestVM::get_code_analysis(
         return it1->second;
     }
     auto [it2, b] = code_analyses_.insert(
-        {code_hash, evmone::baseline::analyze({code, code_size}, false)});
+        {code_hash, evmone::baseline::analyze({code, code_size})});
     MONAD_VM_ASSERT(b);
     return it2->second;
 }

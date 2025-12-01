@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include "gtest_filter.hpp"
 #include "test_vm.hpp"
 
 #include <test_resource_data.h>
@@ -37,23 +38,7 @@ int main(int argc, char **argv)
     blockchain_test_setup(&argc, argv);
 
     // Skip slow and broken tests:
-    testing::FLAGS_gtest_filter +=
-        ":-"
-        // Slow
-        "GeneralStateTests/VMTests/vmPerformance.loopExp:"
-        "GeneralStateTests/VMTests/vmPerformance.loopMul:"
-        "GeneralStateTests/stTimeConsuming.CALLBlake2f_MaxRounds:"
-        "GeneralStateTests/stTimeConsuming.static_Call50000_sha256:"
-        // Broken until https://github.com/ethereum/evmone/pull/1241 is included
-        // in a release
-        "InvalidBlocks/bcEIP1559.badBlocks:"
-        "InvalidBlocks/bcEIP1559.badUncles:"
-        "InvalidBlocks/bcEIP1559.gasLimit20m:"
-        "InvalidBlocks/bcEIP1559.gasLimit40m:"
-        "InvalidBlocks/bcMultiChainTest.UncleFromSideChain:"
-        "InvalidBlocks/bcUncleTest.UncleIsBrother:"
-        // Currently skipped on ethereum/evmone master
-        "ValidBlocks/bcValidBlockTest.SimpleTx3LowS";
+    testing::FLAGS_gtest_filter += base_gtest_filter;
 
     return blockchain_test_main({root}, false, vm);
 }

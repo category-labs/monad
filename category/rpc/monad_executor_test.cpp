@@ -3618,7 +3618,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_REVERT);
+    EXPECT_EQ(ctx.result->status_code, EVMC_MONAD_RESERVE_BALANCE_VIOLATION);
 
     monad_executor_destroy(executor);
     monad_state_override_destroy(state_override);

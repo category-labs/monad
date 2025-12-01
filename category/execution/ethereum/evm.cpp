@@ -145,7 +145,9 @@ void post_call(State &state, evmc::Result const &result)
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
     MONAD_ASSERT(
         result.status_code == EVMC_SUCCESS ||
-        result.status_code == EVMC_REVERT || result.gas_left == 0);
+        result.status_code == EVMC_REVERT ||
+        result.status_code == EVMC_MONAD_RESERVE_BALANCE_VIOLATION ||
+        result.gas_left == 0);
 
     if (result.status_code == EVMC_SUCCESS) {
         state.pop_accept();
@@ -259,7 +261,11 @@ evmc::Result create(
     }
 
     if (msg.depth == 0 && revert_transaction()) {
-        result.status_code = EVMC_REVERT;
+        // TODO: The reserve balance reversion mechanism should be refactored to
+        // use compile-time traits. For now, assert that Ethereum traits never
+        // try to revert the transaction here.
+        MONAD_ASSERT(is_monad_trait_v<traits>);
+        result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
     }
 
     if (result.status_code == EVMC_SUCCESS) {
@@ -315,7 +321,11 @@ evmc::Result call(
     }
 
     if (msg.depth == 0 && revert_transaction()) {
-        result.status_code = EVMC_REVERT;
+        // TODO: The reserve balance reversion mechanism should be refactored to
+        // use compile-time traits. For now, assert that Ethereum traits never
+        // try to revert the transaction here.
+        MONAD_ASSERT(is_monad_trait_v<traits>);
+        result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
         result.gas_refund = 0;
     }
 

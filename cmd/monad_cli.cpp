@@ -802,7 +802,7 @@ int main(int argc, char *argv[])
     cli.add_option(
            "--db",
            dbname_paths,
-           "A comma-separated list of previously created database paths")
+           "Database file or device paths. Multiple paths can be specified.")
         ->required();
     cli.add_option(
         "--sq_thread_cpu",

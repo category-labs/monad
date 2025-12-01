@@ -2517,6 +2517,79 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     EXPECT_EQ(ro_db.get_earliest_version(), min_block_num_after);
 }
 
+TEST(DbTest, db_from_multiple_files_works)
+{
+    auto const filename1 = create_temp_file(2); // 2GB
+    auto const filename2 = create_temp_file(2); // 2GB
+
+    // prepare updates with large 8KB size value
+    constexpr unsigned nkeys = 1000;
+    std::deque<monad::byte_string> bytes_alloc;
+    std::deque<Update> updates_alloc;
+    monad::byte_string const large_value(32 * 1024, 0xf);
+
+    for (size_t i = 0; i < nkeys; ++i) {
+        updates_alloc.push_back(Update{
+            .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
+            .value = large_value,
+            .incarnation = false,
+            .next = UpdateList{}});
+    }
+
+    {
+        StateMachineAlwaysMerkle machine{};
+        OnDiskDbConfig const config{
+            .sq_thread_cpu = std::nullopt,
+            .dbname_paths = {filename1, filename2}};
+        Db db(machine, config);
+        Node::SharedPtr root{};
+
+        auto batch_upsert_once = [&](uint64_t const version) {
+            UpdateList ls;
+            for (auto &u : updates_alloc) {
+                ls.push_front(u);
+            }
+            root = db.upsert(std::move(root), std::move(ls), version);
+        };
+
+        monad::async::storage_pool::creation_flags pool_options;
+        pool_options.open_read_only = true;
+        monad::async::storage_pool pool(
+            config.dbname_paths,
+            monad::async::storage_pool::mode::open_existing,
+            pool_options);
+        monad::io::Ring read_ring{monad::io::RingConfig{128}};
+        monad::io::Buffers read_buffers = monad::io::make_buffers_for_read_only(
+            read_ring, 128, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        monad::async::AsyncIO io_ctx(pool, read_buffers);
+        UpdateAux aux_reader{&io_ctx};
+
+        EXPECT_EQ(aux_reader.num_chunks(UpdateAuxImpl::chunk_list::free), 9);
+        EXPECT_EQ(aux_reader.num_chunks(UpdateAuxImpl::chunk_list::fast), 1);
+        EXPECT_EQ(aux_reader.num_chunks(UpdateAuxImpl::chunk_list::slow), 1);
+        EXPECT_EQ(io_ctx.chunk_count(), 11);
+        uint64_t version = 0;
+        // Write enough data to span both files
+        while (aux_reader.disk_usage() <= 0.5) {
+            batch_upsert_once(version);
+            ++version;
+        }
+
+        auto const latest_version = db.get_latest_version();
+        EXPECT_EQ(latest_version, version - 1);
+        EXPECT_EQ(aux_reader.db_history_max_version(), latest_version);
+        EXPECT_EQ(
+            db_get(db, root, bytes_alloc.front(), latest_version).value(),
+            large_value);
+        EXPECT_EQ(
+            db_get(db, root, bytes_alloc.back(), latest_version).value(),
+            large_value);
+    }
+
+    std::filesystem::remove(filename1);
+    std::filesystem::remove(filename2);
+}
+
 TYPED_TEST(DbTest, scalability)
 {
     static constexpr size_t COUNT = 1000000;

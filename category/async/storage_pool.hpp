@@ -68,6 +68,8 @@ pathological i/o performance loss at usually the most inconvenient times.
 class storage_pool
 {
 public:
+    static constexpr unsigned NUM_CNV_CHUNKS = 3;
+
     //! \brief Type of chunk, conventional or sequential
     enum chunk_type
     {
@@ -400,6 +402,10 @@ public:
     //! \brief Returns the number of chunks for the specified type
     size_t chunks(chunk_type which) const noexcept
     {
+        if (which == chunk_type::cnv) {
+            MONAD_DEBUG_ASSERT(
+                chunks_[which].size() == storage_pool::NUM_CNV_CHUNKS);
+        }
         return chunks_[which].size();
     }
 

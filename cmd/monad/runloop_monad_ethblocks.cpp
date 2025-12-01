@@ -47,6 +47,7 @@
 #include <chrono>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -78,6 +79,29 @@ void log_tps(
         gps,
         monad_procfs_self_resident() / (1L << 20));
 };
+
+void get_block_with_retry(
+    BlockDb &block_db, uint64_t const block_num, Block &block,
+    std::chrono::seconds const timeout)
+{
+    constexpr auto RETRY_INTERVAL = std::chrono::milliseconds(100);
+
+    auto const start_time = std::chrono::steady_clock::now();
+
+    while (true) {
+        if (block_db.get(block_num, block)) {
+            return;
+        }
+
+        if (timeout == std::chrono::seconds::zero() ||
+            std::chrono::steady_clock::now() - start_time >= timeout) {
+            MONAD_ABORT_PRINTF(
+                "Could not read block %lu from blockdb", block_num);
+        }
+
+        std::this_thread::sleep_for(RETRY_INTERVAL);
+    }
+}
 
 #pragma GCC diagnostic pop
 
@@ -277,7 +301,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing)
+    bool const enable_tracing, std::chrono::seconds const block_db_timeout)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -299,10 +323,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
 
     if (block_num > 1) {
         Block parent_block;
-        MONAD_ASSERT_PRINTF(
-            block_db.get(block_num - 1, parent_block),
-            "Could not query %lu from blockdb for parent",
-            block_num - 1);
+        get_block_with_retry(
+            block_db, block_num - 1, parent_block, block_db_timeout);
         auto const recovered_senders =
             recover_senders(parent_block.transactions, priority_pool);
         auto const recovered_authorities =
@@ -329,10 +351,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
 
         if (block_num > 2) {
             Block grandparent_block;
-            MONAD_ASSERT_PRINTF(
-                block_db.get(block_num - 2, grandparent_block),
-                "Could not query %lu from blockdb for grandparent",
-                block_num - 2);
+            get_block_with_retry(
+                block_db, block_num - 2, grandparent_block, block_db_timeout);
             auto const grandparent_recovered_senders =
                 recover_senders(grandparent_block.transactions, priority_pool);
             auto const grandparent_recovered_authorities = recover_authorities(
@@ -364,10 +384,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
 
     while (block_num <= end_block_num && stop == 0) {
         Block block;
-        MONAD_ASSERT_PRINTF(
-            block_db.get(block_num, block),
-            "Could not query %lu from blockdb",
-            block_num);
+        get_block_with_retry(block_db, block_num, block, block_db_timeout);
 
         bytes32_t const block_id = bytes32_t{block.header.number};
         monad_revision const rev =

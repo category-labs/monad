@@ -128,6 +128,7 @@ try {
     bool no_compaction = false;
     bool trace_calls = false;
     bool as_eth_blocks = false;
+    std::chrono::seconds block_db_timeout = std::chrono::seconds::zero();
     std::string exec_event_ring_config;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     std::optional<unsigned> ro_sq_thread_cpu;
@@ -175,8 +176,13 @@ try {
         dump_snapshot,
         "directory to dump state to at the end of run");
     cli.add_flag("--trace_calls", trace_calls, "enable call tracing");
-    cli.add_flag(
+    auto *const as_eth_blocks_flag = cli.add_flag(
         "--as_eth_blocks", as_eth_blocks, "ingest monad blocks in evm format");
+    cli.add_option(
+           "--block_db_timeout",
+           block_db_timeout,
+           "timeout in seconds for reading blocks from blockdb (0 = no retry)")
+        ->needs(as_eth_blocks_flag);
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group
@@ -433,7 +439,8 @@ try {
                     block_num,
                     end_block_num,
                     stop,
-                    trace_calls);
+                    trace_calls,
+                    block_db_timeout);
             }
             else {
                 return runloop_monad(

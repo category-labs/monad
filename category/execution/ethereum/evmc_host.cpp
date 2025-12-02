@@ -119,9 +119,9 @@ size_t EvmcHostBase::copy_code(
     stack_unwind();
 }
 
-evmc_tx_context EvmcHostBase::get_tx_context() const noexcept
+evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
 {
-    return tx_context_;
+    return &tx_context_;
 }
 
 // This attempts to read from the contract first before falling back to the

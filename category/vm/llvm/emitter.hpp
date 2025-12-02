@@ -30,6 +30,8 @@
 #include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/storage.hpp>
 
+#include <evmc/evmc.hpp>
+
 #ifdef LLVM_RUNTIME_DEBUG
     #include <intx/intx.hpp>
 
@@ -442,6 +444,7 @@ namespace monad::vm::llvm
         std::unordered_map<byte_offset, BasicBlock *> jumpdest_tbl;
 
         Type *context_ty = llvm.void_ty;
+        Type *evmc_tx_context_ty = llvm.void_ty;
 
         Function *exit_f = init_exit();
         Function *llvm_runtime_debug_f = nullptr;
@@ -931,6 +934,27 @@ namespace monad::vm::llvm
             return f;
         };
 
+        Function *
+        load_evmc_tx_context_addr(Instruction const &instr, uint64_t offset)
+        {
+            SaveInsert const _unused(llvm);
+
+            auto [f, vctx] = context_fun(instr);
+
+            // dereference the evmc_tx_context ptr
+            auto *ptr_ref = context_gep(
+                vctx,
+                context_offset_env_tx_context,
+                "context_offset_env_tx_context");
+            auto *ptr_val = llvm.load(llvm.ptr_ty(evmc_tx_context_ty), ptr_ref);
+
+            auto *ref = context_gep(ptr_val, offset, "evmc_tx_context_addr");
+            auto *val = llvm.load(llvm.addr_ty, ref);
+
+            llvm.ret(llvm.addr_to_word(val));
+            return f;
+        };
+
         Function *load_context_uint32(Instruction const &instr, uint64_t offset)
         {
             SaveInsert const _unused(llvm);
@@ -953,12 +977,48 @@ namespace monad::vm::llvm
             return f;
         };
 
+        Function *
+        load_evmc_tx_context_uint64(Instruction const &instr, uint64_t offset)
+        {
+            SaveInsert const _unused(llvm);
+
+            auto [f, vctx] = context_fun(instr);
+            auto *ptr_ref = context_gep(
+                vctx,
+                context_offset_env_tx_context,
+                "context_offset_env_tx_context");
+            auto *ptr_val = llvm.load(llvm.ptr_ty(evmc_tx_context_ty), ptr_ref);
+
+            auto *ref = context_gep(ptr_val, offset, "evmc_tx_context_u64");
+            auto *val = llvm.load(llvm.int_ty(64), ref);
+            llvm.ret(llvm.cast_word(val));
+            return f;
+        };
+
         Function *load_context_be(Instruction const &instr, uint64_t offset)
         {
             SaveInsert const _unused(llvm);
 
             auto [f, vctx] = context_fun(instr);
             auto *ref = context_gep(vctx, offset, "context_be");
+            auto *val = llvm.load(llvm.word_ty, ref);
+            llvm.ret(llvm.bswap(val));
+            return f;
+        };
+
+        Function *
+        load_evmc_tx_context_be(Instruction const &instr, uint64_t offset)
+        {
+            SaveInsert const _unused(llvm);
+
+            auto [f, vctx] = context_fun(instr);
+            auto *ptr_ref = context_gep(
+                vctx,
+                context_offset_env_tx_context,
+                "context_offset_env_tx_context");
+            auto *ptr_val = llvm.load(llvm.ptr_ty(evmc_tx_context_ty), ptr_ref);
+
+            auto *ref = context_gep(ptr_val, offset, "evmc_tx_context_be");
             auto *val = llvm.load(llvm.word_ty, ref);
             llvm.ret(llvm.bswap(val));
             return f;
@@ -1340,23 +1400,23 @@ namespace monad::vm::llvm
                 return load_context_addr(instr, context_offset_env_recipient);
 
             case Coinbase:
-                return load_context_addr(
-                    instr, context_offset_env_tx_context_block_coinbase);
+                return load_evmc_tx_context_addr(
+                    instr, offsetof(evmc_tx_context, block_coinbase));
 
             case Caller:
                 return load_context_addr(instr, context_offset_env_sender);
 
             case Origin:
-                return load_context_addr(
-                    instr, context_offset_env_tx_context_origin);
+                return load_evmc_tx_context_addr(
+                    instr, offsetof(evmc_tx_context, tx_origin));
 
             case GasLimit:
-                return load_context_uint64(
-                    instr, context_offset_env_tx_context_block_gas_limit);
+                return load_evmc_tx_context_uint64(
+                    instr, offsetof(evmc_tx_context, block_gas_limit));
 
             case Number:
-                return load_context_uint64(
-                    instr, context_offset_env_tx_context_block_number);
+                return load_evmc_tx_context_uint64(
+                    instr, offsetof(evmc_tx_context, block_number));
 
             case MSize:
                 return load_context_uint32(instr, context_offset_memory_size);
@@ -1369,32 +1429,32 @@ namespace monad::vm::llvm
                     instr, context_offset_env_input_data_size);
 
             case Timestamp:
-                return load_context_uint64(
-                    instr, context_offset_env_tx_context_block_timestamp);
+                return load_evmc_tx_context_uint64(
+                    instr, offsetof(evmc_tx_context, block_timestamp));
 
             case ReturnDataSize:
                 return load_context_uint64(
                     instr, context_offset_env_return_data_size);
 
             case ChainId:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_chain_id);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, chain_id));
 
             case Difficulty:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_block_prev_randao);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, block_prev_randao));
 
             case BlobBaseFee:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_blob_base_fee);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, blob_base_fee));
 
             case BaseFee:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_block_base_fee);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, block_base_fee));
 
             case GasPrice:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_tx_gas_price);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, tx_gas_price));
 
             case CallValue:
                 return load_context_be(instr, context_offset_env_value);

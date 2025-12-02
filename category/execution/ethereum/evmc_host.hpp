@@ -81,7 +81,7 @@ public:
         Address const &, size_t offset, uint8_t *data,
         size_t size) const noexcept override;
 
-    virtual evmc_tx_context get_tx_context() const noexcept override;
+    virtual evmc_tx_context const *get_tx_context() const noexcept override;
 
     virtual bytes32_t get_block_hash(int64_t) const noexcept override;
 

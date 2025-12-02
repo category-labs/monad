@@ -76,6 +76,7 @@ namespace
     {
         size_t calls_before_exception_;
         std::function<evmc::Result(Host &)> call_impl_;
+        evmc_tx_context tx_context_{};
 
     public:
         struct Exception
@@ -152,9 +153,9 @@ namespace
             stack_unwind();
         }
 
-        evmc_tx_context get_tx_context() const noexcept override
+        evmc_tx_context const *get_tx_context() const noexcept override
         {
-            return evmc_tx_context{};
+            return &tx_context_;
         }
 
         evmc::bytes32 get_block_hash(int64_t) const noexcept override

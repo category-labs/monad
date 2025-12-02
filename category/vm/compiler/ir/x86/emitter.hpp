@@ -858,9 +858,11 @@ namespace monad::vm::compiler::native
         void jumpi_keep_fallthrough_stack();
 
         void read_context_address(int32_t offset);
+        void read_evmc_tx_context_address(int32_t offset);
         void read_context_word(int32_t offset);
+        void read_evmc_tx_context_word(int32_t offset);
         void read_context_uint32_to_word(int32_t offset);
-        void read_context_uint64_to_word(int32_t offset);
+        void read_evmc_tx_context_uint64_to_word(int32_t offset);
 
         void lt(StackElemRef dst, StackElemRef src);
         void slt(StackElemRef dst, StackElemRef src);

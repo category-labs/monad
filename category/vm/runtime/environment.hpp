@@ -34,7 +34,7 @@ namespace monad::vm::runtime
         }
 
         auto const block_number = static_cast<std::int64_t>(*block_number_ptr);
-        auto const &tx_context = ctx->env.tx_context;
+        auto const &tx_context = *ctx->env.tx_context;
 
         auto const first_allowed_block =
             std::max(tx_context.block_number - 256, 0L);
@@ -59,7 +59,7 @@ namespace monad::vm::runtime
     inline void
     blobhash(Context *ctx, uint256_t *result_ptr, uint256_t const *index)
     {
-        auto const &c = ctx->env.tx_context;
+        auto const &c = *ctx->env.tx_context;
         *result_ptr = (*index < c.blob_hashes_count)
                           ? uint256_from_bytes32(
                                 c.blob_hashes[static_cast<size_t>(*index)])

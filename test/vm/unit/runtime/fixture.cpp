@@ -92,7 +92,7 @@ namespace monad::vm::compiler::test
                       .input_data_size = sizeof(call_data_),
                       .code_size = sizeof(code_),
                       .return_data_size = 0,
-                      .tx_context = host_.tx_context,
+                      .tx_context = &host_.tx_context,
                   },
               .memory = Memory(EvmMemoryAllocator{})}
     {

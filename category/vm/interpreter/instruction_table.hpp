@@ -857,7 +857,7 @@ namespace monad::vm::interpreter
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         push(
             stack_top,
-            runtime::uint256_from_address(ctx.env.tx_context.tx_origin));
+            runtime::uint256_from_address(ctx.env.tx_context->tx_origin));
 
         MONAD_VM_NEXT(ORIGIN);
     }
@@ -978,7 +978,7 @@ namespace monad::vm::interpreter
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         push(
             stack_top,
-            runtime::uint256_from_bytes32(ctx.env.tx_context.tx_gas_price));
+            runtime::uint256_from_bytes32(ctx.env.tx_context->tx_gas_price));
 
         MONAD_VM_NEXT(GASPRICE);
     }
@@ -1096,7 +1096,7 @@ namespace monad::vm::interpreter
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         push(
             stack_top,
-            runtime::uint256_from_address(ctx.env.tx_context.block_coinbase));
+            runtime::uint256_from_address(ctx.env.tx_context->block_coinbase));
 
         MONAD_VM_NEXT(COINBASE);
     }
@@ -1109,7 +1109,7 @@ namespace monad::vm::interpreter
     {
         check_requirements<TIMESTAMP, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
-        push(stack_top, ctx.env.tx_context.block_timestamp);
+        push(stack_top, ctx.env.tx_context->block_timestamp);
 
         MONAD_VM_NEXT(TIMESTAMP);
     }
@@ -1122,7 +1122,7 @@ namespace monad::vm::interpreter
     {
         check_requirements<NUMBER, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
-        push(stack_top, ctx.env.tx_context.block_number);
+        push(stack_top, ctx.env.tx_context->block_number);
 
         MONAD_VM_NEXT(NUMBER);
     }
@@ -1138,7 +1138,7 @@ namespace monad::vm::interpreter
         push(
             stack_top,
             runtime::uint256_from_bytes32(
-                ctx.env.tx_context.block_prev_randao));
+                ctx.env.tx_context->block_prev_randao));
 
         MONAD_VM_NEXT(DIFFICULTY);
     }
@@ -1151,7 +1151,7 @@ namespace monad::vm::interpreter
     {
         check_requirements<GASLIMIT, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
-        push(stack_top, ctx.env.tx_context.block_gas_limit);
+        push(stack_top, ctx.env.tx_context->block_gas_limit);
 
         MONAD_VM_NEXT(GASLIMIT);
     }
@@ -1166,7 +1166,7 @@ namespace monad::vm::interpreter
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         push(
             stack_top,
-            runtime::uint256_from_bytes32(ctx.env.tx_context.chain_id));
+            runtime::uint256_from_bytes32(ctx.env.tx_context->chain_id));
 
         MONAD_VM_NEXT(CHAINID);
     }
@@ -1199,7 +1199,7 @@ namespace monad::vm::interpreter
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         push(
             stack_top,
-            runtime::uint256_from_bytes32(ctx.env.tx_context.block_base_fee));
+            runtime::uint256_from_bytes32(ctx.env.tx_context->block_base_fee));
 
         MONAD_VM_NEXT(BASEFEE);
     }
@@ -1232,7 +1232,7 @@ namespace monad::vm::interpreter
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         push(
             stack_top,
-            runtime::uint256_from_bytes32(ctx.env.tx_context.blob_base_fee));
+            runtime::uint256_from_bytes32(ctx.env.tx_context->blob_base_fee));
 
         MONAD_VM_NEXT(BLOBBASEFEE);
     }

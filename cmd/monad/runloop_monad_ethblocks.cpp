@@ -124,7 +124,7 @@ Result<void> process_monad_block(
 
     // Block input validation
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
-    BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_block<traits>(block.to_view()));
 
     // Sender and authority recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
@@ -198,7 +198,7 @@ Result<void> process_monad_block(
         auto const receipts,
         execute_block<traits>(
             chain,
-            block,
+            block.to_view(),
             senders,
             recovered_authorities,
             block_state,

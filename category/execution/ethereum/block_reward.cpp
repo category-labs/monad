@@ -18,7 +18,6 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/block_reward.hpp>
-#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -74,7 +73,7 @@ constexpr uint256_t const calculate_ommer_reward(
 }
 
 template <Traits traits>
-void apply_block_reward(State &state, Block const &block)
+void apply_block_reward(State &state, InputBlock const block)
 {
     auto const miner_reward = calculate_block_reward(
         block_reward<traits>(),
@@ -83,13 +82,15 @@ void apply_block_reward(State &state, Block const &block)
 
     // reward block beneficiary, YP Eqn. 172
     if (MONAD_LIKELY(miner_reward)) {
-        state.add_to_balance(block.header.beneficiary, miner_reward);
+        state.add_to_balance(block.header_inputs.beneficiary, miner_reward);
     }
 
     // reward ommers, YP Eqn. 175
     for (auto const &ommer : block.ommers) {
         auto const ommer_reward = calculate_ommer_reward(
-            block_reward<traits>(), block.header.number, ommer.number);
+            block_reward<traits>(),
+            block.header_inputs.number,
+            ommer.number);
         if (MONAD_LIKELY(ommer_reward)) {
             state.add_to_balance(ommer.beneficiary, ommer_reward);
         }

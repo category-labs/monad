@@ -69,12 +69,13 @@ public:
         bytes32_t const &block_id = bytes32_t{}) override;
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &block_id,
-        BlockHeader const &, std::vector<Receipt> const & = {},
+        BlockHeaderInputs const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const & = std::nullopt) override;
+        std::optional<std::vector<Withdrawal>> const & = std::nullopt,
+        OutputHeaderPatchFn header_patch_fn = {}) override;
     virtual void
     finalize(uint64_t block_number, bytes32_t const &block_id) override;
     virtual void update_verified_block(uint64_t block_number) override;

@@ -29,10 +29,13 @@
 #include <category/vm/vm.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
+
+using OutputHeaderPatchFn = std::function<void(BlockHeader &)>;
 
 struct Db
 {
@@ -63,34 +66,37 @@ struct Db
 
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &block_id,
-        BlockHeader const &, std::vector<Receipt> const & = {},
+        BlockHeaderInputs const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const & = std::nullopt) = 0;
+        std::optional<std::vector<Withdrawal>> const & = std::nullopt,
+        OutputHeaderPatchFn = {}) = 0;
 
     virtual void commit(
         std::unique_ptr<StateDeltas> state_deltas, Code const &code,
-        bytes32_t const &block_id, BlockHeader const &header,
+        bytes32_t const &block_id, BlockHeaderInputs const &header_inputs,
         std::vector<Receipt> const &receipts = {},
         std::vector<std::vector<CallFrame>> const &call_frames = {},
         std::vector<Address> const &senders = {},
         std::vector<Transaction> const &transactions = {},
         std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const &withdrawals = {})
+        std::optional<std::vector<Withdrawal>> const &withdrawals = {},
+        OutputHeaderPatchFn header_patch_fn = {})
     {
         commit(
             *state_deltas,
             code,
             block_id,
-            header,
+            header_inputs,
             receipts,
             call_frames,
             senders,
             transactions,
             ommers,
-            withdrawals);
+            withdrawals,
+            header_patch_fn);
     }
 
     virtual std::string print_stats()

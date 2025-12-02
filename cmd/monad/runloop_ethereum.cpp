@@ -23,6 +23,7 @@
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/chain/patch_output_header.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
@@ -90,7 +91,7 @@ Result<void> process_ethereum_block(
 
     // Block input validation
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
-    BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_block<traits>(block.to_view()));
 
     // Sender and authority recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
@@ -137,7 +138,7 @@ Result<void> process_ethereum_block(
         auto const receipts,
         execute_block<traits>(
             chain,
-            block,
+            block.to_view(),
             senders,
             recovered_authorities,
             block_state,
@@ -152,13 +153,17 @@ Result<void> process_ethereum_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     block_state.commit(
         bytes32_t{block.header.number},
-        block.header,
+        static_cast<BlockHeaderInputs const &>(block.header),
         receipts,
         call_frames,
         senders,
         block.transactions,
         block.ommers,
-        block.withdrawals);
+        block.withdrawals,
+        [&chain = chain,
+         &input_header = block.header](BlockHeader &output_header) {
+            patch_output_header(chain, input_header, output_header);
+        });
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);

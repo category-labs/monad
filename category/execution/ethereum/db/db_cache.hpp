@@ -160,38 +160,42 @@ public:
 
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &,
-        BlockHeader const &, std::vector<Receipt> const &,
+        BlockHeaderInputs const &, std::vector<Receipt> const &,
         std::vector<std::vector<CallFrame>> const &,
         std::vector<Address> const &, std::vector<Transaction> const &,
         std::vector<BlockHeader> const &,
-        std::optional<std::vector<Withdrawal>> const &) override
+        std::optional<std::vector<Withdrawal>> const &,
+        OutputHeaderPatchFn) override
     {
         MONAD_ABORT("Use DbCache commit with unique_ptr arg.");
     }
 
     virtual void commit(
         std::unique_ptr<StateDeltas> state_deltas, Code const &code,
-        bytes32_t const &block_id, BlockHeader const &header,
+        bytes32_t const &block_id, BlockHeaderInputs const &header_inputs,
         std::vector<Receipt> const &receipts = {},
         std::vector<std::vector<CallFrame>> const &call_frames = {},
         std::vector<Address> const &senders = {},
         std::vector<Transaction> const &transactions = {},
         std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const &withdrawals = {}) override
+        std::optional<std::vector<Withdrawal>> const &withdrawals = {},
+        OutputHeaderPatchFn header_patch_fn = {}) override
     {
         db_.commit(
             *state_deltas,
             code,
             block_id,
-            header,
+            header_inputs,
             receipts,
             call_frames,
             senders,
             transactions,
             ommers,
-            withdrawals);
+            withdrawals,
+            header_patch_fn);
 
-        proposals_.commit(std::move(state_deltas), header.number, block_id);
+        proposals_.commit(
+            std::move(state_deltas), header_inputs.number, block_id);
     }
 
     virtual BlockHeader read_eth_header() override

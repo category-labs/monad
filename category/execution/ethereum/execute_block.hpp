@@ -47,11 +47,12 @@ namespace fiber
 } // namespace fiber
 
 template <Traits traits>
-void execute_block_header(Chain const &, BlockState &, BlockHeader const &);
+void execute_block_header(
+    Chain const &, BlockState &, BlockHeaderInputs const &);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(
-    Chain const &, BlockHeader const &, std::span<Transaction const>,
+    Chain const &, BlockHeaderInputs const &, std::span<Transaction const>,
     std::span<Address const> senders,
     std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
@@ -62,7 +63,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &, Block const &, std::span<Address const> senders,
+    Chain const &, InputBlock, std::span<Address const> senders,
     std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     std::span<std::unique_ptr<CallTracerBase>>,

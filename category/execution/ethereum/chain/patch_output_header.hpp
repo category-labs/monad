@@ -15,20 +15,15 @@
 
 #pragma once
 
-#include <category/execution/ethereum/dispatch_transaction.hpp>
-#include <category/execution/monad/system_sender.hpp>
+#include <category/core/config.hpp>
+
+struct BlockHeader;
+class Chain;
 
 MONAD_NAMESPACE_BEGIN
 
-template <Traits traits>
-Result<Receipt> dispatch_transaction(
-    Chain const &chain, uint64_t const i, Transaction const &transaction,
-    Address const &sender,
-    std::vector<std::optional<Address>> const &authorities,
-    BlockHeaderInputs const &header_inputs,
-    BlockHashBuffer const &block_hash_buffer, BlockState &block_state,
-    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
-    CallTracerBase &call_tracer, trace::StateTracer &,
-    RevertTransactionFn const &revert_transaction);
+void patch_output_header(
+    Chain const &chain, BlockHeader const &input_header,
+    BlockHeader &output_header);
 
 MONAD_NAMESPACE_END

@@ -30,7 +30,7 @@ MONAD_NAMESPACE_BEGIN
 
 void record_block_start(
     bytes32_t const &bft_block_id, uint256_t const &chain_id,
-    BlockHeader const &eth_block_header, bytes32_t const &eth_parent_hash,
+    BlockHeaderInputs const &inputs, bytes32_t const &eth_parent_hash,
     uint64_t block_round, uint64_t epoch, uint128_t epoch_nano_timestamp,
     size_t txn_count,
     std::optional<monad_c_secp256k1_pubkey> const &opt_block_author,
@@ -46,7 +46,7 @@ void record_block_start(
     *block_start.payload = monad_exec_block_start{
         .block_tag{
             .id = bft_block_id,
-            .block_number = eth_block_header.number,
+            .block_number = inputs.number,
         },
         .round = block_round,
         .epoch = epoch,
@@ -55,25 +55,25 @@ void record_block_start(
         .author = opt_block_author.value_or({}),
         .parent_eth_hash = eth_parent_hash,
         .eth_block_input =
-            {.ommers_hash = eth_block_header.ommers_hash,
-             .beneficiary = eth_block_header.beneficiary,
-             .transactions_root = eth_block_header.transactions_root,
-             .difficulty = static_cast<uint64_t>(eth_block_header.difficulty),
-             .number = eth_block_header.number,
-             .gas_limit = eth_block_header.gas_limit,
-             .timestamp = eth_block_header.timestamp,
+            {.ommers_hash = inputs.ommers_hash,
+             .beneficiary = inputs.beneficiary,
+             .transactions_root = inputs.transactions_root,
+             .difficulty = static_cast<uint64_t>(inputs.difficulty),
+             .number = inputs.number,
+             .gas_limit = inputs.gas_limit,
+             .timestamp = inputs.timestamp,
              .extra_data = {}, // Variable-length, set below,
-             .extra_data_length = size(eth_block_header.extra_data),
-             .prev_randao = eth_block_header.prev_randao,
-             .nonce = std::bit_cast<monad_c_b64>(eth_block_header.nonce),
-             .base_fee_per_gas = eth_block_header.base_fee_per_gas.value_or(0),
+             .extra_data_length = size(inputs.extra_data),
+             .prev_randao = inputs.prev_randao,
+             .nonce = std::bit_cast<monad_c_b64>(inputs.nonce),
+             .base_fee_per_gas = inputs.base_fee_per_gas.value_or(0),
              .withdrawals_root =
-                 eth_block_header.withdrawals_root.value_or(evmc_bytes32{}),
+                 inputs.withdrawals_root.value_or(evmc_bytes32{}),
              .txn_count = txn_count},
         .monad_block_input = opt_monad_input.value_or({})};
     memcpy(
         block_start.payload->eth_block_input.extra_data.bytes,
-        data(eth_block_header.extra_data),
+        data(inputs.extra_data),
         block_start.payload->eth_block_input.extra_data_length);
     exec_recorder->commit(block_start);
 }

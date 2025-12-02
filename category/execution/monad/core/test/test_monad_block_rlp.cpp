@@ -140,7 +140,7 @@ TEST(Rlp_Block, MonadConsensusBlock)
 
     EXPECT_EQ(consensus_header.block_round, 10);
     EXPECT_EQ(consensus_header.epoch, 5);
-    EXPECT_EQ(consensus_header.seqno, consensus_header.execution_inputs.number);
+    EXPECT_EQ(consensus_header.seqno, consensus_header.header_inputs.number);
 
     {
         EXPECT_EQ(
@@ -165,7 +165,7 @@ TEST(Rlp_Block, MonadConsensusBlock)
         .excess_blob_gas = 0,
         .parent_beacon_block_root = bytes32_t{},
     };
-    EXPECT_EQ(res.value().execution_inputs, execution_header);
+    EXPECT_EQ(res.value().header_inputs, execution_header);
     ASSERT_EQ(res.value().delayed_execution_results.size(), 1);
     EXPECT_EQ(
         res.value().delayed_execution_results[0], BlockHeader{.number = 4});

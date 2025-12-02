@@ -41,7 +41,7 @@ Result<void>
 static_validate_consensus_header(MonadConsensusBlockHeader const &header)
 {
     uint64_t const timestamp_s = uint64_t{header.timestamp_ns / 1'000'000'000};
-    if (MONAD_UNLIKELY(timestamp_s != header.execution_inputs.timestamp)) {
+    if (MONAD_UNLIKELY(timestamp_s != header.header_inputs.timestamp)) {
         return MonadBlockError::TimestampMismatch;
     }
 
@@ -50,7 +50,7 @@ static_validate_consensus_header(MonadConsensusBlockHeader const &header)
                       MonadConsensusBlockHeaderV2>) {
         if (MONAD_UNLIKELY(
                 uint256_t{header.base_fee} !=
-                header.execution_inputs.base_fee_per_gas)) {
+                header.header_inputs.base_fee_per_gas)) {
             return MonadBlockError::BaseFeeMismatch;
         }
     }

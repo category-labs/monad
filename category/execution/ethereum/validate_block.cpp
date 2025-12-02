@@ -73,83 +73,83 @@ bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)
 }
 
 template <Traits traits>
-Result<void> static_validate_header(BlockHeader const &header)
+Result<void> static_validate_header(BlockHeaderInputs const &inputs)
 {
     // YP eq. 56
-    if (MONAD_UNLIKELY(header.gas_limit < 5000)) {
+    if (MONAD_UNLIKELY(inputs.gas_limit < 5000)) {
         return BlockError::InvalidGasLimit;
     }
 
     // EIP-1985
     if (MONAD_UNLIKELY(
-            header.gas_limit > std::numeric_limits<int64_t>::max())) {
+            inputs.gas_limit > std::numeric_limits<int64_t>::max())) {
         return BlockError::InvalidGasLimit;
     }
 
     // YP eq. 56
-    if (MONAD_UNLIKELY(header.extra_data.length() > 32)) {
+    if (MONAD_UNLIKELY(inputs.extra_data.length() > 32)) {
         return BlockError::ExtraDataTooLong;
     }
 
     // EIP-1559
     if constexpr (traits::evm_rev() < EVMC_LONDON) {
-        if (MONAD_UNLIKELY(header.base_fee_per_gas.has_value())) {
+        if (MONAD_UNLIKELY(inputs.base_fee_per_gas.has_value())) {
             return BlockError::FieldBeforeFork;
         }
     }
-    else if (MONAD_UNLIKELY(!header.base_fee_per_gas.has_value())) {
+    else if (MONAD_UNLIKELY(!inputs.base_fee_per_gas.has_value())) {
         return BlockError::MissingField;
     }
 
     // EIP-7685
     if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
-        if (MONAD_UNLIKELY(header.requests_hash.has_value())) {
+        if (MONAD_UNLIKELY(inputs.requests_hash.has_value())) {
             return BlockError::FieldBeforeFork;
         }
     }
-    else if (MONAD_UNLIKELY(!header.requests_hash.has_value())) {
+    else if (MONAD_UNLIKELY(!inputs.requests_hash.has_value())) {
         return BlockError::MissingField;
     }
 
     // EIP-4844 and EIP-4788
     if constexpr (traits::evm_rev() < EVMC_CANCUN) {
         if (MONAD_UNLIKELY(
-                header.blob_gas_used.has_value() ||
-                header.excess_blob_gas.has_value() ||
-                header.parent_beacon_block_root.has_value())) {
+                inputs.blob_gas_used.has_value() ||
+                inputs.excess_blob_gas.has_value() ||
+                inputs.parent_beacon_block_root.has_value())) {
             return BlockError::FieldBeforeFork;
         }
     }
     else if (MONAD_UNLIKELY(
-                 !header.blob_gas_used.has_value() ||
-                 !header.excess_blob_gas.has_value() ||
-                 !header.parent_beacon_block_root.has_value())) {
+                 !inputs.blob_gas_used.has_value() ||
+                 !inputs.excess_blob_gas.has_value() ||
+                 !inputs.parent_beacon_block_root.has_value())) {
         return BlockError::MissingField;
     }
 
     // EIP-4895
     if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
-        if (MONAD_UNLIKELY(header.withdrawals_root.has_value())) {
+        if (MONAD_UNLIKELY(inputs.withdrawals_root.has_value())) {
             return BlockError::FieldBeforeFork;
         }
     }
-    else if (MONAD_UNLIKELY(!header.withdrawals_root.has_value())) {
+    else if (MONAD_UNLIKELY(!inputs.withdrawals_root.has_value())) {
         return BlockError::MissingField;
     }
 
     // EIP-3675
     if constexpr (traits::evm_rev() >= EVMC_PARIS) {
-        if (MONAD_UNLIKELY(header.difficulty != 0)) {
+        if (MONAD_UNLIKELY(inputs.difficulty != 0)) {
             return BlockError::PowBlockAfterMerge;
         }
 
         constexpr byte_string_fixed<8> empty_nonce{
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-        if (MONAD_UNLIKELY(header.nonce != empty_nonce)) {
+        if (MONAD_UNLIKELY(inputs.nonce != empty_nonce)) {
             return BlockError::InvalidNonce;
         }
 
-        if (MONAD_UNLIKELY(header.ommers_hash != NULL_LIST_HASH)) {
+        if (MONAD_UNLIKELY(inputs.ommers_hash != NULL_LIST_HASH)) {
             return BlockError::WrongOmmersHash;
         }
     }
@@ -160,10 +160,10 @@ Result<void> static_validate_header(BlockHeader const &header)
 EXPLICIT_TRAITS(static_validate_header);
 
 template <Traits traits>
-constexpr Result<void> static_validate_ommers(Block const &block)
+constexpr Result<void> static_validate_ommers(InputBlock const block)
 {
     // YP eq. 33
-    if (compute_ommers_hash(block.ommers) != block.header.ommers_hash) {
+    if (compute_ommers_hash(block.ommers) != block.header_inputs.ommers_hash) {
         return BlockError::WrongOmmersHash;
     }
 
@@ -194,7 +194,7 @@ constexpr Result<void> static_validate_ommers(Block const &block)
 }
 
 template <Traits traits>
-constexpr Result<void> static_validate_4844(Block const &block)
+constexpr Result<void> static_validate_4844(InputBlock const block)
 {
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         uint64_t blob_gas_used = 0;
@@ -208,7 +208,7 @@ constexpr Result<void> static_validate_4844(Block const &block)
             return BlockError::GasAboveLimit;
         }
         if (MONAD_UNLIKELY(
-                block.header.blob_gas_used.value() != blob_gas_used)) {
+                block.header_inputs.blob_gas_used.value() != blob_gas_used)) {
             return BlockError::InvalidGasUsed;
         }
     }
@@ -216,7 +216,7 @@ constexpr Result<void> static_validate_4844(Block const &block)
 }
 
 template <Traits traits>
-constexpr Result<void> static_validate_body(Block const &block)
+constexpr Result<void> static_validate_body(InputBlock const block)
 {
     // EIP-4895
     if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
@@ -237,9 +237,9 @@ constexpr Result<void> static_validate_body(Block const &block)
 }
 
 template <Traits traits>
-Result<void> static_validate_block(Block const &block)
+Result<void> static_validate_block(InputBlock const block)
 {
-    BOOST_OUTCOME_TRY(static_validate_header<traits>(block.header));
+    BOOST_OUTCOME_TRY(static_validate_header<traits>(block.header_inputs));
 
     BOOST_OUTCOME_TRY(static_validate_body<traits>(block));
 
@@ -248,7 +248,8 @@ Result<void> static_validate_block(Block const &block)
 
 EXPLICIT_TRAITS(static_validate_block);
 
-Result<void> static_validate_block(evmc_revision const rev, Block const &block)
+Result<void>
+static_validate_block(evmc_revision const rev, InputBlock const block)
 {
     SWITCH_EVM_TRAITS(static_validate_block, block);
     MONAD_ASSERT(false);

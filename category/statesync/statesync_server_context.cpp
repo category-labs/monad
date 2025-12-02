@@ -296,26 +296,28 @@ void monad_statesync_server_context::update_proposed_metadata(
 
 void monad_statesync_server_context::commit(
     StateDeltas const &state_deltas, Code const &code,
-    bytes32_t const &block_id, BlockHeader const &header,
+    bytes32_t const &block_id, BlockHeaderInputs const &header_inputs,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Address> const &senders,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals)
+    std::optional<std::vector<Withdrawal>> const &withdrawals,
+    OutputHeaderPatchFn header_patch_fn)
 {
-    on_commit(*this, state_deltas, header.number, block_id);
+    on_commit(*this, state_deltas, header_inputs.number, block_id);
     rw.commit(
         state_deltas,
         code,
         block_id,
-        header,
+        header_inputs,
         receipts,
         call_frames,
         senders,
         transactions,
         ommers,
-        withdrawals);
+        withdrawals,
+        header_patch_fn);
 }
 
 uint64_t monad_statesync_server_context::get_block_number() const

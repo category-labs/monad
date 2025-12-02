@@ -51,7 +51,7 @@ struct monad_statesync_client_context
     std::vector<std::pair<uint64_t, uint64_t>> progress;
     std::vector<std::unique_ptr<monad::StatesyncProtocol>> protocol;
     std::array<monad::BlockHeader, 256> hdrs;
-    monad::BlockHeader tgrt;
+    monad::BlockHeader tgrt{};
     uint64_t current;
     Map<monad::Address, StorageDeltas> buffered;
     ankerl::unordered_dense::segmented_set<monad::bytes32_t> seen_code;

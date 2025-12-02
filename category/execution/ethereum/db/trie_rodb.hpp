@@ -134,12 +134,13 @@ public:
 
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &,
-        BlockHeader const &, std::vector<Receipt> const & = {},
+        BlockHeaderInputs const &, std::vector<Receipt> const & = {},
         std::vector<std::vector<CallFrame>> const & = {},
         std::vector<Address> const & = {},
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const & = {},
-        std::optional<std::vector<Withdrawal>> const & = std::nullopt) override
+        std::optional<std::vector<Withdrawal>> const & = std::nullopt,
+        OutputHeaderPatchFn = {}) override
     {
         MONAD_ABORT();
     }

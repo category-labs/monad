@@ -27,42 +27,42 @@
 
 MONAD_RLP_ANONYMOUS_NAMESPACE_BEGIN
 
-Result<BlockHeader> decode_execution_inputs(byte_string_view &enc)
+Result<BlockHeaderInputs> decode_execution_inputs(byte_string_view &enc)
 {
-    BlockHeader header;
+    BlockHeaderInputs inputs;
 
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
-    BOOST_OUTCOME_TRY(header.ommers_hash, decode_bytes32(payload));
-    BOOST_OUTCOME_TRY(header.beneficiary, decode_address(payload));
-    BOOST_OUTCOME_TRY(header.transactions_root, decode_bytes32(payload));
-    BOOST_OUTCOME_TRY(header.difficulty, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(header.number, decode_unsigned<uint64_t>(payload));
-    BOOST_OUTCOME_TRY(header.gas_limit, decode_unsigned<uint64_t>(payload));
-    BOOST_OUTCOME_TRY(header.timestamp, decode_unsigned<uint64_t>(payload));
-    BOOST_OUTCOME_TRY(header.extra_data, decode_string(payload));
-    BOOST_OUTCOME_TRY(header.prev_randao, decode_bytes32(payload));
-    BOOST_OUTCOME_TRY(header.nonce, decode_byte_string_fixed<8>(payload));
+    BOOST_OUTCOME_TRY(inputs.ommers_hash, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(inputs.beneficiary, decode_address(payload));
+    BOOST_OUTCOME_TRY(inputs.transactions_root, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(inputs.difficulty, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(inputs.number, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(inputs.gas_limit, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(inputs.timestamp, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(inputs.extra_data, decode_string(payload));
+    BOOST_OUTCOME_TRY(inputs.prev_randao, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(inputs.nonce, decode_byte_string_fixed<8>(payload));
     BOOST_OUTCOME_TRY(
-        header.base_fee_per_gas, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(header.withdrawals_root, decode_bytes32(payload));
-    BOOST_OUTCOME_TRY(header.blob_gas_used, decode_unsigned<uint64_t>(payload));
+        inputs.base_fee_per_gas, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(inputs.withdrawals_root, decode_bytes32(payload));
+    BOOST_OUTCOME_TRY(inputs.blob_gas_used, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(
-        header.excess_blob_gas, decode_unsigned<uint64_t>(payload));
-    BOOST_OUTCOME_TRY(header.parent_beacon_block_root, decode_bytes32(payload));
+        inputs.excess_blob_gas, decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(inputs.parent_beacon_block_root, decode_bytes32(payload));
 
     // TODO: This backwards-compatible logic should be temporary. When explicit
     // versioning is added to this module, the following field needs to be
     // parsed only if we're in a revision where EVMC_PRAGUE is active
     // (MONAD_FOUR and onwards).
     if (payload.size() > 0) {
-        BOOST_OUTCOME_TRY(header.requests_hash, decode_bytes32(payload));
+        BOOST_OUTCOME_TRY(inputs.requests_hash, decode_bytes32(payload));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
-    return header;
+    return inputs;
 }
 
 Result<std::vector<BlockHeader>> decode_execution_results(byte_string_view &enc)
@@ -163,8 +163,14 @@ decode_consensus_block_body(byte_string_view &enc)
 
     BOOST_OUTCOME_TRY(
         body.transactions, decode_transaction_list(execution_payload));
+
+    // ommers, always empty.
     BOOST_OUTCOME_TRY(
-        body.ommers, decode_block_header_vector(execution_payload));
+        auto ommers_payload, parse_list_metadata(execution_payload));
+    if (MONAD_UNLIKELY(!ommers_payload.empty())) {
+        return DecodeError::ArrayLengthUnexpected;
+    }
+
     BOOST_OUTCOME_TRY(
         body.withdrawals, decode_withdrawal_list(execution_payload));
     if (MONAD_UNLIKELY(!execution_payload.empty())) {
@@ -194,7 +200,7 @@ decode_consensus_block_header(byte_string_view &enc)
     BOOST_OUTCOME_TRY(
         header.delayed_execution_results, decode_execution_results(payload));
     BOOST_OUTCOME_TRY(
-        header.execution_inputs, decode_execution_inputs(payload));
+        header.header_inputs, decode_execution_inputs(payload));
     BOOST_OUTCOME_TRY(header.block_body_id, decode_bytes32(payload));
 
     if constexpr (std::same_as<

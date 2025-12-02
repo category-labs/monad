@@ -237,25 +237,27 @@ void BlockState::merge(State const &state)
 }
 
 void BlockState::commit(
-    bytes32_t const &block_id, BlockHeader const &header,
+    bytes32_t const &block_id, BlockHeaderInputs const &header_inputs,
     std::vector<Receipt> const &receipts,
     std::vector<std::vector<CallFrame>> const &call_frames,
     std::vector<Address> const &senders,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals)
+    std::optional<std::vector<Withdrawal>> const &withdrawals,
+    OutputHeaderPatchFn fn)
 {
     db_.commit(
         std::move(state_),
         code_,
         block_id,
-        header,
+        header_inputs,
         receipts,
         call_frames,
         senders,
         transactions,
         ommers,
-        withdrawals);
+        withdrawals,
+        fn);
 }
 
 void BlockState::log_debug()

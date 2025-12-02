@@ -49,12 +49,13 @@ monad_statesync_client_context::monad_statesync_client_context(
           monad_statesync_client_prefixes(),
           {db.get_latest_version(), db.get_latest_version()})
     , protocol(monad_statesync_client_prefixes())
-    , tgrt{BlockHeader{.number = mpt::INVALID_BLOCK_NUM}}
+    , tgrt{}
     , current{db.get_latest_version() == mpt::INVALID_BLOCK_NUM ? 0 : db.get_latest_version() + 1}
     , n_upserts{0}
     , sync{sync}
     , statesync_send_request{statesync_send_request}
 {
+    tgrt.number = mpt::INVALID_BLOCK_NUM;
     MONAD_ASSERT(db.get_latest_version() == db.get_latest_finalized_version());
 }
 

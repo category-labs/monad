@@ -124,6 +124,9 @@ inline bytes32_t commit_sequential(
 
 inline void load_db(TrieDb &db, uint64_t const n)
 {
+    BlockHeader header{};
+    header.number = n; // commit to block n, finalized
+
     commit_sequential(
         db,
         StateDeltas{
@@ -188,7 +191,7 @@ inline void load_db(TrieDb &db, uint64_t const n)
             {D_CODE_HASH, D_ICODE},
             {E_CODE_HASH, E_ICODE},
             {H_CODE_HASH, H_ICODE}},
-        BlockHeader{.number = n}); // commit to block n, finalized
+        header); // commit to block n, finalized
 }
 
 MONAD_TEST_NAMESPACE_END

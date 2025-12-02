@@ -871,6 +871,8 @@ public:
                         metadata->db_offsets.store(old_metadata->db_offsets);
                         metadata->root_offsets.next_version_ =
                             old_metadata->root_offsets.next_version_;
+                        metadata->root_offsets.version_lower_bound_ =
+                            old_metadata->root_offsets.version_lower_bound_;
                         memcpy(
                             &metadata->root_offsets.storage_,
                             &old_metadata->root_offsets.storage_,

@@ -21,7 +21,34 @@
 
 namespace monad::vm::fuzzing
 {
+    using monad::vm::compiler::EvmOpCode;
     using enum monad::vm::compiler::EvmOpCode;
+
+    // Helper to build arrays of opcodes for each EVM revision.
+    template <Traits traits, size_t N>
+    consteval size_t compute_size(std::array<EvmOpCode, N> const &opcodes)
+    {
+        size_t size = 0;
+        for (auto const opcode : opcodes) {
+            if (!is_unknown_opcode_info<traits>(opcode)) {
+                size++;
+            }
+        }
+        return size;
+    }
+
+    template <Traits traits, size_t N, std::array<EvmOpCode, N> const &opcodes>
+    consteval auto make_opcode_array()
+    {
+        std::array<EvmOpCode, compute_size<traits, N>(opcodes)> arr{};
+        size_t arr_ix = 0;
+        for (auto const opcode : opcodes) {
+            if (!is_unknown_opcode_info<traits>(opcode)) {
+                arr[arr_ix++] = opcode;
+            }
+        }
+        return arr;
+    }
 
     // The following instructions are special cases in the generator:
     //   RETURNDATACOPY  (generate_returndatacopy)
@@ -54,7 +81,7 @@ namespace monad::vm::fuzzing
         DUP16,
     };
 
-    constexpr auto uncommon_non_terminators = std::array{
+    constexpr auto uncommon_non_terminators_all = std::array{
         BALANCE,  BLOBHASH,    BLOCKHASH,   CALLDATACOPY, CALLDATALOAD,
         CODECOPY, EXTCODECOPY, EXTCODEHASH, EXTCODESIZE,  LOG0,
         LOG1,     LOG2,        LOG3,        LOG4,         MCOPY,
@@ -63,7 +90,7 @@ namespace monad::vm::fuzzing
     };
 
     // Note DIFFICULTY == PREVRANDAO
-    constexpr auto common_non_terminators = std::array{
+    constexpr auto common_non_terminators_all = std::array{
         ADD,        MUL,         SUB,
         DIV,        SDIV,        MOD,
         SMOD,       ADDMOD,      MULMOD,
@@ -87,7 +114,7 @@ namespace monad::vm::fuzzing
         SWAP16,
     };
 
-    constexpr auto terminators = std::array{
+    constexpr auto terminators_all = std::array{
         STOP,
         REVERT,
         RETURN,
@@ -97,27 +124,46 @@ namespace monad::vm::fuzzing
         SELFDESTRUCT,
     };
 
-    constexpr auto exit_terminators = std::array{
+    constexpr auto exit_terminators_all = std::array{
         STOP,
         REVERT,
         RETURN,
         SELFDESTRUCT,
     };
+
+    constexpr auto jump_terminators_all = std::array{
+        JUMP,
+        JUMPI,
+        JUMPDEST,
+    };
+
+    template <Traits traits>
+    constexpr auto uncommon_non_terminators = make_opcode_array<
+        traits, uncommon_non_terminators_all.size(),
+        uncommon_non_terminators_all>();
+    template <Traits traits>
+    constexpr auto common_non_terminators = make_opcode_array<
+        traits, common_non_terminators_all.size(),
+        common_non_terminators_all>();
+    template <Traits traits>
+    constexpr auto terminators =
+        make_opcode_array<traits, terminators_all.size(), terminators_all>();
+    template <Traits traits>
+    constexpr auto exit_terminators = make_opcode_array<
+        traits, exit_terminators_all.size(), exit_terminators_all>();
+    template <Traits traits>
+    constexpr auto jump_terminators = make_opcode_array<
+        traits, jump_terminators_all.size(), jump_terminators_all>();
 
     constexpr bool is_exit_terminator(std::uint8_t opcode) noexcept
     {
         return std::find(
-                   exit_terminators.begin(), exit_terminators.end(), opcode) !=
-               exit_terminators.end();
+                   exit_terminators_all.begin(),
+                   exit_terminators_all.end(),
+                   opcode) != exit_terminators_all.end();
     }
 
     static_assert(is_exit_terminator(STOP));
-
-    constexpr auto jump_terminators = std::array{
-        JUMP,
-        JUMPI,
-        JUMPDEST,
-    };
 
     std::vector<std::uint8_t> const &
     memory_operands(std::uint8_t const opcode) noexcept;

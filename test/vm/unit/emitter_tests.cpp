@@ -342,6 +342,7 @@ namespace
                    Emitter::location_type_to_string(right_loc));
     }
 
+    template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
     void pure_una_instr_test_instance(
         asmjit::JitRuntime &rt, PureEmitterInstr instr, uint256_t const &input,
         Emitter::LocationType loc, uint256_t const &result,
@@ -530,24 +531,25 @@ namespace
             rt, opcode, [&](Emitter &e) { (e.*instr)(); }, left, right, result);
     }
 
+    template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
     void pure_una_instr_test(
         asmjit::JitRuntime &rt, EvmOpCode opcode, PureEmitterInstr instr,
         uint256_t const &input, uint256_t const &result)
     {
         std::vector<uint8_t> bytecode1{PUSH0, opcode, PUSH0, RETURN};
-        auto ir1 =
-            basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode1));
+        auto ir1 = basic_blocks::BasicBlocksIR::unsafe_from<traits>(
+            std::move(bytecode1));
         for (auto loc : all_locations) {
-            pure_una_instr_test_instance(
+            pure_una_instr_test_instance<traits>(
                 rt, instr, input, loc, result, ir1, false);
         }
 
         std::vector<uint8_t> bytecode2{
             PUSH0, DUP1, opcode, SWAP1, opcode, RETURN};
-        auto ir2 =
-            basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode2));
+        auto ir2 = basic_blocks::BasicBlocksIR::unsafe_from<traits>(
+            std::move(bytecode2));
         for (auto loc : all_locations) {
-            pure_una_instr_test_instance(
+            pure_una_instr_test_instance<traits>(
                 rt, instr, input, loc, result, ir1, true);
         }
     }
@@ -3099,6 +3101,32 @@ TEST(Emitter, sar_max)
     auto e = emit.get_stack().get(0);
     emit.sar();
     ASSERT_EQ(emit.get_stack().get(0), e);
+}
+
+TEST(Emitter, clz)
+{
+    asmjit::JitRuntime rt;
+
+    // Test zero case
+    pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(rt, CLZ, &Emitter::clz, 0, 256);
+
+    // Test all leading zeros
+    for (uint64_t i = 0; i < 256; ++i) {
+        // 1 hot bit at different positions
+        uint256_t value{uint256_t{1} << (255 - i)};
+        pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(
+            rt, CLZ, &Emitter::clz, value, countl_zero(value));
+
+        // All ones except leading zeros
+        value = ~uint256_t{0} >> i;
+        pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(
+            rt, CLZ, &Emitter::clz, value, countl_zero(value));
+
+        // Test with some random bits set after the leading one
+        value = value | (uint256_t{0xDEADBEEF} << (i * 4));
+        pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(
+            rt, CLZ, &Emitter::clz, value, countl_zero(value));
+    }
 }
 
 TEST(Emitter, call_runtime_pure)

@@ -306,6 +306,7 @@ namespace monad::vm::compiler::native
         void shl();
         void shr();
         void sar();
+        void clz();
 
         void and_();
         void or_();
@@ -350,6 +351,8 @@ namespace monad::vm::compiler::native
         bool mulmod_opt();
         void mulmod(int64_t remaining_base_gas);
 
+        template <typename T, size_t N>
+        void array_leading_zeros(std::array<T, N> const &);
         template <typename T, size_t N>
         void array_byte_width(std::array<T, N> const &);
 

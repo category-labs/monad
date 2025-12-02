@@ -124,6 +124,9 @@ namespace
         case Sar:
             emit.sar();
             break;
+        case Clz:
+            emit.clz();
+            break;
         case Sha3:
             emit.sha3<traits>(remaining_base_gas);
             break;

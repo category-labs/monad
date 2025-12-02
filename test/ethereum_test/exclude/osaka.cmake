@@ -11,6 +11,5 @@ set(osaka_excluded_tests
     "BlockchainTests.osaka/eip7823_modexp_upper_bounds/*"
     "BlockchainTests.osaka/eip7934_block_rlp_limit/*"
     "BlockchainTests.osaka/eip7825_transaction_gas_limit_cap/*"
-    "BlockchainTests.osaka/eip7939_count_leading_zeros/*"
     "BlockchainTests.osaka/eip7883_modexp_gas_increase/*"
 )

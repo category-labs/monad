@@ -39,7 +39,7 @@ unsigned encode_two_pieces(
 
     MONAD_DEBUG_ASSERT(path.data_size() <= KECCAK256_SIZE);
 
-    unsigned char path_arr[max_compact_encode_size];
+    unsigned char path_arr[max_compact_encode_size] = {0};
     auto const first = compact_encode(path_arr, path, has_value);
     MONAD_ASSERT(first.size() <= max_compact_encode_size);
     // leaf and hashed node ref requires rlp encoding,
@@ -60,7 +60,7 @@ unsigned encode_two_pieces(
 
     byte_string rlp(rlp::list_length(concat_len), 0);
     rlp::encode_list(rlp, {concat_rlp.data(), concat_rlp.size()});
-    auto ret = to_node_reference({rlp.data(), rlp.size()}, dest);
+    auto const ret = to_node_reference({rlp.data(), rlp.size()}, dest);
     // free any long array allocated on heap
     return ret;
 }

@@ -17,13 +17,12 @@
 #include "test_fixtures_gtest.hpp"
 
 #include <category/async/config.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
-#include <category/mpt/node.hpp>
 #include <category/mpt/update.hpp>
 
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
-
 #include <iostream>
+#include <utility>
 #include <vector>
 
 using namespace MONAD_ASYNC_NAMESPACE;

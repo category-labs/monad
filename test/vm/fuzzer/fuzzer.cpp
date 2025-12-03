@@ -315,7 +315,7 @@ namespace
         bool print_stats = false;
         BlockchainTestVM::Implementation implementation =
             BlockchainTestVM::Implementation::Compiler;
-        evmc_revision revision = EVMC_PRAGUE;
+        evmc_revision revision = EVMC_OSAKA;
         std::optional<std::string> focus_path = std::nullopt;
         std::optional<GeneratorFocus> focus = std::nullopt;
 

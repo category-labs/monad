@@ -24,30 +24,20 @@ namespace monad::vm::fuzzing
     using monad::vm::compiler::EvmOpCode;
     using enum monad::vm::compiler::EvmOpCode;
 
-    // Helper to build arrays of opcodes for each EVM revision.
-    template <Traits traits, size_t N>
-    consteval size_t compute_size(std::array<EvmOpCode, N> const &opcodes)
-    {
-        size_t size = 0;
-        for (auto const opcode : opcodes) {
-            if (!is_unknown_opcode_info<traits>(opcode)) {
-                size++;
-            }
-        }
-        return size;
+    template <auto in, auto f>
+    consteval auto filter() {
+        static constexpr auto new_size = std::count_if(in.begin(), in.end(), f);
+        auto out = std::array<typename decltype(in)::value_type, new_size>{};
+        std::copy_if(in.begin(), in.end(), out.begin(), f);
+        return out;
     }
 
-    template <Traits traits, size_t N, std::array<EvmOpCode, N> const &opcodes>
+    template <Traits traits, auto opcodes>
     consteval auto make_opcode_array()
     {
-        std::array<EvmOpCode, compute_size<traits, N>(opcodes)> arr{};
-        size_t arr_ix = 0;
-        for (auto const opcode : opcodes) {
-            if (!is_unknown_opcode_info<traits>(opcode)) {
-                arr[arr_ix++] = opcode;
-            }
-        }
-        return arr;
+        return filter<opcodes, [](auto opcode) {
+            return !is_unknown_opcode_info<traits>(opcode);
+        }>();
     }
 
     // The following instructions are special cases in the generator:
@@ -139,21 +129,19 @@ namespace monad::vm::fuzzing
 
     template <Traits traits>
     constexpr auto uncommon_non_terminators = make_opcode_array<
-        traits, uncommon_non_terminators_all.size(),
-        uncommon_non_terminators_all>();
+        traits, uncommon_non_terminators_all>();
     template <Traits traits>
     constexpr auto common_non_terminators = make_opcode_array<
-        traits, common_non_terminators_all.size(),
-        common_non_terminators_all>();
+        traits, common_non_terminators_all>();
     template <Traits traits>
-    constexpr auto terminators =
-        make_opcode_array<traits, terminators_all.size(), terminators_all>();
+    constexpr auto terminators = make_opcode_array<
+        traits, terminators_all>();
     template <Traits traits>
     constexpr auto exit_terminators = make_opcode_array<
-        traits, exit_terminators_all.size(), exit_terminators_all>();
+        traits, exit_terminators_all>();
     template <Traits traits>
     constexpr auto jump_terminators = make_opcode_array<
-        traits, jump_terminators_all.size(), jump_terminators_all>();
+        traits, jump_terminators_all>();
 
     constexpr bool is_exit_terminator(std::uint8_t opcode) noexcept
     {

@@ -25,7 +25,8 @@ namespace monad::vm::fuzzing
     using enum monad::vm::compiler::EvmOpCode;
 
     template <auto in, auto f>
-    consteval auto filter() {
+    consteval auto filter()
+    {
         static constexpr auto new_size = std::count_if(in.begin(), in.end(), f);
         auto out = std::array<typename decltype(in)::value_type, new_size>{};
         std::copy_if(in.begin(), in.end(), out.begin(), f);
@@ -127,21 +128,16 @@ namespace monad::vm::fuzzing
         JUMPDEST,
     };
 
-    template <Traits traits>
     constexpr auto uncommon_non_terminators = make_opcode_array<
-        traits, uncommon_non_terminators_all>();
-    template <Traits traits>
-    constexpr auto common_non_terminators = make_opcode_array<
-        traits, common_non_terminators_all>();
-    template <Traits traits>
-    constexpr auto terminators = make_opcode_array<
-        traits, terminators_all>();
-    template <Traits traits>
-    constexpr auto exit_terminators = make_opcode_array<
-        traits, exit_terminators_all>();
-    template <Traits traits>
-    constexpr auto jump_terminators = make_opcode_array<
-        traits, jump_terminators_all>();
+        EvmTraits<EVMC_OSAKA>, uncommon_non_terminators_all>();
+    constexpr auto common_non_terminators =
+        make_opcode_array<EvmTraits<EVMC_OSAKA>, common_non_terminators_all>();
+    constexpr auto terminators =
+        make_opcode_array<EvmTraits<EVMC_OSAKA>, terminators_all>();
+    constexpr auto exit_terminators =
+        make_opcode_array<EvmTraits<EVMC_OSAKA>, exit_terminators_all>();
+    constexpr auto jump_terminators =
+        make_opcode_array<EvmTraits<EVMC_OSAKA>, jump_terminators_all>();
 
     constexpr bool is_exit_terminator(std::uint8_t opcode) noexcept
     {

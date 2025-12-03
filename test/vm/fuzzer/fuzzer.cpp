@@ -28,8 +28,6 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
-#include <category/vm/evm/switch_traits.hpp>
-#include <category/vm/evm/traits.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/generator.hpp>
 #include <category/vm/utils/debug.hpp>
@@ -412,10 +410,9 @@ static arguments parse_args(int const argc, char **const argv)
     return args;
 }
 
-template <Traits traits>
 static evmc_status_code fuzz_iteration(
-    evmc_message const &msg, State &evmone_state, evmc::VM &evmone_vm,
-    State &monad_state, evmc::VM &monad_vm,
+    evmc_message const &msg, evmc_revision const rev, State &evmone_state,
+    evmc::VM &evmone_vm, State &monad_state, evmc::VM &monad_vm,
     BlockchainTestVM::Implementation const impl)
 {
     for (State &state : {std::ref(evmone_state), std::ref(monad_state)}) {
@@ -424,12 +421,12 @@ static evmc_status_code fuzz_iteration(
     }
 
     auto const evmone_checkpoint = evmone_state.checkpoint();
-    auto const evmone_result = transition(
-        evmone_state, msg, traits::evm_rev(), evmone_vm, block_gas_limit);
+    auto const evmone_result =
+        transition(evmone_state, msg, rev, evmone_vm, block_gas_limit);
 
     auto const monad_checkpoint = monad_state.checkpoint();
-    auto const monad_result = transition(
-        monad_state, msg, traits::evm_rev(), monad_vm, block_gas_limit);
+    auto const monad_result =
+        transition(monad_state, msg, rev, monad_vm, block_gas_limit);
 
     assert_equal(
         evmone_result,
@@ -501,9 +498,10 @@ static bool toss(Engine &engine, double p)
     return dist(engine);
 }
 
-template <Traits traits>
 static void do_run(std::size_t const run_index, arguments const &args)
 {
+    auto const rev = args.revision;
+
     auto engine = random_engine_t(args.seed);
 
     auto evmone_vm = evmc::VM(evmc_create_evmone());
@@ -533,18 +531,17 @@ static void do_run(std::size_t const run_index, arguments const &args)
                       Choice(0.60, [](auto &) { return pow2_focus; }),
                       Choice(0.05, [](auto &) { return dyn_jump_focus; }));
 
-        if (traits::evm_rev() >= EVMC_PRAGUE && toss(engine, 0.001)) {
-            auto precompile = monad::vm::fuzzing::
-                generate_precompile_address(engine, traits::evm_rev());
+        if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
+            auto precompile =
+                monad::vm::fuzzing::generate_precompile_address(engine, rev);
             auto const a = deploy_delegated_contracts(
                 evmone_state, monad_state, genesis_address, precompile);
             known_addresses.push_back(a);
         }
 
         for (;;) {
-            auto const contract =
-                monad::vm::fuzzing::generate_program<random_engine_t, traits>(
-                    focus, engine, known_addresses);
+            auto const contract = monad::vm::fuzzing::generate_program(
+                focus, engine, rev, known_addresses);
 
             if (contract.size() > evmone::MAX_CODE_SIZE) {
                 // The evmone host will fail when we attempt to deploy
@@ -590,8 +587,9 @@ static void do_run(std::size_t const run_index, arguments const &args)
                 });
             ++total_messages;
 
-            auto const ec = fuzz_iteration<traits>(
+            auto const ec = fuzz_iteration(
                 *msg,
+                rev,
                 evmone_state,
                 evmone_vm,
                 monad_state,
@@ -602,12 +600,6 @@ static void do_run(std::size_t const run_index, arguments const &args)
     }
 
     log(start_time, args, exit_code_stats, run_index, total_messages);
-}
-
-static void do_run(std::size_t const run_index, arguments const &args)
-{
-    auto const rev = args.revision;
-    SWITCH_EVM_TRAITS(do_run, run_index, args);
 }
 
 static void run_loop(int argc, char **argv)

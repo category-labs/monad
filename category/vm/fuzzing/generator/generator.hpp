@@ -466,18 +466,16 @@ namespace monad::vm::fuzzing
     using Instruction = std::variant<
         NonTerminator, Terminator, Push, Call, ReturnDataCopy, Create>;
 
-    template <typename Engine, Traits traits>
+    template <typename Engine>
     NonTerminator generate_common_non_terminator(Engine &eng)
     {
-        return NonTerminator{
-            uniform_sample(eng, common_non_terminators<traits>)};
+        return NonTerminator{uniform_sample(eng, common_non_terminators)};
     }
 
-    template <typename Engine, Traits traits>
+    template <typename Engine>
     NonTerminator generate_uncommon_non_terminator(Engine &eng)
     {
-        return NonTerminator{
-            uniform_sample(eng, uncommon_non_terminators<traits>)};
+        return NonTerminator{uniform_sample(eng, uncommon_non_terminators)};
     }
 
     template <typename Engine>
@@ -486,11 +484,11 @@ namespace monad::vm::fuzzing
         return NonTerminator{uniform_sample(eng, dup_non_terminator)};
     }
 
-    template <typename Engine, Traits traits>
+    template <typename Engine>
     Terminator generate_terminator(Engine &eng, bool const exit)
     {
-        auto opcode = exit ? uniform_sample(eng, exit_terminators<traits>)
-                           : uniform_sample(eng, jump_terminators<traits>);
+        auto opcode = exit ? uniform_sample(eng, exit_terminators)
+                           : uniform_sample(eng, jump_terminators);
 
         return Terminator{opcode};
     }
@@ -502,7 +500,7 @@ namespace monad::vm::fuzzing
         return NonTerminator{dist(eng)};
     }
 
-    template <typename Engine, Traits traits>
+    template <typename Engine>
     std::vector<Instruction> generate_block(
         GeneratorFocus const &focus, Engine &eng, bool const is_exit,
         bool const is_main)
@@ -584,10 +582,7 @@ namespace monad::vm::fuzzing
                 [](auto &g) { return generate_random_byte(g); },
                 Choice(
                     common_non_term_prob,
-                    [](auto &g) {
-                        return generate_common_non_terminator<Engine, traits>(
-                            g);
-                    }),
+                    [](auto &g) { return generate_common_non_terminator(g); }),
                 Choice(
                     push_prob,
                     [&focus](auto &g) { return generate_push(focus, g); }),
@@ -600,11 +595,10 @@ namespace monad::vm::fuzzing
                 Choice(
                     uncommon_non_term_prob,
                     [](auto &g) {
-                        return generate_uncommon_non_terminator<Engine, traits>(
-                            g);
+                        return generate_uncommon_non_terminator(g);
                     }),
                 Choice(terminate_prob, [&](auto &g) {
-                    return generate_terminator<Engine, traits>(g, is_exit);
+                    return generate_terminator(g, is_exit);
                 }));
 
             if (auto *term = std::get_if<Terminator>(&next_inst)) {
@@ -636,7 +630,6 @@ namespace monad::vm::fuzzing
         return program;
     }
 
-
     template <typename Engine>
     evmc::address generate_precompile_address(Engine &eng, evmc_revision rev)
     {
@@ -648,19 +641,58 @@ namespace monad::vm::fuzzing
                 return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8});
             }
             else if (rev <= EVMC_SHANGHAI) {
-                return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9});
+                return uniform_sample(
+                    eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9});
             }
             else if (rev == EVMC_CANCUN) {
-                return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+                return uniform_sample(
+                    eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
             }
             else if (rev == EVMC_PRAGUE) {
-                return uniform_sample(eng, std::array{
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17});
+                return uniform_sample(
+                    eng,
+                    std::array{
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12,
+                        13,
+                        14,
+                        15,
+                        16,
+                        17});
             }
             else if (rev == EVMC_OSAKA) {
                 // New precompile at address 0x100 (256): P256VERIFY
-                return uniform_sample(eng, std::array{
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 256});
+                return uniform_sample(
+                    eng,
+                    std::array{
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12,
+                        13,
+                        14,
+                        15,
+                        16,
+                        17,
+                        256});
             }
             else {
                 MONAD_VM_ASSERT(false);
@@ -670,20 +702,20 @@ namespace monad::vm::fuzzing
         return evmc::address{static_cast<uint64_t>(addr)};
     }
 
-    template <typename Engine, Traits traits>
+    template <typename Engine>
     void compile_address(
-        Engine &eng, std::vector<std::uint8_t> &program,
+        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
         std::vector<evmc::address> const &valid_addresses)
     {
         auto const &addr = [&] {
             if (valid_addresses.empty()) {
-                return generate_precompile_address(eng, traits::evm_rev());
+                return generate_precompile_address(eng, rev);
             }
             return discrete_choice<evmc::address>(
                 eng,
                 [&](auto &g) { return uniform_sample(g, valid_addresses); },
-                Choice(0.001, [](auto &g) {
-                    return generate_precompile_address(g, traits::evm_rev());
+                Choice(0.001, [rev](auto &g) {
+                    return generate_precompile_address(g, rev);
                 }));
         }();
 
@@ -729,10 +761,10 @@ namespace monad::vm::fuzzing
         program.push_back(RETURNDATACOPY);
     }
 
-    template <typename Engine, Traits traits>
+    template <typename Engine>
     void compile_create(
-        Engine &eng, std::vector<std::uint8_t> &program, Create const &c,
-        std::vector<evmc::address> const &valid_addresses)
+        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
+        Create const &c, std::vector<evmc::address> const &valid_addresses)
     {
         if (!c.isTrivial) {
             if (c.opcode == CREATE2) {
@@ -740,7 +772,7 @@ namespace monad::vm::fuzzing
             }
             // -> [salt (CREATE2)]
 
-            compile_address<Engine, traits>(eng, program, valid_addresses);
+            compile_address(eng, rev, program, valid_addresses);
             // -> [address, salt (CREATE2)]
             program.push_back(DUP1);
             // -> [address, address, salt (CREATE2)]
@@ -770,10 +802,10 @@ namespace monad::vm::fuzzing
         program.push_back(c.opcode);
     }
 
-    template <typename Engine, Traits traits>
+    template <typename Engine>
     void compile_call(
-        Engine &eng, std::vector<std::uint8_t> &program, Call const &call,
-        std::vector<evmc::address> const &valid_addresses)
+        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
+        Call const &call, std::vector<evmc::address> const &valid_addresses)
     {
         bool isTrivial = call.isTrivial;
 
@@ -788,7 +820,7 @@ namespace monad::vm::fuzzing
                 compile_percent(program, call.balancePct);
             }
 
-            compile_address<Engine, traits>(eng, program, valid_addresses);
+            compile_address(eng, rev, program, valid_addresses);
 
             // send some percentage of available gas
             program.push_back(GAS);
@@ -848,9 +880,9 @@ namespace monad::vm::fuzzing
         MONAD_VM_DEBUG_ASSERT(patches.empty());
     }
 
-    template <typename Engine, Traits traits>
+    template <typename Engine>
     void compile_block(
-        Engine &eng, std::vector<std::uint8_t> &program,
+        Engine &eng, evmc_revision rev, std::vector<std::uint8_t> &program,
         std::vector<Instruction> const &block,
         std::vector<evmc::address> const &valid_addresses,
         std::vector<std::uint32_t> &valid_jumpdests,
@@ -896,15 +928,13 @@ namespace monad::vm::fuzzing
                             eng, program, p, valid_addresses, jumpdest_patches);
                     },
                     [&](Call const &c) {
-                        compile_call<Engine, traits>(
-                            eng, program, c, valid_addresses);
+                        compile_call(eng, rev, program, c, valid_addresses);
                     },
                     [&](ReturnDataCopy const &r) {
                         compile_returndatacopy(program, r);
                     },
                     [&](Create const &c) {
-                        compile_create<Engine, traits>(
-                            eng, program, c, valid_addresses);
+                        compile_create(eng, rev, program, c, valid_addresses);
                     },
                 },
                 inst);
@@ -980,9 +1010,9 @@ namespace monad::vm::fuzzing
         }
     }
 
-    template <typename Engine, Traits traits>
+    template <typename Engine>
     std::vector<std::uint8_t> generate_program(
-        GeneratorFocus const &focus, Engine &eng,
+        GeneratorFocus const &focus, Engine &eng, evmc_revision rev,
         std::vector<evmc::address> const &valid_addresses)
     {
         auto prog = std::vector<std::uint8_t>{};
@@ -1006,11 +1036,11 @@ namespace monad::vm::fuzzing
             auto const is_main = (i == 0);
             auto const is_exit = (i > n_blocks - n_exit_blocks);
 
-            auto const block =
-                generate_block<Engine, traits>(focus, eng, is_exit, is_main);
+            auto const block = generate_block(focus, eng, is_exit, is_main);
 
-            compile_block<Engine, traits>(
+            compile_block(
                 eng,
+                rev,
                 prog,
                 block,
                 valid_addresses,

@@ -210,7 +210,13 @@ void UpdateAuxImpl::update_root_offset(
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
         auto g = m->hold_dirty();
-        root_offsets(m == db_metadata_[1].main).assign(i, root_offset);
+        auto ro = root_offsets(m == db_metadata_[1].main);
+        ro.assign(i, root_offset);
+        if (root_offset == INVALID_OFFSET && i == db_history_max_version() &&
+            i == db_history_min_valid_version()) {
+            ro.reset_all(0);
+            MONAD_ASSERT(ro.max_version() == INVALID_BLOCK_NUM);
+        }
     };
     do_(db_metadata_[0].main);
     do_(db_metadata_[1].main);
@@ -1202,6 +1208,9 @@ Node::SharedPtr UpdateAuxImpl::do_update(
 void UpdateAuxImpl::release_unreferenced_chunks()
 {
     auto const min_valid_version = db_history_min_valid_version();
+    if (min_valid_version == INVALID_BLOCK_NUM) {
+        return;
+    }
     auto min_valid_root = read_node_blocking(
         *this,
         get_root_offset_at_version(min_valid_version),
@@ -1281,17 +1290,18 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
 void UpdateAuxImpl::clear_root_offsets_up_to_and_including(
     uint64_t const version)
 {
-    uint64_t v = db_metadata()->root_offsets.version_lower_bound_;
-    for (; v <= version; ++v) {
+    for (uint64_t v = db_history_range_lower_bound();
+         v != INVALID_BLOCK_NUM && v <= version;
+         v = db_history_range_lower_bound()) {
         update_root_offset(v, INVALID_OFFSET);
     }
-    MONAD_ASSERT(db_metadata()->root_offsets.version_lower_bound_ > version);
 }
 
 void UpdateAuxImpl::move_trie_version_forward(
     uint64_t const src, uint64_t const dest)
 {
     MONAD_ASSERT(is_on_disk());
+    MONAD_ASSERT(version_is_valid_ondisk(src));
     // only allow moving forward
     MONAD_ASSERT(
         dest > src && dest != INVALID_BLOCK_NUM &&
@@ -1300,13 +1310,14 @@ void UpdateAuxImpl::move_trie_version_forward(
     auto g2(set_current_upsert_tid());
     auto const offset = get_root_offset_at_version(src);
     update_root_offset(src, INVALID_OFFSET);
-    fast_forward_next_version(dest);
-    append_root_offset(offset);
-    // erase versions that fall out of history range
-    MONAD_ASSERT(dest == db_history_max_version());
+    // Must erase versions that will fall out of history range first
     if (dest >= version_history_length()) {
         erase_versions_up_to_and_including(dest - version_history_length());
     }
+    fast_forward_next_version(dest);
+    append_root_offset(offset);
+    MONAD_ASSERT(dest == db_history_max_version());
+    MONAD_ASSERT(version_is_valid_ondisk(dest));
 }
 
 void UpdateAuxImpl::update_disk_growth_data()

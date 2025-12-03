@@ -610,6 +610,9 @@ public:
                                : version_lower_bound;
                 auto const max_version =
                     next_version_.load(std::memory_order_acquire) - 1;
+                if (max_version == INVALID_BLOCK_NUM) {
+                    return;
+                }
                 while (idx < max_version && (*this)[idx] == INVALID_OFFSET) {
                     idx++;
                 }

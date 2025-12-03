@@ -636,44 +636,38 @@ namespace monad::vm::fuzzing
         return program;
     }
 
-    template <Traits traits>
-    consteval auto precompile_addresses()
-    {
-        if constexpr (traits::evm_rev() <= EVMC_SPURIOUS_DRAGON) {
-            return std::array{1, 2, 3, 4};
-        }
-        else if constexpr (traits::evm_rev() <= EVMC_PETERSBURG) {
-            return std::array{1, 2, 3, 4, 5, 6, 7, 8};
-        }
-        else if constexpr (traits::evm_rev() <= EVMC_SHANGHAI) {
-            return std::array{1, 2, 3, 4, 5, 6, 7, 8, 9};
-        }
-        else if constexpr (traits::evm_rev() == EVMC_CANCUN) {
-            return std::array{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-        }
-        else if constexpr (traits::evm_rev() == EVMC_PRAGUE) {
-            return std::array{
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
-        }
-        else if constexpr (traits::evm_rev() == EVMC_OSAKA) {
-            // New precompile at address 0x100 (256): P256VERIFY
-            return std::array{
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 256};
-        }
-        else {
-            MONAD_VM_ASSERT(false);
-        }
-    }
 
-    template <typename Engine, Traits traits>
-    evmc::address generate_precompile_address(Engine &eng)
+    template <typename Engine>
+    evmc::address generate_precompile_address(Engine &eng, evmc_revision rev)
     {
-        constexpr auto precomp_addrs = precompile_addresses<traits>();
-        uint64_t const precomp_addr_ix =
-            std::uniform_int_distribution<std::size_t>(
-                0, precomp_addrs.size() - 1)(eng);
-        evmc::address addr{precomp_addr_ix};
-        return addr;
+        auto addr = [rev, &eng]() {
+            if (rev <= EVMC_SPURIOUS_DRAGON) {
+                return uniform_sample(eng, std::array{1, 2, 3, 4});
+            }
+            else if (rev <= EVMC_PETERSBURG) {
+                return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8});
+            }
+            else if (rev <= EVMC_SHANGHAI) {
+                return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9});
+            }
+            else if (rev == EVMC_CANCUN) {
+                return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+            }
+            else if (rev == EVMC_PRAGUE) {
+                return uniform_sample(eng, std::array{
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17});
+            }
+            else if (rev == EVMC_OSAKA) {
+                // New precompile at address 0x100 (256): P256VERIFY
+                return uniform_sample(eng, std::array{
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 256});
+            }
+            else {
+                MONAD_VM_ASSERT(false);
+            }
+        }();
+
+        return evmc::address{static_cast<uint64_t>(addr)};
     }
 
     template <typename Engine, Traits traits>
@@ -683,13 +677,13 @@ namespace monad::vm::fuzzing
     {
         auto const &addr = [&] {
             if (valid_addresses.empty()) {
-                return generate_precompile_address<Engine, traits>(eng);
+                return generate_precompile_address(eng, traits::evm_rev());
             }
             return discrete_choice<evmc::address>(
                 eng,
                 [&](auto &g) { return uniform_sample(g, valid_addresses); },
                 Choice(0.001, [](auto &g) {
-                    return generate_precompile_address<Engine, traits>(g);
+                    return generate_precompile_address(g, traits::evm_rev());
                 }));
         }();
 

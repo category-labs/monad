@@ -535,7 +535,7 @@ static void do_run(std::size_t const run_index, arguments const &args)
 
         if (traits::evm_rev() >= EVMC_PRAGUE && toss(engine, 0.001)) {
             auto precompile = monad::vm::fuzzing::
-                generate_precompile_address<random_engine_t, traits>(engine);
+                generate_precompile_address(engine, traits::evm_rev());
             auto const a = deploy_delegated_contracts(
                 evmone_state, monad_state, genesis_address, precompile);
             known_addresses.push_back(a);

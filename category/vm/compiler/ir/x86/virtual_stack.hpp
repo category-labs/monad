@@ -41,9 +41,17 @@ namespace monad::vm::compiler::native
 
     bool operator==(Literal const &a, Literal const &b);
 
+    enum class PrevLoc
+    {
+        Unknown,
+        AvxReg,
+        GprReg
+    };
+
     struct StackOffset
     {
         std::int32_t offset;
+        PrevLoc moved_from;
     };
 
     bool operator==(StackOffset const &a, StackOffset const &b);
@@ -491,7 +499,7 @@ namespace monad::vm::compiler::native
          * virtual stack item at this index, and mark that physical index as
          * allocated. Returns a stack element holding the offset.
          */
-        StackElemRef alloc_stack_offset(std::int32_t stack_index);
+        StackElemRef alloc_stack_offset(std::int32_t stack_index, PrevLoc);
 
         /**
          * Allocate an AVX register.
@@ -515,14 +523,16 @@ namespace monad::vm::compiler::native
          * Find a stack offset for the given stack element. The given
          * `preferred_offset` will be used as offset if it is available.
          */
-        void insert_stack_offset(StackElemRef, std::int32_t preferred_offset);
-        void insert_stack_offset(StackElem &, std::int32_t preferred_offset);
+        void insert_stack_offset(
+            StackElemRef, std::int32_t preferred_offset, PrevLoc);
+        void insert_stack_offset(
+            StackElem &, std::int32_t preferred_offset, PrevLoc);
 
         /**
          * Find a stack offset for the given stack element.
          */
-        void insert_stack_offset(StackElemRef);
-        void insert_stack_offset(StackElem &);
+        void insert_stack_offset(StackElemRef, PrevLoc);
+        void insert_stack_offset(StackElem &, PrevLoc);
 
         /**
          * Remove stack offset from `elem` and return a new stack element
@@ -792,8 +802,8 @@ namespace monad::vm::compiler::native
          * if there's a collision, we need to use another available slot to
          * relocate this item to.
          */
-        StackOffset
-        find_available_stack_offset(std::int32_t preferred_offset) const;
+        StackOffset find_available_stack_offset(
+            std::int32_t preferred_offset, PrevLoc moved_from) const;
 
         // Linked list of stack element RC objects, using `ref_count`
         // for "next" pointer:

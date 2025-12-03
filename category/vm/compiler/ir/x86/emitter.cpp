@@ -479,8 +479,10 @@ namespace monad::vm::compiler::native
             mov_arg(*remaining_gas_arg_, remaining_base_gas_);
         }
         if (result_arg_.has_value()) {
-            auto result =
-                em_->stack_.alloc_stack_offset(em_->stack_.top_index() + 1);
+            // Assumes that result will be written to memory from general
+            // registers
+            auto result = em_->stack_.alloc_stack_offset(
+                em_->stack_.top_index() + 1, PrevLoc::GprReg);
             mov_arg(*result_arg_, stack_offset_to_mem(*result->stack_offset()));
             em_->stack_.push(std::move(result));
         }
@@ -1488,7 +1490,8 @@ namespace monad::vm::compiler::native
                 }
                 else {
                     MONAD_VM_DEBUG_ASSERT(d->general_reg().has_value());
-                    auto const m = stack_offset_to_mem(StackOffset{*it});
+                    auto const m =
+                        stack_offset_to_mem(StackOffset{*it, PrevLoc::GprReg});
                     // Move to final stack offset:
                     mov_general_reg_to_mem(*d->general_reg(), m);
                     // Point to next stack offset:
@@ -1503,7 +1506,9 @@ namespace monad::vm::compiler::native
             // Move to remaining final stack offsets:
             for (; it != is.end(); ++it) {
                 if (!d->stack_offset() || d->stack_offset()->offset != *it) {
-                    as_.vmovaps(stack_offset_to_mem(StackOffset{*it}), yx1);
+                    as_.vmovaps(
+                        stack_offset_to_mem(StackOffset{*it, PrevLoc::AvxReg}),
+                        yx1);
                     MONAD_COMPILER_X86_INC_FINAL_WRITE_COUNT();
                 }
             }
@@ -1582,13 +1587,16 @@ namespace monad::vm::compiler::native
                 as_.vmovaps(
                     yx2, stack_offset_to_mem(*cycle[k - 1]->stack_offset()));
                 for (int32_t const i : cycle[k]->stack_indices()) {
-                    as_.vmovaps(stack_offset_to_mem(StackOffset{i}), yx1);
+                    as_.vmovaps(
+                        stack_offset_to_mem(StackOffset{i, PrevLoc::AvxReg}),
+                        yx1);
                     MONAD_COMPILER_X86_INC_FINAL_WRITE_COUNT();
                 }
                 std::swap(yx1, yx2);
             }
             for (int32_t const i : e->stack_indices()) {
-                as_.vmovaps(stack_offset_to_mem(StackOffset{i}), yx1);
+                as_.vmovaps(
+                    stack_offset_to_mem(StackOffset{i, PrevLoc::AvxReg}), yx1);
                 MONAD_COMPILER_X86_INC_FINAL_WRITE_COUNT();
             }
         }
@@ -2099,7 +2107,7 @@ namespace monad::vm::compiler::native
     Emitter::mov_avx_reg_to_stack_offset(StackElemRef elem, int32_t preferred)
     {
         MONAD_VM_DEBUG_ASSERT(elem->avx_reg().has_value());
-        stack_.insert_stack_offset(elem, preferred);
+        stack_.insert_stack_offset(elem, preferred, PrevLoc::AvxReg);
         auto const y = avx_reg_to_ymm(*elem->avx_reg());
         as_.vmovaps(stack_offset_to_mem(*elem->stack_offset()), y);
     }
@@ -2120,7 +2128,7 @@ namespace monad::vm::compiler::native
     Emitter::mov_general_reg_to_stack_offset(StackElem &elem, int32_t preferred)
     {
         MONAD_VM_DEBUG_ASSERT(elem.general_reg().has_value());
-        stack_.insert_stack_offset(elem, preferred);
+        stack_.insert_stack_offset(elem, preferred, PrevLoc::GprReg);
         mov_general_reg_to_mem(
             *elem.general_reg(), stack_offset_to_mem(*elem.stack_offset()));
     }
@@ -2141,9 +2149,12 @@ namespace monad::vm::compiler::native
     Emitter::mov_literal_to_stack_offset(StackElemRef elem, int32_t preferred)
     {
         MONAD_VM_DEBUG_ASSERT(elem->literal().has_value());
-        stack_.insert_stack_offset(elem, preferred);
+        // mov_literal_to_mem stores literals by first loading them into an avx
+        // register, hence we set it as the previous location
+        stack_.insert_stack_offset(elem, preferred, PrevLoc::AvxReg);
         mov_literal_to_mem<true, true>(
             elem, stack_offset_to_mem(*elem->stack_offset()));
+        MONAD_VM_DEBUG_ASSERT(elem->avx_reg().has_value());
     }
 
     void Emitter::mov_avx_reg_to_general_reg(StackElemRef elem)
@@ -5676,6 +5687,17 @@ namespace monad::vm::compiler::native
                 return {new_dst, new_dst, LocationType::GeneralReg};
             }
             MONAD_VM_DEBUG_ASSERT(dst->stack_offset().has_value());
+            // to prevent a store forwarding stall, load the stack offset back
+            // into gpr if we know it was previously stored there from another
+            // gpr
+            if (dst->stack_offset()->moved_from == PrevLoc::GprReg) {
+                mov_stack_offset_to_general_reg(dst);
+                if (!is_dst_mutated) {
+                    return {dst, dst, LocationType::GeneralReg};
+                }
+                auto const new_dst = release_general_reg(std::move(dst), live);
+                return {new_dst, new_dst, LocationType::GeneralReg};
+            }
             mov_stack_offset_to_avx_reg(dst);
         }
 
@@ -5724,6 +5746,14 @@ namespace monad::vm::compiler::native
                     LocationType::AvxReg};
             }
             MONAD_VM_DEBUG_ASSERT(dst->stack_offset().has_value());
+            if (dst->stack_offset()->moved_from == PrevLoc::GprReg) {
+                mov_stack_offset_to_general_reg(dst);
+                return {
+                    std::move(dst),
+                    LocationType::GeneralReg,
+                    std::move(src),
+                    LocationType::GeneralReg};
+            }
             mov_stack_offset_to_avx_reg(dst);
             return {
                 std::move(dst),
@@ -5797,6 +5827,15 @@ namespace monad::vm::compiler::native
         }
         // Case 8: (stack, stack)
         if (dst->stack_offset() && src->stack_offset()) {
+            if (dst->stack_offset()->moved_from == PrevLoc::GprReg ||
+                src->stack_offset()->moved_from == PrevLoc::GprReg) {
+                mov_stack_offset_to_general_reg(dst);
+                return {
+                    std::move(dst),
+                    LocationType::GeneralReg,
+                    std::move(src),
+                    LocationType::StackOffset};
+            }
             mov_stack_offset_to_avx_reg(dst);
             return {
                 std::move(dst),

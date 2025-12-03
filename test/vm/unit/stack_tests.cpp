@@ -37,9 +37,9 @@ namespace
         {
         }
 
-        StackElemTestData &with_stack_offset(StackOffset x)
+        StackElemTestData &with_stack_offset(std::int32_t offset)
         {
-            stack_offset = x;
+            stack_offset = {offset, PrevLoc::Unknown};
             return *this;
         }
 
@@ -86,9 +86,9 @@ TEST(VirtualStack, ctor_test_1)
     ASSERT_EQ(stack.max_delta(), 0);
     ASSERT_EQ(stack.delta(), -1);
     ASSERT_TRUE(test_stack_element(
-        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset({-2})));
+        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset(-2)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset({-1})));
+        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset(-1)));
 }
 
 TEST(VirtualStack, ctor_test_2)
@@ -100,11 +100,11 @@ TEST(VirtualStack, ctor_test_2)
     ASSERT_EQ(stack.max_delta(), 0);
     ASSERT_EQ(stack.delta(), -4);
     ASSERT_TRUE(test_stack_element(
-        stack.get(-3), StackElemTestData{{-3}}.with_stack_offset({-3})));
+        stack.get(-3), StackElemTestData{{-3}}.with_stack_offset(-3)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset({-2})));
+        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset(-2)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset({-1})));
+        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset(-1)));
 }
 
 TEST(VirtualStack, ctor_test_3)
@@ -127,9 +127,9 @@ TEST(VirtualStack, ctor_test_4)
     ASSERT_EQ(stack.max_delta(), 0);
     ASSERT_EQ(stack.delta(), 0);
     ASSERT_TRUE(test_stack_element(
-        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset({-1})));
+        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset(-1)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset({-2})));
+        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset(-2)));
 }
 
 TEST(VirtualStack, ctor_test_5)
@@ -142,7 +142,7 @@ TEST(VirtualStack, ctor_test_5)
     ASSERT_EQ(stack.delta(), 0);
     for (int32_t i = -1; i >= -17; --i) {
         ASSERT_TRUE(test_stack_element(
-            stack.get(i), StackElemTestData{{i}}.with_stack_offset({i})));
+            stack.get(i), StackElemTestData{{i}}.with_stack_offset(i)));
     }
 }
 
@@ -155,7 +155,7 @@ TEST(VirtualStack, ctor_test_6)
     ASSERT_EQ(stack.max_delta(), 1);
     ASSERT_EQ(stack.delta(), 1);
     ASSERT_TRUE(test_stack_element(
-        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset({-1})));
+        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset(-1)));
 }
 
 TEST(VirtualStack, ctor_test_7)
@@ -168,7 +168,7 @@ TEST(VirtualStack, ctor_test_7)
     ASSERT_EQ(stack.delta(), 1);
     for (int32_t i = -1; i >= -16; --i) {
         ASSERT_TRUE(test_stack_element(
-            stack.get(i), StackElemTestData{{i}}.with_stack_offset({i})));
+            stack.get(i), StackElemTestData{{i}}.with_stack_offset(i)));
     }
 }
 
@@ -182,9 +182,9 @@ TEST(VirtualStack, ctor_test_8)
     ASSERT_EQ(stack.max_delta(), 3);
     ASSERT_EQ(stack.delta(), 1);
     ASSERT_TRUE(test_stack_element(
-        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset({-1})));
+        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset(-1)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset({-2})));
+        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset(-2)));
 }
 
 TEST(VirtualStack, push_test)
@@ -210,7 +210,7 @@ TEST(VirtualStack, pop_test)
     ASSERT_EQ(stack.max_delta(), 0);
     ASSERT_EQ(stack.delta(), 0);
     ASSERT_TRUE(
-        test_stack_element(e, StackElemTestData{{}}.with_stack_offset({-1})));
+        test_stack_element(e, StackElemTestData{{}}.with_stack_offset(-1)));
 }
 
 TEST(VirtualStack, swap_test)
@@ -223,11 +223,11 @@ TEST(VirtualStack, swap_test)
     ASSERT_EQ(stack.max_delta(), 0);
     ASSERT_EQ(stack.delta(), 0);
     ASSERT_TRUE(test_stack_element(
-        stack.get(-3), StackElemTestData{{-3}}.with_stack_offset({-1})));
+        stack.get(-3), StackElemTestData{{-3}}.with_stack_offset(-1)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset({-2})));
+        stack.get(-2), StackElemTestData{{-2}}.with_stack_offset(-2)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset({-3})));
+        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset(-3)));
 }
 
 TEST(VirtualStack, dup_test)
@@ -240,11 +240,11 @@ TEST(VirtualStack, dup_test)
     ASSERT_EQ(stack.max_delta(), 1);
     ASSERT_EQ(stack.delta(), 1);
     ASSERT_TRUE(test_stack_element(
-        stack.get(-2), StackElemTestData{{0, -2}}.with_stack_offset({-2})));
+        stack.get(-2), StackElemTestData{{0, -2}}.with_stack_offset(-2)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset({-1})));
+        stack.get(-1), StackElemTestData{{-1}}.with_stack_offset(-1)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(0), StackElemTestData{{0, -2}}.with_stack_offset({-2})));
+        stack.get(0), StackElemTestData{{0, -2}}.with_stack_offset(-2)));
 }
 
 TEST(VirtualStack, push_pop_dup_swap_test_1)
@@ -264,9 +264,9 @@ TEST(VirtualStack, push_pop_dup_swap_test_1)
     ASSERT_TRUE(
         test_stack_element(e, StackElemTestData{{1}}.with_literal({0})));
     ASSERT_TRUE(test_stack_element(
-        stack.get(-1), StackElemTestData{{-1, 0}}.with_stack_offset({-1})));
+        stack.get(-1), StackElemTestData{{-1, 0}}.with_stack_offset(-1)));
     ASSERT_TRUE(test_stack_element(
-        stack.get(0), StackElemTestData{{-1, 0}}.with_stack_offset({-1})));
+        stack.get(0), StackElemTestData{{-1, 0}}.with_stack_offset(-1)));
     ASSERT_TRUE(test_stack_element(
         stack.get(1), StackElemTestData{{1}}.with_literal({0})));
 }
@@ -276,10 +276,10 @@ TEST(VirtualStack, insert_stack_offset_test_1)
     auto ir = basic_blocks::BasicBlocksIR::unsafe_from({PUSH0});
     Stack stack{ir.blocks()[0]};
     stack.push_literal(0);
-    stack.insert_stack_offset(stack.get(0));
+    stack.insert_stack_offset(stack.get(0), PrevLoc::Unknown);
     ASSERT_TRUE(test_stack_element(
         stack.get(0),
-        StackElemTestData{{0}}.with_literal({0}).with_stack_offset({0})));
+        StackElemTestData{{0}}.with_literal({0}).with_stack_offset(0)));
 }
 
 TEST(VirtualStack, insert_stack_offset_test_2)
@@ -289,18 +289,18 @@ TEST(VirtualStack, insert_stack_offset_test_2)
     stack.push_literal(0);
     stack.push_literal(0);
     stack.push_literal(0);
-    stack.insert_stack_offset(stack.get(0), 1);
-    stack.insert_stack_offset(stack.get(1));
-    stack.insert_stack_offset(stack.get(2));
+    stack.insert_stack_offset(stack.get(0), 1, PrevLoc::Unknown);
+    stack.insert_stack_offset(stack.get(1), PrevLoc::Unknown);
+    stack.insert_stack_offset(stack.get(2), PrevLoc::Unknown);
     ASSERT_TRUE(test_stack_element(
         stack.get(0),
-        StackElemTestData{{0}}.with_literal({0}).with_stack_offset({1})));
+        StackElemTestData{{0}}.with_literal({0}).with_stack_offset(1)));
     ASSERT_TRUE(test_stack_element(
         stack.get(1),
-        StackElemTestData{{1}}.with_literal({0}).with_stack_offset({0})));
+        StackElemTestData{{1}}.with_literal({0}).with_stack_offset(0)));
     ASSERT_TRUE(test_stack_element(
         stack.get(2),
-        StackElemTestData{{2}}.with_literal({0}).with_stack_offset({2})));
+        StackElemTestData{{2}}.with_literal({0}).with_stack_offset(2)));
 }
 
 TEST(VirtualStack, insert_stack_offset_test_3)
@@ -310,18 +310,18 @@ TEST(VirtualStack, insert_stack_offset_test_3)
     stack.push_literal(0);
     stack.push_literal(0);
     stack.push_literal(0);
-    stack.insert_stack_offset(stack.get(0), 1);
-    stack.insert_stack_offset(stack.get(2));
-    stack.insert_stack_offset(stack.get(1));
+    stack.insert_stack_offset(stack.get(0), 1, PrevLoc::Unknown);
+    stack.insert_stack_offset(stack.get(2), PrevLoc::Unknown);
+    stack.insert_stack_offset(stack.get(1), PrevLoc::Unknown);
     ASSERT_TRUE(test_stack_element(
         stack.get(0),
-        StackElemTestData{{0}}.with_literal({0}).with_stack_offset({1})));
+        StackElemTestData{{0}}.with_literal({0}).with_stack_offset(1)));
     ASSERT_TRUE(test_stack_element(
         stack.get(1),
-        StackElemTestData{{1}}.with_literal({0}).with_stack_offset({0})));
+        StackElemTestData{{1}}.with_literal({0}).with_stack_offset(0)));
     ASSERT_TRUE(test_stack_element(
         stack.get(2),
-        StackElemTestData{{2}}.with_literal({0}).with_stack_offset({2})));
+        StackElemTestData{{2}}.with_literal({0}).with_stack_offset(2)));
 }
 
 TEST(VirtualStack, alloc_stack_offset_test_1)
@@ -330,18 +330,18 @@ TEST(VirtualStack, alloc_stack_offset_test_1)
     Stack stack{ir.blocks()[0]};
     stack.pop();
     stack.pop();
-    auto e1 = stack.alloc_stack_offset(-2);
-    auto e2 = stack.alloc_stack_offset(-2);
+    auto e1 = stack.alloc_stack_offset(-2, PrevLoc::Unknown);
+    auto e2 = stack.alloc_stack_offset(-2, PrevLoc::Unknown);
     ASSERT_TRUE(
-        test_stack_element(e1, StackElemTestData{{}}.with_stack_offset({-2})));
+        test_stack_element(e1, StackElemTestData{{}}.with_stack_offset(-2)));
     ASSERT_TRUE(
-        test_stack_element(e2, StackElemTestData{{}}.with_stack_offset({-1})));
+        test_stack_element(e2, StackElemTestData{{}}.with_stack_offset(-1)));
     stack.push(e1);
     stack.push(e2);
-    ASSERT_TRUE(test_stack_element(
-        e1, StackElemTestData{{-2}}.with_stack_offset({-2})));
-    ASSERT_TRUE(test_stack_element(
-        e2, StackElemTestData{{-1}}.with_stack_offset({-1})));
+    ASSERT_TRUE(
+        test_stack_element(e1, StackElemTestData{{-2}}.with_stack_offset(-2)));
+    ASSERT_TRUE(
+        test_stack_element(e2, StackElemTestData{{-1}}.with_stack_offset(-1)));
 }
 
 TEST(VirtualStack, insert_avx_reg_test_1)

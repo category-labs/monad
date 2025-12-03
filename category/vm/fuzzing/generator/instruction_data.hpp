@@ -102,7 +102,7 @@ namespace monad::vm::fuzzing
         SWAP7,      SWAP8,       SWAP9,
         SWAP10,     SWAP11,      SWAP12,
         SWAP13,     SWAP14,      SWAP15,
-        SWAP16,
+        SWAP16,     CLZ,
     };
 
     constexpr auto terminators_all = std::array{

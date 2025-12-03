@@ -181,7 +181,7 @@ static void do_run(std::size_t const run_index, arguments const &args)
             Choice(0.8, [](auto &) { return dyn_jump_focus; }));
 
         auto const contract =
-            monad::vm::fuzzing::generate_program(focus, engine, {});
+            monad::vm::fuzzing::generate_program(focus, engine, rev, {});
 
         fuzz_iteration(contract, rev);
     }

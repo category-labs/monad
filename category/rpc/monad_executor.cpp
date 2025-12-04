@@ -56,6 +56,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/reserve_balance.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -209,28 +210,21 @@ namespace
 
     template <Traits traits>
     auto make_revert_lambda(
-        Chain const &chain, BlockHeader const &header,
-        MonadChainContext const &chain_context)
+        BlockHeader const &header, MonadChainContext const &chain_context)
     {
         if constexpr (is_monad_trait_v<traits>) {
-            return [&chain, &header, &chain_context](
+            return [&header, &chain_context](
                        Address const &sender,
                        Transaction const &tx,
                        uint64_t const i,
                        State &state) -> bool {
-                // If this cast doesn't succeed, then something has gone
-                // terribly wrong. It will throw an exception which we let
-                // the caller of this simulation / replay handle.
-                return dynamic_cast<MonadChain const &>(chain)
-                    .revert_transaction(
-                        header.number,
-                        header.timestamp,
-                        sender,
-                        tx,
-                        header.base_fee_per_gas.value_or(0),
-                        i,
-                        state,
-                        chain_context);
+                return revert_monad_transaction<traits>(
+                    sender,
+                    tx,
+                    header.base_fee_per_gas.value_or(0),
+                    i,
+                    state,
+                    chain_context);
             };
         }
         else {
@@ -382,7 +376,7 @@ namespace
             authorities,
             header,
             0,
-            make_revert_lambda<traits>(chain, header, chain_context),
+            make_revert_lambda<traits>(header, chain_context),
         }(state, host);
 
         // compute gas_refund and gas_used
@@ -474,7 +468,7 @@ namespace
             noop_call_tracers.data(), transactions_size};
 
         auto const revert_transaction =
-            make_revert_lambda<traits>(chain, header, chain_context);
+            make_revert_lambda<traits>(header, chain_context);
 
         // Trace single transaction
         if (trace_transaction) {

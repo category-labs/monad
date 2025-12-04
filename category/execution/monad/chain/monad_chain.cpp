@@ -31,7 +31,6 @@
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
-#include <category/vm/evm/switch_traits.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -60,18 +59,6 @@ Result<void> MonadChain::validate_transaction(
     evmc_revision const rev = get_revision(block_number, timestamp);
     return validate_monad_transaction(
         monad_rev, rev, tx, sender, state, base_fee_per_gas, authorities);
-}
-
-bool MonadChain::revert_transaction(
-    uint64_t const block_number, uint64_t const timestamp,
-    Address const &sender, Transaction const &tx,
-    uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
-    MonadChainContext const &ctx) const
-{
-    monad_revision const monad_rev = get_monad_revision(timestamp);
-    evmc_revision const rev = get_revision(block_number, timestamp);
-    return revert_monad_transaction(
-        monad_rev, rev, sender, tx, base_fee_per_gas, i, state, ctx);
 }
 
 MONAD_NAMESPACE_END

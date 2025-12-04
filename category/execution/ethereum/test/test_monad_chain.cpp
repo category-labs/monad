@@ -243,9 +243,7 @@ void run_revert_transaction_test(
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
         state.subtract_from_balance(SENDER, value);
-        bool should_revert = revert_monad_transaction(
-            traits::monad_rev(),
-            traits::evm_rev(),
+        bool should_revert = revert_monad_transaction<traits>(
             SENDER,
             tx,
             BASE_FEE_PER_GAS,
@@ -436,15 +434,8 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     State state{bs, Incarnation{1, 1}};
     prepare_state(state);
 
-    bool const should_revert = revert_monad_transaction(
-        traits::monad_rev(),
-        traits::evm_rev(),
-        SENDER,
-        tx,
-        BASE_FEE_PER_GAS,
-        0,
-        state,
-        context);
+    bool const should_revert = revert_monad_transaction<traits>(
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, context);
 
     if constexpr (traits::monad_rev() < MONAD_FOUR) {
         EXPECT_FALSE(should_revert);

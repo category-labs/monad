@@ -44,6 +44,7 @@
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
+#include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -293,14 +294,12 @@ Result<BlockExecOutput> propose_block(
             block_metrics,
             call_tracers,
             state_tracers,
-            [&chain, &block, &chain_context](
+            [&block, &chain_context](
                 Address const &sender,
                 Transaction const &tx,
                 uint64_t const i,
                 State &state) {
-                return chain.revert_transaction(
-                    block.header.number,
-                    block.header.timestamp,
+                return revert_monad_transaction<traits>(
                     sender,
                     tx,
                     block.header.base_fee_per_gas.value_or(0),

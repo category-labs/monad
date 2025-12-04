@@ -113,13 +113,12 @@ uint64_t monad_db_snapshot_write_filesystem(
     }
 
     auto &stream = context->shard.at(shard).at(type);
-    auto const before = stream.foutput.tellp();
     stream.foutput.write(
         reinterpret_cast<char const *>(bytes),
         static_cast<std::streamsize>(len));
     MONAD_ASSERT(stream.foutput.good());
     blake3_hasher_update(&stream.hasher, bytes, len);
-    return static_cast<uint64_t>(stream.foutput.tellp() - before);
+    return len;
 }
 
 void monad_db_snapshot_load_filesystem(

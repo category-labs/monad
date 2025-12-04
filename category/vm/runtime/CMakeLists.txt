@@ -23,6 +23,7 @@ target_sources(monad-vm-runtime PRIVATE
     "cached_allocator.hpp"
     "bin.hpp"
     "call.hpp"
+    "checkreservebalance.hpp"
     "context.S"
     "context.cpp"
     "create.hpp"

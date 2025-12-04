@@ -50,6 +50,7 @@
 [submodule "third_party/evmc"]
 	path = third_party/evmc
 	url = https://github.com/category-labs/evmc.git
+	branch = mkolosick/reserve-balance-opcode
 [submodule "third_party/cthash"]
 	path = third_party/cthash
 	url = https://github.com/hanickadot/cthash.git

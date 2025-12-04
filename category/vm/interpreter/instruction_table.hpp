@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/call_runtime.hpp>
@@ -94,6 +95,15 @@ namespace monad::vm::interpreter
     {
         constexpr auto since = [](evmc_revision first, InstrEval impl) {
             return (traits::evm_rev() >= first) ? impl : invalid;
+        };
+
+        constexpr auto since_monad = [](monad_revision first, InstrEval impl) {
+            if constexpr (is_monad_trait_v<traits>) {
+                return (traits::monad_rev() >= first) ? impl : invalid;
+            }
+            else {
+                return invalid;
+            }
         };
 
         return {
@@ -285,24 +295,7 @@ namespace monad::vm::interpreter
             invalid, //
             invalid, //
 
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-
-            invalid, //
+            invalid, // 0xB0
             invalid, //
             invalid, //
             invalid, //
@@ -319,7 +312,7 @@ namespace monad::vm::interpreter
             invalid, //
             invalid, //
 
-            invalid, //
+            invalid, // 0xC0
             invalid, //
             invalid, //
             invalid, //
@@ -336,7 +329,24 @@ namespace monad::vm::interpreter
             invalid, //
             invalid, //
 
+            since_monad(MONAD_NEXT, checkreservebalance<traits>), // 0xD0,
             invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+            invalid, //
+
+            invalid, // 0xE0
             invalid, //
             invalid, //
             invalid, //
@@ -1610,6 +1620,24 @@ namespace monad::vm::interpreter
             instr_ptr);
 
         MONAD_VM_NEXT(LOG0 + N);
+    }
+ 
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void
+    checkreservebalance(runtime::Context &ctx, Intercode const &analysis,
+        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
+        std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
+    {
+        checked_runtime_call<CHECKRESERVEBALANCE, traits>(
+            runtime::checkreservebalance,
+            ctx,
+            analysis,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr);
+
+        MONAD_VM_NEXT(CHECKRESERVEBALANCE);
     }
 
     // Call & Create

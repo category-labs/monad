@@ -197,7 +197,7 @@ struct EvmcHost final : public EvmcHostBase
         return call_tracer_;
     }
 
-    bool revert_transaction()
+    bool revert_transaction() noexcept override
     {
         try {
             if constexpr (is_monad_trait_v<traits>) {

@@ -155,7 +155,7 @@ dmypy.json
 vcpkg_installed/
 
 # Jetbrains IDEs (i.e. CLion)
-/.idea
+.idea/
 
 # VM Fuzzer log files
 tmux-fuzzer-log/

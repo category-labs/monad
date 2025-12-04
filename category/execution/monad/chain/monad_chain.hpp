@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>

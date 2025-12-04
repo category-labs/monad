@@ -510,6 +510,12 @@ namespace monad::vm::compiler::native
         }
 
         template <Traits traits>
+        void checkreservebalance(int64_t remaining_base_gas)
+        {
+            call_runtime(remaining_base_gas, true, runtime::checkreservebalance);
+        }
+
+        template <Traits traits>
         void create(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::create<traits>);

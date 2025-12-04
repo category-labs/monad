@@ -277,6 +277,9 @@ namespace
                 MONAD_VM_ASSERT(false);
             }
             break;
+        case CheckReserveBalance:
+            emit.checkreservebalance<traits>(remaining_base_gas);
+            break;
         case Create:
             emit.create<traits>(remaining_base_gas);
             break;

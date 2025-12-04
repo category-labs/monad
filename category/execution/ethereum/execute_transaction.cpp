@@ -323,6 +323,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         tx_context,
         block_hash_buffer_,
         state,
+        sender_,
         tx_,
         header_.base_fee_per_gas,
         i_,

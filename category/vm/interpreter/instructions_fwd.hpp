@@ -399,6 +399,11 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     log(runtime::Context &, Intercode const &, runtime::uint256_t const *,
         runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+ 
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void
+    checkreservebalance(runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
 
     // Call & Create
     template <Traits traits>

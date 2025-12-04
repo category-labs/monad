@@ -66,7 +66,7 @@ jobs:
           with:
             repository: category-labs/evmone
             token: ${{ steps.generate_token.outputs.token }}
-            ref: v0.18.0-category
+            ref: mkolosick/revert-transaction
             path: third_party/evmone
 
         - name: Setup Docker Buildx

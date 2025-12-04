@@ -181,7 +181,7 @@ TYPED_TEST(TraitsTest, execute_success)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -256,7 +256,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -336,7 +336,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -450,7 +450,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -539,7 +539,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(

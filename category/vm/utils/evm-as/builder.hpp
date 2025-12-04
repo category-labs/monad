@@ -726,6 +726,11 @@ namespace monad::vm::utils::evm_as
             return ins(compiler::EvmOpCode::LOG4);
         }
 
+        EvmBuilder &checkreservebalance() noexcept
+        {
+            return ins(compiler::EvmOpCode::CHECKRESERVEBALANCE);
+        }
+
         EvmBuilder &create() noexcept
         {
             return ins(compiler::EvmOpCode::CREATE);

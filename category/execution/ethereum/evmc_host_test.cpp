@@ -174,6 +174,7 @@ TYPED_TEST(TraitsTest, emit_log)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
+        from,
         tx,
         base_fee,
         0,
@@ -205,6 +206,7 @@ TYPED_TEST(TraitsTest, access_precompile)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Address from{};
     Transaction tx{};
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
@@ -213,6 +215,7 @@ TYPED_TEST(TraitsTest, access_precompile)
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
+        from,
         tx,
         base_fee,
         0,

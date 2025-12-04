@@ -194,6 +194,11 @@ namespace
             evmc::bytes32 const &) noexcept override
         {
         }
+
+        bool revert_transaction() noexcept override
+        {
+            return false;
+        }
     };
 }
 

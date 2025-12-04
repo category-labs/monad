@@ -102,6 +102,7 @@ namespace monad::vm::compiler
         Dup = 0x80,
         Swap = 0x90,
         Log = 0xA0,
+        CheckReserveBalance = 0xD0,
         Create = 0xF0,
         Call = 0xF1,
         CallCode = 0xF2,
@@ -393,6 +394,8 @@ namespace monad::vm::compiler
             return "SWAP";
         case Log:
             return "LOG";
+        case CheckReserveBalance:
+            return "CHECKRSERVEBALANCE";
         case Create:
             return "CREATE";
         case Call:

@@ -241,6 +241,7 @@ namespace monad::vm::compiler
         LOG2 = 0xA2,
         LOG3 = 0xA3,
         LOG4 = 0xA4,
+        CHECKRESERVEBALANCE = 0xD0,
         CREATE = 0xF0,
         CALL = 0xF1,
         CALLCODE = 0xF2,
@@ -836,7 +837,12 @@ namespace monad::vm::compiler
     consteval std::array<OpCodeInfo, 256>
     make_opcode_table<MonadTraits<MONAD_NEXT>>()
     {
-        return make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();
+        auto table =
+            make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();
+
+        // TODO: gas costs
+        add_opcode(0xD0, table, {"CHECKRESERVEBBALANCE", 0, 0, 1, true, 123456789, 0});
+        return table;
     }
 
     /**

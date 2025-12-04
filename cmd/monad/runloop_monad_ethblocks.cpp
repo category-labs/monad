@@ -212,9 +212,7 @@ Result<void> process_monad_block(
                 Transaction const &tx,
                 uint64_t const i,
                 State &state) {
-                return chain.revert_transaction(
-                    block.header.number,
-                    block.header.timestamp,
+                return chain.revert_transaction<traits>(
                     sender,
                     tx,
                     block.header.base_fee_per_gas.value_or(0),

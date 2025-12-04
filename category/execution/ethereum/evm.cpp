@@ -27,16 +27,16 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <ethash/hash_types.hpp>
-
 #include <intx/intx.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <utility>
 
@@ -261,10 +261,6 @@ evmc::Result create(
     }
 
     if (msg.depth == 0 && revert_transaction()) {
-        // TODO: The reserve balance reversion mechanism should be refactored to
-        // use compile-time traits. For now, assert that Ethereum traits never
-        // try to revert the transaction here.
-        MONAD_ASSERT(is_monad_trait_v<traits>);
         result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
     }
 
@@ -321,10 +317,6 @@ evmc::Result call(
     }
 
     if (msg.depth == 0 && revert_transaction()) {
-        // TODO: The reserve balance reversion mechanism should be refactored to
-        // use compile-time traits. For now, assert that Ethereum traits never
-        // try to revert the transaction here.
-        MONAD_ASSERT(is_monad_trait_v<traits>);
         result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
         result.gas_refund = 0;
     }

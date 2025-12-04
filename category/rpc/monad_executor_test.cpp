@@ -51,6 +51,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
 #include <category/vm/utils/evm-as/validator.hpp>
@@ -2500,15 +2501,14 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
         state.subtract_from_balance(sender, gas_fee);
         state.subtract_from_balance(sender, value);
         EXPECT_TRUE(block_state.can_merge(state));
-        bool const should_revert = revert_monad_transaction(
-            MONAD_NEXT,
-            EVMC_PRAGUE,
-            sender,
-            tx,
-            BASE_FEE_PER_GAS,
-            0, // transaction index
-            state,
-            chain_context);
+        bool const should_revert =
+            revert_monad_transaction<monad::MonadTraits<MONAD_NEXT>>(
+                sender,
+                tx,
+                BASE_FEE_PER_GAS,
+                0, // transaction index
+                state,
+                chain_context);
         EXPECT_TRUE(should_revert);
     }
 

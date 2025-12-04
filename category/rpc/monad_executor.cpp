@@ -222,9 +222,7 @@ namespace
                 // terribly wrong. It will throw an exception which we let
                 // the caller of this simulation / replay handle.
                 return dynamic_cast<MonadChain const &>(chain)
-                    .revert_transaction(
-                        header.number,
-                        header.timestamp,
+                    .revert_transaction<traits>(
                         sender,
                         tx,
                         header.base_fee_per_gas.value_or(0),

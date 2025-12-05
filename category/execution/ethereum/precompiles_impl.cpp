@@ -241,7 +241,7 @@ expmod_iteration_count(runtime::uint256_t exp_len256, size_t bit_len) noexcept
                                 static_cast<runtime::uint256_t>(bit_len - 1);
     }
 
-    return std::max(adjusted_exponent_len, {1});
+    return std::max(adjusted_exponent_len, runtime::uint256_t{1});
 }
 
 template <Traits traits>
@@ -285,9 +285,9 @@ uint64_t expmod_gas_cost(byte_string_view const input_view)
         }
     }
     else if (
-        runtime::count_significant_bytes(base_len256) > 64 ||
-        runtime::count_significant_bytes(exp_len256) > 64 ||
-        runtime::count_significant_bytes(mod_len256) > 64) {
+        runtime::count_significant_bytes(base_len256) > 8 ||
+        runtime::count_significant_bytes(exp_len256) > 8 ||
+        runtime::count_significant_bytes(mod_len256) > 8) {
         return UINT64_MAX;
     }
 
@@ -306,7 +306,7 @@ uint64_t expmod_gas_cost(byte_string_view const input_view)
         }
         exp_head = runtime::uint256_t::load_be_unsafe(input.data());
     }
-    size_t bit_len{256 - countl_zero(exp_head)};
+    size_t bit_len{256 - runtime::countl_zero(exp_head)};
 
     runtime::uint256_t const iteration_count{
         expmod_iteration_count<traits>(exp_len256, bit_len)};
@@ -328,7 +328,7 @@ uint64_t expmod_gas_cost(byte_string_view const input_view)
         return UINT64_MAX;
     }
     else {
-        return std::max(min_gas, static_cast<uint64_t>(gas));
+        return std::max(min_gas, gas.as_words()[0]);
     }
 }
 

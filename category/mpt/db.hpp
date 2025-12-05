@@ -68,14 +68,14 @@ public:
     RODb &operator=(RODb const &) = delete;
     RODb &operator=(RODb &&) = delete;
 
-    Result<CacheNodeCursor>
-    find(CacheNodeCursor const &, NibblesView, uint64_t block_id) const;
-    Result<CacheNodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+    Result<NodeCursor>
+    find(NodeCursor const &, NibblesView, uint64_t block_id) const;
+    Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
 
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
     bool traverse(
-        CacheNodeCursor const &, TraverseMachine &, uint64_t block_id,
+        NodeCursor const &, TraverseMachine &, uint64_t block_id,
         size_t concurrency_limit = 4096);
 };
 
@@ -169,7 +169,7 @@ public:
 struct AsyncContext
 {
     using inflight_root_t = ankerl::unordered_dense::segmented_map<
-        uint64_t, std::vector<std::function<void(std::shared_ptr<CacheNode>)>>>;
+        uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;
 
     UpdateAux<> &aux;
     NodeCache node_cache;
@@ -203,12 +203,12 @@ namespace detail
             op_get_node2
         } op_type;
 
-        std::shared_ptr<CacheNode> root;
-        CacheNodeCursor cur;
+        std::shared_ptr<Node> root;
+        NodeCursor cur;
         Nibbles const nv;
         uint64_t const block_id;
 
-        find_result_type<CacheNodeCursor> res_root;
+        find_result_type<NodeCursor> res_root;
         find_result_type<T> get_result;
 
         constexpr DbGetSender(
@@ -219,13 +219,13 @@ namespace detail
             , nv(n)
             , block_id(block_id_)
         {
-            if constexpr (std::same_as<T, std::shared_ptr<CacheNode>>) {
+            if constexpr (std::same_as<T, std::shared_ptr<Node>>) {
                 MONAD_ASSERT(op_type == op_t::op_get_node1);
             }
         }
 
         constexpr DbGetSender(
-            AsyncContext &context_, op_t const op_type_, CacheNodeCursor cur_,
+            AsyncContext &context_, op_t const op_type_, NodeCursor cur_,
             NibblesView const n, uint64_t const block_id_)
             : context(context_)
             , op_type(op_type_)
@@ -233,7 +233,7 @@ namespace detail
             , nv(n)
             , block_id(block_id_)
         {
-            if constexpr (std::same_as<T, std::shared_ptr<CacheNode>>) {
+            if constexpr (std::same_as<T, std::shared_ptr<Node>>) {
                 MONAD_ASSERT(op_type == op_t::op_get_node1);
             }
         }
@@ -283,13 +283,13 @@ inline detail::DbGetSender<byte_string> make_get_data_sender(
         block_id};
 }
 
-inline detail::DbGetSender<std::shared_ptr<CacheNode>> make_get_node_sender(
+inline detail::DbGetSender<std::shared_ptr<Node>> make_get_node_sender(
     AsyncContext *const context, NibblesView const nv, uint64_t const block_id)
 {
     MONAD_ASSERT(context);
     return {
         *context,
-        detail::DbGetSender<std::shared_ptr<CacheNode>>::op_t::op_get_node1,
+        detail::DbGetSender<std::shared_ptr<Node>>::op_t::op_get_node1,
         nv,
         block_id};
 }

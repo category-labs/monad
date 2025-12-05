@@ -48,7 +48,7 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 Node::Node(prevent_public_construction_tag) {}
 
-NodeBase::NodeBase(
+Node::Node(
     prevent_public_construction_tag, uint16_t const mask,
     std::optional<byte_string_view> value, size_t const data_size,
     NibblesView const path, int64_t const version)
@@ -87,7 +87,7 @@ Node::~Node()
     }
 }
 
-unsigned NodeBase::to_child_index(unsigned const branch) const noexcept
+unsigned Node::to_child_index(unsigned const branch) const noexcept
 {
     // convert the enabled i'th bit in a 16-bit mask into its corresponding
     // index location - index
@@ -95,20 +95,19 @@ unsigned NodeBase::to_child_index(unsigned const branch) const noexcept
     return bitmask_index(mask, branch);
 }
 
-unsigned NodeBase::number_of_children() const noexcept
+unsigned Node::number_of_children() const noexcept
 {
     return static_cast<unsigned>(std::popcount(mask));
 }
 
-chunk_offset_t const NodeBase::fnext(unsigned const index) const noexcept
+chunk_offset_t const Node::fnext(unsigned const index) const noexcept
 {
     MONAD_DEBUG_ASSERT(index < number_of_children());
     return unaligned_load<chunk_offset_t>(
         fnext_data + index * sizeof(chunk_offset_t));
 }
 
-void NodeBase::set_fnext(
-    unsigned const index, chunk_offset_t const off) noexcept
+void Node::set_fnext(unsigned const index, chunk_offset_t const off) noexcept
 {
     std::memcpy(
         fnext_data + index * sizeof(chunk_offset_t),
@@ -116,25 +115,25 @@ void NodeBase::set_fnext(
         sizeof(chunk_offset_t));
 }
 
-unsigned char *NodeBase::child_min_offset_fast_data() noexcept
+unsigned char *Node::child_min_offset_fast_data() noexcept
 {
     return fnext_data + number_of_children() * sizeof(file_offset_t);
 }
 
-unsigned char const *NodeBase::child_min_offset_fast_data() const noexcept
+unsigned char const *Node::child_min_offset_fast_data() const noexcept
 {
     return fnext_data + number_of_children() * sizeof(file_offset_t);
 }
 
 compact_virtual_chunk_offset_t
-NodeBase::min_offset_fast(unsigned const index) const noexcept
+Node::min_offset_fast(unsigned const index) const noexcept
 {
     return unaligned_load<compact_virtual_chunk_offset_t>(
         child_min_offset_fast_data() +
         index * sizeof(compact_virtual_chunk_offset_t));
 }
 
-void NodeBase::set_min_offset_fast(
+void Node::set_min_offset_fast(
     unsigned const index, compact_virtual_chunk_offset_t const offset) noexcept
 {
     std::memcpy(
@@ -144,27 +143,27 @@ void NodeBase::set_min_offset_fast(
         sizeof(compact_virtual_chunk_offset_t));
 }
 
-unsigned char *NodeBase::child_min_offset_slow_data() noexcept
+unsigned char *Node::child_min_offset_slow_data() noexcept
 {
     return child_min_offset_fast_data() +
            number_of_children() * sizeof(compact_virtual_chunk_offset_t);
 }
 
-unsigned char const *NodeBase::child_min_offset_slow_data() const noexcept
+unsigned char const *Node::child_min_offset_slow_data() const noexcept
 {
     return child_min_offset_fast_data() +
            number_of_children() * sizeof(compact_virtual_chunk_offset_t);
 }
 
 compact_virtual_chunk_offset_t
-NodeBase::min_offset_slow(unsigned const index) const noexcept
+Node::min_offset_slow(unsigned const index) const noexcept
 {
     return unaligned_load<compact_virtual_chunk_offset_t>(
         child_min_offset_slow_data() +
         index * sizeof(compact_virtual_chunk_offset_t));
 }
 
-void NodeBase::set_min_offset_slow(
+void Node::set_min_offset_slow(
     unsigned const index, compact_virtual_chunk_offset_t const offset) noexcept
 {
     std::memcpy(
@@ -174,25 +173,25 @@ void NodeBase::set_min_offset_slow(
         sizeof(compact_virtual_chunk_offset_t));
 }
 
-unsigned char *NodeBase::child_min_version_data() noexcept
+unsigned char *Node::child_min_version_data() noexcept
 {
     return child_min_offset_slow_data() +
            number_of_children() * sizeof(compact_virtual_chunk_offset_t);
 }
 
-unsigned char const *NodeBase::child_min_version_data() const noexcept
+unsigned char const *Node::child_min_version_data() const noexcept
 {
     return child_min_offset_slow_data() +
            number_of_children() * sizeof(compact_virtual_chunk_offset_t);
 }
 
-int64_t NodeBase::subtrie_min_version(unsigned const index) const noexcept
+int64_t Node::subtrie_min_version(unsigned const index) const noexcept
 {
     return unaligned_load<int64_t>(
         child_min_version_data() + index * sizeof(int64_t));
 }
 
-void NodeBase::set_subtrie_min_version(
+void Node::set_subtrie_min_version(
     unsigned const index, int64_t const min_version) noexcept
 {
     std::memcpy(
@@ -201,17 +200,17 @@ void NodeBase::set_subtrie_min_version(
         sizeof(int64_t));
 }
 
-unsigned char *NodeBase::child_off_data() noexcept
+unsigned char *Node::child_off_data() noexcept
 {
     return child_min_version_data() + number_of_children() * sizeof(int64_t);
 }
 
-unsigned char const *NodeBase::child_off_data() const noexcept
+unsigned char const *Node::child_off_data() const noexcept
 {
     return child_min_version_data() + number_of_children() * sizeof(int64_t);
 }
 
-uint16_t NodeBase::child_data_offset(unsigned const index) const noexcept
+uint16_t Node::child_data_offset(unsigned const index) const noexcept
 {
     MONAD_DEBUG_ASSERT(index <= number_of_children());
     if (index == 0) {
@@ -221,76 +220,76 @@ uint16_t NodeBase::child_data_offset(unsigned const index) const noexcept
         child_off_data() + (index - 1) * sizeof(uint16_t));
 }
 
-unsigned NodeBase::child_data_len(unsigned const index) const
+unsigned Node::child_data_len(unsigned const index) const
 {
     return child_data_offset(index + 1) - child_data_offset(index);
 }
 
-unsigned NodeBase::child_data_len()
+unsigned Node::child_data_len()
 {
     return child_data_offset(number_of_children()) - child_data_offset(0);
 }
 
-unsigned char *NodeBase::path_data() noexcept
+unsigned char *Node::path_data() noexcept
 {
     return child_off_data() + number_of_children() * sizeof(uint16_t);
 }
 
-unsigned char const *NodeBase::path_data() const noexcept
+unsigned char const *Node::path_data() const noexcept
 {
     return child_off_data() + number_of_children() * sizeof(uint16_t);
 }
 
-unsigned NodeBase::path_nibbles_len() const noexcept
+unsigned Node::path_nibbles_len() const noexcept
 {
     MONAD_DEBUG_ASSERT(
         bitpacked.path_nibble_index_start <= path_nibble_index_end);
     return path_nibble_index_end - bitpacked.path_nibble_index_start;
 }
 
-bool NodeBase::has_path() const noexcept
+bool Node::has_path() const noexcept
 {
     return path_nibbles_len() > 0;
 }
 
-unsigned NodeBase::path_bytes() const noexcept
+unsigned Node::path_bytes() const noexcept
 {
     return (path_nibble_index_end + 1) / 2;
 }
 
-NibblesView NodeBase::path_nibble_view() const noexcept
+NibblesView Node::path_nibble_view() const noexcept
 {
     return NibblesView{
         bitpacked.path_nibble_index_start, path_nibble_index_end, path_data()};
 }
 
-unsigned NodeBase::path_start_nibble() const noexcept
+unsigned Node::path_start_nibble() const noexcept
 {
     return bitpacked.path_nibble_index_start;
 }
 
-unsigned char *NodeBase::value_data() noexcept
+unsigned char *Node::value_data() noexcept
 {
     return path_data() + path_bytes();
 }
 
-unsigned char const *NodeBase::value_data() const noexcept
+unsigned char const *Node::value_data() const noexcept
 {
     return path_data() + path_bytes();
 }
 
-bool NodeBase::has_value() const noexcept
+bool Node::has_value() const noexcept
 {
     return bitpacked.has_value;
 }
 
-byte_string_view NodeBase::value() const noexcept
+byte_string_view Node::value() const noexcept
 {
     MONAD_DEBUG_ASSERT(has_value());
     return {value_data(), value_len};
 }
 
-std::optional<byte_string_view> NodeBase::opt_value() const noexcept
+std::optional<byte_string_view> Node::opt_value() const noexcept
 {
     if (has_value()) {
         return value();
@@ -298,32 +297,32 @@ std::optional<byte_string_view> NodeBase::opt_value() const noexcept
     return std::nullopt;
 }
 
-unsigned char *NodeBase::data_data() noexcept
+unsigned char *Node::data_data() noexcept
 {
     return value_data() + value_len;
 }
 
-unsigned char const *NodeBase::data_data() const noexcept
+unsigned char const *Node::data_data() const noexcept
 {
     return value_data() + value_len;
 }
 
-byte_string_view NodeBase::data() const noexcept
+byte_string_view Node::data() const noexcept
 {
     return {data_data(), bitpacked.data_len};
 }
 
-unsigned char *NodeBase::child_data() noexcept
+unsigned char *Node::child_data() noexcept
 {
     return data_data() + bitpacked.data_len;
 }
 
-unsigned char const *NodeBase::child_data() const noexcept
+unsigned char const *Node::child_data() const noexcept
 {
     return data_data() + bitpacked.data_len;
 }
 
-byte_string_view NodeBase::child_data_view(unsigned const index) const noexcept
+byte_string_view Node::child_data_view(unsigned const index) const noexcept
 {
     MONAD_DEBUG_ASSERT(index < number_of_children());
     return byte_string_view{
@@ -331,49 +330,48 @@ byte_string_view NodeBase::child_data_view(unsigned const index) const noexcept
         static_cast<size_t>(child_data_len(index))};
 }
 
-unsigned char *NodeBase::child_data(unsigned const index) noexcept
+unsigned char *Node::child_data(unsigned const index) noexcept
 {
     MONAD_DEBUG_ASSERT(index < number_of_children());
     return child_data() + child_data_offset(index);
 }
 
-void NodeBase::set_child_data(
-    unsigned const index, byte_string_view data) noexcept
+void Node::set_child_data(unsigned const index, byte_string_view data) noexcept
 {
     // called after data_off array is calculated
     std::memcpy(child_data(index), data.data(), data.size());
 }
 
-unsigned char *NodeBase::next_data() noexcept
+unsigned char *Node::next_data() noexcept
 {
     return child_data() + child_data_offset(number_of_children());
 }
 
-unsigned char const *NodeBase::next_data() const noexcept
+unsigned char const *Node::next_data() const noexcept
 {
     return child_data() + child_data_offset(number_of_children());
 }
 
 // round up to 8-byte boundary
-unsigned char *NodeBase::next_data_aligned() noexcept
+unsigned char *Node::next_data_aligned() noexcept
 {
     return reinterpret_cast<unsigned char *>(
         round_up_align<3>(reinterpret_cast<uintptr_t>(next_data())));
 }
 
-unsigned char const *NodeBase::next_data_aligned() const noexcept
+unsigned char const *Node::next_data_aligned() const noexcept
 {
     return reinterpret_cast<unsigned char *>(
         round_up_align<3>(reinterpret_cast<uintptr_t>(next_data())));
 }
 
-uint32_t NodeBase::get_disk_size() const noexcept
+uint32_t Node::get_disk_size() const noexcept
 {
     MONAD_DEBUG_ASSERT(next_data() >= (unsigned char *)this);
     auto const node_disk_size =
         static_cast<uint32_t>(next_data() - (unsigned char *)this);
-    uint32_t const total_disk_size = node_disk_size + NodeBase::disk_size_bytes;
-    MONAD_DEBUG_ASSERT(total_disk_size <= NodeBase::max_disk_size);
+    uint32_t const total_disk_size = node_disk_size + Node::disk_size_bytes;
+    MONAD_DEBUG_ASSERT(total_disk_size <= Node::max_disk_size);
     return total_disk_size;
 }
 
@@ -412,35 +410,10 @@ Node::SharedPtr Node::move_next(unsigned const index) noexcept
 unsigned Node::get_mem_size() const noexcept
 {
     auto const *const end =
-        next_data_aligned() + sizeof(SharedPtr) * number_of_children();
+        next_data_aligned() + sizeof(Node::SharedPtr) * number_of_children();
     MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
     auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
-    MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
-    return mem_size;
-}
-
-void *CacheNode::next(size_t const index) const noexcept
-{
-    return unaligned_load<void *>(next_data_aligned() + index * sizeof(Node *));
-}
-
-void CacheNode::set_next(unsigned const index, void *const ptr) noexcept
-{
-    ptr ? memcpy(
-              next_data_aligned() + index * sizeof(Node *),
-              &ptr,
-              sizeof(void *))
-        : memset(
-              next_data_aligned() + index * sizeof(Node *), 0, sizeof(void *));
-}
-
-unsigned CacheNode::get_mem_size() const noexcept
-{
-    auto const *const end =
-        next_data_aligned() + sizeof(Node *) * number_of_children();
-    MONAD_DEBUG_ASSERT(end >= (unsigned char *)this);
-    auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
-    MONAD_DEBUG_ASSERT(mem_size <= NodeBase::max_size);
+    MONAD_DEBUG_ASSERT(mem_size <= Node::max_size);
     return mem_size;
 }
 

@@ -28,13 +28,12 @@ MONAD_MPT_NAMESPACE_BEGIN
 // Memory bounded node cache
 class NodeCache final
     : private static_lru_cache<
-          virtual_chunk_offset_t,
-          std::pair<std::shared_ptr<CacheNode>, unsigned>,
+          virtual_chunk_offset_t, std::pair<std::shared_ptr<Node>, unsigned>,
           virtual_chunk_offset_t_hasher>
 {
     // second in value is node size
     using Base = static_lru_cache<
-        virtual_chunk_offset_t, std::pair<std::shared_ptr<CacheNode>, unsigned>,
+        virtual_chunk_offset_t, std::pair<std::shared_ptr<Node>, unsigned>,
         virtual_chunk_offset_t_hasher>;
 
     size_t max_bytes_;
@@ -78,7 +77,7 @@ public:
 
     Map::iterator insert(
         virtual_chunk_offset_t const &virt_offset,
-        std::shared_ptr<CacheNode> const &sp) noexcept
+        std::shared_ptr<Node> const &sp) noexcept
     {
         MONAD_ASSERT(virt_offset != virtual_chunk_offset_t::invalid_value());
 

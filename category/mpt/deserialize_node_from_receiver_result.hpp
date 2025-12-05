@@ -53,20 +53,20 @@ namespace detail
         }
     }
 
-    template <class NodeType, class ResultType>
-    inline NodeType::SharedPtr deserialize_node_from_receiver_result(
+    template <class ResultType>
+    inline Node::SharedPtr deserialize_node_from_receiver_result(
         ResultType buffer_, uint16_t buffer_off,
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state)
     {
         MONAD_ASSERT(buffer_);
-        typename NodeType::SharedPtr node;
+        Node::SharedPtr node;
         if constexpr (std::is_same_v<
                           std::decay_t<ResultType>,
                           typename monad::async::read_single_buffer_sender::
                               result_type>) {
             auto &buffer = std::move(buffer_).assume_value().get();
             MONAD_ASSERT(buffer.size() > buffer_off);
-            node = deserialize_node_from_buffer<NodeType>(
+            node = deserialize_node_from_buffer(
                 (unsigned char *)buffer.data() + buffer_off,
                 buffer.size() - buffer_off);
             buffer.reset();
@@ -82,7 +82,7 @@ namespace detail
             MONAD_ASSERT(buffer.size() > buffer_off);
             // Did the Receiver forget to set lifetime_managed_internally?
             MONAD_DEBUG_ASSERT(io_state->lifetime_is_managed_internally());
-            node = deserialize_node_from_buffer<NodeType>(
+            node = deserialize_node_from_buffer(
                 (unsigned char *)buffer.data() + buffer_off,
                 buffer.size() - buffer_off);
         }

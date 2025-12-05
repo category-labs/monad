@@ -20,10 +20,12 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/variant.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/prestate_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -54,15 +56,15 @@ namespace trace
     }
 
     StorageDeltas StateDiffTracer::generate_storage_deltas(
-        Map<bytes32_t, bytes32_t> const &original,
-        Map<bytes32_t, bytes32_t> const &current)
+        AccountState::StorageMap const &original,
+        AccountState::StorageMap const &current)
     {
         StorageDeltas deltas{};
         for (auto const &[key, value] : current) {
-            auto const it = original.find(key);
-            MONAD_ASSERT(it != original.end());
-            if (value != it->second) {
-                deltas.emplace(key, std::make_pair(it->second, value));
+            auto const *it = original.find(key);
+            MONAD_ASSERT(it != nullptr);
+            if (value != *it) {
+                deltas.emplace(key, std::make_pair(*it, value));
             }
         }
         return deltas;
@@ -81,10 +83,12 @@ namespace trace
 
             // Possible diff.
             auto const &current_account_state = current_stack.recent();
-            auto const &current_account = current_account_state.account_;
+            auto const &current_account =
+                get_account_for_trace(current_account_state);
             auto const &current_storage = current_account_state.storage_;
             auto const &original_account_state = it->second;
-            auto const &original_account = original_account_state.account_;
+            auto const &original_account =
+                get_account_for_trace(original_account_state);
             auto const &original_storage = original_account_state.storage_;
 
             // Nothing to do if the account has been created and destructed
@@ -107,23 +111,88 @@ namespace trace
         state_deltas_to_json(state_deltas, state, storage_);
     }
 
-    void run_tracer(StateTracer const &tracer, State &state)
+    AccessListTracer::AccessListTracer(
+        nlohmann::json &storage, Address const &sender,
+        Address const &beneficiary, std::optional<Address> const &to,
+        std::span<std::optional<Address> const> const authorities)
+        : storage_(storage)
     {
-        if (std::holds_alternative<PrestateTracer>(tracer)) {
-            PrestateTracer prestate = std::get<PrestateTracer>(tracer);
-            prestate.encode(state.original(), state);
-            return;
+        excluded_addresses_.insert(sender);
+        excluded_addresses_.insert(beneficiary);
+
+        if (to.has_value()) {
+            excluded_addresses_.insert(*to);
         }
 
-        if (std::holds_alternative<StateDiffTracer>(tracer)) {
-            StateDiffTracer statediff = std::get<StateDiffTracer>(tracer);
-            statediff.encode(statediff.trace(state), state);
-            return;
+        for (auto const &authority : authorities) {
+            if (authority.has_value()) {
+                excluded_addresses_.insert(*authority);
+            }
         }
     }
 
+    template <Traits traits>
+    void AccessListTracer::encode(State &state)
+    {
+        auto access_list = json::array();
+        for (auto const &[address, current_stack] : state.current()) {
+            auto keys = json::array();
+            auto const &current_account_state = current_stack.recent();
+            for (auto const &key :
+                 current_account_state.get_accessed_storage()) {
+                keys.push_back(bytes_to_hex(key.bytes));
+            }
+
+            // If an address is excluded because it's always considered warm, we
+            // still want to include it in the access list if it's had storage
+            // keys set by this transaction.
+            auto const exclude =
+                keys.empty() && should_exclude_address<traits>(address);
+
+            if (!exclude) {
+                access_list.push_back(json::object({
+                    {"address", bytes_to_hex(address.bytes)},
+                    {"storageKeys", std::move(keys)},
+                }));
+            }
+        }
+
+        storage_ = std::move(access_list);
+    }
+
+    EXPLICIT_TRAITS_MEMBER(AccessListTracer::encode);
+
+    template <Traits traits>
+    bool AccessListTracer::should_exclude_address(Address const &addr) const
+    {
+        return excluded_addresses_.contains(addr) ||
+               is_precompile<traits>(addr);
+    }
+
+    EXPLICIT_TRAITS_MEMBER(AccessListTracer::should_exclude_address);
+
+    template <Traits traits>
+    void run_tracer(StateTracer &tracer, State &state)
+    {
+        return std::visit(
+            overloaded{
+                [](std::monostate) {},
+                [&state](PrestateTracer &prestate) {
+                    prestate.encode(state.original(), state);
+                },
+                [&state](StateDiffTracer &statediff) {
+                    statediff.encode(statediff.trace(state), state);
+                },
+                [&state](AccessListTracer &access_list) {
+                    access_list.encode<traits>(state);
+                }},
+            tracer);
+    }
+
+    EXPLICIT_TRAITS(run_tracer);
+
     // Json serialization
-    json storage_to_json(Map<bytes32_t, bytes32_t> const &storage)
+    json storage_to_json(AccountState::StorageMap const &storage)
     {
         json res = json::object();
         for (auto const &[key, value] : storage) {
@@ -158,11 +227,11 @@ namespace trace
         return res;
     }
 
-    json account_state_to_json(OriginalAccountState const &as, State &state)
+    json PrestateTracer::account_state_to_json(
+        OriginalAccountState const &as, State &state)
     {
-        auto const &account = as.account_;
+        auto const &account = get_account_for_trace(as);
         auto const &storage = as.storage_;
-
         json res = account_to_json(account, state);
         if (!storage.empty() && account.has_value()) {
             res["storage"] = storage_to_json(storage);
@@ -170,7 +239,7 @@ namespace trace
         return res;
     }
 
-    void state_to_json(
+    void PrestateTracer::state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
         json &result)
     {
@@ -185,12 +254,25 @@ namespace trace
         }
     }
 
-    json
-    state_to_json(Map<Address, OriginalAccountState> const &trace, State &state)
+    json PrestateTracer::state_to_json(
+        Map<Address, OriginalAccountState> const &trace, State &state)
     {
         json result = json::object();
         state_to_json(trace, state, result);
         return result;
+    }
+
+    void state_to_json(
+        Map<Address, OriginalAccountState> const &trace, State &state,
+        json &result)
+    {
+        PrestateTracer::state_to_json(trace, state, result);
+    }
+
+    json
+    state_to_json(Map<Address, OriginalAccountState> const &trace, State &state)
+    {
+        return PrestateTracer::state_to_json(trace, state);
     }
 
     void state_deltas_to_json(

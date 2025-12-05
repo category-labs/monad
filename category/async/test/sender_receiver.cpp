@@ -27,11 +27,8 @@
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
 #include <category/async/sender_errc.hpp>
-#include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
-#include <category/core/io/buffers.hpp>
-#include <category/core/io/ring.hpp>
 #include <category/core/small_prng.hpp>
 
 #include <boost/fiber/fiber.hpp>
@@ -49,7 +46,6 @@
 #include <boost/outcome/coroutine_support.hpp>
 
 #include <array>
-#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <coroutine>
@@ -57,12 +53,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
-#include <future>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <ostream>
-#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -197,7 +191,8 @@ TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
 
     std::byte *buffer =
         (std::byte *)aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE * 4);
-    auto unbuffer = monad::make_scope_exit([&]() noexcept { free(buffer); });
+    auto const unbuffer =
+        monad::make_scope_exit([&]() noexcept { free(buffer); });
     std::vector<read_multiple_buffer_sender::buffer_type> inbuffers;
     inbuffers.emplace_back(buffer + 0, DISK_PAGE_SIZE);
     inbuffers.emplace_back(buffer + DISK_PAGE_SIZE, DISK_PAGE_SIZE);
@@ -311,7 +306,7 @@ TEST_F(AsyncIO, completion_handler_sender_receiver)
     using namespace MONAD_ASYNC_NAMESPACE;
     read_single_buffer_operation_states_<completion_handler_io_receiver> states(
         shared_state_().get(), MAX_CONCURRENCY);
-    auto begin = std::chrono::steady_clock::now();
+    auto const begin = std::chrono::steady_clock::now();
     auto end = begin;
     states.initiate();
     for (; end - begin < std::chrono::seconds(5);
@@ -320,7 +315,7 @@ TEST_F(AsyncIO, completion_handler_sender_receiver)
     }
     states.stop();
     end = std::chrono::steady_clock::now();
-    auto diff =
+    auto const diff =
         std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
     std::cout << "Did "
               << (1000.0 * states.count() / static_cast<double>(diff.count()))
@@ -353,7 +348,7 @@ struct cpp_suspend_resume_io_receiver
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *rawstate,
         MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type buffer)
     {
-        MONAD_DEBUG_ASSERT(!res.has_value());
+        MONAD_ASSERT(!res.has_value());
         res = {rawstate, std::move(buffer)};
         _h.resume();
     }
@@ -373,13 +368,13 @@ struct cpp_suspend_resume_io_receiver
 
     void await_suspend(std::coroutine_handle<> h)
     {
-        MONAD_DEBUG_ASSERT(!res.has_value());
+        MONAD_ASSERT(!res.has_value());
         _h = h;
     }
 
     result_type await_resume()
     {
-        MONAD_DEBUG_ASSERT(res.has_value());
+        MONAD_ASSERT(res.has_value());
         auto ret = std::move(res).value();
         res.reset();
         return ret;
@@ -394,7 +389,7 @@ TEST_F(AsyncIO, cpp_coroutine_sender_receiver)
     using namespace MONAD_ASYNC_NAMESPACE;
     read_single_buffer_operation_states_<cpp_suspend_resume_io_receiver> states(
         shared_state_().get(), MAX_CONCURRENCY);
-    auto begin = std::chrono::steady_clock::now();
+    auto const begin = std::chrono::steady_clock::now();
     auto end = begin;
     auto coroutine = [&](cpp_suspend_resume_io_receiver &receiver)
         -> BOOST_OUTCOME_V2_NAMESPACE::awaitables::eager<void> {
@@ -424,7 +419,7 @@ TEST_F(AsyncIO, cpp_coroutine_sender_receiver)
     states.stop();
     awaitables.clear();
     end = std::chrono::steady_clock::now();
-    auto diff =
+    auto const diff =
         std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
     std::cout << "Did "
               << (1000.0 * static_cast<double>(states.count()) /
@@ -467,7 +462,7 @@ TEST_F(AsyncIO, fiber_sender_receiver)
     using namespace MONAD_ASYNC_NAMESPACE;
     read_single_buffer_operation_states_<fiber_suspend_resume_io_receiver>
         states(shared_state_().get(), MAX_CONCURRENCY);
-    auto begin = std::chrono::steady_clock::now();
+    auto const begin = std::chrono::steady_clock::now();
     auto end = begin;
     auto fiber = [&](fiber_suspend_resume_io_receiver *receiver) {
         for (;;) {
@@ -497,7 +492,7 @@ TEST_F(AsyncIO, fiber_sender_receiver)
     }
     fibers.clear();
     end = std::chrono::steady_clock::now();
-    auto diff =
+    auto const diff =
         std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
     std::cout << "Did "
               << (1000.0 * static_cast<double>(states.count()) /
@@ -697,6 +692,7 @@ TEST_F(AsyncIO, immediate_completion_decays_to_bytes_transferred)
             std::monostate, size_t, filled_read_buffer, filled_write_buffer>
             payload_to_immediately_complete;
 
+        // NOLINTNEXTLINE(bugprone-exception-escape): `std::visit` won't throw
         result<void> operator()(erased_connected_operation *) noexcept
         {
             return std::visit(
@@ -784,6 +780,7 @@ TEST_F(AsyncIO, immediate_completion_decays_to_void)
             std::monostate, size_t, filled_read_buffer, filled_write_buffer>
             payload_to_immediately_complete;
 
+        // NOLINTNEXTLINE(bugprone-exception-escape): `std::visit` won't throw
         result<void> operator()(erased_connected_operation *) noexcept
         {
             return std::visit(

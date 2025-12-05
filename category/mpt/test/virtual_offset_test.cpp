@@ -13,8 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/unordered_map.hpp>
 #include <category/mpt/util.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <gtest/gtest.h>
 

@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
@@ -39,6 +39,7 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/PassManager.h>
 #include <llvm/IR/Type.h>
@@ -48,6 +49,7 @@
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 
@@ -79,9 +81,30 @@ namespace monad::vm::llvm
             }
         };
 
+        void set_contract_addr_from_disk(std::string_view fn)
+        {
+            auto ObjectBuffer = MemoryBuffer::getFile(fn);
+            MONAD_VM_ASSERT(ObjectBuffer);
+            ExitOnErr(lljit->addObjectFile(std::move(*ObjectBuffer)));
+            JITDylib &jd = lljit->getMainJITDylib();
+
+            MONAD_VM_ASSERT(!jd.define(absoluteSymbols(opcode_syms)));
+
+            Expected<ExecutorAddr> expected_contract_addr =
+                lljit->lookup("contract");
+
+            if (auto err = expected_contract_addr.takeError()) {
+                errs() << "error:" << toString(std::move(err)) << '\n';
+            }
+
+            contract_addr = reinterpret_cast<void (*)()>(
+                expected_contract_addr->getValue());
+        };
+
         void set_contract_addr(std::string const &dbg_nm = "")
         {
             debug_on = dbg_nm != "";
+
             LoopAnalysisManager LAM;
             FunctionAnalysisManager FAM;
             CGSCCAnalysisManager CGAM;
@@ -109,9 +132,13 @@ namespace monad::vm::llvm
                     dump_module(dbg_nm + "_opt.ll");
                 }
                 std::string const nm = dbg_nm + ".jit";
-                ObjectTransformLayer &otl = lljit->getObjTransformLayer();
-                DumpObjects const dumpobjs = DumpObjects("", nm);
-                otl.setTransform(dumpobjs);
+
+                std::string const nm_obj = nm + ".o";
+                if (!std::filesystem::exists(nm_obj)) {
+                    ObjectTransformLayer &otl = lljit->getObjTransformLayer();
+                    DumpObjects const dumpobjs = DumpObjects("", nm);
+                    otl.setTransform(dumpobjs);
+                }
             }
 
             JITDylib &jd = lljit->getMainJITDylib();
@@ -120,8 +147,8 @@ namespace monad::vm::llvm
 
             if (!do_optimize) {
                 MONAD_VM_ASSERT(
-                    verifyModule(*llvm_module)); // BAL: this fails when O2 and
-                                                 // O3 are applied.  Why?
+                    verifyModule(*llvm_module)); // this fails when O2 and O3
+                                                 // are applied.  Why?
             }
 
             ThreadSafeModule tsm(
@@ -164,22 +191,28 @@ namespace monad::vm::llvm
             ir.CreateCall(f, args);
         };
 
-        Value *call(Function *f, std::vector<Value *> const &args)
+        Value *
+        call(Function *f, std::vector<Value *> const &args, std::string_view nm)
         {
-            return ir.CreateCall(f, args, "r");
+            return ir.CreateCall(f, args, nm);
         };
 
         void insert_symbol(std::string const &nm, void const *f)
         {
             JITTargetAddress const jit_addr = pointerToJITTargetAddress(f);
-            auto esd = ExecutorSymbolDef(
+            auto const esd = ExecutorSymbolDef(
                 ExecutorAddr(jit_addr), JITSymbolFlags::Callable);
             opcode_syms.insert({mangle(nm), esd});
         }
 
+        BasicBlock *get_insert()
+        {
+            return ir.GetInsertBlock();
+        };
+
         void save_insert()
         {
-            auto *lbl = ir.GetInsertBlock();
+            auto *lbl = get_insert();
             insert_lbls.push_back(lbl);
         };
 
@@ -195,9 +228,10 @@ namespace monad::vm::llvm
             insert_lbls.pop_back();
         };
 
-        Value *gep(Type *ty, Value *v, Value *const offset, std::string_view nm)
+        Value *
+        gep(Type *ty, Value *v, ArrayRef<Value *> idxs, std::string_view nm)
         {
-            return ir.CreateInBoundsGEP(ty, v, {offset}, nm);
+            return ir.CreateInBoundsGEP(ty, v, idxs, nm);
         }
 
         void store(Value *v, Value *p)
@@ -223,7 +257,7 @@ namespace monad::vm::llvm
         void comment(std::string const &s)
         {
             Value *v = no_op();
-            Instruction *instr = dyn_cast<Instruction>(v);
+            ::llvm::Instruction *instr = dyn_cast<::llvm::Instruction>(v);
             MDString *comment_str = MDString::get(context, "comment");
             MDNode *comment_node = MDNode::get(context, comment_str);
 
@@ -237,6 +271,26 @@ namespace monad::vm::llvm
             instr->setMetadata(sanitized, comment_node);
         }
 
+        PHINode *phi(Type *ty)
+        {
+            return ir.CreatePHI(ty, 0, "phi");
+        }
+
+        void phi_add_incoming(PHINode *v, Value *val, BasicBlock *lbl)
+        {
+            v->addIncoming(val, lbl);
+        }
+
+        IndirectBrInst *indirectbr(Value *addr)
+        {
+            return ir.CreateIndirectBr(addr, 0);
+        }
+
+        void indirect_br_add_dest(IndirectBrInst *r, BasicBlock *lbl)
+        {
+            r->addDestination(lbl);
+        }
+
         void br(BasicBlock *blk)
         {
             ir.CreateBr(blk);
@@ -248,7 +302,7 @@ namespace monad::vm::llvm
                 bswap_f = ::llvm::Intrinsic::getDeclaration(
                     &m, ::llvm::Intrinsic::bswap, {word_ty});
             }
-            return call(bswap_f, {val});
+            return call(bswap_f, {val}, "bswap");
         };
 
         Value *addr_to_word(Value *val)
@@ -256,9 +310,23 @@ namespace monad::vm::llvm
             return shr(bswap(cast_word(val)), lit_word(96));
         };
 
-        void condbr(Value *pred, BasicBlock *then_lbl, BasicBlock *else_lbl)
+        Value *select(Value *cond, Value *a, Value *b)
         {
-            ir.CreateCondBr(pred, then_lbl, else_lbl);
+            return ir.CreateSelect(cond, a, b, "select");
+        };
+
+        void condbr(
+            Value *pred, BasicBlock *then_lbl, BasicBlock *else_lbl,
+            bool predict_true)
+        {
+            MDNode *weights;
+            if (predict_true) {
+                weights = MDBuilder(context).createLikelyBranchWeights();
+            }
+            else {
+                weights = MDBuilder(context).createUnlikelyBranchWeights();
+            }
+            ir.CreateCondBr(pred, then_lbl, else_lbl, weights);
         };
 
         SwitchInst *switch_(Value *v, BasicBlock *dflt, unsigned n)
@@ -274,6 +342,16 @@ namespace monad::vm::llvm
         Value *cast_bool(Value *a)
         {
             return ir.CreateIntCast(a, int_ty(1), false, "cast_bool");
+        };
+
+        Value *cast_32(Value *a)
+        {
+            return ir.CreateIntCast(a, int_ty(32), false, "cast_32");
+        };
+
+        Value *cast_64(Value *a)
+        {
+            return ir.CreateIntCast(a, int_ty(64), false, "cast_64");
         };
 
         Value *not_(Value *a)
@@ -394,6 +472,16 @@ namespace monad::vm::llvm
             return ir.CreateICmpUGT(a, b, "ugt");
         };
 
+        Value *uge(Value *a, Value *b)
+        {
+            return ir.CreateICmpUGE(a, b, "uge");
+        };
+
+        Value *ule(Value *a, Value *b)
+        {
+            return ir.CreateICmpULE(a, b, "ule");
+        };
+
         Value *ult(Value *a, Value *b)
         {
             return ir.CreateICmpULT(a, b, "ult");
@@ -424,6 +512,21 @@ namespace monad::vm::llvm
             return u64(static_cast<uint64_t>(x));
         };
 
+        Constant *u32(uint32_t x)
+        {
+            return ConstantInt::get(int_ty(32), x);
+        };
+
+        Constant *i32(int32_t x)
+        {
+            return u32(static_cast<uint32_t>(x));
+        };
+
+        Constant *bool_(bool x)
+        {
+            return ConstantInt::get(bool_ty, x);
+        };
+
         ConstantInt *lit_word(uint256_t x)
         {
             std::array<uint64_t, 4> const words{
@@ -439,8 +542,8 @@ namespace monad::vm::llvm
             std::string_view nm, Type *ty, std::vector<Type *> const &tys,
             bool is_external)
         {
-            auto linkage = is_external ? Function::ExternalLinkage
-                                       : Function::InternalLinkage;
+            auto const linkage = is_external ? Function::ExternalLinkage
+                                             : Function::InternalLinkage;
             auto *fty = FunctionType::get(ty, tys, false);
             return Function::Create(fty, linkage, nm, m);
         }
@@ -449,7 +552,7 @@ namespace monad::vm::llvm
         function_definition_params(Function *f, std::vector<Type *> const &tys)
         {
             std::vector<Value *> params;
-            auto args = f->args();
+            auto const args = f->args();
             auto *arg_iter = args.begin();
 
             for (size_t i = 0; i < tys.size(); ++i) {
@@ -465,7 +568,7 @@ namespace monad::vm::llvm
             std::string_view nm, Type *ty, std::vector<Type *> const &tys)
         {
             Function *f = declare_function(nm, ty, tys, false);
-            auto params = function_definition_params(f, tys);
+            auto const params = function_definition_params(f, tys);
 
             return std::make_tuple(f, params);
         }
@@ -475,7 +578,7 @@ namespace monad::vm::llvm
             std::string_view nm, Type *ty, std::vector<Type *> const &tys)
         {
             Function *f = declare_function(nm, ty, tys, true);
-            auto params = function_definition_params(f, tys);
+            auto const params = function_definition_params(f, tys);
             return std::make_tuple(f, params);
         }
 
@@ -483,6 +586,28 @@ namespace monad::vm::llvm
         {
             return BasicBlock::Create(context, nm, fun);
         };
+
+        ArrayType *array_ty(Type *ty, uint64_t sz)
+        {
+            return ArrayType::get(ty, sz);
+        }
+
+        GlobalVariable *
+        const_array(std::vector<Constant *> const vals, std::string_view nm)
+        {
+            MONAD_VM_ASSERT(vals.size() > 0);
+
+            Type *ty = vals[0]->getType();
+            ArrayType *arr_ty = array_ty(ty, vals.size());
+            Constant *arr = ConstantArray::get(arr_ty, vals);
+            return new GlobalVariable(
+                m, arr_ty, true, GlobalValue::InternalLinkage, arr, nm);
+        }
+
+        BlockAddress *block_address(BasicBlock *blk)
+        {
+            return BlockAddress::get(blk);
+        }
 
     private:
         std::unique_ptr<LLVMContext> llvm_context =
@@ -518,6 +643,7 @@ namespace monad::vm::llvm
         void (*contract_addr)() = nullptr;
 
         Type *word_ty = int_ty(256);
+        Type *bool_ty = int_ty(1);
         Type *addr_ty = int_ty(160);
         Type *void_ty = ir.getVoidTy();
     };

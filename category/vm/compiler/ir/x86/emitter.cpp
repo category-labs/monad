@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -24,7 +25,6 @@
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 #include <category/vm/utils/debug.hpp>
 
 #include <asmjit/core/api-config.h>
@@ -34,6 +34,8 @@
 #include <asmjit/core/jitruntime.h>
 #include <asmjit/core/operand.h>
 #include <asmjit/x86/x86operand.h>
+
+#include <evmc/evmc.h>
 
 #include <algorithm>
 #include <array>
@@ -269,9 +271,8 @@ namespace monad::vm::compiler::native
             return "StackOffset";
         case Emitter::LocationType::Literal:
             return "Literal";
-        default:
-            MONAD_VM_ASSERT(false);
         }
+        return ""; // unreachable
     }
 
     template <size_t N>
@@ -452,7 +453,7 @@ namespace monad::vm::compiler::native
             !result_arg_.has_value() || result_arg_ != remaining_gas_arg_);
 
         for (size_t a = 0, i = 0; i < arg_count_; ++i) {
-            auto u = std::optional{i};
+            auto const u = std::optional{i};
             if (u == context_arg_ || u == result_arg_ ||
                 u == remaining_gas_arg_) {
                 continue;
@@ -591,7 +592,7 @@ namespace monad::vm::compiler::native
         , as_{init_code_holder(rt, config.asm_log_path)}
         , epilogue_label_{as_.newNamedLabel("ContractEpilogue")}
         , error_label_{as_.newNamedLabel("Error")}
-        , jump_table_label_{as_.newNamedLabel("JumpTable")}
+        , jump_table_label_{std::nullopt}
         , keep_stack_in_next_block_{}
         , gpq256_regs_{Gpq256{x86::r12, x86::r13, x86::r14, x86::r15}, Gpq256{x86::r8, x86::r9, x86::r10, x86::r11}, Gpq256{x86::rcx, x86::rsi, x86::rdx, x86::rdi}}
         , bytecode_size_{codesize}
@@ -642,29 +643,32 @@ namespace monad::vm::compiler::native
         // relative label distance ourselves, instead of asmjit doing the
         // same calculation again and again for `as_.embedLabelDelta`.
         as_.align(asmjit::AlignMode::kData, 4);
-        as_.bind(jump_table_label_);
-        int32_t const error_offset = [&] {
-            int64_t const x = std::bit_cast<int64_t>(
-                code_holder_.labelOffset(error_label_) -
-                code_holder_.labelOffset(jump_table_label_));
-            MONAD_VM_DEBUG_ASSERT(
-                x <= std::numeric_limits<int32_t>::max() &&
-                x >= std::numeric_limits<int32_t>::min());
-            return static_cast<int32_t>(x);
-        }();
-        size_t error_offset_repeat_count = 0;
-        for (size_t bid = 0; bid < *bytecode_size_; ++bid) {
-            auto lbl = jump_dests_.find(bid);
-            if (lbl != jump_dests_.end()) {
-                as_.embedInt32(error_offset, error_offset_repeat_count);
-                error_offset_repeat_count = 0;
-                as_.embedLabelDelta(lbl->second, jump_table_label_, 4);
+        if (jump_table_label_) {
+            as_.bind(jump_table_label_.value());
+            int32_t const error_offset = [&] {
+                int64_t const x = std::bit_cast<int64_t>(
+                    code_holder_.labelOffset(error_label_) -
+                    code_holder_.labelOffset(jump_table_label_.value()));
+                MONAD_VM_DEBUG_ASSERT(
+                    x <= std::numeric_limits<int32_t>::max() &&
+                    x >= std::numeric_limits<int32_t>::min());
+                return static_cast<int32_t>(x);
+            }();
+            size_t error_offset_repeat_count = 0;
+            for (size_t bid = 0; bid < *bytecode_size_; ++bid) {
+                auto const lbl = jump_dests_.find(bid);
+                if (lbl != jump_dests_.end()) {
+                    as_.embedInt32(error_offset, error_offset_repeat_count);
+                    error_offset_repeat_count = 0;
+                    as_.embedLabelDelta(
+                        lbl->second, jump_table_label_.value(), 4);
+                }
+                else {
+                    ++error_offset_repeat_count;
+                }
             }
-            else {
-                ++error_offset_repeat_count;
-            }
+            as_.embedInt32(error_offset, error_offset_repeat_count);
         }
-        as_.embedInt32(error_offset, error_offset_repeat_count);
 
         static char const *const ro_section_name = "ro";
         static auto const ro_section_name_len = 2;
@@ -698,7 +702,7 @@ namespace monad::vm::compiler::native
         }
 
         entrypoint_t contract_main;
-        auto err = rt.add(&contract_main, &code_holder_);
+        auto const err = rt.add(&contract_main, &code_holder_);
         if (err != asmjit::kErrorOk) {
             fail_with_error(err);
         }
@@ -762,9 +766,9 @@ namespace monad::vm::compiler::native
 
     void Emitter::runtime_print_gas_remaining(std::string const &msg)
     {
-        auto msg_lbl = as_.newLabel();
+        auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto fn_mem =
+        auto const fn_mem =
             rodata_.add_external_function(runtime_print_gas_remaining_impl);
 
         discharge_deferred_comparison();
@@ -777,9 +781,9 @@ namespace monad::vm::compiler::native
 
     void Emitter::runtime_print_input_stack(std::string const &msg)
     {
-        auto msg_lbl = as_.newLabel();
+        auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto fn_mem =
+        auto const fn_mem =
             rodata_.add_external_function(runtime_print_input_stack_impl);
 
         discharge_deferred_comparison();
@@ -810,7 +814,7 @@ namespace monad::vm::compiler::native
 
         checked_debug_comment("Store stack in transient storage");
 
-        auto fn_mem =
+        auto const fn_mem =
             rodata_.add_external_function(runtime_store_input_stack_impl);
 
         discharge_deferred_comparison();
@@ -837,7 +841,7 @@ namespace monad::vm::compiler::native
 
         as_.add(x86::rsp, current_stack_size * 32);
 
-        auto skip_lbl = as_.newLabel();
+        auto const skip_lbl = as_.newLabel();
         as_.test(x86::eax, x86::eax);
         as_.jz(skip_lbl);
 
@@ -858,16 +862,17 @@ namespace monad::vm::compiler::native
 
     void Emitter::runtime_print_top2(std::string const &msg)
     {
-        auto msg_lbl = as_.newLabel();
+        auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto fn_mem = rodata_.add_external_function(runtime_print_top2_impl);
+        auto const fn_mem =
+            rodata_.add_external_function(runtime_print_top2_impl);
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
 
         as_.lea(x86::rdi, x86::qword_ptr(msg_lbl));
 
-        auto e1 = stack_.get(stack_.top_index());
+        auto const e1 = stack_.get(stack_.top_index());
         if (!e1->stack_offset() && !e1->literal()) {
             mov_stack_elem_to_stack_offset(e1);
         }
@@ -878,7 +883,7 @@ namespace monad::vm::compiler::native
             auto const m = rodata_.add_literal(e1->literal().value());
             as_.lea(x86::rsi, m);
         }
-        auto e2 = stack_.get(stack_.top_index() - 1);
+        auto const e2 = stack_.get(stack_.top_index() - 1);
         if (!e2->stack_offset() && !e2->literal()) {
             mov_stack_elem_to_stack_offset(e2);
         }
@@ -895,16 +900,17 @@ namespace monad::vm::compiler::native
 
     void Emitter::runtime_print_top1(std::string const &msg)
     {
-        auto msg_lbl = as_.newLabel();
+        auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto fn_mem = rodata_.add_external_function(runtime_print_top1_impl);
+        auto const fn_mem =
+            rodata_.add_external_function(runtime_print_top1_impl);
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
 
         as_.lea(x86::rdi, x86::qword_ptr(msg_lbl));
 
-        auto e1 = stack_.get(stack_.top_index());
+        auto const e1 = stack_.get(stack_.top_index());
         if (!e1->stack_offset() && !e1->literal()) {
             mov_stack_elem_to_stack_offset(e1);
         }
@@ -989,8 +995,8 @@ namespace monad::vm::compiler::native
     {
         char name[2 * sizeof(byte_offset) + 2];
         static_assert(sizeof(byte_offset) <= sizeof(long));
-        auto isize = snprintf(name, sizeof(name), "B%lx", d);
-        auto size = static_cast<size_t>(isize);
+        auto const isize = snprintf(name, sizeof(name), "B%lx", d);
+        auto const size = static_cast<size_t>(isize);
         MONAD_VM_DEBUG_ASSERT(size < sizeof(name));
         jump_dests_.emplace(d, as_.newNamedLabel(name, size));
     }
@@ -1170,7 +1176,7 @@ namespace monad::vm::compiler::native
                 return alloc_general_reg();
             }
         }
-        auto r = stack_.release_general_reg(std::move(elem));
+        auto const r = stack_.release_general_reg(std::move(elem));
         return {r, GeneralRegReserv{r}};
     }
 
@@ -1186,7 +1192,7 @@ namespace monad::vm::compiler::native
                 return alloc_avx_reg();
             }
         }
-        auto r = stack_.release_avx_reg(std::move(elem));
+        auto const r = stack_.release_avx_reg(std::move(elem));
         return {r, AvxRegReserv{r}};
     }
 
@@ -1285,7 +1291,7 @@ namespace monad::vm::compiler::native
         bool const keep_stack = keep_stack_in_next_block_;
         keep_stack_in_next_block_ = false;
 
-        auto it = jump_dests_.find(b.offset);
+        auto const it = jump_dests_.find(b.offset);
         if (it != jump_dests_.end()) {
             as_.bind(it->second);
         }
@@ -1323,7 +1329,7 @@ namespace monad::vm::compiler::native
     {
         auto const delta = stack_.delta();
         if (delta != 0) {
-            auto ssm = x86::qword_ptr(x86::rsp, sp_offset_stack_size);
+            auto const ssm = x86::qword_ptr(x86::rsp, sp_offset_stack_size);
             if constexpr (preserve_eflags) {
                 as_.mov(x86::rax, ssm);
                 as_.lea(x86::rax, x86::ptr(x86::rax, delta));
@@ -1414,7 +1420,7 @@ namespace monad::vm::compiler::native
         // of dependencies of all the stack elements on the stack.
         std::unordered_map<StackElem *, int32_t> dep_counts;
         for (int32_t i = min_delta; i <= top_index; ++i) {
-            auto d = stack_.get(i);
+            auto const d = stack_.get(i);
 
             MONAD_VM_DEBUG_ASSERT(
                 d->general_reg().has_value() || d->avx_reg().has_value() ||
@@ -1482,7 +1488,7 @@ namespace monad::vm::compiler::native
                 }
                 else {
                     MONAD_VM_DEBUG_ASSERT(d->general_reg().has_value());
-                    auto m = stack_offset_to_mem(StackOffset{*it});
+                    auto const m = stack_offset_to_mem(StackOffset{*it});
                     // Move to final stack offset:
                     mov_general_reg_to_mem(*d->general_reg(), m);
                     // Point to next stack offset:
@@ -1608,12 +1614,12 @@ namespace monad::vm::compiler::native
         if (!stack_.has_deferred_comparison()) {
             return;
         }
-        auto dc = stack_.discharge_deferred_comparison();
+        auto const dc = stack_.discharge_deferred_comparison();
         if (dc.stack_elem) {
             discharge_deferred_comparison(dc.stack_elem, dc.comparison());
         }
         if (dc.negated_stack_elem) {
-            auto comp = negate_comparison(dc.comparison());
+            auto const comp = negate_comparison(dc.comparison());
             discharge_deferred_comparison(dc.negated_stack_elem, comp);
         }
     }
@@ -1638,7 +1644,7 @@ namespace monad::vm::compiler::native
             !elem->general_reg() && !elem->avx_reg() && !elem->literal() &&
             !elem->stack_offset());
         insert_avx_reg_without_reserv(*elem);
-        auto x = avx_reg_to_xmm(*elem->avx_reg());
+        auto const x = avx_reg_to_xmm(*elem->avx_reg());
         switch (comp) {
         case Comparison::Below:
             as_.setb(x86::al);
@@ -1836,7 +1842,7 @@ namespace monad::vm::compiler::native
         else {
             MONAD_VM_DEBUG_ASSERT(elem->stack_offset().has_value());
             auto [t, reserv] = alloc_avx_reg();
-            auto ymm = avx_reg_to_ymm(*t->avx_reg());
+            auto const ymm = avx_reg_to_ymm(*t->avx_reg());
             as_.vmovaps(ymm, stack_offset_to_mem(*elem->stack_offset()));
             as_.vmovups(mem, ymm);
         }
@@ -2052,13 +2058,13 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(elem->general_reg().has_value());
         Gpq256 const &gpq = general_reg_to_gpq256(*elem->general_reg());
-        auto reserv0 = insert_avx_reg(elem);
-        auto elem_avx = *elem->avx_reg();
-        auto xmm0 = avx_reg_to_xmm(elem_avx);
-        auto ymm0 = avx_reg_to_ymm(elem_avx);
+        auto const reserv0 = insert_avx_reg(elem);
+        auto const elem_avx = *elem->avx_reg();
+        auto const xmm0 = avx_reg_to_xmm(elem_avx);
+        auto const ymm0 = avx_reg_to_ymm(elem_avx);
 
         auto [temp_reg, reserv1] = alloc_avx_reg();
-        auto xmm1 = avx_reg_to_xmm(*temp_reg->avx_reg());
+        auto const xmm1 = avx_reg_to_xmm(*temp_reg->avx_reg());
 
         as_.vmovq(xmm0, gpq[0]);
         as_.vmovq(xmm1, gpq[2]);
@@ -2070,14 +2076,14 @@ namespace monad::vm::compiler::native
     void Emitter::mov_literal_to_avx_reg(StackElemRef elem)
     {
         MONAD_VM_DEBUG_ASSERT(elem->literal().has_value());
-        auto reserv = insert_avx_reg(elem);
+        auto const reserv = insert_avx_reg(elem);
         mov_literal_to_ymm(*elem->literal(), avx_reg_to_ymm(*elem->avx_reg()));
     }
 
     void Emitter::mov_stack_offset_to_avx_reg(StackElemRef elem)
     {
         MONAD_VM_DEBUG_ASSERT(elem->stack_offset().has_value());
-        auto reserv = insert_avx_reg(elem);
+        auto const reserv = insert_avx_reg(elem);
         as_.vmovaps(
             avx_reg_to_ymm(*elem->avx_reg()),
             stack_offset_to_mem(*elem->stack_offset()));
@@ -2094,7 +2100,7 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(elem->avx_reg().has_value());
         stack_.insert_stack_offset(elem, preferred);
-        auto y = avx_reg_to_ymm(*elem->avx_reg());
+        auto const y = avx_reg_to_ymm(*elem->avx_reg());
         as_.vmovaps(stack_offset_to_mem(*elem->stack_offset()), y);
     }
 
@@ -2156,7 +2162,7 @@ namespace monad::vm::compiler::native
     void Emitter::mov_literal_to_general_reg(StackElemRef elem)
     {
         MONAD_VM_DEBUG_ASSERT(elem->literal().has_value());
-        auto reserv = insert_general_reg(elem);
+        auto const reserv = insert_general_reg(elem);
         mov_literal_to_gpq256(
             *elem->literal(), general_reg_to_gpq256(*elem->general_reg()));
     }
@@ -2164,7 +2170,7 @@ namespace monad::vm::compiler::native
     void Emitter::mov_stack_offset_to_general_reg(StackElemRef elem)
     {
         MONAD_VM_DEBUG_ASSERT(elem->stack_offset().has_value());
-        auto reserv = insert_general_reg(elem);
+        auto const reserv = insert_general_reg(elem);
         mov_stack_offset_to_gpq256(
             *elem->stack_offset(), general_reg_to_gpq256(*elem->general_reg()));
     }
@@ -2254,7 +2260,8 @@ namespace monad::vm::compiler::native
     void Emitter::mov_stack_elem_to_mem_be(StackElemRef e, x86::Mem m)
     {
         if (e->literal()) {
-            auto x = uint256_t::load_be_unsafe(e->literal()->value.as_bytes());
+            auto const x =
+                uint256_t::load_be_unsafe(e->literal()->value.as_bytes());
             mov_literal_to_mem<false>(Literal{x}, m);
         }
         else if (e->general_reg()) {
@@ -2266,7 +2273,7 @@ namespace monad::vm::compiler::native
         }
         else {
             auto [tmp_elem, reserv] = alloc_avx_reg();
-            auto y = avx_reg_to_ymm(*tmp_elem->avx_reg());
+            auto const y = avx_reg_to_ymm(*tmp_elem->avx_reg());
             if (e->avx_reg()) {
                 bswap_to_ymm(avx_reg_to_ymm(*e->avx_reg()), y);
             }
@@ -2579,6 +2586,47 @@ namespace monad::vm::compiler::native
         }
         return shift_by_stack_elem<ShiftType::SAR>(
             std::move(shift), std::move(value), live);
+    }
+
+    // Discharge
+    void Emitter::clz()
+    {
+        auto const elem = stack_.pop();
+
+        if (elem->literal()) {
+            auto const &x = elem->literal()->value;
+            push(runtime::countl_zero(x));
+            return;
+        }
+
+        discharge_deferred_comparison();
+
+        if (elem->general_reg()) {
+            auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
+            std::array<asmjit::x86::Gpq, 4> const &gpq_r64 = {
+                gpq[0].r64(), gpq[1].r64(), gpq[2].r64(), gpq[3].r64()};
+            array_leading_zeros(gpq_r64);
+        }
+        else if (elem->stack_offset()) {
+            array_leading_zeros(stack_offset_to_mem256(*elem->stack_offset()));
+        }
+        else if (elem->avx_reg()) {
+            // There are no methods to compute CLZ directly from YMM registers
+            // without writing the data to memory. So we spill to the stack and
+            // use array_leading_zeros.
+            mov_stack_elem_to_stack_offset(elem);
+            array_leading_zeros(stack_offset_to_mem256(*elem->stack_offset()));
+        }
+
+        auto [dst, _] = alloc_general_reg();
+        Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
+        // mov eax into dst[0]
+        as_.mov(gpq[0].r32(), x86::eax);
+        // zero other parts
+        as_.xor_(gpq[1].r32(), gpq[1].r32());
+        as_.xor_(gpq[2].r32(), gpq[2].r32());
+        as_.xor_(gpq[3].r32(), gpq[3].r32());
+        stack_.push(dst);
     }
 
     // Discharge through `and_` overload
@@ -2910,7 +2958,7 @@ namespace monad::vm::compiler::native
     // Discharge
     void Emitter::not_()
     {
-        auto elem = stack_.pop();
+        auto const elem = stack_.pop();
         if (elem->literal()) {
             push(~elem->literal()->value);
             return;
@@ -3019,67 +3067,64 @@ namespace monad::vm::compiler::native
     // No discharge
     void Emitter::origin()
     {
-        read_context_address(runtime::context_offset_env_tx_context_origin);
+        read_evmc_tx_context_address(offsetof(evmc_tx_context, tx_origin));
     }
 
     // No discharge
     void Emitter::gasprice()
     {
-        read_context_word(runtime::context_offset_env_tx_context_tx_gas_price);
+        read_evmc_tx_context_word(offsetof(evmc_tx_context, tx_gas_price));
     }
 
     // No discharge
     void Emitter::gaslimit()
     {
-        read_context_uint64_to_word(
-            runtime::context_offset_env_tx_context_block_gas_limit);
+        read_evmc_tx_context_uint64_to_word(
+            offsetof(evmc_tx_context, block_gas_limit));
     }
 
     // No discharge
     void Emitter::coinbase()
     {
-        read_context_address(
-            runtime::context_offset_env_tx_context_block_coinbase);
+        read_evmc_tx_context_address(offsetof(evmc_tx_context, block_coinbase));
     }
 
     // No discharge
     void Emitter::timestamp()
     {
-        read_context_uint64_to_word(
-            runtime::context_offset_env_tx_context_block_timestamp);
+        read_evmc_tx_context_uint64_to_word(
+            offsetof(evmc_tx_context, block_timestamp));
     }
 
     // No discharge
     void Emitter::number()
     {
-        read_context_uint64_to_word(
-            runtime::context_offset_env_tx_context_block_number);
+        read_evmc_tx_context_uint64_to_word(
+            offsetof(evmc_tx_context, block_number));
     }
 
     // No discharge
     void Emitter::prevrandao()
     {
-        read_context_word(
-            runtime::context_offset_env_tx_context_block_prev_randao);
+        read_evmc_tx_context_word(offsetof(evmc_tx_context, block_prev_randao));
     }
 
     // No discharge
     void Emitter::chainid()
     {
-        read_context_word(runtime::context_offset_env_tx_context_chain_id);
+        read_evmc_tx_context_word(offsetof(evmc_tx_context, chain_id));
     }
 
     // No discharge
     void Emitter::basefee()
     {
-        read_context_word(
-            runtime::context_offset_env_tx_context_block_base_fee);
+        read_evmc_tx_context_word(offsetof(evmc_tx_context, block_base_fee));
     }
 
     // No discharge
     void Emitter::blobbasefee()
     {
-        read_context_word(runtime::context_offset_env_tx_context_blob_base_fee);
+        read_evmc_tx_context_word(offsetof(evmc_tx_context, blob_base_fee));
     }
 
     // Discharge
@@ -3116,7 +3161,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(rdi_general_reg == volatile_general_reg);
         MONAD_VM_DEBUG_ASSERT(rsi_general_reg == volatile_general_reg);
 
-        auto done_label = as_.newLabel();
+        auto const done_label = as_.newLabel();
 
         offset->reserve_avx_reg();
         auto [result, reserv] = alloc_avx_reg();
@@ -3147,7 +3192,7 @@ namespace monad::vm::compiler::native
             }
         }
         else if (std::holds_alternative<x86::Gpq>(offset_op)) {
-            auto r = std::get<x86::Gpq>(offset_op);
+            auto const r = std::get<x86::Gpq>(offset_op);
             // We always have `r` not part of the volatile general reg:
             // According to `is_bounded_by_bits`, if `r` is part of volatile
             // general reg, then the stack elem `offset` is live (the case
@@ -3172,9 +3217,9 @@ namespace monad::vm::compiler::native
         }
 
         auto const load_bounded_label = as_.newLabel();
-        auto load_bounded_fn =
+        auto const load_bounded_fn =
             rodata_.add_external_function(monad_vm_runtime_load_bounded_le_raw);
-        auto bswap_label = as_.newLabel();
+        auto const bswap_label = as_.newLabel();
         load_bounded_le_handlers_.emplace_back(
             load_bounded_label, load_bounded_fn, bswap_label);
 
@@ -3218,7 +3263,7 @@ namespace monad::vm::compiler::native
     {
         auto offset = stack_.pop();
         auto mem = touch_memory(std::move(offset), 1, {});
-        auto value = stack_.pop();
+        auto const value = stack_.pop();
         if (!mem) {
             return;
         }
@@ -3242,6 +3287,62 @@ namespace monad::vm::compiler::native
             as_.mov(x86::cl, stack_offset_to_mem(*value->stack_offset()));
             as_.mov(*mem, x86::cl);
         }
+    }
+
+    void Emitter::mul(int64_t remaining_base_gas)
+    {
+        if (mul_optimized()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, false, runtime::mul);
+    }
+
+    void Emitter::udiv(int64_t remaining_base_gas)
+    {
+        if (div_optimized<false>()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::udiv);
+    }
+
+    void Emitter::sdiv(int64_t remaining_base_gas)
+    {
+        if (div_optimized<true>()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::sdiv);
+    }
+
+    void Emitter::umod(int64_t remaining_base_gas)
+    {
+        if (mod_optimized<false>()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::umod);
+    }
+
+    void Emitter::smod(int64_t remaining_base_gas)
+    {
+        if (mod_optimized<true>()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::smod);
+    }
+
+    void Emitter::addmod(int64_t remaining_base_gas)
+    {
+        if (addmod_opt()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::addmod);
+    }
+
+    void Emitter::mulmod(int64_t remaining_base_gas)
+    {
+        if (mulmod_opt()) {
+            return;
+        }
+        call_runtime(remaining_base_gas, true, runtime::mulmod);
     }
 
     // Discharge
@@ -3343,9 +3444,9 @@ namespace monad::vm::compiler::native
 
     void Emitter::return_with_status_code(runtime::StatusCode status)
     {
-        auto offset = stack_.pop();
+        auto const offset = stack_.pop();
         RegReserv const offset_avx_reserv{offset};
-        auto size = stack_.pop();
+        auto const size = stack_.pop();
         RegReserv const size_avx_reserv{size};
         discharge_deferred_comparison();
         status_code(status);
@@ -3362,7 +3463,7 @@ namespace monad::vm::compiler::native
         StackElemRef dest, std::tuple<LiveSet...> const &live)
     {
         if (dest->literal()) {
-            auto lit = literal_jump_dest_operand(std::move(dest));
+            auto const lit = literal_jump_dest_operand(std::move(dest));
             write_to_final_stack_offsets();
             adjust_by_stack_delta<false>();
             jump_literal_dest(lit);
@@ -3386,7 +3487,7 @@ namespace monad::vm::compiler::native
             return error_label_;
         }
         else {
-            auto it = jump_dests_.find(dest[0]);
+            auto const it = jump_dests_.find(dest[0]);
             if (it == jump_dests_.end()) {
                 return error_label_;
             }
@@ -3455,6 +3556,8 @@ namespace monad::vm::compiler::native
                 stack_.remove_general_reg(*dest);
             }
         }
+        jump_table_label_ = jump_table_label_ ? jump_table_label_
+                                              : as_.newNamedLabel("JumpTable");
         if (std::holds_alternative<Gpq256>(dest_op)) {
             Gpq256 const &gpq = std::get<Gpq256>(dest_op);
             as_.cmp(gpq[0], *bytecode_size_);
@@ -3463,7 +3566,7 @@ namespace monad::vm::compiler::native
             as_.or_(gpq[1], gpq[3]);
             as_.jnz(error_label_);
 
-            as_.lea(x86::rax, x86::ptr(jump_table_label_));
+            as_.lea(x86::rax, x86::ptr(jump_table_label_.value()));
             as_.movsxd(x86::rcx, x86::dword_ptr(x86::rax, gpq[0], 2));
             as_.add(x86::rax, x86::rcx);
             as_.jmp(x86::rax);
@@ -3489,7 +3592,7 @@ namespace monad::vm::compiler::native
             as_.or_(x86::rdx, m);
             as_.jnz(error_label_);
 
-            as_.lea(x86::rax, x86::ptr(jump_table_label_));
+            as_.lea(x86::rax, x86::ptr(jump_table_label_.value()));
             as_.movsxd(x86::rcx, x86::dword_ptr(x86::rax, x86::rcx, 2));
             as_.add(x86::rax, x86::rcx);
             as_.jmp(x86::rax);
@@ -3534,7 +3637,7 @@ namespace monad::vm::compiler::native
 
     Comparison Emitter::jumpi_comparison(StackElemRef cond, StackElemRef dest)
     {
-        auto dc = stack_.discharge_deferred_comparison();
+        auto const dc = stack_.discharge_deferred_comparison();
         if (dc.stack_elem && (dc.stack_elem == dest.get() ||
                               !dc.stack_elem->stack_indices().empty())) {
             RegReserv const cond_reserv{cond};
@@ -3560,7 +3663,7 @@ namespace monad::vm::compiler::native
         else {
             comp = Comparison::NotEqual;
             if (cond->avx_reg()) {
-                auto y = avx_reg_to_ymm(*cond->avx_reg());
+                auto const y = avx_reg_to_ymm(*cond->avx_reg());
                 as_.vptest(y, y);
             }
             else if (cond->general_reg()) {
@@ -3581,7 +3684,7 @@ namespace monad::vm::compiler::native
                 MONAD_VM_DEBUG_ASSERT(cond->stack_offset().has_value());
                 RegReserv const dest_reserv{dest};
                 mov_stack_offset_to_avx_reg(cond);
-                auto y = avx_reg_to_ymm(*cond->avx_reg());
+                auto const y = avx_reg_to_ymm(*cond->avx_reg());
                 as_.vptest(y, y);
             }
         }
@@ -3615,13 +3718,13 @@ namespace monad::vm::compiler::native
         Comparison const comp = jumpi_comparison(std::move(cond), dest);
 
         if (dest->literal()) {
-            auto lit = literal_jump_dest_operand(std::move(dest));
+            auto const lit = literal_jump_dest_operand(std::move(dest));
             write_to_final_stack_offsets();
             adjust_by_stack_delta<true>();
             conditional_jmp(jump_dest_label(lit), comp);
         }
         else {
-            auto fallthrough_lbl = as_.newLabel();
+            auto const fallthrough_lbl = as_.newLabel();
             // Note that `cond` is not live here.
             auto [op, spill_elem] = non_literal_jump_dest_operand(dest, {});
             write_to_final_stack_offsets();
@@ -3658,7 +3761,7 @@ namespace monad::vm::compiler::native
             stack_.missing_spill_count() == 0) {
             // We do not need to spill stack elements and we do not need
             // to adjust by stack delta, so only need conditional jump.
-            auto lit = literal_jump_dest_operand(std::move(dest));
+            auto const lit = literal_jump_dest_operand(std::move(dest));
             conditional_jmp(jump_dest_label(lit), comp);
         }
         else {
@@ -3692,9 +3795,43 @@ namespace monad::vm::compiler::native
         stack_.push(std::move(dst));
     }
 
+    void Emitter::read_evmc_tx_context_address(int32_t offset)
+    {
+        auto [dst, _] = alloc_general_reg();
+        Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
+        as_.mov(
+            gpq[3],
+            x86::qword_ptr(
+                reg_context, runtime::context_offset_env_tx_context));
+        x86::Mem m = x86::qword_ptr(gpq[3], offset);
+        m.setSize(4);
+        as_.movbe(gpq[2].r32(), m);
+        m.addOffset(4);
+        m.setSize(8);
+        as_.movbe(gpq[1], m);
+        m.addOffset(8);
+        as_.movbe(gpq[0], m);
+        if (stack_.has_deferred_comparison()) {
+            as_.mov(gpq[3], 0);
+        }
+        else {
+            as_.xor_(gpq[3].r32(), gpq[3].r32());
+        }
+        stack_.push(std::move(dst));
+    }
+
     void Emitter::read_context_word(int32_t offset)
     {
         stack_.push(read_mem_be(x86::qword_ptr(reg_context, offset)));
+    }
+
+    void Emitter::read_evmc_tx_context_word(int32_t offset)
+    {
+        as_.mov(
+            x86::rax,
+            x86::qword_ptr(
+                reg_context, runtime::context_offset_env_tx_context));
+        stack_.push(read_mem_be(x86::qword_ptr(x86::rax, offset)));
     }
 
     void Emitter::read_context_uint32_to_word(int32_t offset)
@@ -3715,11 +3852,15 @@ namespace monad::vm::compiler::native
         stack_.push(std::move(dst));
     }
 
-    void Emitter::read_context_uint64_to_word(int32_t offset)
+    void Emitter::read_evmc_tx_context_uint64_to_word(int32_t offset)
     {
         auto [dst, _] = alloc_general_reg();
         Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
-        as_.mov(gpq[0], x86::qword_ptr(reg_context, offset));
+        as_.mov(
+            gpq[0],
+            x86::qword_ptr(
+                reg_context, runtime::context_offset_env_tx_context));
+        as_.mov(gpq[0], x86::qword_ptr(gpq[0], offset));
         if (stack_.has_deferred_comparison()) {
             as_.mov(gpq[1].r32(), 0);
             as_.mov(gpq[2].r32(), 0);
@@ -3970,7 +4111,7 @@ namespace monad::vm::compiler::native
         as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
         as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
 
-        auto zero_reg = dst_gpq[1];
+        auto const zero_reg = dst_gpq[1];
         as_.mov(dst_gpq[0].r32(), 31);
 
         if (ix->general_reg()) {
@@ -3978,7 +4119,7 @@ namespace monad::vm::compiler::native
             as_.sub(dst_gpq[0], ix_gpq[0]);
         }
         else if (ix->stack_offset()) {
-            auto ix_mem = stack_offset_to_mem(*ix->stack_offset());
+            auto const ix_mem = stack_offset_to_mem(*ix->stack_offset());
             as_.sub(dst_gpq[0], ix_mem);
         }
         else {
@@ -4079,7 +4220,7 @@ namespace monad::vm::compiler::native
             ix0 = ix_gpq[0];
         }
         else if (ix->stack_offset()) {
-            auto ix_mem = stack_offset_to_mem(*ix->stack_offset());
+            auto const ix_mem = stack_offset_to_mem(*ix->stack_offset());
             as_.mov(x86::rax, ix_mem);
             ix0 = x86::rax;
         }
@@ -4132,9 +4273,9 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(i < 32);
 
         AvxRegReserv const src_reserv{src};
-        auto src_ymm = avx_reg_to_ymm(*src->avx_reg());
+        auto const src_ymm = avx_reg_to_ymm(*src->avx_reg());
         auto [dst, dst_reserv] = alloc_avx_reg();
-        auto dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
+        auto const dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
 
         uint64_t const byte_index = 31 - i[0];
         uint64_t const yword_index = byte_index >> 4;
@@ -4168,14 +4309,14 @@ namespace monad::vm::compiler::native
         RegReserv const ix_reserv{ix};
         AvxRegReserv const src_reserv{src};
 
-        auto src_ymm = avx_reg_to_ymm(*src->avx_reg());
+        auto const src_ymm = avx_reg_to_ymm(*src->avx_reg());
         test_high_bits192(ix, std::tuple_cat(std::make_tuple(src), live));
 
         auto [dst, dst_reserv] = alloc_or_release_avx_reg(
             std::move(src), std::tuple_cat(std::make_tuple(ix), live));
-        auto dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
+        auto const dst_ymm = avx_reg_to_ymm(*dst->avx_reg());
         auto [scratch, scratch_reserv] = alloc_avx_reg();
-        auto scratch_ymm = avx_reg_to_ymm(*scratch->avx_reg());
+        auto const scratch_ymm = avx_reg_to_ymm(*scratch->avx_reg());
 
         if (ix->general_reg()) {
             Gpq256 const &ix_gpq = general_reg_to_gpq256(*ix->general_reg());
@@ -4658,7 +4799,7 @@ namespace monad::vm::compiler::native
         std::tuple<LiveSet...> const &live)
     {
         if (shift->literal()) {
-            auto shift_value = shift->literal()->value;
+            auto const shift_value = shift->literal()->value;
             shift.reset(); // Potentially clear locations
             return shift_by_literal<shift_type>(
                 shift_value, std::move(value), live);
@@ -5310,8 +5451,8 @@ namespace monad::vm::compiler::native
         }
 
         if (commutative) {
-            auto src_ord = get_stack_elem_general_order_index(src, live);
-            auto dst_ord = get_stack_elem_general_order_index(dst, live);
+            auto const src_ord = get_stack_elem_general_order_index(src, live);
+            auto const dst_ord = get_stack_elem_general_order_index(dst, live);
             if (src_ord < dst_ord) {
                 std::swap(dst, src);
             }
@@ -5531,7 +5672,7 @@ namespace monad::vm::compiler::native
                 if (!is_dst_mutated) {
                     return {dst, dst, LocationType::GeneralReg};
                 }
-                auto new_dst = release_general_reg(std::move(dst), live);
+                auto const new_dst = release_general_reg(std::move(dst), live);
                 return {new_dst, new_dst, LocationType::GeneralReg};
             }
             MONAD_VM_DEBUG_ASSERT(dst->stack_offset().has_value());
@@ -5542,7 +5683,7 @@ namespace monad::vm::compiler::native
             return {dst, dst, LocationType::AvxReg};
         }
         if (!is_live(dst, live)) {
-            auto n = stack_.release_avx_reg(std::move(dst));
+            auto const n = stack_.release_avx_reg(std::move(dst));
             return {n, n, LocationType::AvxReg};
         }
         auto [n, _] = alloc_avx_reg();
@@ -5691,7 +5832,7 @@ namespace monad::vm::compiler::native
         RegReserv const src_reserv{src};
 
         if (dst_loc == LocationType::GeneralReg) {
-            auto new_dst = release_general_reg(dst, live);
+            auto const new_dst = release_general_reg(dst, live);
             if (dst == src) {
                 return {new_dst, new_dst, dst_loc, new_dst, src_loc};
             }
@@ -5703,7 +5844,7 @@ namespace monad::vm::compiler::native
             MONAD_VM_DEBUG_ASSERT(dst_loc == LocationType::AvxReg);
             if (is_live(dst, live)) {
                 if (!is_live(src, live) && src_loc == LocationType::AvxReg) {
-                    auto n = stack_.release_avx_reg(src);
+                    auto const n = stack_.release_avx_reg(src);
                     return {n, std::move(dst), dst_loc, n, src_loc};
                 }
                 else {
@@ -5713,7 +5854,7 @@ namespace monad::vm::compiler::native
                 }
             }
 
-            auto n = stack_.release_avx_reg(dst);
+            auto const n = stack_.release_avx_reg(dst);
             if (dst == src) {
                 return {n, n, dst_loc, n, src_loc};
             }
@@ -5920,7 +6061,7 @@ namespace monad::vm::compiler::native
         // rdi_general_reg.
         MONAD_VM_DEBUG_ASSERT(rdi_general_reg == volatile_general_reg);
 
-        auto after_increase_label = as_.newLabel();
+        auto const after_increase_label = as_.newLabel();
 
         auto const offset_op = is_bounded_by_bits<runtime::Memory::offset_bits>(
             std::move(offset), error_label_, live);
@@ -5934,7 +6075,7 @@ namespace monad::vm::compiler::native
             spill_avx_reg_range(5);
 
             auto const lit = std::get<uint64_t>(offset_op);
-            auto read_end = static_cast<int32_t>(lit) + read_size;
+            auto const read_end = static_cast<int32_t>(lit) + read_size;
             static_assert(sizeof(runtime::Memory::size) == sizeof(uint32_t));
             as_.cmp(
                 x86::dword_ptr(
@@ -5961,7 +6102,7 @@ namespace monad::vm::compiler::native
             as_.jae(after_increase_label);
         }
 
-        auto increase_memory_fn =
+        auto const increase_memory_fn =
             rodata_.add_external_function(monad_vm_runtime_increase_memory_raw);
         as_.call(increase_memory_fn);
 
@@ -5972,7 +6113,7 @@ namespace monad::vm::compiler::native
                 x86::rax,
                 x86::qword_ptr(
                     reg_context, runtime::context_offset_memory_data));
-            auto lit = std::get<uint64_t>(offset_op);
+            auto const lit = std::get<uint64_t>(offset_op);
             return x86::qword_ptr(x86::rax, static_cast<int32_t>(lit));
         }
         else {
@@ -6190,8 +6331,8 @@ namespace monad::vm::compiler::native
         auto const last_ix = div64_ceil(bit_size) - 1;
 
         auto next_dst_pair = [&](size_t i) -> std::pair<x86::Gpq, x86::Gpq> {
-            auto dst1 = i == last_ix - 1 ? x86::rax : dst[i + 1];
-            auto dst2 = i == 0 ? dst[0] : x86::rdx;
+            auto const dst1 = i == last_ix - 1 ? x86::rax : dst[i + 1];
+            auto const dst2 = i == 0 ? dst[0] : x86::rdx;
             return {dst1, dst2};
         };
 
@@ -6314,7 +6455,7 @@ namespace monad::vm::compiler::native
             }
         }
         else if (N > 1) {
-            auto known_value = std::visit(
+            auto const known_value = std::visit(
                 Cases{
                     [&](uint256_t const &r) {
                         auto x = r[word_count - N];
@@ -6339,7 +6480,7 @@ namespace monad::vm::compiler::native
             std::visit(
                 Cases{
                     [&](uint256_t const &r) {
-                        auto x = r[word_count - N];
+                        auto const x = r[word_count - N];
                         if constexpr (Has32Bit) {
                             em_.gpr_mul_by_uint64<true>(mul_dst[0], lgpq[0], x);
                         }
@@ -6384,7 +6525,7 @@ namespace monad::vm::compiler::native
             std::visit(
                 Cases{
                     [&](uint256_t const &r) {
-                        auto x = r[word_count - N];
+                        auto const x = r[word_count - N];
                         if constexpr (Has32Bit) {
                             em_.gpr_mul_by_uint64<true>(mul_dst[0], lmem, x);
                         }
@@ -6675,7 +6816,7 @@ namespace monad::vm::compiler::native
         }
 
         auto &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
-        auto left_op =
+        auto const left_op =
             left->general_reg()
                 ? Operand{general_reg_to_gpq256(*left->general_reg())}
                 : Operand{stack_offset_to_mem(*left->stack_offset())};
@@ -6701,7 +6842,7 @@ namespace monad::vm::compiler::native
             .emit();
 
         if (bit_size & 31) {
-            auto mask = (uint64_t{1} << (bit_size & 63)) - 1;
+            auto const mask = (uint64_t{1} << (bit_size & 63)) - 1;
             if (std::bit_width(mask) <= 32) {
                 as_.and_(dst_gpq[dst_word_count - 1].r32(), mask);
             }
@@ -6839,7 +6980,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(!elem->literal().has_value());
         MONAD_VM_DEBUG_ASSERT(shift_in <= 255);
 
-        auto shift = static_cast<uint64_t>(shift_in);
+        auto const shift = static_cast<uint64_t>(shift_in);
 
         if (shift == 0) {
             return elem;
@@ -6853,7 +6994,7 @@ namespace monad::vm::compiler::native
             c -= 64;
             --index;
         }
-        auto mask = (static_cast<uint64_t>(1) << (shift & 63)) - 1;
+        auto const mask = (static_cast<uint64_t>(1) << (shift & 63)) - 1;
 
         StackElemRef sh;
         {
@@ -7027,7 +7168,7 @@ namespace monad::vm::compiler::native
         if (runtime::popcount(b) == 1) {
             stack_.pop();
             stack_.pop();
-            auto shift = runtime::countr_zero(b);
+            auto const shift = runtime::countr_zero(b);
             auto dst = [&] {
                 if constexpr (is_sdiv) {
                     return sdiv_by_sar(std::move(a_elem), shift, {});
@@ -7080,8 +7221,8 @@ namespace monad::vm::compiler::native
         auto const &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
 
         auto const sign_mem = rodata_.add8(static_cast<uint64_t>(1) << 63);
-        auto non_negative_lbl = as_.newLabel();
-        auto after_lbl = as_.newLabel();
+        auto const non_negative_lbl = as_.newLabel();
+        auto const after_lbl = as_.newLabel();
 
         auto emit_mask = [&] {
             if (is_literal_bounded({mask})) {
@@ -7199,8 +7340,8 @@ namespace monad::vm::compiler::native
                 LocationType::GeneralReg};
         }
 
-        auto src_ord = get_stack_elem_general_order_index(src, live);
-        auto dst_ord = get_stack_elem_general_order_index(dst, live);
+        auto const src_ord = get_stack_elem_general_order_index(src, live);
+        auto const dst_ord = get_stack_elem_general_order_index(dst, live);
         if (src_ord < dst_ord) {
             std::swap(dst, src);
         }
@@ -7263,7 +7404,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(elem->stack_offset().has_value());
 
         x86::Mem mem{stack_offset_to_mem(*elem->stack_offset())};
-        auto reserv = insert_general_reg(elem);
+        auto const reserv = insert_general_reg(elem);
         MONAD_VM_DEBUG_ASSERT(elem->general_reg());
         auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
 
@@ -7286,7 +7427,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(exp > 0);
         MONAD_VM_DEBUG_ASSERT(elem->literal().has_value());
 
-        auto reserv = insert_general_reg(elem);
+        auto const reserv = insert_general_reg(elem);
         auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
         auto const &lit =
             *elem->literal(); // literal_to_imm256(*elem->literal());
@@ -7382,7 +7523,7 @@ namespace monad::vm::compiler::native
         if (!m_elem->literal()) {
             return false;
         }
-        auto m = m_elem->literal()->value;
+        auto const m = m_elem->literal()->value;
         m_elem.reset(); // Clear locations
 
         // The trivial group
@@ -7849,7 +7990,7 @@ namespace monad::vm::compiler::native
         auto res_mem = stack_offset_to_mem(*stack_.top()->stack_offset());
         res_mem.addOffset(static_cast<int64_t>(last_ix * 8));
         if (exp & 63) {
-            auto last_mask = mask[last_ix];
+            auto const last_mask = mask[last_ix];
             if (std::bit_width(last_mask) < 32) {
                 as_.and_(res_mem, last_mask);
             }
@@ -7865,8 +8006,39 @@ namespace monad::vm::compiler::native
         }
     }
 
-    // Performs byte_width operation on array of operands. Assumes that the
-    // operands are ordered from least significant to most significant.
+    // Count the number of leading zeros of the value.
+    // The operands in `arr` must be ordered from least to most significant.
+    //
+    // The implementation optimizes for uniformly distributed values, using a
+    // branched approach to return early when the first non-zero word is found.
+    // For uniformly distributed values, this is more efficient than a cascade
+    // of cmov instructions since the probability of the most significant word
+    // being zero is 1 / 2^64.
+    template <typename T, size_t N>
+    void Emitter::array_leading_zeros(std::array<T, N> const &arr)
+    {
+        auto const end_lbl = as_.newLabel();
+        for (size_t i = N; i >= 1; --i) {
+            auto const word_offset = static_cast<int32_t>(64 * (N - i));
+            // Compute number of leading zeros. CF == 1 iff arr[i] == 0
+            as_.lzcnt(x86::rax, arr[i - 1]);
+            if (word_offset != 0) {
+                // Leave flags unchanged
+                as_.lea(x86::eax, x86::ptr(x86::eax, word_offset));
+            }
+            // If arr[i - 1] != 0, jump to end_lbl
+            as_.jnc(end_lbl);
+        }
+        as_.bind(end_lbl);
+    }
+
+    // Count the byte width (number of significant bytes) of the value.
+    // The operands in `arr` must be ordered from least to most significant.
+    //
+    // Unlike `array_leading_zeros`, this implementation does not optimize the
+    // case where the input value is uniformly distributed, since
+    // array_byte_width is only used on EXP exponents, which are biased towards
+    // smaller values.
     template <typename T, size_t N>
     void Emitter::array_byte_width(std::array<T, N> const &arr)
     {
@@ -7920,9 +8092,9 @@ namespace monad::vm::compiler::native
             array_byte_width(stack_offset_to_mem256(*elem->stack_offset()));
         }
         else if (elem->avx_reg()) {
-            auto avx_reg = avx_reg_to_ymm(*elem->avx_reg());
+            auto const avx_reg = avx_reg_to_ymm(*elem->avx_reg());
             auto [avx_tmp_elem, _] = alloc_avx_reg();
-            auto avx_tmp = avx_reg_to_ymm(*avx_tmp_elem->avx_reg());
+            auto const avx_tmp = avx_reg_to_ymm(*avx_tmp_elem->avx_reg());
             as_.vpxor(avx_tmp, avx_tmp, avx_tmp);
             as_.vpcmpeqb(avx_tmp, avx_reg, avx_tmp); // tmp.b = (reg.b == 0)
             as_.vpmovmskb(x86::eax, avx_tmp); // eax = mask of zero bytes

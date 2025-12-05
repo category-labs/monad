@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
 #include <category/execution/monad/staking/config.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -32,34 +33,84 @@ MONAD_STAKING_NAMESPACE_BEGIN
 
 using namespace intx::literals;
 
+// staking contract address
+inline constexpr Address STAKING_CA{0x1000};
+
+// 1e18 constant
 inline constexpr uint256_t MON{1000000000000000000_u256};
 
-// validator
-inline constexpr uint256_t MAX_COMMISSION = MON;
-inline constexpr uint256_t MIN_VALIDATE_STAKE{100'000 * MON};
-inline constexpr uint256_t ACTIVE_VALIDATOR_STAKE{25'000'000 * MON};
-
-// precision
+// accumulator precision
 inline constexpr uint256_t UNIT_BIAS{
     1000000000000000000000000000000000000_u256}; // 1e36
-inline constexpr uint256_t DUST_THRESHOLD{1000000000}; // 1e9
 
-// external rewards
-inline constexpr uint256_t MIN_EXTERNAL_REWARD = DUST_THRESHOLD;
-inline constexpr uint256_t MAX_EXTERNAL_REWARD{
-    10000000000000000000000000_u256}; // 1e25
+// the limits namespace denotes constants that can be forked in future releases.
+namespace limits
+{
+    constexpr uint256_t dust_threshold()
+    {
+        return 1000000000; // 1e9
+    }
 
-inline constexpr Address STAKING_CA{0x1000};
-inline constexpr uint64_t ACTIVE_VALSET_SIZE{200};
-inline constexpr uint64_t WITHDRAWAL_DELAY = 1;
+    constexpr uint256_t max_commission()
+    {
+        return MON; // 1e18
+    }
 
-// Results for get_valset, get_delegators_for_validator, and
-// get_validators_for_delegator are paginated
-inline constexpr uint64_t PAGINATED_RESULTS_SIZE{100};
+    template <Traits traits>
+    constexpr uint256_t active_validator_stake()
+    {
+        if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+            return 10'000'000 * MON;
+        }
+        return 25'000'000 * MON;
+    }
+
+    constexpr uint256_t min_auth_address_stake()
+    {
+        return 100'000 * MON;
+    }
+
+    constexpr uint256_t min_external_reward()
+    {
+        return dust_threshold();
+    }
+
+    constexpr uint256_t max_external_reward()
+    {
+        return 10000000000000000000000000_u256; // 1e25
+    };
+
+    constexpr uint64_t active_valset_size()
+    {
+        return 200;
+    }
+
+    constexpr uint32_t array_pagination()
+    {
+        return 100;
+    };
+
+    template <Traits traits>
+    constexpr uint32_t linked_list_pagination()
+    {
+        if constexpr (traits::monad_rev() < MONAD_EIGHT) {
+            return 100;
+        }
+
+        // The relation to array pagination is each list node occupies two
+        // slots.
+        return 50;
+    };
+
+    constexpr uint64_t withdrawal_delay()
+    {
+        return 1;
+    }
+};
 
 // sanity check: commission rate doesn't exceed 100% (1e18)
 // note that: delegator_reward = (raw_reward * COMMISSION) / 1e18
-static_assert(MAX_COMMISSION <= MON);
+static_assert(limits::max_commission() <= MON);
 
 enum
 {

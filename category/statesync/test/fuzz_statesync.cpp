@@ -15,6 +15,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -303,13 +304,19 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     std::span<uint8_t const> raw{data, size};
     State state{};
 
+    bytes32_t parent_hash{};
     BlockHeader hdr{.number = 0};
+
+    // write the genesis block
     {
-        sctx->commit(
-            StateDeltas{}, Code{}, NULL_HASH_BLAKE3, BlockHeader{.number = 0});
+        sctx->commit(StateDeltas{}, Code{}, NULL_HASH_BLAKE3, hdr);
         sctx->finalize(0, NULL_HASH_BLAKE3);
+        auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
+        parent_hash = to_bytes(keccak256(rlp));
     }
+
     while (raw.size() >= sizeof(uint64_t)) {
+        // generate state deltas for the new block
         StateDeltas deltas;
         uint64_t const n = unaligned_load<uint64_t>(raw.data());
         raw = raw.subspan(sizeof(uint64_t));
@@ -337,12 +344,19 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         client.mask = raw.size() < sizeof(uint64_t)
                           ? std::numeric_limits<uint64_t>::max()
                           : n;
+
+        // write new block
         hdr.number = stdb.get_block_number() + 1;
         MONAD_ASSERT(hdr.number > 0);
+        hdr.parent_hash = parent_hash;
+        bytes32_t const curr_block_id = bytes32_t{hdr.number};
         sctx->set_block_and_prefix(hdr.number - 1);
-        sctx->commit(deltas, {}, bytes32_t{hdr.number}, hdr);
-        sctx->finalize(hdr.number, bytes32_t{hdr.number});
+        sctx->commit(deltas, {}, curr_block_id, hdr);
+        sctx->finalize(hdr.number, curr_block_id);
         auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
+        parent_hash = to_bytes(keccak256(rlp));
+
+        // statesync to that block
         monad_statesync_client_handle_target(cctx, rlp.data(), rlp.size());
         while (!client.rqs.empty()) {
             monad_statesync_server_run_once(server);

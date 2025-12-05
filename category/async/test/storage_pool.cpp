@@ -27,11 +27,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
-#include <stdexcept>
-#include <system_error>
+#include <stdio.h>
 #include <utility>
 #include <vector>
 
@@ -42,55 +42,41 @@ namespace
 {
     using namespace MONAD_ASYNC_NAMESPACE;
 
-    inline void print_pool_statistics(storage_pool const &pool)
+    inline void print_pool_statistics(storage_pool &pool)
     {
         std::cout << "Pool has " << pool.devices().size() << " devices:";
         for (size_t n = 0; n < pool.devices().size(); n++) {
             auto const &device = pool.devices()[n];
-            auto capacity = device.capacity();
+            auto const capacity = device.capacity();
             std::cout << "\n   " << (n + 1) << ". chunks = " << device.chunks()
                       << " capacity = " << capacity.first
                       << " used = " << capacity.second
                       << " path = " << device.current_path();
         }
         std::cout << "\n\n    Total conventional chunks = "
-                  << pool.chunks(storage_pool::cnv) << " of which active = "
-                  << pool.currently_active_chunks(storage_pool::cnv);
+                  << pool.chunks(storage_pool::cnv);
         std::cout << "\nTotal sequential write chunks = "
-                  << pool.chunks(storage_pool::seq) << " of which active = "
-                  << pool.currently_active_chunks(storage_pool::seq);
+                  << pool.chunks(storage_pool::seq);
         std::cout << "\n   First conventional chunk ";
-        if (auto chunk = pool.chunk(storage_pool::cnv, 0)) {
-            std::cout << "has capacity = " << chunk->capacity()
-                      << " used = " << chunk->size();
-        }
-        else {
-            std::cout << "is not active";
+        {
+            auto const &chunk = pool.chunk(storage_pool::cnv, 0);
+            std::cout << "has capacity = " << chunk.capacity()
+                      << " used = " << chunk.size();
         }
         std::cout << "\n   First sequential chunk ";
-        if (auto chunk = pool.chunk(storage_pool::seq, 0)) {
-            std::cout << "has capacity = " << chunk->capacity()
-                      << " used = " << chunk->size();
-        }
-        else {
-            std::cout << "is not active";
+        {
+            auto const &chunk = pool.chunk(storage_pool::seq, 0);
+            std::cout << "has capacity = " << chunk.capacity()
+                      << " used = " << chunk.size();
         }
         std::cout << std::endl;
     }
 
     inline void run_tests(storage_pool &pool)
     {
-        print_pool_statistics(pool);
-        std::cout << "\n\nActivating first conventional chunk ..." << std::endl;
-        auto chunk1 = pool.activate_chunk(storage_pool::cnv, 0);
-        print_pool_statistics(pool);
-        std::cout << "\n\nActivating first sequential chunk ..." << std::endl;
-        auto chunk2 = pool.activate_chunk(storage_pool::seq, 0);
-        print_pool_statistics(pool);
-        std::cout << "\n\nActivating last sequential chunk (which is "
-                  << (pool.chunks(storage_pool::seq) - 1) << ") ..."
-                  << std::endl;
-        auto chunk3 = pool.activate_chunk(
+        auto chunk1 = pool.chunk(storage_pool::cnv, 0);
+        auto chunk2 = pool.chunk(storage_pool::seq, 0);
+        auto chunk3 = pool.chunk(
             storage_pool::seq,
             static_cast<uint32_t>(pool.chunks(storage_pool::seq) - 1));
         print_pool_statistics(pool);
@@ -98,8 +84,8 @@ namespace
         std::vector<std::byte> buffer(1024 * 1024);
         memset(buffer.data(), 0xee, buffer.size());
         std::cout << "\n\nWriting to conventional chunk ..." << std::endl;
-        EXPECT_EQ(chunk1->size(), chunk1->capacity()); // always full
-        auto fd = chunk1->write_fd(buffer.size());
+        EXPECT_EQ(chunk1.size(), chunk1.capacity()); // always full
+        auto fd = chunk1.write_fd(buffer.size());
         EXPECT_EQ(fd.second, 0);
         MONAD_ASSERT(
             -1 != ::pwrite(
@@ -107,10 +93,10 @@ namespace
                       buffer.data(),
                       buffer.size(),
                       static_cast<off_t>(fd.second)));
-        EXPECT_EQ(chunk1->size(), chunk1->capacity()); // always full
+        EXPECT_EQ(chunk1.size(), chunk1.capacity()); // always full
 
         memset(buffer.data(), 0xaa, buffer.size());
-        fd = chunk1->write_fd(buffer.size());
+        fd = chunk1.write_fd(buffer.size());
         EXPECT_EQ(fd.second, 0);
         MONAD_ASSERT(
             -1 != ::pwrite(
@@ -118,57 +104,57 @@ namespace
                       buffer.data(),
                       buffer.size(),
                       static_cast<off_t>(fd.second + buffer.size())));
-        EXPECT_EQ(chunk1->size(), chunk1->capacity()); // always full
+        EXPECT_EQ(chunk1.size(), chunk1.capacity()); // always full
         print_pool_statistics(pool);
 
         memset(buffer.data(), 0x77, buffer.size());
         std::cout << "\n\nWriting to first sequential chunk ..." << std::endl;
-        fd = chunk2->write_fd(buffer.size());
-        EXPECT_EQ(fd.second, chunk1->capacity() * 3);
+        fd = chunk2.write_fd(buffer.size());
+        EXPECT_EQ(fd.second, chunk1.capacity() * 3);
         MONAD_ASSERT(
             -1 != ::pwrite(
                       fd.first,
                       buffer.data(),
                       buffer.size(),
                       static_cast<off_t>(fd.second)));
-        EXPECT_EQ(chunk2->size(), buffer.size());
+        EXPECT_EQ(chunk2.size(), buffer.size());
         print_pool_statistics(pool);
 
         memset(buffer.data(), 0x55, buffer.size());
-        fd = chunk2->write_fd(buffer.size());
-        EXPECT_EQ(fd.second, chunk1->capacity() * 3 + buffer.size());
+        fd = chunk2.write_fd(buffer.size());
+        EXPECT_EQ(fd.second, chunk1.capacity() * 3 + buffer.size());
         MONAD_ASSERT(
             -1 != ::pwrite(
                       fd.first,
                       buffer.data(),
                       buffer.size(),
                       static_cast<off_t>(fd.second)));
-        EXPECT_EQ(chunk2->size(), buffer.size() * 2);
+        EXPECT_EQ(chunk2.size(), buffer.size() * 2);
         print_pool_statistics(pool);
 
         memset(buffer.data(), 0x33, buffer.size());
         std::cout << "\n\nWriting to last sequential chunk ..." << std::endl;
-        fd = chunk3->write_fd(buffer.size());
+        fd = chunk3.write_fd(buffer.size());
         EXPECT_EQ(
             fd.second,
-            chunk1->capacity() * 2 + chunk1->capacity() *
-                                         pool.chunks(storage_pool::seq) /
-                                         pool.devices().size());
+            chunk1.capacity() * 2 + chunk1.capacity() *
+                                        pool.chunks(storage_pool::seq) /
+                                        pool.devices().size());
         MONAD_ASSERT(
             -1 != ::pwrite(
                       fd.first,
                       buffer.data(),
                       buffer.size(),
                       static_cast<off_t>(fd.second)));
-        EXPECT_EQ(chunk3->size(), buffer.size());
+        EXPECT_EQ(chunk3.size(), buffer.size());
         print_pool_statistics(pool);
 
         memset(buffer.data(), 0x22, buffer.size());
-        fd = chunk3->write_fd(buffer.size());
+        fd = chunk3.write_fd(buffer.size());
         EXPECT_EQ(
             fd.second,
-            chunk1->capacity() * 2 +
-                chunk1->capacity() * pool.chunks(storage_pool::seq) /
+            chunk1.capacity() * 2 +
+                chunk1.capacity() * pool.chunks(storage_pool::seq) /
                     pool.devices().size() +
                 buffer.size());
         MONAD_ASSERT(
@@ -177,12 +163,12 @@ namespace
                       buffer.data(),
                       buffer.size(),
                       static_cast<off_t>(fd.second)));
-        EXPECT_EQ(chunk3->size(), buffer.size() * 2);
+        EXPECT_EQ(chunk3.size(), buffer.size() * 2);
         print_pool_statistics(pool);
 
         std::vector<std::byte> buffer2(buffer.size());
         auto check = [&](auto &chunk, int a, int b) {
-            auto fd = chunk->read_fd();
+            auto const fd = chunk.read_fd();
             MONAD_ASSERT(
                 -1 != ::pread(
                           fd.first,
@@ -213,10 +199,10 @@ namespace
         std::cout << "\n\nDestroying contents of last sequential chunk ..."
                   << std::endl;
         print_pool_statistics(pool);
-        chunk3->destroy_contents();
-        EXPECT_EQ(chunk1->size(), chunk1->capacity()); // always full
-        EXPECT_EQ(chunk2->size(), buffer.size() * 2);
-        EXPECT_EQ(chunk3->size(), 0);
+        chunk3.destroy_contents();
+        EXPECT_EQ(chunk1.size(), chunk1.capacity()); // always full
+        EXPECT_EQ(chunk2.size(), buffer.size() * 2);
+        EXPECT_EQ(chunk3.size(), 0);
         check(chunk1, 0xee, 0xaa);
         check(chunk2, 0x77, 0x55);
         check(chunk3, 0x00, 0x00);
@@ -224,10 +210,10 @@ namespace
 
         std::cout << "\n\nDestroying contents of conventional chunk ..."
                   << std::endl;
-        chunk1->destroy_contents();
-        EXPECT_EQ(chunk1->size(), chunk1->capacity()); // always full
-        EXPECT_EQ(chunk2->size(), buffer.size() * 2);
-        EXPECT_EQ(chunk3->size(), 0);
+        chunk1.destroy_contents();
+        EXPECT_EQ(chunk1.size(), chunk1.capacity()); // always full
+        EXPECT_EQ(chunk2.size(), buffer.size() * 2);
+        EXPECT_EQ(chunk3.size(), 0);
         check(chunk1, 0x00, 0x00);
         check(chunk2, 0x77, 0x55);
         check(chunk3, 0x00, 0x00);
@@ -235,19 +221,16 @@ namespace
 
         std::cout << "\n\nDestroying contents of first sequential chunk ..."
                   << std::endl;
-        chunk2->destroy_contents();
-        EXPECT_EQ(chunk1->size(), chunk1->capacity()); // always full
-        EXPECT_EQ(chunk2->size(), 0);
-        EXPECT_EQ(chunk3->size(), 0);
+        chunk2.destroy_contents();
+        EXPECT_EQ(chunk1.size(), chunk1.capacity()); // always full
+        EXPECT_EQ(chunk2.size(), 0);
+        EXPECT_EQ(chunk3.size(), 0);
         check(chunk1, 0x00, 0x00);
         check(chunk2, 0x00, 0x00);
         check(chunk3, 0x00, 0x00);
         print_pool_statistics(pool);
 
         std::cout << "\n\nReleasing chunks ..." << std::endl;
-        chunk1.reset();
-        chunk2.reset();
-        chunk3.reset();
         print_pool_statistics(pool);
     }
 
@@ -263,7 +246,7 @@ namespace
             ({
                 std::filesystem::path const devs[] = {
                     "/dev/mapper/raid0-rawblk0", "/dev/mapper/raid0-rawblk1"};
-                storage_pool pool(devs, storage_pool::mode::truncate);
+                storage_pool const pool(devs, storage_pool::mode::truncate);
             }),
             "open failed");
     }
@@ -292,8 +275,8 @@ namespace
                 create_temp_file(22 * BLKSIZE),
                 create_temp_file(12 * BLKSIZE),
                 create_temp_file(7 * BLKSIZE)};
-            auto undevs = monad::make_scope_exit([&]() noexcept {
-                for (auto &p : devs) {
+            auto const undevs = monad::make_scope_exit([&]() noexcept {
+                for (auto const &p : devs) {
                     std::filesystem::remove(p);
                 }
             });
@@ -304,10 +287,10 @@ namespace
             std::array<size_t, 3> counts{0, 0, 0};
             std::array<std::vector<size_t>, 3> indices;
             for (size_t n = 0; n < pool.chunks(storage_pool::seq); n++) {
-                auto p = pool.activate_chunk(
-                    storage_pool::seq, static_cast<uint32_t>(n));
+                auto &p =
+                    pool.chunk(storage_pool::seq, static_cast<uint32_t>(n));
                 auto const device_idx = static_cast<unsigned long>(
-                    &p->device() - pool.devices().data());
+                    &p.device() - pool.devices().data());
                 counts[device_idx]++;
                 indices[device_idx].push_back(n);
             }
@@ -405,8 +388,8 @@ namespace
             create_temp_file(20 * BLKSIZE),
             create_temp_file(10 * BLKSIZE),
             create_temp_file(5 * BLKSIZE)};
-        auto undevs = monad::make_scope_exit([&]() noexcept {
-            for (auto &p : devs) {
+        auto const undevs = monad::make_scope_exit([&]() noexcept {
+            for (auto const &p : devs) {
                 std::filesystem::remove(p);
             }
         });
@@ -428,31 +411,31 @@ namespace
 
         std::vector<std::byte> buffer1(1024 * 1024);
         memset(buffer1.data(), 0xee, buffer1.size());
-        auto chunk1 = pool1.activate_chunk(storage_pool::seq, 0);
+        auto chunk1 = pool1.chunk(storage_pool::seq, 0);
         {
-            auto fd = chunk1->write_fd(buffer1.size());
+            auto const fd = chunk1.write_fd(buffer1.size());
             MONAD_ASSERT(
                 -1 != ::pwrite(
                           fd.first,
                           buffer1.data(),
                           buffer1.size(),
                           static_cast<off_t>(fd.second)));
-            EXPECT_EQ(chunk1->size(), buffer1.size());
+            EXPECT_EQ(chunk1.size(), buffer1.size());
         }
         std::vector<std::byte> buffer2(1024 * 1024);
         memset(buffer2.data(), 0xcc, buffer2.size());
-        auto chunk2 = pool2.activate_chunk(storage_pool::seq, 0);
+        auto chunk2 = pool2.chunk(storage_pool::seq, 0);
         {
-            auto cloned = chunk1->clone_contents_into(*chunk2, UINT32_MAX);
+            auto const cloned = chunk1.clone_contents_into(chunk2, UINT32_MAX);
             EXPECT_EQ(cloned, buffer1.size());
-            auto fd = chunk2->read_fd();
+            auto const fd = chunk2.read_fd();
             MONAD_ASSERT(
                 -1 != ::pread(
                           fd.first,
                           buffer2.data(),
                           buffer2.size(),
                           static_cast<off_t>(fd.second)));
-            EXPECT_EQ(chunk2->size(), buffer1.size());
+            EXPECT_EQ(chunk2.size(), buffer1.size());
         }
         EXPECT_EQ(0, memcmp(buffer1.data(), buffer2.data(), buffer1.size()));
     }

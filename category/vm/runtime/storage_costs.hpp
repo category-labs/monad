@@ -329,19 +329,31 @@ namespace monad::vm::runtime
 
     template <>
     struct StorageCostTable<MonadTraits<MONAD_FIVE>>
+        : StorageCostTable<MonadTraits<MONAD_FIVE>::evm_base>
     {
-        // Derived from the algorithm in:
-        // Monad specification §4.2: Storage Gas Cost and Refunds
-        static constexpr auto costs = std::array{
-            StoreCost{.gas_cost = 100, .gas_refund = 0}, // catch all
-            StoreCost{.gas_cost = 127900, .gas_refund = 0}, // 0 -> 0 -> Z
-            StoreCost{.gas_cost = 2900, .gas_refund = 120000}, // X -> X -> 0
-            StoreCost{.gas_cost = 2900, .gas_refund = 0}, // X -> X -> Z
-            StoreCost{.gas_cost = 100, .gas_refund = -120000}, // X -> 0 -> Z
-            StoreCost{.gas_cost = 100, .gas_refund = 120000}, // X -> Y -> 0
-            StoreCost{.gas_cost = 100, .gas_refund = -117200}, // X -> 0 -> X
-            StoreCost{.gas_cost = 100, .gas_refund = 127800}, // 0 -> Y -> 0
-            StoreCost{.gas_cost = 100, .gas_refund = 2800}, // X -> Y -> X
-        };
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_SIX>>
+        : StorageCostTable<MonadTraits<MONAD_SIX>::evm_base>
+    {
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_SEVEN>>
+        : StorageCostTable<MonadTraits<MONAD_SEVEN>::evm_base>
+    {
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_EIGHT>>
+        : StorageCostTable<MonadTraits<MONAD_EIGHT>::evm_base>
+    {
+    };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_NEXT>>
+        : StorageCostTable<MonadTraits<MONAD_NEXT>::evm_base>
+    {
     };
 }

@@ -21,7 +21,6 @@
 #include <category/async/config.hpp>
 #include <category/async/io.hpp>
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -74,7 +73,7 @@ namespace
             this->aux, *this->sm, std::move(this->root), std::move(updates));
         EXPECT_EQ(
             root_hash(),
-            0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_hex);
+            0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes);
 
         inflight_map_t inflights;
         boost::fibers::fiber find_fiber(
@@ -101,7 +100,7 @@ namespace
             this->aux, *this->sm, std::move(this->root), std::move(updates));
         EXPECT_EQ(
             root_hash(),
-            0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_hex);
+            0xcbb6d81afdc76fec144f6a1a283205d42c03c102a94fc210b3a1bcfdcb625884_bytes);
 
         inflight_map_t inflights;
         std::vector<boost::fibers::fiber> fibers;

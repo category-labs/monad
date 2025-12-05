@@ -15,16 +15,15 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/runtime/uint256.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
 #include <category/vm/utils/evm-as/utils.hpp>
 
 #include <evmc/evmc.h>
-#include <intx/intx.hpp>
 
 #include <concepts>
 #include <cstdint>
@@ -115,7 +114,7 @@ namespace monad::vm::utils::evm_as
 
         EvmBuilder &push(uint64_t const imm) noexcept
         {
-            size_t n = byte_width(imm);
+            size_t const n = byte_width(imm);
             MONAD_VM_ASSERT(n <= 32);
             return push(n, runtime::uint256_t{imm});
         }
@@ -141,20 +140,20 @@ namespace monad::vm::utils::evm_as
                 n = 1;
                 i = 0;
             }
-            auto pushop =
+            auto const pushop =
                 PushI{static_cast<compiler::EvmOpCode>(0x60 + (n - 1)), i};
             return insert(std::move(pushop));
         }
 
         EvmBuilder &push(std::string const &label) noexcept
         {
-            auto pushop = PushLabelI{label};
+            auto const pushop = PushLabelI{label};
             return insert(std::move(pushop));
         }
 
         EvmBuilder &jumpdest(std::string const &label) noexcept
         {
-            auto jumpdestop = JumpdestI{label};
+            auto const jumpdestop = JumpdestI{label};
             return insert(std::move(jumpdestop));
         }
 
@@ -325,6 +324,11 @@ namespace monad::vm::utils::evm_as
         EvmBuilder &sar() noexcept
         {
             return ins(compiler::EvmOpCode::SAR);
+        }
+
+        EvmBuilder &clz() noexcept
+        {
+            return ins(compiler::EvmOpCode::CLZ);
         }
 
         EvmBuilder &sha3() noexcept

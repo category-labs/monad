@@ -37,29 +37,29 @@ namespace detail
         [[likely]] if (
             bytes_to_read <= MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {
             read_short_update_sender sender(receiver);
-            auto iostate =
-                io.make_connected(std::move(sender), std::move(receiver));
+            auto iostate = io.make_connected(
+                std::move(sender), std::forward<Receiver>(receiver));
             iostate->initiate();
             iostate.release();
         }
         else {
             read_long_update_sender sender(receiver);
-            using connected_type =
-                decltype(connect(io, std::move(sender), std::move(receiver)));
-            auto *iostate = new connected_type(
-                connect(io, std::move(sender), std::move(receiver)));
+            using connected_type = decltype(connect(
+                io, std::move(sender), std::forward<Receiver>(receiver)));
+            auto *iostate = new connected_type(connect(
+                io, std::move(sender), std::forward<Receiver>(receiver)));
             iostate->initiate();
             // drop iostate
         }
     }
 
     template <class NodeType, class ResultType>
-    inline NodeType::UniquePtr deserialize_node_from_receiver_result(
+    inline NodeType::SharedPtr deserialize_node_from_receiver_result(
         ResultType buffer_, uint16_t buffer_off,
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state)
     {
         MONAD_ASSERT(buffer_);
-        typename NodeType::UniquePtr node;
+        typename NodeType::SharedPtr node;
         if constexpr (std::is_same_v<
                           std::decay_t<ResultType>,
                           typename monad::async::read_single_buffer_sender::
@@ -78,7 +78,7 @@ namespace detail
             // Comes from read_long_update_sender which always allocates single
             // buffer.
             MONAD_ASSERT(buffer_.assume_value().size() == 1);
-            auto &buffer = buffer_.assume_value().front();
+            auto const &buffer = buffer_.assume_value().front();
             MONAD_ASSERT(buffer.size() > buffer_off);
             // Did the Receiver forget to set lifetime_managed_internally?
             MONAD_DEBUG_ASSERT(io_state->lifetime_is_managed_internally());

@@ -37,7 +37,7 @@ class TrieRODb final : public ::monad::Db
     ::monad::mpt::CacheNodeCursor prefix_cursor_;
 
 public:
-    TrieRODb(mpt::RODb &db)
+    explicit TrieRODb(mpt::RODb &db)
         : db_(db)
         , block_number_(mpt::INVALID_BLOCK_NUM)
         , prefix_cursor_()
@@ -155,6 +155,11 @@ public:
     }
 
     virtual void update_voted_metadata(uint64_t, bytes32_t const &) override
+    {
+        MONAD_ABORT();
+    }
+
+    virtual void update_proposed_metadata(uint64_t, bytes32_t const &) override
     {
         MONAD_ABORT();
     }

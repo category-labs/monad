@@ -28,8 +28,8 @@ inline byte_string const EMPTY_STRING = {0x80};
 
 inline byte_string_view zeroless_view(byte_string_view const string_view)
 {
-    auto b = string_view.begin();
-    auto const e = string_view.end();
+    auto const *b = string_view.begin();
+    auto const *e = string_view.end();
     while (b < e && *b == 0) {
         ++b;
     }
@@ -73,11 +73,15 @@ byte_string encode_list2(Args const &...args)
     if (size > 55) {
         auto const size_str = to_big_compact(size);
         MONAD_ASSERT(size_str.size() <= 8u);
-        result += (0xf7 + static_cast<unsigned char>(size_str.size()));
+        result +=
+            (static_cast<unsigned char>(0xf7) +
+             static_cast<unsigned char>(size_str.size()));
         result += size_str;
     }
     else {
-        result += (0xc0 + static_cast<unsigned char>(size));
+        result +=
+            (static_cast<unsigned char>(0xc0) +
+             static_cast<unsigned char>(size));
     }
     ([&] { result += args; }(), ...);
     return result;

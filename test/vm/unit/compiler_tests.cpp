@@ -33,7 +33,6 @@
 using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::compiler;
-using namespace intx;
 
 template <
     typename Op, typename... Args,

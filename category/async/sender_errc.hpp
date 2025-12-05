@@ -97,9 +97,9 @@ public:
             std::reference_wrapper<filled_write_buffer>>
             payload;
 
-        constexpr value_type() noexcept {}
+        constexpr value_type() noexcept = default;
 
-        constexpr value_type(sender_errc code_) noexcept
+        constexpr explicit value_type(sender_errc code_) noexcept
             : code(code_)
         {
         }
@@ -174,7 +174,7 @@ protected:
         const noexcept override
     {
         (void)code;
-        MONAD_DEBUG_ASSERT(code.domain() == *this);
+        MONAD_ASSERT(code.domain() == *this);
         return true;
     }
 
@@ -183,7 +183,7 @@ protected:
         const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code2)
         const noexcept override
     {
-        MONAD_DEBUG_ASSERT(code1.domain() == *this);
+        MONAD_ASSERT(code1.domain() == *this);
         auto const &c1 =
             static_cast<sender_errc_with_payload_code const &>(code1);
         if (code2.domain() == *this) {
@@ -208,7 +208,7 @@ protected:
         const noexcept override
     {
         (void)code;
-        MONAD_DEBUG_ASSERT(code.domain() == *this);
+        MONAD_ASSERT(code.domain() == *this);
         return errc::unknown;
     }
 
@@ -216,7 +216,7 @@ protected:
         const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code)
         const noexcept override
     {
-        MONAD_DEBUG_ASSERT(code.domain() == *this);
+        MONAD_ASSERT(code.domain() == *this);
         auto const &c =
             static_cast<sender_errc_with_payload_code const &>(code);
         switch (sender_errc(c.value().code)) {
@@ -234,7 +234,7 @@ protected:
         const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code)
         const override
     {
-        MONAD_DEBUG_ASSERT(code.domain() == *this);
+        MONAD_ASSERT(code.domain() == *this);
         auto const &c =
             static_cast<sender_errc_with_payload_code const &>(code);
         throw BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_error<
@@ -275,11 +275,14 @@ namespace detail
 
         thread_local_sender_errc_with_payload_code_allocator() = default;
 
+        // NOLINTBEGIN(google-explicit-constructor)
         template <class U>
         constexpr thread_local_sender_errc_with_payload_code_allocator(
             thread_local_sender_errc_with_payload_code_allocator<U> const &)
         {
         }
+
+        // NOLINTEND(google-explicit-constructor)
 
         [[nodiscard]] value_type *allocate(size_type n)
         {

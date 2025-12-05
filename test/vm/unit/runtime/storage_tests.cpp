@@ -15,9 +15,9 @@
 
 #include "fixture.hpp"
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/transmute.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.h>
 
@@ -41,360 +41,177 @@ TEST_F(RuntimeTest, TransientStorage)
     ctx_.gas_remaining = 0;
 
     ASSERT_EQ(load(key), 0);
+    ASSERT_EQ(ctx_.result.status, StatusCode::Success);
 
     store(key, val);
+    ASSERT_EQ(ctx_.result.status, StatusCode::Success);
     ASSERT_EQ(load(key), val);
+    ASSERT_EQ(ctx_.result.status, StatusCode::Success);
 
     store(key, val_2);
+    ASSERT_EQ(ctx_.result.status, StatusCode::Success);
     ASSERT_EQ(load(key), val_2);
+    ASSERT_EQ(ctx_.result.status, StatusCode::Success);
 }
 
-TEST_F(RuntimeTest, StorageHomestead)
+TYPED_TEST(RuntimeTraitsTest, StorageLoadCold)
 {
-    using traits = EvmTraits<EVMC_HOMESTEAD>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
+    using traits = TestFixture::Trait;
+    auto load = TestFixture::wrap(sload<traits>);
 
-    ctx_.gas_remaining = 0;
+    this->ctx_.gas_remaining = [] {
+        if constexpr (is_monad_trait_v<traits>) {
+            if constexpr (traits::monad_rev() >= MONAD_SEVEN) {
+                return 8000;
+            }
+        }
+        if constexpr (traits::evm_rev() <= EVMC_ISTANBUL) {
+            return 0;
+        }
+        else {
+            return 2000;
+        }
+    }();
     ASSERT_EQ(load(key), 0);
-
-    ctx_.gas_remaining = 15000;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val);
-
-    ctx_.gas_remaining = 0;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val_2);
-
-    ctx_.gas_remaining = 0;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.gas_refund, 15000);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
     ASSERT_EQ(load(key), 0);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
 }
 
-TEST_F(RuntimeTest, StorageConstantinopleOriginalEmpty)
+TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
 {
-    using traits = EvmTraits<EVMC_CONSTANTINOPLE>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
+    using traits = TestFixture::Trait;
+    auto load = TestFixture::wrap(sload<traits>);
 
-    ctx_.gas_remaining = 0;
+    this->host_.access_storage(
+        this->ctx_.env.recipient, bytes32_from_uint256(key));
+
+    this->ctx_.gas_remaining = 0;
     ASSERT_EQ(load(key), 0);
-
-    // empty -> nonempty
-    ctx_.gas_remaining = 19800;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val);
-
-    // nonempty -> nonempty
-    ctx_.gas_remaining = 0;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val_2);
-
-    // nonempty -> empty
-    ctx_.gas_remaining = 0;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.gas_refund, 19800);
-    ASSERT_EQ(load(key), 0);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
 }
 
-TEST_F(RuntimeTest, StorageConstantinopleOriginalNonEmpty)
+TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 {
-    using traits = EvmTraits<EVMC_CONSTANTINOPLE>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
+    using traits = TestFixture::Trait;
+    auto load = TestFixture::wrap(sload<traits>);
+    auto store = TestFixture::wrap(sstore<traits>);
+
+    auto do_test = [&load, &store, &ctx_ = this->ctx_](
+                       int64_t empty_nonempty_cold_cost,
+                       int64_t nonempty_empty_warm_refund) {
+        // empty -> nonempty (cold)
+        ctx_.gas_remaining = empty_nonempty_cold_cost;
+        store(key, val);
+        ASSERT_EQ(ctx_.gas_remaining, 0);
+        ASSERT_EQ(load(key), val);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+
+        // nonempty -> nonempty (warm)
+        ctx_.gas_remaining = 2301;
+        store(key, val_2);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+        ASSERT_EQ(ctx_.gas_remaining, 2301);
+        ASSERT_EQ(load(key), val_2);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+
+        // nonempty -> empty (warm)
+        ctx_.gas_remaining = 2301;
+        store(key, 0);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+        ASSERT_EQ(ctx_.gas_remaining, 2301);
+        ASSERT_EQ(ctx_.gas_refund, nonempty_empty_warm_refund);
+        ASSERT_EQ(load(key), 0);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+    };
+
+    if constexpr (is_monad_trait_v<traits>) {
+        if constexpr (traits::monad_rev() >= MONAD_SEVEN) {
+            return do_test(28000, 19900);
+        }
+    }
+    if constexpr (
+        traits::evm_rev() <= EVMC_BYZANTIUM ||
+        traits::evm_rev() == EVMC_PETERSBURG) {
+        do_test(15000, 15000);
+    }
+    else if constexpr (traits::evm_rev() == EVMC_CONSTANTINOPLE) {
+        do_test(19800, 19800);
+    }
+    else if constexpr (traits::evm_rev() == EVMC_ISTANBUL) {
+        do_test(19200, 19200);
+    }
+    else {
+        do_test(22000, 19900);
+    }
+}
+
+TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
+{
+    using traits = TestFixture::Trait;
+    auto load = TestFixture::wrap(sload<traits>);
+    auto store = TestFixture::wrap(sstore<traits>);
 
     // current == original
-    auto &loc =
-        host_.accounts[ctx_.env.recipient].storage[bytes32_from_uint256(key)];
+    auto &loc = this->host_.accounts[this->ctx_.env.recipient]
+                    .storage[bytes32_from_uint256(key)];
     loc.original = bytes32_from_uint256(val);
     loc.current = bytes32_from_uint256(val);
 
-    ctx_.gas_remaining = 0;
-    ASSERT_EQ(load(key), val);
+    auto do_test = [&load, &store, &ctx_ = this->ctx_](
+                       int64_t nonempty_same_nonempty_cold_remaining,
+                       int64_t nonempty_different_nonempty_warm_cost) {
+        // nonempty -> same nonempty (cold)
+        ctx_.gas_remaining = 8100;
+        store(key, val);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+        ASSERT_EQ(ctx_.gas_remaining, nonempty_same_nonempty_cold_remaining);
+        ASSERT_EQ(load(key), val);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
 
-    // nonempty -> same nonempty
-    ctx_.gas_remaining = 0;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val);
+        // nonempty -> different nonempty (warm)
+        ctx_.gas_remaining = nonempty_different_nonempty_warm_cost;
+        store(key, val_2);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+        ASSERT_EQ(ctx_.gas_remaining, 0);
+        ASSERT_EQ(load(key), val_2);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
 
-    // nonempty -> different nonempty
-    ctx_.gas_remaining = 4800;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val_2);
+        // nonempty -> empty (warm)
+        ctx_.gas_remaining = 2301;
+        store(key, 0);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+        ASSERT_EQ(ctx_.gas_remaining, 2301);
+        if constexpr (traits::evm_rev() <= EVMC_BERLIN) {
+            ASSERT_EQ(ctx_.gas_refund, 15000);
+        }
+        else {
+            ASSERT_EQ(ctx_.gas_refund, 4800);
+        }
+        ASSERT_EQ(load(key), 0);
+        ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+    };
 
-    // nonempty -> empty
-    ctx_.gas_remaining = 0;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.gas_refund, 15000);
-    ASSERT_EQ(load(key), 0);
-}
-
-TEST_F(RuntimeTest, StorageIstanbulOriginalEmpty)
-{
-    using traits = EvmTraits<EVMC_ISTANBUL>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
-
-    ctx_.gas_remaining = 0;
-    ASSERT_EQ(load(key), 0);
-
-    // empty -> nonempty
-    ctx_.gas_remaining = 19200;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val);
-
-    // nonempty -> nonempty
-    ctx_.gas_remaining = 2301;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(load(key), val_2);
-
-    // nonempty -> empty
-    ctx_.gas_remaining = 2301;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(ctx_.gas_refund, 19200);
-    ASSERT_EQ(load(key), 0);
-}
-
-TEST_F(RuntimeTest, StorageIstanbulOriginalNonEmpty)
-{
-    using traits = EvmTraits<EVMC_ISTANBUL>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
-
-    // current == original
-    auto &loc =
-        host_.accounts[ctx_.env.recipient].storage[bytes32_from_uint256(key)];
-    loc.original = bytes32_from_uint256(val);
-    loc.current = bytes32_from_uint256(val);
-
-    ctx_.gas_remaining = 0;
-    ASSERT_EQ(load(key), val);
-
-    // nonempty -> same nonempty
-    ctx_.gas_remaining = 2301;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(load(key), val);
-
-    // nonempty -> different nonempty
-    ctx_.gas_remaining = 4200;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val_2);
-
-    // nonempty -> empty
-    ctx_.gas_remaining = 2301;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(ctx_.gas_refund, 15000);
-    ASSERT_EQ(load(key), 0);
-}
-
-TEST_F(RuntimeTest, StorageBerlinLoadCold)
-{
-    using traits = EvmTraits<EVMC_BERLIN>;
-    auto load = wrap(sload<traits>);
-
-    ctx_.gas_remaining = 2000;
-    ASSERT_EQ(load(key), 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-}
-
-TEST_F(RuntimeTest, StorageBerlinLoadWarm)
-{
-    using traits = EvmTraits<EVMC_BERLIN>;
-    auto load = wrap(sload<traits>);
-
-    host_.access_storage(ctx_.env.recipient, bytes32_from_uint256(key));
-
-    ctx_.gas_remaining = 0;
-    ASSERT_EQ(load(key), 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-}
-
-TEST_F(RuntimeTest, StorageBerlinOriginalEmpty)
-{
-    using traits = EvmTraits<EVMC_BERLIN>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
-
-    // empty -> nonempty (cold)
-    ctx_.gas_remaining = 22000;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val);
-
-    // nonempty -> nonempty (warm)
-    ctx_.gas_remaining = 2301;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(load(key), val_2);
-
-    // nonempty -> empty (warm)
-    ctx_.gas_remaining = 2301;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(ctx_.gas_refund, 19900);
-    ASSERT_EQ(load(key), 0);
-}
-
-TEST_F(RuntimeTest, StorageBerlinOriginalNonEmpty)
-{
-    using traits = EvmTraits<EVMC_BERLIN>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
-
-    // current == original
-    auto &loc =
-        host_.accounts[ctx_.env.recipient].storage[bytes32_from_uint256(key)];
-    loc.original = bytes32_from_uint256(val);
-    loc.current = bytes32_from_uint256(val);
-
-    // nonempty -> same nonempty (cold)
-    ctx_.gas_remaining = 2301;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 201);
-    ASSERT_EQ(load(key), val);
-
-    // nonempty -> different nonempty (warm)
-    ctx_.gas_remaining = 2800;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val_2);
-
-    // nonempty -> empty (warm)
-    ctx_.gas_remaining = 2301;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(ctx_.gas_refund, 15000);
-    ASSERT_EQ(load(key), 0);
-}
-
-TEST_F(RuntimeTest, StorageLondonOriginalNonEmpty)
-{
-    using traits = EvmTraits<EVMC_LONDON>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
-
-    // current == original
-    auto &loc =
-        host_.accounts[ctx_.env.recipient].storage[bytes32_from_uint256(key)];
-    loc.original = bytes32_from_uint256(val);
-    loc.current = bytes32_from_uint256(val);
-
-    // nonempty -> same nonempty (cold)
-    ctx_.gas_remaining = 2301;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 201);
-    ASSERT_EQ(load(key), val);
-
-    // nonempty -> different nonempty (warm)
-    ctx_.gas_remaining = 2800;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val_2);
-
-    // nonempty -> empty (warm)
-    ctx_.gas_remaining = 2301;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(ctx_.gas_refund, 4800);
-    ASSERT_EQ(load(key), 0);
-}
-
-TEST_F(RuntimeTest, StorageCancunLoadCold)
-{
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto load = wrap(sload<traits>);
-
-    ctx_.gas_remaining = 2000;
-    ASSERT_EQ(load(key), 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-}
-
-TEST_F(RuntimeTest, StorageCancunLoadWarm)
-{
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto load = wrap(sload<traits>);
-
-    host_.access_storage(ctx_.env.recipient, bytes32_from_uint256(key));
-
-    ctx_.gas_remaining = 0;
-    ASSERT_EQ(load(key), 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-}
-
-TEST_F(RuntimeTest, StorageCancunOriginalEmpty)
-{
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
-
-    // empty -> nonempty (cold)
-    ctx_.gas_remaining = 22000;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val);
-
-    // nonempty -> nonempty (warm)
-    ctx_.gas_remaining = 2301;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(load(key), val_2);
-
-    // nonempty -> empty (warm)
-    ctx_.gas_remaining = 2301;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(ctx_.gas_refund, 19900);
-    ASSERT_EQ(load(key), 0);
-}
-
-TEST_F(RuntimeTest, StorageCancunOriginalNonEmpty)
-{
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto load = wrap(sload<traits>);
-    auto store = wrap(sstore<traits>);
-
-    // current == original
-    auto &loc =
-        host_.accounts[ctx_.env.recipient].storage[bytes32_from_uint256(key)];
-    loc.original = bytes32_from_uint256(val);
-    loc.current = bytes32_from_uint256(val);
-
-    // nonempty -> same nonempty (cold)
-    ctx_.gas_remaining = 2301;
-    store(key, val);
-    ASSERT_EQ(ctx_.gas_remaining, 201);
-    ASSERT_EQ(load(key), val);
-
-    // nonempty -> different nonempty (warm)
-    ctx_.gas_remaining = 2800;
-    store(key, val_2);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(load(key), val_2);
-
-    // nonempty -> empty (warm)
-    ctx_.gas_remaining = 2301;
-    store(key, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 2301);
-    ASSERT_EQ(ctx_.gas_refund, 4800);
-    ASSERT_EQ(load(key), 0);
+    if constexpr (is_monad_trait_v<traits>) {
+        if constexpr (traits::monad_rev() >= MONAD_SEVEN) {
+            return do_test(0, 2800);
+        }
+    }
+    if constexpr (
+        traits::evm_rev() <= EVMC_BYZANTIUM ||
+        traits::evm_rev() == EVMC_PETERSBURG) {
+        do_test(8100, 0);
+    }
+    else if constexpr (traits::evm_rev() == EVMC_CONSTANTINOPLE) {
+        do_test(8100, 4800);
+    }
+    else if constexpr (traits::evm_rev() == EVMC_ISTANBUL) {
+        do_test(8100, 4200);
+    }
+    else {
+        do_test(6000, 2800);
+    }
 }

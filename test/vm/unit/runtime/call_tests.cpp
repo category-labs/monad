@@ -30,317 +30,455 @@ using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;
-using namespace intx;
 
-TEST_F(RuntimeTest, CallBasic)
+TYPED_TEST(RuntimeTraitsTest, CallBasic)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto do_call = wrap(monad::vm::runtime::call<traits>);
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::call<typename TestFixture::Trait>);
 
-    ctx_.gas_remaining = 100000;
-    host_.call_result = success_result(2000);
-    host_.access_account(address_from_uint256(0));
+    this->ctx_.gas_remaining = 100000;
+    this->host_.call_result = TestFixture::success_result(2000);
+    this->host_.access_account(address_from_uint256(0));
 
     auto res = do_call(10000, 0, 0, 0, 0, 0, 32);
 
     ASSERT_EQ(res, 1);
-    ASSERT_EQ(ctx_.memory.size, 32);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->ctx_.memory.size, 32);
     for (auto i = 0u; i < 32; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], i);
+        ASSERT_EQ(this->ctx_.memory.data[i], i);
     }
-    ASSERT_EQ(ctx_.gas_remaining, 91997);
+    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
+        ASSERT_EQ(this->ctx_.gas_remaining, 66997);
+    }
+    else {
+        ASSERT_EQ(this->ctx_.gas_remaining, 91997);
+    }
 }
 
-TEST_F(RuntimeTest, CallWithValueCold)
+TYPED_TEST(RuntimeTraitsTest, CallWithValueCold)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto do_call = wrap(monad::vm::runtime::call<traits>);
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::call<typename TestFixture::Trait>);
 
-    ctx_.gas_remaining = 100000;
-    host_.call_result = success_result(2000);
+    this->ctx_.gas_remaining = 100000;
+    this->host_.call_result = TestFixture::success_result(2000);
 
     auto res = do_call(10000, 0, 1, 0, 0, 0, 0);
 
     ASSERT_EQ(res, 1);
-    ASSERT_EQ(ctx_.memory.size, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 55500);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->ctx_.memory.size, 0);
+    constexpr auto gas_remaining = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+                return 48'000;
+            }
+        }
+        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+            return 58'000;
+        }
+        else {
+            return 55'500;
+        }
+    }();
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
 }
 
-TEST_F(RuntimeTest, CallGasLimit)
+TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto do_call = wrap(monad::vm::runtime::call<traits>);
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::call<typename TestFixture::Trait>);
 
-    ctx_.gas_remaining = 66500;
-    host_.call_result = success_result(2000);
+    this->ctx_.gas_remaining = 66500;
+    this->host_.call_result = TestFixture::success_result(2000);
 
     auto res =
         do_call(std::numeric_limits<std::int64_t>::max(), 0, 0, 0, 0, 0, 0);
 
-    ASSERT_EQ(res, 1);
-    ASSERT_EQ(ctx_.memory.size, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 3000);
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
+        ASSERT_EQ(res, 1);
+        ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+        ASSERT_EQ(this->ctx_.memory.size, 0);
+
+        constexpr auto gas_remaining = [] {
+            if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+                if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+                    return 2882;
+                }
+            }
+            if constexpr (
+                TestFixture::Trait::evm_rev() == EVMC_TANGERINE_WHISTLE) {
+                return 2648;
+            }
+            else if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+                return 3039;
+            }
+            else {
+                return 3000;
+            }
+        }();
+
+        ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
+    }
+    else {
+        ASSERT_EQ(this->ctx_.result.status, StatusCode::OutOfGas);
+        // because set_return_data is not reached in this branch due to the
+        // early exit, ASAN complains about a memory leak, since the destructor
+        // of Environment would normally run std::free on this data.
+        std::free(
+            const_cast<std::uint8_t *>(this->host_.call_result.output_data));
+    }
 }
 
-TEST_F(RuntimeTest, CallFailure)
+TYPED_TEST(RuntimeTraitsTest, CallFailure)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto do_call = wrap(monad::vm::runtime::call<traits>);
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::call<typename TestFixture::Trait>);
 
-    ctx_.gas_remaining = 100000;
-    host_.call_result = failure_result();
+    this->ctx_.gas_remaining = 100000;
+    this->host_.call_result = TestFixture::failure_result();
 
     auto res = do_call(10000, 0, 0, 0, 0, 0, 0);
     ASSERT_EQ(res, 0);
-    ASSERT_EQ(ctx_.memory.size, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 87500);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->ctx_.memory.size, 0);
+
+    constexpr auto gas_remaining = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+                return 80'000;
+            }
+        }
+        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
+            return 65'000;
+        }
+        else if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+            return 90'000;
+        }
+        else {
+            return 87'500;
+        }
+    }();
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
 }
 
-TEST_F(RuntimeTest, DelegateCallIstanbul)
+TYPED_TEST(RuntimeTraitsTest, DelegateCall)
 {
-    using traits = EvmTraits<EVMC_ISTANBUL>;
-    auto do_call = wrap(monad::vm::runtime::delegatecall<traits>);
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BYZANTIUM) {
+        auto do_call = TestFixture::wrap(
+            monad::vm::runtime::delegatecall<typename TestFixture::Trait>);
 
-    ctx_.gas_remaining = 100000;
-    host_.call_result = success_result(2000);
+        this->ctx_.gas_remaining = 100000;
+        this->host_.call_result = TestFixture::success_result(2000);
 
-    auto res = do_call(10000, 0, 0, 0, 0, 0);
-    ASSERT_EQ(res, 1);
-    ASSERT_EQ(ctx_.memory.size, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 92000);
+        auto res = do_call(10000, 0, 0, 0, 0, 0);
+        ASSERT_EQ(res, 1);
+        ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+        ASSERT_EQ(this->ctx_.memory.size, 0);
+        constexpr auto gas_remaining = [] {
+            if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+                if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+                    return 82'000;
+                }
+            }
+            if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+                return 92'000;
+            }
+            else {
+                return 89'500;
+            }
+        }();
+        ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
+    }
 }
 
-TEST_F(RuntimeTest, CallCodeHomestead)
+TYPED_TEST(RuntimeTraitsTest, CallCode)
 {
-    using traits = EvmTraits<EVMC_HOMESTEAD>;
-    auto do_call = wrap(monad::vm::runtime::callcode<traits>);
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::callcode<typename TestFixture::Trait>);
 
-    ctx_.gas_remaining = 100000;
-    host_.call_result = success_result(2000);
+    this->ctx_.gas_remaining = 100000;
+    this->host_.call_result = TestFixture::success_result(2000);
 
     auto res = do_call(10000, 0, 34, 120, 2, 3, 54);
     ASSERT_EQ(res, 1);
-    ASSERT_EQ(ctx_.memory.size, 128);
-    ASSERT_EQ(ctx_.gas_remaining, 82988);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->ctx_.memory.size, 128);
+    constexpr auto gas_remaining = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+                return 72'988;
+            }
+        }
+        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+            return 82'988;
+        }
+        else {
+            return 80'488;
+        }
+    }();
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
 }
 
-TEST_F(RuntimeTest, StaticCallByzantium)
+TYPED_TEST(RuntimeTraitsTest, StaticCall)
 {
-    using traits = EvmTraits<EVMC_BYZANTIUM>;
-    auto do_call = wrap(monad::vm::runtime::staticcall<traits>);
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BYZANTIUM) {
+        auto do_call = TestFixture::wrap(
+            monad::vm::runtime::staticcall<typename TestFixture::Trait>);
 
-    ctx_.gas_remaining = 100000;
-    host_.call_result = success_result(2000);
+        this->ctx_.gas_remaining = 100000;
+        this->host_.call_result = TestFixture::success_result(2000);
 
-    auto res = do_call(10000, 0, 23, 238, 890, 67);
-    ASSERT_EQ(res, 1);
-    ASSERT_EQ(ctx_.memory.size, 960);
-    ASSERT_EQ(ctx_.gas_remaining, 91909);
+        auto res = do_call(10000, 0, 23, 238, 890, 67);
+        ASSERT_EQ(res, 1);
+        ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+        ASSERT_EQ(this->ctx_.memory.size, 960);
+        constexpr auto gas_remaining = [] {
+            if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+                if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+                    return 81'909;
+                }
+            }
+            if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+                return 91'909;
+            }
+            else {
+                return 89'409;
+            }
+        }();
+        ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
+    }
 }
 
-TEST_F(RuntimeTest, CallTooDeep)
+TYPED_TEST(RuntimeTraitsTest, CallTooDeep)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
-    auto do_call = wrap(monad::vm::runtime::call<traits>);
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::call<typename TestFixture::Trait>);
 
-    ctx_.env.depth = 1024;
-    ctx_.gas_remaining = 100000;
+    this->ctx_.env.depth = 1024;
+    this->ctx_.gas_remaining = 100000;
 
     auto res = do_call(10000, 0, 1, 0, 0, 0, 0);
 
     ASSERT_EQ(res, 0);
-    ASSERT_EQ(ctx_.memory.size, 0);
-    ASSERT_EQ(ctx_.gas_remaining, 65800);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->ctx_.memory.size, 0);
+    constexpr auto gas_remaining = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+                return 58'300;
+            }
+        }
+        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+            return 68'300;
+        }
+        else {
+            return 65'800;
+        }
+    }();
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
 }
 
-TEST_F(RuntimeTest, DelegatedCallPrague)
+TYPED_TEST(RuntimeTraitsTest, DelegatedCall)
 {
-    using traits = EvmTraits<EVMC_PRAGUE>;
-
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
     coffee_code.append_range(delegate_addr.bytes);
     ASSERT_EQ(coffee_code.size(), 23);
-    add_account_at(0xC0FFEE, coffee_code);
+    TestFixture::add_account_at(0xC0FFEE, coffee_code);
 
     std::vector<uint8_t> beef_code = {0x00};
-    add_account_at(0xBEEF, beef_code);
+    TestFixture::add_account_at(0xBEEF, beef_code);
 
-    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
+    ASSERT_EQ(this->host_.recorded_account_accesses.size(), 0);
 
-    auto do_call = wrap(monad::vm::runtime::call<traits>);
-    ctx_.gas_remaining = 100000;
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::call<typename TestFixture::Trait>);
+    this->ctx_.gas_remaining = 100000;
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
 
     ASSERT_EQ(res, 1);
     ASSERT_EQ(
-        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
-    ASSERT_EQ(
-        host_.access_account(address_from_uint256(0xBEEF)), EVMC_ACCESS_WARM);
-    ASSERT_EQ(host_.recorded_calls.size(), 1);
-    ASSERT_EQ(
-        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
-        static_cast<uint32_t>(EVMC_DELEGATED));
+        this->host_.access_account(address_from_uint256(0xC0FFEE)),
+        EVMC_ACCESS_WARM);
+    TestFixture::assert_delegated(delegate_addr);
 }
 
-TEST_F(RuntimeTest, DelegatedStaticCallPrague)
+TYPED_TEST(RuntimeTraitsTest, DelegatedStaticCall)
 {
-    using traits = EvmTraits<EVMC_PRAGUE>;
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BYZANTIUM) {
+        auto const delegate_addr = address_from_uint256(0xBEEF);
+        std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
+        coffee_code.append_range(delegate_addr.bytes);
+        ASSERT_EQ(coffee_code.size(), 23);
+        TestFixture::add_account_at(0xC0FFEE, coffee_code);
 
+        std::vector<uint8_t> beef_code = {0x00};
+        TestFixture::add_account_at(0xBEEF, beef_code);
+
+        ASSERT_EQ(this->host_.recorded_account_accesses.size(), 0);
+
+        auto do_call = TestFixture::wrap(
+            monad::vm::runtime::staticcall<typename TestFixture::Trait>);
+        this->ctx_.gas_remaining = 100000;
+
+        auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0);
+
+        ASSERT_EQ(res, 1);
+        ASSERT_EQ(
+            this->host_.access_account(address_from_uint256(0xC0FFEE)),
+            EVMC_ACCESS_WARM);
+        TestFixture::assert_delegated(delegate_addr);
+    }
+}
+
+TYPED_TEST(RuntimeTraitsTest, DelegatedDelegateCall)
+{
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BYZANTIUM) {
+        auto const delegate_addr = address_from_uint256(0xBEEF);
+        std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
+        coffee_code.append_range(delegate_addr.bytes);
+        ASSERT_EQ(coffee_code.size(), 23);
+        TestFixture::add_account_at(0xC0FFEE, coffee_code);
+
+        std::vector<uint8_t> beef_code = {0x00};
+        TestFixture::add_account_at(0xBEEF, beef_code);
+
+        ASSERT_EQ(this->host_.recorded_account_accesses.size(), 0);
+
+        auto do_call = TestFixture::wrap(
+            monad::vm::runtime::delegatecall<typename TestFixture::Trait>);
+        this->ctx_.gas_remaining = 100000;
+
+        auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0);
+
+        ASSERT_EQ(res, 1);
+        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+            ASSERT_EQ(
+                this->host_.access_account(address_from_uint256(0xC0FFEE)),
+                EVMC_ACCESS_COLD);
+        }
+        else {
+            ASSERT_EQ(
+                this->host_.access_account(address_from_uint256(0xC0FFEE)),
+                EVMC_ACCESS_WARM);
+        }
+        TestFixture::assert_delegated(delegate_addr);
+    }
+}
+
+TYPED_TEST(RuntimeTraitsTest, DelegatedCallcode)
+{
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
     coffee_code.append_range(delegate_addr.bytes);
     ASSERT_EQ(coffee_code.size(), 23);
-    add_account_at(0xC0FFEE, coffee_code);
+    TestFixture::add_account_at(0xC0FFEE, coffee_code);
 
     std::vector<uint8_t> beef_code = {0x00};
-    add_account_at(0xBEEF, beef_code);
+    TestFixture::add_account_at(0xBEEF, beef_code);
 
-    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
+    ASSERT_EQ(this->host_.recorded_account_accesses.size(), 0);
 
-    auto do_call = wrap(monad::vm::runtime::staticcall<traits>);
-    ctx_.gas_remaining = 100000;
-
-    auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0);
-
-    ASSERT_EQ(res, 1);
-    ASSERT_EQ(
-        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
-    ASSERT_EQ(
-        host_.access_account(address_from_uint256(0xBEEF)), EVMC_ACCESS_WARM);
-    ASSERT_EQ(host_.recorded_calls.size(), 1);
-    ASSERT_EQ(
-        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
-        static_cast<uint32_t>(EVMC_DELEGATED));
-}
-
-TEST_F(RuntimeTest, DelegatedDelegateCallPrague)
-{
-    using traits = EvmTraits<EVMC_PRAGUE>;
-
-    auto const delegate_addr = address_from_uint256(0xBEEF);
-    std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
-    coffee_code.append_range(delegate_addr.bytes);
-    ASSERT_EQ(coffee_code.size(), 23);
-    add_account_at(0xC0FFEE, coffee_code);
-
-    std::vector<uint8_t> beef_code = {0x00};
-    add_account_at(0xBEEF, beef_code);
-
-    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
-
-    auto do_call = wrap(monad::vm::runtime::delegatecall<traits>);
-    ctx_.gas_remaining = 100000;
-
-    auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0);
-
-    ASSERT_EQ(res, 1);
-    ASSERT_EQ(
-        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
-    ASSERT_EQ(
-        host_.access_account(address_from_uint256(0xBEEF)), EVMC_ACCESS_WARM);
-    ASSERT_EQ(host_.recorded_calls.size(), 1);
-    ASSERT_EQ(
-        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
-        static_cast<uint32_t>(EVMC_DELEGATED));
-}
-
-TEST_F(RuntimeTest, DelegatedCallcodePrague)
-{
-    using traits = EvmTraits<EVMC_PRAGUE>;
-
-    auto const delegate_addr = address_from_uint256(0xBEEF);
-    std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
-    coffee_code.append_range(delegate_addr.bytes);
-    ASSERT_EQ(coffee_code.size(), 23);
-    add_account_at(0xC0FFEE, coffee_code);
-
-    std::vector<uint8_t> beef_code = {0x00};
-    add_account_at(0xBEEF, beef_code);
-
-    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
-
-    auto do_call = wrap(monad::vm::runtime::callcode<traits>);
-    ctx_.gas_remaining = 100000;
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::callcode<typename TestFixture::Trait>);
+    this->ctx_.gas_remaining = 100000;
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
 
     ASSERT_EQ(res, 1);
-    ASSERT_EQ(
-        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
-    ASSERT_EQ(
-        host_.access_account(address_from_uint256(0xBEEF)), EVMC_ACCESS_WARM);
-    ASSERT_EQ(host_.recorded_calls.size(), 1);
-    ASSERT_EQ(
-        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
-        static_cast<uint32_t>(EVMC_DELEGATED));
+    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        ASSERT_EQ(
+            this->host_.access_account(address_from_uint256(0xC0FFEE)),
+            EVMC_ACCESS_COLD);
+    }
+    else {
+        ASSERT_EQ(
+            this->host_.access_account(address_from_uint256(0xC0FFEE)),
+            EVMC_ACCESS_WARM);
+    }
+    TestFixture::assert_delegated(delegate_addr);
 }
 
-TEST_F(RuntimeTest, DelegatedCallPraguePrecompile)
+TYPED_TEST(RuntimeTraitsTest, DelegatedCallPrecompile)
 {
-    using traits = EvmTraits<EVMC_PRAGUE>;
-
     auto const delegate_addr = address_from_uint256(0x01);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
     coffee_code.append_range(delegate_addr.bytes);
     ASSERT_EQ(coffee_code.size(), 23);
-    add_account_at(0xC0FFEE, coffee_code);
+    TestFixture::add_account_at(0xC0FFEE, coffee_code);
 
-    ASSERT_EQ(host_.recorded_account_accesses.size(), 0);
+    ASSERT_EQ(this->host_.recorded_account_accesses.size(), 0);
 
-    auto do_call = wrap(monad::vm::runtime::call<traits>);
-    ctx_.gas_remaining = 100000;
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::call<typename TestFixture::Trait>);
+    this->ctx_.gas_remaining = 100000;
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
 
     ASSERT_EQ(res, 1);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
     ASSERT_EQ(
-        host_.access_account(address_from_uint256(0xC0FFEE)), EVMC_ACCESS_WARM);
-    ASSERT_EQ(host_.recorded_calls.size(), 1);
-    ASSERT_EQ(
-        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
-        static_cast<uint32_t>(EVMC_DELEGATED));
+        this->host_.access_account(address_from_uint256(0xC0FFEE)),
+        EVMC_ACCESS_WARM);
+    ASSERT_EQ(this->host_.recorded_calls.size(), 1);
+
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
+        ASSERT_EQ(
+            this->host_.recorded_calls[0].flags &
+                static_cast<uint32_t>(EVMC_DELEGATED),
+            static_cast<uint32_t>(EVMC_DELEGATED));
+    }
+    else {
+        ASSERT_NE(
+            this->host_.recorded_calls[0].flags &
+                static_cast<uint32_t>(EVMC_DELEGATED),
+            static_cast<uint32_t>(EVMC_DELEGATED));
+    }
 }
 
-TEST_F(RuntimeTest, DelegatedCallPragueBadCode1)
+TYPED_TEST(RuntimeTraitsTest, DelegatedCallBadCode1)
 {
-    using traits = EvmTraits<EVMC_PRAGUE>;
-
     std::array<uint8_t, 2> baad_addr{0xBA, 0xAD};
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
     coffee_code.append_range(baad_addr);
-    add_account_at(0xC0FFEE, coffee_code);
+    TestFixture::add_account_at(0xC0FFEE, coffee_code);
 
-    auto do_call = wrap(monad::vm::runtime::call<traits>);
-    ctx_.gas_remaining = 100000;
-    host_.call_result = success_result(2000);
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::call<typename TestFixture::Trait>);
+    this->ctx_.gas_remaining = 100000;
+    this->host_.call_result = TestFixture::success_result(2000);
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
 
     ASSERT_EQ(res, 1);
-    ASSERT_EQ(host_.recorded_calls.size(), 1);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->host_.recorded_calls.size(), 1);
     ASSERT_EQ(
-        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
+        this->host_.recorded_calls[0].flags &
+            static_cast<uint32_t>(EVMC_DELEGATED),
         0);
 }
 
-TEST_F(RuntimeTest, DelegatedCallPragueBadCode2)
+TYPED_TEST(RuntimeTraitsTest, DelegatedCallBadCode2)
 {
-    using traits = EvmTraits<EVMC_PRAGUE>;
-
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
-    add_account_at(0xC0FFEE, coffee_code);
+    TestFixture::add_account_at(0xC0FFEE, coffee_code);
 
-    auto do_call = wrap(monad::vm::runtime::call<traits>);
-    ctx_.gas_remaining = 100000;
-    host_.call_result = success_result(2000);
+    auto do_call = TestFixture::wrap(
+        monad::vm::runtime::call<typename TestFixture::Trait>);
+    this->ctx_.gas_remaining = 100000;
+    this->host_.call_result = TestFixture::success_result(2000);
 
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
 
     ASSERT_EQ(res, 1);
-    ASSERT_EQ(host_.recorded_calls.size(), 1);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->host_.recorded_calls.size(), 1);
     ASSERT_EQ(
-        host_.recorded_calls[0].flags & static_cast<uint32_t>(EVMC_DELEGATED),
+        this->host_.recorded_calls[0].flags &
+            static_cast<uint32_t>(EVMC_DELEGATED),
         0);
 }

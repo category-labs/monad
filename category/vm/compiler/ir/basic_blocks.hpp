@@ -367,8 +367,8 @@ namespace monad::vm::compiler::basic_blocks
     {
         MONAD_VM_DEBUG_ASSERT(current_offset < bytes.size());
 
-        auto opcode = bytes[current_offset];
-        auto opcode_offset = current_offset;
+        auto const opcode = bytes[current_offset];
+        auto const opcode_offset = current_offset;
 
         auto const &info = opcode_table<traits>[opcode];
         current_offset++;
@@ -426,7 +426,7 @@ namespace monad::vm::compiler::basic_blocks
         for (auto const &instr : block.instrs) {
             base_gas += instr.static_gas_cost();
         }
-        auto term_gas =
+        auto const term_gas =
             basic_blocks::terminator_static_gas<traits>(block.terminator);
         // This is also correct for fall through and invalid instruction:
         return base_gas + term_gas;
@@ -486,7 +486,7 @@ namespace monad::vm::compiler::basic_blocks
                         // the block as being a jumpdest
                         if (current_offset < *byte_count) {
                             auto next_offset = current_offset;
-                            auto next_inst = scan_from<traits>(
+                            auto const next_inst = scan_from<traits>(
                                 {bytes, *byte_count}, next_offset);
                             if (std::holds_alternative<JumpDest>(next_inst)) {
                                 current_offset += 1;

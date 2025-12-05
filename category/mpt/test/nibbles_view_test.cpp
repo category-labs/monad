@@ -16,7 +16,6 @@
 #include "gtest/gtest.h"
 
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/core/nibble.h>
 #include <category/mpt/nibbles_view.hpp>
 
@@ -28,7 +27,7 @@ using namespace monad::literals;
 TEST(NibblesViewTest, nibbles_view)
 {
     auto const path =
-        0x1234567812345678123456781234567812345678123456781234567812345678_hex;
+        0x1234567812345678123456781234567812345678123456781234567812345678_bytes;
 
     NibblesView const a{12, 12, path.data()};
     EXPECT_EQ(a.data_size(), 0);
@@ -39,7 +38,7 @@ TEST(NibblesViewTest, nibbles_view)
     EXPECT_EQ(b, c);
 
     NibblesView const d{15, 18, path.data()};
-    auto const expected_bytes = 0x8120_hex;
+    auto const expected_bytes = 0x8120_bytes;
     auto const expected = NibblesView{0, 3, expected_bytes.data()};
     EXPECT_EQ(d, expected);
 }
@@ -47,7 +46,7 @@ TEST(NibblesViewTest, nibbles_view)
 TEST(NibblesTest, concat_nibbles)
 {
     auto path =
-        0x1234567812345678123456781234567812345678123456781234567812345678_hex;
+        0x1234567812345678123456781234567812345678123456781234567812345678_bytes;
 
     Nibbles const a =
         concat(get_nibble(path.data(), 0), NibblesView{1, 12, path.data()});
@@ -68,7 +67,7 @@ TEST(NibblesTest, nibbles_size)
 
 TEST(NibblesTest, substr_also_aligns)
 {
-    Nibbles const path{0x1234567812345678_hex};
+    Nibbles const path{0x1234567812345678_bytes};
 
     ASSERT_EQ(path.nibble_size(), 16);
 

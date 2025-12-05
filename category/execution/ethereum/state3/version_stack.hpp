@@ -29,7 +29,7 @@ class VersionStack
     std::deque<std::pair<unsigned, T>> stack_{};
 
 public:
-    VersionStack(T value, unsigned version = 0)
+    explicit VersionStack(T value, unsigned version = 0)
     {
         stack_.emplace_back(version, std::move(value));
     }

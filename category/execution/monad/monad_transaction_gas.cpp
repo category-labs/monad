@@ -23,11 +23,7 @@ template <Traits traits>
 uint64_t compute_gas_refund(
     Transaction const &tx, uint64_t const gas_remaining, uint64_t const refund)
 {
-    if constexpr (traits::monad_rev() >= MONAD_FIVE) {
-        // Monad specification §4.2: Storage Gas Cost and Refunds
-        return refund;
-    }
-    else if constexpr (traits::monad_rev() >= MONAD_ONE) {
+    if constexpr (traits::monad_rev() >= MONAD_ONE) {
         return 0;
     }
 
@@ -35,19 +31,5 @@ uint64_t compute_gas_refund(
 }
 
 EXPLICIT_MONAD_TRAITS(compute_gas_refund);
-
-template <Traits traits>
-uint256_t
-refund_gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas)
-{
-    if constexpr (traits::monad_rev() >= MONAD_FIVE) {
-        // Monad specification §4.2: Storage Gas Cost and Refunds
-        return monad_min_base_fee_wei(traits::monad_rev());
-    }
-
-    return gas_price<traits>(tx, base_fee_per_gas);
-}
-
-EXPLICIT_MONAD_TRAITS(refund_gas_price);
 
 MONAD_NAMESPACE_END

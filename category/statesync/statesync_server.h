@@ -17,6 +17,8 @@
 
 #include <category/statesync/statesync_messages.h>
 
+#include <sys/types.h>
+
 struct monad_statesync_server;
 struct monad_statesync_server_context;
 struct monad_statesync_server_network;

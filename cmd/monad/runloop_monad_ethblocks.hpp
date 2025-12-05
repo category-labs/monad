@@ -16,21 +16,32 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
-#include <category/execution/ethereum/chain/genesis_state.hpp>
-#include <category/execution/monad/chain/monad_chain.hpp>
-#include <category/vm/evm/monad/revision.h>
+#include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
+#include <category/vm/vm.hpp>
+
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <utility>
+
+#include <signal.h>
 
 MONAD_NAMESPACE_BEGIN
 
-struct MonadTestnet2 : MonadChain
+struct MonadChain;
+struct Db;
+class BlockHashBufferFinalized;
+
+namespace fiber
 {
-    virtual monad_revision
-    get_monad_revision(uint64_t timestamp) const override;
+    class PriorityPool;
+}
 
-    virtual uint256_t get_chain_id() const override;
-
-    virtual GenesisState get_genesis_state() const override;
-};
+Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
+    MonadChain const &, std::filesystem::path const &, Db &, vm::VM &,
+    BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
+    sig_atomic_t const volatile &, bool enable_tracing,
+    std::chrono::seconds block_db_timeout);
 
 MONAD_NAMESPACE_END

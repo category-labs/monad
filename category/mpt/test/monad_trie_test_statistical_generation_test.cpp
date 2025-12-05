@@ -24,7 +24,8 @@
 #include <vector>
 
 #include <category/core/small_prng.hpp>
-#include <category/core/unordered_map.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 /*
 We know from analysing Ethereum chain history that:
@@ -67,8 +68,8 @@ int main()
     std::vector<uint32_t> arr;
     if (!std::filesystem::exists("array_sorted.bin") &&
         !std::filesystem::exists("array_unsorted.bin")) {
-        monad::unordered_flat_map<uint32_t, uint32_t> map;
-        monad::unordered_flat_set<uint32_t> seen;
+        ankerl::unordered_dense::segmented_map<uint32_t, uint32_t> map;
+        ankerl::unordered_dense::segmented_set<uint32_t> seen;
         std::cout << "Generating map ..." << std::endl;
         monad::small_prng rand;
         for (uint32_t x = 0; x < SLICES; x++) {

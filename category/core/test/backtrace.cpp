@@ -92,7 +92,7 @@ namespace
 
         st->print(fds[1], 3, true);
         char buffer[16384];
-        auto bytesread = ::read(fds[0], buffer, sizeof(buffer));
+        auto const bytesread = ::read(fds[0], buffer, sizeof(buffer));
         buffer[bytesread] = 0;
         puts("Backtrace was:");
         puts(buffer);

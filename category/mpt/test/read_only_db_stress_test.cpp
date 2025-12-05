@@ -16,7 +16,6 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/fiber/priority_pool.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/mpt/db.hpp>
@@ -156,8 +155,19 @@ int main(int argc, char *const argv[])
                 long_value + serialize_as_big_endian<8>(i));
         }
 
-        auto upsert_new_version_overwrite_keys = [&](Db &db,
-                                                     uint64_t const version) {
+        // construct RWDb
+        StateMachineAlwaysMerkle machine{};
+
+        auto const config =
+            overwrite_keys_mode
+                ? OnDiskDbConfig{.compaction = true, .dbname_paths = {dbname_paths}, .file_size_db = 4, .fixed_history_length = 40}
+                : OnDiskDbConfig{
+                      .compaction = enable_compaction,
+                      .dbname_paths = {dbname_paths}};
+        Db rw_db{machine, config};
+        Node::SharedPtr rw_root = nullptr;
+
+        auto upsert_new_version_overwrite_keys = [&](uint64_t const version) {
             // RWDb writes the same set of nodes every block. While RODb
             // concurrently read a random key from the latest block
 
@@ -171,12 +181,12 @@ int main(int argc, char *const argv[])
                     bytes_alloc.emplace_back(to_key(k)),
                     values_overwrite_keys_mode[k])));
             }
-            db.upsert(std::move(ul), version);
+            rw_root = rw_db.upsert(std::move(rw_root), std::move(ul), version);
         };
 
-        auto const prefix = 0x00_hex;
+        auto const prefix = 0x00_bytes;
 
-        auto upsert_new_version = [&](Db &db, uint64_t const version) {
+        auto upsert_new_version = [&](uint64_t const version) {
             UpdateList ul;
             std::list<monad::byte_string> bytes_alloc;
             std::list<Update> update_alloc;
@@ -197,7 +207,8 @@ int main(int argc, char *const argv[])
             UpdateList ul_prefix;
             ul_prefix.push_front(u_prefix);
 
-            db.upsert(std::move(ul_prefix), version);
+            rw_root =
+                rw_db.upsert(std::move(rw_root), std::move(ul_prefix), version);
         };
 
         auto random_sync_read = [&]() {
@@ -222,14 +233,15 @@ int main(int argc, char *const argv[])
                     serialize_as_big_endian<sizeof(uint64_t)>(version);
 
                 for (size_t k = 0; k < num_nodes_per_version; ++k) {
-                    auto const res = ro_db.get(
+                    auto const res = ro_db.find(
                         concat(
                             NibblesView{prefix},
                             NibblesView{
                                 to_key(version * num_nodes_per_version + k)}),
                         version);
                     if (res.has_value()) {
-                        MONAD_ASSERT(res.value() == version_bytes);
+                        MONAD_ASSERT(
+                            res.value().node->value() == version_bytes);
                         ++nsuccess;
                     }
                     else {
@@ -466,14 +478,14 @@ int main(int argc, char *const argv[])
                 auto const version = ro_db.get_earliest_version() + 1;
                 auto const value =
                     serialize_as_big_endian<sizeof(uint64_t)>(version);
-                auto const res = ro_db.get(
+                auto const res = ro_db.find(
                     concat(
                         NibblesView{prefix},
                         NibblesView{to_key(version * num_nodes_per_version)}),
                     version);
                 if (res.has_value()) {
                     ++nsuccess;
-                    MONAD_ASSERT(res.value() == value);
+                    MONAD_ASSERT(res.value().node->value() == value);
                 }
                 else {
                     ++nfailed;
@@ -536,17 +548,6 @@ int main(int argc, char *const argv[])
             }
         };
 
-        // construct RWDb
-        StateMachineAlwaysMerkle machine{};
-
-        auto const config =
-            overwrite_keys_mode
-                ? OnDiskDbConfig{.compaction = true, .dbname_paths = {dbname_paths}, .file_size_db = 4, .fixed_history_length = 40}
-                : OnDiskDbConfig{
-                      .compaction = enable_compaction,
-                      .dbname_paths = {dbname_paths}};
-        Db db{machine, config};
-
         std::cout << "Running read only DB stress test..." << std::endl;
 
         std::vector<std::thread> readers;
@@ -571,8 +572,8 @@ int main(int argc, char *const argv[])
         uint64_t version = 0;
         alarm(timeout_seconds);
         while (!g_done) {
-            overwrite_keys_mode ? upsert_new_version_overwrite_keys(db, version)
-                                : upsert_new_version(db, version);
+            overwrite_keys_mode ? upsert_new_version_overwrite_keys(version)
+                                : upsert_new_version(version);
             ++version;
         }
         for (auto &t : readers) {
@@ -580,8 +581,8 @@ int main(int argc, char *const argv[])
         }
 
         std::cout << "Writer finished. Max version in RWDb is "
-                  << db.get_latest_version() << ", min version in RWDb is "
-                  << db.get_earliest_version() << "\n\n";
+                  << rw_db.get_latest_version() << ", min version in RWDb is "
+                  << rw_db.get_earliest_version() << "\n\n";
     }
     catch (const CLI::CallForHelp &e) {
         std::cout << cli.help() << std::flush;

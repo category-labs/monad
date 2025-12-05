@@ -15,10 +15,9 @@
 
 #pragma once
 
-#include <category/vm/llvm/llvm_state.hpp>
-#include <category/vm/llvm/virtual_stack.hpp>
-
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/llvm/dependency_blocks.hpp>
+#include <category/vm/llvm/llvm_state.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/create.hpp>
 #include <category/vm/runtime/data.hpp>
@@ -31,10 +30,34 @@
 #include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/storage.hpp>
 
+#include <evmc/evmc.hpp>
+
+#ifdef LLVM_RUNTIME_DEBUG
+    #include <intx/intx.hpp>
+
+void llvm_runtime_debug(
+    Context *ctx, int64_t *gas_p, uint256_t *stack_begin, uint256_t *stack_top)
+{
+    std::cerr << std::format("gas {}\n", *gas_p);
+    std::cerr << std::format(
+        "gas price {}\n",
+        intx::hex(
+            intx::be::load<intx::uint256>(ctx->env.tx_context.tx_gas_price)));
+    std::cerr << std::format("stack:\n", *stack_begin);
+    int i = 0;
+    while (stack_begin < stack_top) {
+        std::cerr << std::format("{}: {}\n", i, *stack_begin);
+        stack_begin++;
+        i++;
+    }
+}
+#endif
+
 namespace monad::vm::llvm
 {
     using namespace monad::vm::compiler;
     using namespace monad::vm::runtime;
+    using namespace monad::vm::dependency_blocks;
 
     using enum Terminator;
     using enum OpCode;
@@ -78,147 +101,322 @@ namespace monad::vm::llvm
     {
 
     public:
-        Emitter(LLVMState &llvm, BasicBlocksIR &ir)
+        Emitter(LLVMState &llvm, DependencyBlocksIR &dep_ir)
             : llvm(llvm)
-            , ir(ir)
-            , gas_from_inlining(ir.blocks().size())
+            , dep_ir(dep_ir)
         {
-            inline_empty_fallthroughs();
+        }
+
+        Value *EvmValue_to_value(EvmValue const &arg)
+        {
+            Value *val;
+            std::visit<void>(
+                Cases{
+                    [&](uint256_t const &c) { val = llvm.lit_word(c); },
+                    [&](InstrIdx const &j) { val = value_tbl[j]; },
+                },
+                arg);
+            return val;
+        }
+
+        void prep_for_return(EvmValue const &a, EvmValue const &b)
+        {
+            auto *offsetp = context_gep(
+                g_ctx_ref, context_offset_result_offset, "result_offset");
+            llvm.store(EvmValue_to_value(a), offsetp);
+            auto *sizep = context_gep(
+                g_ctx_ref, context_offset_result_size, "result_size");
+            llvm.store(EvmValue_to_value(b), sizep);
+        }
+
+        void selfdestruct_(EvmValue const &v)
+        {
+            if (selfdestruct_f == nullptr) {
+                selfdestruct_f = declare_symbol(
+                    term_name(SelfDestruct),
+                    (void *)(&selfdestruct<traits>),
+                    llvm.void_ty,
+                    {llvm.ptr_ty(context_ty), llvm.ptr_ty(llvm.word_ty)});
+            }
+
+            auto *p = assign(EvmValue_to_value(v), "addr");
+            llvm.call_void(selfdestruct_f, {g_ctx_ref, p});
+            llvm.unreachable();
+        };
+
+        std::tuple<byte_offset, byte_offset, byte_offset> init_jumptable()
+        {
+            MONAD_VM_ASSERT(!jumpdest_tbl.empty());
+
+            byte_offset min_offset = std::numeric_limits<byte_offset>::max();
+            byte_offset max_offset = 0;
+
+            for (auto const &[k, _] : jumpdest_tbl) {
+                min_offset = std::min(min_offset, k);
+                max_offset = std::max(max_offset, k);
+            }
+
+            byte_offset const err_offset = max_offset + 1;
+
+#ifdef LLVM_USE_SMALL_JUMPTABLE
+            const byte_offset sz = err_offset - min_offset + 1;
+#else
+            const byte_offset sz = err_offset + 1;
+#endif
+
+            jumptable_ty = llvm.array_ty(block_addr_ty, sz);
+
+            std::vector<Constant *> vals(sz);
+
+            for (byte_offset i = 0; i < sz; ++i) {
+#ifdef LLVM_USE_SMALL_JUMPTABLE
+                vals[i] = llvm.block_address(
+                    lookup_jumpdest(static_cast<uint256_t>(i + min_offset)));
+#else
+                vals[i] = llvm.block_address(
+                    lookup_jumpdest(static_cast<uint256_t>(i)));
+#endif
+            }
+
+            jumptable = llvm.const_array(vals, "jumptable");
+            return {min_offset, max_offset, err_offset};
+        }
+
+        BasicBlock *lookup_jumpdest(uint256_t c)
+        {
+            if (c > std::numeric_limits<byte_offset>::max()) {
+                return error_lbl();
+            }
+
+            auto const item = jumpdest_tbl.find(static_cast<byte_offset>(c));
+            if (item == jumpdest_tbl.end()) {
+                return error_lbl();
+            }
+
+            return item->second;
+        }
+
+        void emit_jump(EvmValue const &v)
+        {
+            std::visit<void>(
+                Cases{
+                    [&](uint256_t const &c) { llvm.br(lookup_jumpdest(c)); },
+
+                    [&](InstrIdx const &i) { llvm.br(indirectbr_lbl(i)); },
+                },
+                v);
+        }
+
+        void emit_jumpi(
+            EvmValue const &else_v, EvmValue const &pred, BasicBlock *then_lbl)
+        {
+            std::visit<void>(
+                Cases{
+                    [&](uint256_t const &c) {
+                        if (c == 0) {
+                            llvm.br(then_lbl);
+                            return;
+                        }
+                        emit_jump(else_v);
+                        return;
+                    },
+                    [&](InstrIdx const &i) {
+                        auto *isz = llvm.eq(value_tbl[i], llvm.lit_word(0));
+
+                        BasicBlock *else_lbl = std::visit(
+                            Cases{
+                                [&](uint256_t const &c) {
+                                    return lookup_jumpdest(c);
+                                },
+                                [&](InstrIdx const &j) {
+                                    return indirectbr_lbl(j);
+                                },
+                            },
+                            else_v);
+
+                        llvm.condbr(isz, then_lbl, else_lbl, false);
+                    },
+                },
+                pred);
         }
 
         void terminate_block(
-            Block const &blk, VirtualStack &stack, Value *stack_top,
-            bool const stack_top_updated)
+            Terminator term, std::vector<EvmValue> const &args,
+            BasicBlock *fallthrough_lbl)
         {
-            auto term = blk.terminator;
             switch (term) {
             case Jump:
-                jump(stack, stack_top, stack_top_updated);
+                emit_jump(args[0]);
                 return;
             case JumpI:
-                jumpi(blk, stack, stack_top, stack_top_updated);
+                emit_jumpi(args[0], args[1], fallthrough_lbl);
                 return;
             case FallThrough:
-                fallthrough_to_jumpdest(
-                    blk, stack, stack_top, stack_top_updated);
+                llvm.br(fallthrough_lbl);
                 return;
             case Stop:
-                llvm.debug("stop\n");
-                llvm.br(return_lbl);
+                llvm.br(return_lbl());
                 return;
             case Return:
-                llvm.debug("return\n");
-                prep_for_return(stack);
-                llvm.br(return_lbl);
+                prep_for_return(args[0], args[1]);
+                llvm.br(return_lbl());
                 return;
             case Revert:
-                llvm.debug("revert\n");
-                prep_for_return(stack);
-                llvm.br(revert_lbl);
+                prep_for_return(args[0], args[1]);
+                llvm.br(revert_lbl());
                 return;
             case SelfDestruct:
-                llvm.debug("self destruct\n");
-                selfdestruct_(stack);
+                selfdestruct_(args[0]);
                 return;
             default:
-                llvm.debug("invalid instruction\n");
                 MONAD_VM_ASSERT(term == InvalidInstruction);
-                llvm.br(error_lbl);
+                llvm.br(error_lbl());
                 return;
             };
         };
 
+        void insert_value(InstrIdx i, Value *v)
+        {
+            if (static_cast<InstrIdx>(value_tbl.size()) <= i) {
+                value_tbl.resize(i + 1);
+            }
+            value_tbl[i] = v;
+        }
+
+        Value *stacktop_offset(Value *stack_top, StackIdx i)
+        {
+            return llvm.gep(
+                llvm.word_ty, stack_top, {llvm.i32(i)}, "stacktop_offset");
+        }
+
+        Value *check_and_update_gas(int64_t const blk_gas_update)
+        {
+            if (blk_gas_update == 0) {
+                return llvm.bool_(false);
+            }
+
+            if (check_and_update_gas_f == nullptr) {
+                SaveInsert const _unused(llvm);
+                auto [f, arg] = llvm.internal_function_definition(
+                    "check_and_update_gas",
+                    llvm.bool_ty,
+                    {llvm.ptr_ty(llvm.int_ty(64)), llvm.int_ty(64)});
+                check_and_update_gas_f = f;
+                auto *entry = llvm.basic_block("entry", f);
+                llvm.insert_at(entry);
+
+                Value *gas_ref = arg[0];
+                gas_ref->setName("gas_ref");
+                Value *blk_gas_update = arg[1];
+                blk_gas_update->setName("blk_gas_update");
+
+                auto *gas = llvm.load(llvm.int_ty(64), gas_ref);
+                auto *gas1 = llvm.sub(gas, blk_gas_update);
+                llvm.store(gas1, gas_ref);
+                auto *gas_lt_zero = llvm.slt(gas1, llvm.i64(0));
+                llvm.ret(gas_lt_zero);
+            }
+
+            return llvm.call(
+                check_and_update_gas_f,
+                {g_ctx_gas_ref, llvm.i64(blk_gas_update)},
+                "is_gas_ok");
+        }
+
+        void emit_block_check(Value *is_err)
+        {
+            if (block_check_f == nullptr) {
+                SaveInsert const _unused(llvm);
+                auto [f, arg] = llvm.internal_function_definition(
+                    "block_check",
+                    llvm.void_ty,
+                    {llvm.ptr_ty(context_ty), llvm.bool_ty});
+                block_check_f = f;
+                auto *entry = llvm.basic_block("entry", f);
+                auto *ok_lbl = llvm.basic_block("ok_lbl", f);
+                auto *err_lbl = llvm.basic_block("err_lbl", f);
+
+                Value *ctx_ref = arg[0];
+                ctx_ref->setName("ctx_ref");
+                Value *is_err_v = arg[1];
+                is_err_v->setName("is_err");
+
+                llvm.insert_at(entry);
+                llvm.condbr(is_err_v, err_lbl, ok_lbl, true);
+
+                llvm.insert_at(err_lbl);
+                exit_(ctx_ref, StatusCode::Error);
+
+                llvm.insert_at(ok_lbl);
+                llvm.ret_void();
+            }
+
+            llvm.call_void(block_check_f, {g_ctx_ref, is_err});
+        }
+
         void emit_contract()
         {
-            bool const any_jumpdests = ir.jump_dests().size() > 0;
+            contract_start();
 
-            contract_start(any_jumpdests);
+            for (auto const &[offset, _] : dep_ir.jump_dests) {
+                jumpdest_tbl.insert({offset, get_block_lbl(offset)});
+            }
 
-            VirtualStack stack;
-            Value *stack_top = evm_stack_begin;
-            int64_t total_delta = 0;
-
-            for (size_t i = 0; i < ir.blocks().size(); ++i) {
-                auto const &blk = ir.blocks()[i];
-
-                base_gas_remaining =
-                    block_base_gas<traits>(blk) + gas_from_inlining[i];
-
-                auto *lbl = get_block_lbl(blk);
-
+            for (DependencyBlock const &blk : dep_ir.blocks) {
+                auto *lbl = get_block_lbl(blk.offset);
                 llvm.insert_at(lbl);
 
-                llvm.debug(std::format(
-                    "\nblock {} is {}\n",
-                    blk.offset,
-                    is_jumpdest(blk) ? "jumpdest" : "fall through"));
+                Value *stack_top = load_stack_top_p();
 
-                if (is_jumpdest(blk)) {
-                    llvm.debug("clear stack and update stack_top\n");
-                    stack.clear();
-                    stack_top = load_stack_top_p();
-                    total_delta = 0;
-                    jumpdests.emplace_back(blk.offset, lbl);
+                Value *is_neg = check_and_update_gas(blk.block_gas_update);
+                Value *is_under = is_stack_underflow(stack_top, blk.low);
+                Value *is_over = is_stack_overflow(stack_top, blk.high);
+
+                Value *is_any = llvm.or_(llvm.or_(is_neg, is_under), is_over);
+
+                emit_block_check(is_any);
+
+                for (auto const &item : blk.instrs) {
+                    auto i = std::get<0>(item);
+                    auto instr = std::get<1>(item);
+
+                    std::visit<void>(
+                        Cases{
+                            [&](struct EvmInstr const &ei) {
+                                emit_instr(blk.offset, i, ei);
+                            },
+                            [&](struct UnspillInstr const &ui) {
+                                Value *v = llvm.load(
+                                    llvm.word_ty,
+                                    stacktop_offset(stack_top, ui.idx));
+                                insert_value(i, v);
+                            },
+                            [&](struct SpillInstr const &si) {
+                                llvm.store(
+                                    EvmValue_to_value(si.val),
+                                    stacktop_offset(stack_top, si.idx));
+                            },
+                        },
+                        instr);
                 }
 
-                else {
-                    llvm.debug(std::format(
-                        "carry over stack (size = {}) and stack_top\n",
-                        stack.size()));
+                switch (blk.terminator) {
+                case Jump:
+                case JumpI:
+                case FallThrough:
+                    store_stack_top_p(stacktop_offset(stack_top, blk.delta));
+                    break;
+                default:
+                    break;
                 }
 
-                // compute low/delta/high stack water marks
-                auto [low, delta, high] = blk.stack_deltas();
-
-                llvm.debug(std::format("virtstack size={}\n", stack.size()));
-
-                llvm.debug(std::format(
-                    "low={}, high={}, delta={}, total_delta={}\n",
-                    low,
-                    high,
-                    delta,
-                    total_delta));
-
-                if (low < -1024 || // impossible to not be out of bounds
-                    high > 1024 || (blk.terminator == Jump && !any_jumpdests)) {
-                    llvm.br(error_lbl);
-                    continue;
-                }
-
-                // compute gas
-                int64_t const min_gas = is_jumpdest(blk)
-                                            ? 1 + base_gas_remaining
-                                            : base_gas_remaining;
-
-                update_gas(min_gas, blk.offset);
-
-                Value *stack_top_pre = stack_top;
-                if (total_delta != 0) {
-                    stack_top_pre = evm_stack_idx(stack_top, total_delta);
-                }
-
-                check_underflow(low, stack_top_pre, blk.offset);
-                check_overflow(high, stack_top_pre, blk.offset);
-                stack_unspill(low, stack, stack_top_pre);
-
-                for (auto const &instr : blk.instrs) {
-                    base_gas_remaining -= instr.static_gas_cost();
-
-                    emit_instr(instr, stack);
-                }
-
-                base_gas_remaining -=
-                    terminator_static_gas<traits>(blk.terminator);
-
-                total_delta += delta;
-
-                Value *stack_top_next = stack_top;
-                bool const stack_top_updated = total_delta != 0;
-                if (stack_top_updated) {
-                    stack_top_next = evm_stack_idx(stack_top, total_delta);
-                }
-
-                terminate_block(blk, stack, stack_top_next, stack_top_updated);
+                BasicBlock *fallthrough_lbl =
+                    blk.fallthrough_dest == INVALID_BLOCK_ID
+                        ? error_lbl()
+                        : get_block_lbl(
+                              dep_ir.blocks[blk.fallthrough_dest].offset);
+                terminate_block(
+                    blk.terminator, blk.terminator_args, fallthrough_lbl);
             }
 
             contract_finish();
@@ -226,41 +424,47 @@ namespace monad::vm::llvm
 
     private:
         LLVMState &llvm;
-        BasicBlocksIR &ir;
+        DependencyBlocksIR &dep_ir;
 
         Value *g_ctx_ref = nullptr;
         Value *g_ctx_gas_ref = nullptr;
-        Value *g_local_gas_ref = nullptr;
 
         Value *evm_stack_begin = nullptr;
         Value *evm_stack_end = nullptr;
         Value *evm_stack_top_p = nullptr;
 
+        Value *jumptable = nullptr;
+        Type *block_addr_ty = llvm.ptr_ty(llvm.int_ty(8));
+        Type *jumptable_ty;
+
         std::unordered_map<std::string, Function *> llvm_opcode_tbl;
         // ^ string instead of opcode for Log
 
-        std::vector<std::tuple<byte_offset, BasicBlock *>> jumpdests;
-
-        std::vector<int32_t> gas_from_inlining;
-
         std::unordered_map<byte_offset, BasicBlock *> block_tbl;
-        int64_t base_gas_remaining;
+        std::unordered_map<byte_offset, BasicBlock *> jumpdest_tbl;
 
         Type *context_ty = llvm.void_ty;
+        Type *evmc_tx_context_ty = llvm.void_ty;
 
         Function *exit_f = init_exit();
+        Function *llvm_runtime_debug_f = nullptr;
         Function *selfdestruct_f = nullptr;
+        Function *check_and_update_gas_f = nullptr;
+        Function *is_stack_underflow_f = nullptr;
+        Function *is_stack_overflow_f = nullptr;
+        Function *block_check_f = nullptr;
 
-        Value *jump_mem = nullptr;
-        BasicBlock *jump_lbl = nullptr;
-        BasicBlock *error_lbl = nullptr;
-        BasicBlock *return_lbl = nullptr;
-        BasicBlock *revert_lbl = nullptr;
+        BasicBlock *error_lbl_v = nullptr;
+        BasicBlock *return_lbl_v = nullptr;
+        BasicBlock *revert_lbl_v = nullptr;
+
+        BasicBlock *indirectbr_lbl_v = nullptr;
+        PHINode *indirectbr_phi = nullptr;
+
+        std::vector<Value *> value_tbl;
+
         BasicBlock *entry = nullptr;
         Function *contract = nullptr;
-
-        Function *evm_push_f = nullptr;
-        Function *evm_pop_f = nullptr;
 
         void copy_gas(Value *from, Value *to)
         {
@@ -270,17 +474,108 @@ namespace monad::vm::llvm
 
         void store_stack_top_p(Value *stack_top)
         {
-            llvm.debug("storing new stack_top_p\n");
             llvm.store(stack_top, evm_stack_top_p);
         }
 
         Value *load_stack_top_p()
         {
-            llvm.debug("loading stacktop_p\n");
             return llvm.load(llvm.ptr_ty(llvm.word_ty), evm_stack_top_p);
         }
 
-        void contract_start(bool any_jumpdests)
+        BasicBlock *error_lbl()
+        {
+            if (error_lbl_v == nullptr) {
+                SaveInsert const _unused(llvm);
+                error_lbl_v = llvm.basic_block("error_lbl", contract);
+                llvm.insert_at(error_lbl_v);
+                exit_(g_ctx_ref, StatusCode::Error);
+            }
+            return error_lbl_v;
+        }
+
+        BasicBlock *return_lbl()
+        {
+            if (return_lbl_v == nullptr) {
+                SaveInsert const _unused(llvm);
+                return_lbl_v = llvm.basic_block("return_lbl", contract);
+                llvm.insert_at(return_lbl_v);
+                exit_(g_ctx_ref, StatusCode::Success);
+            }
+            return return_lbl_v;
+        }
+
+        BasicBlock *revert_lbl()
+        {
+            if (revert_lbl_v == nullptr) {
+                SaveInsert const _unused(llvm);
+                revert_lbl_v = llvm.basic_block("revert_lbl", contract);
+                llvm.insert_at(revert_lbl_v);
+                exit_(g_ctx_ref, StatusCode::Revert);
+            }
+            return revert_lbl_v;
+        }
+
+        BasicBlock *indirectbr_lbl(InstrIdx i)
+        {
+            if (jumpdest_tbl.empty()) {
+                return error_lbl();
+            }
+
+            if (indirectbr_lbl_v == nullptr) {
+                auto const &[min_offset, max_offset, err_offset] =
+                    init_jumptable();
+
+                indirectbr_lbl_v = llvm.basic_block("indirectbr_lbl", contract);
+                SaveInsert const _unused(llvm);
+                llvm.insert_at(indirectbr_lbl_v);
+
+                indirectbr_phi = llvm.phi(llvm.word_ty);
+
+                Value *is_lte_max_offset = llvm.ule(
+                    indirectbr_phi,
+                    llvm.lit_word(static_cast<uint256_t>(err_offset)));
+
+                Value *lte_offset = llvm.select(
+                    is_lte_max_offset,
+                    llvm.cast_64(indirectbr_phi),
+                    llvm.u64(err_offset));
+#ifdef LLVM_USE_SMALL_JUMPTABLE
+                Value *is_gte_min_offset =
+                    llvm.uge(lte_offset, llvm.u64(min_offset));
+
+                Value *gte_offset = llvm.select(
+                    is_gte_min_offset, lte_offset, llvm.u64(err_offset));
+
+                Value *sub_offset = llvm.sub(gte_offset, llvm.u64(min_offset));
+                // you can eliminate this subtraction by rewriting the jumptable
+                // address
+
+#else
+                Value *sub_offset = lte_offset;
+#endif
+
+                Value *p = llvm.gep(
+                    jumptable_ty,
+                    jumptable,
+                    {llvm.u32(0), sub_offset},
+                    "jumpdest_p");
+
+                Value *jd_addr = llvm.load(llvm.ptr_ty(block_addr_ty), p);
+                IndirectBrInst *indirectbr_v = llvm.indirectbr(jd_addr);
+
+                llvm.indirect_br_add_dest(indirectbr_v, error_lbl());
+                for (auto const &[_, lbl] : jumpdest_tbl) {
+                    llvm.indirect_br_add_dest(indirectbr_v, lbl);
+                }
+            }
+
+            llvm.phi_add_incoming(
+                indirectbr_phi, value_tbl[i], llvm.get_insert());
+
+            return indirectbr_lbl_v;
+        }
+
+        void contract_start()
         {
             auto [contractf, arg] = llvm.external_function_definition(
                 "contract",
@@ -290,356 +585,113 @@ namespace monad::vm::llvm
             contract = contractf;
 
             entry = llvm.basic_block("entry", contract);
-            error_lbl = llvm.basic_block("error_lbl", contract);
-            return_lbl = llvm.basic_block("return_lbl", contract);
-            revert_lbl = llvm.basic_block("revert_lbl", contract);
 
             llvm.insert_at(entry);
 
-            // BAL: should the stack be allocated here instead of passed in?
+#ifdef LLVM_USE_ALLOCA_STACK
+            ArrayType *stack_ty = llvm.array_ty(llvm.word_ty, 1024);
+            evm_stack_begin = llvm.alloca_(stack_ty, "evm_stack_begin");
+#else
             evm_stack_begin = arg[0];
+            evm_stack_begin->setName("evm_stack_begin");
+#endif
             g_ctx_ref = arg[1];
+            g_ctx_ref->setName("ctx_ref");
 
-            // llvm.comment("init.the.gas");
             g_ctx_gas_ref = context_gep(
                 g_ctx_ref, context_offset_gas_remaining, "ctx_gas_ref");
 
-            g_local_gas_ref = llvm.alloca_(llvm.int_ty(64), "local_gas_ref");
-            copy_gas(g_ctx_gas_ref, g_local_gas_ref);
-
-            // llvm.comment("init.the.stack");
-
             evm_stack_end = llvm.gep(
-                llvm.word_ty, evm_stack_begin, llvm.u64(1024), "evm_stack_end");
+                llvm.word_ty,
+                evm_stack_begin,
+                {llvm.u64(1024)},
+                "evm_stack_end");
 
             evm_stack_top_p =
                 llvm.alloca_(llvm.ptr_ty(llvm.word_ty), "evm_stack_top_p");
 
-            if (any_jumpdests) {
-                store_stack_top_p(evm_stack_begin);
-            }
-
-            llvm.insert_at(error_lbl);
-            exit_(StatusCode::Error);
-
-            llvm.insert_at(return_lbl);
-            exit_(StatusCode::Success);
-
-            llvm.insert_at(revert_lbl);
-            exit_(StatusCode::Revert);
+            store_stack_top_p(evm_stack_begin);
 
             llvm.insert_at(entry);
         }
 
-        void emit_jumptable()
-        {
-            MONAD_VM_ASSERT(jump_lbl != nullptr);
-            MONAD_VM_ASSERT(jump_mem != nullptr);
-            MONAD_VM_ASSERT(jumpdests.size() > 0);
-
-            llvm.insert_at(jump_lbl);
-            auto *d = llvm.load(llvm.word_ty, jump_mem);
-
-            // create switch
-            auto *jump_lbl_switch = llvm.switch_(
-                d, error_lbl, static_cast<unsigned>(jumpdests.size()));
-
-            for (auto [k, v] : jumpdests) {
-                auto *c = llvm.lit_word(static_cast<uint256_t>(k));
-                jump_lbl_switch->addCase(c, v);
-            }
-        };
-
         Value *evm_stack_idx(Value *stack_top, int64_t i)
         {
             return llvm.gep(
-                llvm.word_ty, stack_top, llvm.i64(i), "evm_stack_idx");
-        };
-
-        // spill virtual stack values to the evm runtime stack
-        void stack_spill(
-            VirtualStack const &stack, Value *stack_top,
-            bool const stack_top_updated)
-        {
-            int64_t sz = stack.size();
-
-            llvm.debug(std::format("spilling stack size {}\n", sz));
-
-            if (stack_top_updated) {
-                llvm.debug("storing stack top pointer\n");
-                store_stack_top_p(stack_top);
-            }
-            else {
-                llvm.debug("no need to store stack top pointer\n");
-            }
-
-            for (int64_t i = -1; i >= -sz; --i) {
-                llvm.debug(std::format("spilling stack index {}\n", i));
-                Value *v = stack.peek(i);
-                Value *p = evm_stack_idx(stack_top, i);
-                llvm.store(v, p);
-            }
-        };
-
-        // unspill values from the evm runtime stack to the virtual stack (if
-        // necessary)
-        void stack_unspill(int64_t low, VirtualStack &stack, Value *stack_top)
-        {
-            auto sz = stack.size();
-
-            llvm.debug(std::format(
-                "unspilling stack size {}, low = {}, net = {}\n",
-                sz,
-                -low,
-                sz + low));
-
-            for (int64_t i = -sz - 1; i >= low; --i) {
-                llvm.debug(std::format("unspilling stack index {}\n", i));
-                Value *p = evm_stack_idx(stack_top, i);
-                Value *v = llvm.load(llvm.word_ty, p);
-                // fallthroughs want to be inserted at the beginning
-                stack.push_front(v);
-            }
+                llvm.word_ty, stack_top, {llvm.i64(i)}, "evm_stack_idx");
         };
 
         void contract_finish()
         {
             llvm.insert_at(entry);
-            MONAD_VM_ASSERT(ir.blocks().size() > 0);
-            llvm.br(get_block_lbl(ir.blocks().front()));
-
-            // add jump table if needed
-            if (jump_lbl != nullptr) {
-                emit_jumptable();
-            }
+            MONAD_VM_ASSERT(!dep_ir.blocks.empty());
+            llvm.br(get_block_lbl(dep_ir.blocks.front().offset));
         };
 
-        bool reads_ctx_gas(OpCode op)
+        std::string to_register_name(byte_offset blkId, InstrIdx i)
         {
-            return (
-                op == Balance || op == BlobHash || op == BlockHash ||
-                op == Call || op == CallCode || op == CallDataCopy ||
-                op == CallDataLoad || op == CodeCopy || op == Create ||
-                op == Create2 || op == DelegateCall || op == Exp ||
-                op == ExtCodeCopy || op == ExtCodeHash || op == ExtCodeSize ||
-                op == Log || op == MCopy || op == MLoad || op == MStore ||
-                op == MStore8 || op == ReturnDataCopy || op == SLoad ||
-                op == SStore || op == SelfBalance || op == Sha3 ||
-                op == StaticCall || op == TLoad || op == TStore);
-        };
-
-        bool writes_ctx_gas(OpCode op)
-        {
-            return (
-                op == Balance || op == Call || op == CallCode ||
-                op == CallDataCopy || op == CodeCopy || op == Create ||
-                op == Create2 || op == DelegateCall || op == Exp ||
-                op == ExtCodeCopy || op == ExtCodeHash || op == ExtCodeSize ||
-                op == Log || op == MCopy || op == MLoad || op == MStore ||
-                op == MStore8 || op == ReturnDataCopy || op == SLoad ||
-                op == SStore || op == Sha3 || op == StaticCall);
-        };
-
-        void emit_instr(Instruction const &instr, VirtualStack &stack)
-        {
-            auto op = instr.opcode();
-
-            switch (op) {
-            case Push:
-                stack.push(llvm.lit_word(instr.immediate_value()));
-                break;
-
-            case Pc:
-                stack.push(llvm.lit_word(instr.pc()));
-                break;
-
-            case Dup:
-                stack.dup(instr.index());
-                break;
-
-            case Swap:
-                stack.swap(instr.index());
-                break;
-
-            case Pop:
-                stack.pop();
-                break;
-
-            case Gas:
-                llvm_gas(stack);
-                break;
-
-            default:
-                Function *f;
-                auto nm = instr_name(instr);
-
-                auto item = llvm_opcode_tbl.find(nm);
-                if (item != llvm_opcode_tbl.end()) {
-                    f = item->second;
-                }
-                else {
-                    f = init_instr(instr);
-                    llvm_opcode_tbl.insert({nm, f});
-                }
-
-                std::vector<Value *> args;
-
-                args.push_back(g_ctx_ref);
-
-                MONAD_VM_DEBUG_ASSERT(base_gas_remaining >= 0);
-
-                auto *g =
-                    llvm.lit(64, static_cast<uint64_t>(base_gas_remaining));
-                args.push_back(g);
-
-                for (auto i = 0; i < instr.stack_args(); ++i) {
-                    auto *v = stack.pop();
-                    args.push_back(v);
-                }
-
-                if (reads_ctx_gas(op)) {
-                    copy_gas(g_local_gas_ref, g_ctx_gas_ref);
-                }
-
-                if (instr.increases_stack()) {
-                    stack.push(llvm.call(f, args));
-                }
-                else {
-                    llvm.call_void(f, args);
-                }
-
-                if (writes_ctx_gas(op)) {
-                    copy_gas(g_ctx_gas_ref, g_local_gas_ref);
-                }
-            }
-        };
-
-        std::tuple<Value *, BasicBlock *> get_jump_info()
-        {
-            if (jump_mem == nullptr) {
-                SaveInsert const _unused(llvm);
-
-                MONAD_VM_ASSERT(jump_lbl == nullptr);
-
-                llvm.insert_at(entry);
-                jump_mem = llvm.alloca_(llvm.word_ty, "jump_mem");
-
-                jump_lbl = llvm.basic_block("do_jump", contract);
-            }
-
-            return std::tuple(jump_mem, jump_lbl);
-        };
-
-        void inline_empty_fallthroughs()
-        {
-            // rewrite from the bottom up so we can take advantage of previous
-            // rewrites
-            uint64_t i = ir.blocks().size();
-            while (i > 0) {
-                --i;
-                Block &blk = ir.blocks()[i];
-                if (blk.terminator == Terminator::FallThrough) {
-                    Block const &dest = ir.blocks()[blk.fallthrough_dest];
-                    if (dest.instrs.size() == 0) {
-                        gas_from_inlining[i] = is_jumpdest(dest) ? 1 : 0;
-                        gas_from_inlining[i] +=
-                            gas_from_inlining[blk.fallthrough_dest];
-                        blk.terminator = dest.terminator;
-                        blk.fallthrough_dest = dest.fallthrough_dest;
-                    }
-                    else {
-                        gas_from_inlining[i] = 0;
-                    }
-                }
-            }
-
-            MONAD_VM_DEBUG_ASSERT(ir.is_valid());
+            return std::format("v{}_{}", blkId, i);
         }
 
-        bool is_jumpdest(Block const &blk)
+        void emit_instr(
+            byte_offset blkId, InstrIdx const &i, struct EvmInstr const &ei)
         {
-            auto item = ir.jump_dests().find(blk.offset);
-            return (item != ir.jump_dests().end());
-        };
+            Function *f;
+            auto const nm = instr_name(ei.instr);
 
-        void emit_jump(Value *v)
-        {
-            if (ir.jump_dests().size() == 0) {
-                llvm.br(error_lbl);
+            auto const item = llvm_opcode_tbl.find(nm);
+            if (item != llvm_opcode_tbl.end()) {
+                f = item->second;
             }
             else {
-                auto [p, lbl] = get_jump_info();
-                llvm.store(v, p);
-                llvm.br(lbl);
+                f = init_instr(ei.instr);
+                llvm_opcode_tbl.insert({nm, f});
             }
-        };
 
-        Block const &get_fallthrough_block(Block const &blk)
-        {
-            auto dest = blk.fallthrough_dest;
-            MONAD_VM_ASSERT(
-                dest != INVALID_BLOCK_ID && dest < ir.blocks().size());
-            return ir.blocks()[dest];
-        };
+            std::vector<Value *> args;
 
-        void fallthrough_to_jumpdest(
-            Block const &blk, VirtualStack const &stack, Value *stack_top,
-            bool const stack_top_updated)
-        {
-            auto next_blk = get_fallthrough_block(blk);
-            MONAD_VM_ASSERT(is_jumpdest(next_blk));
-            llvm.debug("fall through to jumpdest\n");
-            stack_spill(stack, stack_top, stack_top_updated);
-            llvm.br(get_block_lbl(next_blk));
-        };
+            args.push_back(g_ctx_ref);
 
-        void jump(
-            VirtualStack &stack, Value *stack_top, bool const stack_top_updated)
-        {
-            auto *v = stack.pop();
-            llvm.debug("jump\n");
-            stack_spill(stack, stack_top, stack_top_updated);
-            emit_jump(v);
-        };
+            auto *g = llvm.i64(ei.remaining_block_base_gas);
+            args.push_back(g);
 
-        void jumpi(
-            Block const &blk, VirtualStack &stack, Value *stack_top,
-            bool const stack_top_updated)
-        {
-            llvm.debug("jumpi\n");
-            auto *v = stack.pop();
-            auto *b = stack.pop();
-            auto *isz = llvm.eq(b, llvm.lit_word(0));
+            if (ei.instr.opcode() == Gas) {
+                args.push_back(g_ctx_gas_ref);
+            }
 
-            auto fallthrough_block = get_fallthrough_block(blk);
-            BasicBlock *then_lbl = get_block_lbl(fallthrough_block);
+            for (auto const &arg : ei.args) {
+                args.push_back(EvmValue_to_value(arg));
+            }
 
-            BasicBlock *else_lbl = llvm.basic_block(
-                std::format("else_lbl_{}", blk.offset), contract);
-
-            auto fallthrough_is_jumpdest = is_jumpdest(fallthrough_block);
-
-            if (fallthrough_is_jumpdest) {
-                llvm.debug("jumpi fallthrough is jumpdest, spilling prior to "
-                           "condbr\n");
-                stack_spill(stack, stack_top, stack_top_updated);
+            if (ei.instr.increases_stack()) {
+                auto v = llvm.call(f, args, to_register_name(blkId, i));
+                insert_value(i, v);
             }
             else {
-                llvm.debug("jumpi fallthrough not jumpdest, ");
-                llvm.debug("spilling in else branch\n");
+                llvm.call_void(f, args);
             }
+        };
 
-            llvm.condbr(isz, then_lbl, else_lbl);
-
-            llvm.insert_at(else_lbl);
-
-            if (!fallthrough_is_jumpdest) {
-                llvm.debug("else branch spill\n");
-                stack_spill(stack, stack_top, stack_top_updated);
+#ifdef LLVM_RUNTIME_DEBUG
+        void emit_llvm_runtime_debug()
+        {
+            if (llvm_runtime_debug_f == nullptr) {
+                auto f = declare_symbol(
+                    "llvm_runtime_debug",
+                    (void *)(llvm_runtime_debug),
+                    llvm.void_ty,
+                    {llvm.ptr_ty(context_ty),
+                     llvm.ptr_ty(llvm.int_ty(64)),
+                     llvm.ptr_ty(llvm.word_ty),
+                     llvm.ptr_ty(llvm.word_ty)});
+                llvm_runtime_debug_f = f;
             }
-
-            emit_jump(v);
+            Value *stack_top = load_stack_top_p();
+            llvm.call_void(
+                llvm_runtime_debug_f,
+                {g_ctx_ref, g_ctx_gas_ref, evm_stack_begin, stack_top});
         }
+#endif
 
         Function *init_exit()
         {
@@ -651,104 +703,87 @@ namespace monad::vm::llvm
             return f;
         }
 
-        void exit_(StatusCode status)
+        void exit_(Value *ctx_ref, StatusCode status)
         {
-            copy_gas(g_local_gas_ref, g_ctx_gas_ref);
-
             llvm.call_void(
-                exit_f,
-                {g_ctx_ref, llvm.lit(64, static_cast<uint64_t>(status))});
+                exit_f, {ctx_ref, llvm.u64(static_cast<uint64_t>(status))});
             llvm.unreachable();
         }
 
-        void selfdestruct_(VirtualStack &stack)
-        {
-            if (selfdestruct_f == nullptr) {
-                selfdestruct_f = declare_symbol(
-                    term_name(SelfDestruct),
-                    (void *)(&selfdestruct<traits>),
-                    llvm.void_ty,
-                    {llvm.ptr_ty(context_ty), llvm.ptr_ty(llvm.word_ty)});
-            }
-
-            copy_gas(g_local_gas_ref, g_ctx_gas_ref);
-
-            auto *addr = stack.pop();
-            auto *p = assign(addr, "addr");
-            llvm.call_void(selfdestruct_f, {g_ctx_ref, p});
-            llvm.unreachable();
-            llvm.ret_void();
-        };
-
-        void prep_for_return(VirtualStack &stack)
-        {
-            auto *a = stack.pop();
-            auto *b = stack.pop();
-            auto *offsetp = context_gep(
-                g_ctx_ref, context_offset_result_offset, "result_offset");
-            llvm.store(a, offsetp);
-            auto *sizep = context_gep(
-                g_ctx_ref, context_offset_result_size, "result_size");
-            llvm.store(b, sizep);
-        }
-
-        void check_underflow(int64_t low, Value *stack_top, byte_offset offset)
-        {
-            if (low >= 0) {
-                llvm.debug("no need to check underflow\n");
-                return;
-            }
-            auto *no_underflow_lbl = llvm.basic_block(
-                std::format("no_underflow_lbl_{}", offset), contract);
-
-            auto *stack_low = evm_stack_idx(stack_top, low);
-
-            auto *low_pred = llvm.slt(stack_low, evm_stack_begin);
-            llvm.condbr(low_pred, error_lbl, no_underflow_lbl);
-
-            llvm.insert_at(no_underflow_lbl);
-        };
-
-        void check_overflow(int64_t high, Value *stack_top, byte_offset offset)
+        Value *is_stack_overflow(Value *stack_top, int32_t high)
         {
             if (high <= 0) {
-                llvm.debug("no need to check overflow\n");
-                return;
+                return llvm.bool_(false);
             }
-            auto *no_overflow_lbl = llvm.basic_block(
-                std::format("no_overflow_lbl_{}", offset), contract);
 
-            auto *stack_high = evm_stack_idx(stack_top, high);
+            if (is_stack_overflow_f == nullptr) {
+                SaveInsert const _unused(llvm);
+                auto [f, arg] = llvm.internal_function_definition(
+                    "is_stack_overflow",
+                    llvm.bool_ty,
+                    {llvm.ptr_ty(llvm.word_ty), llvm.ptr_ty(llvm.word_ty)});
 
-            auto *high_pred = llvm.sgt(stack_high, evm_stack_end);
-            llvm.condbr(high_pred, error_lbl, no_overflow_lbl);
+                is_stack_overflow_f = f;
+                auto *entry = llvm.basic_block("entry", f);
 
-            llvm.insert_at(no_overflow_lbl);
+                llvm.insert_at(entry);
+
+                Value *stack_end = arg[0];
+                stack_end->setName("stack_end");
+                Value *stack_high = arg[1];
+                stack_high->setName("stack_high");
+
+                auto *is_stack_err = llvm.sgt(stack_high, stack_end);
+                llvm.ret(is_stack_err);
+            }
+
+            return llvm.call(
+                is_stack_overflow_f,
+                {evm_stack_end, stacktop_offset(stack_top, high)},
+                "is_stack_overflow");
         };
 
-        void update_gas(int64_t const min_gas, byte_offset offset)
+        Value *is_stack_underflow(Value *stack_top, int32_t low)
         {
-            auto *gas = llvm.load(llvm.int_ty(64), g_local_gas_ref);
-            auto *gas1 =
-                llvm.sub(gas, llvm.lit(64, static_cast<uint64_t>(min_gas)));
-            auto *gas_lt_zero = llvm.slt(gas1, llvm.lit(64, 0));
+            if (low >= 0) {
+                return llvm.bool_(false);
+            }
 
-            auto *gas_ok_lbl = llvm.basic_block(
-                std::format("gas_ok_lbl_{}", offset), contract);
+            if (is_stack_underflow_f == nullptr) {
+                SaveInsert const _unused(llvm);
+                auto [f, arg] = llvm.internal_function_definition(
+                    "is_stack_underflow",
+                    llvm.bool_ty,
+                    {llvm.ptr_ty(llvm.word_ty), llvm.ptr_ty(llvm.word_ty)});
 
-            llvm.condbr(gas_lt_zero, error_lbl, gas_ok_lbl);
-            llvm.insert_at(gas_ok_lbl);
-            llvm.store(gas1, g_local_gas_ref);
-        }
+                is_stack_underflow_f = f;
+                auto *entry = llvm.basic_block("entry", f);
+                llvm.insert_at(entry);
 
-        BasicBlock *get_block_lbl(Block const &blk)
+                Value *stack_begin = arg[0];
+                stack_begin->setName("stack_begin");
+                Value *stack_low = arg[1];
+                stack_low->setName("stack_low");
+
+                auto *is_stack_err = llvm.slt(stack_low, stack_begin);
+                llvm.ret(is_stack_err);
+            }
+
+            return llvm.call(
+                is_stack_underflow_f,
+                {evm_stack_begin, stacktop_offset(stack_top, low)},
+                "is_stack_underflow");
+        };
+
+        BasicBlock *get_block_lbl(byte_offset offset)
         {
-            auto item = block_tbl.find(blk.offset);
+            auto const item = block_tbl.find(offset);
             if (item == block_tbl.end()) {
-                auto const *nm = is_jumpdest(blk) ? "jd" : "fallthrough";
+                auto const *nm =
+                    dep_ir.is_jumpdest(offset) ? "jd" : "fallthrough";
                 auto *lbl = llvm.basic_block(
-                    std::format("{}_lbl_{}", nm, blk.offset), contract);
-                block_tbl.insert({blk.offset, lbl});
+                    std::format("{}_lbl_{}", nm, offset), contract);
+                block_tbl.insert({offset, lbl});
                 return lbl;
             }
             return item->second;
@@ -756,7 +791,7 @@ namespace monad::vm::llvm
 
         Value *context_gep(Value *ctx_ref, uint64_t offset, std::string_view nm)
         {
-            return llvm.gep(llvm.int_ty(8), ctx_ref, llvm.lit(64, offset), nm);
+            return llvm.gep(llvm.int_ty(8), ctx_ref, {llvm.u64(offset)}, nm);
         };
 
         Value *assign(Value *v, std::string_view nm)
@@ -815,6 +850,10 @@ namespace monad::vm::llvm
 
             auto [f, arg] = llvm.internal_function_definition(
                 nm, has_ret ? llvm.word_ty : llvm.void_ty, tys);
+
+            arg[0]->setName("evm_ctx");
+            arg[1]->setName("gas");
+
             auto *entry = llvm.basic_block("entry", f);
             llvm.insert_at(entry);
 
@@ -895,6 +934,27 @@ namespace monad::vm::llvm
             return f;
         };
 
+        Function *
+        load_evmc_tx_context_addr(Instruction const &instr, uint64_t offset)
+        {
+            SaveInsert const _unused(llvm);
+
+            auto [f, vctx] = context_fun(instr);
+
+            // dereference the evmc_tx_context ptr
+            auto *ptr_ref = context_gep(
+                vctx,
+                context_offset_env_tx_context,
+                "context_offset_env_tx_context");
+            auto *ptr_val = llvm.load(llvm.ptr_ty(evmc_tx_context_ty), ptr_ref);
+
+            auto *ref = context_gep(ptr_val, offset, "evmc_tx_context_addr");
+            auto *val = llvm.load(llvm.addr_ty, ref);
+
+            llvm.ret(llvm.addr_to_word(val));
+            return f;
+        };
+
         Function *load_context_uint32(Instruction const &instr, uint64_t offset)
         {
             SaveInsert const _unused(llvm);
@@ -917,12 +977,48 @@ namespace monad::vm::llvm
             return f;
         };
 
+        Function *
+        load_evmc_tx_context_uint64(Instruction const &instr, uint64_t offset)
+        {
+            SaveInsert const _unused(llvm);
+
+            auto [f, vctx] = context_fun(instr);
+            auto *ptr_ref = context_gep(
+                vctx,
+                context_offset_env_tx_context,
+                "context_offset_env_tx_context");
+            auto *ptr_val = llvm.load(llvm.ptr_ty(evmc_tx_context_ty), ptr_ref);
+
+            auto *ref = context_gep(ptr_val, offset, "evmc_tx_context_u64");
+            auto *val = llvm.load(llvm.int_ty(64), ref);
+            llvm.ret(llvm.cast_word(val));
+            return f;
+        };
+
         Function *load_context_be(Instruction const &instr, uint64_t offset)
         {
             SaveInsert const _unused(llvm);
 
             auto [f, vctx] = context_fun(instr);
             auto *ref = context_gep(vctx, offset, "context_be");
+            auto *val = llvm.load(llvm.word_ty, ref);
+            llvm.ret(llvm.bswap(val));
+            return f;
+        };
+
+        Function *
+        load_evmc_tx_context_be(Instruction const &instr, uint64_t offset)
+        {
+            SaveInsert const _unused(llvm);
+
+            auto [f, vctx] = context_fun(instr);
+            auto *ptr_ref = context_gep(
+                vctx,
+                context_offset_env_tx_context,
+                "context_offset_env_tx_context");
+            auto *ptr_val = llvm.load(llvm.ptr_ty(evmc_tx_context_ty), ptr_ref);
+
+            auto *ref = context_gep(ptr_val, offset, "evmc_tx_context_be");
             auto *val = llvm.load(llvm.word_ty, ref);
             llvm.ret(llvm.bswap(val));
             return f;
@@ -972,7 +1068,8 @@ namespace monad::vm::llvm
             auto *denom_not_0 = llvm.basic_block("denom_not_0", f);
 
             llvm.insert_at(entry);
-            llvm.condbr(llvm.eq(n, llvm.lit_word(0)), denom_is_0, denom_not_0);
+            llvm.condbr(
+                llvm.eq(n, llvm.lit_word(0)), denom_is_0, denom_not_0, false);
 
             llvm.insert_at(denom_is_0);
             llvm.ret(llvm.lit_word(0));
@@ -1017,14 +1114,17 @@ namespace monad::vm::llvm
             llvm.ret(llvm.sdiv(numer, denom));
 
             llvm.insert_at(entry); // check for denominator is 0
-            llvm.condbr(llvm.eq(denom, zero), ret_zero, try_denominator_neg1);
+            llvm.condbr(
+                llvm.eq(denom, zero), ret_zero, try_denominator_neg1, false);
 
             llvm.insert_at(try_denominator_neg1); // check for denominator is -1
-            llvm.condbr(llvm.eq(denom, neg1), try_overflow_semantics, ret_sdiv);
+            llvm.condbr(
+                llvm.eq(denom, neg1), try_overflow_semantics, ret_sdiv, false);
 
             llvm.insert_at(
                 try_overflow_semantics); // check for numerator is minbound
-            llvm.condbr(llvm.eq(numer, minbound), ret_overflow, ret_sdiv);
+            llvm.condbr(
+                llvm.eq(numer, minbound), ret_overflow, ret_sdiv, false);
 
             return f;
         }
@@ -1045,7 +1145,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isz, then_lbl, else_lbl);
+            llvm.condbr(isz, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(llvm.lit_word(0));
@@ -1073,7 +1173,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isgt, then_lbl, else_lbl);
+            llvm.condbr(isgt, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(llvm.lit_word(0));
@@ -1082,14 +1182,6 @@ namespace monad::vm::llvm
             llvm.ret((&llvm->*method)(b, a));
 
             return f;
-        }
-
-        void llvm_gas(VirtualStack &stack)
-        {
-            auto *gas = llvm.load(llvm.int_ty(64), g_local_gas_ref);
-            auto *r = llvm.add(
-                gas, llvm.lit(64, static_cast<uint64_t>(base_gas_remaining)));
-            stack.push(llvm.cast_word(r));
         }
 
         Function *llvm_byte(Instruction const &instr)
@@ -1108,7 +1200,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isgt, then_lbl, else_lbl);
+            llvm.condbr(isgt, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(llvm.lit_word(0));
@@ -1118,6 +1210,30 @@ namespace monad::vm::llvm
             auto *nbytes = llvm.sub(llvm.lit_word(31), a);
             auto *nbits = llvm.mul(nbytes, llvm.lit_word(8));
             llvm.ret(llvm.and_(llvm.shr(b, nbits), llvm.lit_word(255)));
+            return f;
+        }
+
+        Function *llvm_gas(Instruction const &instr)
+        {
+            SaveInsert const _unused(llvm);
+
+            auto [f, arg] = llvm.internal_function_definition(
+                instr_name(instr),
+                llvm.word_ty,
+                {llvm.ptr_ty(context_ty),
+                 llvm.int_ty(64),
+                 llvm.ptr_ty(llvm.int_ty(64))});
+
+            Value *block_base_gas_remaining = arg[1];
+            block_base_gas_remaining->setName("block_base_gas_remaining");
+            Value *ctx_gas_ref = arg[2];
+            ctx_gas_ref->setName("ctx_gas_ref");
+
+            auto *entry = llvm.basic_block("entry", f);
+            llvm.insert_at(entry);
+            auto *gas = llvm.load(llvm.int_ty(64), ctx_gas_ref);
+            auto *r = llvm.add(gas, block_base_gas_remaining);
+            llvm.ret(llvm.cast_word(r));
             return f;
         }
 
@@ -1136,7 +1252,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isgt, then_lbl, else_lbl);
+            llvm.condbr(isgt, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(llvm.sar(b, llvm.lit_word(255)));
@@ -1163,7 +1279,7 @@ namespace monad::vm::llvm
             auto *then_lbl = llvm.basic_block("then_lbl", f);
             auto *else_lbl = llvm.basic_block("else_lbl", f);
 
-            llvm.condbr(isgt, then_lbl, else_lbl);
+            llvm.condbr(isgt, then_lbl, else_lbl, false);
 
             llvm.insert_at(then_lbl);
             llvm.ret(b);
@@ -1178,7 +1294,7 @@ namespace monad::vm::llvm
 
         Function *init_instr(Instruction const &instr)
         {
-            auto op = instr.opcode();
+            OpCode const op = instr.opcode();
             switch (op) {
             case SStore:
                 return ffi_runtime(instr, sstore<traits>);
@@ -1284,23 +1400,23 @@ namespace monad::vm::llvm
                 return load_context_addr(instr, context_offset_env_recipient);
 
             case Coinbase:
-                return load_context_addr(
-                    instr, context_offset_env_tx_context_block_coinbase);
+                return load_evmc_tx_context_addr(
+                    instr, offsetof(evmc_tx_context, block_coinbase));
 
             case Caller:
                 return load_context_addr(instr, context_offset_env_sender);
 
             case Origin:
-                return load_context_addr(
-                    instr, context_offset_env_tx_context_origin);
+                return load_evmc_tx_context_addr(
+                    instr, offsetof(evmc_tx_context, tx_origin));
 
             case GasLimit:
-                return load_context_uint64(
-                    instr, context_offset_env_tx_context_block_gas_limit);
+                return load_evmc_tx_context_uint64(
+                    instr, offsetof(evmc_tx_context, block_gas_limit));
 
             case Number:
-                return load_context_uint64(
-                    instr, context_offset_env_tx_context_block_number);
+                return load_evmc_tx_context_uint64(
+                    instr, offsetof(evmc_tx_context, block_number));
 
             case MSize:
                 return load_context_uint32(instr, context_offset_memory_size);
@@ -1313,38 +1429,38 @@ namespace monad::vm::llvm
                     instr, context_offset_env_input_data_size);
 
             case Timestamp:
-                return load_context_uint64(
-                    instr, context_offset_env_tx_context_block_timestamp);
+                return load_evmc_tx_context_uint64(
+                    instr, offsetof(evmc_tx_context, block_timestamp));
 
             case ReturnDataSize:
                 return load_context_uint64(
                     instr, context_offset_env_return_data_size);
 
             case ChainId:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_chain_id);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, chain_id));
 
             case Difficulty:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_block_prev_randao);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, block_prev_randao));
 
             case BlobBaseFee:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_blob_base_fee);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, blob_base_fee));
 
             case BaseFee:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_block_base_fee);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, block_base_fee));
 
             case GasPrice:
-                return load_context_be(
-                    instr, context_offset_env_tx_context_tx_gas_price);
+                return load_evmc_tx_context_be(
+                    instr, offsetof(evmc_tx_context, tx_gas_price));
 
             case CallValue:
                 return load_context_be(instr, context_offset_env_value);
 
             case Gas:
-                return nullptr; // Gas opcode is inlined
+                return llvm_gas(instr);
 
             case Byte:
                 return llvm_byte(instr);

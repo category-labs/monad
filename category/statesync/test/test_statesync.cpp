@@ -212,7 +212,11 @@ TEST_F(StateSyncFixture, sync_from_latest)
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
-        load_header(db, BlockHeader{.number = N - 257});
+        uint64_t const block_number = N - 257;
+        load_header(
+            db.load_root_for_version(block_number),
+            db,
+            BlockHeader{.number = block_number});
         for (size_t i = N - 256; i < N; ++i) {
             BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
             tdb.set_block_and_prefix(i - 1);
@@ -242,7 +246,11 @@ TEST_F(StateSyncFixture, sync_from_empty)
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
     {
-        load_header(sdb, BlockHeader{.number = N - 257});
+        uint64_t const block_number = N - 257;
+        load_header(
+            sdb.load_root_for_version(block_number),
+            sdb,
+            BlockHeader{.number = block_number});
         for (size_t i = N - 256; i < N; ++i) {
             stdb.set_block_and_prefix(i - 1);
             commit_sequential(
@@ -271,6 +279,7 @@ TEST_F(StateSyncFixture, sync_from_empty)
         machine,
         mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
     TrieDb ctdb{cdb};
+    ctdb.set_block_and_prefix(cdb.get_latest_finalized_version());
     EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
     EXPECT_TRUE(ctdb.read_account(ADDR_A).has_value());
     auto const a_icode = ctdb.read_code(A_CODE_HASH);
@@ -286,9 +295,13 @@ TEST_F(StateSyncFixture, sync_from_empty)
     auto const h_icode = ctdb.read_code(H_CODE_HASH);
     EXPECT_EQ(byte_string_view(h_icode->code(), h_icode->size()), H_CODE);
 
-    auto raw = cdb.get(concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), N);
-    ASSERT_TRUE(raw.has_value());
-    auto const hdr = rlp::decode_block_header(raw.value());
+    auto find_res = cdb.find(
+        cdb.load_root_for_version(N),
+        concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE),
+        N);
+    ASSERT_TRUE(find_res.has_value());
+    auto raw = find_res.value().node->value();
+    auto const hdr = rlp::decode_block_header(raw);
     ASSERT_TRUE(hdr.has_value());
     EXPECT_EQ(hdr.value(), tgrt);
 }
@@ -306,10 +319,9 @@ TEST_F(StateSyncFixture, sync_from_some)
         load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
-    auto const root = sdb.load_root_for_version(0);
-    ASSERT_TRUE(root.is_valid());
-    auto const res =
-        sdb.find(root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
+    ASSERT_TRUE(stdb.get_root() != nullptr);
+    auto const res = sdb.find(
+        stdb.get_root(), concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
     ASSERT_TRUE(res.has_value() && res.value().is_valid());
     BlockHeader const hdr1{
         .parent_hash = to_bytes(keccak256(res.value().node->value())),
@@ -489,16 +501,15 @@ TEST_F(StateSyncFixture, deletion_proposal)
         load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
-    auto const root = sdb.load_root_for_version(0);
-    ASSERT_TRUE(root.is_valid());
-    auto const res =
-        sdb.find(root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
+    ASSERT_TRUE(stdb.get_root() != nullptr);
+    auto const res = sdb.find(
+        stdb.get_root(), concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
     ASSERT_TRUE(res.has_value() && res.value().is_valid());
     // delete ADDR1 on one fork
     {
         constexpr auto ADDR1 =
             0x000d836201318ec6899a67540690382780743280_address;
-        auto const acct = stdb.read_account(ADDR1);
+        auto const acct = sctx.read_account(ADDR1);
         ASSERT_TRUE(acct.has_value());
         sctx.set_block_and_prefix(0);
         sctx.commit(
@@ -511,7 +522,7 @@ TEST_F(StateSyncFixture, deletion_proposal)
     {
         constexpr auto ADDR2 =
             0x001762430ea9c3a26e5749afdb70da5f78ddbb8c_address;
-        auto const acct = stdb.read_account(ADDR2);
+        auto const acct = sctx.read_account(ADDR2);
         ASSERT_TRUE(acct.has_value());
         sctx.set_block_and_prefix(0);
         sctx.commit(
@@ -539,7 +550,10 @@ TEST_F(StateSyncFixture, sync_one_account)
 {
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
-    load_header(sdb, BlockHeader{.number = N - 257});
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
     for (size_t i = N - 256; i < N; ++i) {
         stdb.set_block_and_prefix(i - 1);
         commit_sequential(
@@ -571,7 +585,10 @@ TEST_F(StateSyncFixture, sync_empty)
 {
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
-    load_header(sdb, BlockHeader{.number = N - 257});
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
     for (size_t i = N - 256; i < N; ++i) {
         stdb.set_block_and_prefix(i - 1);
         commit_sequential(
@@ -595,7 +612,7 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
-        load_header(db, BlockHeader{.number = 0});
+        tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
         for (uint64_t n = 1; n <= 249; ++n) {
             tdb.commit({}, {}, bytes32_t{n}, BlockHeader{.number = n});
         }
@@ -605,7 +622,10 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
     bytes32_t parent_hash{NULL_HASH};
     {
         // init server db
-        load_header(sdb, BlockHeader{.number = N - 257});
+        load_header(
+            sdb.load_root_for_version(N - 257),
+            sdb,
+            BlockHeader{.number = N - 257});
         for (size_t i = N - 256; i < N; ++i) {
             BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
             stdb.set_block_and_prefix(i - 1);
@@ -835,7 +855,11 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
     Account const a{.balance = 100, .incarnation = Incarnation{1, 0}};
 
     bytes32_t parent_hash{NULL_HASH};
-    load_header(sdb, BlockHeader{.number = 1'000'000 - 257});
+    uint64_t const block_number = 1'000'000 - 257;
+    load_header(
+        sdb.load_root_for_version(block_number),
+        sdb,
+        BlockHeader{.number = block_number});
     for (size_t i = 1'000'000 - 256; i < 1'000'000; ++i) {
         stdb.set_block_and_prefix(i - 1);
         commit_sequential(
@@ -977,8 +1001,8 @@ TEST_F(StateSyncFixture, update_contract_twice)
 
 TEST_F(StateSyncFixture, handle_request_from_bad_block)
 {
-    load_header(sdb, BlockHeader{.number = 0});
-    load_header(sdb, BlockHeader{.number = 1});
+    load_header(sdb.load_root_for_version(0), sdb, BlockHeader{.number = 0});
+    load_header(sdb.load_root_for_version(1), sdb, BlockHeader{.number = 1});
     init();
     handle_target(cctx, BlockHeader{.number = 1});
     run();
@@ -999,7 +1023,11 @@ TEST_F(StateSyncFixture, benchmark)
     }
 
     bytes32_t parent_hash{NULL_HASH};
-    load_header(sdb, BlockHeader{.number = 1'000'000 - 257});
+    uint64_t const block_number = 1'000'000 - 257;
+    load_header(
+        sdb.load_root_for_version(block_number),
+        sdb,
+        BlockHeader{.number = block_number});
     for (size_t i = 1'000'000 - 256; i < 1'000'000; ++i) {
         stdb.set_block_and_prefix(i - 1);
         commit_sequential(
@@ -1019,6 +1047,7 @@ TEST_F(StateSyncFixture, benchmark)
     handle_target(cctx, hdr);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+    quill::flush();
 }
 
 TEST(Deletions, history_length)
@@ -1173,4 +1202,142 @@ TEST(Deletions, exceed_max_deletions)
 
     bool const success = deletions->for_each(12, [](auto const &) {});
     EXPECT_TRUE(success);
+}
+
+// Unit tests for request validation logic
+TEST_F(StateSyncFixture, validation_prefix_bytes_too_large)
+{
+    // Set up a valid database state
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 9, // exceeds maximum of 8 - INVALID
+        .target = 99,
+        .from = 0,
+        .until = 99,
+        .old_target = INVALID_BLOCK_NUM};
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    // Should fail due to validation, not due to missing data
+    EXPECT_FALSE(client.success);
+}
+
+TEST_F(StateSyncFixture, validation_target_invalid)
+{
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 8,
+        .target = INVALID_BLOCK_NUM, // invalid target
+        .from = 0,
+        .until = 99,
+        .old_target = INVALID_BLOCK_NUM};
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    EXPECT_FALSE(client.success);
+}
+
+TEST_F(StateSyncFixture, validation_from_greater_than_until)
+{
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 8,
+        .target = 99,
+        .from = 50,
+        .until = 40, // from > until - INVALID
+        .old_target = INVALID_BLOCK_NUM};
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    EXPECT_FALSE(client.success);
+}
+
+TEST_F(StateSyncFixture, validation_until_greater_than_target)
+{
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 8,
+        .target = 99,
+        .from = 0,
+        .until = 100, // until > target - INVALID
+        .old_target = INVALID_BLOCK_NUM};
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    EXPECT_FALSE(client.success);
+}
+
+TEST_F(StateSyncFixture, validation_old_target_greater_than_target)
+{
+    bytes32_t parent_hash{NULL_HASH};
+    for (size_t i = 0; i < 100; ++i) {
+        if (i > 0) {
+            stdb.set_block_and_prefix(i - 1);
+        }
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    init();
+
+    monad_sync_request rq{
+        .prefix = 0,
+        .prefix_bytes = 8,
+        .target = 50,
+        .from = 0,
+        .until = 50,
+        .old_target = 51}; // old_target > target - INVALID
+
+    client.rqs.push_back(rq);
+    monad_statesync_server_run_once(server);
+    EXPECT_FALSE(client.success);
 }

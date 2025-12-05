@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <monad/test/traits_test.hpp>
 #include <test_resource_data.h>
 
 #include <evmc/evmc.h>
@@ -48,9 +49,9 @@ using namespace monad::test;
 
 using db_t = TrieDb;
 
-using evm_host_t = EvmcHost<EvmTraits<EVMC_SHANGHAI>>;
+#define PUSH3(x) 0x62, (((x) >> 16) & 0xFF), (((x) >> 8) & 0xFF), ((x) & 0xFF)
 
-TEST(Evm, create_with_insufficient)
+TYPED_TEST(TraitsTest, create_with_insufficient)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -82,14 +83,77 @@ TEST(Evm, create_with_insufficient)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    auto const result = create<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
 
-TEST(Evm, eip684_existing_code)
+// Test that CREATE transactions that fail due to insufficient balance
+// do not bump nonce prior to MONAD_FIVE but do bump it after
+TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr uint64_t initial_nonce = 5;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                          .nonce = initial_nonce}}}}},
+        Code{},
+        BlockHeader{});
+
+    evmc_message m{
+        .kind = EVMC_CREATE,
+        .depth = 0, // top-level transaction
+        .gas = 20'000,
+        .sender = from,
+    };
+    uint256_t const v{70'000'000'000'000'000}; // too much balance required
+    intx::be::store(m.value.bytes, v);
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+
+    auto const result = create<typename TestFixture::Trait>(&h, s, m);
+
+    EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
+
+    auto const final_nonce = s.get_nonce(from);
+    if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_FIVE) {
+            EXPECT_EQ(final_nonce, initial_nonce + 1);
+        }
+        else {
+            EXPECT_EQ(final_nonce, initial_nonce);
+        }
+    }
+    else {
+        // Asserting expected behavior here but noting that this test is
+        // unrealistic for ethereum since the sender balance is always
+        // sufficient to pay for the gas + value
+        EXPECT_EQ(final_nonce, initial_nonce);
+    }
+}
+
+TYPED_TEST(TraitsTest, eip684_existing_code)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -129,13 +193,13 @@ TEST(Evm, eip684_existing_code)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
-    auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    auto const result = create<typename TestFixture::Trait>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 
-TEST(Evm, create_nonce_out_of_range)
+TYPED_TEST(TraitsTest, create_nonce_out_of_range)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -151,8 +215,8 @@ TEST(Evm, create_nonce_out_of_range)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -175,13 +239,13 @@ TEST(Evm, create_nonce_out_of_range)
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
 
-    auto const result = create<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    auto const result = create<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
 }
 
-TEST(Evm, static_precompile_execution)
+TYPED_TEST(TraitsTest, static_precompile_execution)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -197,8 +261,8 @@ TEST(Evm, static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -224,7 +288,7 @@ TEST(Evm, static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    auto const result = call<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    auto const result = call<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(result.gas_left, 382);
@@ -233,7 +297,7 @@ TEST(Evm, static_precompile_execution)
     EXPECT_NE(result.output_data, m.input_data);
 }
 
-TEST(Evm, out_of_gas_static_precompile_execution)
+TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -249,8 +313,8 @@ TEST(Evm, out_of_gas_static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    EthereumMainnet chain;
-    evm_host_t h{chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     commit_sequential(
         tdb,
@@ -276,14 +340,14 @@ TEST(Evm, out_of_gas_static_precompile_execution)
         .value = {0},
         .code_address = code_address};
 
-    evmc::Result const result = call<EvmTraits<EVMC_SHANGHAI>>(&h, s, m);
+    evmc::Result const result = call<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }
 
 // Checks that the CREATE opcode respects the configured max code size for the
 // current chain.
-TEST(Evm, create_op_max_initcode_size)
+TYPED_TEST(TraitsTest, create_op_max_initcode_size)
 {
     static constexpr auto good_code_address{
         0xbebebebebebebebebebebebebebebebebebebebe_address};
@@ -299,13 +363,15 @@ TEST(Evm, create_op_max_initcode_size)
     db_t tdb{db};
     vm::VM vm;
 
-    // PUSH3 2 * 128 * 1024; PUSH0; PUSH0; CREATE
-    uint8_t const good_code[] = {0x62, 0x04, 0x00, 0x00, 0x5f, 0x5f, 0xf0};
+    // PUSH3 max_initcode_size(); PUSH0; PUSH0; CREATE
+    uint8_t const good_code[] = {
+        PUSH3(TestFixture::Trait::max_initcode_size()), 0x5f, 0x5f, 0xf0};
     auto const good_icode = vm::make_shared_intercode(good_code);
     auto const good_code_hash = to_bytes(keccak256(good_code));
 
-    // PUSH3 (2 * 128 * 1024) + 1; PUSH0; PUSH0; CREATE
-    uint8_t const bad_code[] = {0x62, 0x04, 0x00, 0x01, 0x5f, 0x5f, 0xf0};
+    // PUSH3 max_initcode_size() + 1; PUSH0; PUSH0; CREATE
+    uint8_t const bad_code[] = {
+        PUSH3(TestFixture::Trait::max_initcode_size() + 1), 0x5f, 0x5f, 0xf0};
     auto const bad_icode = vm::make_shared_intercode(bad_code);
     auto const bad_code_hash = to_bytes(keccak256(bad_code));
 
@@ -337,16 +403,18 @@ TEST(Evm, create_op_max_initcode_size)
 
     BlockState bs{tdb, vm};
     BlockHashBufferFinalized const block_hash_buffer;
-    EthereumMainnet chain{};
     NoopCallTracer call_tracer;
 
     auto s = State{bs, Incarnation{0, 0}};
 
-    EvmcHost<MonadTraits<MONAD_FOUR>> h{
-        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     // Initcode fits inside size limit
-    {
+    if constexpr (
+        TestFixture::Trait::max_initcode_size() <
+        std::numeric_limits<size_t>::max()) {
+        static_assert(TestFixture::Trait::max_initcode_size() < 0xFFFFFF);
         evmc_message m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
@@ -354,12 +422,14 @@ TEST(Evm, create_op_max_initcode_size)
             .sender = from,
             .code_address = good_code_address};
 
-        auto const result = call<MonadTraits<MONAD_FOUR>>(&h, s, m);
+        auto const result = call<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     }
 
     // Initcode doesn't fit inside size limit
-    {
+    if constexpr (
+        TestFixture::Trait::max_initcode_size() <
+        std::numeric_limits<size_t>::max()) {
         evmc_message m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
@@ -367,14 +437,14 @@ TEST(Evm, create_op_max_initcode_size)
             .sender = from,
             .code_address = bad_code_address};
 
-        auto const result = call<MonadTraits<MONAD_FOUR>>(&h, s, m);
+        auto const result = call<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
     }
 }
 
 // Checks that the CREATE2 opcode respects the configured max code size for the
 // current chain.
-TEST(Evm, create2_op_max_initcode_size)
+TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
 {
     static constexpr auto good_code_address{
         0xbebebebebebebebebebebebebebebebebebebebe_address};
@@ -390,14 +460,19 @@ TEST(Evm, create2_op_max_initcode_size)
     db_t tdb{db};
     vm::VM vm;
 
-    // PUSH0; PUSH3 2 * 128 * 1024; PUSH0; PUSH0; CREATE2
+    // PUSH0; PUSH3 max_initcode_size(); PUSH0; PUSH0; CREATE2
     uint8_t const good_code[] = {
-        0x5f, 0x62, 0x04, 0x00, 0x00, 0x5f, 0x5f, 0xf5};
+        0x5f, PUSH3(TestFixture::Trait::max_initcode_size()), 0x5f, 0x5f, 0xf5};
     auto const good_icode = vm::make_shared_intercode(good_code);
     auto const good_code_hash = to_bytes(keccak256(good_code));
 
-    // PUSH0; PUSH3 (2 * 128 * 1024) + 1; PUSH0; PUSH0; CREATE2
-    uint8_t const bad_code[] = {0x5f, 0x62, 0x04, 0x00, 0x01, 0x5f, 0x5f, 0xf5};
+    // PUSH0; PUSH3 max_initcode_size() + 1; PUSH0; PUSH0; CREATE2
+    uint8_t const bad_code[] = {
+        0x5f,
+        PUSH3(TestFixture::Trait::max_initcode_size() + 1),
+        0x5f,
+        0x5f,
+        0xf5};
     auto const bad_icode = vm::make_shared_intercode(bad_code);
     auto const bad_code_hash = to_bytes(keccak256(bad_code));
 
@@ -429,16 +504,18 @@ TEST(Evm, create2_op_max_initcode_size)
 
     BlockState bs{tdb, vm};
     BlockHashBufferFinalized const block_hash_buffer;
-    EthereumMainnet chain{};
     NoopCallTracer call_tracer;
 
     auto s = State{bs, Incarnation{0, 0}};
 
-    EvmcHost<MonadTraits<MONAD_FOUR>> h{
-        chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
 
     // Initcode fits inside size limit
-    {
+    if constexpr (
+        TestFixture::Trait::max_initcode_size() <
+        std::numeric_limits<size_t>::max()) {
+        static_assert(TestFixture::Trait::max_initcode_size() < 0xFFFFFF);
         evmc_message m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
@@ -446,12 +523,14 @@ TEST(Evm, create2_op_max_initcode_size)
             .sender = from,
             .code_address = good_code_address};
 
-        auto const result = call<MonadTraits<MONAD_FOUR>>(&h, s, m);
+        auto const result = call<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     }
 
     // Initcode doesn't fit inside size limit
-    {
+    if constexpr (
+        TestFixture::Trait::max_initcode_size() <
+        std::numeric_limits<size_t>::max()) {
         evmc_message m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
@@ -459,12 +538,12 @@ TEST(Evm, create2_op_max_initcode_size)
             .sender = from,
             .code_address = bad_code_address};
 
-        auto const result = call<MonadTraits<MONAD_FOUR>>(&h, s, m);
+        auto const result = call<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
     }
 }
 
-TEST(Evm, deploy_contract_code)
+TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
 {
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
@@ -479,76 +558,68 @@ TEST(Evm, deploy_contract_code)
         BlockHeader{});
     BlockState bs{tdb, vm};
 
-    // Frontier
+    uint8_t const code[] = {0xde, 0xad, 0xbe, 0xef};
+    // Successfully deploy code
     {
-        uint8_t const code[] = {0xde, 0xad, 0xbe, 0xef};
-        // Successfully deploy code
-        {
-            State s{bs, Incarnation{0, 0}};
-            static constexpr int64_t gas = 10'000;
-            evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
-            auto const r2 = deploy_contract_code<EvmTraits<EVMC_FRONTIER>>(
-                s, a, std::move(r));
-            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-            EXPECT_EQ(r2.gas_left, gas - 800); // G_codedeposit * size(code)
-            EXPECT_EQ(r2.create_address, a);
-            auto const icode = s.get_code(a)->intercode();
-            EXPECT_EQ(
-                byte_string_view(icode->code(), icode->size()),
-                byte_string_view(code, sizeof(code)));
-        }
-
-        // Initialization code succeeds, but deployment of code failed
-        {
-            State s{bs, Incarnation{0, 1}};
-            evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
-            auto const r2 = deploy_contract_code<EvmTraits<EVMC_FRONTIER>>(
-                s, a, std::move(r));
-            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-            EXPECT_EQ(r2.gas_left, 700);
-            EXPECT_EQ(r2.create_address, a);
-        }
+        State s{bs, Incarnation{0, 0}};
+        static constexpr int64_t gas = 10'000;
+        evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
+        auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
+            s, a, std::move(r));
+        EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(r2.gas_left, gas - 200 * sizeof(code));
+        EXPECT_EQ(r2.create_address, a);
+        auto const icode = s.get_code(a)->intercode();
+        EXPECT_EQ(
+            byte_string_view(icode->code(), icode->size()),
+            byte_string_view(code, sizeof(code)));
     }
 
-    // Homestead
     {
-        uint8_t const code[] = {0xde, 0xad, 0xbe, 0xef};
-        // Successfully deploy code
-        {
-            State s{bs, Incarnation{0, 2}};
-            int64_t const gas = 10'000;
-
-            evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
-            auto const r2 = deploy_contract_code<EvmTraits<EVMC_HOMESTEAD>>(
-                s, a, std::move(r));
+        State s{bs, Incarnation{0, 1}};
+        evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
+        auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
+            s, a, std::move(r));
+        EXPECT_EQ(r2.gas_left, 700);
+        if constexpr (TestFixture::Trait::evm_rev() == EVMC_FRONTIER) {
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.create_address, a);
-            EXPECT_EQ(r2.gas_left,
-                      gas - 800); // G_codedeposit * size(code)
+            auto const &account = s.recent_account(a);
+            EXPECT_TRUE(account.has_value());
             auto const icode = s.get_code(a)->intercode();
-            EXPECT_EQ(
-                byte_string_view(icode->code(), icode->size()),
-                byte_string_view(code, sizeof(code)));
+            EXPECT_EQ(icode->size(), 0);
         }
-
-        // Fail to deploy code - out of gas (EIP-2)
-        {
-            State s{bs, Incarnation{0, 3}};
-            evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
-            auto const r2 = deploy_contract_code<EvmTraits<EVMC_HOMESTEAD>>(
-                s, a, std::move(r));
+        else {
+            // Fail to deploy code - out of gas (EIP-2)
             EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
-            EXPECT_EQ(r2.gas_left, 700);
             EXPECT_EQ(r2.create_address, 0x00_address);
         }
     }
+}
 
-    // Spurious Dragon
-    {
-        uint8_t const ptr[25000]{0x00};
-        byte_string code{ptr, 25000};
+TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
+{
+    static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
-        State s{bs, Incarnation{0, 4}};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    commit_sequential(
+        tdb,
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{},
+        BlockHeader{});
+    BlockState bs{tdb, vm};
+
+    if constexpr (
+        TestFixture::Trait::max_code_size() <
+        std::numeric_limits<size_t>::max()) {
+        uint8_t const ptr[250000]{0x00};
+        byte_string code{ptr, 250000};
+        static_assert(TestFixture::Trait::max_code_size() < 250000);
+
+        State s{bs, Incarnation{0, 0}};
 
         evmc::Result r{
             EVMC_SUCCESS,
@@ -556,30 +627,51 @@ TEST(Evm, deploy_contract_code)
             0,
             code.data(),
             code.size()};
-        auto const r2 = deploy_contract_code<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+        auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
             s, a, std::move(r));
         EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);
     }
+}
 
-    // London
-    {
-        byte_string const illegal_code{0xef, 0x60};
+TYPED_TEST(TraitsTest, deploy_contract_code_validation)
+{
+    static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
-        State s{bs, Incarnation{0, 5}};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    commit_sequential(
+        tdb,
+        StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{},
+        BlockHeader{});
+    BlockState bs{tdb, vm};
 
-        evmc::Result r{
-            EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
-        auto const r2 =
-            deploy_contract_code<EvmTraits<EVMC_LONDON>>(s, a, std::move(r));
+    // EIP-3541 validation
+    byte_string const illegal_code{0xef, 0x60};
+
+    State s{bs, Incarnation{0, 0}};
+
+    evmc::Result r{
+        EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
+    auto const r2 =
+        deploy_contract_code<typename TestFixture::Trait>(s, a, std::move(r));
+    if constexpr (TestFixture::Trait::evm_rev() < EVMC_LONDON) {
+        // Contract starting with 0xef was valid before the London revision
+        EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(r2.create_address, a);
+    }
+    else {
         EXPECT_EQ(r2.status_code, EVMC_CONTRACT_VALIDATION_FAILURE);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);
     }
 }
 
-TEST(Evm, create_inside_delegated_call)
+TYPED_TEST(TraitsTest, create_inside_delegated_call)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -648,32 +740,26 @@ TEST(Evm, create_inside_delegated_call)
         .code_address = delegated,
     };
 
-    // CREATE should succeed on Ethereum chains
-    {
-        BlockHashBufferFinalized const block_hash_buffer;
-        NoopCallTracer call_tracer;
-        EthereumMainnet chain{};
-        EvmcHost<EvmTraits<EVMC_PRAGUE>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
         auto const result = h.call(m);
-
-        EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    }
-
-    // CREATE should fail on Monad chains
-    {
-        BlockHashBufferFinalized const block_hash_buffer;
-        NoopCallTracer call_tracer;
-        MonadDevnet chain{};
-        EvmcHost<MonadTraits<MONAD_FOUR>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
-        auto const result = h.call(m);
-
-        EXPECT_EQ(result.status_code, EVMC_FAILURE);
+        // CREATE should fail on Monad chains and succeed on Ethereum chains
+        if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
+            static_assert(TestFixture::is_evm_trait());
+            EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+        }
+        else {
+            static_assert(TestFixture::is_monad_trait());
+            EXPECT_EQ(result.status_code, EVMC_FAILURE);
+        }
     }
 }
 
-TEST(Evm, create2_inside_delegated_call_via_delegatecall)
+TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -768,32 +854,26 @@ TEST(Evm, create2_inside_delegated_call_via_delegatecall)
         .code_address = delegated,
     };
 
-    // CREATE2 should succeed on Ethereum chains
-    {
-        BlockHashBufferFinalized const block_hash_buffer;
-        NoopCallTracer call_tracer;
-        EthereumMainnet chain{};
-        EvmcHost<EvmTraits<EVMC_PRAGUE>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
         auto const result = h.call(m);
-
-        EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    }
-
-    // CREATE2 should fail on Monad chains
-    {
-        BlockHashBufferFinalized const block_hash_buffer;
-        NoopCallTracer call_tracer;
-        MonadDevnet chain{};
-        EvmcHost<MonadTraits<MONAD_FOUR>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
-        auto const result = h.call(m);
-
-        EXPECT_EQ(result.status_code, EVMC_FAILURE);
+        // CREATE2 should fail on Monad chains and succeed on Ethereum chains
+        if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
+            static_assert(TestFixture::is_evm_trait());
+            EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+        }
+        else {
+            static_assert(TestFixture::is_monad_trait());
+            EXPECT_EQ(result.status_code, EVMC_FAILURE);
+        }
     }
 }
 
-TEST(Evm, nested_call_to_delegated_precompile)
+TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 {
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -872,14 +952,107 @@ TEST(Evm, nested_call_to_delegated_precompile)
         .code_address = contract,
     };
 
-    {
+    // requires EIP-7702
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
-        MonadDevnet chain{};
-        EvmcHost<MonadTraits<MONAD_FOUR>> h{
-            chain, call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        EvmcHost<typename TestFixture::Trait> h{
+            call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     }
 }
+
+TYPED_TEST(TraitsTest, cold_account_access)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    static constexpr auto from{
+        0x00000000000000000000000000000000bbbbbbbb_address};
+
+    static constexpr auto contract{
+        0x00000000000000000000000000000000cccccccc_address};
+
+    // push cold address; BALANCE
+    auto const code =
+        evmc::from_hex("0x7300000000000000000000000000000000aaaaaaaa31")
+            .value();
+    auto const icode = vm::make_shared_intercode(code);
+    auto const code_hash = to_bytes(keccak256(code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10'000'000'000,
+                      }}}},
+            {contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .code_hash = code_hash,
+                      }}}}},
+        Code{
+            {code_hash, icode},
+        },
+        BlockHeader{});
+
+    constexpr auto gas_limit = 1'000'000;
+
+    evmc_message const m{
+        .kind = EVMC_CALL,
+        .gas = gas_limit,
+        .recipient = contract,
+        .sender = from,
+        .code_address = contract,
+    };
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+    auto const result = h.call(m);
+    auto const gas_used = gas_limit - result.gas_left;
+
+    constexpr auto balance_gas = [] {
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+                return 10100;
+            }
+            else {
+                return 2600;
+            }
+        }
+        else {
+            if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BERLIN) {
+                return 2600;
+            }
+            else if constexpr (TestFixture::Trait::evm_rev() >= EVMC_ISTANBUL) {
+                return 700;
+            }
+            else if constexpr (
+                TestFixture::Trait::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
+                return 400;
+            }
+            else {
+                return 20;
+            }
+        }
+    }();
+
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(gas_used, balance_gas + 3); // +3 for PUSH20
+}
+
+#undef PUSH3

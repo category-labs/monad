@@ -139,7 +139,7 @@ struct chunk_info_restore_t
     monad::mpt::detail::db_metadata::chunk_info_t const metadata;
     std::span<std::byte const> const compressed;
 
-    monad::async::storage_pool::chunk_ptr chunk_ptr;
+    monad::async::storage_pool::chunk_t *chunk_ptr;
     std::vector<std::byte> nonchunkstorage;
     std::future<size_t> decompression_thread;
     bool const is_uncompressed;
@@ -281,7 +281,7 @@ struct chunk_info_restore_t
 
 struct chunk_info_archive_t
 {
-    monad::async::storage_pool::chunk_ptr const chunk_ptr;
+    monad::async::storage_pool::chunk_t const *chunk_ptr;
     la_int64_t const metadata;
 
     void *compressed_storage{nullptr};
@@ -292,7 +292,7 @@ struct chunk_info_archive_t
     std::future<void> compression_thread;
 
     chunk_info_archive_t(
-        monad::async::storage_pool::chunk_ptr chunk_ptr_, la_int64_t metadata_)
+        monad::async::storage_pool::chunk_t *chunk_ptr_, la_int64_t metadata_)
         : chunk_ptr(std::move(chunk_ptr_))
         , metadata(metadata_)
     {
@@ -393,6 +393,7 @@ struct impl_t
     std::ostream &cerr;
     MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
     uint8_t chunk_capacity = flags.chunk_capacity;
+    uint32_t root_offsets_chunk_count = 16;
     bool allow_dirty = false;
     bool no_prompt = false;
     bool create_database = false;
@@ -448,17 +449,17 @@ public:
         do {
             auto chunkid = item->index(aux.db_metadata());
             count++;
-            auto chunk = pool->activate_chunk(pool->seq, chunkid);
-            MONAD_DEBUG_ASSERT(chunk->zone_id().second == chunkid);
+            auto &chunk = pool->chunk(pool->seq, chunkid);
+            MONAD_DEBUG_ASSERT(chunk.zone_id().second == chunkid);
             if constexpr (!std::is_void_v<T>) {
                 if (list != nullptr) {
                     la_int64_t const metadata =
                         std::bit_cast<la_int64_t>(*item);
-                    list->emplace_back(chunk, metadata);
+                    list->emplace_back(std::addressof(chunk), metadata);
                 }
             }
-            total_capacity += chunk->capacity();
-            total_used += chunk->size();
+            total_capacity += chunk.capacity();
+            total_used += chunk.size();
             item = item->next(aux.db_metadata());
         }
         while (item != nullptr);
@@ -488,8 +489,13 @@ public:
              << " history, earliest is " << aux.db_history_min_valid_version()
              << " latest is " << aux.db_history_max_version()
              << ".\n     It has been configured to retain no more than "
-             << aux.version_history_length() << ".\n     Latest voted is ("
-             << aux.get_latest_voted_version() << ", "
+             << aux.version_history_length() << ".\n     Latest proposed is ("
+             << aux.get_latest_proposed_version() << ", "
+             << evmc::hex(monad::byte_string_view(
+                    aux.get_latest_proposed_block_id().bytes,
+                    sizeof(monad::bytes32_t)))
+             << ").\n     Latest voted is (" << aux.get_latest_voted_version()
+             << ", "
              << evmc::hex(monad::byte_string_view(
                     aux.get_latest_voted_block_id().bytes,
                     sizeof(monad::bytes32_t)))
@@ -665,7 +671,7 @@ public:
                 i.nonchunkstorage.resize(size_t(decompressed_len));
             }
             else {
-                i.chunk_ptr = pool->activate_chunk(i.type, i.chunk_id);
+                i.chunk_ptr = std::addressof(pool->chunk(i.type, i.chunk_id));
                 if (decompressed_len > i.chunk_ptr->capacity()) {
                     std::stringstream ss;
                     ss << "DB archive " << restore_database << " chunk id "
@@ -723,7 +729,7 @@ public:
                     MONAD_ASYNC_NAMESPACE::AsyncIO::
                         MONAD_IO_BUFFERS_WRITE_SIZE);
             auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
-            MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
+            MONAD_MPT_NAMESPACE::UpdateAux<> aux(io);
             for (;;) {
                 auto const *item = aux.db_metadata()->fast_list_begin();
                 if (item == nullptr) {
@@ -827,12 +833,12 @@ public:
                               "version.";
                         throw std::runtime_error(ss.str());
                     }
-                    auto cnv_chunk = pool->activate_chunk(
-                        monad::async::storage_pool::cnv, 0);
-                    auto [wfd, offset] = cnv_chunk->write_fd(0);
+                    auto &cnv_chunk =
+                        pool->chunk(monad::async::storage_pool::cnv, 0);
+                    auto [wfd, offset] = cnv_chunk.write_fd(0);
                     auto *new_metadata_map = ::mmap(
                         nullptr,
-                        cnv_chunk->capacity(),
+                        cnv_chunk.capacity(),
                         PROT_READ | PROT_WRITE,
                         MAP_SHARED,
                         wfd,
@@ -842,13 +848,13 @@ public:
                     }
                     auto un_new_metadata_map =
                         monad::make_scope_exit([&]() noexcept {
-                            ::munmap(new_metadata_map, cnv_chunk->capacity());
+                            ::munmap(new_metadata_map, cnv_chunk.capacity());
                         });
                     monad::mpt::detail::db_metadata *db_metadata[2] = {
                         (monad::mpt::detail::db_metadata *)new_metadata_map,
                         (monad::mpt::detail::db_metadata
                              *)((std::byte *)new_metadata_map +
-                                cnv_chunk->capacity() / 2)};
+                                cnv_chunk.capacity() / 2)};
                     auto do_ = [&](auto &&f) {
                         f(db_metadata[0]);
                         f(db_metadata[1]);
@@ -865,6 +871,8 @@ public:
                         metadata->db_offsets.store(old_metadata->db_offsets);
                         metadata->root_offsets.next_version_ =
                             old_metadata->root_offsets.next_version_;
+                        metadata->root_offsets.version_lower_bound_ =
+                            old_metadata->root_offsets.version_lower_bound_;
                         memcpy(
                             &metadata->root_offsets.storage_,
                             &old_metadata->root_offsets.storage_,
@@ -966,7 +974,7 @@ public:
             2,
             MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
-        MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
+        MONAD_MPT_NAMESPACE::UpdateAux<> aux(io);
         size_t slow_chunks_inserted = 0;
         size_t fast_chunks_inserted = 0;
         auto override_insertion_count =
@@ -1115,8 +1123,7 @@ public:
                 std::thread::hardware_concurrency() /
                 2 /* deliberately not
                      true_hardware_concurrency */
-                * pool->activate_chunk(monad::async::storage_pool::seq, 0)
-                      ->capacity();
+                * pool->chunk(monad::async::storage_pool::seq, 0).capacity();
             int const tempfd = monad::async::make_temporary_inode();
             if (tempfd == -1) {
                 throw std::system_error(errno, std::system_category());
@@ -1219,7 +1226,8 @@ public:
             std::vector<chunk_info_archive_t> cnv_infos;
             cnv_infos.reserve(pool->chunks(pool->cnv));
             for (uint32_t n = 0; n <= additional_cnv_chunks_to_archive; n++) {
-                cnv_infos.emplace_back(pool->activate_chunk(pool->cnv, n), -1);
+                cnv_infos.emplace_back(
+                    std::addressof(pool->chunk(pool->cnv, n)), -1);
                 tocompress.push_back(&cnv_infos.back());
                 if (n == 0) {
                     // Need to determine additional_cnv_chunks_to_archive
@@ -1440,6 +1448,22 @@ opened.
                 "set chunk capacity during database creation (default is 28, "
                 "1<<28 "
                 "= 256Mb, max is 31).");
+            cli.add_option(
+                   "--root-offsets-chunk-count",
+                   impl.root_offsets_chunk_count,
+                   "Number of chunks to allocate for storing root offsets. "
+                   "Must be a positive number that is a power of 2. Default is "
+                   "16. Each chunk holds approx 16.5M history entries.")
+                ->check([](std::string const &s) {
+                    auto const v = std::stoll(s);
+                    if (v <= 0) {
+                        return "Value must be positive";
+                    }
+                    if ((v & (v - 1)) != 0) {
+                        return "Value must be a power of 2";
+                    }
+                    return "";
+                });
             cli.add_flag(
                 "--chunk-increasing",
                 impl.create_chunk_increasing,
@@ -1473,6 +1497,9 @@ opened.
             impl.flags.open_read_only = true;
             impl.flags.open_read_only_allow_dirty =
                 impl.allow_dirty || !impl.archive_database.empty();
+            impl.flags.num_cnv_chunks =
+                impl.root_offsets_chunk_count +
+                monad::mpt::UpdateAuxImpl::cnv_chunks_for_db_metadata;
             if (!impl.restore_database.empty()) {
                 if (!impl.archive_database.empty()) {
                     impl.cli_ask_question(
@@ -1553,7 +1580,7 @@ opened.
                       MONAD_ASYNC_NAMESPACE::AsyncIO::
                           MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*impl.pool, rwbuf};
-        MONAD_MPT_NAMESPACE::UpdateAux<> aux(&io);
+        MONAD_MPT_NAMESPACE::UpdateAux<> aux(io);
 
         {
             cout << R"(MPT database on storages:
@@ -1599,7 +1626,7 @@ opened.
                     impl.cli_ask_question(ss.str().c_str());
                 }
                 aux.unset_io();
-                aux.set_io(&io, impl.reset_history_length);
+                aux.set_io(io, impl.reset_history_length);
                 cout << "Success! Done resetting history to "
                      << impl.reset_history_length.value() << ".\n";
                 impl.print_db_history_summary(aux);

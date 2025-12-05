@@ -127,9 +127,10 @@ void CallTracer::on_enter(evmc_message const &msg)
                     return CallType::CREATE;
                 case EVMC_CREATE2:
                     return CallType::CREATE2;
-                default:
-                    MONAD_ASSERT(false);
+                case EVMC_EOFCREATE:
+                    MONAD_ABORT(); // unsupported
                 }
+                MONAD_ABORT(); // unreachable
             }(),
         .flags = msg.flags,
         .from = from,
@@ -168,7 +169,9 @@ void CallTracer::on_exit(evmc::Result const &res)
     frame.status = res.status_code;
 
     if (frame.type == CallType::CREATE || frame.type == CallType::CREATE2) {
-        frame.to = res.create_address;
+        frame.to = is_zero(res.create_address)
+                       ? std::nullopt
+                       : std::optional{res.create_address};
     }
 
     last_.pop();
@@ -206,6 +209,7 @@ void CallTracer::on_self_destruct(Address const &from, Address const &to)
         .output = {},
         .status = EVMC_SUCCESS, // TODO
         .depth = depth_ + 1,
+        .logs = std::vector<CallFrame::Log>{},
     });
 }
 

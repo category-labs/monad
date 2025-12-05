@@ -127,6 +127,7 @@ namespace monad::vm::compiler
         SHL = 0x1B,
         SHR = 0x1C,
         SAR = 0x1D,
+        CLZ = 0x1E,
         SHA3 = 0x20,
         ADDRESS = 0x30,
         BALANCE = 0x31,
@@ -760,8 +761,12 @@ namespace monad::vm::compiler
     consteval std::array<OpCodeInfo, 256>
     make_opcode_table<EvmTraits<EVMC_OSAKA>>()
     {
-        return make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_OSAKA)>>();
+        auto table =
+            make_opcode_table<EvmTraits<previous_evm_revision(EVMC_OSAKA)>>();
+
+        // https://eips.ethereum.org/EIPS/eip-7939
+        add_opcode(0x1E, table, {"CLZ", 0, 1, 1, false, 5, 0});
+        return table;
     }
 
     template <>
@@ -803,10 +808,35 @@ namespace monad::vm::compiler
     consteval std::array<OpCodeInfo, 256>
     make_opcode_table<MonadTraits<MONAD_FIVE>>()
     {
-        auto table = make_opcode_table<MonadTraits<MONAD_FIVE>::evm_base>();
-        table[CREATE].min_gas = 160'000;
-        table[CREATE2].min_gas = 160'000;
-        return table;
+        return make_opcode_table<MonadTraits<MONAD_FIVE>::evm_base>();
+    }
+
+    template <>
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<MonadTraits<MONAD_SIX>>()
+    {
+        return make_opcode_table<MonadTraits<MONAD_SIX>::evm_base>();
+    }
+
+    template <>
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<MonadTraits<MONAD_SEVEN>>()
+    {
+        return make_opcode_table<MonadTraits<MONAD_SEVEN>::evm_base>();
+    }
+
+    template <>
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<MonadTraits<MONAD_EIGHT>>()
+    {
+        return make_opcode_table<MonadTraits<MONAD_EIGHT>::evm_base>();
+    }
+
+    template <>
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<MonadTraits<MONAD_NEXT>>()
+    {
+        return make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();
     }
 
     /**

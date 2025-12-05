@@ -49,7 +49,10 @@
 	url = https://github.com/asmjit/asmjit.git
 [submodule "third_party/evmc"]
 	path = third_party/evmc
-	url = https://github.com/ipsilon/evmc.git
+	url = https://github.com/category-labs/evmc.git
 [submodule "third_party/cthash"]
 	path = third_party/cthash
 	url = https://github.com/hanickadot/cthash.git
+[submodule "third_party/immer"]
+	path = third_party/immer
+	url = https://github.com/arximboldi/immer.git

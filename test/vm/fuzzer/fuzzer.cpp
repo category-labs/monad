@@ -316,6 +316,8 @@ namespace
         BlockchainTestVM::Implementation implementation =
             BlockchainTestVM::Implementation::Compiler;
         evmc_revision revision = EVMC_PRAGUE;
+        std::optional<std::string> focus_path = std::nullopt;
+        std::optional<GeneratorFocus> focus = std::nullopt;
 
         void set_random_seed_if_default()
         {
@@ -345,6 +347,8 @@ static arguments parse_args(int const argc, char **const argv)
         "--seed",
         args.seed,
         "Seed to use for reproducible fuzzing (random by default)");
+
+    app.add_option("--focus", args.focus_path, "Path to the JSON focus config");
 
     auto const impl_map =
         std::map<std::string, BlockchainTestVM::Implementation>{
@@ -518,11 +522,14 @@ static void do_run(std::size_t const run_index, arguments const &args)
 
     for (auto i = 0; i < args.iterations_per_run; ++i) {
         using monad::vm::fuzzing::GeneratorFocus;
-        auto focus = discrete_choice<GeneratorFocus>(
-            engine,
-            [](auto &) { return GeneratorFocus::Generic; },
-            Choice(0.60, [](auto &) { return GeneratorFocus::Pow2; }),
-            Choice(0.05, [](auto &) { return GeneratorFocus::DynJump; }));
+        auto const &focus =
+            args.focus
+                ? *args.focus
+                : discrete_choice<GeneratorFocus>(
+                      engine,
+                      [](auto &) { return generic_focus; },
+                      Choice(0.60, [](auto &) { return pow2_focus; }),
+                      Choice(0.05, [](auto &) { return dyn_jump_focus; }));
 
         if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
             auto precompile =
@@ -598,6 +605,9 @@ static void do_run(std::size_t const run_index, arguments const &args)
 static void run_loop(int argc, char **argv)
 {
     auto args = parse_args(argc, argv);
+    if (args.focus_path) {
+        args.focus = parse_generator_focus(*args.focus_path);
+    }
     auto const *msg_rev = evmc_revision_to_string(args.revision);
     for (auto i = 0u; i < args.runs; ++i) {
         std::cerr << std::format(

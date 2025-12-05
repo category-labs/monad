@@ -97,9 +97,9 @@ struct chunk_offset_t
         , spare{spare_ & max_spare}
         , bits_format{0x1}
     {
-        MONAD_DEBUG_ASSERT(id_ <= max_id);
-        MONAD_DEBUG_ASSERT(offset_ <= max_offset);
-        MONAD_DEBUG_ASSERT(spare_ <= max_spare);
+        MONAD_ASSERT(id_ <= max_id);
+        MONAD_ASSERT(offset_ <= max_offset);
+        MONAD_ASSERT(spare_ <= max_spare);
     }
 
     constexpr bool operator==(chunk_offset_t const &o) const noexcept
@@ -122,7 +122,7 @@ struct chunk_offset_t
     {
         chunk_offset_t ret(*this);
         offset_ += ret.offset;
-        MONAD_DEBUG_ASSERT(offset_ <= max_offset);
+        MONAD_ASSERT(offset_ <= max_offset);
         ret.offset = offset_ & max_offset;
         return ret;
     }
@@ -149,7 +149,7 @@ struct chunk_offset_t
 
     void set_spare(uint16_t value) noexcept
     {
-        MONAD_DEBUG_ASSERT(value < max_spare);
+        MONAD_ASSERT(value < max_spare);
         spare = value & max_spare;
     }
 };
@@ -208,7 +208,7 @@ namespace std
             return v_.is_lock_free();
         }
 
-        constexpr atomic(value_type v) noexcept
+        constexpr explicit atomic(value_type v) noexcept
             : v_(std::bit_cast<uint64_t>(v))
         {
         }

@@ -115,7 +115,6 @@ quick_status_code_from_enum<monad::SystemTransactionError>::value_mappings()
          "system transaction before fork",
          {}},
         {SystemTransactionError::GasNonZero, "gas non zero", {}},
-        {SystemTransactionError::ValueNonZero, "value nonzero", {}},
         {SystemTransactionError::TypeNotLegacy, "type not legacy", {}},
         {SystemTransactionError::BadSender, "bad sender", {}},
         {SystemTransactionError::MissingTo, "missing to", {}},

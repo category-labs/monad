@@ -136,6 +136,12 @@ add_subdirectory("third_party/cthash")
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
 
+# immer
+option(immer_BUILD_TESTS OFF)
+option(immer_BUILD_EXAMPLES OFF)
+option(immer_BUILD_EXTRAS OFF)
+add_subdirectory("third_party/immer" SYSTEM)
+
 # intx
 add_subdirectory("third_party/intx")
 
@@ -153,14 +159,20 @@ add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")
 
 # LLVM
-if(MONAD_COMPILER_LLVM)
-  # Because LLVM is a large dependency, we only try to find it if it's
-  # explicitly enabled as part of the VM build: regular client builds don't need
-  # to use it.
+# Because LLVM is a large dependency, we only try to find it if it's
+# explicitly enabled as part of the VM build: regular client builds don't need
+# to use it.
+if(UTILS_CLANG_TIDY_AUTO_CONST OR MONAD_COMPILER_LLVM)
   include(cmake/LinkLLVM.cmake)
   find_package(LLVM 19.1.7 REQUIRED CONFIG)
+endif()
+
+if(MONAD_COMPILER_LLVM)
   add_definitions(-DMONAD_COMPILER_LLVM)
 endif()
+
+# magic_enum
+find_package(magic_enum REQUIRED)
 
 # nanobench
 add_subdirectory("third_party/nanobench")
@@ -318,3 +330,11 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/cmd)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/vm)
+
+# ##############################################################################
+# utilities
+# ##############################################################################
+
+if(UTILS_CLANG_TIDY_AUTO_CONST)
+  add_subdirectory(${PROJECT_SOURCE_DIR}/utils)
+endif()

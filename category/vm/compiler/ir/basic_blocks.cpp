@@ -72,12 +72,12 @@ namespace monad::vm::compiler::basic_blocks
 
     bool BasicBlocksIR::is_valid() const
     {
-        auto all_blocks_valid =
+        auto const all_blocks_valid =
             std::all_of(blocks_.begin(), blocks_.end(), [](auto const &b) {
                 return b.is_valid();
             });
 
-        auto all_dests_valid = std::all_of(
+        auto const all_dests_valid = std::all_of(
             jump_dests_.begin(), jump_dests_.end(), [this](auto const &entry) {
                 auto [offset, block_id] = entry;
                 return block_id < blocks_.size();

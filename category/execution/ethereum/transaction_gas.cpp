@@ -207,15 +207,6 @@ uint64_t compute_gas_refund(
 EXPLICIT_EVM_TRAITS(compute_gas_refund);
 
 template <Traits traits>
-uint256_t
-refund_gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas)
-{
-    return gas_price<traits>(tx, base_fee_per_gas);
-}
-
-EXPLICIT_EVM_TRAITS(refund_gas_price);
-
-template <Traits traits>
 uint256_t calculate_txn_award(
     Transaction const &tx, uint256_t const &base_fee_per_gas,
     uint64_t const gas_used) noexcept

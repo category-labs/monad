@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/io.hpp>
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
 #include <category/core/byte_string.hpp>
@@ -58,6 +59,53 @@ using namespace monad::mpt;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
+// validate the request sent by client
+bool static_validate_request(monad_sync_request const &rq)
+{
+    // sanity check the number of bytes in the prefix
+    constexpr size_t MAX_PREFIX_BYTES = sizeof(decltype(rq.prefix));
+    static_assert(MAX_PREFIX_BYTES == 8);
+    if (rq.prefix_bytes > MAX_PREFIX_BYTES) {
+        LOG_INFO(
+            "Invalid request: prefix_bytes={} exceeds maximum={}",
+            rq.prefix_bytes,
+            MAX_PREFIX_BYTES);
+        return false;
+    }
+
+    // validate target
+    if (rq.target == INVALID_BLOCK_NUM) {
+        LOG_INFO(
+            "Invalid request: target cannot be INVALID_BLOCK_NUM ({})",
+            INVALID_BLOCK_NUM);
+        return false;
+    }
+
+    // Validate block number ordering: from <= until <= target
+    if (rq.from > rq.until) {
+        LOG_INFO("Invalid request: from={} > until={}", rq.from, rq.until);
+        return false;
+    }
+
+    if (rq.until > rq.target) {
+        LOG_INFO("Invalid request: until={} > target={}", rq.until, rq.target);
+        return false;
+    }
+
+    // Validate old_target == INVALID_BLOCK_NUM || old_target <= target
+    if (rq.old_target != INVALID_BLOCK_NUM) {
+        if (rq.old_target > rq.target) {
+            LOG_INFO(
+                "Invalid request: old_target={} > target={}",
+                rq.old_target,
+                rq.target);
+            return false;
+        }
+    }
+
+    return true;
+}
+
 byte_string from_prefix(uint64_t const prefix, size_t const n_bytes)
 {
     byte_string bytes;
@@ -69,7 +117,8 @@ byte_string from_prefix(uint64_t const prefix, size_t const n_bytes)
 
 bool send_deletion(
     monad_statesync_server *const sync, monad_sync_request const &rq,
-    monad_statesync_server_context &ctx)
+    monad_statesync_server_context &ctx, uint64_t *const num_upserts,
+    uint64_t *const upsert_bytes)
 {
     MONAD_ASSERT(
         rq.old_target <= rq.target || rq.old_target == INVALID_BLOCK_NUM);
@@ -78,8 +127,10 @@ bool send_deletion(
         return true;
     }
 
-    auto const fn = [sync, prefix = from_prefix(rq.prefix, rq.prefix_bytes)](
-                        Deletion const &deletion) {
+    auto const fn = [sync,
+                     prefix = from_prefix(rq.prefix, rq.prefix_bytes),
+                     num_upserts,
+                     upsert_bytes](Deletion const &deletion) {
         auto const &[addr, key] = deletion;
         auto const hash = keccak256(addr.bytes);
         byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
@@ -94,6 +145,8 @@ bool send_deletion(
                 sizeof(addr),
                 nullptr,
                 0);
+            ++(*num_upserts);
+            *upsert_bytes += sizeof(addr);
         }
         else {
             auto const skey = rlp::encode_bytes32_compact(key.value());
@@ -104,11 +157,20 @@ bool send_deletion(
                 sizeof(addr),
                 skey.data(),
                 skey.size());
+            ++(*num_upserts);
+            *upsert_bytes += sizeof(addr) + skey.size();
         }
     };
 
     for (uint64_t i = rq.old_target + 1; i <= rq.target; ++i) {
         if (!ctx.deletions.for_each(i, fn)) {
+            LOG_INFO(
+                "Request failed: deletion not found for block={} "
+                "(old_target={}, "
+                "target={})",
+                i,
+                rq.old_target,
+                rq.target);
             return false;
         }
     }
@@ -118,6 +180,17 @@ bool send_deletion(
 bool statesync_server_handle_request(
     monad_statesync_server *const sync, monad_sync_request const rq)
 {
+    uint64_t disk_ios_start = 0;
+    uint64_t disk_bytes_start = 0;
+    auto const *io = monad::async::AsyncIO::thread_instance();
+    if (io != nullptr) {
+        disk_ios_start = io->total_reads_submitted();
+        disk_bytes_start = io->total_bytes_read();
+    }
+
+    uint64_t num_upserts = 0;
+    uint64_t upsert_bytes = 0;
+
     struct Traverse final : public TraverseMachine
     {
         unsigned char nibble;
@@ -127,16 +200,21 @@ bool statesync_server_handle_request(
         NibblesView prefix;
         uint64_t from;
         uint64_t until;
+        uint64_t *num_upserts;
+        uint64_t *upsert_bytes;
 
         Traverse(
             monad_statesync_server *const sync, NibblesView const prefix,
-            uint64_t const from, uint64_t const until)
+            uint64_t const from, uint64_t const until,
+            uint64_t *const num_upserts, uint64_t *const upsert_bytes)
             : nibble{INVALID_BRANCH}
             , depth{0}
             , sync{sync}
             , prefix{prefix}
             , from{from}
             , until{until}
+            , num_upserts{num_upserts}
+            , upsert_bytes{upsert_bytes}
         {
         }
 
@@ -188,13 +266,11 @@ bool statesync_server_handle_request(
                                              unsigned char const *const v1 =
                                                  nullptr,
                                              uint64_t const size1 = 0) {
+                    uint64_t const size2 = node.value().size();
                     sync->statesync_server_send_upsert(
-                        sync->net,
-                        type,
-                        v1,
-                        size1,
-                        node.value().data(),
-                        node.value().size());
+                        sync->net, type, v1, size1, node.value().data(), size2);
+                    ++(*num_upserts);
+                    *upsert_bytes += size1 + size2;
                 };
 
                 if (nibble == CODE_NIBBLE) {
@@ -252,18 +328,36 @@ bool statesync_server_handle_request(
         }
     };
 
-    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
+    if (MONAD_UNLIKELY(!static_validate_request(rq))) {
+        return false;
+    }
+
+    // load the target root to verify existence of target
     auto *const ctx = sync->context;
     auto &db = *ctx->ro;
+    NodeCursor const root{db.load_root_for_version(rq.target)};
+    if (!root.is_valid()) {
+        LOG_INFO(
+            "Request failed: target root not found for target={}", rq.target);
+        return false;
+    }
+
+    [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
     if (rq.prefix < 256 && rq.target > rq.prefix) {
         auto const version = rq.target - rq.prefix - 1;
-        auto const root = db.load_root_for_version(version);
+        NodeCursor const root{db.load_root_for_version(version)};
         if (!root.is_valid()) {
+            LOG_INFO(
+                "Request failed: header root not found for version={}",
+                version);
             return false;
         }
         auto const res = db.find(
             root, concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), version);
         if (res.has_error() || !res.value().is_valid()) {
+            LOG_INFO(
+                "Request failed: block header not found for version={}",
+                version);
             return false;
         }
         auto const &val = res.value().node->value();
@@ -275,33 +369,61 @@ bool statesync_server_handle_request(
             val.size(),
             nullptr,
             0);
+        ++num_upserts;
+        upsert_bytes += val.size();
     }
 
-    if (!send_deletion(sync, rq, *ctx)) {
+    if (!send_deletion(sync, rq, *ctx, &num_upserts, &upsert_bytes)) {
         return false;
     }
 
     auto const bytes = from_prefix(rq.prefix, rq.prefix_bytes);
-    auto const root = db.load_root_for_version(rq.target);
-    if (!root.is_valid()) {
-        return false;
-    }
     auto const finalized_root_res = db.find(root, finalized_nibbles, rq.target);
     if (!finalized_root_res.has_value()) {
+        LOG_INFO(
+            "Request failed: finalized root not found for target={}",
+            rq.target);
         return false;
     }
     auto const &finalized_root = finalized_root_res.value();
-    if (db.find(finalized_root, state_nibbles, rq.target).has_error() ||
-        db.find(finalized_root, code_nibbles, rq.target).has_error()) {
+    auto const state_res = db.find(finalized_root, state_nibbles, rq.target);
+    if (state_res.has_error()) {
+        LOG_INFO(
+            "Request failed: state tree not found for target={}", rq.target);
+        return false;
+    }
+    auto const code_res = db.find(finalized_root, code_nibbles, rq.target);
+    if (code_res.has_error()) {
+        LOG_INFO(
+            "Request failed: code tree not found for target={}", rq.target);
         return false;
     }
 
     [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
-    Traverse traverse(sync, NibblesView{bytes}, rq.from, rq.until);
+    Traverse traverse(
+        sync,
+        NibblesView{bytes},
+        rq.from,
+        rq.until,
+        &num_upserts,
+        &upsert_bytes);
     if (!db.traverse(finalized_root, traverse, rq.target)) {
+        LOG_INFO(
+            "Request failed: traverse failed for target={} prefix={} "
+            "prefix_bytes={}",
+            rq.target,
+            rq.prefix,
+            rq.prefix_bytes);
         return false;
     }
     [[maybe_unused]] auto const end = std::chrono::steady_clock::now();
+
+    uint64_t disk_ios_submitted = 0;
+    uint64_t disk_bytes_total = 0;
+    if (io != nullptr) {
+        disk_ios_submitted = io->total_reads_submitted() - disk_ios_start;
+        disk_bytes_total = io->total_bytes_read() - disk_bytes_start;
+    }
 
     LOG_INFO(
         "processed request prefix={} prefix_bytes={} target={} from={} "
@@ -315,6 +437,33 @@ bool statesync_server_handle_request(
         rq.old_target,
         std::chrono::duration_cast<std::chrono::microseconds>(end - start),
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin));
+
+    auto const elapsed_seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(end - start)
+            .count();
+    [[maybe_unused]] double disk_ios_per_sec = 0.0;
+    [[maybe_unused]] double disk_bytes_per_sec = 0.0;
+    [[maybe_unused]] double upsert_bytes_per_sec = 0.0;
+    if (elapsed_seconds > 0.0) {
+        disk_ios_per_sec =
+            static_cast<double>(disk_ios_submitted) / elapsed_seconds;
+        disk_bytes_per_sec =
+            static_cast<double>(disk_bytes_total) / elapsed_seconds;
+        upsert_bytes_per_sec =
+            static_cast<double>(upsert_bytes) / elapsed_seconds;
+    }
+
+    LOG_INFO(
+        "session metrics: disk_ios={} disk_bytes={} num_upserts={} "
+        "upsert_bytes={} | disk_ios/s={:.1f} disk_bytes/s={:.1f} "
+        "upsert_bytes/s={:.1f}",
+        disk_ios_submitted,
+        disk_bytes_total,
+        num_upserts,
+        upsert_bytes,
+        disk_ios_per_sec,
+        disk_bytes_per_sec,
+        upsert_bytes_per_sec);
 
     return true;
 }
@@ -368,15 +517,10 @@ void monad_statesync_server_run_once(struct monad_statesync_server *const sync)
         return;
     }
     MONAD_ASSERT(buf[0] == SYNC_TYPE_REQUEST);
-    unsigned char *ptr = buf;
-    uint64_t n = sizeof(monad_sync_request);
-    while (n != 0) {
-        auto const res = sync->statesync_server_recv(sync->net, ptr, n);
-        if (res == -1) {
-            continue;
-        }
-        ptr += res;
-        n -= static_cast<size_t>(res);
+    if (sync->statesync_server_recv(
+            sync->net, buf, sizeof(monad_sync_request)) !=
+        static_cast<ssize_t>(sizeof(monad_sync_request))) {
+        return;
     }
     auto const &rq = unaligned_load<monad_sync_request>(buf);
     monad_statesync_server_handle_request(sync, rq);

@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+enable_language(ASM)
+
 add_executable(vm-unit-tests)
 
 target_sources(vm-unit-tests PRIVATE
@@ -38,6 +40,7 @@ target_sources(vm-unit-tests PRIVATE
     lru_weight_cache_tests.cpp
     test_params.cpp
     runtime/fixture.cpp
+    runtime/fixture.S
     runtime/transmute_tests.cpp
     runtime/math_tests.cpp
     runtime/memory_tests.cpp
@@ -52,7 +55,7 @@ target_sources(vm-unit-tests PRIVATE
 
 if(MONAD_COMPILER_TESTING)
     target_sources(vm-unit-tests PRIVATE
-        evm_fixture.cpp
+        evm_fixture.hpp
         evm_tests.cpp
     )
 endif()

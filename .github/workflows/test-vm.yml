@@ -76,7 +76,7 @@ jobs:
               with:
                 repository: category-labs/evmone
                 token: ${{ steps.generate_token.outputs.token }}
-                ref: v0.15.0-category
+                ref: v0.18.0-category
                 path: third_party/evmone
 
             - name: Setup Docker Buildx
@@ -131,7 +131,7 @@ jobs:
         with:
           repository: category-labs/evmone
           token: ${{ steps.generate_token.outputs.token }}
-          ref: v0.15.0-category
+          ref: v0.18.0-category
           path: third_party/evmone
 
       - name: Setup Docker Buildx

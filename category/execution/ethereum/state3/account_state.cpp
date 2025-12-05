@@ -39,7 +39,7 @@ evmc_storage_status AccountState::zero_out_key(
         return EVMC_STORAGE_MODIFIED_DELETED;
     }();
 
-    storage_[key] = bytes32_t{};
+    storage_ = storage_.insert({key, bytes32_t{}});
 
     return status;
 }
@@ -67,7 +67,7 @@ evmc_storage_status AccountState::set_current_value(
         return EVMC_STORAGE_ASSIGNED;
     }();
 
-    storage_[key] = value;
+    storage_ = storage_.insert({key, value});
 
     return status;
 }

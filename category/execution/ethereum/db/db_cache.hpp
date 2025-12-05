@@ -138,6 +138,7 @@ public:
             storage_.clear();
         }
         db_.finalize(block_number, block_id);
+        proposals_.set_block_and_prefix(block_number, block_id);
     }
 
     virtual void update_verified_block(uint64_t const block_number) override
@@ -149,6 +150,12 @@ public:
         uint64_t const block_number, bytes32_t const &block_id) override
     {
         db_.update_voted_metadata(block_number, block_id);
+    }
+
+    virtual void update_proposed_metadata(
+        uint64_t const block_number, bytes32_t const &block_id) override
+    {
+        db_.update_proposed_metadata(block_number, block_id);
     }
 
     virtual void commit(

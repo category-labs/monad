@@ -24,6 +24,8 @@
 
 #include <evmc/evmc.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <bit>
 #include <cstddef>
 #include <functional>
@@ -72,6 +74,17 @@ inline constexpr bytes32_t NULL_HASH_BLAKE3{
     0xaf1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262_bytes32};
 
 MONAD_NAMESPACE_END
+
+template <>
+struct ankerl::unordered_dense::hash<monad::bytes32_t>
+{
+    using is_avalanching = void;
+
+    uint64_t operator()(monad::bytes32_t const &x) const noexcept
+    {
+        return detail::wyhash::hash(x.bytes, sizeof(x.bytes));
+    }
+};
 
 namespace boost
 {

@@ -108,4 +108,48 @@ public:
     }
 };
 
+class GetAllMachine : public TraverseMachine
+{
+    Nibbles path_;
+    TraverseCallback callback_;
+
+public:
+    explicit GetAllMachine(TraverseCallback callback)
+        : path_()
+        , callback_(std::move(callback))
+    {
+    }
+
+    GetAllMachine(GetAllMachine const &other) = default;
+
+    virtual bool down(unsigned char const branch, Node const &node) override
+    {
+        if (MONAD_UNLIKELY(branch == INVALID_BRANCH)) {
+            MONAD_ASSERT(path_.nibble_size() == 0);
+            return true;
+        }
+
+        path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
+        if (node.has_value()) {
+            callback_(path_, node.value());
+        }
+        return true;
+    }
+
+    virtual void up(unsigned char const branch, Node const &node) override
+    {
+        auto const path_view = NibblesView{path_};
+        unsigned const prefix_size =
+            branch == INVALID_BRANCH
+                ? 0
+                : path_view.nibble_size() - node.path_nibbles_len() - 1;
+        path_ = path_view.substr(0, prefix_size);
+    }
+
+    virtual std::unique_ptr<TraverseMachine> clone() const override
+    {
+        return std::make_unique<GetAllMachine>(*this);
+    }
+};
+
 MONAD_MPT_NAMESPACE_END

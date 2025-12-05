@@ -16,7 +16,6 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/fiber/priority_pool.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/mpt/db.hpp>
@@ -216,17 +215,24 @@ int main(int argc, char *const argv[])
             << "Collecting keys from the latest version of the database..."
             << std::endl;
 
+        // construct RWDb
+        StateMachineAlwaysMerkle machine{};
+        auto const config = OnDiskDbConfig{
+            .append = true, .compaction = true, .dbname_paths = {dbname_paths}};
+        Db rw_db{machine, config};
+        auto rw_root = rw_db.load_root_for_version(rw_db.get_latest_version());
+
         CollectKeys collect_keys(keys);
         ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname_paths}};
         AsyncIOContext io_ctx{ro_config};
         Db ro_db{io_ctx};
 
         auto version = ro_db.get_latest_version();
-        auto cursor = ro_db.load_root_for_version(version);
+        auto root = ro_db.load_root_for_version(version);
 
-        MONAD_ASSERT(cursor.is_valid());
+        MONAD_ASSERT(root != nullptr);
 
-        ro_db.traverse(cursor, collect_keys, version);
+        ro_db.traverse(NodeCursor{root}, collect_keys, version);
 
         std::sort(keys.begin(), keys.end());
 
@@ -247,9 +253,9 @@ int main(int argc, char *const argv[])
                 long_value + serialize_as_big_endian<8>(i));
         }
 
-        auto const prefix = 0x10_hex;
+        auto const prefix = 0x10_bytes;
 
-        auto upsert_new_version = [&](Db &db, uint64_t const version) {
+        auto upsert_new_version = [&](uint64_t const version) {
             UpdateList ul;
             std::list<monad::byte_string> bytes_alloc;
             std::list<Update> update_alloc;
@@ -272,7 +278,8 @@ int main(int argc, char *const argv[])
             UpdateList ul_prefix;
             ul_prefix.push_front(u_prefix);
 
-            db.upsert(std::move(ul_prefix), version);
+            rw_root =
+                rw_db.upsert(std::move(rw_root), std::move(ul_prefix), version);
         };
 
         auto random_async_read = [&]() {
@@ -495,12 +502,6 @@ int main(int argc, char *const argv[])
                 std::chrono::steady_clock::now() - start;
         };
 
-        // construct RWDb
-        StateMachineAlwaysMerkle machine{};
-        auto const config = OnDiskDbConfig{
-            .append = true, .compaction = true, .dbname_paths = {dbname_paths}};
-        Db db{machine, config};
-
         std::cout << "Running read only DB benchmark..." << std::endl;
 
         std::vector<std::thread> readers;
@@ -515,7 +516,7 @@ int main(int argc, char *const argv[])
         alarm(runtime_seconds);
         while (!g_done) {
             ++version;
-            upsert_new_version(db, version);
+            upsert_new_version(version);
             std::this_thread::sleep_for(
                 std::chrono::milliseconds(update_delay_ms));
         }
@@ -524,8 +525,8 @@ int main(int argc, char *const argv[])
         }
 
         std::cout << "Writer finished. Max version in RWDb is "
-                  << db.get_latest_version() << ", min version in RWDb is "
-                  << db.get_earliest_version() << "\n\n";
+                  << rw_db.get_latest_version() << ", min version in RWDb is "
+                  << rw_db.get_earliest_version() << "\n\n";
 
         std::cout << "Total stats:\n";
         std::cout

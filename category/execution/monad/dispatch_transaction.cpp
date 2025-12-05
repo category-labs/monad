@@ -29,6 +29,7 @@ Result<Receipt> dispatch_transaction(
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    trace::StateTracer &state_tracer,
     RevertTransactionFn const &revert_transaction)
 {
     if (traits::monad_rev() >= MONAD_FOUR && sender == SYSTEM_SENDER) {
@@ -59,6 +60,7 @@ Result<Receipt> dispatch_transaction(
             block_metrics,
             prev,
             call_tracer,
+            state_tracer,
             revert_transaction}();
     }
 }

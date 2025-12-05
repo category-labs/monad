@@ -15,23 +15,27 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
-struct BlockHeader;
 class State;
+struct BlockHeader;
 
 constexpr Address BLOCK_HISTORY_ADDRESS{
     0x0000F90827F1C53a10cb7A02335B175320002935_address};
 
 constexpr uint64_t BLOCK_HISTORY_LENGTH{8191};
 
+template <Traits traits>
 void deploy_block_hash_history_contract(State &);
 
+template <Traits traits>
 void set_block_hash_history(State &, BlockHeader const &);
 
 bytes32_t get_block_hash_history(State &, uint64_t block_number);

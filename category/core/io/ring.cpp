@@ -37,9 +37,6 @@ Ring::Ring(RingConfig const &config)
             ret.sq_thread_cpu = *config.sq_thread_cpu;
             ret.sq_thread_idle = 60 * 1000;
         }
-        if (config.enable_io_polling) {
-            ret.flags |= IORING_SETUP_IOPOLL;
-        }
         return ret;
     }()}
 {

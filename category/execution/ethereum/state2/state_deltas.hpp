@@ -19,6 +19,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/vm/vm.hpp>
@@ -47,7 +48,8 @@ using StorageDelta = Delta<bytes32_t>;
 static_assert(sizeof(StorageDelta) == 64);
 static_assert(alignof(StorageDelta) == 1);
 
-using StorageDeltas = oneapi::tbb::concurrent_hash_map<bytes32_t, StorageDelta>;
+using StorageDeltas = oneapi::tbb::concurrent_hash_map<
+    bytes32_t, StorageDelta, BytesHashCompare<bytes32_t>>;
 
 static_assert(sizeof(StorageDeltas) == 576);
 static_assert(alignof(StorageDeltas) == 8);
@@ -61,12 +63,14 @@ struct StateDelta
 static_assert(sizeof(StateDelta) == 752);
 static_assert(alignof(StateDelta) == 8);
 
-using StateDeltas = oneapi::tbb::concurrent_hash_map<Address, StateDelta>;
+using StateDeltas = oneapi::tbb::concurrent_hash_map<
+    Address, StateDelta, BytesHashCompare<Address>>;
 
 static_assert(sizeof(StateDeltas) == 576);
 static_assert(alignof(StateDeltas) == 8);
 
-using Code = oneapi::tbb::concurrent_hash_map<bytes32_t, vm::SharedIntercode>;
+using Code = oneapi::tbb::concurrent_hash_map<
+    bytes32_t, vm::SharedIntercode, BytesHashCompare<bytes32_t>>;
 
 static_assert(sizeof(Code) == 576);
 static_assert(alignof(Code) == 8);

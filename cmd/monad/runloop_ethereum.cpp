@@ -115,6 +115,8 @@ Result<void> process_ethereum_block(
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{
+        block.transactions.size()};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         call_tracers[i] =
             enable_tracing
@@ -122,6 +124,8 @@ Result<void> process_ethereum_block(
                       block.transactions[i], call_frames[i])}
                 : std::unique_ptr<CallTracerBase>{
                       std::make_unique<NoopCallTracer>()};
+        state_tracers[i] = std::unique_ptr<trace::StateTracer>{
+            std::make_unique<trace::StateTracer>(std::monostate{})};
     }
 
     // Core execution: transaction-level EVM execution that tracks state
@@ -138,9 +142,10 @@ Result<void> process_ethereum_block(
             recovered_authorities,
             block_state,
             block_hash_buffer,
-            priority_pool,
+            priority_pool.fiber_group(),
             block_metrics,
-            call_tracers));
+            call_tracers,
+            state_tracers));
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
@@ -157,11 +162,15 @@ Result<void> process_ethereum_block(
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
-
+    if (commit_time > std::chrono::milliseconds(500)) {
+        LOG_WARNING(
+            "Slow block commit detected - block {}: {}",
+            block.header.number,
+            commit_time);
+    }
     // Post-commit validation of header, with Merkle root fields filled in
     auto const output_header = db.read_eth_header();
-    BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, output_header));
+    BOOST_OUTCOME_TRY(validate_output_header(block.header, output_header));
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer

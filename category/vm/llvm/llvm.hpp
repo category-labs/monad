@@ -45,5 +45,8 @@ namespace monad::vm::llvm
         std::shared_ptr<LLVMState> cache_llvm(
             evmc_revision rev, evmc::bytes32 const &code_hash,
             uint8_t const *code, size_t code_size);
+
+    private:
+        void load_llvm_file_cache();
     };
 }

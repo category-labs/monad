@@ -33,7 +33,6 @@
 #include <category/async/io_senders.hpp>
 
 #include <category/core/tl_tid.h>
-#include <category/core/unordered_map.hpp>
 
 #ifdef __clang__
     #pragma clang diagnostic push
@@ -43,6 +42,8 @@
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
+
+#include <ankerl/unordered_dense.h>
 
 #include <atomic>
 #include <bit>
@@ -109,7 +110,7 @@ struct read_short_update_sender
     : MONAD_ASYNC_NAMESPACE::read_single_buffer_sender
 {
     template <receiver Receiver>
-    constexpr read_short_update_sender(Receiver const &receiver)
+    explicit constexpr read_short_update_sender(Receiver const &receiver)
         : read_single_buffer_sender(receiver.rd_offset, receiver.bytes_to_read)
     {
         MONAD_DEBUG_ASSERT(
@@ -125,7 +126,7 @@ class read_long_update_sender
 
 public:
     template <receiver Receiver>
-    read_long_update_sender(Receiver const &receiver)
+    explicit read_long_update_sender(Receiver const &receiver)
         : MONAD_ASYNC_NAMESPACE::read_multiple_buffer_sender(
               receiver.rd_offset, {&buffer_, 1})
         , buffer_(
@@ -141,10 +142,13 @@ public:
 
     read_long_update_sender(read_long_update_sender &&o) noexcept
         : MONAD_ASYNC_NAMESPACE::read_multiple_buffer_sender(std::move(o))
-        , buffer_(o.buffer_)
+        , buffer_(o.buffer_) // NOLINT(bugprone-use-after-move)
+                             // the move only affects the base class
+                             // read_multiple_buffer_sender
+                             // and leaves `o.buffer_` untouched
     {
         this->reset(this->offset(), {&buffer_, 1});
-        o.buffer_ = {};
+        o.buffer_ = {}; // NOLINT(bugprone-use-after-move) (see above)
     }
 
     read_long_update_sender &operator=(read_long_update_sender &&o) noexcept
@@ -276,7 +280,7 @@ protected:
     public:
         shared_lock_holder_(shared_lock_holder_ const &) = delete;
 
-        shared_lock_holder_(shared_lock_holder_ &&o)
+        shared_lock_holder_(shared_lock_holder_ &&o) noexcept
             : parent_(o.parent_)
             , was_atomic_(o.was_atomic_)
         {
@@ -334,7 +338,7 @@ protected:
 
                 holder2(holder2 const &) = delete;
 
-                holder2(holder2 &&o)
+                holder2(holder2 &&o) noexcept
                     : parent_(o.parent_)
                     , initial_upsert_call_count_(o.initial_upsert_call_count_)
                     , was_atomic_(o.was_atomic_)
@@ -388,6 +392,9 @@ protected:
     };
 
 public:
+    // Allocate the first cnv chunk for db metadata copies
+    static constexpr unsigned cnv_chunks_for_db_metadata = 1;
+
     int64_t curr_upsert_auto_expire_version{0};
     compact_virtual_chunk_offset_t compact_offset_fast{
         MIN_COMPACT_VIRTUAL_OFFSET};
@@ -401,13 +408,15 @@ public:
 
     detail::TrieUpdateCollectedStats stats;
 
-    UpdateAuxImpl(
-        MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+    // in-memory
+    UpdateAuxImpl() = default;
+
+    // on-disk
+    explicit UpdateAuxImpl(
+        MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
         std::optional<uint64_t> const history_len = {})
     {
-        if (io_) {
-            set_io(io_, history_len);
-        }
+        set_io(io_, history_len);
     }
 
     virtual ~UpdateAuxImpl();
@@ -428,7 +437,7 @@ public:
         public:
             holder(holder const &) = delete;
 
-            holder(holder &&o)
+            holder(holder &&o) noexcept
                 : parent_(o.parent_)
             {
                 o.parent_ = nullptr;
@@ -498,7 +507,7 @@ public:
         public:
             holder(holder const &) = delete;
 
-            holder(holder &&o)
+            holder(holder &&o) noexcept
                 : parent_(o.parent_)
             {
                 o.parent_ = nullptr;
@@ -546,7 +555,7 @@ public:
     }
 
     void set_io(
-        MONAD_ASYNC_NAMESPACE::AsyncIO *,
+        MONAD_ASYNC_NAMESPACE::AsyncIO &,
         std::optional<uint64_t> history_length = {});
 
     void unset_io();
@@ -601,6 +610,9 @@ public:
                                : version_lower_bound;
                 auto const max_version =
                     next_version_.load(std::memory_order_acquire) - 1;
+                if (max_version == INVALID_BLOCK_NUM) {
+                    return;
+                }
                 while (idx < max_version && (*this)[idx] == INVALID_OFFSET) {
                     idx++;
                 }
@@ -736,10 +748,14 @@ public:
     void set_latest_finalized_version(uint64_t version) noexcept;
     void set_latest_verified_version(uint64_t version) noexcept;
     void set_latest_voted(uint64_t version, bytes32_t const &block_id) noexcept;
+    void
+    set_latest_proposed(uint64_t version, bytes32_t const &block_id) noexcept;
     uint64_t get_latest_finalized_version() const noexcept;
     uint64_t get_latest_verified_version() const noexcept;
     bytes32_t get_latest_voted_block_id() const noexcept;
     uint64_t get_latest_voted_version() const noexcept;
+    bytes32_t get_latest_proposed_block_id() const noexcept;
+    uint64_t get_latest_proposed_version() const noexcept;
 
     int64_t get_auto_expire_version_metadata() const noexcept;
 
@@ -926,15 +942,27 @@ class UpdateAux final : public UpdateAuxImpl
     }
 
 public:
-    UpdateAux(
-        MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+    // in-memory
+    UpdateAux() = default;
+
+    // on-disk
+    explicit UpdateAux(
+        MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
         std::optional<uint64_t> const history_len = {})
         : UpdateAuxImpl(io_, history_len)
     {
     }
 
-    UpdateAux(
-        LockType &&lock, MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+    // in-memory with lock
+    explicit UpdateAux(LockType &&lock)
+        : UpdateAuxImpl()
+        , lock_(std::move(lock))
+    {
+    }
+
+    // on-disk with lock
+    explicit UpdateAux(
+        LockType &&lock, MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
         std::optional<uint64_t> const history_len = {})
         : UpdateAuxImpl(io_, history_len)
         , lock_(std::move(lock))
@@ -976,8 +1004,12 @@ class UpdateAux<void> final : public UpdateAuxImpl
     }
 
 public:
-    UpdateAux(
-        MONAD_ASYNC_NAMESPACE::AsyncIO *io_ = nullptr,
+    // in-memory
+    UpdateAux() = default;
+
+    // on-disk
+    explicit UpdateAux(
+        MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
         std::optional<uint64_t> const history_len = {})
         : UpdateAuxImpl(io_, history_len)
     {
@@ -1003,8 +1035,8 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
         receiver.bytes_to_read <=
         MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {
         read_short_update_sender sender(receiver);
-        auto iostate =
-            aux.io->make_connected(std::move(sender), std::move(receiver));
+        auto iostate = aux.io->make_connected(
+            std::move(sender), std::forward<Receiver>(receiver));
         iostate->initiate();
         // TEMPORARY UNTIL ALL THIS GETS BROKEN OUT: Release
         // management until i/o completes
@@ -1012,10 +1044,10 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
     }
     else {
         read_long_update_sender sender(receiver);
-        using connected_type =
-            decltype(connect(*aux.io, std::move(sender), std::move(receiver)));
-        auto *iostate = new connected_type(
-            connect(*aux.io, std::move(sender), std::move(receiver)));
+        using connected_type = decltype(connect(
+            *aux.io, std::move(sender), std::forward<Receiver>(receiver)));
+        auto *iostate = new connected_type(connect(
+            *aux.io, std::move(sender), std::forward<Receiver>(receiver)));
         iostate->initiate();
         // drop iostate
     }
@@ -1023,7 +1055,7 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
 
 // batch upsert, updates can be nested
 Node::SharedPtr upsert(
-    UpdateAuxImpl &, uint64_t, StateMachine &, Node::SharedPtr old,
+    UpdateAuxImpl &, uint64_t version, StateMachine &, Node::SharedPtr old,
     UpdateList &&, bool write_root = true);
 
 // Performs a deep copy of a subtrie from `src_root` trie at
@@ -1032,9 +1064,9 @@ Node::SharedPtr upsert(
 // Any pre-existing trie at `dest_prefix` will be overwritten.
 // The in-memory effect is similar to a move operation.
 Node::SharedPtr copy_trie_to_dest(
-    UpdateAuxImpl &, NodeCursor src_root, NibblesView src_prefix,
-    uint64_t src_version, Node::SharedPtr dest_root, NibblesView dest_prefx,
-    uint64_t const dest_version, bool must_write_to_disk);
+    UpdateAuxImpl &, Node::SharedPtr src_root, NibblesView src_prefix,
+    Node::SharedPtr dest_root, NibblesView dest_prefix, uint64_t dest_version,
+    bool write_root = true);
 
 // load all nodes as far as caching policy would allow
 size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor const &);
@@ -1059,13 +1091,13 @@ using find_result_type = std::pair<T, find_result>;
 using find_cursor_result_type = find_result_type<NodeCursor>;
 using find_owning_cursor_result_type = find_result_type<CacheNodeCursor>;
 
-using inflight_map_t = unordered_dense_map<
+using inflight_map_t = ankerl::unordered_dense::segmented_map<
     chunk_offset_t,
     std::vector<
         std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor const &)>>,
     chunk_offset_t_hasher>;
 
-using inflight_map_owning_t = unordered_dense_map<
+using inflight_map_owning_t = ankerl::unordered_dense::segmented_map<
     virtual_chunk_offset_t,
     std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
         CacheNodeCursor const &)>>,
@@ -1118,10 +1150,10 @@ find_cursor_result_type find_blocking(
 
 /* This function reads a node from the specified physical offset `node_offset`,
 where the spare bits indicate the number of pages to read. It returns a valid
-`Node::UniquePtr` on success, and returns `nullptr` if the specified version
+`Node::SharedPtr` on success, and returns `nullptr` if the specified version
 becomes invalid.
 */
-Node::UniquePtr read_node_blocking(
+Node::SharedPtr read_node_blocking(
     UpdateAuxImpl const &, chunk_offset_t node_offset, uint64_t version);
 
 //////////////////////////////////////////////////////////////////////////////

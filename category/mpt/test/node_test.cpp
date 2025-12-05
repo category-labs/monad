@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -60,13 +59,13 @@ struct DummyCompute final : Compute
     }
 };
 
-auto const value = 0x12345678_hex;
-auto const path = 0xabcdabcdabcdabcd_hex;
+auto const value = 0x12345678_bytes;
+auto const path = 0xabcdabcdabcdabcd_bytes;
 
 TEST(NodeTest, leaf)
 {
     NibblesView const path1{1, 10, path.data()};
-    Node::UniquePtr node{make_node(0, {}, path1, value, {}, 0)};
+    Node::SharedPtr node{make_node(0, {}, path1, value, {}, 0)};
 
     EXPECT_EQ(node->mask, 0);
     EXPECT_EQ(node->value(), value);
@@ -87,7 +86,7 @@ TEST(NodeTest, leaf_single_branch)
     children[0].ptr = make_node(0, {}, path1, value, {}, 0);
     NibblesView const path2{1, 10, path.data()};
     uint16_t const mask = 1u << 0xc;
-    Node::UniquePtr node{
+    Node::SharedPtr node{
         create_node_with_children(comp, mask, children, path2, value, 0)};
 
     EXPECT_EQ(node->value(), value);
@@ -112,7 +111,7 @@ TEST(NodeTest, leaf_multiple_branches)
 
     NibblesView const path2{1, 10, path.data()};
     uint16_t const mask = (1u << 0xa) | (1u << 0xc);
-    Node::UniquePtr node{
+    Node::SharedPtr node{
         create_node_with_children(comp, mask, children, path2, value, 0)};
 
     EXPECT_EQ(node->value(), value);
@@ -137,7 +136,7 @@ TEST(NodeTest, branch_node)
 
     NibblesView const path2{1, 1, path.data()}; // path2 is empty
     uint16_t const mask = (1u << 0xa) | (1u << 0xc);
-    Node::UniquePtr node{create_node_with_children(
+    Node::SharedPtr node{create_node_with_children(
         comp, mask, children, path2, std::nullopt, 0)};
 
     EXPECT_EQ(node->value_len, 0);
@@ -162,7 +161,7 @@ TEST(NodeTest, extension_node)
 
     NibblesView const path2{1, 10, path.data()};
     uint16_t const mask = (1u << 0xa) | (1u << 0xc);
-    Node::UniquePtr node{create_node_with_children(
+    Node::SharedPtr node{create_node_with_children(
         comp, mask, children, path2, std::nullopt, 0)};
 
     EXPECT_EQ(node->value_len, 0);
@@ -177,7 +176,7 @@ TEST(NodeTest, super_large_node)
     DummyCompute const comp{};
     size_t const value_len = 255 * 1024 * 1024;
     monad::byte_string value(value_len, 0);
-    Node::UniquePtr node{make_node(0, {}, {}, value, {}, 0)};
+    Node::SharedPtr node{make_node(0, {}, {}, value, {}, 0)};
     EXPECT_EQ(node->value_len, value_len);
     EXPECT_EQ(node->bitpacked.data_len, 0);
     EXPECT_EQ(node->get_mem_size(), value_len + sizeof(Node));

@@ -13,27 +13,38 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/llvm/emitter.hpp>
-#include <category/vm/llvm/llvm_state.hpp>
-
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/llvm/dependency_blocks.hpp>
+#include <category/vm/llvm/emitter.hpp>
+#include <category/vm/llvm/llvm_state.hpp>
+#include <category/vm/runtime/data.hpp>
+#include <category/vm/runtime/environment.hpp>
+#include <category/vm/runtime/keccak.hpp>
+#include <category/vm/runtime/log.hpp>
+#include <category/vm/runtime/memory.hpp>
+#include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
+
+#include <llvm-c/Target.h>
 
 #include <cstdint>
 #include <format>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <string>
+#include <string_view>
 
 namespace monad::vm::llvm
 {
     using namespace monad::vm::runtime;
+    using namespace monad::vm::dependency_blocks;
 
     extern "C" void llvm_runtime_trampoline(
         // put contract args here and update entry.S accordingly
@@ -48,36 +59,154 @@ namespace monad::vm::llvm
         ctx->exit(static_cast<StatusCode>(x));
     };
 
+    std::once_flag llvm_needs_init;
+
+    void init_llvm()
+    {
+        LLVMInitializeNativeTarget();
+        LLVMInitializeNativeAsmPrinter();
+    }
+
+    std::shared_ptr<LLVMState> make_shared_llvm_state()
+    {
+        std::call_once(llvm_needs_init, init_llvm);
+        return std::make_shared<LLVMState>();
+    }
+
+    template <Traits traits>
+    std::shared_ptr<LLVMState> load_from_disk_impl(std::string_view fn)
+    {
+        auto ptr = make_shared_llvm_state();
+        LLVMState &llvm = *ptr;
+        llvm.insert_symbol("ffi_SSTORE", (void *)sstore<traits>);
+        llvm.insert_symbol("ffi_CREATE", (void *)create<traits>);
+        llvm.insert_symbol("ffi_CREATE2", (void *)create2<traits>);
+        llvm.insert_symbol("ffi_DELEGATECALL", (void *)delegatecall<traits>);
+        llvm.insert_symbol("ffi_STATICCALL", (void *)staticcall<traits>);
+        llvm.insert_symbol("ffi_CALL", (void *)call<traits>);
+        llvm.insert_symbol("ffi_CALLCODE", (void *)callcode<traits>);
+        llvm.insert_symbol("ffi_SELFBALANCE", (void *)selfbalance);
+        llvm.insert_symbol("ffi_BALANCE", (void *)balance<traits>);
+        llvm.insert_symbol("ffi_EXTCODEHASH", (void *)extcodehash<traits>);
+        llvm.insert_symbol("ffi_EXTCODESIZE", (void *)extcodesize<traits>);
+        llvm.insert_symbol("ffi_SLOAD", (void *)sload<traits>);
+        llvm.insert_symbol("ffi_BLOBHASH", (void *)blobhash);
+        llvm.insert_symbol("ffi_BLOCKHASH", (void *)blockhash);
+        llvm.insert_symbol("ffi_CALLDATALOAD", (void *)calldataload);
+        llvm.insert_symbol("ffi_MLOAD", (void *)mload);
+        llvm.insert_symbol("ffi_TLOAD", (void *)tload);
+        llvm.insert_symbol("ffi_EXP", (void *)exp<traits>);
+
+        llvm.insert_symbol("ffi_KECCAK256", (void *)sha3);
+
+        llvm.insert_symbol("ffi_MSTORE", (void *)mstore);
+        llvm.insert_symbol("ffi_MSTORE8", (void *)mstore8);
+        llvm.insert_symbol("ffi_TSTORE", (void *)tstore);
+        llvm.insert_symbol("ffi_CALLDATACOPY", (void *)calldatacopy);
+        llvm.insert_symbol("ffi_CODECOPY", (void *)codecopy);
+        llvm.insert_symbol("ffi_MCOPY", (void *)mcopy);
+        llvm.insert_symbol("ffi_RETURNDATACOPY", (void *)returndatacopy);
+        llvm.insert_symbol("ffi_EXTCODECOPY", (void *)extcodecopy<traits>);
+        llvm.insert_symbol("ffi_LOG0", (void *)log0);
+        llvm.insert_symbol("ffi_LOG1", (void *)log1);
+        llvm.insert_symbol("ffi_LOG2", (void *)log2);
+        llvm.insert_symbol("ffi_LOG3", (void *)log3);
+        llvm.insert_symbol("ffi_LOG4", (void *)log4);
+
+        llvm.insert_symbol("rt_EXIT", (void *)&rt_exit);
+        llvm.insert_symbol("ffi_SelfDestruct", (void *)selfdestruct<traits>);
+
+        llvm.set_contract_addr_from_disk(fn);
+
+        return ptr;
+    };
+
     template <Traits traits>
     std::shared_ptr<LLVMState>
     compile_impl(std::span<uint8_t const> code, std::string const &dbg_nm = "")
     {
-        auto ptr = std::make_shared<LLVMState>();
+        auto ptr = make_shared_llvm_state();
         LLVMState &llvm = *ptr;
 
-        auto ir = unsafe_make_ir<traits>(code);
+        BasicBlocksIR ir = unsafe_make_ir<traits>(code);
+        DependencyBlocksIR dep_ir = make_DependencyBlocksIR<traits>(ir);
 
-        if (dbg_nm != "") {
+        if (!dbg_nm.empty()) {
             std::ofstream out(std::format("{}.ir", dbg_nm));
-            auto ir_str = std::format("{}", ir);
+            auto const ir_str = std::format("{}", ir);
             out << ir_str;
+            auto const dep_ir_str = std::format("\n{}", dep_ir);
+            out << dep_ir_str;
             out.close();
         }
 
-        MONAD_VM_DEBUG_ASSERT(ir.is_valid());
+        MONAD_VM_ASSERT(ir.is_valid());
 
         llvm.insert_symbol("rt_EXIT", (void *)&rt_exit);
 
-        Emitter<traits> emitter{llvm, ir};
+        Emitter<traits> emitter{llvm, dep_ir};
 
         emitter.emit_contract();
 
-        if (dbg_nm != "") {
+        if (!dbg_nm.empty()) {
             llvm.dump_module(std::format("{}.ll", dbg_nm));
         }
 
         llvm.set_contract_addr(dbg_nm);
+
         return ptr;
+    }
+
+    std::shared_ptr<LLVMState>
+    load_from_disk(evmc_revision rev, std::string_view fn)
+    {
+        switch (rev) {
+        case EVMC_FRONTIER:
+            return load_from_disk_impl<EvmTraits<EVMC_FRONTIER>>(fn);
+
+        case EVMC_HOMESTEAD:
+            return load_from_disk_impl<EvmTraits<EVMC_HOMESTEAD>>(fn);
+
+        case EVMC_TANGERINE_WHISTLE:
+            return load_from_disk_impl<EvmTraits<EVMC_TANGERINE_WHISTLE>>(fn);
+
+        case EVMC_SPURIOUS_DRAGON:
+            return load_from_disk_impl<EvmTraits<EVMC_SPURIOUS_DRAGON>>(fn);
+
+        case EVMC_BYZANTIUM:
+            return load_from_disk_impl<EvmTraits<EVMC_BYZANTIUM>>(fn);
+
+        case EVMC_CONSTANTINOPLE:
+            return load_from_disk_impl<EvmTraits<EVMC_CONSTANTINOPLE>>(fn);
+
+        case EVMC_PETERSBURG:
+            return load_from_disk_impl<EvmTraits<EVMC_PETERSBURG>>(fn);
+
+        case EVMC_ISTANBUL:
+            return load_from_disk_impl<EvmTraits<EVMC_ISTANBUL>>(fn);
+
+        case EVMC_BERLIN:
+            return load_from_disk_impl<EvmTraits<EVMC_BERLIN>>(fn);
+
+        case EVMC_LONDON:
+            return load_from_disk_impl<EvmTraits<EVMC_LONDON>>(fn);
+
+        case EVMC_PARIS:
+            return load_from_disk_impl<EvmTraits<EVMC_PARIS>>(fn);
+
+        case EVMC_SHANGHAI:
+            return load_from_disk_impl<EvmTraits<EVMC_SHANGHAI>>(fn);
+
+        case EVMC_CANCUN:
+            return load_from_disk_impl<EvmTraits<EVMC_CANCUN>>(fn);
+
+        case EVMC_PRAGUE:
+            return load_from_disk_impl<EvmTraits<EVMC_PRAGUE>>(fn);
+
+        default:
+            MONAD_VM_ASSERT(rev == EVMC_OSAKA);
+            return load_from_disk_impl<EvmTraits<EVMC_OSAKA>>(fn);
+        }
     }
 
     void execute(LLVMState &llvm, Context &ctx, uint256_t *evm_stack)

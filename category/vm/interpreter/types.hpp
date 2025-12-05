@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <array>
 #include <cstdint>

@@ -13,14 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/byte_string.hpp>
-#include <category/core/bytes.hpp>
-#include <category/core/fiber/priority_pool.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/core/keccak.hpp>
-#include <category/core/monad_exception.hpp>
-#include <category/execution/ethereum/block_hash_buffer.hpp>
-#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -29,32 +22,21 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/execute_block.hpp>
-#include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
-#include <category/execution/ethereum/state2/block_state.hpp>
-#include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
-#include <category/vm/evm/traits.hpp>
 
 #include <ethash/keccak.hpp>
-#include <evmc/evmc.hpp>
-#include <evmc/hex.hpp>
 #include <intx/intx.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-
-#include <iostream>
-#include <memory>
 
 #include <test_resource_data.h>
 
@@ -75,20 +57,6 @@ using namespace monad::test;
 
 namespace
 {
-    // clang-format off
-    auto const STRESS_TEST_CODE =
-        evmc::from_hex("0x5b61c3506080511015603f576000600061c3506000600173aaaf5374fce5edbc8e2a8697c15331677e6ebf0b610640f16000556001608051016080526000565b60805160015500")
-            .value();
-    // clang-format on
-    auto const STRESS_TEST_CODE_HASH = to_bytes(keccak256(STRESS_TEST_CODE));
-    auto const STRESS_TEST_ICODE = vm::make_shared_intercode(STRESS_TEST_CODE);
-
-    auto const REFUND_TEST_CODE =
-        evmc::from_hex("0x6000600155600060025560006003556000600455600060055500")
-            .value();
-    auto const REFUND_TEST_CODE_HASH = to_bytes(keccak256(REFUND_TEST_CODE));
-    auto const REFUND_TEST_ICODE = vm::make_shared_intercode(REFUND_TEST_CODE);
-
     constexpr auto key1 =
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
     constexpr auto key2 =
@@ -97,16 +65,6 @@ namespace
         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
     constexpr auto value2 =
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
-
-    struct ShanghaiEthereumMainnet : EthereumMainnet
-    {
-        virtual evmc_revision get_revision(
-            uint64_t /* block_number */,
-            uint64_t /* timestamp */) const override
-        {
-            return EVMC_SHANGHAI;
-        }
-    };
 
     struct InMemoryTrieDbFixture : public ::testing::Test
     {
@@ -126,11 +84,15 @@ namespace
         vm::VM vm;
     };
 
+    using OnDiskTrieDbWithFileFixture =
+        OnDiskDbWithFileFixtureBase<OnDiskMachine>;
+
     ///////////////////////////////////////////
     // DB Getters
     ///////////////////////////////////////////
     std::vector<CallFrame> read_call_frame(
-        mpt::Db &db, uint64_t const block_number, uint64_t const txn_idx)
+        mpt::Node::SharedPtr root, mpt::Db &db, uint64_t const block_number,
+        uint64_t const txn_idx)
     {
         using namespace mpt;
 
@@ -153,7 +115,7 @@ namespace
             [&chunks](NibblesView const path, byte_string_view const value) {
                 chunks.emplace_back(path, value);
             }};
-        db.traverse(db.root(), machine, block_number);
+        db.traverse(root, machine, block_number);
         MONAD_ASSERT(!chunks.empty());
 
         std::sort(
@@ -179,20 +141,21 @@ namespace
     }
 
     std::pair<bytes32_t, bytes32_t> read_storage_and_slot(
-        mpt::Db const &db, uint64_t const block_number, Address const &addr,
-        bytes32_t const &key)
+        mpt::Node::SharedPtr const &root, mpt::Db const &db,
+        uint64_t const block_number, Address const &addr, bytes32_t const &key)
     {
-        auto const value = db.get(
+        auto const find_res = db.find(
+            root,
             mpt::concat(
                 FINALIZED_NIBBLE,
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
                 mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
             block_number);
-        if (!value.has_value()) {
+        if (!find_res.has_value()) {
             return {};
         }
-        auto encoded_storage = value.value();
+        auto encoded_storage = find_res.value().node->value();
         auto const storage = decode_storage_db(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
         return storage.value();
@@ -295,14 +258,16 @@ TYPED_TEST(DBTest, read_storage)
     // Existing storage
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
     EXPECT_EQ(
-        read_storage_and_slot(this->db, tdb.get_block_number(), ADDR_A, key1)
+        read_storage_and_slot(
+            tdb.get_root(), this->db, tdb.get_block_number(), ADDR_A, key1)
             .first,
         key1);
 
     // Non-existing key
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key2), bytes32_t{});
     EXPECT_EQ(
-        read_storage_and_slot(this->db, tdb.get_block_number(), ADDR_A, key2)
+        read_storage_and_slot(
+            tdb.get_root(), this->db, tdb.get_block_number(), ADDR_A, key2)
             .first,
         bytes32_t{});
 
@@ -310,7 +275,8 @@ TYPED_TEST(DBTest, read_storage)
     EXPECT_FALSE(tdb.read_account(ADDR_B).has_value());
     EXPECT_EQ(tdb.read_storage(ADDR_B, Incarnation{0, 0}, key1), bytes32_t{});
     EXPECT_EQ(
-        read_storage_and_slot(this->db, tdb.get_block_number(), ADDR_B, key1)
+        read_storage_and_slot(
+            tdb.get_root(), this->db, tdb.get_block_number(), ADDR_B, key1)
             .first,
         bytes32_t{});
 }
@@ -342,7 +308,8 @@ TYPED_TEST(DBTest, read_code)
 TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
 {
     TrieDb tdb{db};
-    load_header(db, BlockHeader{.number = 8});
+    tdb.reset_root(
+        load_header(tdb.get_root(), db, BlockHeader{.number = 8}), 8);
     EXPECT_TRUE(get_proposal_block_ids(db, 8).empty());
 
     tdb.set_block_and_prefix(8);
@@ -520,11 +487,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     Receipt rct{
         .status = 1, .gas_used = 65'092, .type = TransactionType::legacy};
     rct.add_log(Receipt::Log{
-        .data = from_hex("0x000000000000000000000000000000000000000000000000000"
-                         "000000000000000000000000000000000000043b2126e7a22e0c2"
-                         "88dfb469e3de4d2c097f3ca000000000000000000000000000000"
-                         "0000000000000000001195387bce41fd499000000000000000000"
-                         "0000000000000000000000000000000000000000000000"),
+        .data =
+            0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000043b2126e7a22e0c288dfb469e3de4d2c097f3ca0000000000000000000000000000000000000000000000001195387bce41fd4990000000000000000000000000000000000000000000000000000000000000000_bytes,
         .topics =
             {0xf341246adaac6f497bc2a656f546ab9e182111d630394f0c57c710a59a2cb567_bytes32},
         .address = 0x8d12a197cb00d4747a1fe03395095ce2a5cc6819_address});
@@ -587,14 +551,16 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     auto verify_read_and_parse_receipt = [&](uint64_t const block_id) {
         size_t log_i = 0;
         for (unsigned i = 0; i < receipts.size(); ++i) {
-            auto res = this->db.get(
+            auto find_res = this->db.find(
+                tdb.get_root(),
                 mpt::concat(
                     FINALIZED_NIBBLE,
                     RECEIPT_NIBBLE,
                     mpt::NibblesView{rlp::encode_unsigned<unsigned>(i)}),
                 block_id);
-            ASSERT_TRUE(res.has_value());
-            auto const decode_res = decode_receipt_db(res.value());
+            ASSERT_TRUE(find_res.has_value());
+            auto node_value = find_res.value().node->value();
+            auto const decode_res = decode_receipt_db(node_value);
             ASSERT_TRUE(decode_res.has_value());
             auto const [receipt, log_index_begin] = decode_res.value();
             EXPECT_EQ(receipt, receipts[i]) << i;
@@ -605,14 +571,16 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
     auto verify_read_and_parse_transaction = [&](uint64_t const block_id) {
         for (unsigned i = 0; i < transactions.size(); ++i) {
-            auto res = this->db.get(
+            auto find_res = this->db.find(
+                tdb.get_root(),
                 mpt::concat(
                     FINALIZED_NIBBLE,
                     TRANSACTION_NIBBLE,
                     mpt::NibblesView{rlp::encode_unsigned<unsigned>(i)}),
                 block_id);
-            ASSERT_TRUE(res.has_value());
-            auto const decode_res = decode_transaction_db(res.value());
+            ASSERT_TRUE(find_res.has_value());
+            auto node_value = find_res.value().node->value();
+            auto const decode_res = decode_transaction_db(node_value);
             ASSERT_TRUE(decode_res.has_value());
             auto const [tx, sender] = decode_res.value();
             EXPECT_EQ(tx, transactions[i]) << i;
@@ -622,12 +590,13 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     auto verify_tx_hash = [&](hash256 const &tx_hash,
                               uint64_t const block_id,
                               unsigned const tx_idx) {
-        auto const res = this->db.get(
+        auto const find_res = this->db.find(
+            tdb.get_root(),
             concat(FINALIZED_NIBBLE, TX_HASH_NIBBLE, mpt::NibblesView{tx_hash}),
-            this->db.get_latest_version());
-        EXPECT_TRUE(res.has_value());
+            tdb.get_block_number());
+        EXPECT_TRUE(find_res.has_value());
         EXPECT_EQ(
-            res.value(),
+            find_res.value().node->value(),
             rlp::encode_list2(
                 rlp::encode_unsigned(block_id), rlp::encode_unsigned(tx_idx)));
     };
@@ -676,6 +645,79 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     verify_tx_hash(tx_hash[4], second_block, 1);
     verify_read_and_parse_receipt(second_block);
     verify_read_and_parse_transaction(second_block);
+}
+
+TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
+{
+    using namespace intx;
+    using namespace evmc::literals;
+
+    TrieDb tdb{this->db};
+
+    static constexpr auto price{20'000'000'000};
+    static constexpr auto value{0xde0b6b3a7640000_u256};
+    static constexpr auto r{
+        0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276_u256};
+    static constexpr auto s{
+        0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
+    static constexpr auto to_addr{
+        0x3535353535353535353535353535353535353535_address};
+
+    constexpr uint64_t block_number = 0;
+    constexpr unsigned total_txs = 4096;
+    std::vector<Transaction> transactions;
+    transactions.reserve(total_txs);
+    Transaction tx{
+        .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
+        .nonce = 9,
+        .max_fee_per_gas = price,
+        .gas_limit = 21'000,
+        .value = value,
+        .to = to_addr};
+    for (unsigned i = 0; i < total_txs; ++i) {
+        transactions.emplace_back(tx);
+        tx.nonce++;
+    }
+    std::vector<std::vector<CallFrame>> call_frames;
+    std::vector<Receipt> receipts;
+    receipts.resize(transactions.size());
+    call_frames.resize(receipts.size());
+    std::vector<Address> senders = recover_senders(transactions);
+    commit_sequential(
+        tdb,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = block_number},
+        receipts,
+        call_frames,
+        senders,
+        transactions);
+
+    auto verify_transactions = [&](auto &db) {
+        auto const txs_res = get_transactions(db, block_number);
+        ASSERT_TRUE(txs_res.has_value());
+        auto const txs = txs_res.value();
+        EXPECT_EQ(txs.size(), transactions.size());
+        for (size_t i = 0; i < txs.size(); ++i) {
+            EXPECT_EQ(txs[i], transactions[i]);
+        }
+    };
+
+    // RWDb
+    verify_transactions(this->db);
+
+    { // nonblocking RODb
+        mpt::RODb rodb{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
+        verify_transactions(rodb);
+    }
+
+    { // blocking read-only Db
+        mpt::AsyncIOContext io_ctx{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
+        mpt::Db rodb{io_ctx};
+        verify_transactions(rodb);
+    }
 }
 
 TYPED_TEST(DBTest, to_json)
@@ -786,8 +828,9 @@ TYPED_TEST(DBTest, load_from_binary)
 {
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
     std::ifstream code(test_resource::checkpoint_dir / "code");
-    load_from_binary(this->db, accounts, code);
+    auto root = load_from_binary(this->db, accounts, code);
     TrieDb tdb{this->db};
+    tdb.reset_root(root, 0);
     EXPECT_EQ(
         tdb.state_root(),
         0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
@@ -875,331 +918,11 @@ TYPED_TEST(DBTest, commit_call_frames)
         transactions);
 
     for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
-        auto const &res =
-            read_call_frame(this->db, tdb.get_block_number(), txn);
+        auto const &res = read_call_frame(
+            tdb.get_root(), this->db, tdb.get_block_number(), txn);
         ASSERT_TRUE(!res.empty());
         ASSERT_TRUE(res.size() == 2);
         EXPECT_EQ(res[0], call_frame1);
         EXPECT_EQ(res[1], call_frame2);
     }
-}
-
-// test referenced from :
-// https://github.com/ethereum/tests/blob/develop/BlockchainTests/GeneralStateTests/stQuadraticComplexityTest/Call50000.json
-TYPED_TEST(DBTest, call_frames_stress_test)
-{
-    using namespace intx;
-
-    TrieDb tdb{this->db};
-
-    auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
-    auto const to = 0xbbbf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
-    auto const ca = 0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
-
-    commit_sequential(
-        tdb,
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xffffffffffffffffffffffffffffffff_u128,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
-            {to,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x0fffffffffffff,
-                          .code_hash = STRESS_TEST_CODE_HASH}}}},
-            {ca,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}}},
-        Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE}},
-        BlockHeader{.number = 0});
-
-    // clang-format off
-    byte_string const block_rlp = evmc::from_hex("0xf90283f90219a0d2472bbb9c83b0e7615b791409c2efaccd5cb7d923741bbc44783bf0d063f5b6a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d4934794b94f5374fce5edbc8e2a8697c15331677e6ebf0ba0644bb1009c2332d1532062fe9c28cae87169ccaab2624aa0cfb4f0a0e59ac3aaa0cc2a2a77bb0d7a07b12d7e1d13b9f5dfff4f4bc53052b126e318f8b27b7ab8f9a027408083641cf20cfde86cd87cd57bf10c741d7553352ca96118e31ab8ceb9ceb901000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080018433428f00840ee6b2808203e800a000000000000000000000000000000000000000000000000000000000000200008800000000000000000aa056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421f863f861800a840ee6b28094bbbf5374fce5edbc8e2a8697c15331677e6ebf0b0a801ba0462186579a4be0ad8a63224059a11693b4c0684b9939f6c2394d1fbe045275f2a059d73f99e037295a5f8c0e656acdb5c8b9acd28ec73c320c277df61f2e2d54f9c0c0")
-            .value();
-    // clang-format on
-    byte_string_view block_rlp_view{block_rlp};
-    auto block = rlp::decode_block(block_rlp_view);
-    ASSERT_TRUE(!block.has_error());
-
-    BlockHashBufferFinalized block_hash_buffer;
-    block_hash_buffer.set(
-        block.value().header.number - 1, block.value().header.parent_hash);
-
-    BlockState bs(tdb, this->vm);
-    BlockMetrics metrics;
-
-    fiber::PriorityPool pool{1, 1};
-
-    auto const recovered_senders =
-        recover_senders(block.value().transactions, pool);
-    std::vector<Address> senders(block.value().transactions.size());
-    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
-        MONAD_ASSERT(recovered_senders[i].has_value());
-        senders[i] = recovered_senders[i].value();
-    }
-    auto const recovered_authorities =
-        recover_authorities(block.value().transactions, pool);
-    std::vector<std::vector<CallFrame>> call_frames(
-        block.value().transactions.size());
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
-    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
-    }
-
-    auto const receipts = execute_block<EvmTraits<EVMC_SHANGHAI>>(
-        EthereumMainnet{},
-        block.value(),
-        senders,
-        recovered_authorities,
-        bs,
-        block_hash_buffer,
-        pool,
-        metrics,
-        call_tracers);
-
-    ASSERT_TRUE(!receipts.has_error());
-
-    bs.log_debug();
-
-    auto const &transactions = block.value().transactions;
-    BlockHeader const header{.number = 1};
-    bytes32_t const block_id{header.number};
-    bs.commit(
-        block_id,
-        header,
-        receipts.value(),
-        call_frames,
-        recover_senders(transactions),
-        transactions,
-        {},
-        {});
-    tdb.finalize(1, block_id);
-    tdb.set_block_and_prefix(1);
-
-    auto const actual_call_frames =
-        read_call_frame(this->db, tdb.get_block_number(), 0);
-
-    EXPECT_EQ(actual_call_frames.size(), 35799);
-}
-
-// This test is based on the test `DBTest.call_frames_stress_test`
-TYPED_TEST(DBTest, assertion_exception)
-{
-    using namespace intx;
-
-    TrieDb tdb{this->db};
-
-    auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
-    auto const to = 0xbbbf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
-
-    commit_sequential(
-        tdb,
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
-            {to,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = STRESS_TEST_CODE_HASH}}}}},
-        Code{},
-        BlockHeader{.number = 0});
-
-    // clang-format off
-    byte_string const block_rlp = evmc::from_hex("0xf90283f90219a0d2472bbb9c83b0e7615b791409c2efaccd5cb7d923741bbc44783bf0d063f5b6a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d4934794b94f5374fce5edbc8e2a8697c15331677e6ebf0ba0644bb1009c2332d1532062fe9c28cae87169ccaab2624aa0cfb4f0a0e59ac3aaa0cc2a2a77bb0d7a07b12d7e1d13b9f5dfff4f4bc53052b126e318f8b27b7ab8f9a027408083641cf20cfde86cd87cd57bf10c741d7553352ca96118e31ab8ceb9ceb901000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080018433428f00840ee6b2808203e800a000000000000000000000000000000000000000000000000000000000000200008800000000000000000aa056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421f863f861800a840ee6b28094bbbf5374fce5edbc8e2a8697c15331677e6ebf0b0a801ba0462186579a4be0ad8a63224059a11693b4c0684b9939f6c2394d1fbe045275f2a059d73f99e037295a5f8c0e656acdb5c8b9acd28ec73c320c277df61f2e2d54f9c0c0")
-            .value();
-    // clang-format on
-
-    byte_string_view block_rlp_view{block_rlp};
-    auto block = rlp::decode_block(block_rlp_view);
-    ASSERT_TRUE(!block.has_error());
-
-    BlockHashBufferFinalized block_hash_buffer;
-    block_hash_buffer.set(
-        block.value().header.number - 1, block.value().header.parent_hash);
-
-    BlockState bs(tdb, this->vm);
-    BlockMetrics metrics;
-
-    fiber::PriorityPool pool{1, 1};
-
-    auto const recovered_senders =
-        recover_senders(block.value().transactions, pool);
-    std::vector<Address> senders(block.value().transactions.size());
-    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
-        MONAD_ASSERT(recovered_senders[i].has_value());
-        senders[i] = recovered_senders[i].value();
-    }
-    auto const recovered_authorities =
-        recover_authorities(block.value().transactions, pool);
-    std::vector<std::vector<CallFrame>> call_frames(
-        block.value().transactions.size());
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
-    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
-    }
-
-    EXPECT_THROW(
-        {
-            (void)execute_block<EvmTraits<EVMC_SHANGHAI>>(
-                EthereumMainnet{},
-                block.value(),
-                senders,
-                recovered_authorities,
-                bs,
-                block_hash_buffer,
-                pool,
-                metrics,
-                call_tracers);
-        },
-        MonadException);
-}
-
-// test referenced from :
-// https://github.com/ethereum/tests/blob/v10.0/BlockchainTests/GeneralStateTests/stRefundTest/refund50_1.json
-TYPED_TEST(DBTest, call_frames_refund)
-{
-    TrieDb tdb{this->db};
-
-    auto const from = 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
-    auto const to = 0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address;
-    auto const ca = 0x095e7baea6a6c7c4c2dfeb977efac326af552d87_address;
-
-    commit_sequential(
-        tdb,
-        StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x989680,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
-            {to,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x0,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x01}}}},
-            {ca,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x1b58,
-                          .code_hash = REFUND_TEST_CODE_HASH}},
-                 .storage =
-                     {{bytes32_t{0x01}, {bytes32_t{}, bytes32_t{0x01}}},
-                      {bytes32_t{0x02}, {bytes32_t{}, bytes32_t{0x01}}},
-                      {bytes32_t{0x03}, {bytes32_t{}, bytes32_t{0x01}}},
-                      {bytes32_t{0x04}, {bytes32_t{}, bytes32_t{0x01}}},
-                      {bytes32_t{0x05}, {bytes32_t{}, bytes32_t{0x01}}}}}}},
-        Code{{REFUND_TEST_CODE_HASH, REFUND_TEST_ICODE}},
-        BlockHeader{.number = 0});
-
-    // clang-format off
-    byte_string const block_rlp = evmc::from_hex("0xf9025ff901f7a01e736f5755fc7023588f262b496b6cbc18aa9062d9c7a21b1c709f55ad66aad3a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347942adc25665018aa1fe0e6bc666dac8fc2697ff9baa096841c0823ec823fdb0b0b8ea019c8dd6691b9f335e0433d8cfe59146e8b884ca0f0f9b1e10ec75d9799e3a49da5baeeab089b431b0073fb05fa90035e830728b8a06c8ab36ec0629c97734e8ac823cdd8397de67efb76c7beb983be73dcd3c78141b90100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008302000001830f42408259e78203e800a00000000000000000000000000000000000000000000000000000000000000000880000000000000000f862f860800a830186a094095e7baea6a6c7c4c2dfeb977efac326af552d8780801ba0eac92a424c1599d71b1c116ad53800caa599233ea91907e639b7cb98fa0da3bba06be40f001771af85bfba5e6c4d579e038e6465af3f55e71b9490ab48fcfa5b1ec0")
-            .value();
-    // clang-format on
-    byte_string_view block_rlp_view{block_rlp};
-    auto block = rlp::decode_block(block_rlp_view);
-    ASSERT_TRUE(!block.has_error());
-    EXPECT_EQ(block.value().header.number, 1);
-
-    BlockHashBufferFinalized block_hash_buffer;
-    block_hash_buffer.set(
-        block.value().header.number - 1, block.value().header.parent_hash);
-
-    BlockState bs(tdb, this->vm);
-    BlockMetrics metrics;
-
-    fiber::PriorityPool pool{1, 1};
-
-    auto const recovered_senders =
-        recover_senders(block.value().transactions, pool);
-    std::vector<Address> senders(block.value().transactions.size());
-    for (unsigned i = 0; i < recovered_senders.size(); ++i) {
-        MONAD_ASSERT(recovered_senders[i].has_value());
-        senders[i] = recovered_senders[i].value();
-    }
-    auto const recovered_authorities =
-        recover_authorities(block.value().transactions, pool);
-    std::vector<std::vector<CallFrame>> call_frames(
-        block.value().transactions.size());
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
-    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
-    }
-
-    auto const receipts = execute_block<EvmTraits<EVMC_SHANGHAI>>(
-        ShanghaiEthereumMainnet{},
-        block.value(),
-        senders,
-        recovered_authorities,
-        bs,
-        block_hash_buffer,
-        pool,
-        metrics,
-        call_tracers);
-
-    ASSERT_TRUE(!receipts.has_error());
-
-    bs.log_debug();
-
-    auto const &transactions = block.value().transactions;
-    BlockHeader const header = block.value().header;
-    bytes32_t const block_id{header.number};
-    bs.commit(
-        block_id,
-        header,
-        receipts.value(),
-        call_frames,
-        recover_senders(transactions),
-        transactions,
-        {},
-        std::nullopt);
-    tdb.finalize(1, block_id);
-    tdb.set_block_and_prefix(1);
-
-    auto const actual_call_frames =
-        read_call_frame(this->db, tdb.get_block_number(), 0);
-
-    ASSERT_EQ(actual_call_frames.size(), 1);
-    CallFrame expected{
-        .type = CallType::CALL,
-        .flags = 0,
-        .from = from,
-        .to = ca,
-        .value = 0,
-        .gas = 0x186a0,
-        .gas_used = 0x8fd8,
-        .status = EVMC_SUCCESS,
-        .depth = 0,
-        .logs = std::vector<CallFrame::Log>{},
-    };
-
-    EXPECT_EQ(actual_call_frames[0], expected);
 }

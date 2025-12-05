@@ -41,7 +41,7 @@ std::optional<evmc::Result> check_call_monad_precompile(
 
     byte_string_view input{msg.input_data, msg.input_size};
     auto const [method, cost] =
-        staking::StakingContract::precompile_dispatch(input);
+        staking::StakingContract::precompile_dispatch<traits>(input);
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
@@ -73,6 +73,9 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 bool is_precompile(Address const &address)
 {
+    // Note that if new Monad-specific precompiles are added, identifying them
+    // as a precompile should be gated behind the revision they were activated
+    // in.
     return is_eth_precompile<traits>(address) ||
            (address == staking::STAKING_CA);
 }

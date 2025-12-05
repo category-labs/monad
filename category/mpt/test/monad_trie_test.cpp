@@ -30,7 +30,6 @@
 #include <category/core/io/ring.hpp>
 #include <category/core/keccak.h>
 #include <category/core/small_prng.hpp>
-#include <category/core/unordered_map.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -42,6 +41,8 @@
 
 #include <boost/fiber/fiber.hpp>
 #include <boost/fiber/operations.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <quill/Quill.h>
 
@@ -220,7 +221,7 @@ void prepare_keccak(
         static constexpr uint32_t TOTAL_KEYS = 500000000;
         static double const MAX_RAND = double(monad::small_prng::max());
         monad::small_prng rand(uint32_t(key_offset / (100 * SLICE_LEN)));
-        monad::unordered_flat_set<uint32_t> seen;
+        ankerl::unordered_dense::segmented_set<uint32_t> seen;
         for (size_t i = 0; i < nkeys; ++i) {
             if ((i % SLICE_LEN) == 0) {
                 seen.clear();
@@ -253,7 +254,7 @@ void prepare_keccak(
         MONAD_ASSERT(distrib.min() == 0 && distrib.max() == MAX_NUM_KEYS - 1);
 
         size_t key;
-        monad::unordered_flat_set<size_t> keys_per_slice; // dedup
+        ankerl::unordered_dense::segmented_set<size_t> keys_per_slice; // dedup
         // prepare keccak
         for (size_t i = 0; i < nkeys; ++i) {
             if (i % SLICE_LEN == 0) {
@@ -304,7 +305,6 @@ int main(int argc, char *argv[])
     bool realistic_corpus = false;
     bool random_keys = false;
     bool compaction = false;
-    bool use_iopoll = false;
     int file_size_db = 512; // truncate to 512 gb by default
     unsigned random_read_benchmark_threads = 0;
     unsigned concurrent_read_io_limit = 0;
@@ -347,7 +347,6 @@ int main(int argc, char *argv[])
         cli.add_flag(
             "--random-keys", random_keys, "generate random integers as keys");
         cli.add_flag("--compaction", compaction, "perform compaction on disk");
-        cli.add_flag("--use-iopoll", use_iopoll, "use i/o polling in io_uring");
         cli.add_option(
             "--file-size-gb",
             file_size_db,
@@ -474,8 +473,7 @@ int main(int argc, char *argv[])
                     : MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate};
 
             // init uring
-            monad::io::Ring ring1(
-                monad::io::RingConfig{512, use_iopoll, sq_thread_cpu});
+            monad::io::Ring ring1(monad::io::RingConfig{512, sq_thread_cpu});
             monad::io::Ring ring2(monad::io::RingConfig{16}
                                   /* max concurrent write buffers in use <= 6 */
             );
@@ -532,8 +530,7 @@ int main(int argc, char *argv[])
                 }
             };
 
-            auto aux =
-                in_memory ? UpdateAux<>() : UpdateAux<>(&io, history_len);
+            auto aux = in_memory ? UpdateAux<>() : UpdateAux<>(io, history_len);
             monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
 
             Node::SharedPtr root{};
@@ -657,7 +654,7 @@ int main(int argc, char *argv[])
             }
             // read only
             // init uring
-            monad::io::Ring ring({512, use_iopoll, sq_thread_cpu});
+            monad::io::Ring ring({512, sq_thread_cpu});
 
             // init buffer
             monad::io::Buffers rwbuf = make_buffers_for_read_only(
@@ -681,7 +678,7 @@ int main(int argc, char *argv[])
                 Node::SharedPtr &root = std::get<1>(*ret);
                 NodeCursor &state_start = std::get<2>(*ret);
                 if (!in_memory) {
-                    aux.set_io(&io, history_len);
+                    aux.set_io(io, history_len);
                 }
                 root = read_node_blocking(
                     aux,

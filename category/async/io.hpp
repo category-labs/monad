@@ -29,6 +29,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -45,54 +46,41 @@ struct IORecord
     unsigned inflight_rd{0};
     unsigned inflight_rd_scatter{0};
     unsigned inflight_wr{0};
-    unsigned inflight_tm{0};
-    std::atomic<unsigned> inflight_ts{0};
 
     unsigned max_inflight_rd{0};
     unsigned max_inflight_rd_scatter{0};
     unsigned max_inflight_wr{0};
 
-    unsigned nreads{0};
+    uint64_t nreads{0};
     // Reads and scatter reads which got a EAGAIN and were retried
     unsigned reads_retried{0};
+    uint64_t bytes_read{0};
 };
 
 class AsyncIO final
 {
-public:
-    struct timed_invocation_state;
-
 private:
     friend class read_single_buffer_sender;
     using _storage_pool = class storage_pool;
-    using cnv_chunk = _storage_pool::cnv_chunk;
-    using seq_chunk = _storage_pool::seq_chunk;
+    using chunk_t = _storage_pool::chunk_t;
 
-    template <class T>
-    struct chunk_ptr_
+    struct chunk_ref_
     {
-        std::shared_ptr<T> ptr;
+        chunk_t &chunk;
         int io_uring_read_fd{-1}, io_uring_write_fd{-1}; // NOT POSIX fds!
 
-        constexpr chunk_ptr_() = default;
-
-        constexpr chunk_ptr_(std::shared_ptr<T> ptr_)
-            : ptr(std::move(ptr_))
-            , io_uring_read_fd(ptr ? ptr->read_fd().first : -1)
-            , io_uring_write_fd(ptr ? ptr->write_fd(0).first : -1)
+        constexpr explicit chunk_ref_(chunk_t &chunk_)
+            : chunk{chunk_}
+            , io_uring_read_fd{chunk.read_fd().first}
+            , io_uring_write_fd{chunk.write_fd(0).first}
         {
         }
     };
 
     pid_t const owning_tid_;
     class storage_pool *storage_pool_{nullptr};
-    chunk_ptr_<cnv_chunk> cnv_chunk_;
-    std::vector<chunk_ptr_<seq_chunk>> seq_chunks_;
-
-    struct
-    {
-        int msgread, msgwrite;
-    } fds_;
+    chunk_ref_ cnv_chunk_;
+    std::vector<chunk_ref_> seq_chunks_;
 
     monad::io::Ring &uring_, *wr_uring_{nullptr};
     monad::io::Buffers &rwbuf_;
@@ -105,11 +93,16 @@ private:
     IORecord records_;
     unsigned concurrent_read_io_limit_{0};
 
-    struct
+    struct deferred_read
     {
-        unsigned count{0};
-        erased_connected_operation *first{nullptr}, *last{nullptr};
-    } concurrent_read_ios_pending_;
+        erased_connected_operation *op;
+        std::span<std::byte> buffer;
+        chunk_offset_t offset;
+    };
+
+    // Reads which could not be submitted immediately because the limit on
+    // concurrent reads was reached.
+    std::deque<deferred_read> concurrent_read_ios_pending_;
 
     void submit_request_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
@@ -120,7 +113,13 @@ private:
     void submit_request_(
         std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
-    void submit_request_(timed_invocation_state *state, void *uring_data);
+
+    // Submit request, guaranteed to have sqe available
+    void submit_request_sqe_(
+        std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+        void *uring_data, enum erased_connected_operation::io_priority prio);
+
+    void account_read_(size_t size);
 
     void poll_uring_while_submission_queue_full_();
     size_t poll_uring_(bool blocking, unsigned poll_rings_mask);
@@ -142,13 +141,13 @@ public:
 
     class storage_pool &storage_pool() noexcept
     {
-        MONAD_DEBUG_ASSERT(storage_pool_ != nullptr);
+        MONAD_ASSERT(storage_pool_ != nullptr);
         return *storage_pool_;
     }
 
     const class storage_pool &storage_pool() const noexcept
     {
-        MONAD_DEBUG_ASSERT(storage_pool_ != nullptr);
+        MONAD_ASSERT(storage_pool_ != nullptr);
         return *storage_pool_;
     }
 
@@ -164,7 +163,7 @@ public:
             "id %zu seq chunks size %zu",
             id,
             seq_chunks_.size());
-        return seq_chunks_[id].ptr->capacity();
+        return seq_chunks_[id].chunk.capacity();
     }
 
     //! The instance for this thread
@@ -175,16 +174,16 @@ public:
 
     unsigned io_in_flight() const noexcept
     {
-        return records_.inflight_rd + concurrent_read_ios_pending_.count +
+        return records_.inflight_rd +
+               static_cast<unsigned>(concurrent_read_ios_pending_.size()) +
                records_.inflight_rd_scatter + records_.inflight_wr +
-               records_.inflight_tm +
-               records_.inflight_ts.load(std::memory_order_relaxed) +
                deferred_initiations_in_flight();
     }
 
     unsigned reads_in_flight() const noexcept
     {
-        return records_.inflight_rd + concurrent_read_ios_pending_.count;
+        return records_.inflight_rd +
+               static_cast<unsigned>(concurrent_read_ios_pending_.size());
     }
 
     unsigned max_reads_in_flight() const noexcept
@@ -212,16 +211,16 @@ public:
         return records_.max_inflight_wr;
     }
 
-    unsigned timers_in_flight() const noexcept
-    {
-        return records_.inflight_tm;
-    }
-
     unsigned deferred_initiations_in_flight() const noexcept;
 
-    unsigned threadsafeops_in_flight() const noexcept
+    uint64_t total_reads_submitted() const noexcept
     {
-        return records_.inflight_ts.load(std::memory_order_relaxed);
+        return records_.nreads;
+    }
+
+    uint64_t total_bytes_read() const noexcept
+    {
+        return records_.bytes_read;
     }
 
     unsigned concurrent_read_io_limit() const noexcept
@@ -327,46 +326,28 @@ public:
         records_.max_inflight_rd_scatter = 0;
         records_.max_inflight_wr = 0;
         records_.nreads = 0;
+        records_.bytes_read = 0;
+        records_.reads_retried = 0;
     }
 
     size_t submit_read_request(
         std::span<std::byte> buffer, chunk_offset_t offset,
         erased_connected_operation *uring_data)
     {
-        if (concurrent_read_io_limit_ > 0) {
-            if (records_.inflight_rd >= concurrent_read_io_limit_) {
-                auto *state = (erased_connected_operation *)uring_data;
-                erased_connected_operation::rbtree_node_traits::set_right(
-                    state, nullptr);
-                if (concurrent_read_ios_pending_.last == nullptr) {
-                    MONAD_DEBUG_ASSERT(
-                        concurrent_read_ios_pending_.first == nullptr);
-                    concurrent_read_ios_pending_.first =
-                        concurrent_read_ios_pending_.last = state;
-                    MONAD_DEBUG_ASSERT(concurrent_read_ios_pending_.count == 0);
-                }
-                else {
-                    MONAD_DEBUG_ASSERT(
-                        erased_connected_operation::rbtree_node_traits::
-                            get_right(concurrent_read_ios_pending_.last) ==
-                        nullptr);
-                    erased_connected_operation::rbtree_node_traits::set_right(
-                        concurrent_read_ios_pending_.last, state);
-                    concurrent_read_ios_pending_.last = state;
-                }
-                concurrent_read_ios_pending_.count++;
-                return size_t(-1); // we never complete immediately
-            }
-        }
-
         if (capture_io_latencies_) {
             uring_data->initiated = std::chrono::steady_clock::now();
         }
-        submit_request_(buffer, offset, uring_data, uring_data->io_priority());
-        if (++records_.inflight_rd > records_.max_inflight_rd) {
-            records_.max_inflight_rd = records_.inflight_rd;
+
+        if (concurrent_read_io_limit_ > 0 &&
+            records_.inflight_rd >= concurrent_read_io_limit_) {
+            concurrent_read_ios_pending_.emplace_back(
+                deferred_read{uring_data, buffer, offset});
+            return size_t(-1); // we never complete immediately
         }
-        ++records_.nreads;
+
+        auto const size = buffer.size();
+        submit_request_(buffer, offset, uring_data, uring_data->io_priority());
+        account_read_(size);
         return size_t(-1); // we never complete immediately
     }
 
@@ -432,7 +413,7 @@ public:
         ConnectedOperationType state[0];
 #pragma GCC diagnostic pop
 
-        constexpr registered_io_buffer_with_connected_operation() {}
+        constexpr registered_io_buffer_with_connected_operation() = default;
     };
     friend struct io_connected_operation_unique_ptr_deleter;
 
@@ -483,9 +464,9 @@ public:
     using read_buffer_ptr = detail::read_buffer_ptr;
     using write_buffer_ptr = detail::write_buffer_ptr;
 
-    read_buffer_ptr get_read_buffer(size_t bytes) noexcept
+    read_buffer_ptr get_read_buffer(size_t bytes)
     {
-        MONAD_DEBUG_ASSERT(bytes <= READ_BUFFER_SIZE);
+        MONAD_ASSERT(bytes <= READ_BUFFER_SIZE);
         unsigned char *mem = rd_pool_.alloc();
         if (mem == nullptr) {
             mem = poll_uring_while_no_io_buffers_(false);
@@ -494,7 +475,7 @@ public:
             (std::byte *)mem, detail::read_buffer_deleter(this));
     }
 
-    write_buffer_ptr get_write_buffer() noexcept
+    write_buffer_ptr get_write_buffer()
     {
         unsigned char *mem = wr_pool_.alloc();
         if (mem == nullptr) {
@@ -518,22 +499,21 @@ private:
             connected_operation_storage_pool_, 1);
         MONAD_ASSERT_PRINTF(
             mem != nullptr, "failed due to %s", strerror(errno));
-        MONAD_DEBUG_ASSERT(((void)mem[0], true));
         auto ret = std::unique_ptr<
             connected_type,
             io_connected_operation_unique_ptr_deleter>(
             new (mem) connected_type(connect()));
         // Did you accidentally pass in a foreign buffer to use?
         // Can't do that, must use buffer returned.
-        MONAD_DEBUG_ASSERT(ret->sender().buffer().data() == nullptr);
+        MONAD_ASSERT(ret->sender().buffer().data() == nullptr);
         if constexpr (is_write) {
-            MONAD_DEBUG_ASSERT(rwbuf_.get_write_size() >= WRITE_BUFFER_SIZE);
+            MONAD_ASSERT(rwbuf_.get_write_size() >= WRITE_BUFFER_SIZE);
             auto buffer = std::move(ret->sender()).buffer();
             buffer.set_write_buffer(get_write_buffer());
             ret->sender().reset(ret->sender().offset(), std::move(buffer));
         }
         else {
-            MONAD_DEBUG_ASSERT(rwbuf_.get_read_size() >= READ_BUFFER_SIZE);
+            MONAD_ASSERT(rwbuf_.get_read_size() >= READ_BUFFER_SIZE);
         }
         return ret;
     }
@@ -555,7 +535,9 @@ public:
         return make_connected_impl_ < Sender::my_operation_type ==
                operation_type::write > ([&] {
                    return connect<Sender, Receiver>(
-                       *this, std::move(sender), std::move(receiver));
+                       *this,
+                       std::forward<Sender>(sender),
+                       std::forward<Receiver>(receiver));
                });
     }
 
@@ -603,7 +585,7 @@ public:
                     state);
             erased_connected_operation::rbtree_node_traits::set_key(
                 p, state->sender().offset().raw());
-            MONAD_DEBUG_ASSERT(p->key == state->sender().offset().raw());
+            MONAD_ASSERT(p->key == state->sender().offset().raw());
             extant_write_operations_::init(p);
             auto pred = [](auto const *a, auto const *b) {
                 auto get_key = [](auto const *a) {
@@ -668,7 +650,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 224);
+static_assert(sizeof(AsyncIO) == 280);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

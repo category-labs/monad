@@ -34,6 +34,7 @@ struct NodeCursorBase
     {
     }
 
+    // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr NodeCursorBase(
         std::shared_ptr<NodeType> node_, unsigned prefix_index_ = 0)
         : node{std::move(node_)}

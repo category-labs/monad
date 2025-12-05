@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 namespace monad::vm::runtime
 {
@@ -30,7 +30,7 @@ namespace monad::vm::runtime
         }
 
         Memory::Offset offset;
-        auto size = ctx->get_memory_offset(size_word);
+        auto const size = ctx->get_memory_offset(size_word);
 
         if (*size > 0) {
             offset = ctx->get_memory_offset(offset_word);

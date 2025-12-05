@@ -15,6 +15,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -22,6 +23,7 @@
 #include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/interpreter/intercode.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -51,19 +53,21 @@ bool dipped_into_reserve(
     uint256_t const gas_fees =
         uint256_t{tx.gas_limit} * gas_price(rev, tx, base_fee_per_gas);
     auto const &orig = state.original();
-    for (auto const &[addr, stack] : state.current()) {
+    for (auto const &[addr, cur_account] : state.current()) {
         MONAD_ASSERT(orig.contains(addr));
-        std::optional<Account> const &orig_account = orig.at(addr).account_;
-        bytes32_t const orig_code_hash = orig_account.has_value()
-                                             ? orig_account.value().code_hash
-                                             : NULL_HASH;
+        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
+        bytes32_t const effective_code_hash =
+            (monad_rev >= MONAD_EIGHT) ? cur_account.recent().get_code_hash()
+                                       : orig_code_hash;
+        bool effective_is_delegated = false;
 
         // Skip if not EOA
-        if (orig_code_hash != NULL_HASH) {
+        if (effective_code_hash != NULL_HASH) {
             vm::SharedIntercode const intercode =
-                state.read_code(orig_code_hash)->intercode();
-            if (!monad::vm::evm::is_delegated(
-                    {intercode->code(), intercode->size()})) {
+                state.read_code(effective_code_hash)->intercode();
+            effective_is_delegated = monad::vm::evm::is_delegated(
+                {intercode->code(), intercode->size()});
+            if (!effective_is_delegated) {
                 continue;
             }
         }
@@ -71,8 +75,8 @@ bool dipped_into_reserve(
         // Check if dipped into reserve
         std::optional<uint256_t> const violation_threshold =
             [&] -> std::optional<uint256_t> {
-            uint256_t const orig_balance =
-                orig_account.has_value() ? orig_account.value().balance : 0;
+            uint256_t const orig_balance = intx::be::load<uint256_t>(
+                state.get_original_balance_pessimistic(addr));
             uint256_t const reserve =
                 std::min(get_max_reserve(monad_rev, addr), orig_balance);
             if (addr == sender) {
@@ -83,15 +87,16 @@ bool dipped_into_reserve(
             }
             return reserve;
         }();
-        std::optional<Account> const &curr_account = stack.recent().account_;
-        uint256_t const curr_balance =
-            curr_account.has_value() ? curr_account.value().balance : 0;
+        uint256_t const curr_balance = intx::be::load<uint256_t>(
+            state.get_current_balance_pessimistic(addr));
         if (!violation_threshold.has_value() ||
             curr_balance < violation_threshold.value()) {
             if (addr == sender) {
                 if (!can_sender_dip_into_reserve(
-                        sender, i, orig_code_hash, ctx)) {
-                    MONAD_ASSERT(
+                        sender, i, effective_is_delegated, ctx)) {
+                    // Safety: this assertion is recoverable because it can be
+                    // triggered via RPC parameter setting.
+                    MONAD_ASSERT_THROW(
                         violation_threshold.has_value(),
                         "gas fee greater than reserve for non-dipping "
                         "transaction");
@@ -100,6 +105,10 @@ bool dipped_into_reserve(
                 // Skip if allowed to dip into reserve
             }
             else {
+                // Safety: this assertion should not be a recoverable one, as it
+                // indicates a logic error in the surrounding code: the
+                // violation threshold can only be nullopt when addr == sender,
+                // which is not the case in this branch.
                 MONAD_ASSERT(violation_threshold.has_value());
                 return true;
             }
@@ -131,10 +140,10 @@ bool revert_monad_transaction(
 }
 
 bool can_sender_dip_into_reserve(
-    Address const &sender, uint64_t const i, bytes32_t const &orig_code_hash,
+    Address const &sender, uint64_t const i, bool const sender_is_delegated,
     MonadChainContext const &ctx)
 {
-    if (orig_code_hash != NULL_HASH) { // check delegated
+    if (sender_is_delegated) { // delegated accounts cannot dip
         return false;
     }
 

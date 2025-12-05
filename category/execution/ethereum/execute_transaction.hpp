@@ -19,13 +19,14 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
-#include <vector>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -55,7 +56,7 @@ protected:
     Chain const &chain_;
     Transaction const &tx_;
     Address const &sender_;
-    std::vector<std::optional<Address>> const &authorities_;
+    std::span<std::optional<Address> const> const authorities_;
     BlockHeader const &header_;
     uint64_t i_;
     RevertTransactionFn revert_transaction_;
@@ -63,14 +64,10 @@ protected:
 public:
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
-        std::vector<std::optional<Address>> const &, BlockHeader const &,
+        std::span<std::optional<Address> const>, BlockHeader const &,
         uint64_t i,
         RevertTransactionFn const & = [](Address const &, Transaction const &,
                                          uint64_t, State &) { return false; });
-
-    ExecuteTransactionNoValidation(
-        Chain const &, Transaction const &, Address const &,
-        BlockHeader const &);
 
     evmc::Result operator()(State &, EvmcHost<traits> &);
 };
@@ -91,6 +88,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
     CallTracerBase &call_tracer_;
+    trace::StateTracer &state_tracer_;
 
     Result<evmc::Result> execute_impl2(State &);
     Receipt execute_final(State &, evmc::Result const &);
@@ -98,9 +96,10 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
 public:
     ExecuteTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
-        std::vector<std::optional<Address>> const &, BlockHeader const &,
+        std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
+        trace::StateTracer &,
         RevertTransactionFn const & = [](Address const &, Transaction const &,
                                          uint64_t, State &) { return false; });
     ~ExecuteTransaction() = default;

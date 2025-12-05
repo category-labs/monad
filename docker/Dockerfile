@@ -1,39 +1,14 @@
 # syntax=docker/dockerfile:1-labs
 
-FROM ubuntu:25.04 AS base
+FROM ubuntu:25.10 AS base
 
-RUN apt update && apt upgrade -y
-
-RUN apt update && apt install -y apt-utils
-
-RUN apt update && apt install -y dialog
-
-RUN apt update && apt install -y \
-  ca-certificates \
-  curl \
-  gnupg \
-  software-properties-common \
-  wget
+RUN apt-get update && apt-get upgrade -y
 
 COPY scripts/ubuntu-build/ /opt
-
-RUN apt update && apt install -y \
-  clang-19 \
-  gcc-15 \
-  g++-15
 
 RUN /opt/install-boost.sh
 RUN /opt/install-tools.sh
 RUN /opt/install-deps.sh
-
-RUN apt update && apt install -y \
-  libarchive-dev \
-  libbrotli-dev \
-  libcap-dev \
-  libcli11-dev \
-  libgmp-dev \
-  libtbb-dev \
-  libzstd-dev
 
 FROM base AS build_and_test
 
@@ -42,6 +17,9 @@ COPY . src
 ARG CC
 ARG CXX
 ARG CMAKE_BUILD_TYPE
+ARG GIT_COMMIT_HASH
+
+ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
 RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./scripts/configure.sh
 
@@ -76,13 +54,15 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -DMONAD_COMPILER_TESTING=On     \
   -DCMAKE_BUILD_TYPE=Debug        \
   -DCMAKE_C_COMPILER=clang-19     \
-  -DCMAKE_CXX_COMPILER=clang++-19
+  -DCMAKE_CXX_COMPILER=clang++-19 \
+  -DUTILS_CLANG_TIDY_AUTO_CONST=On
 
+RUN cd src && cmake --build build -t ConstCorrectnessChecks
 RUN cd src && ./scripts/check-clang-tidy.sh
 
 FROM base AS vm_fuzz
 
-RUN apt update && apt install -y tmux
+RUN apt-get update && apt-get install -y tmux
 
 COPY . src
 
@@ -96,3 +76,8 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
 
 RUN cd src && cmake --build build -t monad-compiler-fuzzer
 RUN cd src && ./scripts/vm/ci-fuzzer.sh
+
+FROM base AS runner
+COPY --from=build_and_test /src/build/category/mpt/monad_mpt /usr/local/bin/
+COPY --from=build_and_test /src/build/cmd/monad_cli /usr/local/bin/
+COPY --from=build_and_test /src/build/cmd/monad /usr/local/bin/

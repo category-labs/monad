@@ -25,6 +25,7 @@
 #include <evmc/evmc.hpp>
 
 #include <optional>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -44,15 +45,12 @@ struct Chain
 
     virtual Result<void> static_validate_header(BlockHeader const &) const;
 
-    virtual Result<void> validate_output_header(
-        BlockHeader const &input, BlockHeader const &output) const = 0;
-
     virtual GenesisState get_genesis_state() const = 0;
 
     virtual Result<void> validate_transaction(
         uint64_t block_number, uint64_t timestamp, Transaction const &,
         Address const &sender, State &, uint256_t const &base_fee_per_gas,
-        std::vector<std::optional<Address>> const &authorities) const = 0;
+        std::span<std::optional<Address> const> authorities) const = 0;
 };
 
 MONAD_NAMESPACE_END

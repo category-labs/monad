@@ -38,11 +38,13 @@
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/db_error.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/traverse.hpp>
+#include <category/mpt/traverse_util.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
@@ -101,6 +103,7 @@ namespace
         size_t buf_size_;
         std::unique_ptr<unsigned char[]> buf_;
         uint64_t block_id_;
+        Node::SharedPtr root_;
 
     public:
         BinaryDbLoader(
@@ -109,11 +112,12 @@ namespace
             , buf_size_{buf_size}
             , buf_{std::make_unique_for_overwrite<unsigned char[]>(buf_size)}
             , block_id_{block_id}
+            , root_{nullptr}
         {
             MONAD_ASSERT(buf_size >= CHUNK_SIZE);
         };
 
-        void load(std::istream &accounts, std::istream &code)
+        Node::SharedPtr load(std::istream &accounts, std::istream &code)
         {
             load(
                 accounts,
@@ -139,8 +143,12 @@ namespace
                         .version = static_cast<int64_t>(block_id_),
                     };
                     finalized_updates.push_front(finalized);
-                    db_.upsert(
-                        std::move(finalized_updates), block_id_, false, false);
+                    root_ = db_.upsert(
+                        std::move(root_),
+                        std::move(finalized_updates),
+                        block_id_,
+                        false,
+                        false);
                     db_.update_finalized_version(block_id_);
 
                     update_alloc_.clear();
@@ -170,12 +178,17 @@ namespace
                         .version = static_cast<int64_t>(block_id_),
                     };
                     finalized_updates.push_front(finalized);
-                    db_.upsert(
-                        std::move(finalized_updates), block_id_, false, false);
+                    root_ = db_.upsert(
+                        std::move(root_),
+                        std::move(finalized_updates),
+                        block_id_,
+                        false,
+                        false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
                 });
+            return root_;
         }
 
     private:
@@ -764,21 +777,17 @@ void write_to_file(
             std::chrono::steady_clock::now() - start_time));
 }
 
-void load_from_binary(
+Node::SharedPtr load_from_binary(
     mpt::Db &db, std::istream &accounts, std::istream &code,
     uint64_t const init_block_number, size_t const buf_size)
 {
-    if (db.root().is_valid()) {
-        throw std::runtime_error(
-            "Unable to load snapshot to an existing db, truncate the "
-            "existing db to empty and try again");
-    }
     BinaryDbLoader loader{
         db, buf_size, db.is_on_disk() ? init_block_number : 0};
-    loader.load(accounts, code);
+    return loader.load(accounts, code);
 }
 
-void load_header(mpt::Db &db, BlockHeader const &header)
+Node::SharedPtr
+load_header(Node::SharedPtr root, mpt::Db &db, BlockHeader const &header)
 {
     using namespace mpt;
 
@@ -801,8 +810,12 @@ void load_header(mpt::Db &db, BlockHeader const &header)
         .next = std::move(header_updates),
         .version = static_cast<int64_t>(n)};
     ls.push_front(u);
-    db.upsert(
-        std::move(ls), n, false /* compaction */, true /* write_to_fast */);
+    return db.upsert(
+        std::move(root),
+        std::move(ls),
+        n,
+        false /* compaction */,
+        true /* write_to_fast */);
 }
 
 mpt::Nibbles proposal_prefix(bytes32_t const &block_id)
@@ -885,19 +898,49 @@ get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
     return block_ids;
 }
 
-std::optional<BlockHeader> read_eth_header(
-    mpt::Db const &db, uint64_t const block, mpt::NibblesView prefix)
+template <typename DBType>
+    requires std::is_same_v<mpt::Db, DBType> ||
+             std::is_same_v<mpt::RODb, DBType>
+Result<std::vector<Transaction>> get_transactions(
+    DBType &db, uint64_t const block_number, bytes32_t const &block_id)
 {
-    auto const query_res =
-        db.get(mpt::concat(prefix, BLOCKHEADER_NIBBLE), block);
-    if (MONAD_UNLIKELY(!query_res.has_value())) {
-        return std::nullopt;
+    Nibbles const prefix =
+        block_id == bytes32_t{} ? finalized_nibbles : proposal_prefix(block_id);
+    BOOST_OUTCOME_TRY(
+        auto const cursor,
+        db.find(concat(NibblesView{prefix}, TRANSACTION_NIBBLE), block_number));
+    // traverse from cursor
+    std::vector<Transaction> txs;
+    txs.reserve(1000);
+    GetAllMachine machine{
+        [&txs](NibblesView const path, byte_string_view value) {
+            // nibble size is even and first nibble starts at index 0
+            MONAD_ASSERT(path.nibble_size() == path.data_size() * 2);
+            // convert nibbles to byte_string
+            byte_string_view raw{path.data(), path.data_size()};
+            auto const index_res = rlp::decode_unsigned<uint32_t>(raw);
+            MONAD_ASSERT(index_res.has_value());
+            uint32_t const idx = index_res.value();
+            auto tx_res = decode_transaction_db(value);
+            MONAD_ASSERT(tx_res.has_value());
+            auto &tx = tx_res.value().first;
+            if (idx >= txs.size()) {
+                txs.resize(idx + 1);
+            }
+            txs[idx] = std::move(tx);
+        }};
+    if (db.traverse(cursor, machine, block_number) == false) {
+        MONAD_ASSERT(db.find({}, block_number).has_error());
+        return DbError::version_no_longer_exist;
     }
-    byte_string_view view{query_res.value()};
-    auto const decoded = rlp::decode_block_header(view);
-    MONAD_ASSERT(decoded.has_value());
-    return decoded.value();
+    return txs;
 }
+
+template Result<std::vector<Transaction>>
+get_transactions<mpt::Db>(mpt::Db &, uint64_t, bytes32_t const &);
+
+template Result<std::vector<Transaction>>
+get_transactions<mpt::RODb>(mpt::RODb &, uint64_t, bytes32_t const &);
 
 bool for_each_code(
     mpt::Db &db, uint64_t const block,

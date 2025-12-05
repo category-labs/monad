@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -57,6 +57,7 @@ namespace monad::vm::compiler
         Shl = 0x1B,
         Shr = 0x1C,
         Sar = 0x1D,
+        Clz = 0x1E,
         Sha3 = 0x20,
         Address = 0x30,
         Balance = 0x31,
@@ -302,6 +303,8 @@ namespace monad::vm::compiler
             return "SHR";
         case Sar:
             return "SAR";
+        case Clz:
+            return "CLZ";
         case Sha3:
             return "KECCAK256";
         case Address:

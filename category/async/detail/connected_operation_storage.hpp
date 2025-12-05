@@ -46,7 +46,7 @@ namespace detail
 
         bool am_within_completions() const noexcept
         {
-            MONAD_DEBUG_ASSERT(within_completions_count >= 0);
+            MONAD_ASSERT(within_completions_count >= 0);
             return within_completions_count > 0;
         }
 
@@ -102,7 +102,7 @@ namespace detail
 
     inline AsyncIO *AsyncIO_thread_instance() noexcept
     {
-        auto &ts = AsyncIO_per_thread_state();
+        auto const &ts = AsyncIO_per_thread_state();
         return ts.instance;
     }
 
@@ -149,16 +149,15 @@ namespace detail
         Sender sender_;
         Receiver receiver_;
 
-        virtual initiation_result do_possibly_deferred_initiate_(
-            bool never_defer, bool is_retry) noexcept override
+        virtual initiation_result
+        do_possibly_deferred_initiate_(bool never_defer, bool is_retry) override
         {
             (void)
                 is_retry; // useful to know how this initiation is coming about
             // You must initiate operations on the same kernel thread as
             // the AsyncIO instance associated with this operation state
-            // (except for threadsafeop)
-            MONAD_DEBUG_ASSERT(
-                this->executor() == nullptr || this->is_threadsafeop() ||
+            MONAD_ASSERT(
+                this->executor() == nullptr ||
                 this->executor()->owning_thread_id() == get_tl_tid());
             this->being_executed_ = true;
             // Prevent compiler reordering write of being_executed_ after this
@@ -369,35 +368,21 @@ namespace detail
             return sender_operation_type<Sender> == operation_type::write;
         }
 
-        static constexpr bool is_timeout() noexcept
-        {
-            return sender_operation_type<Sender> == operation_type::timeout;
-        }
-
-        static constexpr bool is_threadsafeop() noexcept
-        {
-            return sender_operation_type<Sender> ==
-                   operation_type::threadsafeop;
-        }
-
         //! Initiates the operation, calling the Receiver with any failure,
         //! returning if deferred or if immediate failure occurred.
         //! If successful do NOT modify anything after
         //! this until after completion, it may cause a silent page
         //! copy-on-write.
-        initiation_result initiate() noexcept
+        initiation_result initiate()
         {
             // NOTE Keep this in sync with the one in
             // erased_connected_operation. This is here to aid devirtualisation.
             //
             // It is safe to not defer write op, because no write receivers do
             // recursion in current use cases thus no risk of stack exhaustion.
-            // The threadsafe op is special, it isn't for this AsyncIO
-            // instance and therefore never needs deferring
             return this->do_possibly_deferred_initiate_(
                 detail::sender_operation_type<sender_type> ==
-                        operation_type::write ||
-                    this->is_threadsafeop(),
+                    operation_type::write,
                 false);
         }
 

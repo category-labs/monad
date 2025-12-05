@@ -16,6 +16,7 @@
 #include "event.hpp"
 #include "runloop_ethereum.hpp"
 #include "runloop_monad.hpp"
+#include "runloop_monad_ethblocks.hpp"
 
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
@@ -42,11 +43,9 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
-#include <category/execution/monad/chain/monad_testnet2.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
-#include <category/statesync/statesync_server.h>
-#include <category/statesync/statesync_server_context.hpp>
 #include <category/statesync/statesync_server_network.hpp>
+#include <category/statesync/statesync_thread.hpp>
 #include <category/vm/vm.hpp>
 
 #include <CLI/CLI.hpp>
@@ -128,9 +127,11 @@ try {
     unsigned nfibers = 256;
     bool no_compaction = false;
     bool trace_calls = false;
+    bool as_eth_blocks = false;
+    std::chrono::seconds block_db_timeout = std::chrono::seconds::zero();
     std::string exec_event_ring_config;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
-    unsigned ro_sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 2);
+    std::optional<unsigned> ro_sq_thread_cpu;
     std::vector<fs::path> dbname_paths;
     fs::path snapshot;
     fs::path dump_snapshot;
@@ -141,8 +142,7 @@ try {
         {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
          {"monad_devnet", CHAIN_CONFIG_MONAD_DEVNET},
          {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET},
-         {"monad_mainnet", CHAIN_CONFIG_MONAD_MAINNET},
-         {"monad_testnet2", CHAIN_CONFIG_MONAD_TESTNET2}};
+         {"monad_mainnet", CHAIN_CONFIG_MONAD_MAINNET}};
 
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
@@ -163,7 +163,8 @@ try {
     cli.add_option(
         "--ro_sq_thread_cpu",
         ro_sq_thread_cpu,
-        "sq_thread_cpu for the read only db");
+        "sq_thread_cpu for the read only db (optional, disables SQPOLL if not "
+        "specified)");
     cli.add_option(
         "--db",
         dbname_paths,
@@ -175,6 +176,13 @@ try {
         dump_snapshot,
         "directory to dump state to at the end of run");
     cli.add_flag("--trace_calls", trace_calls, "enable call tracing");
+    auto *const as_eth_blocks_flag = cli.add_flag(
+        "--as_eth_blocks", as_eth_blocks, "ingest monad blocks in evm format");
+    cli.add_option(
+           "--block_db_timeout",
+           block_db_timeout,
+           "timeout in seconds for reading blocks from blockdb (0 = no retry)")
+        ->needs(as_eth_blocks_flag);
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group
@@ -299,8 +307,6 @@ try {
             return std::make_unique<MonadTestnet>();
         case CHAIN_CONFIG_MONAD_MAINNET:
             return std::make_unique<MonadMainnet>();
-        case CHAIN_CONFIG_MONAD_TESTNET2:
-            return std::make_unique<MonadTestnet2>();
         }
         MONAD_ASSERT(false);
     }();
@@ -309,7 +315,7 @@ try {
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
-            if (db.root().is_valid()) {
+            if (triedb.get_root() != nullptr) {
                 throw std::runtime_error(
                     "can not load checkpoint into non-empty database");
             }
@@ -317,17 +323,16 @@ try {
             std::ifstream accounts(snapshot / "accounts");
             std::ifstream code(snapshot / "code");
             auto const n = std::stoul(snapshot.stem());
-            load_from_binary(db, accounts, code, n);
-
+            auto root = load_from_binary(db, accounts, code, n);
             // load the eth header for snapshot
             BlockDb block_db{block_db_path};
             Block block;
             MONAD_ASSERT_PRINTF(
                 block_db.get(n, block), "FATAL: Could not load block %lu", n);
-            load_header(db, block.header);
-            return n;
+            root = load_header(std::move(root), db, block.header);
+            triedb.reset_root(std::move(root), n);
         }
-        else if (!db.root().is_valid()) {
+        else if (triedb.get_root() == nullptr) {
             MONAD_ASSERT(statesync.empty());
             LOG_INFO("loading from genesis");
             GenesisState const genesis_state = chain->get_genesis_state();
@@ -336,29 +341,13 @@ try {
         return triedb.get_block_number();
     }();
 
-    std::unique_ptr<monad_statesync_server_context> ctx;
-    std::jthread sync_thread;
-    monad_statesync_server *sync = nullptr;
+    std::unique_ptr<monad::StateSyncServer> sync_server;
     if (!statesync.empty()) {
-        ctx = std::make_unique<monad_statesync_server_context>(triedb);
-        sync = monad_statesync_server_create(
-            ctx.get(),
-            &net.value(),
-            &statesync_server_recv,
-            &statesync_server_send_upsert,
-            &statesync_server_send_done);
-        sync_thread = std::jthread([&](std::stop_token const token) {
-            pthread_setname_np(pthread_self(), "statesync thread");
-            mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
-                .sq_thread_cpu = ro_sq_thread_cpu,
-                .dbname_paths = dbname_paths}};
-            mpt::Db ro{io_ctx};
-            ctx->ro = &ro;
-            while (!token.stop_requested()) {
-                monad_statesync_server_run_once(sync);
-            }
-            ctx->ro = nullptr;
-        });
+        sync_server = monad::make_statesync_server(monad::StateSyncServerConfig{
+            .triedb = &triedb,
+            .network = &net.value(),
+            .ro_sq_thread_cpu = ro_sq_thread_cpu,
+            .dbname_paths = dbname_paths});
     }
 
     LOG_INFO(
@@ -420,7 +409,8 @@ try {
     // codes that are required to serve RPC responses that include call traces.
     vm::VM vm{!trace_calls};
 
-    DbCache db_cache = ctx ? DbCache{*ctx} : DbCache{triedb};
+    DbCache db_cache =
+        sync_server ? DbCache{*sync_server->ctx} : DbCache{triedb};
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -438,19 +428,34 @@ try {
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
         case CHAIN_CONFIG_MONAD_MAINNET:
-        case CHAIN_CONFIG_MONAD_TESTNET2:
-            return runloop_monad(
-                dynamic_cast<MonadChain const &>(*chain),
-                block_db_path,
-                db,
-                db_cache,
-                vm,
-                block_hash_buffer,
-                priority_pool,
-                block_num,
-                end_block_num,
-                stop,
-                trace_calls);
+            if (as_eth_blocks) {
+                return runloop_monad_ethblocks(
+                    dynamic_cast<MonadChain const &>(*chain),
+                    block_db_path,
+                    db_cache,
+                    vm,
+                    block_hash_buffer,
+                    priority_pool,
+                    block_num,
+                    end_block_num,
+                    stop,
+                    trace_calls,
+                    block_db_timeout);
+            }
+            else {
+                return runloop_monad(
+                    dynamic_cast<MonadChain const &>(*chain),
+                    block_db_path,
+                    db,
+                    db_cache,
+                    vm,
+                    block_hash_buffer,
+                    priority_pool,
+                    block_num,
+                    end_block_num,
+                    stop,
+                    trace_calls);
+            }
         }
         MONAD_ABORT_PRINTF("Unsupported chain");
     }();
@@ -484,11 +489,7 @@ try {
             vm.print_total_counts());
     }
 
-    if (sync != nullptr) {
-        sync_thread.request_stop();
-        sync_thread.join();
-        monad_statesync_server_destroy(sync);
-    }
+    sync_server.reset();
 
     if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", block_num);

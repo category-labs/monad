@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>

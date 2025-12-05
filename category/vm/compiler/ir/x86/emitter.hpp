@@ -306,6 +306,7 @@ namespace monad::vm::compiler::native
         void shl();
         void shr();
         void sar();
+        void clz();
 
         void and_();
         void or_();
@@ -340,78 +341,24 @@ namespace monad::vm::compiler::native
         void mstore();
         void mstore8();
 
-        // Revision dependent instructions
-        void mul(int64_t remaining_base_gas)
-        {
-            if (mul_optimized()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, false, runtime::mul);
-        }
-
-        template <Traits traits>
-        void udiv(int64_t remaining_base_gas)
-        {
-            if (div_optimized<false>()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::udiv);
-        }
-
-        template <Traits traits>
-        void sdiv(int64_t remaining_base_gas)
-        {
-            if (div_optimized<true>()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::sdiv);
-        }
-
-        template <Traits traits>
-        void umod(int64_t remaining_base_gas)
-        {
-            if (mod_optimized<false>()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::umod);
-        }
-
-        template <Traits traits>
-        void smod(int64_t remaining_base_gas)
-        {
-            if (mod_optimized<true>()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::smod);
-        }
-
+        void mul(int64_t remaining_base_gas);
+        void udiv(int64_t remaining_base_gas);
+        void sdiv(int64_t remaining_base_gas);
+        void umod(int64_t remaining_base_gas);
+        void smod(int64_t remaining_base_gas);
         bool addmod_opt();
-
-        template <Traits traits>
-        void addmod(int64_t remaining_base_gas)
-        {
-            if (addmod_opt()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::addmod);
-        }
-
+        void addmod(int64_t remaining_base_gas);
         bool mulmod_opt();
+        void mulmod(int64_t remaining_base_gas);
 
-        template <Traits traits>
-        void mulmod(int64_t remaining_base_gas)
-        {
-            if (mulmod_opt()) {
-                return;
-            }
-            call_runtime(remaining_base_gas, true, runtime::mulmod);
-        }
-
+        template <typename T, size_t N>
+        void array_leading_zeros(std::array<T, N> const &);
         template <typename T, size_t N>
         void array_byte_width(std::array<T, N> const &);
 
         bool exp_optimized(int64_t, uint32_t);
 
+        // Revision dependent instructions
         template <Traits traits>
         void exp(int64_t remaining_base_gas)
         {
@@ -914,9 +861,11 @@ namespace monad::vm::compiler::native
         void jumpi_keep_fallthrough_stack();
 
         void read_context_address(int32_t offset);
+        void read_evmc_tx_context_address(int32_t offset);
         void read_context_word(int32_t offset);
+        void read_evmc_tx_context_word(int32_t offset);
         void read_context_uint32_to_word(int32_t offset);
-        void read_context_uint64_to_word(int32_t offset);
+        void read_evmc_tx_context_uint64_to_word(int32_t offset);
 
         void lt(StackElemRef dst, StackElemRef src);
         void slt(StackElemRef dst, StackElemRef src);
@@ -1090,7 +1039,7 @@ namespace monad::vm::compiler::native
         asmjit::x86::Assembler as_;
         asmjit::Label epilogue_label_;
         asmjit::Label error_label_;
-        asmjit::Label jump_table_label_;
+        std::optional<asmjit::Label> jump_table_label_;
         Stack stack_;
         bool keep_stack_in_next_block_;
         std::array<Gpq256, 3> gpq256_regs_;

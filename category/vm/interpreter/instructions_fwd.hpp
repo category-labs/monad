@@ -151,6 +151,11 @@ namespace monad::vm::interpreter
     sar(runtime::Context &, Intercode const &, runtime::uint256_t const *,
         runtime::uint256_t *, std::int64_t, std::uint8_t const *);
 
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void
+    clz(runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+
     // Data
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void sha3(

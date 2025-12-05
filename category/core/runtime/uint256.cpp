@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/core/assert.h>
-#include <category/vm/runtime/uint256.hpp>
+#include <category/core/assert.h>
+#include <category/core/runtime/uint256.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -85,7 +85,7 @@ namespace monad::vm::runtime
     uint256_t
     from_bytes(std::size_t n, std::size_t remaining, uint8_t const *src)
     {
-        MONAD_VM_ASSERT(n <= 32);
+        MONAD_ASSERT(n <= 32);
 
         if (n == 0) {
             return 0;

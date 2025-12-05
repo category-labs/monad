@@ -59,22 +59,22 @@ namespace
             emit.sub();
             break;
         case Div:
-            emit.udiv<traits>(remaining_base_gas);
+            emit.udiv(remaining_base_gas);
             break;
         case SDiv:
-            emit.sdiv<traits>(remaining_base_gas);
+            emit.sdiv(remaining_base_gas);
             break;
         case Mod:
-            emit.umod<traits>(remaining_base_gas);
+            emit.umod(remaining_base_gas);
             break;
         case SMod:
-            emit.smod<traits>(remaining_base_gas);
+            emit.smod(remaining_base_gas);
             break;
         case AddMod:
-            emit.addmod<traits>(remaining_base_gas);
+            emit.addmod(remaining_base_gas);
             break;
         case MulMod:
-            emit.mulmod<traits>(remaining_base_gas);
+            emit.mulmod(remaining_base_gas);
             break;
         case Exp:
             emit.exp<traits>(remaining_base_gas);
@@ -123,6 +123,9 @@ namespace
             break;
         case Sar:
             emit.sar();
+            break;
+        case Clz:
+            emit.clz();
             break;
         case Sha3:
             emit.sha3<traits>(remaining_base_gas);
@@ -388,7 +391,7 @@ namespace
         asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
         code_size_t contract_code_size, CompilerConfig const &config)
     {
-        auto ir =
+        auto const ir =
             basic_blocks::make_ir<traits>(contract_code, contract_code_size);
         return compile_basic_blocks<traits>(rt, ir, config);
     }

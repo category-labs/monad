@@ -39,7 +39,7 @@
 
 #include <intx/intx.hpp>
 
-#include <ankerl/unordered_dense.h>
+#include <immer/vector.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -83,6 +83,9 @@ AccountState &State::current_account_state(Address const &address)
         auto const &account_state = original_account_state(address);
         it = current_.try_emplace(address, account_state, version_).first;
     }
+    if (!dirty_.empty()) {
+        dirty_.back().emplace(address);
+    }
     return it->second.current(version_);
 }
 
@@ -105,11 +108,6 @@ State::Map<Address, OriginalAccountState> const &State::original() const
     return original_;
 }
 
-State::Map<Address, OriginalAccountState> &State::original()
-{
-    return original_;
-}
-
 State::Map<Address, VersionStack<AccountState>> const &State::current() const
 {
     return current_;
@@ -122,15 +120,26 @@ State::Map<bytes32_t, vm::SharedVarcode> const &State::code() const
 
 void State::push()
 {
+    MONAD_ASSERT(dirty_.size() == version_);
+
     ++version_;
+    dirty_.emplace_back();
 }
 
 void State::pop_accept()
 {
     MONAD_ASSERT(version_);
+    MONAD_ASSERT(dirty_.size() == version_);
 
-    for (auto &it : current_) {
-        it.second.pop_accept(version_);
+    auto accounts = std::move(dirty_.back());
+    dirty_.pop_back();
+    for (auto const &dirty_address : accounts) {
+        auto const it = current_.find(dirty_address);
+        MONAD_ASSERT(it != current_.end());
+        it->second.pop_accept(version_);
+        if (!dirty_.empty()) {
+            dirty_.back().emplace(dirty_address);
+        }
     }
 
     logs_.pop_accept(version_);
@@ -141,12 +150,16 @@ void State::pop_accept()
 void State::pop_reject()
 {
     MONAD_ASSERT(version_);
+    MONAD_ASSERT(dirty_.size() == version_);
 
     std::vector<Address> removals;
-
-    for (auto &it : current_) {
-        if (it.second.pop_reject(version_)) {
-            removals.push_back(it.first);
+    auto accounts = std::move(dirty_.back());
+    dirty_.pop_back();
+    for (auto const &dirty_address : accounts) {
+        auto const it = current_.find(dirty_address);
+        MONAD_ASSERT(it != current_.end());
+        if (it->second.pop_reject(version_)) {
+            removals.push_back(it->first);
         }
     }
 
@@ -199,7 +212,7 @@ uint64_t State::get_nonce(Address const &address)
     return 0;
 }
 
-bytes32_t State::get_balance(Address const &address)
+bytes32_t State::get_current_balance_pessimistic(Address const &address)
 {
     auto const &account = recent_account(address);
     original_account_state(address).set_validate_exact_balance();
@@ -207,6 +220,11 @@ bytes32_t State::get_balance(Address const &address)
         return intx::be::store<bytes32_t>(account.value().balance);
     }
     return {};
+}
+
+bytes32_t State::get_original_balance_pessimistic(Address const &address)
+{
+    return original_account_state(address).get_balance_pessimistic();
 }
 
 bytes32_t State::get_code_hash(Address const &address)
@@ -228,21 +246,23 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
         auto &storage = account_state.storage_;
-        auto it3 = storage.find(key);
-        if (it3 == storage.end()) {
+        if (auto const *const it3 = storage.find(key); it3) {
+            return *it3;
+        }
+        else {
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
-            it3 = storage.try_emplace(key, value).first;
+            storage = storage.insert({key, value});
+            return value;
         }
-        return it3->second;
     }
     else {
         auto const &account_state = it->second.recent();
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
         auto const &storage = account_state.storage_;
-        if (auto const it2 = storage.find(key); it2 != storage.end()) {
-            return it2->second;
+        if (auto const *const it2 = storage.find(key); it2) {
+            return *it2;
         }
         auto const it2 = original_.find(address);
         MONAD_ASSERT(it2 != original_.end());
@@ -254,13 +274,15 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
             return {};
         }
         auto &original_storage = original_account_state.storage_;
-        auto it3 = original_storage.find(key);
-        if (it3 == original_storage.end()) {
+        if (auto const *const it3 = original_storage.find(key); it3) {
+            return *it3;
+        }
+        else {
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
-            it3 = original_storage.try_emplace(key, value).first;
+            original_storage = original_storage.insert({key, value});
+            return value;
         }
-        return it3->second;
     }
 }
 
@@ -311,7 +333,7 @@ void State::subtract_from_balance(
         account = Account{.incarnation = incarnation_};
     }
 
-    MONAD_ASSERT(delta <= account.value().balance);
+    MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
 
     account.value().balance -= delta;
     account_state.touch();
@@ -334,14 +356,16 @@ evmc_storage_status State::set_storage(
     {
         auto &orig_account_state = original_account_state(address);
         auto &storage = orig_account_state.storage_;
-        auto it = storage.find(key);
-        if (it == storage.end()) {
+        if (auto const *const it = storage.find(key); it) {
+            original_value = *it;
+        }
+        else {
             Incarnation const incarnation = account_state.account_->incarnation;
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
-            it = storage.try_emplace(key, value).first;
+            storage = storage.insert({key, value});
+            original_value = value;
         }
-        original_value = it->second;
     }
     // state
     {
@@ -569,7 +593,7 @@ void State::create_account_no_rollback(Address const &address)
         }};
 }
 
-std::vector<Receipt::Log> const &State::logs()
+immer::vector<Receipt::Log> const &State::logs()
 {
     return logs_.recent();
 }
@@ -577,7 +601,7 @@ std::vector<Receipt::Log> const &State::logs()
 void State::store_log(Receipt::Log const &log)
 {
     auto &logs = logs_.current(version_);
-    logs.push_back(log);
+    logs = logs.push_back(log);
 }
 
 void State::set_to_state_incarnation(Address const &address)
@@ -593,9 +617,11 @@ void State::set_to_state_incarnation(Address const &address)
 // if original and current can be adjusted to satisfy min balance, adjust
 // both values for merge
 bool State::try_fix_account_mismatch(
-    Address const &address, OriginalAccountState &original_state,
-    std::optional<Account> const &actual)
+    Address const &address, std::optional<Account> const &actual)
 {
+    auto const original_it = original_.find(address);
+    MONAD_ASSERT(original_it != original_.end());
+    OriginalAccountState &original_state = original_it->second;
     auto &original = original_state.account_;
     // verify original used and original found are otherwise the same
     if (is_dead(original)) {
@@ -626,10 +652,10 @@ bool State::try_fix_account_mismatch(
         return false;
     }
     // adjust balances
-    auto it = current_.find(address);
-    if (it != current_.end()) {
-        MONAD_ASSERT(it->second.size() == 1);
-        auto &recent_state = it->second.recent();
+    auto const current_it = current_.find(address);
+    if (current_it != current_.end()) {
+        MONAD_ASSERT(current_it->second.size() == 1);
+        auto &recent_state = current_it->second.recent();
         auto &recent = recent_state.account_;
         if (!recent) {
             return false;
@@ -644,7 +670,44 @@ bool State::try_fix_account_mismatch(
         }
     }
     original->balance = actual->balance;
+
+    // not necessary as can_merge() wont be called
+    // anymore, but just being defensive, and this makes
+    // it easier to write the class invariant
+    original_state.set_validate_exact_balance();
     return true;
+}
+
+bool State::record_balance_constraint_for_debit(
+    Address const &address, uint256_t const &debit)
+{
+    auto const &account = recent_account(address);
+    uint256_t const balance = account.has_value() ? account->balance : 0;
+
+    auto &original_state = original_account_state(address);
+    // RELAXED MERGE
+    // if current balance  >= `debit`, then:
+    // 1. compute the amount that current balance exceeds `debit`
+    // 2. require that the original balance at merge time is at least the
+    // original balance used during this execution less said excess
+    if (balance >= debit) {
+        uint256_t const diff = balance - debit;
+        auto const &original = original_state.account_;
+        uint256_t const original_balance =
+            original.has_value() ? original->balance : 0;
+        if (original_balance > diff) { // avoid underflow when <= diff
+            uint256_t const min_balance =
+                original_balance -
+                diff; // original balance - current balance + debit
+            original_state.set_min_balance(min_balance);
+        }
+        return true;
+    }
+
+    // otherwise require that original balance at merge time matches
+    // original balance used during this execution exactly
+    original_state.set_validate_exact_balance();
+    return false;
 }
 
 MONAD_NAMESPACE_END

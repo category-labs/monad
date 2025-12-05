@@ -15,11 +15,11 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -34,14 +34,14 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         if constexpr (traits::eip_2929_active()) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_account_cost());
             }
         }
 
-        auto balance = ctx->host->get_balance(ctx->context, &address);
+        auto const balance = ctx->host->get_balance(ctx->context, &address);
         *result_ptr = uint256_from_bytes32(balance);
     }
 
@@ -69,16 +69,16 @@ namespace monad::vm::runtime
         uint256_t const &offset_word, uint256_t const &size_word,
         std::uint8_t const *source, std::uint32_t len)
     {
-        auto size = ctx->get_memory_offset(size_word);
+        auto const size = ctx->get_memory_offset(size_word);
         if (*size == 0) {
             return;
         }
 
-        auto dest_offset = ctx->get_memory_offset(dest_offset_word);
+        auto const dest_offset = ctx->get_memory_offset(dest_offset_word);
 
         ctx->expand_memory(dest_offset + size);
 
-        auto size_in_words = shr_ceil<5>(size);
+        auto const size_in_words = shr_ceil<5>(size);
         ctx->deduct_gas(size_in_words * bin<3>);
 
         std::uint32_t const start =
@@ -86,7 +86,7 @@ namespace monad::vm::runtime
                 ? std::min(static_cast<std::uint32_t>(offset_word), len)
                 : len;
 
-        auto copy_size = std::min(*size, len - start);
+        auto const copy_size = std::min(*size, len - start);
         auto *dest_ptr = ctx->memory.data + *dest_offset;
         std::copy_n(source + start, copy_size, dest_ptr);
         std::fill_n(dest_ptr + copy_size, *size - copy_size, 0);
@@ -124,7 +124,7 @@ namespace monad::vm::runtime
         uint256_t const *dest_offset_ptr, uint256_t const *offset_ptr,
         uint256_t const *size_ptr)
     {
-        auto size = ctx->get_memory_offset(*size_ptr);
+        auto const size = ctx->get_memory_offset(*size_ptr);
         Memory::Offset dest_offset;
 
         if (*size > 0) {
@@ -132,14 +132,14 @@ namespace monad::vm::runtime
 
             ctx->expand_memory(dest_offset + size);
 
-            auto size_in_words = shr_ceil<5>(size);
+            auto const size_in_words = shr_ceil<5>(size);
             ctx->deduct_gas(size_in_words * bin<3>);
         }
 
         auto address = address_from_uint256(*address_ptr);
 
         if constexpr (traits::eip_2929_active()) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_account_cost());
@@ -147,10 +147,10 @@ namespace monad::vm::runtime
         }
 
         if (*size > 0) {
-            auto offset = clamp_cast<std::uint32_t>(*offset_ptr);
+            auto const offset = clamp_cast<std::uint32_t>(*offset_ptr);
 
             auto *dest_ptr = ctx->memory.data + *dest_offset;
-            auto n = ctx->host->copy_code(
+            auto const n = ctx->host->copy_code(
                 ctx->context, &address, offset, dest_ptr, *size);
 
             auto *begin = dest_ptr + static_cast<std::uint32_t>(n);
@@ -164,8 +164,8 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const *dest_offset_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr)
     {
-        auto size = ctx->get_memory_offset(*size_ptr);
-        auto offset = clamp_cast<std::uint32_t>(*offset_ptr);
+        auto const size = ctx->get_memory_offset(*size_ptr);
+        auto const offset = clamp_cast<std::uint32_t>(*offset_ptr);
 
         std::uint32_t end;
         if (MONAD_VM_UNLIKELY(
@@ -175,11 +175,11 @@ namespace monad::vm::runtime
         }
 
         if (*size > 0) {
-            auto dest_offset = ctx->get_memory_offset(*dest_offset_ptr);
+            auto const dest_offset = ctx->get_memory_offset(*dest_offset_ptr);
 
             ctx->expand_memory(dest_offset + size);
 
-            auto size_in_words = shr_ceil<5>(size);
+            auto const size_in_words = shr_ceil<5>(size);
             ctx->deduct_gas(size_in_words * bin<3>);
 
             std::copy_n(
@@ -196,14 +196,14 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         if constexpr (traits::eip_2929_active()) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_account_cost());
             }
         }
 
-        auto hash = ctx->host->get_code_hash(ctx->context, &address);
+        auto const hash = ctx->host->get_code_hash(ctx->context, &address);
         *result_ptr = uint256_from_bytes32(hash);
     }
 
@@ -214,7 +214,7 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         if constexpr (traits::eip_2929_active()) {
-            auto access_status =
+            auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_account_cost());

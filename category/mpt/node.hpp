@@ -50,6 +50,7 @@ struct node_disk_pages_spare_15
         spare_type_15 spare;
         uint16_t value;
 
+        // NOLINTNEXTLINE(google-explicit-constructor)
         constexpr spare_dual(uint16_t v)
             : value(v)
         {
@@ -158,7 +159,7 @@ public:
         max_disk_size + max_number_of_children * KECCAK256_SIZE;
 
     template <node_type DestNodeType, node_type SrcNodeType>
-    friend DestNodeType::UniquePtr copy_node(SrcNodeType const *const from);
+    friend DestNodeType::SharedPtr copy_node(SrcNodeType const *const from);
 
     /* 16-bit mask for children */
     uint16_t mask{0};
@@ -170,7 +171,7 @@ public:
         bool path_nibble_index_start : 1 {false};
         /* size (in byte) of intermediate cache for branch hash */
         uint8_t data_len : 6 {0};
-    } bitpacked{0};
+    } bitpacked{false};
 
     static_assert(sizeof(bitpacked) == 1);
 
@@ -302,7 +303,7 @@ public:
     using UniquePtr = std::unique_ptr<Node, Deleter>;
     using SharedPtr = std::shared_ptr<Node>;
 
-    Node(prevent_public_construction_tag);
+    explicit Node(prevent_public_construction_tag);
 
     Node(
         prevent_public_construction_tag tag, uint16_t mask,
@@ -323,6 +324,16 @@ public:
         return allocators::allocate_aliasing_unique<
             &allocators::aliasing_allocator_pair<Node>>(
             bytes,
+            prevent_public_construction_tag{},
+            std::forward<Args>(args)...);
+    }
+
+    template <class... Args>
+    static SharedPtr make_shared(size_t bytes, Args &&...args)
+    {
+        allocators::variable_size_allocator<Node> const alloc(bytes);
+        return std::allocate_shared<Node>(
+            alloc,
             prevent_public_construction_tag{},
             std::forward<Args>(args)...);
     }
@@ -351,8 +362,9 @@ public:
     using Deleter = allocators::unique_ptr_aliasing_allocator_deleter<
         &allocators::aliasing_allocator_pair<CacheNode>>;
     using UniquePtr = std::unique_ptr<CacheNode, Deleter>;
+    using SharedPtr = std::shared_ptr<CacheNode>;
 
-    CacheNode(prevent_public_construction_tag)
+    explicit CacheNode(prevent_public_construction_tag)
         : NodeBase()
     {
     }
@@ -364,6 +376,16 @@ public:
         return allocators::allocate_aliasing_unique<
             &allocators::aliasing_allocator_pair<CacheNode>>(
             bytes,
+            prevent_public_construction_tag{},
+            std::forward<Args>(args)...);
+    }
+
+    template <class... Args>
+    static SharedPtr make_shared(size_t bytes, Args &&...args)
+    {
+        allocators::variable_size_allocator<CacheNode> alloc(bytes);
+        return std::allocate_shared<CacheNode>(
+            alloc,
             prevent_public_construction_tag{},
             std::forward<Args>(args)...);
     }
@@ -398,7 +420,7 @@ struct ChildData
 
     bool is_valid() const;
     void erase();
-    void finalize(Node::UniquePtr, Compute &, bool cache);
+    void finalize(Node::SharedPtr, Compute &, bool cache);
     void copy_old_child(Node *old, unsigned i);
 };
 
@@ -431,21 +453,21 @@ constexpr size_t MAX_VALUE_LEN_OF_LEAF =
         0 /* number_of_children */, 0 /* child_data_size */, 0 /* value_size */,
         KECCAK256_SIZE /* path_size */, KECCAK256_SIZE /* data_size*/);
 
-Node::UniquePtr make_node(
+Node::SharedPtr make_node(
     Node &from, NibblesView path, std::optional<byte_string_view> value,
     int64_t version);
 
-Node::UniquePtr make_node(
+Node::SharedPtr make_node(
     uint16_t mask, std::span<ChildData>, NibblesView path,
     std::optional<byte_string_view> value, size_t data_size, int64_t version);
 
-Node::UniquePtr make_node(
+Node::SharedPtr make_node(
     uint16_t mask, std::span<ChildData>, NibblesView path,
     std::optional<byte_string_view> value, byte_string_view data,
     int64_t version);
 
 // create node: either branch/extension, with or without leaf
-Node::UniquePtr create_node_with_children(
+Node::SharedPtr create_node_with_children(
     Compute &, uint16_t mask, std::span<ChildData> children, NibblesView path,
     std::optional<byte_string_view> value, int64_t version);
 
@@ -454,7 +476,7 @@ void serialize_node_to_buffer(
     uint32_t disk_size, unsigned offset = 0);
 
 template <node_type NodeType>
-inline NodeType::UniquePtr
+inline NodeType::SharedPtr
 deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
 {
     for (size_t n = 0; n < max_bytes; n += 64) {
@@ -473,7 +495,7 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     if constexpr (std::same_as<NodeType, Node>) {
         auto const alloc_size = round_up_align<3>(base_size) +
                                 number_of_children * sizeof(Node::SharedPtr);
-        auto node = NodeType::make(alloc_size);
+        auto node = NodeType::make_shared(alloc_size);
         std::copy_n(read_pos, base_size, (unsigned char *)node.get());
         for (unsigned i = 0; i < node->number_of_children(); ++i) {
             new (node->child_ptr(i)) Node::SharedPtr();
@@ -484,7 +506,7 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
     else {
         auto const alloc_size = round_up_align<3>(base_size) +
                                 number_of_children * sizeof(NodeType *);
-        auto node = NodeType::make(alloc_size);
+        auto node = NodeType::make_shared(alloc_size);
         std::copy_n(read_pos, base_size, (unsigned char *)node.get());
         std::memset(
             node->next_data_aligned(),
@@ -496,7 +518,7 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
 }
 
 template <node_type DestNodeType, node_type SrcNodeType>
-DestNodeType::UniquePtr copy_node(SrcNodeType const *const from)
+DestNodeType::SharedPtr copy_node(SrcNodeType const *const from)
 {
     auto const number_of_children = from->number_of_children();
     auto const base_size = static_cast<unsigned>(
@@ -505,7 +527,7 @@ DestNodeType::UniquePtr copy_node(SrcNodeType const *const from)
     if constexpr (std::same_as<DestNodeType, Node>) {
         auto const alloc_size = round_up_align<3>(base_size) +
                                 number_of_children * sizeof(Node::SharedPtr);
-        auto node_copy = DestNodeType::make(alloc_size);
+        auto node_copy = DestNodeType::make_shared(alloc_size);
         std::copy_n(
             (unsigned char *)from, base_size, (unsigned char *)node_copy.get());
         for (unsigned i = 0; i < number_of_children; ++i) {
@@ -516,7 +538,7 @@ DestNodeType::UniquePtr copy_node(SrcNodeType const *const from)
     else {
         auto const next_ptrs_size = number_of_children * sizeof(void *);
         auto const alloc_size = round_up_align<3>(base_size) + next_ptrs_size;
-        auto node_copy = DestNodeType::make(alloc_size);
+        auto node_copy = DestNodeType::make_shared(alloc_size);
         std::copy_n(
             (unsigned char *)from, base_size, (unsigned char *)node_copy.get());
         // reset all in memory children
@@ -545,6 +567,7 @@ public:
         using pointer = void;
         using reference = value_type;
 
+        // NOLINTNEXTLINE(google-explicit-constructor)
         iterator(uint16_t mask)
             : index_(0)
             , mask_(mask)

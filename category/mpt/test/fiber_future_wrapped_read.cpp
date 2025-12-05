@@ -40,13 +40,13 @@
 
 using namespace MONAD_ASYNC_NAMESPACE;
 
-struct FiberFutureWrappedFind
-    : public monad::test::AsyncTestFixture<::testing::Test>
+namespace
 {
-};
+    struct FiberFutureWrappedFind
+        : public monad::test::AsyncTestFixture<::testing::Test>
+    {
+    };
 
-TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
-{
     struct receiver_t
     {
         FiberFutureWrappedFind::shared_state_t *const fixture_shared_state;
@@ -55,10 +55,8 @@ TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
             promise;
         chunk_offset_t offset;
 
-        enum : bool
-        {
-            lifetime_managed_internally = false // we manage state lifetime
-        };
+        static constexpr bool lifetime_managed_internally =
+            false; // we manage state lifetime
 
         bool done{false};
 
@@ -89,7 +87,10 @@ TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
             done = true;
         }
     };
+}
 
+TEST_F(FiberFutureWrappedFind, single_thread_fibers_read)
+{
     // impl_sender: request read thru an io sender
     auto impl_sender = [&]() -> result<std::vector<std::byte>> {
         // This initiates the i/o reading DISK_PAGE_SIZE bytes from a

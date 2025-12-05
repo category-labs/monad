@@ -15,11 +15,11 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -63,7 +63,7 @@ namespace monad::vm::runtime
         std::uint32_t code_size;
         std::size_t return_data_size;
 
-        evmc_tx_context tx_context;
+        evmc_tx_context const *tx_context;
 
         ~Environment()
         {
@@ -210,7 +210,7 @@ namespace monad::vm::runtime
         static constexpr int64_t
         memory_cost_from_word_count(Bin<32> const word_count) noexcept
         {
-            auto c = static_cast<uint64_t>(*word_count);
+            auto const c = static_cast<uint64_t>(*word_count);
             return static_cast<int64_t>((c * c) / 512 + (3 * c));
         }
 
@@ -219,7 +219,7 @@ namespace monad::vm::runtime
         void expand_memory(Bin<30> min_size)
         {
             if (memory.size < *min_size) {
-                auto wsize = shr_ceil<5>(min_size);
+                auto const wsize = shr_ceil<5>(min_size);
                 std::int64_t const new_cost =
                     memory_cost_from_word_count(wsize);
                 Bin<31> const new_size = shl<5>(wsize);
@@ -267,7 +267,7 @@ namespace monad::vm::runtime
 
     // Update context.S accordingly if these offsets change:
     static_assert(offsetof(Context, gas_remaining) == 16);
-    static_assert(offsetof(Context, memory) == 512);
+    static_assert(offsetof(Context, memory) == 264);
     static_assert(offsetof(Memory, size) == 8);
     static_assert(offsetof(Memory, capacity) == 12);
     static_assert(offsetof(Memory, cost) == 24);
@@ -290,36 +290,8 @@ namespace monad::vm::runtime
         offsetof(Context, env) + offsetof(Environment, input_data_size);
     constexpr auto context_offset_env_return_data_size =
         offsetof(Context, env) + offsetof(Environment, return_data_size);
-    constexpr auto context_offset_env_tx_context_origin =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, tx_origin);
-    constexpr auto context_offset_env_tx_context_tx_gas_price =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, tx_gas_price);
-    constexpr auto context_offset_env_tx_context_block_gas_limit =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, block_gas_limit);
-    constexpr auto context_offset_env_tx_context_block_coinbase =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, block_coinbase);
-    constexpr auto context_offset_env_tx_context_block_timestamp =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, block_timestamp);
-    constexpr auto context_offset_env_tx_context_block_number =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, block_number);
-    constexpr auto context_offset_env_tx_context_block_prev_randao =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, block_prev_randao);
-    constexpr auto context_offset_env_tx_context_chain_id =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, chain_id);
-    constexpr auto context_offset_env_tx_context_block_base_fee =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, block_base_fee);
-    constexpr auto context_offset_env_tx_context_blob_base_fee =
-        offsetof(Context, env) + offsetof(Environment, tx_context) +
-        offsetof(evmc_tx_context, blob_base_fee);
+    constexpr auto context_offset_env_tx_context =
+        offsetof(Context, env) + offsetof(Environment, tx_context);
     constexpr auto context_offset_memory_size =
         offsetof(Context, memory) + offsetof(Memory, size);
     constexpr auto context_offset_memory_data =

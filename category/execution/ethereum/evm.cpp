@@ -37,7 +37,6 @@
 #include <intx/intx.hpp>
 
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <utility>
 
@@ -46,32 +45,9 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 bool sender_has_balance(State &state, evmc_message const &msg) noexcept
 {
     uint256_t const value = intx::be::load<uint256_t>(msg.value);
-    auto const &account = state.recent_account(msg.sender);
-    uint256_t const balance = account.has_value() ? account->balance : 0;
-    auto &original_state = state.original_account_state(msg.sender);
-    // RELAXED MERGE
-    // if current balance has at least message value, then:
-    // 1. compute the amount that current balance exceeds message value
-    // 2. require that the original balance at merge time is at least the
-    // original balance used during this execution less said excess
-    if (balance >= value) {
-        uint256_t const diff = balance - value;
-        auto const &original = original_state.account_;
-        uint256_t const original_balance =
-            original.has_value() ? original->balance : 0;
-        if (original_balance > diff) { // avoid underflow
-            uint256_t const min_balance =
-                original_balance -
-                diff; // original balance - current balance + value
-            original_state.set_min_balance(min_balance);
-        }
-    }
-    else {
-        // otherwise require that original balance at merge time matches
-        // original balance used during this execution exactly
-        original_state.set_validate_exact_balance();
-    }
-    return balance >= value;
+    // for optimistic execution, we do NOT require the original balance to match
+    // exactly, just add a lower bound constraint to suffice for this debit
+    return state.record_balance_constraint_for_debit(msg.sender, value);
 }
 
 void transfer_balances(State &state, evmc_message const &msg, Address const &to)
@@ -104,8 +80,7 @@ evmc::Result deploy_contract_code(
         }
     }
 
-    auto const deploy_cost =
-        static_cast<int64_t>(result.output_size) * traits::code_deposit_cost();
+    auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
 
     if (result.gas_left < deploy_cost) {
         if constexpr (traits::evm_rev() == EVMC_FRONTIER) {
@@ -170,7 +145,9 @@ void post_call(State &state, evmc::Result const &result)
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
     MONAD_ASSERT(
         result.status_code == EVMC_SUCCESS ||
-        result.status_code == EVMC_REVERT || result.gas_left == 0);
+        result.status_code == EVMC_REVERT ||
+        result.status_code == EVMC_MONAD_RESERVE_BALANCE_VIOLATION ||
+        result.gas_left == 0);
 
     if (result.status_code == EVMC_SUCCESS) {
         state.pop_accept();
@@ -196,14 +173,32 @@ evmc::Result create(
     call_tracer.on_enter(msg);
 
     if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+        if constexpr (is_monad_trait_v<traits>) {
+            /**
+             * for Ethereum, at depth = 0, the sender always has sufficient
+             * balance here as the transaction would be invalid otherwise
+             *
+             * for Monad, at depth = 0, this is not necessarily the case because
+             * Monad has delayed execution with a reserve balance concept -
+             * therefore we must be sure to increment the sender nonce if the
+             * sender does not have sufficient balance
+             */
+            if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+                if (!msg.depth) {
+                    uint64_t const nonce = state.get_nonce(msg.sender);
+                    MONAD_ASSERT(nonce != UINT64_MAX);
+                    state.set_nonce(msg.sender, nonce + 1);
+                }
+            }
+        }
         evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
 
     auto const nonce = state.get_nonce(msg.sender);
-    if (nonce == std::numeric_limits<decltype(nonce)>::max()) {
-        // overflow
+    if (nonce == UINT64_MAX) {
+        // this overflow can only happen for msg.depth != 0
         evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
         call_tracer.on_exit(result);
         return result;
@@ -266,7 +261,11 @@ evmc::Result create(
     }
 
     if (msg.depth == 0 && revert_transaction()) {
-        result.status_code = EVMC_REVERT;
+        // TODO: The reserve balance reversion mechanism should be refactored to
+        // use compile-time traits. For now, assert that Ethereum traits never
+        // try to revert the transaction here.
+        MONAD_ASSERT(is_monad_trait_v<traits>);
+        result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
     }
 
     if (result.status_code == EVMC_SUCCESS) {
@@ -317,12 +316,16 @@ evmc::Result call(
     }
     else {
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }
 
     if (msg.depth == 0 && revert_transaction()) {
-        result.status_code = EVMC_REVERT;
+        // TODO: The reserve balance reversion mechanism should be refactored to
+        // use compile-time traits. For now, assert that Ethereum traits never
+        // try to revert the transaction here.
+        MONAD_ASSERT(is_monad_trait_v<traits>);
+        result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
         result.gas_refund = 0;
     }
 

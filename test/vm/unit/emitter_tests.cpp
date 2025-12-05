@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -24,7 +25,6 @@
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/math.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include "test_params.hpp"
 
@@ -132,8 +132,9 @@ namespace
         return ret;
     }
 
-    runtime::Context
-    test_context(int64_t gas_remaining = (uint64_t{1} << 63) - 1)
+    runtime::Context test_context(
+        evmc_tx_context const *tx_context,
+        int64_t gas_remaining = (uint64_t{1} << 63) - 1)
     {
         return runtime::Context{
             .host = nullptr,
@@ -154,7 +155,7 @@ namespace
                     .input_data_size = 0,
                     .code_size = 0,
                     .return_data_size = 0,
-                    .tx_context = {},
+                    .tx_context = tx_context,
                 },
             .result = test_result(),
             .memory = monad::vm::runtime::Memory(runtime::EvmMemoryAllocator{}),
@@ -300,7 +301,8 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
 
         auto stack_memory = test_stack_memory();
@@ -340,6 +342,7 @@ namespace
                    Emitter::location_type_to_string(right_loc));
     }
 
+    template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
     void pure_una_instr_test_instance(
         asmjit::JitRuntime &rt, PureEmitterInstr instr, uint256_t const &input,
         Emitter::LocationType loc, uint256_t const &result,
@@ -378,7 +381,8 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
 
         auto stack_memory = test_stack_memory();
@@ -476,7 +480,8 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
 
         auto stack_memory = test_stack_memory();
@@ -526,24 +531,25 @@ namespace
             rt, opcode, [&](Emitter &e) { (e.*instr)(); }, left, right, result);
     }
 
+    template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
     void pure_una_instr_test(
         asmjit::JitRuntime &rt, EvmOpCode opcode, PureEmitterInstr instr,
         uint256_t const &input, uint256_t const &result)
     {
         std::vector<uint8_t> bytecode1{PUSH0, opcode, PUSH0, RETURN};
-        auto ir1 =
-            basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode1));
+        auto ir1 = basic_blocks::BasicBlocksIR::unsafe_from<traits>(
+            std::move(bytecode1));
         for (auto loc : all_locations) {
-            pure_una_instr_test_instance(
+            pure_una_instr_test_instance<traits>(
                 rt, instr, input, loc, result, ir1, false);
         }
 
         std::vector<uint8_t> bytecode2{
             PUSH0, DUP1, opcode, SWAP1, opcode, RETURN};
-        auto ir2 =
-            basic_blocks::BasicBlocksIR::unsafe_from(std::move(bytecode2));
+        auto ir2 = basic_blocks::BasicBlocksIR::unsafe_from<traits>(
+            std::move(bytecode2));
         for (auto loc : all_locations) {
-            pure_una_instr_test_instance(
+            pure_una_instr_test_instance<traits>(
                 rt, instr, input, loc, result, ir1, true);
         }
     }
@@ -607,7 +613,8 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
 
         auto stack_memory = test_stack_memory();
@@ -750,7 +757,8 @@ namespace
         emit.revert();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
 
         auto stack_memory = test_stack_memory();
@@ -840,7 +848,8 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
 
         auto stack_memory = test_stack_memory();
@@ -880,7 +889,8 @@ TEST(Emitter, empty)
     TestEmitter emit{rt, code_size_t{}};
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -897,7 +907,8 @@ TEST(Emitter, stop)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -920,7 +931,8 @@ TEST(Emitter, invalid_instruction)
     emit.invalid_instruction();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -937,7 +949,8 @@ TEST(Emitter, gas_decrement_static_work_no_check_1)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(5);
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context, 5);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -956,7 +969,9 @@ TEST(Emitter, gas_decrement_static_work_no_check_2)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD - 1);
+    evmc_tx_context tx_context{};
+    auto ctx =
+        test_context(&tx_context, Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD - 1);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -974,7 +989,9 @@ TEST(Emitter, gas_decrement_static_work_check_non_negative_1)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
+    evmc_tx_context tx_context{};
+    auto ctx =
+        test_context(&tx_context, Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -992,7 +1009,9 @@ TEST(Emitter, gas_decrement_static_work_check_non_negative_2)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD + 1);
+    evmc_tx_context tx_context{};
+    auto ctx =
+        test_context(&tx_context, Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD + 1);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -1016,7 +1035,9 @@ TEST(Emitter, gas_decrement_static_work_check_non_negative_3)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(4 * Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
+    evmc_tx_context tx_context{};
+    auto ctx =
+        test_context(&tx_context, 4 * Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -1035,7 +1056,8 @@ TEST(Emitter, gas_decrement_unbounded_work)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(5);
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context, 5);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -1059,7 +1081,8 @@ TEST(Emitter, return_)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -1083,7 +1106,8 @@ TEST(Emitter, revert)
     emit.revert();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -1142,7 +1166,8 @@ TEST(Emitter, mov_stack_index_to_avx_reg)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     auto stack_memory = test_stack_memory();
@@ -1194,7 +1219,8 @@ TEST(Emitter, mov_literal_to_ymm)
             emit.return_();
 
             entrypoint_t entry = emit.finish_contract(rt);
-            auto ctx = test_context();
+            evmc_tx_context tx_context{};
+            auto ctx = test_context(&tx_context);
             auto const &ret = ctx.result;
 
             auto stack_memory = test_stack_memory();
@@ -1256,7 +1282,8 @@ TEST(Emitter, mov_stack_index_to_general_reg)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     auto stack_memory = test_stack_memory();
@@ -1328,7 +1355,8 @@ TEST(Emitter, mov_stack_index_to_stack_offset)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     auto stack_memory = test_stack_memory();
@@ -1379,7 +1407,8 @@ TEST(Emitter, discharge_deferred_comparison)
     ASSERT_FALSE(stack.has_deferred_comparison());
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     auto stack_memory = test_stack_memory();
@@ -1469,7 +1498,8 @@ TEST(Emitter, discharge_negated_deferred_comparison)
     ASSERT_FALSE(stack.has_deferred_comparison());
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     auto stack_memory = test_stack_memory();
@@ -1892,10 +1922,7 @@ TEST(Emitter, udiv)
         pure_bin_instr_test(
             rt,
             PUSH0,
-            [&](Emitter &em) {
-                em.udiv<EvmTraits<EVMC_FRONTIER>>(
-                    std::numeric_limits<int32_t>::max());
-            },
+            [&](Emitter &em) { em.udiv(std::numeric_limits<int32_t>::max()); },
             a,
             b,
             expected);
@@ -1952,10 +1979,7 @@ TEST(Emitter, sdiv)
         pure_bin_instr_test(
             rt,
             PUSH0,
-            [&](Emitter &em) {
-                em.sdiv<EvmTraits<EVMC_FRONTIER>>(
-                    std::numeric_limits<int32_t>::max());
-            },
+            [&](Emitter &em) { em.sdiv(std::numeric_limits<int32_t>::max()); },
             a,
             b,
             expected);
@@ -1985,10 +2009,7 @@ TEST(Emitter, umod)
         pure_bin_instr_test(
             rt,
             PUSH0,
-            [&](Emitter &em) {
-                em.umod<EvmTraits<EVMC_FRONTIER>>(
-                    std::numeric_limits<int32_t>::max());
-            },
+            [&](Emitter &em) { em.umod(std::numeric_limits<int32_t>::max()); },
             a,
             b,
             expected);
@@ -2050,10 +2071,7 @@ TEST(Emitter, smod)
         pure_bin_instr_test(
             rt,
             PUSH0,
-            [&](Emitter &em) {
-                em.smod<EvmTraits<EVMC_FRONTIER>>(
-                    std::numeric_limits<int32_t>::max());
-            },
+            [&](Emitter &em) { em.smod(std::numeric_limits<int32_t>::max()); },
             a,
             b,
             expected);
@@ -2325,7 +2343,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod(1000);
                 },
                 a,
                 b,
@@ -2338,7 +2356,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod(1000);
                 },
                 a,
                 b,
@@ -2358,7 +2376,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod(1000);
                 },
                 a,
                 b,
@@ -2371,7 +2389,7 @@ TEST(Emitter, mulmod)
                     em.push(m);
                     em.swap(2);
                     em.swap(1);
-                    em.mulmod<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(1000);
+                    em.mulmod(1000);
                 },
                 a,
                 b,
@@ -2407,7 +2425,7 @@ TEST(Emitter, exp)
         for (int i = 0; i < rep_count; ++i) {
             emit.push(513); // some exponent over 512
             emit.push(13); // base (with popcount != 1)
-            emit.exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+            emit.exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                 std::numeric_limits<int32_t>::max());
             emit.pop();
             ASSERT_EQ(
@@ -2419,7 +2437,8 @@ TEST(Emitter, exp)
         emit.push(0);
         emit.return_();
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
 
         auto stack_memory = test_stack_memory();
@@ -2461,7 +2480,7 @@ TEST(Emitter, exp)
                 rt,
                 EXP,
                 [&](Emitter &em) {
-                    (em.exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+                    (em.exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                         std::numeric_limits<int32_t>::max()));
                 },
                 {b},
@@ -2471,7 +2490,7 @@ TEST(Emitter, exp)
                 rt,
                 EXP,
                 [&](Emitter &em) {
-                    (em.exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+                    (em.exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
                         std::numeric_limits<int32_t>::max()));
                 },
                 {b},
@@ -3084,16 +3103,37 @@ TEST(Emitter, sar_max)
     ASSERT_EQ(emit.get_stack().get(0), e);
 }
 
+TEST(Emitter, clz)
+{
+    asmjit::JitRuntime rt;
+
+    // Test zero case
+    pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(rt, CLZ, &Emitter::clz, 0, 256);
+
+    // Test all leading zeros
+    for (uint64_t i = 0; i < 256; ++i) {
+        // 1 hot bit at different positions
+        uint256_t value{uint256_t{1} << (255 - i)};
+        pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(
+            rt, CLZ, &Emitter::clz, value, countl_zero(value));
+
+        // All ones except leading zeros
+        value = ~uint256_t{0} >> i;
+        pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(
+            rt, CLZ, &Emitter::clz, value, countl_zero(value));
+
+        // Test with some random bits set after the leading one
+        value = value | (uint256_t{0xDEADBEEF} << (i * 4));
+        pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(
+            rt, CLZ, &Emitter::clz, value, countl_zero(value));
+    }
+}
+
 TEST(Emitter, call_runtime_pure)
 {
     asmjit::JitRuntime rt;
     pure_bin_instr_test(
-        rt,
-        DIV,
-        [](Emitter &emit) { emit.udiv<EvmTraits<EVMC_FRONTIER>>(0); },
-        1000,
-        4,
-        250);
+        rt, DIV, [](Emitter &emit) { emit.udiv(0); }, 1000, 4, 250);
 }
 
 TEST(Emitter, call_runtime_impl)
@@ -3136,7 +3176,8 @@ TEST(Emitter, call_runtime_12_arg_fun)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(10);
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context, 10);
     auto const &ret = ctx.result;
 
     auto stack_memory = test_stack_memory();
@@ -3173,7 +3214,8 @@ TEST(Emitter, call_runtime_11_arg_fun)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(10);
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context, 10);
     auto const &ret = ctx.result;
 
     auto stack_memory = test_stack_memory();
@@ -3194,11 +3236,13 @@ TEST(Emitter, runtime_exit)
     emit.push(0);
     emit.push(300);
     emit.push(10);
-    emit.call_runtime(9, true, runtime::exp<EvmTraits<EVMC_SPURIOUS_DRAGON>>);
+    emit.call_runtime(
+        9, true, runtime::exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>);
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(99);
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context, 99);
     auto const &ret = ctx.result;
 
     auto stack_memory = test_stack_memory();
@@ -3219,7 +3263,8 @@ TEST(Emitter, address)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     for (uint8_t i = 0; i < 20; ++i) {
@@ -3249,10 +3294,11 @@ TEST(Emitter, origin)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.tx_origin.bytes[18] = 2;
+    tx_context.tx_origin.bytes[18] = 2;
 
     entry(&ctx, nullptr);
 
@@ -3272,10 +3318,11 @@ TEST(Emitter, gasprice)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.tx_gas_price.bytes[30] = 3;
+    tx_context.tx_gas_price.bytes[30] = 3;
 
     entry(&ctx, nullptr);
 
@@ -3295,10 +3342,11 @@ TEST(Emitter, gaslimit)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.block_gas_limit = 4;
+    tx_context.block_gas_limit = 4;
 
     entry(&ctx, nullptr);
 
@@ -3318,10 +3366,11 @@ TEST(Emitter, coinbase)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.block_coinbase.bytes[18] = 5;
+    tx_context.block_coinbase.bytes[18] = 5;
 
     entry(&ctx, nullptr);
 
@@ -3341,10 +3390,11 @@ TEST(Emitter, timestamp)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.block_timestamp = 6;
+    tx_context.block_timestamp = 6;
 
     entry(&ctx, nullptr);
 
@@ -3364,10 +3414,11 @@ TEST(Emitter, number)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.block_number = 7;
+    tx_context.block_number = 7;
 
     entry(&ctx, nullptr);
 
@@ -3388,10 +3439,11 @@ TEST(Emitter, prevrandao)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.block_prev_randao.bytes[30] = 8;
+    tx_context.block_prev_randao.bytes[30] = 8;
 
     entry(&ctx, nullptr);
 
@@ -3411,10 +3463,11 @@ TEST(Emitter, chainid)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.chain_id.bytes[30] = 9;
+    tx_context.chain_id.bytes[30] = 9;
 
     entry(&ctx, nullptr);
 
@@ -3434,10 +3487,11 @@ TEST(Emitter, basefee)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.block_base_fee.bytes[30] = 0xa;
+    tx_context.block_base_fee.bytes[30] = 0xa;
 
     entry(&ctx, nullptr);
 
@@ -3458,10 +3512,11 @@ TEST(Emitter, blobbasefee)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
-    ctx.env.tx_context.blob_base_fee.bytes[30] = 0xb;
+    tx_context.blob_base_fee.bytes[30] = 0xb;
 
     entry(&ctx, nullptr);
 
@@ -3481,7 +3536,8 @@ TEST(Emitter, caller)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     for (uint8_t i = 0; i < 20; ++i) {
@@ -3512,7 +3568,8 @@ TEST(Emitter, calldatasize)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
     ctx.env.input_data_size = 5;
 
@@ -3535,7 +3592,8 @@ TEST(Emitter, returndatasize)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
     ctx.env.return_data_size = 6;
 
@@ -3557,7 +3615,8 @@ TEST(Emitter, msize)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
     ctx.memory.size = 0xffffffff;
 
@@ -3633,7 +3692,8 @@ TEST(Emitter, MemoryInstructions)
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
 
         auto stack_memory = test_stack_memory();
@@ -3726,7 +3786,8 @@ TEST(Emitter, mstore_not_bounded_by_bits)
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
         auto stack_memory = test_stack_memory();
         entry(&ctx, stack_memory.get());
@@ -3747,7 +3808,8 @@ TEST(Emitter, mstore_not_bounded_by_bits)
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
         auto stack_memory = test_stack_memory();
         entry(&ctx, stack_memory.get());
@@ -3774,7 +3836,8 @@ TEST(Emitter, mload_not_bounded_by_bits)
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
         auto stack_memory = test_stack_memory();
         entry(&ctx, stack_memory.get());
@@ -3794,7 +3857,8 @@ TEST(Emitter, mload_not_bounded_by_bits)
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         auto const &ret = ctx.result;
         auto stack_memory = test_stack_memory();
         entry(&ctx, stack_memory.get());
@@ -3805,7 +3869,8 @@ TEST(Emitter, mload_not_bounded_by_bits)
 
 TEST(Emitter, calldataload)
 {
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     uint8_t calldata[33];
     for (uint8_t i = 0; i < sizeof(calldata); ++i) {
         calldata[i] = i + 1;
@@ -3897,7 +3962,8 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         ctx.env.input_data = input_data.get();
         ctx.env.input_data_size = input_data_size;
         auto const &ret = ctx.result;
@@ -3922,7 +3988,8 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         ctx.env.input_data = input_data.get();
         ctx.env.input_data_size = input_data_size;
         auto const &ret = ctx.result;
@@ -3947,7 +4014,8 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        auto ctx = test_context();
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
         ctx.env.input_data = input_data.get();
         ctx.env.input_data_size = input_data_size;
         auto const &ret = ctx.result;
@@ -3972,7 +4040,8 @@ TEST(Emitter, gas)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context(10);
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context, 10);
     auto const &ret = ctx.result;
 
     entry(&ctx, nullptr);
@@ -3993,7 +4062,8 @@ TEST(Emitter, callvalue)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
 
     for (uint8_t i = 0; i < 32; ++i) {
@@ -4056,7 +4126,8 @@ TEST(Emitter, jump_bad_jumpdest)
     emit.jump();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
     auto stack_memory = test_stack_memory();
     entry(&ctx, stack_memory.get());
@@ -4102,7 +4173,8 @@ TEST(Emitter, jumpi_bad_jumpdest)
     emit.jumpi(ir.blocks().at(1));
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
     auto stack_memory = test_stack_memory();
     entry(&ctx, stack_memory.get());
@@ -4262,7 +4334,8 @@ TEST(Emitter, SpillInMovGeneralRegToAvxRegRegression)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
     auto stack_memory = test_stack_memory();
     entry(&ctx, stack_memory.get());
@@ -4297,7 +4370,8 @@ TEST(Emitter, ReleaseSrcAndDestRegression)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    auto ctx = test_context();
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
     auto const &ret = ctx.result;
     auto stack_memory = test_stack_memory();
     entry(&ctx, stack_memory.get());

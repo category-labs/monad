@@ -288,6 +288,12 @@ void monad_statesync_server_context::update_voted_metadata(
     rw.update_voted_metadata(block_number, block_id);
 }
 
+void monad_statesync_server_context::update_proposed_metadata(
+    uint64_t const block_number, bytes32_t const &block_id)
+{
+    rw.update_proposed_metadata(block_number, block_id);
+}
+
 void monad_statesync_server_context::commit(
     StateDeltas const &state_deltas, Code const &code,
     bytes32_t const &block_id, BlockHeader const &header,

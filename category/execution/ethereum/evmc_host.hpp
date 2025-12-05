@@ -50,16 +50,14 @@ class EvmcHostBase : public vm::Host
 
 protected:
     evmc_tx_context const &tx_context_;
-    Chain const &chain_;
     State &state_;
     CallTracerBase &call_tracer_;
     std::function<bool()> revert_transaction_;
 
 public:
     EvmcHostBase(
-        Chain const &, CallTracerBase &, evmc_tx_context const &,
-        BlockHashBuffer const &, State &,
-        std::function<bool()> const &revert_transaction = [] {
+        CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
+        State &, std::function<bool()> const &revert_transaction = [] {
             return false;
         }) noexcept;
 
@@ -83,7 +81,7 @@ public:
         Address const &, size_t offset, uint8_t *data,
         size_t size) const noexcept override;
 
-    virtual evmc_tx_context get_tx_context() const noexcept override;
+    virtual evmc_tx_context const *get_tx_context() const noexcept override;
 
     virtual bytes32_t get_block_hash(int64_t) const noexcept override;
 
@@ -102,7 +100,7 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 96);
+static_assert(sizeof(EvmcHostBase) == 88);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -182,14 +180,9 @@ struct EvmcHost final : public EvmcHostBase
     {
         return call_tracer_;
     }
-
-    Chain const &get_chain() const noexcept
-    {
-        return chain_;
-    }
 };
 
-static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 96);
+static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 88);
 static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
 
 MONAD_NAMESPACE_END

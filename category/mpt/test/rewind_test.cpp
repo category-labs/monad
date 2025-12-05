@@ -45,7 +45,7 @@ TEST_F(RewindTest, works)
     aux.set_latest_voted(100, monad::bytes32_t{100});
     aux.unset_io();
     std::cout << "Reopening DB ..." << std::endl;
-    aux.set_io(&io, 20000);
+    aux.set_io(io, 20000);
     std::cout << "Rewinding DB to latest version " << max_version << "..."
               << std::endl;
     aux.rewind_to_version(max_version);
@@ -70,7 +70,7 @@ TEST_F(RewindTest, works)
     std::cout
         << "Reopening DB to check valid versions are what they should be ..."
         << std::endl;
-    aux.set_io(&io);
+    aux.set_io(io);
     EXPECT_EQ(0, aux.db_history_min_valid_version());
     EXPECT_EQ(9990, aux.db_history_max_version());
     // rewind to latest is noop
@@ -80,7 +80,7 @@ TEST_F(RewindTest, works)
     EXPECT_EQ(aux.get_latest_voted_block_id(), monad::bytes32_t{});
     aux.unset_io();
     std::cout << "Setting max history to 9000 and reopening ..." << std::endl;
-    aux.set_io(&io, 9000);
+    aux.set_io(io, 9000);
     EXPECT_EQ(991, aux.db_history_min_valid_version());
     EXPECT_EQ(9990, aux.db_history_max_version());
     EXPECT_EQ(aux.get_latest_voted_version(), monad::mpt::INVALID_BLOCK_NUM);
@@ -91,7 +91,7 @@ TEST_F(RewindTest, works)
     EXPECT_EQ(aux.get_latest_voted_version(), monad::mpt::INVALID_BLOCK_NUM);
     EXPECT_EQ(aux.get_latest_voted_block_id(), monad::bytes32_t{});
     aux.unset_io();
-    aux.set_io(&io);
+    aux.set_io(io);
     EXPECT_EQ(991, aux.db_history_min_valid_version());
     EXPECT_EQ(9900, aux.db_history_max_version());
     EXPECT_EQ(aux.get_latest_voted_version(), monad::mpt::INVALID_BLOCK_NUM);
@@ -160,5 +160,5 @@ TEST_F(
     aux.unset_io();
 
     // verifies set_io() succeeds
-    aux.set_io(&io);
+    aux.set_io(io);
 }

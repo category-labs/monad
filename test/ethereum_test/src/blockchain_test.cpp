@@ -295,6 +295,8 @@ Result<BlockExecOutput> BlockchainTest::execute(
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
     call_frames.resize(block.transactions.size());
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{
+        block.transactions.size()};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         call_tracers[i] =
             enable_tracing
@@ -302,6 +304,8 @@ Result<BlockExecOutput> BlockchainTest::execute(
                       block.transactions[i], call_frames[i])}
                 : std::unique_ptr<CallTracerBase>{
                       std::make_unique<NoopCallTracer>()};
+        state_tracers[i] = std::unique_ptr<trace::StateTracer>{
+            std::make_unique<trace::StateTracer>(std::monostate{})};
     }
 
     BOOST_OUTCOME_TRY(
@@ -313,9 +317,10 @@ Result<BlockExecOutput> BlockchainTest::execute(
             recovered_authorities,
             block_state,
             block_hash_buffer,
-            *pool_,
+            pool_->fiber_group(),
             metrics,
-            call_tracers));
+            call_tracers,
+            state_tracers));
 
     block_state.log_debug();
     block_state.commit(
@@ -335,7 +340,7 @@ Result<BlockExecOutput> BlockchainTest::execute(
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
 
     BOOST_OUTCOME_TRY(
-        chain.validate_output_header(block.header, exec_output.eth_header));
+        validate_output_header(block.header, exec_output.eth_header));
 
     return exec_output;
 }
@@ -555,6 +560,8 @@ void BlockchainTest::TestBody()
             if (!result.has_error()) {
                 db_post_state = tdb.to_json();
                 EXPECT_FALSE(j_block.contains("expectException"));
+                EXPECT_EQ(tdb.get_block_number(), curr_block_number);
+                auto const root = tdb.get_root();
                 EXPECT_EQ(tdb.state_root(), block.value().header.state_root)
                     << name;
                 EXPECT_EQ(
@@ -565,12 +572,14 @@ void BlockchainTest::TestBody()
                     tdb.withdrawals_root(),
                     block.value().header.withdrawals_root)
                     << name;
-                auto const encoded_ommers_res = db.get(
+                auto const ommers_res = db.find(
+                    root,
                     mpt::concat(FINALIZED_NIBBLE, OMMER_NIBBLE),
                     curr_block_number);
+                ASSERT_TRUE(ommers_res.has_value());
+                auto const encoded_ommers = ommers_res.value().node->value();
                 auto const tdb_ommers_hash =
-                    to_bytes(keccak256(encoded_ommers_res.value()));
-                EXPECT_TRUE(encoded_ommers_res.has_value());
+                    to_bytes(keccak256(encoded_ommers));
                 EXPECT_EQ(tdb_ommers_hash, block.value().header.ommers_hash);
                 if (rev >= EVMC_BYZANTIUM) {
                     EXPECT_EQ(
@@ -616,28 +625,23 @@ void BlockchainTest::TestBody()
                 }
 
                 { // verify block header is stored correctly
-                    auto res = db.get(
-                        mpt::concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE),
-                        curr_block_number);
-                    EXPECT_TRUE(res.has_value());
-                    auto const decode_res =
-                        rlp::decode_block_header(res.value());
-                    EXPECT_TRUE(decode_res.has_value());
-                    auto const decoded_block_header = decode_res.value();
-                    EXPECT_EQ(decode_res.value(), block.value().header);
+                    BlockHeader const header = tdb.read_eth_header();
+                    EXPECT_EQ(header, block.value().header);
                 }
                 { // look up block hash
                     auto const block_hash = keccak256(
                         rlp::encode_block_header(block.value().header));
-                    auto res = db.get(
+                    auto res = db.find(
+                        root,
                         mpt::concat(
                             FINALIZED_NIBBLE,
                             BLOCK_HASH_NIBBLE,
                             mpt::NibblesView{block_hash}),
                         curr_block_number);
                     EXPECT_TRUE(res.has_value());
+                    auto encoded_number = res.value().node->value();
                     auto const decoded_number =
-                        rlp::decode_unsigned<uint64_t>(res.value());
+                        rlp::decode_unsigned<uint64_t>(encoded_number);
                     EXPECT_TRUE(decoded_number.has_value());
                     EXPECT_EQ(decoded_number.value(), curr_block_number);
                 }
@@ -646,15 +650,17 @@ void BlockchainTest::TestBody()
                      ++i) {
                     auto const &tx = block.value().transactions[i];
                     auto const hash = keccak256(rlp::encode_transaction(tx));
-                    auto tx_hash_res = db.get(
+                    auto find_res = db.find(
+                        root,
                         mpt::concat(
                             FINALIZED_NIBBLE,
                             TX_HASH_NIBBLE,
                             mpt::NibblesView{hash}),
                         curr_block_number);
-                    EXPECT_TRUE(tx_hash_res.has_value());
+                    EXPECT_TRUE(find_res.has_value());
+                    auto const tx_hash = find_res.value().node->value();
                     EXPECT_EQ(
-                        tx_hash_res.value(),
+                        tx_hash,
                         rlp::encode_list2(
                             rlp::encode_unsigned(curr_block_number),
                             rlp::encode_unsigned(i)));

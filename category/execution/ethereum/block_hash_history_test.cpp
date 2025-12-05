@@ -92,7 +92,7 @@ namespace
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         EvmcHost<Prague> host{
-            chain, call_tracer, tx_context, block_hash_buffer, state};
+            call_tracer, tx_context, block_hash_buffer, state};
 
         bytes32_t const calldata = enc(block_number);
         evmc_message const msg{
@@ -104,14 +104,14 @@ namespace
             .input_size = 32,
             .code_address = blockhash_opcode_addr};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         return state.vm().execute<Prague>(host, &msg, hash, code);
     }
 
     void BlockHistoryFixture::deploy_history_contract()
     {
         BlockHeader const header{.parent_hash = bytes32_t{}, .number = 0};
-        deploy_block_hash_history_contract(state);
+        deploy_block_hash_history_contract<Prague>(state);
     }
 
     void BlockHistoryFixture::fill_history(
@@ -123,7 +123,7 @@ namespace
         for (uint64_t i = start_block; i <= end_block; i++) {
             BlockHeader const header{
                 .parent_hash = to_bytes(i - 1), .number = i};
-            set_block_hash_history(
+            set_block_hash_history<Prague>(
                 state, header); // sets `number - 1 -> to_bytes(number - 1)`
         }
     }
@@ -134,7 +134,7 @@ namespace
     {
         for (uint64_t i = start_block; i <= end_block; i++) {
             BlockHeader const header{.parent_hash = fixed_hash, .number = i};
-            set_block_hash_history(
+            set_block_hash_history<Prague>(
                 state, header); // sets `number - 1 -> fixed_hash`
         }
     }
@@ -234,7 +234,7 @@ TEST_F(BlockHistoryFixture, read_from_block_hash_history_contract)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         bytes32_t const calldata = enc(block_number);
         evmc_message const msg{
@@ -246,7 +246,7 @@ TEST_F(BlockHistoryFixture, read_from_block_hash_history_contract)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result const result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         if (expect_success) {
@@ -294,7 +294,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         evmc_message const msg{
             .kind = EVMC_CALL,
@@ -305,7 +305,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result const result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
@@ -325,7 +325,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         bytes32_t const calldata = enc(block_number);
         evmc_message msg{
@@ -337,7 +337,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result const result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         if (expect_success) {
@@ -407,7 +407,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         evmc_message const msg{
             .kind = EVMC_CALL,
@@ -418,7 +418,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         if (expect_success) {
@@ -443,7 +443,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             get_tx_context<Prague>(tx, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer{};
         BlockHashBufferFinalized const buffer{};
-        EvmcHost<Prague> host{chain, call_tracer, tx_context, buffer, state};
+        EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         bytes32_t const calldata = enc(block_number);
         evmc_message const msg{
@@ -455,7 +455,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             .input_size = 32,
             .code_address = BLOCK_HISTORY_ADDRESS};
         auto const hash = state.get_code_hash(msg.code_address);
-        auto const &code = state.read_code(hash);
+        auto const code = state.read_code(hash);
         evmc::Result const result =
             state.vm().execute<Prague>(host, &msg, hash, code);
         if (expect_success) {
@@ -664,7 +664,7 @@ TEST_F(BlockHistoryFixture, blockhash_opcode_buffer_history_agreement)
 
     // Identity mapping again
     for (uint64_t i = 0; i < 256; i++) {
-        set_block_hash_history(
+        set_block_hash_history<Prague>(
             state,
             BlockHeader{.parent_hash = to_bytes(i + 1), .number = i + 1});
         // i + 1, because set_block_hash_history sets i - 1.

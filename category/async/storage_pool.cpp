@@ -33,15 +33,15 @@
 #include <cstring>
 #include <filesystem>
 #include <limits>
-#include <memory>
 #include <mutex>
 #include <span>
-#include <sstream>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include <stdlib.h>
+
+#include <quill/Quill.h>
 
 #include <asm-generic/ioctl.h>
 #include <fcntl.h>
@@ -55,7 +55,7 @@
 
 MONAD_ASYNC_NAMESPACE_BEGIN
 
-std::filesystem::path storage_pool::device::current_path() const
+std::filesystem::path storage_pool::device_t::current_path() const
 {
     std::filesystem::path::string_type ret;
     ret.resize(32769);
@@ -76,16 +76,22 @@ std::filesystem::path storage_pool::device::current_path() const
     return ret;
 }
 
-size_t storage_pool::device::chunks() const
+size_t storage_pool::device_t::chunks() const
 {
     MONAD_ASSERT(!is_zoned_device(), "zonefs support isn't implemented yet");
     return metadata_->chunks(size_of_file_);
 }
 
-std::pair<file_offset_t, file_offset_t> storage_pool::device::capacity() const
+size_t storage_pool::device_t::cnv_chunks() const
+{
+    MONAD_ASSERT(!is_zoned_device(), "zonefs support isn't implemented yet");
+    return metadata_->num_cnv_chunks;
+}
+
+std::pair<file_offset_t, file_offset_t> storage_pool::device_t::capacity() const
 {
     switch (type_) {
-    case device::type_t_::file: {
+    case device_t::type_t_::file: {
         struct stat stat;
         MONAD_ASSERT_PRINTF(
             -1 != ::fstat(readwritefd_, &stat),
@@ -94,7 +100,7 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device::capacity() const
         return {
             file_offset_t(stat.st_size), file_offset_t(stat.st_blocks) * 512};
     }
-    case device::type_t_::block_device: {
+    case device_t::type_t_::block_device: {
         file_offset_t capacity;
         // Start with the pool metadata on the device
         file_offset_t used =
@@ -115,7 +121,7 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device::capacity() const
         }
         return {capacity, used};
     }
-    case device::type_t_::zoned_device:
+    case device_t::type_t_::zoned_device:
         MONAD_ABORT("zonefs support isn't implemented yet");
     default:
         MONAD_ABORT();
@@ -124,7 +130,7 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device::capacity() const
 
 /***************************************************************************/
 
-storage_pool::chunk::chunk::~chunk()
+storage_pool::chunk_t::~chunk_t()
 {
     if (owns_readfd_ || owns_writefd_) {
         auto const fd = read_fd_;
@@ -142,7 +148,7 @@ storage_pool::chunk::chunk::~chunk()
 }
 
 std::pair<int, file_offset_t>
-storage_pool::chunk::write_fd(size_t bytes_which_shall_be_written) noexcept
+storage_pool::chunk_t::write_fd(size_t bytes_which_shall_be_written) noexcept
 {
     if (device().is_file() || device().is_block_device()) {
         if (!append_only_) {
@@ -151,7 +157,7 @@ storage_pool::chunk::write_fd(size_t bytes_which_shall_be_written) noexcept
         auto const *const metadata = device().metadata_;
         auto const chunk_bytes_used =
             metadata->chunk_bytes_used(device().size_of_file_);
-        MONAD_DEBUG_ASSERT(
+        MONAD_ASSERT(
             bytes_which_shall_be_written <=
             std::numeric_limits<uint32_t>::max());
         auto const size =
@@ -172,7 +178,7 @@ storage_pool::chunk::write_fd(size_t bytes_which_shall_be_written) noexcept
     MONAD_ABORT("zonefs support isn't implemented yet");
 }
 
-file_offset_t storage_pool::chunk::size() const
+file_offset_t storage_pool::chunk_t::size() const
 {
     if (device().is_file() || device().is_block_device()) {
         auto *const metadata = device().metadata_;
@@ -188,14 +194,15 @@ file_offset_t storage_pool::chunk::size() const
     MONAD_ABORT("zonefs support isn't implemented yet");
 }
 
-void storage_pool::chunk::destroy_contents()
+void storage_pool::chunk_t::destroy_contents()
 {
     if (!try_trim_contents(0)) {
         MONAD_ABORT("zonefs support isn't implemented yet");
     }
 }
 
-uint32_t storage_pool::chunk::clone_contents_into(chunk &other, uint32_t bytes)
+uint32_t
+storage_pool::chunk_t::clone_contents_into(chunk_t &other, uint32_t bytes)
 {
     if (other.is_sequential_write() && other.size() != 0) {
         MONAD_ABORT(
@@ -229,11 +236,11 @@ uint32_t storage_pool::chunk::clone_contents_into(chunk &other, uint32_t bytes)
     return uint32_t(bytescopied);
 }
 
-bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
+bool storage_pool::chunk_t::try_trim_contents(uint32_t bytes)
 {
     bytes = std::min(uint32_t(size()), bytes);
-    MONAD_DEBUG_ASSERT(capacity_ <= std::numeric_limits<off_t>::max());
-    MONAD_DEBUG_ASSERT(offset_ <= std::numeric_limits<off_t>::max());
+    MONAD_ASSERT(capacity_ <= std::numeric_limits<off_t>::max());
+    MONAD_ASSERT(offset_ <= std::numeric_limits<off_t>::max());
     if (device().is_file()) {
         MONAD_ASSERT_PRINTF(
             -1 != ::fallocate(
@@ -265,40 +272,24 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
         // /sys/block/nvmeXXX/queue/discard_max_bytes and adjust accordingly,
         // however every NVMe SSD I'm aware of has 512 and 2Tb. If we ran on MMC
         // or legacy SATA SSDs this would be very different, but we never will.
-        auto *const buffer = reinterpret_cast<std::byte *>(
-            aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE));
-        auto const unbuffer =
-            make_scope_exit([&]() noexcept { ::free(buffer); });
         auto const remainder = offset_ + bytes - range[0];
-        // Copy any fragment of DISK_PAGE_SIZE about to get TRIMed to a
-        // temporary buffer
-        auto const bytesread = (remainder == 0)
-                                   ? 0
-                                   : ::pread(
-                                         read_fd_,
-                                         buffer,
-                                         DISK_PAGE_SIZE,
-                                         static_cast<off_t>(range[0]));
-        MONAD_ASSERT_PRINTF(
-            bytesread != -1, "pread failed due to %s", std::strerror(errno));
-        // As writes must be in DISK_PAGE_SIZE units, no point in TRIMing a
-        // block only to immediately overwrite it
+        MONAD_ASSERT(remainder < DISK_PAGE_SIZE);
         if (remainder > 0) {
-            range[0] += DISK_PAGE_SIZE;
-            range[1] -= DISK_PAGE_SIZE;
-        }
-        if (range[1] > 0) {
-            MONAD_DEBUG_ASSERT(
-                range[0] >= offset_ && range[0] < offset_ + capacity_);
-            MONAD_DEBUG_ASSERT(range[1] <= capacity_);
-            MONAD_DEBUG_ASSERT((range[1] & (DISK_PAGE_SIZE - 1)) == 0);
+            auto *const buffer = reinterpret_cast<std::byte *>(
+                aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE));
+            auto const unbuffer =
+                make_scope_exit([&]() noexcept { ::free(buffer); });
+            // Copy any fragment of DISK_PAGE_SIZE about to get TRIMed to a
+            // temporary buffer
             MONAD_ASSERT_PRINTF(
-                !ioctl(write_fd_, _IO(0x12, 119) /*BLKDISCARD*/, &range),
+                -1 != ::pread(
+                          read_fd_,
+                          buffer,
+                          DISK_PAGE_SIZE,
+                          static_cast<off_t>(range[0])),
                 "failed due to %s",
                 std::strerror(errno));
-        }
-        if (remainder > 0) {
-            // Overwrite the final DISK_PAGE_SIZE unit with all bits after
+            // Overwrite the first DISK_PAGE_SIZE unit with all bits after
             // truncation point set to zero
             memset(buffer + remainder, 0, DISK_PAGE_SIZE - remainder);
             MONAD_ASSERT_PRINTF(
@@ -307,6 +298,18 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
                           buffer,
                           DISK_PAGE_SIZE,
                           static_cast<off_t>(range[0])),
+                "failed due to %s",
+                std::strerror(errno));
+            // TRIM only the remaining DISK_PAGE_SIZE-aligned bytes
+            range[0] += DISK_PAGE_SIZE;
+            range[1] -= DISK_PAGE_SIZE;
+        }
+        if (range[1] > 0) {
+            MONAD_ASSERT(range[0] >= offset_ && range[0] < offset_ + capacity_);
+            MONAD_ASSERT(range[1] <= capacity_);
+            MONAD_ASSERT((range[1] & (DISK_PAGE_SIZE - 1)) == 0);
+            MONAD_ASSERT_PRINTF(
+                !ioctl(write_fd_, _IO(0x12, 119) /*BLKDISCARD*/, &range),
                 "failed due to %s",
                 std::strerror(errno));
         }
@@ -329,9 +332,10 @@ bool storage_pool::chunk::try_trim_contents(uint32_t bytes)
 
 /***************************************************************************/
 
-storage_pool::device storage_pool::make_device_(
-    mode op, device::type_t_ type, std::filesystem::path const &path, int fd,
-    std::variant<uint64_t, device const *> dev_no_or_dev, creation_flags flags)
+storage_pool::device_t storage_pool::make_device_(
+    mode op, device_t::type_t_ type, std::filesystem::path const &path, int fd,
+    std::variant<uint64_t, device_t const *> dev_no_or_dev,
+    creation_flags flags)
 {
     int readwritefd = fd;
     uint64_t const chunk_capacity = 1ULL << flags.chunk_capacity;
@@ -354,13 +358,13 @@ storage_pool::device storage_pool::make_device_(
     struct stat stat;
     memset(&stat, 0, sizeof(stat));
     switch (type) {
-    case device::type_t_::file:
+    case device_t::type_t_::file:
         MONAD_ASSERT_PRINTF(
             -1 != ::fstat(readwritefd, &stat),
             "failed due to %s",
             std::strerror(errno));
         break;
-    case device::type_t_::block_device:
+    case device_t::type_t_::block_device:
         MONAD_ASSERT_PRINTF(
             !ioctl(
                 readwritefd,
@@ -369,7 +373,7 @@ storage_pool::device storage_pool::make_device_(
             "failed due to %s",
             std::strerror(errno));
         break;
-    case device::type_t_::zoned_device:
+    case device_t::type_t_::zoned_device:
         MONAD_ABORT("zonefs support isn't implemented yet");
     default:
         abort();
@@ -388,9 +392,9 @@ storage_pool::device storage_pool::make_device_(
         auto const unbuffer =
             make_scope_exit([&]() noexcept { ::free(buffer); });
         auto const offset = round_down_align<DISK_PAGE_BITS>(
-            file_offset_t(stat.st_size) - sizeof(device::metadata_t));
-        MONAD_DEBUG_ASSERT(offset <= std::numeric_limits<off_t>::max());
-        MONAD_DEBUG_ASSERT(static_cast<size_t>(stat.st_size) > offset);
+            file_offset_t(stat.st_size) - sizeof(device_t::metadata_t));
+        MONAD_ASSERT(offset <= std::numeric_limits<off_t>::max());
+        MONAD_ASSERT(static_cast<size_t>(stat.st_size) > offset);
         auto const bytesread = ::pread(
             readwritefd,
             buffer,
@@ -398,8 +402,8 @@ storage_pool::device storage_pool::make_device_(
             static_cast<off_t>(offset));
         MONAD_ASSERT_PRINTF(
             bytesread != -1, "pread failed due to %s", std::strerror(errno));
-        auto *const metadata_footer = start_lifetime_as<device::metadata_t>(
-            buffer + bytesread - sizeof(device::metadata_t));
+        auto *const metadata_footer = start_lifetime_as<device_t::metadata_t>(
+            buffer + bytesread - sizeof(device_t::metadata_t));
         if (memcmp(metadata_footer->magic, "MND0", 4) != 0 ||
             op == mode::truncate) {
             // Uninitialised
@@ -418,7 +422,7 @@ storage_pool::device storage_pool::make_device_(
             }
             // Throw away all contents
             switch (type) {
-            case device::type_t_::file:
+            case device_t::type_t_::file:
                 MONAD_ASSERT_PRINTF(
                     ::ftruncate(readwritefd, 0) != -1,
                     "failed due to %s",
@@ -428,7 +432,7 @@ storage_pool::device storage_pool::make_device_(
                     "failed due to %s",
                     std::strerror(errno));
                 break;
-            case device::type_t_::block_device: {
+            case device_t::type_t_::block_device: {
                 uint64_t range[2] = {0, uint64_t(stat.st_size)};
                 if (ioctl(readwritefd, _IO(0x12, 119) /*BLKDISCARD*/, &range)) {
                     MONAD_ABORT_PRINTF(
@@ -436,13 +440,13 @@ storage_pool::device storage_pool::make_device_(
                 }
                 break;
             }
-            case device::type_t_::zoned_device:
+            case device_t::type_t_::zoned_device:
                 MONAD_ABORT("zonefs support isn't implemented yet");
             default:
                 abort();
             }
             memset(buffer, 0, DISK_PAGE_SIZE * 2);
-            MONAD_DEBUG_ASSERT(
+            MONAD_ASSERT(
                 chunk_capacity <= std::numeric_limits<uint32_t>::max());
             for (off_t offset2 = static_cast<off_t>(
                      offset - round_up_align<DISK_PAGE_BITS>(
@@ -458,6 +462,7 @@ storage_pool::device storage_pool::make_device_(
             memcpy(metadata_footer->magic, "MND0", 4);
             metadata_footer->chunk_capacity =
                 static_cast<uint32_t>(chunk_capacity);
+            metadata_footer->num_cnv_chunks = flags.num_cnv_chunks;
             MONAD_ASSERT_PRINTF(
                 ::pwrite(
                     readwritefd,
@@ -469,6 +474,17 @@ storage_pool::device storage_pool::make_device_(
         }
         total_size =
             metadata_footer->total_size(static_cast<size_t>(stat.st_size));
+        if (flags.num_cnv_chunks > metadata_footer->num_cnv_chunks) {
+            LOG_WARNING(
+                "Flag-specified num_cnv_chunks ({}) is greater than the value "
+                "stored in metadata ({}). This setting will be ignored. "
+                "Existing databases cannot be reconfigured to use more chunks, "
+                "create a new database if you need a higher num_cnv_chunks.",
+                flags.num_cnv_chunks,
+                metadata_footer->num_cnv_chunks == 0
+                    ? 3
+                    : metadata_footer->num_cnv_chunks);
+        }
     }
     size_t const offset = round_down_align<CPU_PAGE_BITS>(
         static_cast<size_t>(stat.st_size) - total_size);
@@ -485,14 +501,14 @@ storage_pool::device storage_pool::make_device_(
         static_cast<off_t>(offset));
     MONAD_ASSERT_PRINTF(
         MAP_FAILED != addr, "mmap failed due to %s", std::strerror(errno));
-    auto *const metadata = start_lifetime_as<device::metadata_t>(
+    auto *const metadata = start_lifetime_as<device_t::metadata_t>(
         reinterpret_cast<std::byte *>(addr) + stat.st_size - offset -
-        sizeof(device::metadata_t));
-    MONAD_DEBUG_ASSERT(0 == memcmp(metadata->magic, "MND0", 4));
+        sizeof(device_t::metadata_t));
+    MONAD_ASSERT(0 == memcmp(metadata->magic, "MND0", 4));
     if (auto const **const dev = std::get_if<1>(&dev_no_or_dev)) {
         unique_hash = (*dev)->unique_hash_;
     }
-    return device(
+    return device_t(
         readwritefd,
         type,
         unique_hash,
@@ -503,11 +519,18 @@ storage_pool::device storage_pool::make_device_(
 void storage_pool::fill_chunks_(creation_flags const &flags)
 {
     auto hashshouldbe = fnv1a_hash<uint32_t>::begin();
-    for (auto &device : devices_) {
+    for (auto const &device : devices_) {
         fnv1a_hash<uint32_t>::add(hashshouldbe, uint32_t(device.unique_hash_));
         fnv1a_hash<uint32_t>::add(
             hashshouldbe, uint32_t(device.unique_hash_ >> 32));
     }
+    // Backward compatibility: databases created before `num_cnv_chunks` was
+    // added have this field set to 0. Treat 0 as the legacy default of 3
+    // chunks.
+    uint32_t const cnv_chunks_count =
+        devices_[0].metadata_->num_cnv_chunks == 0
+            ? 3
+            : devices_[0].metadata_->num_cnv_chunks;
     std::vector<size_t> chunks;
     size_t total = 0;
     chunks.reserve(devices_.size());
@@ -515,15 +538,15 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         if (device.is_file() || device.is_block_device()) {
             auto const devicechunks = device.chunks();
             MONAD_ASSERT_PRINTF(
-                devicechunks >= 4,
-                "Device %s has %zu chunks the minimum allowed is four.",
+                devicechunks >= cnv_chunks_count + 1,
+                "Device %s has %zu chunks the minimum allowed is %u.",
                 device.current_path().c_str(),
-                devicechunks);
-            MONAD_DEBUG_ASSERT(
-                devicechunks <= std::numeric_limits<uint32_t>::max());
-            // Take off three for the cnv chunks
-            chunks.push_back(devicechunks - 3);
-            total += devicechunks - 3;
+                devicechunks,
+                cnv_chunks_count + 1);
+            MONAD_ASSERT(devicechunks <= std::numeric_limits<uint32_t>::max());
+            // Take off cnv_chunks_count for the cnv chunks
+            chunks.push_back(devicechunks - cnv_chunks_count);
+            total += devicechunks - cnv_chunks_count;
             fnv1a_hash<uint32_t>::add(
                 hashshouldbe, static_cast<uint32_t>(devicechunks));
             fnv1a_hash<uint32_t>::add(
@@ -562,19 +585,20 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
             }
         }
     }
-    // First three blocks of each device goes to conventional, remainder go to
-    // sequential
-    chunks_[cnv].reserve(devices_.size() * 3);
+    auto const zone_id = [this](int const chunk_type) {
+        return static_cast<uint32_t>(chunks_[chunk_type].size());
+    };
+    // First cnv_chunks_count blocks of each device goes to conventional,
+    // remainder go to sequential
+    chunks_[cnv].reserve(devices_.size() * cnv_chunks_count);
     chunks_[seq].reserve(total);
     if (flags.interleave_chunks_evenly) {
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 0);
-        }
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 1);
-        }
-        for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 2);
+        for (uint32_t chunk_idx = 0; chunk_idx < cnv_chunks_count;
+             ++chunk_idx) {
+            for (auto &device : devices_) {
+                chunks_[cnv].emplace_back(activate_chunk(
+                    storage_pool::cnv, device, chunk_idx, zone_id(cnv)));
+            }
         }
         // We now need to evenly spread the sequential chunks such that if
         // device A has 20, device B has 10 and device C has 5, the interleaving
@@ -584,14 +608,17 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         for (size_t n = 0; n < chunks.size(); n++) {
             chunkratios[n] = double(total) / static_cast<double>(chunks[n]);
             chunkcounts[n] = chunkratios[n];
-            chunks[n] = 3;
+            chunks[n] = cnv_chunks_count;
         }
         while (chunks_[seq].size() < chunks_[seq].capacity()) {
             for (size_t n = 0; n < chunks.size(); n++) {
                 chunkcounts[n] -= 1.0;
                 if (chunkcounts[n] < 0) {
-                    chunks_[seq].emplace_back(
-                        std::weak_ptr<class chunk>{}, devices_[n], chunks[n]++);
+                    chunks_[seq].emplace_back(activate_chunk(
+                        seq,
+                        devices_[n],
+                        static_cast<uint32_t>(chunks[n]++),
+                        zone_id(seq)));
                     chunkcounts[n] += chunkratios[n];
                     if (chunks_[seq].size() == chunks_[seq].capacity()) {
                         break;
@@ -601,21 +628,26 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         }
 #ifndef NDEBUG
         for (size_t n = 0; n < chunks.size(); n++) {
-            auto devicechunks = devices_[n].chunks();
-            MONAD_DEBUG_ASSERT(chunks[n] == devicechunks);
+            auto const devicechunks = devices_[n].chunks();
+            MONAD_ASSERT(chunks[n] == devicechunks);
         }
 #endif
     }
     else {
         for (auto &device : devices_) {
-            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 0);
-            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 1);
-            chunks_[cnv].emplace_back(std::weak_ptr<class chunk>{}, device, 2);
+            for (uint32_t chunk_idx = 0; chunk_idx < cnv_chunks_count;
+                 ++chunk_idx) {
+                chunks_[cnv].emplace_back(
+                    activate_chunk(cnv, device, chunk_idx, zone_id(cnv)));
+            }
         }
         for (size_t deviceidx = 0; deviceidx < chunks.size(); deviceidx++) {
             for (size_t n = 0; n < chunks[deviceidx]; n++) {
-                chunks_[seq].emplace_back(
-                    std::weak_ptr<class chunk>{}, devices_[deviceidx], 3 + n);
+                chunks_[seq].emplace_back(activate_chunk(
+                    seq,
+                    devices_[deviceidx],
+                    static_cast<uint32_t>(cnv_chunks_count + n),
+                    zone_id(seq)));
             }
         }
     }
@@ -649,7 +681,7 @@ storage_pool::storage_pool(storage_pool const *src, clone_as_read_only_tag_)
             if (src_device.is_block_device()) {
                 return make_device_(
                     mode::open_existing,
-                    device::type_t_::block_device,
+                    device_t::type_t_::block_device,
                     path,
                     fd,
                     &src_device,
@@ -658,7 +690,7 @@ storage_pool::storage_pool(storage_pool const *src, clone_as_read_only_tag_)
             if (src_device.is_file()) {
                 return make_device_(
                     mode::open_existing,
-                    device::type_t_::file,
+                    device_t::type_t_::file,
                     path,
                     fd,
                     &src_device,
@@ -703,7 +735,7 @@ storage_pool::storage_pool(
             if ((stat.st_mode & S_IFMT) == S_IFBLK) {
                 return make_device_(
                     mode,
-                    device::type_t_::block_device,
+                    device_t::type_t_::block_device,
                     source.c_str(),
                     fd,
                     0ULL,
@@ -712,7 +744,7 @@ storage_pool::storage_pool(
             if ((stat.st_mode & S_IFMT) == S_IFREG) {
                 return make_device_(
                     mode,
-                    device::type_t_::file,
+                    device_t::type_t_::file,
                     source.c_str(),
                     fd,
                     stat.st_ino,
@@ -745,7 +777,7 @@ storage_pool::storage_pool(
     MONAD_ASSERT_PRINTF(
         -1 != ::ftruncate(fd, len), "failed due to %s", std::strerror(errno));
     devices_.push_back(make_device_(
-        mode::truncate, device::type_t_::file, {}, fd, uint64_t(0), flags));
+        mode::truncate, device_t::type_t_::file, {}, fd, uint64_t(0), flags));
     unfd.release();
     fill_chunks_(flags);
 }
@@ -753,20 +785,19 @@ storage_pool::storage_pool(
 storage_pool::~storage_pool()
 {
     auto const cleanupchunks_ = [&](chunk_type which) {
-        for (auto &chunk_ : chunks_[which]) {
-            auto chunk(chunk_.chunk.lock());
-            if (chunk && (chunk->owns_readfd_ || chunk->owns_writefd_)) {
-                auto const fd = chunk->read_fd_;
-                if (chunk->owns_readfd_ && chunk->read_fd_ != -1) {
-                    (void)::close(chunk->read_fd_);
-                    chunk->read_fd_ = -1;
+        for (auto &chunk : chunks_[which]) {
+            if (chunk.owns_readfd_ || chunk.owns_writefd_) {
+                auto const fd = chunk.read_fd_;
+                if (chunk.owns_readfd_ && chunk.read_fd_ != -1) {
+                    (void)::close(chunk.read_fd_);
+                    chunk.read_fd_ = -1;
                 }
-                if (chunk->owns_writefd_ && chunk->write_fd_ != -1) {
-                    if (chunk->write_fd_ != fd) {
-                        (void)::fsync(chunk->write_fd_);
-                        (void)::close(chunk->write_fd_);
+                if (chunk.owns_writefd_ && chunk.write_fd_ != -1) {
+                    if (chunk.write_fd_ != fd) {
+                        (void)::fsync(chunk.write_fd_);
+                        (void)::close(chunk.write_fd_);
                     }
-                    chunk->write_fd_ = -1;
+                    chunk.write_fd_ = -1;
                 }
             }
         }
@@ -776,11 +807,11 @@ storage_pool::~storage_pool()
     cleanupchunks_(seq);
     for (auto const &device : devices_) {
         if (device.metadata_ != nullptr) {
-            auto total_size =
+            auto const total_size =
                 device.metadata_->total_size(device.size_of_file_);
             ::munmap(
                 reinterpret_cast<void *>(round_down_align<CPU_PAGE_BITS>(
-                    (uintptr_t)device.metadata_ + sizeof(device::metadata_t) -
+                    (uintptr_t)device.metadata_ + sizeof(device_t::metadata_t) -
                     total_size)),
                 total_size);
         }
@@ -792,85 +823,57 @@ storage_pool::~storage_pool()
     devices_.clear();
 }
 
-size_t storage_pool::currently_active_chunks(chunk_type which) const noexcept
-{
-    std::unique_lock const g(lock_);
-    size_t ret = 0;
-    for (auto const &i : chunks_[which]) {
-        if (!i.chunk.expired()) {
-            ret++;
-        }
-    }
-    return ret;
-}
-
-std::shared_ptr<class storage_pool::chunk>
-storage_pool::chunk(chunk_type which, uint32_t id) const
+storage_pool::chunk_t &storage_pool::chunk(chunk_type which, uint32_t id)
 {
     std::unique_lock const g(lock_);
     if (id >= chunks_[which].size()) {
         MONAD_ABORT("Requested chunk which does not exist");
     }
-    return chunks_[which][id].chunk.lock();
+    return chunks_[which][id];
 }
 
-std::shared_ptr<class storage_pool::chunk>
-storage_pool::activate_chunk(chunk_type const which, uint32_t const id)
+storage_pool::chunk_t storage_pool::activate_chunk(
+    chunk_type const which, device_t &device, uint32_t const id_within_device,
+    uint32_t const id_within_zone)
 {
 #ifndef __clang__
-    MONAD_DEBUG_ASSERT(this != nullptr);
+    MONAD_ASSERT(this != nullptr);
 #endif
-    std::unique_lock g(lock_);
-    if (id >= chunks_[which].size()) {
-        MONAD_ABORT("Requested to activate chunk which does not exist");
-    }
-    auto ret = chunks_[which][id].chunk.lock();
-    if (ret) {
-        return ret;
-    }
-    g.unlock();
-    auto &chunkinfo = chunks_[which][id];
-    switch (which) {
-    case chunk_type::cnv:
-        ret = std::shared_ptr<cnv_chunk>(new cnv_chunk(
-            chunkinfo.device,
-            chunkinfo.device.readwritefd_,
-            chunkinfo.device.readwritefd_,
-            file_offset_t(chunkinfo.chunk_offset_into_device) *
-                chunkinfo.device.metadata_->chunk_capacity,
-            chunkinfo.device.metadata_->chunk_capacity,
-            chunkinfo.chunk_offset_into_device,
-            id,
-            false,
-            false,
-            false));
-        break;
-    case chunk_type::seq: {
-        ret = std::shared_ptr<seq_chunk>(new seq_chunk(
-            chunkinfo.device,
-            chunkinfo.device.readwritefd_,
-            chunkinfo.device.readwritefd_,
-            file_offset_t(chunkinfo.chunk_offset_into_device) *
-                chunkinfo.device.metadata_->chunk_capacity,
-            chunkinfo.device.metadata_->chunk_capacity,
-            chunkinfo.chunk_offset_into_device,
-            id,
-            false,
-            false,
-            true));
-        break;
-    }
-    }
-    MONAD_ASSERT(ret);
-    if (ret->device().is_zoned_device()) {
-        MONAD_ABORT("zonefs support isn't implemented yet");
-    }
-    g.lock();
-    auto const ret2 = chunks_[which][id].chunk.lock();
-    if (ret2) {
-        return ret2;
-    }
-    chunks_[which][id].chunk = ret;
+    std::unique_lock const g(lock_);
+    chunk_t const ret = [&]() {
+        switch (which) {
+        case chunk_type::cnv:
+            return chunk_t{
+                device,
+                device.readwritefd_,
+                device.readwritefd_,
+                file_offset_t(id_within_device) *
+                    device.metadata_->chunk_capacity,
+                device.metadata_->chunk_capacity,
+                id_within_device,
+                id_within_zone,
+                false,
+                false,
+                false};
+        case chunk_type::seq: {
+            return chunk_t{
+                device,
+                device.readwritefd_,
+                device.readwritefd_,
+                file_offset_t(id_within_device) *
+                    device.metadata_->chunk_capacity,
+                device.metadata_->chunk_capacity,
+                id_within_device,
+                id_within_zone,
+                false,
+                false,
+                true};
+        }
+        }
+        MONAD_ABORT_PRINTF("chunk type not supported: %d", which);
+    }();
+    MONAD_ASSERT_PRINTF(
+        !ret.device().is_zoned_device(), "zonefs isn't implemented");
     return ret;
 }
 

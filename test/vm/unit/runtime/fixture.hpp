@@ -15,9 +15,10 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
+#include <monad/test/traits_test.hpp>
 
 #include <gtest/gtest.h>
 
@@ -26,15 +27,17 @@
 
 #include <limits>
 
+extern "C" void tests_trampoline(void *, void (*)(void *), void *);
+
 namespace monad::vm::compiler::test
 {
     using namespace runtime;
     using namespace evmc::literals;
 
-    class RuntimeTest : public testing::Test
+    class RuntimeTestBase
     {
     protected:
-        RuntimeTest();
+        RuntimeTestBase();
 
         std::array<std::uint8_t, 128> code_;
         std::array<std::uint8_t, 128> call_data_;
@@ -52,6 +55,15 @@ namespace monad::vm::compiler::test
             std::int64_t gas_refund = 0);
 
         evmc_result failure_result(evmc_status_code = EVMC_INTERNAL_ERROR);
+
+        // shim to be able to pass a function pointer to tests_trampoline
+        // which will then correctly invoke the actual closure/lambda
+        template <typename Closure>
+        static void call_closure(void *ptr)
+        {
+            auto *fn = reinterpret_cast<Closure *>(ptr);
+            (*fn)();
+        }
 
         /**
          * This function performs some slightly gnarly metaprogramming to make
@@ -119,7 +131,25 @@ namespace monad::vm::compiler::test
                     }
                 }();
 
-                std::apply(f, all_args);
+                // if f uses the context, it may exit early by calling
+                // ctx->exit(...) therefore, have to call it via the
+                // tests_trampoline to set up the compiler calling convention
+                // and if f returns, call ctx_->exit(StatusCode::Success) to
+                // restore the previous context correctly
+                if constexpr (use_context) {
+                    auto f_lambda = [f, &all_args]() {
+                        std::apply(f, all_args);
+                        std::get<0>(all_args)->exit(StatusCode::Success);
+                    };
+
+                    tests_trampoline(
+                        static_cast<void *>(&ctx_.exit_stack_ptr),
+                        &call_closure<decltype(f_lambda)>,
+                        static_cast<void *>(&f_lambda));
+                }
+                else {
+                    std::apply(f, all_args);
+                }
 
                 if constexpr (use_result) {
                     return result;
@@ -142,4 +172,43 @@ namespace monad::vm::compiler::test
 
         void add_account_at(uint256_t addr, std::span<uint8_t> const code);
     };
+
+    class RuntimeTest
+        : public RuntimeTestBase
+        , public testing::Test
+    {
+    };
+
+    template <typename T>
+    class RuntimeTraitsTest
+        : public RuntimeTestBase
+        , public TraitsTest<T>
+    {
+    public:
+        void assert_delegated(evmc::address const &delegate_addr)
+        {
+            ASSERT_EQ(ctx_.result.status, StatusCode::Success);
+
+            ASSERT_EQ(host_.recorded_calls.size(), 1);
+
+            if constexpr (TraitsTest<T>::Trait::evm_rev() >= EVMC_PRAGUE) {
+                ASSERT_EQ(
+                    host_.access_account(delegate_addr), EVMC_ACCESS_WARM);
+                ASSERT_EQ(
+                    host_.recorded_calls[0].flags &
+                        static_cast<uint32_t>(EVMC_DELEGATED),
+                    static_cast<uint32_t>(EVMC_DELEGATED));
+            }
+            else {
+                ASSERT_EQ(
+                    host_.access_account(delegate_addr), EVMC_ACCESS_COLD);
+                ASSERT_NE(
+                    host_.recorded_calls[0].flags &
+                        static_cast<uint32_t>(EVMC_DELEGATED),
+                    static_cast<uint32_t>(EVMC_DELEGATED));
+            }
+        }
+    };
 }
+
+DEFINE_TRAITS_FIXTURE(RuntimeTraitsTest);

@@ -53,7 +53,7 @@ class BatchMemPool
 #endif
 
 public:
-    BatchMemPool(size_t const initial, size_t const batch = 1024)
+    explicit BatchMemPool(size_t const initial, size_t const batch = 1024)
         : pool_{sizeof(T), initial}
     {
         void *p = pool_.malloc();

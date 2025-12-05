@@ -15,12 +15,19 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.hpp>
+
+// It is assumed that if the `result` pointer overlaps with `left` and/or
+// `right`, then `result` pointer is equal to `left` and/or `right`.
+extern "C" void monad_vm_runtime_mul(
+    monad::vm::runtime::uint256_t *result,
+    monad::vm::runtime::uint256_t const *left,
+    monad::vm::runtime::uint256_t const *right) noexcept;
 
 // It is assumed that if the `result` pointer overlaps with `left` and/or
 // `right`, then `result` pointer is equal to `left` and/or `right`.
@@ -124,9 +131,9 @@ namespace monad::vm::runtime
     exp(Context *ctx, uint256_t *result_ptr, uint256_t const *a_ptr,
         uint256_t const *exponent_ptr) noexcept
     {
-        auto exponent_byte_size = count_significant_bytes(*exponent_ptr);
+        auto const exponent_byte_size = count_significant_bytes(*exponent_ptr);
 
-        auto exponent_cost = exp_dynamic_gas_cost_multiplier<traits>();
+        auto const exponent_cost = exp_dynamic_gas_cost_multiplier<traits>();
 
         ctx->deduct_gas(exponent_byte_size * exponent_cost);
 

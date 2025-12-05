@@ -46,9 +46,8 @@ constexpr std::string_view call_kind_to_string(CallType const &type)
         return "CREATE2";
     case CallType::SELFDESTRUCT:
         return "SELFDESTRUCT";
-    default:
-        MONAD_ASSERT(false);
     }
+    MONAD_ABORT(); // unreachable
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END

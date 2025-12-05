@@ -15,13 +15,13 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/interpreter/stack.hpp>
 #include <category/vm/interpreter/types.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.h>
 

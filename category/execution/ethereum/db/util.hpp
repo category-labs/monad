@@ -156,19 +156,23 @@ void write_to_file(
     nlohmann::json const &, std::filesystem::path const &,
     uint64_t block_number);
 
-void load_from_binary(
+mpt::Node::SharedPtr load_from_binary(
     mpt::Db &, std::istream &accounts, std::istream &code,
     uint64_t init_block_number = 0,
     size_t buf_size = 1ul << 32); // TODO: dynamic loading
 
-void load_header(mpt::Db &, BlockHeader const &);
+mpt::Node::SharedPtr
+load_header(mpt::Node::SharedPtr, mpt::Db &, BlockHeader const &);
 
 mpt::Nibbles proposal_prefix(bytes32_t const &);
 
 std::vector<bytes32_t> get_proposal_block_ids(mpt::Db &, uint64_t block_number);
 
-std::optional<BlockHeader>
-read_eth_header(mpt::Db const &db, uint64_t block, mpt::NibblesView prefix);
+template <typename DBType>
+    requires std::is_same_v<mpt::Db, DBType> ||
+             std::is_same_v<mpt::RODb, DBType>
+Result<std::vector<Transaction>> get_transactions(
+    DBType &, uint64_t block_number, bytes32_t const &block_id = {});
 
 bool for_each_code(
     mpt::Db &, uint64_t block,

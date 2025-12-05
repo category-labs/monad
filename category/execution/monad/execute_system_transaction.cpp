@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -73,6 +74,7 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     , prev_{prev}
     , call_tracer_{call_tracer}
 {
+    record_txn_header_events(static_cast<uint32_t>(i), tx, sender, {});
 }
 
 template <Traits traits>
@@ -113,6 +115,11 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             }
             auto const receipt = execute_final(state);
             block_state_.merge(state);
+            record_txn_output_events(
+                static_cast<uint32_t>(this->i_),
+                receipt,
+                call_tracer_.get_call_frames(),
+                state);
             return receipt;
         }
     }
@@ -132,6 +139,11 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         }
         auto const receipt = execute_final(state);
         block_state_.merge(state);
+        record_txn_output_events(
+            static_cast<uint32_t>(this->i_),
+            receipt,
+            call_tracer_.get_call_frames(),
+            state);
         return receipt;
     }
 }
@@ -139,7 +151,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 template <Traits traits>
 evmc_message ExecuteSystemTransaction<traits>::to_message() const
 {
-    return evmc_message{
+    evmc_message msg{
         .kind = EVMC_CALL,
         .flags = 0,
         .depth = 0,
@@ -154,6 +166,8 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
         .code = nullptr,
         .code_size = 0,
     };
+    intx::be::store(msg.value.bytes, tx_.value);
+    return msg;
 }
 
 template <Traits traits>
@@ -204,11 +218,11 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
 
     switch (signature) {
     case SyscallSelector::REWARD:
-        return contract.syscall_reward(calldata, value);
+        return contract.syscall_reward<traits>(calldata, value);
     case SyscallSelector::SNAPSHOT:
-        return contract.syscall_snapshot(calldata);
+        return contract.syscall_snapshot(calldata, value);
     case SyscallSelector::ON_EPOCH_CHANGE:
-        return contract.syscall_on_epoch_change(calldata);
+        return contract.syscall_on_epoch_change(calldata, value);
     }
     return staking::StakingError::MethodNotSupported;
 }

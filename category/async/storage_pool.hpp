@@ -77,7 +77,7 @@ public:
 
     /*! \brief A source of backing storage for the storage pool.
      */
-    class device
+    class device_t
     {
         friend class storage_pool;
 
@@ -95,7 +95,8 @@ public:
         {
             // Preceding this is an array of uint32_t of chunk bytes used
 
-            uint32_t spare_[13]; // set aside for flags later
+            uint32_t spare_[12]; // set aside for flags later
+            uint32_t num_cnv_chunks; // number of cnv chunks per device
             uint32_t config_hash; // hash of this configuration
             uint32_t chunk_capacity;
             uint8_t magic[4]; // "MND0" for v1 of this metadata
@@ -103,13 +104,13 @@ public:
             size_t chunks(file_offset_t end_of_this_offset) const noexcept
             {
                 end_of_this_offset -= sizeof(metadata_t);
-                auto ret =
+                auto const ret =
                     end_of_this_offset / (chunk_capacity + sizeof(uint32_t));
                 // We need the front CPU_PAGE_SIZE of this metadata to not
                 // include any chunk
-                auto endofchunks =
+                auto const endofchunks =
                     round_down_align<CPU_PAGE_BITS>(ret * chunk_capacity);
-                auto startofmetadata = round_down_align<CPU_PAGE_BITS>(
+                auto const startofmetadata = round_down_align<CPU_PAGE_BITS>(
                     end_of_this_offset - ret * sizeof(uint32_t));
                 if (startofmetadata == endofchunks) {
                     return ret - 1;
@@ -123,7 +124,7 @@ public:
             {
                 static_assert(
                     sizeof(uint32_t) == sizeof(std::atomic<uint32_t>));
-                auto count = chunks(end_of_this_offset);
+                auto const count = chunks(end_of_this_offset);
                 return {
                     start_lifetime_as_array<std::atomic<uint32_t>>(
                         const_cast<std::byte *>(
@@ -136,14 +137,14 @@ public:
             // Bytes used by the pool metadata on this device
             size_t total_size(file_offset_t end_of_this_offset) const noexcept
             {
-                auto count = chunks(end_of_this_offset);
+                auto const count = chunks(end_of_this_offset);
                 return sizeof(metadata_t) + count * sizeof(uint32_t);
             }
         } *const metadata_;
 
         static_assert(sizeof(metadata_t) == 64);
 
-        constexpr device(
+        constexpr device_t(
             int readwritefd, type_t_ type, uint64_t unique_hash,
             file_offset_t size_of_file, metadata_t *metadata)
             : readwritefd_(readwritefd)
@@ -178,6 +179,9 @@ public:
 
         //! Returns the number of chunks on this device
         size_t chunks() const;
+
+        //! Returns the number of cnv chunks on this device
+        size_t cnv_chunks() const;
         //! Returns the capacity of the device, and how much of that is
         //! currently filled with data, in that order.
         std::pair<file_offset_t, file_offset_t> capacity() const;
@@ -187,12 +191,11 @@ public:
     ptr. When the shared ptr count reaches zero, any file descriptors or other
     resources associated with the chunk are released.
      */
-    class chunk
+    class chunk_t
     {
         friend class storage_pool;
 
-    protected:
-        class device &device_;
+        device_t &device_;
         int read_fd_{-1}, write_fd_{-1};
         file_offset_t const offset_{file_offset_t(-1)},
             capacity_{file_offset_t(-1)};
@@ -201,11 +204,12 @@ public:
         bool const owns_readfd_{false}, owns_writefd_{false},
             append_only_{false};
 
-        constexpr chunk(
-            class device &device, int read_fd, int write_fd,
-            file_offset_t offset, file_offset_t capacity,
-            uint32_t chunkid_within_device, uint32_t chunkid_within_zone,
-            bool owns_readfd, bool owns_writefd, bool append_only)
+    public:
+        constexpr chunk_t(
+            device_t &device, int read_fd, int write_fd, file_offset_t offset,
+            file_offset_t capacity, uint32_t chunkid_within_device,
+            uint32_t chunkid_within_zone, bool owns_readfd, bool owns_writefd,
+            bool append_only)
             : device_(device)
             , read_fd_(read_fd)
             , write_fd_(write_fd)
@@ -219,19 +223,16 @@ public:
         {
         }
 
-    public:
-        chunk(chunk const &) = delete;
-        chunk(chunk &&) = delete;
-        virtual ~chunk();
+        virtual ~chunk_t();
 
         //! \brief Returns the storage device this chunk is stored upon
-        class device &device() noexcept
+        device_t &device() noexcept
         {
             return device_;
         }
 
         //! \brief Returns the storage device this chunk is stored upon
-        const class device &device() const noexcept
+        device_t const &device() const noexcept
         {
             return device_;
         }
@@ -288,54 +289,13 @@ public:
         //! chunk, using kernel offload where available. The destination chunk
         //! MUST be empty if it is sequential append only, otherwise the call
         //! fails.
-        uint32_t clone_contents_into(chunk &other, uint32_t bytes);
+        uint32_t clone_contents_into(chunk_t &other, uint32_t bytes);
 
         /*! \brief Tries to trim the contents of a chunk by efficiently
         discarding the tail of the contents. If not possible to do efficiently,
         return false.
         */
         bool try_trim_contents(uint32_t bytes);
-    };
-
-    /*! \brief A conventional zone chunk from the `cnv` subdirectory.
-     */
-    class cnv_chunk final : public chunk
-    {
-        friend class storage_pool;
-
-        using chunk::chunk;
-
-    public:
-        bool is_conventional_write() const noexcept
-        {
-            return true;
-        }
-
-        bool is_sequential_write() const noexcept
-        {
-            return false;
-        }
-    };
-
-    /*! \brief An append-only sequential write zone chunk from the `seq`
-     * subdirectory.
-     */
-    class seq_chunk final : public chunk
-    {
-        friend class storage_pool;
-
-        using chunk::chunk;
-
-    public:
-        bool is_conventional_write() const noexcept
-        {
-            return false;
-        }
-
-        bool is_sequential_write() const noexcept
-        {
-            return true;
-        }
     };
 
     //! \brief What to do when opening the pool for use.
@@ -365,39 +325,32 @@ public:
         //! happily use any partition you feed it, including the system drive.
         uint32_t disable_mismatching_storage_pool_check : 1;
 
+        //! Number of conventional chunks to allocate per device. Default is 3.
+        uint32_t num_cnv_chunks;
+
         constexpr creation_flags()
             : chunk_capacity(28)
             , interleave_chunks_evenly(false)
             , open_read_only(false)
             , open_read_only_allow_dirty(false)
             , disable_mismatching_storage_pool_check(false)
+            , num_cnv_chunks(3)
         {
         }
     };
 
-    using chunk_ptr = std::shared_ptr<class chunk>;
-    using cnv_chunk_ptr = std::shared_ptr<cnv_chunk>;
-    using seq_chunk_ptr = std::shared_ptr<seq_chunk>;
-
 private:
     bool const is_read_only_, is_read_only_allow_dirty_, is_newly_truncated_;
-    std::vector<device> devices_;
+    std::vector<device_t> devices_;
 
     // Lock protects everything below this
     mutable std::mutex lock_;
 
-    struct chunk_info_
-    {
-        std::weak_ptr<class chunk> chunk;
-        class device &device;
-        uint32_t const chunk_offset_into_device;
-    };
+    std::vector<chunk_t> chunks_[2];
 
-    std::vector<chunk_info_> chunks_[2];
-
-    device make_device_(
-        mode op, device::type_t_ type, std::filesystem::path const &path,
-        int fd, std::variant<uint64_t, device const *> dev_no_or_dev,
+    device_t make_device_(
+        mode op, device_t::type_t_ type, std::filesystem::path const &path,
+        int fd, std::variant<uint64_t, device_t const *> dev_no_or_dev,
         creation_flags flags);
 
     void fill_chunks_(creation_flags const &flags);
@@ -447,7 +400,7 @@ public:
     }
 
     //! \brief Returns a list of the backing storage devices
-    std::span<device const> devices() const noexcept
+    std::span<device_t const> devices() const noexcept
     {
         return {devices_};
     }
@@ -458,16 +411,17 @@ public:
         return chunks_[which].size();
     }
 
-    //! \brief Returns the number of currently active chunks for the specified
-    //! type
-    size_t currently_active_chunks(chunk_type which) const noexcept;
     //! \brief Get an existing chunk, if it is activated
-    std::shared_ptr<class chunk> chunk(chunk_type which, uint32_t id) const;
-    //! \brief Activate a chunk (i.e. open file descriptors to it, if necessary)
-    std::shared_ptr<class chunk> activate_chunk(chunk_type which, uint32_t id);
+    chunk_t &chunk(chunk_type which, uint32_t id);
 
     //! \brief Clones an existing storage pool as read-only
     storage_pool clone_as_read_only() const;
+
+private:
+    //! \brief Activate a chunk (i.e. open file descriptors to it, if necessary)
+    chunk_t activate_chunk(
+        chunk_type which, device_t &device, uint32_t id_within_device,
+        uint32_t id_within_zone);
 };
 
 MONAD_ASYNC_NAMESPACE_END

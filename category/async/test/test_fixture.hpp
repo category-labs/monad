@@ -34,7 +34,7 @@ namespace monad::test
         {
             static monad::io::Ring make_ring()
             {
-                return monad::io::Ring({MAX_CONCURRENCY, false, 0});
+                return monad::io::Ring({MAX_CONCURRENCY, 0});
             }
 
             static monad::io::Buffers make_buffers(monad::io::Ring &ring)
@@ -63,9 +63,8 @@ namespace monad::test
             std::unique_ptr<monad::async::AsyncIO> testio = [this] {
                 auto ret =
                     std::make_unique<monad::async::AsyncIO>(pool, testrwbuf);
-                auto fd =
-                    pool.activate_chunk(monad::async::storage_pool::seq, 0)
-                        ->write_fd(TEST_FILE_SIZE);
+                auto const fd = pool.chunk(monad::async::storage_pool::seq, 0)
+                                    .write_fd(TEST_FILE_SIZE);
                 MONAD_ASSERT(
                     TEST_FILE_SIZE == ::pwrite(
                                           fd.first,

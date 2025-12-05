@@ -18,8 +18,8 @@
 #include <category/vm/compiler/ir/local_stacks.hpp>
 #include <category/vm/compiler/types.hpp>
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -223,6 +223,11 @@ namespace
             break;
         case Sar:
             eval_binary_instruction(tok, stack, sar);
+            break;
+        case Clz:
+            eval_unary_instruction(tok, stack, [](auto &x) {
+                return monad::vm::runtime::countl_zero(x);
+            });
             break;
         case CodeSize:
             stack.emplace_front(ValueIs::LITERAL, uint256_t{codesize});

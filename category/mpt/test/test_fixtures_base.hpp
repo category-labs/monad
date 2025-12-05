@@ -289,46 +289,46 @@ namespace monad::test
     namespace fixed_updates
     {
         std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
-            {0x1234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_hex},
-            {0x1234567822345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe_hex},
-            {0x1234567832345678123456781234567812345678123456781234567812345671_hex,
-             0xdeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafe_hex},
-            {0x1234567832345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabe_hex}};
+            {0x1234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_bytes},
+            {0x1234567822345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe_bytes},
+            {0x1234567832345678123456781234567812345678123456781234567812345671_bytes,
+             0xdeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafe_bytes},
+            {0x1234567832345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabe_bytes}};
     };
 
     namespace unrelated_leaves
     {
         std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
-            {0x0234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_hex},
-            {0x1234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe_hex},
-            {0x2234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafe_hex},
-            {0x3234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabe_hex}};
+            {0x0234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_bytes},
+            {0x1234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe_bytes},
+            {0x2234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafedeadcafe_bytes},
+            {0x3234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabedeadbabe_bytes}};
     };
 
     namespace var_len_values
     {
         std::vector<std::pair<monad::byte_string, monad::byte_string>> const kv{
-            {0x0234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdead_hex}, // 0
-            {0x1234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xbeef_hex}, // 1
-            {0x2234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xba_hex}, // 2
-            {0x3234567812345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeef_hex}, // 3
-            {0x1234567822345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbeefcafe_hex}, // 4
-            {0x1234567832345678123456781234567812345678123456781234567812345671_hex,
-             0xdeadcafedeadcafedeadcafedeadcafedead_hex}, // 5
-            {0x1234567832345678123456781234567812345678123456781234567812345678_hex,
-             0xdeadbabedeadbabedeadbabedead_hex}}; // 6
+            {0x0234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdead_bytes}, // 0
+            {0x1234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xbeef_bytes}, // 1
+            {0x2234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xba_bytes}, // 2
+            {0x3234567812345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeef_bytes}, // 3
+            {0x1234567822345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbeefcafe_bytes}, // 4
+            {0x1234567832345678123456781234567812345678123456781234567812345671_bytes,
+             0xdeadcafedeadcafedeadcafedeadcafedead_bytes}, // 5
+            {0x1234567832345678123456781234567812345678123456781234567812345678_bytes,
+             0xdeadbabedeadbabedeadbabedead_bytes}}; // 6
     };
 
     // merkle tries
@@ -341,7 +341,7 @@ namespace monad::test
 
         InMemoryTrieBase()
             : root()
-            , aux(nullptr)
+            , aux()
         {
         }
 
@@ -384,7 +384,7 @@ namespace monad::test
                   MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE))
             , io(pool, rwbuf)
             , root()
-            , aux(&io, MPT_TEST_HISTORY_LENGTH)
+            , aux(io, MPT_TEST_HISTORY_LENGTH)
         {
         }
 
@@ -515,7 +515,7 @@ namespace monad::test
             Node::SharedPtr root;
             StateMachineAlwaysMerkle sm;
             UpdateAux<LockType> aux{
-                &io, Config.history_len}; // trie section starts from account
+                io, Config.history_len}; // trie section starts from account
             monad::small_prng rand;
             std::vector<std::pair<monad::byte_string, size_t>> keys;
             uint64_t version{0};
@@ -539,7 +539,7 @@ namespace monad::test
                 }
             }
 
-            std::ostream &print(std::ostream &s) const
+            std::ostream &print(std::ostream &s)
             {
                 auto v = pool.devices().front().capacity();
                 std::cout << "\n   Storage pool capacity = " << v.first
@@ -559,10 +559,10 @@ namespace monad::test
                      ci != nullptr;
                      ci = ci->next(aux.db_metadata())) {
                     auto idx = ci->index(aux.db_metadata());
-                    auto chunk = pool.chunk(pool.seq, idx);
+                    auto &chunk = pool.chunk(pool.seq, idx);
                     std::cout << "\n      Chunk " << idx
-                              << " has capacity = " << chunk->capacity()
-                              << " consumed = " << chunk->size();
+                              << " has capacity = " << chunk.capacity()
+                              << " consumed = " << chunk.size();
                 }
                 std::cout << "\n\n   Slow list:";
                 for (auto const *ci = aux.db_metadata()->slow_list_begin();
@@ -571,8 +571,8 @@ namespace monad::test
                     auto idx = ci->index(aux.db_metadata());
                     auto chunk = pool.chunk(pool.seq, idx);
                     std::cout << "\n      Chunk " << idx
-                              << " has capacity = " << chunk->capacity()
-                              << " consumed = " << chunk->size();
+                              << " has capacity = " << chunk.capacity()
+                              << " consumed = " << chunk.size();
                 }
                 std::cout << "\n\n   Free list: "
                           << aux.db_metadata()->capacity_in_free_list
@@ -599,7 +599,7 @@ namespace monad::test
                     for (size_t n = 0; n < Config.updates_per_block; n++) {
                         {
                             monad::byte_string key(
-                                0x1234567812345678123456781234567812345678123456781234567812345678_hex);
+                                0x1234567812345678123456781234567812345678123456781234567812345678_bytes);
                             for (size_t n = 0; n < key.size(); n += 4) {
                                 *(uint32_t *)(key.data() + n) = rand();
                             }

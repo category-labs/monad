@@ -25,9 +25,12 @@
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/tl_tid.h>
-#include <category/core/unordered_map.hpp>
 
-#include <atomic>
+#include <boost/container/small_vector.hpp>
+#include <boost/outcome/try.hpp>
+
+#include <ankerl/unordered_dense.h>
+
 #include <cassert>
 #include <cerrno>
 #include <chrono>
@@ -36,12 +39,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <ostream>
 #include <span>
+#include <sys/poll.h>
 #include <utility>
 #include <vector>
 
@@ -83,10 +88,6 @@ MONAD_ASYNC_NAMESPACE_BEGIN
 
 namespace detail
 {
-    // diseased dead beef in hex, last bit set so won't be a pointer
-    static void *const ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC =
-        (void *)(uintptr_t)0xd15ea5eddeadbeef;
-
     struct AsyncIO_per_thread_state_t::within_completions_holder
     {
         AsyncIO_per_thread_state_t *parent;
@@ -98,11 +99,16 @@ namespace detail
         }
 
         within_completions_holder(within_completions_holder const &) = delete;
-        within_completions_holder(within_completions_holder &&) = default;
+
+        within_completions_holder(within_completions_holder &&other) noexcept
+            : parent(other.parent)
+        {
+            other.parent = nullptr;
+        }
 
         ~within_completions_holder()
         {
-            if (0 == --parent->within_completions_count) {
+            if (parent && 0 == --parent->within_completions_count) {
                 parent->within_completions_reached_zero();
             }
         }
@@ -143,7 +149,8 @@ namespace detail
 
 AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     : owning_tid_(get_tl_tid())
-    , fds_{-1, -1}
+    , storage_pool_{std::addressof(pool)}
+    , cnv_chunk_{pool.chunk(storage_pool::cnv, 0)}
     , uring_(rwbuf.ring())
     , wr_uring_(rwbuf.wr_ring())
     , rwbuf_(rwbuf)
@@ -168,54 +175,22 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         "currently cannot create more than one AsyncIO per thread at a time");
     ts.instance = this;
 
-    // create and register the message type pipe for threadsafe communications
-    // read side is nonblocking, write side is blocking
-    auto *ring = &uring_.get_ring();
-    if (!(ring->flags & IORING_SETUP_IOPOLL)) {
-        MONAD_ASSERT_PRINTF(
-            ::pipe2((int *)&fds_, O_NONBLOCK | O_DIRECT | O_CLOEXEC) != -1,
-            "failed due to %s",
-            std::strerror(errno));
-        MONAD_ASSERT_PRINTF(
-            ::fcntl(fds_.msgwrite, F_SETFL, O_DIRECT | O_CLOEXEC) != -1,
-            "failed due to %s",
-            std::strerror(errno));
-        struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
-        MONAD_ASSERT(sqe);
-        io_uring_prep_poll_multishot(sqe, fds_.msgread, POLLIN);
-        io_uring_sqe_set_data(
-            sqe, detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC);
-        MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
-    }
-
-    // TODO(niall): In the future don't activate all the chunks, as
-    // theoretically zoned storage may enforce a maximum open zone count in
-    // hardware. I cannot find any current zoned storage implementation that
-    // does not implement infinite open zones so I went ahead and have been lazy
-    // here, and we open everything all at once. It also means I can avoid
-    // dynamic fd registration with io_uring, which simplifies implementation.
-    storage_pool_ = &pool;
-    cnv_chunk_ = std::static_pointer_cast<storage_pool::cnv_chunk>(
-        pool.activate_chunk(storage_pool::cnv, 0));
-    auto count = pool.chunks(storage_pool::seq);
-    seq_chunks_.reserve(count);
+    auto const count = pool.chunks(storage_pool::seq);
     std::vector<int> fds;
     fds.reserve(count * 2 + 2);
     fds.push_back(cnv_chunk_.io_uring_read_fd);
     fds.push_back(cnv_chunk_.io_uring_write_fd);
     for (size_t n = 0; n < count; n++) {
         seq_chunks_.emplace_back(
-            std::static_pointer_cast<storage_pool::seq_chunk>(
-                pool.activate_chunk(
-                    storage_pool::seq, static_cast<uint32_t>(n))));
+            pool.chunk(storage_pool::seq, static_cast<uint32_t>(n)));
         MONAD_ASSERT_PRINTF(
-            seq_chunks_.back().ptr->capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE,
+            seq_chunks_.back().chunk.capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE,
             "sequential chunk capacity %llu must equal or exceed i/o buffer "
             "size %zu",
-            seq_chunks_.back().ptr->capacity(),
+            seq_chunks_.back().chunk.capacity(),
             MONAD_IO_BUFFERS_WRITE_SIZE);
         MONAD_ASSERT(
-            (seq_chunks_.back().ptr->capacity() %
+            (seq_chunks_.back().chunk.capacity() %
              MONAD_IO_BUFFERS_WRITE_SIZE) == 0);
         fds.push_back(seq_chunks_[n].io_uring_read_fd);
         fds.push_back(seq_chunks_[n].io_uring_write_fd);
@@ -226,8 +201,8 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     same file descriptor for reads (and it may do so for writes depending). So
     reduce to a minimum mapped set.
     */
-    unordered_dense_map<int, int> fd_to_iouring_map;
-    for (auto fd : fds) {
+    ankerl::unordered_dense::segmented_map<int, int> fd_to_iouring_map;
+    for (auto const fd : fds) {
         MONAD_ASSERT(fd != -1);
         fd_to_iouring_map[fd] = -1;
     }
@@ -279,7 +254,12 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
 
 AsyncIO::~AsyncIO()
 {
-    wait_until_done();
+    try {
+        wait_until_done();
+    }
+    catch (...) {
+        std::terminate();
+    }
 
     auto &ts = detail::AsyncIO_per_thread_state();
     MONAD_ASSERT_PRINTF(
@@ -291,23 +271,29 @@ AsyncIO::~AsyncIO()
         MONAD_ASSERT(!io_uring_unregister_files(&wr_uring_->get_ring()));
     }
     MONAD_ASSERT(!io_uring_unregister_files(&uring_.get_ring()));
-
-    ::close(fds_.msgread);
-    ::close(fds_.msgwrite);
 }
 
-void AsyncIO::submit_request_(
+void AsyncIO::account_read_(size_t size)
+{
+    if (++records_.inflight_rd > records_.max_inflight_rd) {
+        records_.max_inflight_rd = records_.inflight_rd;
+    }
+    ++records_.nreads;
+    records_.bytes_read += size;
+}
+
+void AsyncIO::submit_request_sqe_(
     std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
 {
-    MONAD_DEBUG_ASSERT(uring_data != nullptr);
-    MONAD_DEBUG_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
-    MONAD_DEBUG_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
+    MONAD_ASSERT(uring_data != nullptr);
+    MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+    MONAD_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
+
 #ifndef NDEBUG
     memset(buffer.data(), 0xff, buffer.size());
 #endif
 
-    poll_uring_while_submission_queue_full_();
     struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
     MONAD_ASSERT(sqe);
 
@@ -317,7 +303,7 @@ void AsyncIO::submit_request_(
         ci.io_uring_read_fd,
         buffer.data(),
         static_cast<unsigned int>(buffer.size()),
-        ci.ptr->read_fd().second + chunk_and_offset.offset,
+        ci.chunk.read_fd().second + chunk_and_offset.offset,
         0);
     sqe->flags |= IOSQE_FIXED_FILE;
     switch (prio) {
@@ -337,10 +323,19 @@ void AsyncIO::submit_request_(
 }
 
 void AsyncIO::submit_request_(
+    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+    void *uring_data, enum erased_connected_operation::io_priority prio)
+{
+    poll_uring_while_submission_queue_full_();
+
+    submit_request_sqe_(buffer, chunk_and_offset, uring_data, prio);
+}
+
+void AsyncIO::submit_request_(
     std::span<const struct iovec> buffers, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
 {
-    MONAD_DEBUG_ASSERT(uring_data != nullptr);
+    MONAD_ASSERT(uring_data != nullptr);
     assert((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
 #ifndef NDEBUG
     for (auto const &buffer : buffers) {
@@ -360,7 +355,7 @@ void AsyncIO::submit_request_(
             ci.io_uring_read_fd,
             buffers.front().iov_base,
             static_cast<unsigned int>(buffers.front().iov_len),
-            ci.ptr->read_fd().second + chunk_and_offset.offset);
+            ci.chunk.read_fd().second + chunk_and_offset.offset);
     }
     else {
         io_uring_prep_readv(
@@ -368,7 +363,7 @@ void AsyncIO::submit_request_(
             ci.io_uring_read_fd,
             buffers.data(),
             static_cast<unsigned int>(buffers.size()),
-            ci.ptr->read_fd().second + chunk_and_offset.offset);
+            ci.chunk.read_fd().second + chunk_and_offset.offset);
     }
     sqe->flags |= IOSQE_FIXED_FILE;
     switch (prio) {
@@ -391,13 +386,13 @@ void AsyncIO::submit_request_(
     std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
 {
-    MONAD_DEBUG_ASSERT(uring_data != nullptr);
+    MONAD_ASSERT(uring_data != nullptr);
     MONAD_ASSERT(!rwbuf_.is_read_only());
-    MONAD_DEBUG_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
-    MONAD_DEBUG_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
+    MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+    MONAD_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
 
     auto const &ci = seq_chunks_[chunk_and_offset.id];
-    auto offset = ci.ptr->write_fd(buffer.size()).second;
+    auto const offset = ci.chunk.write_fd(buffer.size()).second;
     /* Do sanity check to ensure initiator is definitely appending where
     they are supposed to be appending.
     */
@@ -480,51 +475,35 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
 {
     // bit 0 in poll_rings_mask blocks read completions, bit 1 blocks write
     // completions
-    MONAD_DEBUG_ASSERT((poll_rings_mask & 3) != 3);
-    auto h = detail::AsyncIO_per_thread_state().enter_completions();
-    MONAD_DEBUG_ASSERT(owning_tid_ == get_tl_tid());
+    MONAD_ASSERT((poll_rings_mask & 3) != 3);
+    auto const h = detail::AsyncIO_per_thread_state().enter_completions();
+    MONAD_ASSERT(owning_tid_ == get_tl_tid());
 
     struct io_uring_cqe *cqe = nullptr;
     auto *const other_ring = &uring_.get_ring();
     auto *const wr_ring =
         (wr_uring_ != nullptr) ? &wr_uring_->get_ring() : nullptr;
+
     auto dequeue_concurrent_read_ios_pending = [&]() {
         if (concurrent_read_io_limit_ > 0) {
-            auto const max_cq_entries =
-                eager_completions_ ? 0 : (*other_ring->cq.kring_entries >> 1);
-            for (auto *state = concurrent_read_ios_pending_.first;
-                 state != nullptr;
-                 state = concurrent_read_ios_pending_.first) {
-                if (records_.inflight_rd >= concurrent_read_io_limit_ ||
-                    io_uring_sq_space_left(other_ring) == 0 ||
-                    io_uring_cq_ready(other_ring) > max_cq_entries) {
-                    break;
-                }
-                auto *next =
-                    erased_connected_operation::rbtree_node_traits::get_right(
-                        state);
-                if (next == nullptr) {
-                    MONAD_DEBUG_ASSERT(concurrent_read_ios_pending_.count == 1);
-                    concurrent_read_ios_pending_.first =
-                        concurrent_read_ios_pending_.last = nullptr;
-                }
-                else {
-                    concurrent_read_ios_pending_.first = next;
-                }
-                concurrent_read_ios_pending_.count--;
-                state->reinitiate();
+            while (!concurrent_read_ios_pending_.empty() &&
+                   records_.inflight_rd < concurrent_read_io_limit_ &&
+                   io_uring_sq_space_left(other_ring) != 0) {
+                auto const &read = concurrent_read_ios_pending_.front();
+                submit_request_sqe_(
+                    read.buffer, read.offset, read.op, read.op->io_priority());
+                account_read_(read.buffer.size());
+                concurrent_read_ios_pending_.pop_front();
             }
         }
     };
+
     dequeue_concurrent_read_ios_pending();
 
     io_uring *ring = nullptr;
     erased_connected_operation *state = nullptr;
     result<size_t> res(success(0));
     auto get_cqe = [&] {
-        auto const inflight_ts =
-            records_.inflight_ts.load(std::memory_order_acquire);
-
         if (wr_ring != nullptr && records_.inflight_wr > 0 &&
             (poll_rings_mask & 2) == 0) {
             ring = wr_ring;
@@ -539,8 +518,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
             }
             io_uring_peek_cqe(wr_ring, &cqe);
             if ((poll_rings_mask & 1) != 0) {
-                if (blocking && inflight_ts == 0 &&
-                    detail::AsyncIO_per_thread_state().empty()) {
+                if (blocking && detail::AsyncIO_per_thread_state().empty()) {
                     MONAD_ASYNC_IO_URING_RETRYABLE(
                         io_uring_wait_cqe(ring, &cqe));
                 }
@@ -560,63 +538,23 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 // code, this will do it.
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(other_ring));
             }
-            if (blocking && inflight_ts == 0 && records_.inflight_wr == 0 &&
+            if (blocking && records_.inflight_wr == 0 &&
                 detail::AsyncIO_per_thread_state().empty()) {
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_wait_cqe(ring, &cqe));
             }
             else {
-                // If nothing in io_uring and there are no threadsafe ops in
-                // flight, return false
-                if (0 != io_uring_peek_cqe(ring, &cqe) && inflight_ts == 0) {
+                // If nothing in io_uring, return false
+                if (0 != io_uring_peek_cqe(ring, &cqe)) {
                     return false;
                 }
             }
         }
 
-        void *data = (cqe != nullptr)
-                         ? io_uring_cqe_get_data(cqe)
-                         : detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC;
+        void *data = io_uring_cqe_get_data(cqe);
         MONAD_ASSERT(data);
-        if (data == detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC) {
-            // MSG_READ pipe has a message for us. It is simply the pointer to
-            // the connected operation state for us to complete.
-            MONAD_ASSERT(cqe == nullptr || cqe->res == POLLIN);
-            if (cqe != nullptr && !(cqe->flags & IORING_CQE_F_MORE)) {
-                // Rearm the poll
-                struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
-                MONAD_ASSERT(sqe);
-                io_uring_prep_poll_multishot(sqe, fds_.msgread, POLLIN);
-                io_uring_sqe_set_data(
-                    sqe, detail::ASYNC_IO_MSG_PIPE_READY_IO_URING_DATA_MAGIC);
-                MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(ring));
-            }
-            auto readed = ::read(
-                fds_.msgread, &state, sizeof(erased_connected_operation *));
-            if (readed >= 0) {
-                MONAD_ASSERT(sizeof(erased_connected_operation *) == readed);
-                // Writes flushed in the submitting thread must be acquired now
-                // before state can be dereferenced
-                std::atomic_thread_fence(std::memory_order_acquire);
-            }
-            else {
-                if (EAGAIN == errno || EWOULDBLOCK == errno) {
-                    // Spurious wakeup
-                    if (cqe != nullptr) {
-                        io_uring_cqe_seen(ring, cqe);
-                        cqe = nullptr;
-                    }
-                    return true;
-                }
-                else {
-                    MONAD_ASSERT(readed >= 0);
-                }
-            }
-        }
-        else {
-            state = reinterpret_cast<erased_connected_operation *>(data);
-            res = (cqe->res < 0) ? result<size_t>(posix_code(-cqe->res))
-                                 : result<size_t>(cqe->res);
-        }
+        state = reinterpret_cast<erased_connected_operation *>(data);
+        res = (cqe->res < 0) ? result<size_t>(posix_code(-cqe->res))
+                             : result<size_t>(cqe->res);
         if (cqe != nullptr) {
             io_uring_cqe_seen(ring, cqe);
             cqe = nullptr;
@@ -665,12 +603,6 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
             --records_.inflight_wr;
             is_read_or_write = true;
         }
-        else if (state->is_timeout()) {
-            --records_.inflight_tm;
-        }
-        else if (state->is_threadsafeop()) {
-            records_.inflight_ts.fetch_sub(1, std::memory_order_acq_rel);
-        }
         else if (state->is_read_scatter()) {
             --records_.inflight_rd_scatter;
             if (retry_operation_if_temporary_failure()) {
@@ -696,7 +628,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         return true;
     };
     if (!eager_completions_) {
-        auto ret = get_cqe();
+        auto const ret = get_cqe();
         if (state == nullptr) {
             return ret;
         }
@@ -711,10 +643,12 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         result<size_t> res{success(0)};
     };
 
-    std::vector<completion_t> completions;
+    constexpr size_t COMPLETIONS_STACK_CAPACITY = 64;
+    boost::container::small_vector<completion_t, COMPLETIONS_STACK_CAPACITY>
+        completions;
     completions.reserve(
-        2 + io_uring_sq_ready(other_ring) +
-        ((wr_ring != nullptr) ? io_uring_sq_ready(wr_ring) : 0));
+        2 + io_uring_cq_ready(other_ring) +
+        ((wr_ring != nullptr) ? io_uring_cq_ready(wr_ring) : 0));
     for (;;) {
         ring = nullptr;
         state = nullptr;
@@ -737,7 +671,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
 
 unsigned AsyncIO::deferred_initiations_in_flight() const noexcept
 {
-    auto &ts = detail::AsyncIO_per_thread_state();
+    auto const &ts = detail::AsyncIO_per_thread_state();
     return !ts.empty() && !ts.am_within_completions();
 }
 
@@ -764,17 +698,17 @@ void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
     int const tofd = ::creat(path.c_str(), 0600);
     MONAD_ASSERT_PRINTF(
         tofd != -1, "creat failed due to %s", std::strerror(errno));
-    auto untodfd = make_scope_exit([tofd]() noexcept { ::close(tofd); });
-    auto fromfd = seq_chunks_[which].ptr->read_fd();
+    auto const untodfd = make_scope_exit([tofd]() noexcept { ::close(tofd); });
+    auto const fromfd = seq_chunks_[which].chunk.read_fd();
     MONAD_ASSERT(fromfd.second <= std::numeric_limits<off64_t>::max());
     off64_t off_in = static_cast<off64_t>(fromfd.second);
     off64_t off_out = 0;
-    auto copied = copy_file_range(
+    auto const copied = copy_file_range(
         fromfd.first,
         &off_in,
         tofd,
         &off_out,
-        seq_chunks_[which].ptr->size(),
+        seq_chunks_[which].chunk.size(),
         0);
     MONAD_ASSERT_PRINTF(
         copied != -1, "copy_file_range failed due to %s", std::strerror(errno));
@@ -785,7 +719,7 @@ unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)
     /* Prevent any new i/o initiation as we cannot exit until an i/o
     buffer becomes freed.
     */
-    auto h = detail::AsyncIO_per_thread_state().enter_completions();
+    auto const h = detail::AsyncIO_per_thread_state().enter_completions();
     for (;;) {
         // If this assert fails, there genuinely
         // are not enough i/o buffers. This can happen if the caller

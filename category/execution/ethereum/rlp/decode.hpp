@@ -82,7 +82,7 @@ constexpr Result<byte_string_view> parse_string_metadata(byte_string_view &enc)
     else // [0xb8, 0xbf]
     {
         ++i;
-        uint8_t length_of_length = enc[0] - 0xb7;
+        uint8_t const length_of_length = enc[0] - 0xb7;
 
         if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
             return DecodeError::InputTooShort;
@@ -156,6 +156,7 @@ decode_byte_string_fixed(byte_string_view &enc)
     if (MONAD_UNLIKELY(payload.size() != N)) {
         return DecodeError::ArrayLengthUnexpected;
     }
+    // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
     std::memcpy(bsf.data(), payload.data(), N);
     return bsf;
 }

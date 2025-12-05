@@ -49,7 +49,7 @@ namespace
             return cont_kind({}, 0);
         }
         byte_offset const off{literal[0]};
-        auto jd = ir.jumpdests.find(off);
+        auto const jd = ir.jumpdests.find(off);
         if (jd == ir.jumpdests.end()) {
             return cont_kind({}, 0);
         }
@@ -67,7 +67,7 @@ namespace
 
     ContKind get_param_cont(Block const &block, size_t const param_id)
     {
-        auto k = get_param_kind(block, param_id);
+        auto const k = get_param_kind(block, param_id);
         if (std::holds_alternative<Cont>(*k)) {
             return std::get<Cont>(*k).cont;
         }
@@ -130,7 +130,7 @@ namespace
             if (std::holds_alternative<Any>(*k)) {
                 return;
             }
-            auto p = get_param_kind(block, x.param);
+            auto const p = get_param_kind(block, x.param);
             if (std::holds_alternative<WordCont>(*p) &&
                 !std::holds_alternative<WordCont>(*k)) {
                 if (std::holds_alternative<Word>(*k)) {

@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/runtime/uint256.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
@@ -132,13 +132,13 @@ namespace monad::vm::utils
         input = drop_spaces(input);
         auto const *p = try_parse_hex_constant(input);
         if (p != input) {
-            auto s = std::string(input, p);
+            auto const s = std::string(input, p);
             return std::make_pair(p, runtime::uint256_t::from_string(s));
         }
 
         p = try_parse_decimal_constant(input);
         if (p != input) {
-            auto s = std::string(input, p);
+            auto const s = std::string(input, p);
             return std::make_pair(p, runtime::uint256_t::from_string(s));
         }
         p = try_parse_label(input);
@@ -146,7 +146,7 @@ namespace monad::vm::utils
             err("missing argument to push", "");
         }
 
-        auto s = std::string(input, p);
+        auto const s = std::string(input, p);
         return std::make_pair(p, s);
     }
 
@@ -285,7 +285,7 @@ namespace monad::vm::utils
                             [&](runtime::uint256_t const &imm) -> void {
                                 auto const *const pushops =
                                     push_ops_with_arg.data();
-                                auto d = std::distance(
+                                auto const d = std::distance(
                                     pushops,
                                     std::find(pushops, pushops + 33, op));
                                 MONAD_VM_ASSERT(d >= 0);

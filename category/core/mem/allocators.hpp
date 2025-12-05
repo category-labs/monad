@@ -292,6 +292,100 @@ namespace allocators
             throw;
         }
     }
+
+    /**************************************************************************/
+    //! \brief A STL allocator for use with `std::allocate_shared` that
+    //! allocates extra bytes beyond sizeof(T) for trailing variable-length
+    //! data.
+    //!
+    //! This allocator is designed for types with flexible array members or
+    //! trailing data. When used with `std::allocate_shared`, it ensures the
+    //! control block and object with trailing data are allocated together.
+    //!
+    //! \tparam T The type to allocate
+    template <typename T>
+    struct variable_size_allocator
+    {
+        using value_type = T;
+        using size_type = std::size_t;
+        using difference_type = std::ptrdiff_t;
+
+        //! \brief Construct allocator with total storage size
+        //! \param storage_bytes Total bytes needed (sizeof(T) + trailing data)
+        //!
+        //! The extra_bytes_ member stores the additional bytes beyond sizeof(T)
+        //! needed for trailing data (path, value, child data, etc.)
+        explicit variable_size_allocator(size_t storage_bytes) noexcept
+            : extra_bytes_(storage_bytes - sizeof(T))
+        {
+            MONAD_ASSERT(storage_bytes >= sizeof(T));
+        }
+
+        //! \brief Rebind constructor for allocator conversion
+        template <typename U>
+        // NOLINTNEXTLINE(google-explicit-constructor)
+        variable_size_allocator(
+            variable_size_allocator<U> const &other) noexcept
+            : extra_bytes_(other.extra_bytes_)
+        {
+        }
+
+        //! \brief Allocate memory for n objects of type T plus extra bytes
+        //! \param n Number of objects to allocate (must be 1)
+        //!
+        //! For std::allocate_shared:
+        //! - If T is the object type: allocates sizeof(T) + extra_bytes
+        //! - If T is control block: allocates sizeof(control_block) +
+        //! extra_bytes
+        //!   (control block already includes sizeof(object), so this gives
+        //!   control block + object trailing data)
+        [[nodiscard]] T *allocate(size_type n)
+        {
+            MONAD_ASSERT(n == 1);
+            size_t const bytes = sizeof(T) + extra_bytes_;
+
+            if constexpr (alignof(T) > alignof(max_align_t)) {
+                return reinterpret_cast<T *>(
+                    ::operator new(bytes, std::align_val_t{alignof(T)}));
+            }
+            return reinterpret_cast<T *>(::operator new(bytes));
+        }
+
+        //! \brief Deallocate memory
+        void deallocate(T *p, size_type) noexcept
+        {
+            if constexpr (alignof(T) > alignof(max_align_t)) {
+                ::operator delete(p, std::align_val_t{alignof(T)});
+            }
+            else {
+                ::operator delete(p);
+            }
+        }
+
+        //! \brief Rebind to allocate different types
+        template <typename U>
+        struct rebind
+        {
+            using other = variable_size_allocator<U>;
+        };
+
+        bool operator==(variable_size_allocator const &other) const noexcept
+        {
+            return extra_bytes_ == other.extra_bytes_;
+        }
+
+        bool operator!=(variable_size_allocator const &other) const noexcept
+        {
+            return !(*this == other);
+        }
+
+        template <typename U>
+        friend struct variable_size_allocator;
+
+    private:
+        //! Extra bytes beyond sizeof(T) for trailing data
+        size_t extra_bytes_;
+    };
 }
 
 MONAD_NAMESPACE_END

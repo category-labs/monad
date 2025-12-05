@@ -33,6 +33,7 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 #include <category/execution/monad/system_sender.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
@@ -68,6 +69,8 @@ struct PrecompileSelector
     static constexpr uint32_t EXTERNAL_REWARD =
         abi_encode_selector("externalReward(uint64)");
     static constexpr uint32_t GET_EPOCH = abi_encode_selector("getEpoch()");
+    static constexpr uint32_t GET_PROPOSER_VAL_ID =
+        abi_encode_selector("getProposerValId()");
     static constexpr uint32_t GET_VALIDATOR =
         abi_encode_selector("getValidator(uint64)");
     static constexpr uint32_t GET_DELEGATOR =
@@ -95,6 +98,7 @@ static_assert(PrecompileSelector::CLAIM_REWARDS == 0xa76e2ca5);
 static_assert(PrecompileSelector::CHANGE_COMMISSION == 0x9bdcc3c8);
 static_assert(PrecompileSelector::EXTERNAL_REWARD == 0xe4b3303b);
 static_assert(PrecompileSelector::GET_EPOCH == 0x757991a8);
+static_assert(PrecompileSelector::GET_PROPOSER_VAL_ID == 0xfbacb0be);
 static_assert(PrecompileSelector::GET_VALIDATOR == 0x2b6d639a);
 static_assert(PrecompileSelector::GET_DELEGATOR == 0x573c1ce0);
 static_assert(PrecompileSelector::GET_WITHDRAWAL_REQUEST == 0x56fa2045);
@@ -237,6 +241,15 @@ constexpr uint64_t EXTERNAL_REWARDS_OP_COST = compute_costs(OpCount{
     .events = 1,
     .transfers = 0});
 
+constexpr uint64_t GET_PROPOSER_VAL_ID_OP_COST = compute_costs(OpCount{
+    .warm_sloads = 1,
+    .cold_sloads = 0,
+    .warm_sstores = 0,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 0,
+    .events = 0,
+    .transfers = 0});
+
 constexpr uint64_t GET_EPOCH_OP_COST = compute_costs(OpCount{
     .warm_sloads = 2,
     .cold_sloads = 0,
@@ -302,6 +315,7 @@ static_assert(CLAIM_REWARDS_OP_COST == 155375);
 static_assert(CHANGE_COMMISSION_OP_COST == 39475);
 static_assert(EXTERNAL_REWARDS_OP_COST == 66575);
 static_assert(GET_EPOCH_OP_COST == 200);
+static_assert(GET_PROPOSER_VAL_ID_OP_COST == 100);
 static_assert(GET_VALIDATOR_OP_COST == 97200);
 static_assert(GET_DELEGATOR_OP_COST == 184900);
 static_assert(GET_WITHDRAWAL_REQUEST_OP_COST == 24300);
@@ -752,6 +766,7 @@ Result<void> StakingContract::apply_reward(
 //  Precompiles  //
 ///////////////////
 
+template <Traits traits>
 std::pair<StakingContract::PrecompileFunc, uint64_t>
 StakingContract::precompile_dispatch(byte_string_view &input)
 {
@@ -767,16 +782,21 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     case PrecompileSelector::ADD_VALIDATOR:
         // [21, 22, 6, 15, 9, 3, 0]
         return {
-            &StakingContract::precompile_add_validator, ADD_VALIDATOR_OP_COST};
+            &StakingContract::precompile_add_validator<traits>,
+            ADD_VALIDATOR_OP_COST};
     case PrecompileSelector::DELEGATE:
         // [21, 17, 6, 14, 5, 2, 0]
-        return {&StakingContract::precompile_delegate, DELEGATE_OP_COST};
+        return {
+            &StakingContract::precompile_delegate<traits>, DELEGATE_OP_COST};
     case PrecompileSelector::UNDELEGATE:
         // [15, 11, 8, 5, 1, 2, 0]
-        return {&StakingContract::precompile_undelegate, UNDELEGATE_OP_COST};
+        return {
+            &StakingContract::precompile_undelegate<traits>,
+            UNDELEGATE_OP_COST};
     case PrecompileSelector::COMPOUND:
         // [46, 17, 6, 29, 3, 2, 0]
-        return {&StakingContract::precompile_compound, COMPOUND_OP_COST};
+        return {
+            &StakingContract::precompile_compound<traits>, COMPOUND_OP_COST};
     case PrecompileSelector::WITHDRAW:
         // [11, 6, 1, 0, 0, 1, 1]
         return {&StakingContract::precompile_withdraw, WITHDRAW_OP_COST};
@@ -797,6 +817,16 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     case PrecompileSelector::GET_EPOCH:
         // [0, 2, 0, 0, 0, 0, 0]
         return {&StakingContract::precompile_get_epoch, GET_EPOCH_OP_COST};
+    case PrecompileSelector::GET_PROPOSER_VAL_ID:
+        // [0, 1, 0, 0, 0, 0, 0]
+        if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+            return {
+                &StakingContract::precompile_get_proposer_val_id,
+                GET_PROPOSER_VAL_ID_OP_COST};
+        }
+        else {
+            return {&StakingContract::precompile_fallback, 40000};
+        }
     case PrecompileSelector::GET_VALIDATOR:
         // [0, 12, 0, 0, 0, 0, 0]
         return {
@@ -828,17 +858,19 @@ StakingContract::precompile_dispatch(byte_string_view &input)
     case PrecompileSelector::GET_DELEGATIONS:
         // [0,100,0,0,0,0,0]
         return {
-            &StakingContract::precompile_get_delegations,
+            &StakingContract::precompile_get_delegations<traits>,
             LINKED_LIST_GETTER_OP_COST};
     case PrecompileSelector::GET_DELEGATORS:
         // [0,100,0,0,0,0,0]
         return {
-            &StakingContract::precompile_get_delegators,
+            &StakingContract::precompile_get_delegators<traits>,
             LINKED_LIST_GETTER_OP_COST};
     default:
         return {&StakingContract::precompile_fallback, 40000};
     }
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_dispatch);
 
 std::tuple<bool, u32_be, std::vector<u64_be>> StakingContract::get_valset(
     StorageArray<u64_be> const &valset, uint32_t const start_index,
@@ -948,13 +980,13 @@ Result<byte_string> StakingContract::get_valset(
             valset.length() > std::numeric_limits<uint32_t>::max())) {
         // Both consensus set and snapshot set are bounded. The execution set is
         // theoretically unbounded, but to be a candidate, you need to put
-        // MIN_VALIDATE_STAKE. This amount prevents that valset from exceeding
-        // u32_max in practice.
+        // limits::min_auth_address_stake(). This amount prevents that valset
+        // from exceeding u32_max in practice.
         return StakingError::InternalError;
     }
 
     auto const [done, next_index, valids] =
-        get_valset(valset, start_index.native(), PAGINATED_RESULTS_SIZE);
+        get_valset(valset, start_index.native(), limits::array_pagination());
     AbiEncoder encoder;
     encoder.add_bool(done);
     encoder.add_uint(next_index);
@@ -987,6 +1019,7 @@ Result<byte_string> StakingContract::precompile_get_execution_valset(
     return get_valset(input, valset);
 }
 
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_get_delegations(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
@@ -1000,7 +1033,7 @@ Result<byte_string> StakingContract::precompile_get_delegations(
     }
 
     auto const [done, next_val_id, vals_page] = get_validators_for_delegator(
-        delegator, start_val_id, PAGINATED_RESULTS_SIZE);
+        delegator, start_val_id, limits::linked_list_pagination<traits>());
 
     AbiEncoder encoder;
     encoder.add_bool(done);
@@ -1009,6 +1042,9 @@ Result<byte_string> StakingContract::precompile_get_delegations(
     return encoder.encode_final();
 }
 
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_get_delegations);
+
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_get_delegators(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
@@ -1023,7 +1059,9 @@ Result<byte_string> StakingContract::precompile_get_delegators(
     }
 
     auto const [done, next_del_addr, dels_page] = get_delegators_for_validator(
-        val_id, start_delegator_address, PAGINATED_RESULTS_SIZE);
+        val_id,
+        start_delegator_address,
+        limits::linked_list_pagination<traits>());
 
     AbiEncoder encoder;
     encoder.add_bool(done);
@@ -1031,6 +1069,8 @@ Result<byte_string> StakingContract::precompile_get_delegators(
     encoder.add_address_array(dels_page);
     return encoder.encode_final();
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_get_delegators);
 
 Result<byte_string> StakingContract::precompile_get_epoch(
     byte_string_view const, evmc_address const &,
@@ -1041,6 +1081,16 @@ Result<byte_string> StakingContract::precompile_get_epoch(
     AbiEncoder encoder;
     encoder.add_uint(vars.epoch.load());
     encoder.add_bool(vars.in_epoch_delay_period.load());
+    return encoder.encode_final();
+}
+
+Result<byte_string> StakingContract::precompile_get_proposer_val_id(
+    byte_string_view, evmc_address const &, evmc_uint256be const &msg_value)
+{
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
+    AbiEncoder encoder;
+    encoder.add_uint(vars.proposer_val_id.load());
     return encoder.encode_final();
 }
 
@@ -1073,7 +1123,7 @@ Result<byte_string> StakingContract::precompile_fallback(
     return StakingError::MethodNotSupported;
 }
 
-// TODO: Track solvency
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_add_validator(
     byte_string_view input, evmc_address const &,
     evmc_uint256be const &msg_value)
@@ -1124,7 +1174,7 @@ Result<byte_string> StakingContract::precompile_add_validator(
     }
 
     auto const stake = intx::be::load<uint256_t>(msg_value);
-    if (MONAD_UNLIKELY(stake < MIN_VALIDATE_STAKE)) {
+    if (MONAD_UNLIKELY(stake < limits::min_auth_address_stake())) {
         return StakingError::InsufficientStake;
     }
 
@@ -1156,7 +1206,7 @@ Result<byte_string> StakingContract::precompile_add_validator(
         return StakingError::BlsSignatureVerificationFailed;
     }
 
-    if (MONAD_UNLIKELY(commission.native() > MAX_COMMISSION)) {
+    if (MONAD_UNLIKELY(commission.native() > limits::max_commission())) {
         return StakingError::CommissionTooHigh;
     }
 
@@ -1187,10 +1237,13 @@ Result<byte_string> StakingContract::precompile_add_validator(
 
     emit_validator_created_event(val_id, auth_address, commission);
 
-    BOOST_OUTCOME_TRY(delegate(val_id, stake, auth_address));
+    BOOST_OUTCOME_TRY(delegate<traits>(val_id, stake, auth_address));
     return byte_string{abi_encode_uint(val_id)};
 }
 
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_add_validator)
+
+template <Traits traits>
 Result<void> StakingContract::delegate(
     u64_be const val_id, uint256_t const &stake, Address const &address)
 {
@@ -1199,7 +1252,7 @@ Result<void> StakingContract::delegate(
         return StakingError::UnknownValidator;
     }
 
-    if (MONAD_UNLIKELY(stake < DUST_THRESHOLD)) {
+    if (MONAD_UNLIKELY(stake < limits::dust_threshold())) {
         // Each individual delegation must be greater than a dust threshold.
         // While it may seem more intuitive to fail only if the delegator's
         // total stake less than the dust threshold. But a delegator could, for
@@ -1250,12 +1303,12 @@ Result<void> StakingContract::delegate(
 
     // does total val stake exceed the minimum threshold?
     auto const oldflags = val.get_flags();
-    if (new_val_stake >= ACTIVE_VALIDATOR_STAKE) {
+    if (new_val_stake >= limits::active_validator_stake<traits>()) {
         val.clear_flag(ValidatorFlagsStakeTooLow);
     }
     // did the auth delegator reactivate?
     if (val.auth_address() == address &&
-        del.get_next_epoch_stake() >= MIN_VALIDATE_STAKE) {
+        del.get_next_epoch_stake() >= limits::min_auth_address_stake()) {
         val.clear_flag(ValidatorFlagWithdrawn);
     }
     if (val.get_flags() != oldflags) {
@@ -1277,6 +1330,9 @@ Result<void> StakingContract::delegate(
     return outcome::success();
 }
 
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::delegate);
+
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_delegate(
     byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
@@ -1288,11 +1344,14 @@ Result<byte_string> StakingContract::precompile_delegate(
     auto const stake = intx::be::load<uint256_t>(msg_value);
 
     if (MONAD_LIKELY(stake != 0)) {
-        BOOST_OUTCOME_TRY(delegate(val_id, stake, msg_sender));
+        BOOST_OUTCOME_TRY(delegate<traits>(val_id, stake, msg_sender));
     }
     return byte_string{abi_encode_bool(true)};
 }
 
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_delegate);
+
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_undelegate(
     byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
@@ -1335,7 +1394,7 @@ Result<byte_string> StakingContract::precompile_undelegate(
 
     BOOST_OUTCOME_TRY(val_stake, checked_sub(val_stake, amount));
     BOOST_OUTCOME_TRY(del_stake, checked_sub(del_stake, amount));
-    if (MONAD_UNLIKELY(del_stake < DUST_THRESHOLD)) {
+    if (MONAD_UNLIKELY(del_stake < limits::dust_threshold())) {
         // if all that remains is dust, send the rest of the delegator's balance
         // with this withdrawal.
         BOOST_OUTCOME_TRY(amount, checked_add(amount, del_stake));
@@ -1348,10 +1407,10 @@ Result<byte_string> StakingContract::precompile_undelegate(
 
     auto const oldflags = val.get_flags();
     if (msg_sender == val.auth_address() &&
-        del.get_next_epoch_stake() < MIN_VALIDATE_STAKE) {
+        del.get_next_epoch_stake() < limits::min_auth_address_stake()) {
         val.set_flag(ValidatorFlagWithdrawn);
     }
-    if (val_stake < ACTIVE_VALIDATOR_STAKE) {
+    if (val_stake < limits::active_validator_stake<traits>()) {
         val.set_flag(ValidatorFlagsStakeTooLow);
     }
     if (val.get_flags() != oldflags) {
@@ -1383,7 +1442,10 @@ Result<byte_string> StakingContract::precompile_undelegate(
     return byte_string{abi_encode_bool(true)};
 }
 
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_undelegate);
+
 // TODO: No compounds allowed if auth_address is under sufficent amount.
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_compound(
     byte_string_view input, evmc_address const &msg_sender,
     evmc_uint256be const &msg_value)
@@ -1407,11 +1469,13 @@ Result<byte_string> StakingContract::precompile_compound(
         // flow of rewards leaving delegation using events only, this aids in
         // double-counting errors.
         emit_claim_rewards_event(val_id, msg_sender, rewards);
-        BOOST_OUTCOME_TRY(delegate(val_id, rewards, msg_sender));
+        BOOST_OUTCOME_TRY(delegate<traits>(val_id, rewards, msg_sender));
     }
 
     return byte_string{abi_encode_bool(true)};
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_compound);
 
 Result<byte_string> StakingContract::precompile_withdraw(
     byte_string_view input, evmc_address const &msg_sender,
@@ -1433,8 +1497,8 @@ Result<byte_string> StakingContract::precompile_withdraw(
     }
     withdrawal_request_storage.clear();
 
-    bool const ready =
-        is_epoch_active(withdrawal_request->epoch.native() + WITHDRAWAL_DELAY);
+    bool const ready = is_epoch_active(
+        withdrawal_request->epoch.native() + limits::withdrawal_delay());
     if (MONAD_UNLIKELY(!ready)) {
         return StakingError::WithdrawalNotReady;
     }
@@ -1452,8 +1516,8 @@ Result<byte_string> StakingContract::precompile_withdraw(
 
     BOOST_OUTCOME_TRY(
         withdrawal_amount, checked_add(withdrawal_amount, rewards));
-    auto const contract_balance =
-        intx::be::load<uint256_t>(state_.get_balance(STAKING_CA));
+    auto const contract_balance = intx::be::load<uint256_t>(
+        state_.get_current_balance_pessimistic(STAKING_CA));
     MONAD_ASSERT_THROW(
         contract_balance >= withdrawal_amount, "withdrawal insolvent");
     send_tokens(msg_sender, withdrawal_amount);
@@ -1508,7 +1572,7 @@ Result<byte_string> StakingContract::precompile_change_commission(
         return StakingError::RequiresAuthAddress;
     }
 
-    if (MONAD_UNLIKELY(new_commission.native() > MAX_COMMISSION)) {
+    if (MONAD_UNLIKELY(new_commission.native() > limits::max_commission())) {
         return StakingError::CommissionTooHigh;
     }
 
@@ -1544,10 +1608,10 @@ Result<byte_string> StakingContract::precompile_external_reward(
     }
 
     // 2. Apply bounds checks
-    if (MONAD_UNLIKELY(external_reward < MIN_EXTERNAL_REWARD)) {
+    if (MONAD_UNLIKELY(external_reward < limits::min_external_reward())) {
         return StakingError::ExternalRewardTooSmall;
     }
-    if (MONAD_UNLIKELY(external_reward > MAX_EXTERNAL_REWARD)) {
+    if (MONAD_UNLIKELY(external_reward > limits::max_external_reward())) {
         return StakingError::ExternalRewardTooLarge;
     }
 
@@ -1562,8 +1626,12 @@ Result<byte_string> StakingContract::precompile_external_reward(
 //  System Calls  //
 ////////////////////
 
-Result<void> StakingContract::syscall_on_epoch_change(byte_string_view input)
+Result<void> StakingContract::syscall_on_epoch_change(
+    byte_string_view input, uint256_t const &value)
 {
+    if (MONAD_UNLIKELY(value != 0)) {
+        return StakingError::ValueNonZero;
+    }
     BOOST_OUTCOME_TRY(u64_be const next_epoch, abi_decode_fixed<u64_be>(input));
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
@@ -1616,6 +1684,7 @@ Result<void> StakingContract::syscall_on_epoch_change(byte_string_view input)
 }
 
 // update rewards for leader only if in active validator set
+template <Traits traits>
 Result<void> StakingContract::syscall_reward(
     byte_string_view input, uint256_t const &raw_reward)
 {
@@ -1662,11 +1731,22 @@ Result<void> StakingContract::syscall_reward(
     BOOST_OUTCOME_TRY(
         apply_reward(val_id.value(), SYSTEM_SENDER, del_reward, active_stake));
 
+    // 6. Store the proposer validator id for other contracts to query.
+    if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+        vars.proposer_val_id.store(val_id.value());
+    }
+
     return outcome::success();
 }
 
-Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::syscall_reward);
+
+Result<void> StakingContract::syscall_snapshot(
+    byte_string_view const input, uint256_t const &value)
 {
+    if (MONAD_UNLIKELY(value != 0)) {
+        return StakingError::ValueNonZero;
+    }
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
@@ -1738,7 +1818,8 @@ Result<void> StakingContract::syscall_snapshot(byte_string_view const input)
         // strict ordering: val id ascending
         return a.first.native() < b.first.native();
     };
-    uint64_t const n = std::min(candidates.size(), ACTIVE_VALSET_SIZE);
+    uint64_t const n =
+        std::min(candidates.size(), limits::active_valset_size());
     std::partial_sort(
         candidates.begin(),
         candidates.begin() + static_cast<std::ptrdiff_t>(n),

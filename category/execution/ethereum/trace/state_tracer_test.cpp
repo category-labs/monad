@@ -17,9 +17,11 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/prestate_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <monad/test/traits_test.hpp>
 
 #include <gtest/gtest.h>
+#include <intx/intx.hpp>
 #include <nlohmann/json.hpp>
 
 #include <test_resource_data.h>
@@ -65,15 +67,16 @@ namespace
     constexpr auto addr2 = 0x008b3b2f992c0e14edaa6e2c662bec549caa8df1_address;
     constexpr auto addr3 = 0x35a9f94af726f07b5162df7e828cc9dc8439e7d0_address;
     constexpr auto addr4 = 0xc8ba32cab1757528daf49033e3673fae77dcf05d_address;
+    constexpr auto addr5 = 0xe02ad958162c9acb9c3eb90f67b02db21b10d3e0_address;
 }
 
 TEST(PrestateTracer, pre_state_to_json)
 {
     Account const a{.balance = 1000, .code_hash = A_CODE_HASH, .nonce = 1};
     OriginalAccountState as{a};
-    as.storage_.emplace(key1, value1);
-    as.storage_.emplace(key2, value2);
-    as.storage_.emplace(key3, value3);
+    as.storage_ = as.storage_.insert({key1, value1});
+    as.storage_ = as.storage_.insert({key2, value2});
+    as.storage_ = as.storage_.insert({key3, value3});
 
     trace::Map<Address, OriginalAccountState> prestate{};
     prestate.emplace(ADDR_A, as);
@@ -436,18 +439,16 @@ TEST(PrestateTracer, geth_example_prestate)
     // because the code in the Geth example is truncated.
     Account const a{.balance = 0, .code_hash = A_CODE_HASH, .nonce = 1};
     OriginalAccountState as{a};
-    as.storage_.emplace(key4, value4);
-    as.storage_.emplace(key5, value5);
-    as.storage_.emplace(key6, value6);
-    as.storage_.emplace(key7, value7);
+    as.storage_ = as.storage_.insert({key4, value4});
+    as.storage_ = as.storage_.insert({key5, value5});
+    as.storage_ = as.storage_.insert({key6, value6});
+    as.storage_ = as.storage_.insert({key7, value7});
 
     Account const b{
         .balance = 0x7a48734599f7284, .code_hash = NULL_HASH, .nonce = 1133};
     OriginalAccountState bs{b};
     Account const c{
-        .balance =
-            monad::vm::runtime::uint256_t::from_string("0x2638035a26d133809")
-                .as_intx(),
+        .balance = intx::from_string<uint256_t>("0x2638035a26d133809"),
         .code_hash = NULL_HASH,
         .nonce = 0};
     OriginalAccountState cs{c};
@@ -589,4 +590,458 @@ TEST(PrestateTracer, statediff_empty)
 
     EXPECT_EQ(
         state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
+}
+
+TYPED_TEST(TraitsTest, access_list_empty)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    AccessListTracer tracer{storage, addr1, addr2, std::nullopt, authorities};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    EXPECT_EQ(storage, nlohmann::json::parse("[]"));
+}
+
+TYPED_TEST(TraitsTest, access_list_write)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.create_account_no_rollback(addr1);
+    s.create_account_no_rollback(addr2);
+    s.create_account_no_rollback(addr3);
+
+    s.access_storage(addr2, key1);
+    s.access_storage(addr2, key2);
+    s.access_storage(addr3, key3);
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    auto const to = std::optional<Address>{addr5};
+    AccessListTracer tracer{storage, addr1, addr4, to, authorities};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    auto const json_str = R"(
+        [
+            {
+                "address": "0x008b3b2f992c0e14edaa6e2c662bec549caa8df1",
+                "storageKeys": [
+                    "0x00000000000000000000000000000000000000000000000000000000cafebabe",
+                    "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+                ]
+            },
+            {
+                "address": "0x35a9f94af726f07b5162df7e828cc9dc8439e7d0",
+                "storageKeys": [
+                    "0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
+                ]
+            }
+        ]
+    )";
+
+    EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+}
+
+TYPED_TEST(TraitsTest, access_list_regular_account)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    // Regular account is included even if it does not have storage keys set
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+        s.create_account_no_rollback(addr4);
+
+        nlohmann::json storage;
+        auto const authorities = std::vector<std::optional<Address>>{};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        auto const json_str = R"(
+            [
+                {
+                    "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
+                    "storageKeys": []
+                }
+            ]
+        )";
+
+        EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+    }
+
+    // Regular account is included if it has storage keys sets
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+        s.create_account_no_rollback(addr4);
+
+        s.access_storage(addr4, key1);
+
+        nlohmann::json storage;
+        auto const authorities = std::vector<std::optional<Address>>{};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        auto const json_str = R"(
+            [
+                {
+                    "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
+                    "storageKeys": [
+                        "0x00000000000000000000000000000000000000000000000000000000cafebabe"
+                    ]
+                }
+            ]
+        )";
+
+        EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+    }
+}
+
+TYPED_TEST(TraitsTest, access_list_sender)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    // Sender is excluded if it does not have storage keys set
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+
+        nlohmann::json storage;
+        auto const authorities = std::vector<std::optional<Address>>{};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        EXPECT_EQ(storage, nlohmann::json::parse("[]"));
+    }
+
+    // Sender is included if it has storage keys sets
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+
+        s.access_storage(addr1, key1);
+
+        nlohmann::json storage;
+        auto const authorities = std::vector<std::optional<Address>>{};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        auto const json_str = R"(
+            [
+                {
+                    "address" : "0x0000000000000000000000000000000000000002",
+                    "storageKeys": [
+                        "0x00000000000000000000000000000000000000000000000000000000cafebabe"
+                    ]
+                }
+            ]
+        )";
+
+        EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+    }
+}
+
+TYPED_TEST(TraitsTest, access_list_beneficiary)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    // Beneficiary is excluded if it does not have storage keys set
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+
+        nlohmann::json storage;
+        auto const authorities = std::vector<std::optional<Address>>{};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        EXPECT_EQ(storage, nlohmann::json::parse("[]"));
+    }
+
+    // Beneficiary is included if it has storage keys sets
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+
+        s.access_storage(addr2, key1);
+
+        nlohmann::json storage;
+        auto const authorities = std::vector<std::optional<Address>>{};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        auto const json_str = R"(
+            [
+                {
+                    "address" : "0x008b3b2f992c0e14edaa6e2c662bec549caa8df1",
+                    "storageKeys": [
+                        "0x00000000000000000000000000000000000000000000000000000000cafebabe"
+                    ]
+                }
+            ]
+        )";
+
+        EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+    }
+}
+
+TYPED_TEST(TraitsTest, access_list_recipient)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    // Recipient is excluded if it does not have storage keys set
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+
+        nlohmann::json storage;
+        auto const authorities = std::vector<std::optional<Address>>{};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        EXPECT_EQ(storage, nlohmann::json::parse("[]"));
+    }
+
+    // Recipient is included if it has storage keys sets
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+
+        s.access_storage(addr3, key1);
+
+        nlohmann::json storage;
+        auto const authorities = std::vector<std::optional<Address>>{};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        auto const json_str = R"(
+            [
+                {
+                    "address" : "0x35a9f94af726f07b5162df7e828cc9dc8439e7d0",
+                    "storageKeys": [
+                        "0x00000000000000000000000000000000000000000000000000000000cafebabe"
+                    ]
+                }
+            ]
+        )";
+
+        EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+    }
+}
+
+TYPED_TEST(TraitsTest, access_list_authorities)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    // Valid authorities are excluded if they do not have storage keys set
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+        s.create_account_no_rollback(addr4);
+        s.create_account_no_rollback(addr5);
+
+        nlohmann::json storage;
+        auto const authorities =
+            std::vector<std::optional<Address>>{addr4, addr5};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        EXPECT_EQ(storage, nlohmann::json::parse("[]"));
+    }
+
+    // Valid authorities are included if they have storage keys set
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+        s.create_account_no_rollback(addr4);
+        s.create_account_no_rollback(addr5);
+
+        s.access_storage(addr4, key1);
+        s.access_storage(addr5, key2);
+
+        nlohmann::json storage;
+        auto const authorities =
+            std::vector<std::optional<Address>>{addr4, addr5};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        auto const json_str = R"(
+            [
+                {
+                    "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
+                    "storageKeys": [
+                        "0x00000000000000000000000000000000000000000000000000000000cafebabe"
+                    ]
+                },
+                {
+                    "address" : "0xe02ad958162c9acb9c3eb90f67b02db21b10d3e0",
+                    "storageKeys" : [
+                        "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+                    ]
+                }
+            ]
+        )";
+
+        EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+    }
+}
+
+TYPED_TEST(TraitsTest, access_list_precompiles)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    constexpr auto ecrecover =
+        0x0000000000000000000000000000000000000001_address;
+    constexpr auto bls_g1_add =
+        0x000000000000000000000000000000000000000b_address;
+
+    auto const json_string = [] {
+        if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+            return R"(
+                    [
+                        {
+                            "address" : "0x000000000000000000000000000000000000000b",
+                            "storageKeys": []
+                        }
+                    ]
+                )";
+        }
+        else {
+            return "[]";
+        }
+    }();
+
+    // Precompiles are always excluded, depending on the active revision
+    {
+        State s{bs, Incarnation{0, 0}};
+
+        s.create_account_no_rollback(addr1);
+        s.create_account_no_rollback(addr2);
+        s.create_account_no_rollback(addr3);
+        s.create_account_no_rollback(ecrecover);
+        s.create_account_no_rollback(bls_g1_add);
+
+        nlohmann::json storage;
+        auto const authorities = std::vector<std::optional<Address>>{};
+        auto const to = std::optional<Address>{addr3};
+        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+        tracer.encode<typename TestFixture::Trait>(s);
+
+        EXPECT_EQ(storage, nlohmann::json::parse(json_string));
+    }
 }

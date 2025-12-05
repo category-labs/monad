@@ -21,6 +21,7 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <monad/test/traits_test.hpp>
 
 #include <test_resource_data.h>
 
@@ -33,6 +34,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <ranges>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -42,43 +44,54 @@ using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::test;
 
-TEST_F(EvmTest, Stop)
+TYPED_TEST(VMTraitsTest, Stop)
 {
-    execute(0, {STOP});
-    ASSERT_EQ(result_.status_code, EVMC_SUCCESS);
+    TestFixture::execute(0, {STOP});
+    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
 }
 
-TEST_F(EvmTest, Push0)
+TYPED_TEST(VMTraitsTest, Push0)
 {
-    execute(2, {PUSH0});
-    ASSERT_EQ(result_.status_code, EVMC_SUCCESS);
-    ASSERT_EQ(result_.gas_left, 0);
+    TestFixture::execute(2, {PUSH0});
+    // PUSH0 supported since EIP-3855
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_SHANGHAI) {
+        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    }
+    else {
+        ASSERT_NE(this->result_.status_code, EVMC_SUCCESS);
+    }
+    ASSERT_EQ(this->result_.gas_left, 0);
 }
 
-TEST_F(EvmTest, PushSeveral)
+TYPED_TEST(VMTraitsTest, PushSeveral)
 {
-    execute(10, {PUSH1, 0x01, PUSH2, 0x20, 0x20, PUSH0});
-    ASSERT_EQ(result_.status_code, EVMC_SUCCESS);
-    ASSERT_EQ(result_.gas_left, 2);
+    if constexpr (TestFixture::Trait::evm_rev() < EVMC_SHANGHAI) {
+        TestFixture::execute(11, {PUSH1, 0x01, PUSH2, 0x20, 0x20, PUSH1, 0x0});
+    }
+    else {
+        TestFixture::execute(10, {PUSH1, 0x01, PUSH2, 0x20, 0x20, PUSH0});
+    }
+    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.gas_left, 2);
 }
 
-TEST_F(EvmTest, OutOfGas)
+TYPED_TEST(VMTraitsTest, OutOfGas)
 {
-    execute(6, {PUSH0, PUSH0, ADD});
-    ASSERT_EQ(result_.status_code, EVMC_OUT_OF_GAS);
-    ASSERT_EQ(result_.gas_left, 0);
+    TestFixture::execute(8, {PUSH1, 0x0, PUSH1, 0x0, ADD});
+    ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+    ASSERT_EQ(this->result_.gas_left, 0);
 }
 
 // https://github.com/category-labs/monad-compiler/issues/138
-TEST_F(EvmTest, BeaconRootRegression_138)
+TYPED_TEST(VMTraitsTest, BeaconRootRegression_138)
 {
     using namespace evmc::literals;
 
-    msg_.sender = 0xbe862ad9abfe6f22bcb087716c7d89a26051f74c_address;
+    this->msg_.sender = 0xbe862ad9abfe6f22bcb087716c7d89a26051f74c_address;
 
     auto insts = std::vector<std::uint8_t>{{CALLER, PUSH20}};
 
-    for (auto b : msg_.sender.bytes) {
+    for (auto b : this->msg_.sender.bytes) {
         insts.push_back(b);
     }
 
@@ -89,48 +102,66 @@ TEST_F(EvmTest, BeaconRootRegression_138)
 
     ASSERT_EQ(insts[2], 0xBE);
     ASSERT_EQ(insts[21], 0x4C);
-    execute(insts);
+    TestFixture::execute(insts);
 
-    ASSERT_EQ(result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
 }
 
 // https://github.com/category-labs/monad-compiler/issues/190
-TEST_F(EvmTest, UnderflowRegression_190)
+TYPED_TEST(VMTraitsTest, UnderflowRegression_190)
 {
-    execute({POP});
-    ASSERT_EQ(result_.status_code, EVMC_FAILURE);
+    TestFixture::execute({POP});
+    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 }
 
 // https://github.com/category-labs/monad-compiler/issues/192
-TEST_F(EvmTest, BadJumpRegression_192)
+TYPED_TEST(VMTraitsTest, BadJumpRegression_192)
 {
-    execute({PUSH0, JUMP});
-    ASSERT_EQ(result_.status_code, EVMC_FAILURE);
+    TestFixture::execute({PUSH0, JUMP});
+    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 }
 
-TEST_P(EvmFile, RegressionFile)
+TEST_P(VMFileTest, RegressionFile)
 {
-    auto const entry = GetParam();
+    auto const [entry, rev] = GetParam();
+
+    // TODO: this test is disabled for MONAD_SEVEN onward until evmone has a
+    // monad revision and can execute with the same gas costs as MONAD_SEVEN
+    if (rev >= std::variant<evmc_revision, monad_revision>{MONAD_SEVEN}) {
+        return;
+    }
     auto file = std::ifstream{entry.path(), std::ifstream::binary};
 
     ASSERT_TRUE(file.good());
 
     std::vector<uint8_t> code(std::istreambuf_iterator<char>{file}, {});
 
-    execute_and_compare(30'000'000, code);
+    execute_and_compare(30'000'000, code, rev);
 }
 
-TEST_F(EvmTest, SignextendLiveIndexBug)
+TYPED_TEST(VMTraitsTest, SignextendLiveIndexBug)
 {
-    execute(
-        100, {GAS, DUP1, SIGNEXTEND, PUSH0, MSTORE, PUSH1, 32, PUSH0, RETURN});
-    ASSERT_EQ(result_.output_size, 32);
-    ASSERT_EQ(uint256_t::load_be_unsafe(result_.output_data), uint256_t{98});
+    TestFixture::execute(
+        100,
+        {GAS,
+         DUP1,
+         SIGNEXTEND,
+         PUSH1,
+         0x0,
+         MSTORE,
+         PUSH1,
+         32,
+         PUSH1,
+         0x0,
+         RETURN});
+    ASSERT_EQ(this->result_.output_size, 32);
+    ASSERT_EQ(
+        uint256_t::load_be_unsafe(this->result_.output_data), uint256_t{98});
 }
 
-TEST_F(EvmTest, JumpiLiveDestDeferredComparisonBug)
+TYPED_TEST(VMTraitsTest, JumpiLiveDestDeferredComparisonBug)
 {
-    execute(
+    TestFixture::execute(
         1000,
         {JUMPDEST,
          GAS,
@@ -143,12 +174,12 @@ TEST_F(EvmTest, JumpiLiveDestDeferredComparisonBug)
          ADDRESS,
          SLT,
          JUMPI});
-    ASSERT_EQ(result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 }
 
-TEST_F(EvmTest, Cmov32BitBug)
+TYPED_TEST(VMTraitsTest, Cmov32BitBug)
 {
-    execute(
+    TestFixture::execute(
         1000,
         {PUSH1,
          0x60,
@@ -161,10 +192,16 @@ TEST_F(EvmTest, Cmov32BitBug)
          SAR,
          ADDRESS,
          JUMPI});
-    ASSERT_EQ(result_.status_code, EVMC_SUCCESS);
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CONSTANTINOPLE) {
+        // SAR opcode only available since EIP-145
+        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    }
+    else {
+        ASSERT_NE(this->result_.status_code, EVMC_SUCCESS);
+    }
 }
 
-TEST_F(EvmTest, MissingDischargeInJumpiKeepFallthroughStack)
+TYPED_TEST(VMTraitsTest, MissingDischargeInJumpiKeepFallthroughStack)
 {
     std::vector<uint8_t> bytecode{
         0x60, 0x80, 0x60, 0x40, 0x52, 0x34, 0x80, 0x15, 0x60, 0x00, 0x38, 0x57,
@@ -191,10 +228,10 @@ TEST_F(EvmTest, MissingDischargeInJumpiKeepFallthroughStack)
         0x85, 0x90, 0x1c, 0x90, 0x50, 0x80, 0x60, 0x1f, 0x1a, 0x90, 0x50, 0x5f,
         0x60, 0x08, 0x86, 0x90, 0x1c, 0x90, 0x50, 0x80, 0x60, 0x04, 0x1a, 0x90,
         0x50, 0x5f, 0x60, 0x10};
-    execute_and_compare(1'000'000, bytecode, {});
+    TestFixture::execute_and_compare(1'000'000, bytecode, {});
 }
 
-TEST_F(EvmTest, WrongGasCheckConditionalJump)
+TYPED_TEST(VMTraitsTest, WrongGasCheckConditionalJump)
 {
     std::vector<uint8_t> bytecode{
         0x60, 0x80, 0x60, 0x40, 0x52, 0x34, 0x80, 0x15, 0x60, 0x0e, 0x57, 0x5f,
@@ -214,10 +251,10 @@ TEST_F(EvmTest, WrongGasCheckConditionalJump)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-    execute_and_compare(1'000'000, bytecode, calldata);
+    TestFixture::execute_and_compare(1'000'000, bytecode, calldata);
 }
 
-TEST_F(EvmTest, MissingRemoveStackOffsetInFallthroughStack)
+TYPED_TEST(VMTraitsTest, MissingRemoveStackOffsetInFallthroughStack)
 {
     std::vector<uint8_t> bytecode{
         0x60, 0x80, 0x60, 0x40, 0x52, 0x60, 0x01, 0x5f, 0x55, 0x60, 0x02, 0x60,
@@ -240,21 +277,30 @@ TEST_F(EvmTest, MissingRemoveStackOffsetInFallthroughStack)
                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-    execute_and_compare(1'000'000, bytecode, calldata);
+    // TODO: this test is disabled for MONAD_SEVEN onward until evmone has a
+    // monad revision and can execute with the same gas costs as MONAD_SEVEN
+    if constexpr (TestFixture::is_monad_trait()) {
+        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            return;
+        }
+    }
+
+    TestFixture::execute_and_compare(1'000'000, bytecode, calldata);
 }
 
-TEST_F(EvmTest, DupStackOverflow)
+TYPED_TEST(VMTraitsTest, DupStackOverflow)
 {
     auto bytecode = std::vector<std::uint8_t>{};
     std::fill_n(std::back_inserter(bytecode), 1024, GAS);
     bytecode.push_back(DUP4);
 
-    execute(bytecode, {}, Implementation::Interpreter);
+    TestFixture::execute(
+        bytecode, {}, TestFixture::Implementation::Interpreter);
 
-    ASSERT_EQ(result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 }
 
-TEST_F(EvmTest, NativeCodeSizeOutOfBound)
+TYPED_TEST(VMTraitsTest, NativeCodeSizeOutOfBound)
 {
     std::vector<uint8_t> bytecode;
     CompilerConfig const config{.max_code_size_offset = runtime::bin<1024>};
@@ -264,14 +310,16 @@ TEST_F(EvmTest, NativeCodeSizeOutOfBound)
     }
     bytecode.push_back(JUMPDEST);
     auto icode = make_shared_intercode(bytecode);
-    auto ncode = vm_.compiler().compile<EvmTraits<EVMC_CANCUN>>(icode, config);
+    auto ncode =
+        this->vm_.compiler().template compile<typename TestFixture::Trait>(
+            icode, config);
     ASSERT_GT(
         ncode->code_size_estimate_before_error(),
         *config.max_code_size_offset + n_jumpi * 32);
     ASSERT_EQ(ncode->error_code(), Nativecode::ErrorCode::SizeOutOfBound);
 }
 
-TEST_F(EvmTest, MaxDeltaOutOfBound)
+TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
 {
     CompilerConfig const config{
         .max_code_size_offset = runtime::bin<32 * 1024>};
@@ -289,35 +337,38 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
     bytecode1.push_back(JUMPDEST);
     auto const icode1 = make_shared_intercode(bytecode1);
     auto const ncode1 =
-        vm_.compiler().compile<EvmTraits<EVMC_CANCUN>>(icode1, config);
+        this->vm_.compiler().template compile<typename TestFixture::Trait>(
+            icode1, config);
 
-    pre_execute(10'000, {});
-    result_ = vm_.execute_native_entrypoint_raw(
-        &host_.get_interface(),
-        host_.to_context(),
-        &msg_,
+    TestFixture::pre_execute(10'000, {});
+    this->result_ = this->vm_.execute_native_entrypoint_raw(
+        &this->host_.get_interface(),
+        this->host_.to_context(),
+        &this->msg_,
         icode1,
         ncode1->entrypoint());
 
-    ASSERT_EQ(result_.status_code, EVMC_SUCCESS);
-    ASSERT_EQ(result_.gas_left, 10'000 - (3 * 1024 + 1));
+    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.gas_left, 10'000 - (3 * 1024 + 1));
 
     std::vector<uint8_t> bytecode2{base_bytecode};
-    bytecode2.push_back(PUSH0);
+    bytecode2.push_back(PUSH1);
+    bytecode2.push_back(0x0);
     bytecode2.push_back(JUMPDEST);
     auto const icode2 = make_shared_intercode(bytecode2);
     auto const ncode2 =
-        vm_.compiler().compile<EvmTraits<EVMC_CANCUN>>(icode2, config);
+        this->vm_.compiler().template compile<typename TestFixture::Trait>(
+            icode2, config);
 
-    pre_execute(10'000, {});
-    result_ = vm_.execute_native_entrypoint_raw(
-        &host_.get_interface(),
-        host_.to_context(),
-        &msg_,
+    TestFixture::pre_execute(10'000, {});
+    this->result_ = this->vm_.execute_native_entrypoint_raw(
+        &this->host_.get_interface(),
+        this->host_.to_context(),
+        &this->msg_,
         icode2,
         ncode2->entrypoint());
 
-    ASSERT_EQ(result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 
     // Since the basic block in `ncode2` is known to overflow the stack, with
     // max_delta > 1024, the native code for the basic block should just jump
@@ -328,7 +379,7 @@ TEST_F(EvmTest, MaxDeltaOutOfBound)
         *ncode1->code_size_estimate());
 }
 
-TEST_F(EvmTest, MinDeltaOutOfBound)
+TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
 {
     CompilerConfig const config{
         .max_code_size_offset = runtime::bin<32 * 1024>};
@@ -345,35 +396,37 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
     bytecode1.push_back(JUMPDEST);
     auto const icode1 = make_shared_intercode(bytecode1);
     auto const ncode1 =
-        vm_.compiler().compile<EvmTraits<EVMC_CANCUN>>(icode1, config);
+        this->vm_.compiler().template compile<typename TestFixture::Trait>(
+            icode1, config);
 
-    pre_execute(10'000, {});
-    result_ = vm_.execute_native_entrypoint_raw(
-        &host_.get_interface(),
-        host_.to_context(),
-        &msg_,
+    TestFixture::pre_execute(10'000, {});
+    this->result_ = this->vm_.execute_native_entrypoint_raw(
+        &this->host_.get_interface(),
+        this->host_.to_context(),
+        &this->msg_,
         icode1,
         ncode1->entrypoint());
 
-    ASSERT_EQ(result_.status_code, EVMC_SUCCESS);
-    ASSERT_EQ(result_.gas_left, 10'000 - (2 * 1024 + 1 + 2 * 1024 + 1));
+    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.gas_left, 10'000 - (2 * 1024 + 1 + 2 * 1024 + 1));
 
     std::vector<uint8_t> bytecode2{base_bytecode};
     bytecode2.push_back(POP);
     bytecode2.push_back(JUMPDEST);
     auto const icode2 = make_shared_intercode(bytecode2);
     auto const ncode2 =
-        vm_.compiler().compile<EvmTraits<EVMC_CANCUN>>(icode2, config);
+        this->vm_.compiler().template compile<typename TestFixture::Trait>(
+            icode2, config);
 
-    pre_execute(10'000, {});
-    result_ = vm_.execute_native_entrypoint_raw(
-        &host_.get_interface(),
-        host_.to_context(),
-        &msg_,
+    TestFixture::pre_execute(10'000, {});
+    this->result_ = this->vm_.execute_native_entrypoint_raw(
+        &this->host_.get_interface(),
+        this->host_.to_context(),
+        &this->msg_,
         icode2,
         ncode2->entrypoint());
 
-    ASSERT_EQ(result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 
     // We expect native code size of `ncode2` to be smaller, because the last
     // basic block has min_delta < -1024, so will just jump to error label,
@@ -387,18 +440,20 @@ TEST_F(EvmTest, MinDeltaOutOfBound)
 // always legitimately report an out of gas exit code. Note that in some cases,
 // the compiler _will_ report an out of gas code (i.e. when gas is deducted by a
 // runtime component).
-TEST_F(EvmTest, LoopOutOfGas)
+TYPED_TEST(VMTraitsTest, LoopOutOfGas)
 {
-    auto const code = std::vector<uint8_t>{JUMPDEST, PUSH0, JUMP};
+    auto const code = std::vector<uint8_t>{JUMPDEST, PUSH1, 0x0, JUMP};
 
-    execute(30'000, code, {}, Implementation::Interpreter);
-    ASSERT_EQ(result_.status_code, EVMC_OUT_OF_GAS);
+    TestFixture::execute(
+        30'000, code, {}, TestFixture::Implementation::Interpreter);
+    ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
 
-    execute(30'000, code, {}, Implementation::Compiler);
-    ASSERT_EQ(result_.status_code, EVMC_FAILURE);
+    TestFixture::execute(
+        30'000, code, {}, TestFixture::Implementation::Compiler);
+    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 }
 
-TEST_F(EvmTest, ShrCeilOffByOneRegression)
+TYPED_TEST(VMTraitsTest, ShrCeilOffByOneRegression)
 {
     VM vm{};
     evmc_message msg{};
@@ -407,12 +462,13 @@ TEST_F(EvmTest, ShrCeilOffByOneRegression)
     std::vector<uint8_t> const code(
         {0x63, 0x0f, 0xff, 0xff, 0xff, 0x63, 0x0f, 0xff, 0xff, 0xff, 0xfd});
     auto const icode = make_shared_intercode(code);
-    auto const ncode = vm.compiler().compile<EvmTraits<EVMC_CANCUN>>(icode);
+    auto const ncode =
+        vm.compiler().template compile<typename TestFixture::Trait>(icode);
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr);
 
     vm.execute_native_entrypoint_raw(
-        &host_.get_interface(),
-        host_.to_context(),
+        &this->host_.get_interface(),
+        this->host_.to_context(),
         &msg,
         icode,
         ncode->entrypoint());
@@ -425,7 +481,7 @@ TEST_F(EvmTest, ShrCeilOffByOneRegression)
 // eth_estimateGas, and to validate that the interpreter propagates this status
 // code. The full integration test based on this contract failed when updating
 // the client to use the Monad VM before out of gas reporting was re-enabled.
-TEST_F(EvmTest, EthCallOutOfGas)
+TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
 {
     auto const code =
         evmc::from_hex(
@@ -492,46 +548,56 @@ TEST_F(EvmTest, EthCallOutOfGas)
                        "0000000000000000000000004e20")
             .value();
 
-    execute(30'000'000, code, data, Implementation::Interpreter);
-    ASSERT_EQ(result_.status_code, EVMC_OUT_OF_GAS);
+    TestFixture::execute(
+        30'000'000, code, data, TestFixture::Implementation::Interpreter);
+    // code contains PUSH0, so will terminate with a failure pre Shanghai
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_SHANGHAI) {
+        ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+    }
+    else {
+        ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+    }
 }
 
-TEST_F(EvmTest, Int32BlockGasOverflow)
+namespace
 {
-    using traits = monad::MonadTraits<MONAD_FIVE>;
-
-    std::vector<uint8_t> code;
-    for (size_t i = 0; i < 14 * 1024; ++i) {
-        code.push_back(PUSH0);
-        code.push_back(PUSH0);
-        code.push_back(CODESIZE);
-        code.push_back(CREATE);
-        code.push_back(POP);
+    std::vector<std::variant<evmc_revision, monad_revision>>
+    monad_evm_revisions()
+    {
+        std::vector<std::variant<evmc_revision, monad_revision>> result;
+        for (auto evm_rev = 0; evm_rev < EVMC_MAX_REVISION; ++evm_rev) {
+            result.push_back(static_cast<evmc_revision>(evm_rev));
+        }
+        for (auto monad_rev = 0; monad_rev <= MONAD_NEXT; ++monad_rev) {
+            result.push_back(static_cast<monad_revision>(monad_rev));
+        }
+        return result;
     }
 
-    auto const ir = basic_blocks::BasicBlocksIR::unsafe_from<traits>(code);
-    ASSERT_EQ(ir.blocks().size(), 1);
-    ASSERT_GT(
-        block_base_gas<traits>(ir.blocks()[0]),
-        std::numeric_limits<int32_t>::max());
+    static auto regression_tests =
+        std::views::cartesian_product(
+            fs::directory_iterator(monad::test_resource::regression_tests_dir),
+            monad_evm_revisions()) |
+        std::ranges::to<std::vector>();
 
-    auto const icode = make_shared_intercode(code);
-    auto const ncode = vm_.compiler().compile<traits>(icode);
+    std::string
+    monad_evm_revision_name(std::variant<evmc_revision, monad_revision> rev)
+    {
+        std::string name;
+        if (std::holds_alternative<monad_revision>(rev)) {
+            name = monad_revision_to_string(std::get<monad_revision>(rev));
+        }
+        else {
+            name = evmc_revision_to_string(std::get<evmc_revision>(rev));
+        }
+        std::replace(name.begin(), name.end(), ' ', '_');
+        return name;
+    }
 
-    pre_execute(20'000'000, {});
-    result_ = evmc::Result{vm_.execute_native_entrypoint_raw(
-        &host_.get_interface(),
-        host_.to_context(),
-        &msg_,
-        icode,
-        ncode->entrypoint())};
-
-    EXPECT_EQ(result_.status_code, EVMC_FAILURE);
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    EvmTest, EvmFile,
-    ::testing::ValuesIn(std::vector<fs::directory_entry>{
-        fs::directory_iterator(monad::test_resource::regression_tests_dir),
-        {}}),
-    [](auto const &info) { return info.param.path().stem().string(); });
+    , VMFileTest, ::testing::ValuesIn(regression_tests), ([](auto const &info) {
+        auto const &[f, rev] = info.param;
+        return monad_evm_revision_name(rev) + "_" + f.path().stem().string();
+    }));

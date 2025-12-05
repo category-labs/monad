@@ -17,9 +17,10 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
-#include <category/core/unordered_map.hpp>
 
 #include <boost/intrusive/list.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <optional>
 #include <utility>
@@ -76,7 +77,7 @@ public:
     insert(Key const &key, Value const &value) noexcept
     {
         std::optional<Value> erased_value = std::nullopt;
-        if (auto it = map_.find(key); it != map_.end()) {
+        if (auto const it = map_.find(key); it != map_.end()) {
             erased_value = it->second->val;
             it->second->val = value;
             update_lru(it->second);
@@ -85,12 +86,12 @@ public:
         list_node *node = nullptr;
         if (!free_list_.empty()) {
             // allocate from free_list_
-            auto list_it = free_list_.begin();
+            auto const list_it = free_list_.begin();
             node = &*list_it;
             free_list_.erase(list_it);
         }
         else { // reuse the last node in active_list_
-            auto list_it = std::prev(active_list_.end());
+            auto const list_it = std::prev(active_list_.end());
             erased_value = list_it->val;
             map_.erase(list_it->key);
             node = &*list_it;

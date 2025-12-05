@@ -18,7 +18,6 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
-#include <category/core/hex_literal.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/traverse.hpp>
@@ -64,7 +63,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
             for (size_t n = 0; n < 1000; n++) {
                 {
                     monad::byte_string key(
-                        0x1234567812345678123456781234567812345678123456781234567812345678_hex);
+                        0x1234567812345678123456781234567812345678123456781234567812345678_bytes);
                     for (size_t n = 0; n < key.size(); n += 4) {
                         *(uint32_t *)(key.data() + n) = rand();
                     }

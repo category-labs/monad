@@ -17,7 +17,7 @@
 
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
-#include <category/core/hex_literal.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
@@ -48,7 +48,7 @@ static constexpr uint64_t MIN_HISTORY_LENGTH = 257;
 
 static byte_string const empty_trie_hash = [] {
     using namespace ::monad::literals;
-    return 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_hex;
+    return 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes;
 }();
 
 struct virtual_chunk_offset_t
@@ -60,27 +60,27 @@ struct virtual_chunk_offset_t
     file_offset_t spare : 15;
     file_offset_t is_in_fast_list : 1;
 
-    static constexpr file_offset_t max_offset = (1ULL << 28) - 1;
-    static constexpr file_offset_t max_count = (1U << 20) - 1;
-    static constexpr file_offset_t max_spare = (1U << 15) - 1;
+    static constexpr file_offset_t MAX_OFFSET = (1ULL << 28) - 1;
+    static constexpr file_offset_t MAX_COUNT = (1U << 20) - 1;
+    static constexpr file_offset_t MAX_SPARE = (1U << 15) - 1;
 
     static constexpr virtual_chunk_offset_t invalid_value() noexcept
     {
-        return {max_count, max_offset, 1, max_spare};
+        return {MAX_COUNT, MAX_OFFSET, 1, MAX_SPARE};
     }
 
     constexpr virtual_chunk_offset_t(
         uint32_t count_, file_offset_t offset_, file_offset_t is_fast_list_,
-        file_offset_t spare_ = max_spare)
-        : offset(offset_ & max_offset)
-        , count(count_ & max_count)
-        , spare{spare_ & max_spare}
+        file_offset_t spare_ = MAX_SPARE)
+        : offset(offset_ & MAX_OFFSET)
+        , count(count_ & MAX_COUNT)
+        , spare{spare_ & MAX_SPARE}
         , is_in_fast_list(is_fast_list_ & 1)
     {
-        MONAD_DEBUG_ASSERT(spare_ <= max_spare);
-        MONAD_DEBUG_ASSERT(count_ <= max_count);
-        MONAD_DEBUG_ASSERT(offset_ <= max_offset);
-        MONAD_DEBUG_ASSERT(is_fast_list_ <= 1);
+        MONAD_ASSERT(spare_ <= MAX_SPARE);
+        MONAD_ASSERT(count_ <= MAX_COUNT);
+        MONAD_ASSERT(offset_ <= MAX_OFFSET);
+        MONAD_ASSERT(is_fast_list_ <= 1);
     }
 
     // note that comparator ignores `spare`
@@ -190,6 +190,7 @@ public:
     {
     }
 
+    // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr compact_virtual_chunk_offset_t(
         virtual_chunk_offset_t const offset)
         : v_{static_cast<uint32_t>(offset.raw() >> bits_to_truncate)}
@@ -209,6 +210,7 @@ public:
         return v_ >> (most_significant_bits - count_bits);
     }
 
+    // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr operator uint32_t() const noexcept
     {
         return v_;

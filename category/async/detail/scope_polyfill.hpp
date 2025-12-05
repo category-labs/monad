@@ -153,7 +153,7 @@ namespace monad
                         return;
                     }
     #if __cplusplus >= 201700 || _HAS_CXX17
-                    bool unwind_is_due_to_throw =
+                    bool const unwind_is_due_to_throw =
                         (std::uncaught_exceptions() > uncaught_exceptions_);
     #else
                     bool unwind_is_due_to_throw = std::uncaught_exception();

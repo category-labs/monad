@@ -49,31 +49,11 @@ evmc_revision MonadChain::get_revision(
     return EVMC_CANCUN;
 }
 
-Result<void> MonadChain::validate_output_header(
-    BlockHeader const &input, BlockHeader const &output) const
-{
-    if (MONAD_UNLIKELY(input.ommers_hash != output.ommers_hash)) {
-        return BlockError::WrongOmmersHash;
-    }
-    if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
-    if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
-
-    // YP eq. 56
-    if (MONAD_UNLIKELY(output.gas_used > output.gas_limit)) {
-        return BlockError::GasAboveLimit;
-    }
-    return success();
-}
-
 Result<void> MonadChain::validate_transaction(
     uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
-    std::vector<std::optional<Address>> const &authorities) const
+    std::span<std::optional<Address> const> const authorities) const
 {
 
     monad_revision const monad_rev = get_monad_revision(timestamp);

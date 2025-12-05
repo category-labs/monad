@@ -20,11 +20,11 @@
 #include <instrumentation_device.hpp>
 #include <stopwatch.hpp>
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <asmjit/core/jitruntime.h>
 

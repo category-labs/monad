@@ -66,8 +66,7 @@ check_if_boost_fiber_needs_ucontext_macro()
 # ##############################################################################
 
 add_library(
-  monad_core
-  OBJECT
+  monad_core OBJECT
   # config
   "config.hpp"
   # core
@@ -87,8 +86,8 @@ add_library(
   "format_err.c"
   "format_err.h"
   "hash.hpp"
-  "hex_literal.hpp"
   "int.hpp"
+  "is_specialization_of.hpp"
   "keccak.c"
   "keccak.h"
   "keccak.hpp"
@@ -99,6 +98,8 @@ add_library(
   "monad_exception.cpp"
   "monad_exception.hpp"
   "nibble.h"
+  "path_util.c"
+  "path_util.h"
   "result.hpp"
   "size_of.hpp"
   "small_prng.hpp"
@@ -107,7 +108,6 @@ add_library(
   "tl_tid.c"
   "tl_tid.h"
   "unaligned.hpp"
-  "unordered_map.hpp"
   "lru/lru_cache.hpp"
   "lru/static_lru_cache.hpp"
   "mem/batch_mem_pool.hpp"
@@ -126,6 +126,10 @@ add_library(
   "event/test_event_ctypes_metadata.c"
   # fiber
   "fiber/config.hpp"
+  "fiber/fiber_group.cpp"
+  "fiber/fiber_group.hpp"
+  "fiber/fiber_thread_pool.cpp"
+  "fiber/fiber_thread_pool.hpp"
   "fiber/priority_algorithm.cpp"
   "fiber/priority_algorithm.hpp"
   "fiber/priority_pool.cpp"
@@ -143,6 +147,9 @@ add_library(
   # rlp
   "rlp/config.hpp"
   "rlp/encode.hpp"
+  # runtime
+  "runtime/uint256.cpp"
+  "runtime/uint256.hpp"
   # test
   "test_util/gtest_signal_stacktrace_printer.hpp"
   # util

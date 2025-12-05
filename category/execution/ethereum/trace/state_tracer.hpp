@@ -19,11 +19,13 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
-
+#include <immer/map.hpp>
 #include <nlohmann/json.hpp>
 
+#include <span>
 #include <variant>
 
 MONAD_NAMESPACE_BEGIN
@@ -33,13 +35,15 @@ struct Transaction;
 
 namespace trace
 {
-
     template <typename Key, typename Elem>
     using Map = ankerl::unordered_dense::segmented_map<Key, Elem>;
 
+    template <class Key>
+    using Set = ankerl::unordered_dense::set<Key>;
+
     struct PrestateTracer
     {
-        PrestateTracer(nlohmann::json &storage)
+        explicit PrestateTracer(nlohmann::json &storage)
             : storage_(storage)
         {
         }
@@ -47,12 +51,24 @@ namespace trace
         void encode(Map<Address, OriginalAccountState> const &, State &);
 
     private:
+        static nlohmann::json
+        account_state_to_json(OriginalAccountState const &, State &);
+        static void state_to_json(
+            Map<Address, OriginalAccountState> const &, State &,
+            nlohmann::json &);
+        static nlohmann::json
+        state_to_json(Map<Address, OriginalAccountState> const &, State &);
+        friend void state_to_json(
+            Map<Address, OriginalAccountState> const &, State &,
+            nlohmann::json &);
+        friend nlohmann::json
+        state_to_json(Map<Address, OriginalAccountState> const &, State &);
         nlohmann::json &storage_;
     };
 
     struct StateDiffTracer
     {
-        StateDiffTracer(nlohmann::json &storage)
+        explicit StateDiffTracer(nlohmann::json &storage)
             : storage_(storage)
         {
         }
@@ -62,14 +78,33 @@ namespace trace
 
     private:
         StorageDeltas generate_storage_deltas(
-            Map<bytes32_t, bytes32_t> const &,
-            Map<bytes32_t, bytes32_t> const &);
+            AccountState::StorageMap const &, AccountState::StorageMap const &);
         nlohmann::json &storage_;
     };
 
-    using StateTracer =
-        std::variant<std::monostate, PrestateTracer, StateDiffTracer>;
-    void run_tracer(StateTracer const &tracer, State &state);
+    struct AccessListTracer
+    {
+        AccessListTracer(
+            nlohmann::json &storage, Address const &sender,
+            Address const &beneficiary, std::optional<Address> const &to,
+            std::span<std::optional<Address> const> const authorities);
+
+        template <Traits traits>
+        void encode(State &);
+
+    private:
+        nlohmann::json &storage_;
+        Set<Address> excluded_addresses_{};
+
+        template <Traits traits>
+        bool should_exclude_address(Address const &) const;
+    };
+
+    using StateTracer = std::variant<
+        std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer>;
+
+    template <Traits traits>
+    void run_tracer(StateTracer &tracer, State &state);
 
     nlohmann::json
     state_to_json(Map<Address, OriginalAccountState> const &, State &);

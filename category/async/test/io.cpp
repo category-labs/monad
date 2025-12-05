@@ -34,6 +34,7 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <sys/types.h>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -42,13 +43,29 @@
 
 namespace
 {
+    struct empty_receiver
+    {
+        std::vector<monad::async::read_single_buffer_sender::buffer_type> &bufs;
+
+        static constexpr bool lifetime_managed_internally = true;
+
+        void set_value(
+            monad::async::erased_connected_operation *,
+            monad::async::read_single_buffer_sender::result_type r)
+        {
+            MONAD_ASSERT(r);
+            // Exactly the same test as the death test, except for this line
+            // bufs.emplace_back(std::move(r.assume_value().get()));
+        }
+    };
+
     TEST(AsyncIO, hardlink_fd_to)
     {
         monad::async::storage_pool pool(
             monad::async::use_anonymous_inode_tag{});
         {
-            auto chunk = pool.activate_chunk(pool.seq, 0);
-            auto fd = chunk->write_fd(1);
+            auto chunk = pool.chunk(pool.seq, 0);
+            auto const fd = chunk.write_fd(1);
             char c = 5;
             MONAD_ASSERT(
                 -1 != ::pwrite(fd.first, &c, 1, static_cast<off_t>(fd.second)));
@@ -103,7 +120,7 @@ namespace
                 empty_receiver{}));
             // Exactly the same test as the death test, except for this line
             state->initiate(); // will reap completions if no buffers free
-            state.release();
+            (void)state.release();
         }
         testio.wait_until_done();
     }
@@ -119,33 +136,13 @@ namespace
         static std::vector<monad::async::read_single_buffer_sender::buffer_type>
             bufs;
 
-        struct empty_receiver
-        {
-            std::vector<monad::async::read_single_buffer_sender::buffer_type>
-                &bufs;
-
-            enum
-            {
-                lifetime_managed_internally = true
-            };
-
-            void set_value(
-                monad::async::erased_connected_operation *,
-                monad::async::read_single_buffer_sender::result_type r)
-            {
-                MONAD_ASSERT(r);
-                // Exactly the same test as the death test, except for this line
-                // bufs.emplace_back(std::move(r.assume_value().get()));
-            }
-        };
-
         for (size_t n = 0; n < 1000; n++) {
             auto state(testio.make_connected(
                 monad::async::read_single_buffer_sender(
                     {0, 0}, monad::async::DISK_PAGE_SIZE),
                 empty_receiver{bufs}));
             state->initiate(); // will reap completions if no buffers free
-            state.release();
+            (void)state.release();
         }
         testio.wait_until_done();
     }
@@ -184,7 +181,7 @@ namespace
             offset += monad::async::DISK_PAGE_SIZE;
             s1->sender().advance_buffer_append(monad::async::DISK_PAGE_SIZE);
             s1->initiate();
-            s1.release();
+            (void)s1.release();
             auto s2 = state->executor()->make_connected(
                 monad::async::write_single_buffer_sender(
                     {0, offset}, monad::async::DISK_PAGE_SIZE),
@@ -192,7 +189,7 @@ namespace
             offset += monad::async::DISK_PAGE_SIZE;
             s2->sender().advance_buffer_append(monad::async::DISK_PAGE_SIZE);
             s2->initiate();
-            s2.release();
+            (void)s2.release();
         }
     }
 
@@ -203,7 +200,6 @@ namespace
         monad::io::Ring testring1(monad::io::RingConfig{4});
         monad::io::Ring testring2(
             {sqe_exhaustion_does_not_reorder_writes_receiver::COUNT,
-             false,
              std::nullopt});
         monad::io::Buffers testrwbuf =
             monad::io::make_buffers_for_segregated_read_write(
@@ -241,12 +237,12 @@ namespace
         offset += monad::async::DISK_PAGE_SIZE;
         s1->sender().advance_buffer_append(monad::async::DISK_PAGE_SIZE);
         s1->initiate();
-        s1.release();
+        (void)s1.release();
         testio.wait_until_done();
         std::cout << "   " << seq.size() << " offsets written." << std::endl;
 
         uint32_t offset2 = 0;
-        for (auto &i : seq) {
+        for (auto const &i : seq) {
             EXPECT_EQ(i, offset2);
             offset2 += monad::async::DISK_PAGE_SIZE;
         }

@@ -29,7 +29,7 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-Node::UniquePtr read_node_blocking(
+Node::SharedPtr read_node_blocking(
     UpdateAuxImpl const &aux, chunk_offset_t const node_offset,
     uint64_t const version)
 {
@@ -52,8 +52,8 @@ Node::UniquePtr read_node_blocking(
         (unsigned char *)aligned_alloc(DISK_PAGE_SIZE, bytes_to_read);
     auto unbuffer = make_scope_exit([buffer]() noexcept { ::free(buffer); });
 
-    auto chunk = pool.activate_chunk(pool.seq, node_offset.id);
-    auto fd = chunk->read_fd();
+    auto &chunk = pool.chunk(pool.seq, node_offset.id);
+    auto fd = chunk.read_fd();
     ssize_t const bytes_read = pread(
         fd.first,
         buffer,
@@ -69,7 +69,7 @@ Node::UniquePtr read_node_blocking(
     return aux.version_is_valid_ondisk(version)
                ? deserialize_node_from_buffer<Node>(
                      buffer + buffer_off, size_t(bytes_read) - buffer_off)
-               : Node::UniquePtr{};
+               : Node::SharedPtr{};
 }
 
 MONAD_MPT_NAMESPACE_END

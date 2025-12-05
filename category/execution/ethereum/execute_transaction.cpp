@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -28,6 +29,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -76,7 +78,7 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
-    std::vector<std::optional<Address>> const &authorities,
+    std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, uint64_t const i,
     RevertTransactionFn const &revert_transaction)
     : chain_{chain}
@@ -86,14 +88,6 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     , header_{header}
     , i_{i}
     , revert_transaction_{revert_transaction}
-{
-}
-
-template <Traits traits>
-ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
-    Chain const &chain, Transaction const &tx, Address const &sender,
-    BlockHeader const &header)
-    : ExecuteTransactionNoValidation{chain, tx, sender, {}, header, 0}
 {
 }
 
@@ -115,7 +109,7 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         // 1. Verify the chain ID is 0 or the ID of the current chain.
         auto const &chain_id = *auth_entry.sc.chain_id;
         auto const host_chain_id =
-            intx::be::load<uint256_t>(host.get_tx_context().chain_id);
+            intx::be::load<uint256_t>(host.get_tx_context()->chain_id);
 
         if (!(chain_id == 0 || chain_id == host_chain_id)) {
             continue;
@@ -142,7 +136,7 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         state.access_account(*authority);
 
         // 5. Verify the code of authority is empty or already delegated.
-        auto const &icode = state.get_code(*authority)->intercode();
+        auto const icode = state.get_code(*authority)->intercode();
         auto const code = std::span{icode->code(), *icode->code_size()};
         if (!(code.empty() || vm::evm::is_delegated(code))) {
             continue;
@@ -239,11 +233,6 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         auth_refund = process_authorizations(state, host);
     }
 
-    if constexpr (!traits::eip_7702_refund_active()) {
-        // monad doesn't give authorization refunds
-        auth_refund = 0;
-    }
-
     // EIP-3651
     if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         host.access_account(header_.beneficiary);
@@ -293,10 +282,11 @@ template <Traits traits>
 ExecuteTransaction<traits>::ExecuteTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender,
-    std::vector<std::optional<Address>> const &authorities,
+    std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    trace::StateTracer &state_tracer,
     RevertTransactionFn const &revert_transaction)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header, i, revert_transaction}
@@ -305,7 +295,9 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , block_metrics_{block_metrics}
     , prev_{prev}
     , call_tracer_{call_tracer}
+    , state_tracer_{state_tracer}
 {
+    record_txn_header_events(static_cast<uint32_t>(i), tx, sender, authorities);
 }
 
 template <Traits traits>
@@ -333,12 +325,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
     auto const tx_context =
         get_tx_context<traits>(tx_, sender_, header_, chain_.get_chain_id());
     EvmcHost<traits> host{
-        chain_,
-        call_tracer_,
-        tx_context,
-        block_hash_buffer_,
-        state,
-        [this, &state] {
+        call_tracer_, tx_context, block_hash_buffer_, state, [this, &state] {
             return revert_transaction_(sender_, tx_, i_, state);
         }};
 
@@ -359,26 +346,17 @@ Receipt ExecuteTransaction<traits>::execute_final(
         tx_,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
-    auto const refund_gas_cost =
-        refund_gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
-    state.add_to_balance(sender_, refund_gas_cost * gas_refund);
+    auto const gas_cost =
+        gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+    state.add_to_balance(sender_, gas_cost * gas_refund);
 
-    auto gas_used = tx_.gas_limit;
-
-    // Monad specification §2.3: Payment Rule for User:
-    // The storage refund does not reduce the gas consumption of the
-    // transaction.
-    if constexpr (traits::should_refund_reduce_gas_used()) {
-        gas_used -= gas_refund;
-    }
+    auto gas_used = tx_.gas_limit - gas_refund;
 
     // EIP-7623
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         auto const floor_gas = floor_data_gas(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
-            auto const gas_cost =
-                gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
             state.subtract_from_balance(sender_, gas_cost * delta);
 
             gas_used = floor_gas;
@@ -438,7 +416,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             }
             auto const receipt = execute_final(state, result.value());
             call_tracer_.on_finish(receipt.gas_used);
+            trace::run_tracer<traits>(state_tracer_, state);
             block_state_.merge(state);
+            record_txn_output_events(
+                static_cast<uint32_t>(this->i_),
+                receipt,
+                call_tracer_.get_call_frames(),
+                state);
             return receipt;
         }
     }
@@ -458,7 +442,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         }
         auto const receipt = execute_final(state, result.value());
         call_tracer_.on_finish(receipt.gas_used);
+        trace::run_tracer<traits>(state_tracer_, state);
         block_state_.merge(state);
+        record_txn_output_events(
+            static_cast<uint32_t>(this->i_),
+            receipt,
+            call_tracer_.get_call_frames(),
+            state);
         return receipt;
     }
 }

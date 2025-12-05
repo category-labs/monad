@@ -28,7 +28,38 @@ enum monad_revision
     MONAD_THREE = 3,
     MONAD_FOUR = 4,
     MONAD_FIVE = 5,
+    MONAD_SIX = 6,
+    MONAD_SEVEN = 7,
+    MONAD_EIGHT = 8,
+    MONAD_NEXT = 9
 };
+
+inline char const *monad_revision_to_string(enum monad_revision const rev)
+{
+    switch (rev) {
+    case MONAD_ZERO:
+        return "MONAD_ZERO";
+    case MONAD_ONE:
+        return "MONAD_ONE";
+    case MONAD_TWO:
+        return "MONAD_TWO";
+    case MONAD_THREE:
+        return "MONAD_THREE";
+    case MONAD_FOUR:
+        return "MONAD_FOUR";
+    case MONAD_FIVE:
+        return "MONAD_FIVE";
+    case MONAD_SIX:
+        return "MONAD_SIX";
+    case MONAD_SEVEN:
+        return "MONAD_SEVEN";
+    case MONAD_EIGHT:
+        return "MONAD_EIGHT";
+    case MONAD_NEXT:
+        return "MONAD_NEXT";
+    }
+    return ""; // unreachable
+}
 
 #ifdef __cplusplus
 }

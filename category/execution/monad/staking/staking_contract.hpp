@@ -29,6 +29,7 @@
 #include <category/execution/monad/staking/util/delegator.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/staking/util/val_execution.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -85,6 +86,8 @@ public:
             0x0000000000000000000000000000000000000000000000000000000000000002_bytes32};
         static constexpr auto AddressLastValId{
             0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
+        static constexpr auto AddressProposerValId{
+            0x0000000000000000000000000000000000000000000000000000000000000004_bytes32};
 
         // Working valsets get namespaces 0x1, 0x2, 0x3
         static constexpr auto AddressValsetExecution{
@@ -133,6 +136,10 @@ public:
         // is 1.
         StorageVariable<u64_be> last_val_id{
             state_, STAKING_CA, AddressLastValId};
+
+        // Set to the validator ID of the proposer each block.
+        StorageVariable<u64_be> proposer_val_id{
+            state_, STAKING_CA, AddressProposerValId};
 
         // Execution valset changes in real time with validator's stake
         StorageArray<u64_be> valset_execution{
@@ -526,6 +533,7 @@ private:
     //  1. add_validator
     //  2. delegate
     //  1. compound
+    template <Traits traits>
     Result<void> delegate(u64_be, uint256_t const &, Address const &);
 
     // Helper function for getting a valset. used by the three valset getters.
@@ -550,6 +558,8 @@ public:
     /////////////////
     // Precompiles //
     /////////////////
+
+    template <Traits traits>
     static std::pair<PrecompileFunc, uint64_t>
     precompile_dispatch(byte_string_view &);
 
@@ -565,21 +575,29 @@ public:
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_get_execution_valset(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_get_delegations(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_get_delegators(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_get_epoch(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    Result<byte_string> precompile_get_proposer_val_id(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
 
     Result<byte_string> precompile_fallback(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_add_validator(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_delegate(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_undelegate(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
+    template <Traits traits>
     Result<byte_string> precompile_compound(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
     Result<byte_string> precompile_withdraw(
@@ -594,9 +612,12 @@ public:
     ////////////////////
     //  System Calls  //
     ////////////////////
-    Result<void> syscall_on_epoch_change(byte_string_view);
+    template <Traits traits>
     Result<void> syscall_reward(byte_string_view, uint256_t const &);
-    Result<void> syscall_snapshot(byte_string_view);
+
+    Result<void> syscall_on_epoch_change(byte_string_view, uint256_t const &);
+
+    Result<void> syscall_snapshot(byte_string_view, uint256_t const &);
 };
 
 MONAD_STAKING_NAMESPACE_END

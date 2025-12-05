@@ -26,14 +26,8 @@ MONAD_IO_NAMESPACE_BEGIN
 struct RingConfig
 {
     unsigned entries{128}; //!< Number of submission queue entries
-    /*! Enable i/o spin polling throughout the kernel i/o stack. Be aware if set
-    all non-i/o operations will fail e.g. timers, posting across threads etc, as
-    will all non-O_DIRECT i/o. And, some filesystems will refuse ops even with
-    O_DIRECT turned on.
-    */
-    bool enable_io_polling{false};
     //! If set, turn on kernel polling of submission ring on the specified CPU
-    std::optional<unsigned> sq_thread_cpu;
+    std::optional<unsigned> sq_thread_cpu{};
 
     RingConfig() = default;
 
@@ -43,10 +37,8 @@ struct RingConfig
     }
 
     constexpr RingConfig(
-        unsigned const entries_, bool const enable_io_polling_,
-        std::optional<unsigned> const sq_thread_cpu_)
+        unsigned const entries_, std::optional<unsigned> const sq_thread_cpu_)
         : entries(entries_)
-        , enable_io_polling(enable_io_polling_)
         , sq_thread_cpu(sq_thread_cpu_)
     {
     }

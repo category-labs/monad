@@ -34,12 +34,11 @@
 MONAD_NAMESPACE_BEGIN
 
 EvmcHostBase::EvmcHostBase(
-    Chain const &chain, CallTracerBase &call_tracer,
-    evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
-    State &state, std::function<bool()> const &revert_transaction) noexcept
+    CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
+    BlockHashBuffer const &block_hash_buffer, State &state,
+    std::function<bool()> const &revert_transaction) noexcept
     : block_hash_buffer_{block_hash_buffer}
     , tx_context_{tx_context}
-    , chain_{chain}
     , state_{state}
     , call_tracer_{call_tracer}
     , revert_transaction_{revert_transaction}
@@ -74,7 +73,7 @@ evmc_storage_status EvmcHostBase::set_storage(
 evmc::uint256be EvmcHostBase::get_balance(Address const &address) const noexcept
 {
     try {
-        return state_.get_balance(address);
+        return state_.get_current_balance_pessimistic(address);
     }
     catch (...) {
         capture_current_exception();
@@ -120,9 +119,9 @@ size_t EvmcHostBase::copy_code(
     stack_unwind();
 }
 
-evmc_tx_context EvmcHostBase::get_tx_context() const noexcept
+evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
 {
-    return tx_context_;
+    return &tx_context_;
 }
 
 // This attempts to read from the contract first before falling back to the

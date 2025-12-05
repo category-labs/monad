@@ -71,8 +71,14 @@
         return f<::monad::MonadTraits<MONAD_FOUR>>(__VA_ARGS__);               \
     case MONAD_FIVE:                                                           \
         return f<::monad::MonadTraits<MONAD_FIVE>>(__VA_ARGS__);               \
-    default:                                                                   \
-        break;                                                                 \
+    case MONAD_SIX:                                                            \
+        return f<::monad::MonadTraits<MONAD_SIX>>(__VA_ARGS__);                \
+    case MONAD_SEVEN:                                                          \
+        return f<::monad::MonadTraits<MONAD_SEVEN>>(__VA_ARGS__);              \
+    case MONAD_EIGHT:                                                          \
+        return f<::monad::MonadTraits<MONAD_EIGHT>>(__VA_ARGS__);              \
+    case MONAD_NEXT:                                                           \
+        return f<::monad::MonadTraits<MONAD_NEXT>>(__VA_ARGS__);               \
     }
 
 // NOLINTEND(bugprone-macro-parentheses)

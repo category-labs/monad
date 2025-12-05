@@ -74,20 +74,29 @@ namespace detail
             --traverse.level;
             return true;
         }
-        for (auto const [idx, branch] : NodeChildrenRange(node.mask)) {
-            if (traverse.should_visit(node, branch)) {
+        for (auto const [idx, next_branch] : NodeChildrenRange(node.mask)) {
+            if (traverse.should_visit(node, next_branch)) {
                 if (Node::SharedPtr const &next = node.next(idx);
                     next != nullptr) {
-                    preorder_traverse_blocking_impl(
-                        aux, branch, *next, traverse, version);
+                    if (!preorder_traverse_blocking_impl(
+                            aux, next_branch, *next, traverse, version)) {
+                        --traverse.level;
+                        traverse.up(branch, node);
+                        return false;
+                    }
                     continue;
                 }
                 MONAD_ASSERT(aux.is_on_disk());
-                Node::UniquePtr next_node_ondisk =
+                auto const next_node_ondisk =
                     read_node_blocking(aux, node.fnext(idx), version);
-                if (!next_node_ondisk ||
-                    !preorder_traverse_blocking_impl(
-                        aux, branch, *next_node_ondisk, traverse, version)) {
+                if (!next_node_ondisk || !preorder_traverse_blocking_impl(
+                                             aux,
+                                             next_branch,
+                                             *next_node_ondisk,
+                                             traverse,
+                                             version)) {
+                    --traverse.level;
+                    traverse.up(branch, node);
                     return false;
                 }
             }
@@ -164,7 +173,7 @@ namespace detail
                     sender->reads_to_initiate_count = 0;
                 }
                 else { // version is valid after reading the buffer
-                    auto next_node_on_disk =
+                    auto const next_node_on_disk =
                         deserialize_node_from_receiver_result<Node>(
                             std::move(buffer_), buffer_off, io_state);
                     sender->within_recursion_count++;
@@ -219,7 +228,7 @@ namespace detail
         }
 
         async::result<void>
-        operator()(async::erased_connected_operation *traverse_state) noexcept
+        operator()(async::erased_connected_operation *traverse_state)
         {
             MONAD_ASSERT(traverse_root != nullptr);
             async_parallel_preorder_traverse_init(
@@ -368,8 +377,10 @@ inline bool preorder_traverse_blocking(
     UpdateAuxImpl &aux, Node const &node, TraverseMachine &traverse,
     uint64_t const version)
 {
-    return detail::preorder_traverse_blocking_impl(
+    auto const ret = detail::preorder_traverse_blocking_impl(
         aux, INVALID_BRANCH, node, traverse, version);
+    MONAD_ASSERT(traverse.level == 0);
+    return ret;
 }
 
 inline bool preorder_traverse_ondisk(

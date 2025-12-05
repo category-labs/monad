@@ -95,29 +95,42 @@ namespace
 
 TrieDb::TrieDb(mpt::Db &db)
     : db_{db}
-    , block_number_{db.get_latest_finalized_version() == INVALID_BLOCK_NUM ? 0 : db.get_latest_finalized_version()}
+    , block_number_{db.get_latest_finalized_version()}
     , proposal_block_id_{bytes32_t{}}
     , prefix_{finalized_nibbles}
+    , curr_root_{db.load_root_for_version(block_number_)}
 {
 }
 
 TrieDb::~TrieDb() = default;
 
+void TrieDb::reset_root(Node::SharedPtr root, uint64_t const block_number)
+{
+    curr_root_ = std::move(root);
+    block_number_ = block_number;
+}
+
+Node::SharedPtr const &TrieDb::get_root() const
+{
+    return curr_root_;
+}
+
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
-    auto const value = db_.get(
+    auto const res = db_.find(
+        curr_root_,
         concat(
             prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
         block_number_);
-    if (!value.has_value()) {
+    if (res.has_error()) {
         stats_account_no_value();
         return std::nullopt;
     }
     stats_account_value();
 
-    auto encoded_account = value.value();
+    auto encoded_account = res.value().node->value();
     auto const acct = decode_account_db_ignore_address(encoded_account);
     MONAD_DEBUG_ASSERT(!acct.has_error());
     return acct.value();
@@ -126,19 +139,20 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 bytes32_t
 TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
-    auto const value = db_.get(
+    auto const res = db_.find(
+        curr_root_,
         concat(
             prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
             NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
         block_number_);
-    if (!value.has_value()) {
+    if (res.has_error()) {
         stats_storage_no_value();
         return {};
     }
     stats_storage_value();
-    auto encoded_storage = value.value();
+    auto encoded_storage = res.value().node->value();
     auto const storage = decode_storage_db_ignore_slot(encoded_storage);
     MONAD_ASSERT(!storage.has_error());
     return to_bytes(storage.value());
@@ -147,16 +161,17 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
     // TODO read intercode object
-    auto const value = db_.get(
+    auto const res = db_.find(
+        curr_root_,
         concat(
             prefix_,
             CODE_NIBBLE,
             NibblesView{to_byte_string_view(code_hash.bytes)}),
         block_number_);
-    if (!value.has_value()) {
+    if (res.has_error()) {
         return vm::make_shared_intercode({});
     }
-    return vm::make_shared_intercode(value.assume_value());
+    return vm::make_shared_intercode(res.value().node->value());
 }
 
 void TrieDb::commit(
@@ -171,31 +186,23 @@ void TrieDb::commit(
 {
     MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
 
-    auto const parent_hash = [&]() {
-        if (MONAD_UNLIKELY(header.number == 0)) {
-            return bytes32_t{};
-        }
-        else {
-            auto const n = db_.is_on_disk() ? header.number - 1 : 0;
-            auto const parent_header_encoded =
-                db_.get(concat(prefix_, BLOCKHEADER_NIBBLE), n);
-            MONAD_ASSERT(parent_header_encoded.has_value());
-            return to_bytes(keccak256(parent_header_encoded.value()));
-        }
-    }();
-
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk() && block_id != proposal_block_id_) {
         auto const dest_prefix = proposal_prefix(block_id);
         if (db_.get_latest_version() != INVALID_BLOCK_NUM) {
             MONAD_ASSERT(header.number != block_number_);
-            db_.copy_trie(
-                block_number_, prefix_, header.number, dest_prefix, false);
+            curr_root_ = db_.copy_trie(
+                curr_root_,
+                prefix_,
+                db_.load_root_for_version(header.number),
+                dest_prefix,
+                header.number,
+                false);
         }
         proposal_block_id_ = block_id;
-        block_number_ = header.number;
         prefix_ = dest_prefix;
     }
+    block_number_ = header.number;
 
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
@@ -400,7 +407,8 @@ void TrieDb::commit(
         .next = std::move(updates),
         .version = static_cast<int64_t>(block_number_)}));
 
-    db_.upsert(std::move(ls), block_number_, true, true, false);
+    curr_root_ = db_.upsert(
+        std::move(curr_root_), std::move(ls), block_number_, true, true, false);
 
     BlockHeader complete_header = header;
     if (MONAD_LIKELY(header.receipts_root == NULL_ROOT)) {
@@ -416,11 +424,9 @@ void TrieDb::commit(
     complete_header.state_root = state_root();
     complete_header.withdrawals_root = withdrawals_root();
     complete_header.transactions_root = transactions_root();
-    complete_header.parent_hash = parent_hash;
     complete_header.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
     complete_header.logs_bloom = compute_bloom(receipts);
     complete_header.ommers_hash = compute_ommers_hash(ommers);
-
     auto const eth_header_rlp = rlp::encode_block_header(complete_header);
 
     UpdateList block_hash_nested_updates;
@@ -458,7 +464,11 @@ void TrieDb::commit(
         .version = static_cast<int64_t>(block_number_)}));
 
     bool const enable_compaction = false;
-    db_.upsert(std::move(ls2), block_number_, enable_compaction);
+    curr_root_ = db_.upsert(
+        std::move(curr_root_),
+        std::move(ls2),
+        block_number_,
+        enable_compaction);
 
     update_alloc_.clear();
     bytes_alloc_.clear();
@@ -470,21 +480,25 @@ void TrieDb::set_block_and_prefix(
 {
     // set read state
     if (!db_.is_on_disk()) {
-        MONAD_ASSERT(block_number_ == 0);
         MONAD_ASSERT(proposal_block_id_ == bytes32_t{});
+        block_number_ = block_number;
         return;
     }
     prefix_ =
         block_id == bytes32_t{} ? finalized_nibbles : proposal_prefix(block_id);
+    if (block_number_ != block_number) {
+        curr_root_ = db_.load_root_for_version(block_number);
+        block_number_ = block_number;
+    }
     MONAD_ASSERT_PRINTF(
-        db_.find(prefix_, block_number).has_value(),
+        db_.find(curr_root_, prefix_, block_number).has_value(),
         "Fail to find block_number %lu, block_id %s",
         block_number,
         fmt::format("{}", block_id).c_str());
-    block_number_ = block_number;
     proposal_block_id_ = block_id;
 }
 
+// also changes internal state to the finalized state
 void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
 {
     // no re-finalization
@@ -496,12 +510,17 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
         block_number,
         latest_finalized);
     MONAD_ASSERT(block_id != bytes32_t{});
-    auto const src_prefix = proposal_prefix(block_id);
     if (db_.is_on_disk()) {
-        MONAD_ASSERT(db_.find(src_prefix, block_number).has_value());
+        auto const src_prefix = proposal_prefix(block_id);
+        auto root = (block_number_ == block_number)
+                        ? curr_root_
+                        : db_.load_root_for_version(block_number);
+        MONAD_ASSERT(db_.find(root, src_prefix, block_number).has_value());
+        curr_root_ = db_.copy_trie(
+            root, src_prefix, root, finalized_nibbles, block_number, true);
+        prefix_ = finalized_nibbles;
     }
-    db_.copy_trie(
-        block_number, src_prefix, block_number, finalized_nibbles, true);
+    block_number_ = block_number;
     db_.update_finalized_version(block_number);
 }
 
@@ -523,6 +542,12 @@ void TrieDb::update_voted_metadata(
     db_.update_voted_metadata(block_number, block_id);
 }
 
+void TrieDb::update_proposed_metadata(
+    uint64_t const block_number, bytes32_t const &block_id)
+{
+    db_.update_proposed_metadata(block_number, block_id);
+}
+
 bytes32_t TrieDb::state_root()
 {
     return merkle_root(state_nibbles);
@@ -540,35 +565,37 @@ bytes32_t TrieDb::transactions_root()
 
 std::optional<bytes32_t> TrieDb::withdrawals_root()
 {
-    auto const value =
-        db_.get_data(concat(prefix_, WITHDRAWAL_NIBBLE), block_number_);
-    if (value.has_error()) {
+    auto const res =
+        db_.find(curr_root_, concat(prefix_, WITHDRAWAL_NIBBLE), block_number_);
+    if (res.has_error()) {
         return std::nullopt;
     }
-    if (value.value().empty()) {
+    auto const data = res.value().node->data();
+    if (data.empty()) {
         return NULL_ROOT;
     }
-    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
-    return to_bytes(value.value());
+    MONAD_ASSERT(data.size() == sizeof(bytes32_t));
+    return to_bytes(data);
 }
 
-bytes32_t TrieDb::merkle_root(mpt::Nibbles const &nibbles)
+bytes32_t TrieDb::merkle_root(Nibbles const &nibbles)
 {
-    auto const value =
-        db_.get_data(concat(prefix_, NibblesView{nibbles}), block_number_);
-    if (!value.has_value() || value.value().empty()) {
+    auto const res = db_.find(
+        curr_root_, concat(prefix_, NibblesView{nibbles}), block_number_);
+    if (!res.has_value() || res.value().node->data().empty()) {
         return NULL_ROOT;
     }
-    MONAD_ASSERT(value.value().size() == sizeof(bytes32_t));
-    return to_bytes(value.value());
+    auto const data = res.value().node->data();
+    MONAD_ASSERT(data.size() == sizeof(bytes32_t));
+    return to_bytes(data);
 }
 
 BlockHeader TrieDb::read_eth_header()
 {
-    auto const query_res =
-        db_.get(concat(prefix_, BLOCKHEADER_NIBBLE), block_number_);
+    auto const query_res = db_.find(
+        curr_root_, concat(prefix_, BLOCKHEADER_NIBBLE), block_number_);
     MONAD_ASSERT(!query_res.has_error());
-    auto encoded_header_db = query_res.value();
+    auto encoded_header_db = query_res.value().node->value();
     auto decode_res = rlp::decode_block_header(encoded_header_db);
     MONAD_ASSERT_PRINTF(
         decode_res.has_value(),
@@ -710,7 +737,8 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
     auto json = nlohmann::json::object();
     Traverse traverse(*this, json);
 
-    auto res_cursor = db_.find(concat(prefix_, STATE_NIBBLE), block_number_);
+    auto res_cursor =
+        db_.find(curr_root_, concat(prefix_, STATE_NIBBLE), block_number_);
     MONAD_ASSERT(res_cursor.has_value());
     MONAD_ASSERT(res_cursor.value().is_valid());
     // RWOndisk Db prevents any parallel traversal that does blocking i/o
@@ -727,11 +755,6 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
     }
 
     return json;
-}
-
-size_t TrieDb::prefetch_current_root()
-{
-    return db_.prefetch();
 }
 
 uint64_t TrieDb::get_block_number() const

@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -30,18 +30,18 @@ namespace monad::vm::runtime
         uint256_t const *size_ptr)
     {
         Memory::Offset offset;
-        auto size = ctx->get_memory_offset(*size_ptr);
+        auto const size = ctx->get_memory_offset(*size_ptr);
 
         if (*size > 0) {
             offset = ctx->get_memory_offset(*offset_ptr);
 
             ctx->expand_memory(offset + size);
 
-            auto word_size = shr_ceil<5>(size);
+            auto const word_size = shr_ceil<5>(size);
             ctx->deduct_gas(word_size * bin<6>);
         }
 
-        auto hash = ethash::keccak256(ctx->memory.data + *offset, *size);
+        auto const hash = ethash::keccak256(ctx->memory.data + *offset, *size);
         *result_ptr = uint256_t::load_be(hash.bytes);
     }
 }

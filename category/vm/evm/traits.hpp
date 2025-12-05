@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/is_specialization_of.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/monad/revision.h>
 
@@ -41,7 +42,6 @@ namespace monad
     concept Traits = requires() {
         requires sizeof(T) == 1;
         { T::evm_rev() } -> std::same_as<evmc_revision>;
-        { T::monad_rev() } -> std::same_as<monad_revision>;
 
         // Feature flags
         { T::eip_2929_active() } -> std::same_as<bool>;
@@ -49,20 +49,11 @@ namespace monad
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
 
-        // Monad specification §2.3: Payment Rule for User
-        { T::should_refund_reduce_gas_used() } -> std::same_as<bool>;
-        { T::eip_7702_refund_active() } -> std::same_as<bool>;
-
-        // Pricing version 1 activates the changes in:
-        // Monad specification §4: Opcode Gas Costs and Gas Refunds
-        { T::monad_pricing_version() } -> std::same_as<uint8_t>;
-
         // Constants
         { T::max_code_size() } -> std::same_as<size_t>;
         { T::max_initcode_size() } -> std::same_as<size_t>;
         { T::cold_account_cost() } -> std::same_as<int64_t>;
         { T::cold_storage_cost() } -> std::same_as<int64_t>;
-        { T::code_deposit_cost() } -> std::same_as<int64_t>;
 
         // Instead of storing a revision, caches should identify revision
         // changes by storing the opaque value returned by this method. No
@@ -77,12 +68,6 @@ namespace monad
         static consteval evmc_revision evm_rev() noexcept
         {
             return Rev;
-        }
-
-        static consteval monad_revision monad_rev() noexcept
-        {
-            static_assert(false, "Calling monad_rev() on an EVM trait type");
-            std::unreachable();
         }
 
         static consteval bool eip_2929_active() noexcept
@@ -103,23 +88,6 @@ namespace monad
         static consteval bool can_create_inside_delegated() noexcept
         {
             return true;
-        }
-
-        static consteval uint8_t monad_pricing_version() noexcept
-        {
-            static_assert(
-                false, "Calling monad_pricing_version() on an EVM trait type");
-            std::unreachable();
-        }
-
-        static consteval bool should_refund_reduce_gas_used() noexcept
-        {
-            return true;
-        }
-
-        static consteval bool eip_7702_refund_active() noexcept
-        {
-            return Rev >= EVMC_PRAGUE;
         }
 
         static consteval size_t max_code_size() noexcept
@@ -156,11 +124,6 @@ namespace monad
             }
 
             std::unreachable();
-        }
-
-        static consteval int64_t code_deposit_cost() noexcept
-        {
-            return 200;
         }
 
         static consteval uint64_t id() noexcept
@@ -209,23 +172,15 @@ namespace monad
             return false;
         }
 
+        // Pricing version 1 activates the changes in:
+        // Monad specification §4: Opcode Gas Costs and Gas Refunds
         static consteval uint8_t monad_pricing_version() noexcept
         {
-            if constexpr (Rev >= MONAD_FIVE) {
+            if constexpr (Rev >= MONAD_SEVEN) {
                 return 1;
             }
 
             return 0;
-        }
-
-        static consteval bool should_refund_reduce_gas_used() noexcept
-        {
-            return Rev < MONAD_FIVE;
-        }
-
-        static consteval bool eip_7702_refund_active() noexcept
-        {
-            return false;
         }
 
         static consteval size_t max_code_size() noexcept
@@ -270,15 +225,6 @@ namespace monad
             std::unreachable();
         }
 
-        static consteval int64_t code_deposit_cost() noexcept
-        {
-            if constexpr (monad_pricing_version() >= 1) {
-                return 1200;
-            }
-
-            return 200;
-        }
-
         static consteval uint64_t id() noexcept
         {
             return static_cast<uint64_t>(Rev);
@@ -289,4 +235,16 @@ namespace monad
         // complete.
         using evm_base = EvmTraits<MonadTraits::evm_rev()>;
     };
+
+    template <typename T>
+    inline constexpr bool is_evm_trait_v = is_specialization_of_v<EvmTraits, T>;
+
+    template <typename T>
+    inline constexpr bool is_monad_trait_v =
+        is_specialization_of_v<MonadTraits, T>;
+
+    static_assert(is_monad_trait_v<MonadTraits<MONAD_ZERO>> == true);
+    static_assert(is_monad_trait_v<EvmTraits<EVMC_FRONTIER>> == false);
+    static_assert(is_evm_trait_v<MonadTraits<MONAD_ZERO>> == false);
+    static_assert(is_evm_trait_v<EvmTraits<EVMC_FRONTIER>> == true);
 }

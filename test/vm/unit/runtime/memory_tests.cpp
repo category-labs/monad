@@ -15,10 +15,10 @@
 
 #include "fixture.hpp"
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/memory.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/runtime/uint256.hpp>
 
 #include <algorithm>
 #include <cstdint>

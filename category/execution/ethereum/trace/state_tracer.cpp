@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
+#include <ankerl/unordered_dense.h>
 #include <nlohmann/json.hpp>
 
 #include <format>
@@ -52,7 +53,78 @@ namespace trace
     void PrestateTracer::encode(
         Map<Address, OriginalAccountState> const &prestate, State &state)
     {
-        state_to_json(prestate, state, storage_);
+        // The following logic determines whether to include the beneficiary in
+        // the prestate trace. Since the Shanghai revision, we access the
+        // beneficiary before execution, which causes the beneficiary to show up
+        // in the prestate trace, even if it did not participate in the block.
+
+        // First check that the beneficiary is in the `original` accounts. If
+        // not, then just compute the prestate trace without further ado.
+        auto const orig_it = state.original().find(beneficiary_);
+        if (orig_it == state.original().end()) {
+            state_to_json(prestate, state, std::nullopt, storage_);
+            return;
+        }
+
+        // Similar to the first case, check that it is present in `current`
+        // accounts.
+        auto const curr_it = state.current().find(beneficiary_);
+        if (curr_it == state.current().end()) {
+            state_to_json(prestate, state, std::nullopt, storage_);
+            return;
+        }
+
+        OriginalAccountState const &original_state = orig_it->second;
+        AccountState const &current_state = curr_it->second.recent();
+
+        // If the original state has no account, then the beneficiary was
+        // created during the block and if the current state has an account,
+        // then it means that the account is still alive.
+        if (!original_state.has_account() && current_state.has_account()) {
+            state_to_json(prestate, state, std::nullopt, storage_);
+            return;
+        }
+
+        // If neither the original state or current state has an account, then
+        // the beneficiary was created and destroyed during the block, hence we
+        // omit it from the prestate trace.
+        if (!original_state.has_account() && !current_state.has_account()) {
+            state_to_json(prestate, state, beneficiary_, storage_);
+            return;
+        }
+
+        // If the current state has no account, then the beneficiary was
+        // destroyed during the block. Thus we must retain it in the prestate
+        // trace.
+        if (!current_state.has_account()) {
+            state_to_json(prestate, state, std::nullopt, storage_);
+            return;
+        }
+
+        Account const &original =
+            get_account_for_trace(orig_it->second).value();
+        Account const &current =
+            get_account_for_trace(curr_it->second.recent()).value();
+
+        // If `original` and `current` are the same, then it must be that the
+        // beneficiary did not participate in the block and show up here because
+        // of the pre-execution access. Therefore we can omit the beneficiary
+        // account from the prestate trace.
+        if (original.nonce == current.nonce &&
+            original.balance == current.balance &&
+            original.code_hash == current.code_hash &&
+            // NOTE(dhil): We piggyback on the fact that the `storage_` is
+            // lazily populated, i.e. a slot binding only appears if the slot
+            // has been read or written to during execution.
+            original_state.storage_.size() == 0 &&
+            current_state.storage_.size() == 0) {
+            state_to_json(prestate, state, beneficiary_, storage_);
+            return;
+        }
+
+        // Otherwise the beneficiary must have participated in the block, thus
+        // we must include it in the prestate trace.
+        state_to_json(prestate, state, std::nullopt, storage_);
     }
 
     StorageDeltas StateDiffTracer::generate_storage_deltas(
@@ -196,6 +268,10 @@ namespace trace
     {
         json res = json::object();
         for (auto const &[key, value] : storage) {
+            if (value == bytes32_t{}) {
+                // Zero values should not appear in the output.
+                continue;
+            }
             auto const key_json = bytes_to_hex(key.bytes);
             auto const value_json = bytes_to_hex(value.bytes);
             res[key_json] = value_json;
@@ -234,16 +310,26 @@ namespace trace
         auto const &storage = as.storage_;
         json res = account_to_json(account, state);
         if (!storage.empty() && account.has_value()) {
-            res["storage"] = storage_to_json(storage);
+            json storage_result = storage_to_json(storage);
+            // It is possible for `storage_to_json(storage)` to return an empty
+            // object for a non-empty `storage`. It happens when the `storage`
+            // contains zero values only.
+            if (!storage_result.empty()) {
+                res["storage"] = storage_result;
+            }
         }
         return res;
     }
 
     void PrestateTracer::state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
-        json &result)
+        std::optional<Address> const &beneficiary, json &result)
     {
         for (auto const &[address, account_state] : trace) {
+            // Skip beneficiary account, if present
+            if (beneficiary.has_value() && address == beneficiary.value()) {
+                continue;
+            }
             // TODO: Because this address is "touched". Should we keep this for
             // monad?
             if (MONAD_UNLIKELY(address == monad::ripemd_address)) {
@@ -255,24 +341,26 @@ namespace trace
     }
 
     json PrestateTracer::state_to_json(
-        Map<Address, OriginalAccountState> const &trace, State &state)
+        Map<Address, OriginalAccountState> const &trace, State &state,
+        std::optional<Address> const &beneficiary)
     {
         json result = json::object();
-        state_to_json(trace, state, result);
+        state_to_json(trace, state, beneficiary, result);
         return result;
     }
 
     void state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
-        json &result)
+        std::optional<Address> const &beneficiary, json &result)
     {
-        PrestateTracer::state_to_json(trace, state, result);
+        PrestateTracer::state_to_json(trace, state, beneficiary, result);
     }
 
-    json
-    state_to_json(Map<Address, OriginalAccountState> const &trace, State &state)
+    json state_to_json(
+        Map<Address, OriginalAccountState> const &trace, State &state,
+        std::optional<Address> const &beneficiary)
     {
-        return PrestateTracer::state_to_json(trace, state);
+        return PrestateTracer::state_to_json(trace, state, beneficiary);
     }
 
     void state_deltas_to_json(
@@ -282,11 +370,10 @@ namespace trace
         json post = json::object();
         for (auto const &[address, state_delta] : state_deltas) {
             auto const address_key = bytes_to_hex(address.bytes);
+            auto const &original_account = state_delta.account.first;
+            auto const &current_account = state_delta.account.second;
             // Account
             {
-                auto const &original_account = state_delta.account.first;
-                auto const &current_account = state_delta.account.second;
-
                 // Specification (copied from
                 // https://geth.ethereum.org/docs/developers/evm-tracing/built-in-tracers)
 
@@ -333,7 +420,6 @@ namespace trace
                     // the pattern (null, null).
                     MONAD_ASSERT(original_account.has_value());
                     MONAD_ASSERT(current_account.has_value());
-                    pre[address_key] = account_to_json(original_account, state);
                     if (original_account->balance != current_account->balance) {
                         post[address_key]["balance"] = std::format(
                             "0x{}",
@@ -352,6 +438,12 @@ namespace trace
                     if (original_account->nonce != current_account->nonce) {
                         post[address_key]["nonce"] = current_account->nonce;
                     }
+
+                    if (state_delta.storage.empty() &&
+                        post.find(address_key) == post.end()) {
+                        continue;
+                    }
+                    pre[address_key] = account_to_json(original_account, state);
                 }
             }
             // Storage

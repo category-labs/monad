@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -35,8 +36,6 @@
 #include <evmc/evmc.h>
 #include <evmc/hex.hpp>
 
-#include <intx/intx.hpp>
-
 #include <setup/settings.h>
 #include <setup/setup.h>
 
@@ -44,6 +43,9 @@
 #include <silkpre/sha256.h>
 
 #include <cstring>
+
+using monad::vm::runtime::uint256_t;
+namespace runtime = monad::vm::runtime;
 
 namespace
 {
@@ -182,11 +184,152 @@ uint64_t blake2bf_gas_cost(byte_string_view const input)
 
 EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 
-template <Traits traits>
-uint64_t expmod_gas_cost(byte_string_view const input)
+static void
+right_pad(std::basic_string<uint8_t> &str, size_t const min_size) noexcept
 {
-    return silkpre_expmod_gas(
-        input.data(), input.size(), static_cast<int>(traits::evm_rev()));
+    if (str.length() < min_size) {
+        str.resize(min_size, '\0');
+    }
+}
+
+static runtime::uint256_t
+mult_complexity_eip198(runtime::uint256_t const &x) noexcept
+{
+    runtime::uint256_t const x_squared{x * x};
+    if (x <= 64) {
+        return x_squared;
+    }
+    else if (x <= 1024) {
+        return (x_squared >> 2) + 96 * x - 3072;
+    }
+    else {
+        return (x_squared >> 4) + 480 * x - 199680;
+    }
+}
+
+static runtime::uint256_t
+mult_complexity_eip2565(runtime::uint256_t const &max_length) noexcept
+{
+    runtime::uint256_t const words{(max_length + 7) >> 3}; // ceil(max_length/8)
+    return words * words;
+}
+
+static runtime::uint256_t
+mult_complexity_eip7883(runtime::uint256_t const &max_length) noexcept
+{
+    runtime::uint256_t const words{(max_length + 7) >> 3}; // ceil(max_length/8)
+    if (max_length > 32) {
+        return 2 * words * words;
+    }
+    else {
+        return 16;
+    }
+}
+
+template <Traits traits>
+runtime::uint256_t
+expmod_iteration_count(runtime::uint256_t exp_len256, size_t bit_len) noexcept
+{
+    runtime::uint256_t adjusted_exponent_len{0};
+    if (exp_len256 > 32) {
+        constexpr runtime::uint256_t exp_mult{
+            traits::evm_rev() < EVMC_OSAKA ? 8u : 16u};
+        adjusted_exponent_len = exp_mult * (exp_len256 - 32);
+    }
+    if (bit_len > 1) {
+        adjusted_exponent_len = adjusted_exponent_len +
+                                static_cast<runtime::uint256_t>(bit_len - 1);
+    }
+
+    return std::max(adjusted_exponent_len, runtime::uint256_t{1});
+}
+
+template <Traits traits>
+constexpr uint64_t expmod_min_gas()
+{
+    if (traits::evm_rev() < EVMC_BERLIN) {
+        return 0; // Prior to Berlin, minimum gas is 0.
+    }
+    else if (traits::evm_rev() < EVMC_OSAKA) {
+        return 200; // From Berlin to pre-Osaka (Prague), minimum gas is 200.
+    }
+    else {
+        return 500; // From Osaka onwards, minimum gas is 500.
+    }
+}
+
+template <Traits traits>
+uint64_t expmod_gas_cost(byte_string_view const input_view)
+{
+    constexpr uint64_t min_gas{expmod_min_gas<traits>()};
+
+    std::basic_string<uint8_t> input(input_view.data(), input_view.size());
+    right_pad(input, 3 * 32);
+
+    runtime::uint256_t base_len256 =
+        runtime::uint256_t::load_be_unsafe(&input.data()[0]);
+    runtime::uint256_t exp_len256 =
+        runtime::uint256_t::load_be_unsafe(&input.data()[32]);
+    runtime::uint256_t mod_len256 =
+        runtime::uint256_t::load_be_unsafe(&input.data()[64]);
+
+    if (base_len256 == 0 && mod_len256 == 0) {
+        return min_gas;
+    }
+
+    if constexpr (traits::evm_rev() >= EVMC_OSAKA) {
+        // EIP-7823: each of the length inputs (base, exponent and modulus) MUST
+        // be less than or equal to 8192 bits (1024 bytes).
+        if (base_len256 > 1024 || exp_len256 > 1024 || mod_len256 > 1024) {
+            return UINT64_MAX;
+        }
+    }
+    else if (
+        runtime::count_significant_bytes(base_len256) > 8 ||
+        runtime::count_significant_bytes(exp_len256) > 8 ||
+        runtime::count_significant_bytes(mod_len256) > 8) {
+        return UINT64_MAX;
+    }
+
+    uint64_t base_len64{static_cast<uint64_t>(base_len256.as_words()[0])};
+    uint64_t exp_len64{static_cast<uint64_t>(exp_len256.as_words()[0])};
+
+    input.erase(0, 3 * 32);
+
+    runtime::uint256_t exp_head{0}; // first 32 bytes of the exponent
+    if (input.length() > base_len64) {
+        input.erase(0, base_len64);
+        right_pad(input, 3 * 32);
+        if (exp_len64 < 32) {
+            input.erase(exp_len64);
+            input.insert(0, 32 - exp_len64, '\0');
+        }
+        exp_head = runtime::uint256_t::load_be_unsafe(input.data());
+    }
+    size_t bit_len{256 - runtime::countl_zero(exp_head)};
+
+    runtime::uint256_t const iteration_count{
+        expmod_iteration_count<traits>(exp_len256, bit_len)};
+
+    runtime::uint256_t const max_length{std::max(mod_len256, base_len256)};
+
+    runtime::uint256_t gas;
+    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
+        gas = mult_complexity_eip198(max_length) * iteration_count / 20;
+    }
+    else if constexpr (traits::evm_rev() < EVMC_OSAKA) {
+        gas = mult_complexity_eip2565(max_length) * iteration_count / 3;
+    }
+    else {
+        gas = mult_complexity_eip7883(max_length) * iteration_count;
+    }
+
+    if (runtime::count_significant_words(gas.as_words()) > 1) {
+        return UINT64_MAX;
+    }
+    else {
+        return std::max(min_gas, gas.as_words()[0]);
+    }
 }
 
 EXPLICIT_TRAITS(expmod_gas_cost);

@@ -355,7 +355,7 @@ Result<BlockExecOutput> propose_block(
         "__exec_block,bl={:8},id={},ts={}"
         ",tx={:5},rt={:4},rtp={:5.2f}%"
         ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
-        ",gas={:9},gpse={:4},gps={:3}{}{}{}",
+        ",gas={:9},gpse={:4},gps={:3}{}{}{}{}",
         block.header.number,
         block_id,
         std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -378,6 +378,7 @@ Result<BlockExecOutput> propose_block(
             (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
         exec_output.eth_header.gas_used /
             (uint64_t)std::max(1L, block_time.count()),
+        block_metrics.print_access_stats(),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());

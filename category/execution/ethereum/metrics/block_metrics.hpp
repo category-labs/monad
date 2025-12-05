@@ -16,8 +16,11 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/metrics/access_stats.hpp>
 
 #include <chrono>
+#include <format>
+#include <string>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -25,6 +28,7 @@ class BlockMetrics
 {
     uint32_t n_retries_{0};
     std::chrono::microseconds tx_exec_time_{1};
+    AccessStats access_stats_;
 
 public:
     void inc_retries()
@@ -45,6 +49,24 @@ public:
     std::chrono::microseconds tx_exec_time() const
     {
         return tx_exec_time_;
+    }
+
+    void record_accesses(AccessStats const &stats)
+    {
+        access_stats_.warm_account_ += stats.warm_account_;
+        access_stats_.warm_storage_ += stats.warm_storage_;
+        access_stats_.cold_account_ += stats.cold_account_;
+        access_stats_.cold_storage_ += stats.cold_storage_;
+    }
+
+    std::string print_access_stats() const
+    {
+        return std::format(
+            ",waa={:5},wsa={:5},caa={:5},csa={:5}",
+            access_stats_.warm_account_,
+            access_stats_.warm_storage_,
+            access_stats_.cold_account_,
+            access_stats_.cold_storage_);
     }
 };
 

@@ -85,7 +85,7 @@ public:
         buffer_ = std::move(buffer);
     }
 
-    result<void> operator()(erased_connected_operation *io_state) noexcept
+    result<void> operator()(erased_connected_operation *io_state)
     {
         if (!buffer_) {
             buffer_.set_read_buffer(
@@ -139,8 +139,6 @@ Instead simply `connect()` it as for a normal Sender-Receiver pair.
 */
 class read_multiple_buffer_sender
 {
-    static constexpr size_t SMALL_BUFFERS_COUNT = 4;
-
 public:
     using buffer_type = std::span<std::byte>;
     using const_buffer_type = std::span<std::byte const>;

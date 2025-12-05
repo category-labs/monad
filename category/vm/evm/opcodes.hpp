@@ -848,6 +848,12 @@ namespace monad::vm::compiler
         return info == unknown_opcode_info;
     }
 
+    template <Traits traits>
+    constexpr bool is_unknown_opcode_info(uint8_t const opcode)
+    {
+        return is_unknown_opcode_info<traits>(opcode_table<traits>[opcode]);
+    }
+
     /**
      * Returns `true` if `opcode` belongs to the `PUSHN` family of EVM opcodes.
      */

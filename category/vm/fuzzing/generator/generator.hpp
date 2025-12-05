@@ -630,39 +630,76 @@ namespace monad::vm::fuzzing
         return program;
     }
 
-    inline uint8_t num_precompiles(evmc_revision rev)
-    {
-        if (rev <= EVMC_SPURIOUS_DRAGON) {
-            return 4;
-        }
-        else if (rev <= EVMC_PETERSBURG) {
-            return 8;
-        }
-        else if (rev <= EVMC_SHANGHAI) {
-            return 9;
-        }
-        else if (rev == EVMC_CANCUN) {
-            return 10;
-        }
-        else if (rev == EVMC_PRAGUE) {
-            return 17;
-        }
-        else if (rev == EVMC_OSAKA) {
-            // TODO(BSC): handle discontinuous precompiles
-            MONAD_VM_ASSERT(false);
-        }
-        else {
-            MONAD_VM_ASSERT(false);
-        }
-    }
-
     template <typename Engine>
     evmc::address generate_precompile_address(Engine &eng, evmc_revision rev)
     {
-        std::uniform_int_distribution<uint8_t> dist(1, num_precompiles(rev));
-        evmc::address addr{};
-        addr.bytes[sizeof(evmc::address) - 1] = dist(eng);
-        return addr;
+        auto addr = [rev, &eng]() {
+            if (rev <= EVMC_SPURIOUS_DRAGON) {
+                return uniform_sample(eng, std::array{1, 2, 3, 4});
+            }
+            else if (rev <= EVMC_PETERSBURG) {
+                return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8});
+            }
+            else if (rev <= EVMC_SHANGHAI) {
+                return uniform_sample(
+                    eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9});
+            }
+            else if (rev == EVMC_CANCUN) {
+                return uniform_sample(
+                    eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+            }
+            else if (rev == EVMC_PRAGUE) {
+                return uniform_sample(
+                    eng,
+                    std::array{
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12,
+                        13,
+                        14,
+                        15,
+                        16,
+                        17});
+            }
+            else if (rev == EVMC_OSAKA) {
+                // New precompile at address 0x100 (256): P256VERIFY
+                return uniform_sample(
+                    eng,
+                    std::array{
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12,
+                        13,
+                        14,
+                        15,
+                        16,
+                        17,
+                        256});
+            }
+            else {
+                MONAD_VM_ASSERT(false);
+            }
+        }();
+
+        return evmc::address{static_cast<uint64_t>(addr)};
     }
 
     template <typename Engine>

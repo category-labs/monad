@@ -234,7 +234,6 @@ TEST(update_aux_test, configurable_root_offset_chunks)
 
         // Verify that exactly 4 chunks were allocated to hold two copies of
         // root offsets, since chunk 0 is used for metadata
-        EXPECT_TRUE(aux.db_metadata()->using_chunks_for_root_offsets);
         EXPECT_EQ(aux.db_metadata()->root_offsets.storage_.cnv_chunks_len, 4);
         EXPECT_EQ(aux.root_offsets().capacity(), 2ULL << 25);
     }
@@ -247,7 +246,6 @@ TEST(update_aux_test, configurable_root_offset_chunks)
         EXPECT_EQ(pool.chunks(monad::async::storage_pool::cnv), 5);
         monad::async::AsyncIO testio(pool, testbuf);
         monad::mpt::UpdateAux<> aux(testio);
-        EXPECT_TRUE(aux.db_metadata()->using_chunks_for_root_offsets);
         EXPECT_EQ(aux.db_metadata()->root_offsets.storage_.cnv_chunks_len, 4);
         EXPECT_EQ(aux.root_offsets().capacity(), 2ULL << 25);
     }

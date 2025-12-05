@@ -188,8 +188,7 @@ class UpdateAuxImpl
     struct db_metadata_
     {
         detail::db_metadata *main{nullptr};
-        std::span<chunk_offset_t>
-            root_offsets; // if not-null, mmap of DB version ring buffer storage
+        std::span<chunk_offset_t> root_offsets;
     } db_metadata_[2]; // two copies, to prevent sudden process
                        // exits making the DB irretrievable
 
@@ -630,16 +629,15 @@ public:
                       m->main->root_offsets.version_lower_bound_)
                 , next_version_(m->main->root_offsets.next_version_)
                 , root_offsets_chunks_(
-                      m->root_offsets.empty()
-                          ? std::span<chunk_offset_t>(
-                                m->main->root_offsets.storage_.arr)
-                          : std::span<chunk_offset_t>(m->root_offsets))
+                      std::span<chunk_offset_t>(m->root_offsets))
             {
-                MONAD_DEBUG_ASSERT(
+                MONAD_ASSERT_PRINTF(
                     root_offsets_chunks_.size() ==
-                    1ULL
-                        << (63 -
-                            std::countl_zero(root_offsets_chunks_.size())));
+                        1ULL
+                            << (63 -
+                                std::countl_zero(root_offsets_chunks_.size())),
+                    "root offsets chunks size is %lu, not a power of 2",
+                    root_offsets_chunks_.size());
             }
 
             size_t capacity() const noexcept

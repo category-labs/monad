@@ -17,6 +17,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/endian.hpp> // little endian
+#include <category/core/nibble.h>
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
@@ -161,10 +162,57 @@ uint64_t monad_db_snapshot_loader_read_account(
     return bytes_consumed;
 }
 
+class NibblePath
+{
+private:
+    // 128 nibbles max: 64 (account hash) + 64 (storage hash)
+    // Note: finalized and code/data nibbles are handled separately and not
+    // stored in path
+    std::array<unsigned char, 64> buffer_{};
+    uint8_t length_{0};
+
+public:
+    void append(unsigned char branch, monad::mpt::NibblesView node_path)
+    {
+        using namespace monad::mpt;
+        unsigned const src_nibbles = node_path.nibble_size();
+        MONAD_ASSERT(length_ + 1 + src_nibbles <= buffer_.size() * 2);
+
+        // Append branch nibble
+        set_nibble(buffer_.data(), length_, branch);
+        ++length_;
+
+        if (src_nibbles == 0) {
+            return;
+        }
+
+        for (unsigned i = 0; i < src_nibbles; ++i) {
+            set_nibble(buffer_.data(), length_ + i, node_path.get(i));
+        }
+        length_ = static_cast<uint8_t>(length_ + src_nibbles);
+    }
+
+    void pop(uint8_t nibble_count)
+    {
+        MONAD_ASSERT(length_ >= nibble_count);
+        length_ -= nibble_count;
+    }
+
+    [[nodiscard]] monad::mpt::NibblesView view() const
+    {
+        return monad::mpt::NibblesView(0, length_, buffer_.data());
+    }
+
+    [[nodiscard]] uint8_t length() const
+    {
+        return length_;
+    }
+};
+
 struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
 {
     unsigned char nibble;
-    monad::mpt::Nibbles path;
+    NibblePath path;
     std::array<uint64_t, MONAD_SNAPSHOT_SHARDS> &account_bytes_written;
     uint64_t account_offset;
     uint64_t (*write)(
@@ -195,24 +243,26 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
 
         if (branch == INVALID_BRANCH) {
-            MONAD_ASSERT(path.nibble_size() == 0);
+            MONAD_ASSERT(path.length() == 0);
             return true;
         }
-        else if (path.nibble_size() == 0 && nibble == INVALID_BRANCH) {
+        else if (path.length() == 0 && nibble == INVALID_BRANCH) {
             nibble = branch;
             return true;
         }
         MONAD_ASSERT(nibble == STATE_NIBBLE || nibble == CODE_NIBBLE);
 
-        path = concat(NibblesView{path}, branch, node.path_nibble_view());
+        path.append(branch, node.path_nibble_view());
 
         if (!node.has_value()) {
             return true;
         }
-        uint64_t const shard = get_shard(path);
+
+        uint64_t const shard = get_shard(path.view());
+
         byte_string_view const val = node.value();
         if (nibble == CODE_NIBBLE) {
-            MONAD_ASSERT(path.nibble_size() == HASH_SIZE);
+            MONAD_ASSERT(path.length() == HASH_SIZE);
             uint64_t const len = val.size();
             MONAD_ASSERT(
                 write(
@@ -228,13 +278,13 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         else {
             MONAD_ASSERT(nibble == STATE_NIBBLE);
             monad_snapshot_type type;
-            if (path.nibble_size() == HASH_SIZE) {
+            if (path.length() == HASH_SIZE) {
                 type = MONAD_SNAPSHOT_ACCOUNT;
                 account_offset = account_bytes_written.at(shard);
                 account_bytes_written.at(shard) += val.size();
             }
             else {
-                MONAD_ASSERT(path.nibble_size() == (HASH_SIZE * 2));
+                MONAD_ASSERT(path.length() == (HASH_SIZE * 2));
                 type = MONAD_SNAPSHOT_STORAGE;
                 MONAD_ASSERT(
                     write(
@@ -255,12 +305,12 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
 
     virtual void up(unsigned char const, monad::mpt::Node const &node) override
     {
-        if (path.nibble_size() == 0) {
+        if (path.length() == 0) {
             nibble = monad::mpt::INVALID_BRANCH;
             return;
         }
-        monad::mpt::NibblesView const view{path};
-        path = view.substr(0, view.nibble_size() - 1 - node.path_nibbles_len());
+        // Remove branch nibble + node path nibbles that were added in down()
+        path.pop(static_cast<uint8_t>(1 + node.path_nibbles_len()));
     }
 
     virtual std::unique_ptr<TraverseMachine> clone() const override
@@ -273,7 +323,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
     {
         using namespace monad;
         using namespace monad::mpt;
-        if (path.nibble_size() == 0 && nibble == INVALID_BRANCH) {
+        if (path.length() == 0 && nibble == INVALID_BRANCH) {
             MONAD_ASSERT(branch != INVALID_BRANCH);
             return branch == STATE_NIBBLE || branch == CODE_NIBBLE;
         }

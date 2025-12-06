@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/metrics/access_stats.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -219,6 +220,17 @@ public:
      */
     bool record_balance_constraint_for_debit(
         Address const &, uint256_t const &debit);
+
+public:
+    /// STATS
+
+    AccessStats const &access_stats() const
+    {
+        return stats_;
+    }
+
+private:
+    AccessStats stats_;
 };
 
 MONAD_NAMESPACE_END

@@ -164,7 +164,7 @@ static void writer_main(
     test_counter->writer_id = writer_id;
     latch->arrive_and_wait();
     sleep(1);
-    auto const start_time = std::chrono::system_clock::now();
+    auto const start_time = std::chrono::steady_clock::now();
     for (uint64_t counter = 0; counter < writer_iterations; ++counter) {
         test_counter->counter = counter;
 
@@ -177,7 +177,7 @@ static void writer_main(
         memcpy(ring_payload_buf, local_payload_buf, payload_size);
         monad_event_recorder_commit(event, seqno);
     }
-    auto const end_time = std::chrono::system_clock::now();
+    auto const end_time = std::chrono::steady_clock::now();
     auto const elapsed_nanos = static_cast<uint64_t>(
         duration_cast<nanoseconds>(end_time - start_time).count());
     std::println(

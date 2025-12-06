@@ -390,14 +390,18 @@ void State::touch(Address const &address)
 evmc_access_status State::access_account(Address const &address)
 {
     auto &account_state = current_account_state(address);
-    return account_state.access();
+    auto const status = account_state.access();
+    stats_.event_account_access(status);
+    return status;
 }
 
 evmc_access_status
 State::access_storage(Address const &address, bytes32_t const &key)
 {
     auto &account_state = current_account_state(address);
-    return account_state.access_storage(key);
+    auto const status = account_state.access_storage(key);
+    stats_.event_storage_access(status);
+    return status;
 }
 
 template <Traits traits>

@@ -629,6 +629,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
             auto const block_time_start = std::chrono::steady_clock::now();
 
+            db.update_voted_metadata(header.seqno - 1, header.parent_id());
+            record_block_qc(header, last_finalized_block_number);
+
             uint64_t const block_number = header.execution_inputs.number;
             auto body = read_body(header.block_body_id, body_dir);
             auto const ntxns = body.transactions.size();
@@ -642,7 +645,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 monad_block_input.base_fee_moment = header.base_fee_moment;
             };
 
-            record_block_qc(header, last_finalized_block_number);
             record_block_start(
                 block_id,
                 chain_id,
@@ -685,7 +687,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 record_block_result(propose_dispatch()));
 
             db.update_proposed_metadata(header.seqno, block_id);
-            db.update_voted_metadata(header.seqno - 1, header.parent_id());
 
             log_tps(
                 block_number,

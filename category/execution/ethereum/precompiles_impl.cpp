@@ -184,37 +184,50 @@ uint64_t blake2bf_gas_cost(byte_string_view const input)
 
 EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 
+template <Traits traits>
 static runtime::uint256_t
-mult_complexity_eip198(runtime::uint256_t const &x) noexcept
+mult_complexity(runtime::uint256_t const &max_len) noexcept
 {
-    runtime::uint256_t const x_squared{x * x};
-    if (x <= 64) {
-        return x_squared;
-    }
-    else if (x <= 1024) {
-        return (x_squared >> 2) + 96 * x - 3072;
+    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
+        runtime::uint256_t const max_len_squared{max_len * max_len};
+        if (max_len <= 64) {
+            return max_len_squared;
+        }
+        else if (max_len <= 1024) {
+            return (max_len_squared >> 2) + 96 * max_len - 3072;
+        }
+        else {
+            return (max_len_squared >> 4) + 480 * max_len - 199680;
+        }
     }
     else {
-        return (x_squared >> 4) + 480 * x - 199680;
+        runtime::uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
+        if constexpr (traits::evm_rev() < EVMC_OSAKA) {
+            return words * words;
+        }
+        else {
+            if (max_len > 32) {
+                return 2 * words * words;
+            }
+            else {
+                return 16;
+            }
+        }
     }
 }
 
+template <Traits traits>
 static runtime::uint256_t
-mult_complexity_eip2565(runtime::uint256_t const &max_length) noexcept
+expmod_gas_denominator() noexcept
 {
-    runtime::uint256_t const words{(max_length + 7) >> 3}; // ceil(max_length/8)
-    return words * words;
-}
-
-static runtime::uint256_t
-mult_complexity_eip7883(runtime::uint256_t const &max_length) noexcept
-{
-    runtime::uint256_t const words{(max_length + 7) >> 3}; // ceil(max_length/8)
-    if (max_length > 32) {
-        return 2 * words * words;
+    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
+        return 20;
+    }
+    else if constexpr (traits::evm_rev() < EVMC_OSAKA) {
+        return 3;
     }
     else {
-        return 16;
+        return 1;
     }
 }
 
@@ -302,17 +315,9 @@ uint64_t expmod_gas_cost(byte_string_view const input)
         expmod_iteration_count<traits>(exp_len256, bit_len)};
 
     runtime::uint256_t const max_length{std::max(mod_len256, base_len256)};
-
-    runtime::uint256_t gas;
-    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
-        gas = mult_complexity_eip198(max_length) * iteration_count / 20;
-    }
-    else if constexpr (traits::evm_rev() < EVMC_OSAKA) {
-        gas = mult_complexity_eip2565(max_length) * iteration_count / 3;
-    }
-    else {
-        gas = mult_complexity_eip7883(max_length) * iteration_count;
-    }
+    runtime::uint256_t gas = mult_complexity<traits>(max_length)
+                           * iteration_count
+                           / expmod_gas_denominator<traits>();
 
     if (runtime::count_significant_words(gas.as_words()) > 1) {
         return UINT64_MAX;

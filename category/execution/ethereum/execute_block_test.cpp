@@ -327,9 +327,8 @@ TYPED_TEST(TraitsTest, assertion_exception)
     }
 }
 
-// test referenced from :
-// https://github.com/ethereum/tests/blob/v10.0/BlockchainTests/GeneralStateTests/stRefundTest/refund50_1.json
-TYPED_TEST(TraitsTest, call_frames_refund)
+template <typename TestFixture, bool sync>
+static void run_call_frames_refund_test()
 {
     using intx::operator""_u256;
     using monad::literals::operator""_bytes;
@@ -419,17 +418,31 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     }
 
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
-        return execute_block<typename TestFixture::Trait>(
-            chain,
-            block.value(),
-            senders,
-            recovered_authorities,
-            bs,
-            block_hash_buffer,
-            pool.fiber_group(),
-            metrics,
-            call_tracers,
-            state_tracers);
+        if constexpr (sync) {
+            return execute_block_sync<typename TestFixture::Trait>(
+                chain,
+                block.value(),
+                senders,
+                recovered_authorities,
+                bs,
+                block_hash_buffer,
+                metrics,
+                call_tracers,
+                state_tracers);
+        }
+        else {
+            return execute_block<typename TestFixture::Trait>(
+                chain,
+                block.value(),
+                senders,
+                recovered_authorities,
+                bs,
+                block_hash_buffer,
+                pool.fiber_group(),
+                metrics,
+                call_tracers,
+                state_tracers);
+        }
     };
 
     auto const receipts = [&] {
@@ -509,4 +522,16 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     };
 
     EXPECT_EQ(actual_call_frames[0], expected);
+}
+
+// test referenced from :
+// https://github.com/ethereum/tests/blob/v10.0/BlockchainTests/GeneralStateTests/stRefundTest/refund50_1.json
+TYPED_TEST(TraitsTest, call_frames_refund)
+{
+    run_call_frames_refund_test<TestFixture, false>();
+}
+
+TYPED_TEST(TraitsTest, call_frames_refund_sync)
+{
+    run_call_frames_refund_test<TestFixture, true>();
 }

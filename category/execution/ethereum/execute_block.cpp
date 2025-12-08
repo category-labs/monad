@@ -108,6 +108,173 @@ void set_beacon_root(State &state, BlockHeader const &header)
     }
 }
 
+template <Traits traits, typename SubmitFn>
+Result<std::vector<Receipt>> execute_block_transactions_impl(
+    Chain const &chain, BlockHeader const &header,
+    std::span<Transaction const> const transactions,
+    std::span<Address const> const senders,
+    std::span<std::vector<std::optional<Address>> const> const authorities,
+    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+    SubmitFn &&submit_fn, BlockMetrics &block_metrics,
+    std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
+    std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
+    RevertTransactionFn const &revert_transaction)
+{
+    MONAD_ASSERT(senders.size() == transactions.size());
+    MONAD_ASSERT(senders.size() == call_tracers.size());
+    MONAD_ASSERT(senders.size() == state_tracers.size());
+
+    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+        new boost::fibers::promise<void>[transactions.size() + 1]};
+    promises[0].set_value();
+
+    std::shared_ptr<std::optional<Result<Receipt>>[]> const results{
+        new std::optional<Result<Receipt>>[transactions.size()]};
+    std::atomic<size_t> txn_exec_finished = 0;
+    size_t const txn_count = transactions.size();
+
+    auto const tx_exec_begin = std::chrono::steady_clock::now();
+    for (unsigned i = 0; i < txn_count; ++i) {
+        std::forward<SubmitFn>(submit_fn)(
+            i,
+            [&chain = chain,
+             i = i,
+             results = results,
+             promises = promises,
+             &transaction = transactions[i],
+             &sender = senders[i],
+             &authorities = authorities[i],
+             &header = header,
+             &block_hash_buffer = block_hash_buffer,
+             &block_state,
+             &block_metrics,
+             &call_tracer = *call_tracers[i],
+             &state_tracer = *state_tracers[i],
+             &txn_exec_finished,
+             &revert_transaction = revert_transaction] {
+                record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
+                try {
+                    results[i] = dispatch_transaction<traits>(
+                        chain,
+                        i,
+                        transaction,
+                        sender,
+                        authorities,
+                        header,
+                        block_hash_buffer,
+                        block_state,
+                        block_metrics,
+                        promises[i],
+                        call_tracer,
+                        state_tracer,
+                        revert_transaction);
+                    promises[i + 1].set_value();
+                    if (results[i]->has_error()) {
+                        record_txn_error_event(i, results[i]->error());
+                    }
+                    record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
+                }
+                catch (...) {
+                    promises[i + 1].set_exception(std::current_exception());
+                }
+                txn_exec_finished.fetch_add(1, std::memory_order::relaxed);
+            });
+    }
+
+    auto const last = static_cast<std::ptrdiff_t>(transactions.size());
+    promises[last].get_future().get();
+    block_metrics.set_tx_exec_time(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - tx_exec_begin));
+
+    // All transactions have released their merge-order synchronization
+    // primitive (promises[i + 1]) but some stragglers could still be running
+    // post-execution code that occurs immediately after that, e.g.
+    // `record_txn_exec_result_events`. This waits for everything to finish
+    // so that it's safe to assume we're the only ones using `results`.
+    while (txn_exec_finished.load() < txn_count) {
+        cpu_relax();
+    }
+
+    std::vector<Receipt> retvals;
+    for (unsigned i = 0; i < transactions.size(); ++i) {
+        MONAD_ASSERT(results[i].has_value());
+        if (MONAD_UNLIKELY(results[i].value().has_error())) {
+            LOG_ERROR(
+                "tx {} {} validation failed: {}",
+                i,
+                transactions[i],
+                results[i].value().assume_error().message().c_str());
+        }
+        BOOST_OUTCOME_TRY(auto retval, std::move(results[i].value()));
+        retvals.push_back(std::move(retval));
+    }
+
+    // YP eq. 22
+    uint64_t cumulative_gas_used = 0;
+    for (auto &receipt : retvals) {
+        cumulative_gas_used += receipt.gas_used;
+        receipt.gas_used = cumulative_gas_used;
+    }
+
+    return retvals;
+}
+
+template <Traits traits, typename SubmitFn>
+Result<std::vector<Receipt>> execute_block_impl(
+    Chain const &chain, Block const &block,
+    std::span<Address const> const senders,
+    std::span<std::vector<std::optional<Address>> const> const authorities,
+    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+    SubmitFn &&submit_fn, BlockMetrics &block_metrics,
+    std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
+    std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
+    RevertTransactionFn const &revert_transaction)
+{
+    TRACE_BLOCK_EVENT(StartBlock);
+
+    MONAD_ASSERT(senders.size() == block.transactions.size());
+    MONAD_ASSERT(senders.size() == call_tracers.size());
+    MONAD_ASSERT(senders.size() == state_tracers.size());
+
+    execute_block_header<traits>(chain, block_state, block.header);
+
+    BOOST_OUTCOME_TRY(
+        auto const retvals,
+        execute_block_transactions_impl<traits>(
+            chain,
+            block.header,
+            block.transactions,
+            senders,
+            authorities,
+            block_state,
+            block_hash_buffer,
+            std::forward<SubmitFn>(submit_fn),
+            block_metrics,
+            call_tracers,
+            state_tracers,
+            revert_transaction));
+
+    State state{
+        block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
+
+    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
+        process_withdrawal(state, block.withdrawals);
+    }
+
+    apply_block_reward<traits>(state, block);
+
+    if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
+        state.destruct_touched_dead();
+    }
+
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(state);
+    record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_EPILOGUE, state);
+
+    return retvals;
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
@@ -223,104 +390,23 @@ Result<std::vector<Receipt>> execute_block_transactions(
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     RevertTransactionFn const &revert_transaction)
 {
-    MONAD_ASSERT(senders.size() == transactions.size());
-    MONAD_ASSERT(senders.size() == call_tracers.size());
-    MONAD_ASSERT(senders.size() == state_tracers.size());
+    auto submit_fn = [&priority_pool](auto const i, auto &&task) {
+        priority_pool.submit(i, std::forward<decltype(task)>(task));
+    };
 
-    std::shared_ptr<boost::fibers::promise<void>[]> promises{
-        new boost::fibers::promise<void>[transactions.size() + 1]};
-    promises[0].set_value();
-
-    std::shared_ptr<std::optional<Result<Receipt>>[]> const results{
-        new std::optional<Result<Receipt>>[transactions.size()]};
-    std::atomic<size_t> txn_exec_finished = 0;
-    size_t const txn_count = transactions.size();
-
-    auto const tx_exec_begin = std::chrono::steady_clock::now();
-    for (unsigned i = 0; i < txn_count; ++i) {
-        priority_pool.submit(
-            i,
-            [&chain = chain,
-             i = i,
-             results = results,
-             promises = promises,
-             &transaction = transactions[i],
-             &sender = senders[i],
-             &authorities = authorities[i],
-             &header = header,
-             &block_hash_buffer = block_hash_buffer,
-             &block_state,
-             &block_metrics,
-             &call_tracer = *call_tracers[i],
-             &state_tracer = *state_tracers[i],
-             &txn_exec_finished,
-             &revert_transaction = revert_transaction] {
-                record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
-                try {
-                    results[i] = dispatch_transaction<traits>(
-                        chain,
-                        i,
-                        transaction,
-                        sender,
-                        authorities,
-                        header,
-                        block_hash_buffer,
-                        block_state,
-                        block_metrics,
-                        promises[i],
-                        call_tracer,
-                        state_tracer,
-                        revert_transaction);
-                    promises[i + 1].set_value();
-                    if (results[i]->has_error()) {
-                        record_txn_error_event(i, results[i]->error());
-                    }
-                    record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
-                }
-                catch (...) {
-                    promises[i + 1].set_exception(std::current_exception());
-                }
-                txn_exec_finished.fetch_add(1, std::memory_order::relaxed);
-            });
-    }
-
-    auto const last = static_cast<std::ptrdiff_t>(transactions.size());
-    promises[last].get_future().get();
-    block_metrics.set_tx_exec_time(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - tx_exec_begin));
-
-    // All transactions have released their merge-order synchronization
-    // primitive (promises[i + 1]) but some stragglers could still be running
-    // post-execution code that occurs immediately after that, e.g.
-    // `record_txn_exec_result_events`. This waits for everything to finish
-    // so that it's safe to assume we're the only ones using `results`.
-    while (txn_exec_finished.load() < txn_count) {
-        cpu_relax();
-    }
-
-    std::vector<Receipt> retvals;
-    for (unsigned i = 0; i < transactions.size(); ++i) {
-        MONAD_ASSERT(results[i].has_value());
-        if (MONAD_UNLIKELY(results[i].value().has_error())) {
-            LOG_ERROR(
-                "tx {} {} validation failed: {}",
-                i,
-                transactions[i],
-                results[i].value().assume_error().message().c_str());
-        }
-        BOOST_OUTCOME_TRY(auto retval, std::move(results[i].value()));
-        retvals.push_back(std::move(retval));
-    }
-
-    // YP eq. 22
-    uint64_t cumulative_gas_used = 0;
-    for (auto &receipt : retvals) {
-        cumulative_gas_used += receipt.gas_used;
-        receipt.gas_used = cumulative_gas_used;
-    }
-
-    return retvals;
+    return execute_block_transactions_impl<traits>(
+        chain,
+        header,
+        transactions,
+        senders,
+        authorities,
+        block_state,
+        block_hash_buffer,
+        std::move(submit_fn),
+        block_metrics,
+        call_tracers,
+        state_tracers,
+        revert_transaction);
 }
 
 template <Traits traits>
@@ -334,52 +420,56 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     RevertTransactionFn const &revert_transaction)
 {
-    TRACE_BLOCK_EVENT(StartBlock);
+    auto submit_fn = [&priority_pool](auto const i, auto &&task) {
+        priority_pool.submit(i, std::forward<decltype(task)>(task));
+    };
 
-    MONAD_ASSERT(senders.size() == block.transactions.size());
-    MONAD_ASSERT(senders.size() == call_tracers.size());
-    MONAD_ASSERT(senders.size() == state_tracers.size());
+    return execute_block_impl<traits>(
+        chain,
+        block,
+        senders,
+        authorities,
+        block_state,
+        block_hash_buffer,
+        std::move(submit_fn),
+        block_metrics,
+        call_tracers,
+        state_tracers,
+        revert_transaction);
+}
 
-    execute_block_header<traits>(chain, block_state, block.header);
+template <Traits traits>
+Result<std::vector<Receipt>> execute_block_sync(
+    Chain const &chain, Block const &block,
+    std::span<Address const> const senders,
+    std::span<std::vector<std::optional<Address>> const> const authorities,
+    BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+    BlockMetrics &block_metrics,
+    std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
+    std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
+    RevertTransactionFn const &revert_transaction)
+{
+    auto submit_fn = [](auto const, auto &&task) {
+        std::forward<decltype(task)>(task)();
+    };
 
-    BOOST_OUTCOME_TRY(
-        auto const retvals,
-        execute_block_transactions<traits>(
-            chain,
-            block.header,
-            block.transactions,
-            senders,
-            authorities,
-            block_state,
-            block_hash_buffer,
-            priority_pool,
-            block_metrics,
-            call_tracers,
-            state_tracers,
-            revert_transaction));
-
-    State state{
-        block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
-
-    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
-        process_withdrawal(state, block.withdrawals);
-    }
-
-    apply_block_reward<traits>(state, block);
-
-    if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
-        state.destruct_touched_dead();
-    }
-
-    MONAD_ASSERT(block_state.can_merge(state));
-    block_state.merge(state);
-    record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_EPILOGUE, state);
-
-    return retvals;
+    return execute_block_impl<traits>(
+        chain,
+        block,
+        senders,
+        authorities,
+        block_state,
+        block_hash_buffer,
+        std::move(submit_fn),
+        block_metrics,
+        call_tracers,
+        state_tracers,
+        revert_transaction);
 }
 
 // Explicit instantiations using EXPLICIT_TRAITS macro
 EXPLICIT_TRAITS(execute_block_transactions);
 EXPLICIT_TRAITS(execute_block);
+EXPLICIT_TRAITS(execute_block_sync);
 
 MONAD_NAMESPACE_END

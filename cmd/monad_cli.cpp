@@ -798,6 +798,8 @@ int main(int argc, char *argv[])
     std::optional<std::filesystem::path> load_binary_snapshot;
     uint64_t version;
     unsigned dump_concurrency_limit = 2048;
+    uint64_t total_shards = 1;
+    uint64_t shard_number = 0;
 
     CLI::App cli{"monad_cli"};
     cli.add_option(
@@ -828,6 +830,22 @@ int main(int argc, char *argv[])
         "--dump_concurrency_limit",
         dump_concurrency_limit,
         "Read concurrency limit for snapshot dump");
+    cli_group
+        ->add_option(
+            "--total_shards",
+            total_shards,
+            "Total number of shards to split snapshot creation across nodes "
+            "(default: 1)")
+        ->check(CLI::Range(1u, MONAD_SNAPSHOT_SHARDS))
+        ->needs(dump_binary_snapshot_option);
+    cli_group
+        ->add_option(
+            "--shard_number",
+            shard_number,
+            "Shard number for this node (0 to total_shards-1, default: 0). "
+            "Each "
+            "shard writes its portion of data and headers.")
+        ->needs(dump_binary_snapshot_option);
     cli_group
         ->add_option(
             "--load_binary_snapshot",
@@ -880,6 +898,14 @@ int main(int argc, char *argv[])
         }
     }
     if (dump_binary_snapshot.has_value()) {
+        if (shard_number >= total_shards) {
+            LOG_ERROR(
+                "shard_number ({}) must be < total_shards ({})",
+                shard_number,
+                total_shards);
+            return 1;
+        }
+
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
                 dump_binary_snapshot.value().c_str(), version);
@@ -895,7 +921,9 @@ int main(int argc, char *argv[])
             version,
             monad_db_snapshot_write_filesystem,
             context,
-            dump_concurrency_limit);
+            dump_concurrency_limit,
+            total_shards,
+            shard_number);
         LOG_INFO(
             "snapshot dump success={} version={} directory={} elapsed={}",
             success,

@@ -196,6 +196,10 @@ namespace trace
     {
         json res = json::object();
         for (auto const &[key, value] : storage) {
+            if (value == bytes32_t{}) {
+                // Zero values should not appear in the output.
+                continue;
+            }
             auto const key_json = bytes_to_hex(key.bytes);
             auto const value_json = bytes_to_hex(value.bytes);
             res[key_json] = value_json;
@@ -234,7 +238,13 @@ namespace trace
         auto const &storage = as.storage_;
         json res = account_to_json(account, state);
         if (!storage.empty() && account.has_value()) {
-            res["storage"] = storage_to_json(storage);
+            json storage_result = storage_to_json(storage);
+            // It is possible for `storage_to_json(storage)` to return an empty
+            // object for a non-empty `storage`. It happens when the `storage`
+            // contains zero values only.
+            if (!storage_result.empty()) {
+                res["storage"] = std::move(storage_result);
+            }
         }
         return res;
     }

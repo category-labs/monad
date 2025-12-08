@@ -643,12 +643,38 @@ namespace monad::vm::runtime
             return load_le_unsafe(bytes).to_be();
         }
 
+        [[gnu::always_inline]]
+        static inline constexpr uint256_t
+        load_be_unsafe(uint8_t const *bytes, size_t len) noexcept
+        {
+            // When loading big-endian data of with `len < num_bytes`, the most
+            // significant bytes are set to zero.
+            // i.e. {0x12, 0x34, 0x56} results in the value 0x00..00123456
+            // This is equivalent to left-padding the big-endian data with
+            // zeros to num_bytes length, then byte-swapping to little-endian.
+            static_assert(std::endian::native == std::endian::little);
+            MONAD_VM_ASSERT(num_bytes >= len);
+            uint256_t result;
+            std::memcpy(result.as_bytes() + (num_bytes - len), bytes, len);
+            return result.to_be();
+        }
+
         [[gnu::always_inline]] static inline constexpr uint256_t
         load_le_unsafe(uint8_t const *bytes) noexcept
         {
             static_assert(std::endian::native == std::endian::little);
             uint256_t result;
             std::memcpy(&result.words_, bytes, num_bytes);
+            return result;
+        }
+
+        [[gnu::always_inline]] static inline constexpr uint256_t
+        load_le_unsafe(uint8_t const *bytes, size_t len) noexcept
+        {
+            static_assert(std::endian::native == std::endian::little);
+            MONAD_VM_ASSERT(num_bytes >= len);
+            uint256_t result;
+            std::memcpy(&result.words_, bytes, len); // Leftover bytes are zero
             return result;
         }
 

@@ -184,14 +184,6 @@ uint64_t blake2bf_gas_cost(byte_string_view const input)
 
 EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 
-static void
-right_pad(std::basic_string<uint8_t> &str, size_t const min_size) noexcept
-{
-    if (str.length() < min_size) {
-        str.resize(min_size, '\0');
-    }
-}
-
 static runtime::uint256_t
 mult_complexity_eip198(runtime::uint256_t const &x) noexcept
 {
@@ -259,12 +251,13 @@ constexpr uint64_t expmod_min_gas()
 }
 
 template <Traits traits>
-uint64_t expmod_gas_cost(byte_string_view const input_view)
+uint64_t expmod_gas_cost(byte_string_view const input)
 {
     constexpr uint64_t min_gas{expmod_min_gas<traits>()};
 
-    std::basic_string<uint8_t> input(input_view.data(), input_view.size());
-    right_pad(input, 3 * 32);
+    if (input.size() < 96) {
+        return min_gas;
+    }
 
     runtime::uint256_t base_len256 =
         runtime::uint256_t::load_be_unsafe(&input.data()[0]);
@@ -291,20 +284,17 @@ uint64_t expmod_gas_cost(byte_string_view const input_view)
         return UINT64_MAX;
     }
 
-    uint64_t base_len64{static_cast<uint64_t>(base_len256.as_words()[0])};
-    uint64_t exp_len64{static_cast<uint64_t>(exp_len256.as_words()[0])};
-
-    input.erase(0, 3 * 32);
+    uint64_t base_len64{static_cast<uint64_t>(base_len256)};
+    uint64_t exp_len64{static_cast<uint64_t>(exp_len256)};
 
     runtime::uint256_t exp_head{0}; // first 32 bytes of the exponent
-    if (input.length() > base_len64) {
-        input.erase(0, base_len64);
-        right_pad(input, 3 * 32);
-        if (exp_len64 < 32) {
-            input.erase(exp_len64);
-            input.insert(0, 32 - exp_len64, '\0');
-        }
-        exp_head = runtime::uint256_t::load_be_unsafe(input.data());
+    auto const exp_index = 96 + base_len64;
+    if (input.length() > exp_index) { // input contains bytes of exponents
+        auto const exp_input_len =
+            std::min(exp_len64, input.length() - exp_index);
+        exp_head = runtime::uint256_t::load_be_unsafe(
+            &input.data()[exp_index],
+            std::min(32ul, static_cast<size_t>(exp_input_len)));
     }
     size_t bit_len{256 - runtime::countl_zero(exp_head)};
 

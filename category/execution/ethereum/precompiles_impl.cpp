@@ -217,17 +217,16 @@ mult_complexity(runtime::uint256_t const &max_len) noexcept
 }
 
 template <Traits traits>
-static runtime::uint256_t
-expmod_gas_denominator() noexcept
+static runtime::uint256_t expmod_gas_denominator() noexcept
 {
-    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
-        return 20;
+    if constexpr (traits::eip_7883_active()) {
+        return 1;
     }
-    else if constexpr (traits::evm_rev() < EVMC_OSAKA) {
+    else if constexpr (traits::eip_2565_active()) {
         return 3;
     }
     else {
-        return 1;
+        return 20; // Pre EIP-2565 (EIP-198)
     }
 }
 
@@ -238,7 +237,7 @@ expmod_iteration_count(runtime::uint256_t exp_len256, size_t bit_len) noexcept
     runtime::uint256_t adjusted_exponent_len{0};
     if (exp_len256 > 32) {
         constexpr runtime::uint256_t exp_mult{
-            traits::evm_rev() < EVMC_OSAKA ? 8u : 16u};
+            traits::eip_7883_active() ? 16u : 8u};
         adjusted_exponent_len = exp_mult * (exp_len256 - 32);
     }
     if (bit_len > 1) {
@@ -252,14 +251,14 @@ expmod_iteration_count(runtime::uint256_t exp_len256, size_t bit_len) noexcept
 template <Traits traits>
 constexpr uint64_t expmod_min_gas()
 {
-    if (traits::evm_rev() < EVMC_BERLIN) {
-        return 0; // Prior to Berlin, minimum gas is 0.
+    if constexpr (traits::eip_7883_active()) {
+        return 500;
     }
-    else if (traits::evm_rev() < EVMC_OSAKA) {
-        return 200; // From Berlin to pre-Osaka (Prague), minimum gas is 200.
+    else if constexpr (traits::eip_2565_active()) {
+        return 200;
     }
     else {
-        return 500; // From Osaka onwards, minimum gas is 500.
+        return 0; // Pre EIP-2565 (EIP-198)
     }
 }
 
@@ -283,7 +282,7 @@ uint64_t expmod_gas_cost(byte_string_view const input)
         return min_gas;
     }
 
-    if constexpr (traits::evm_rev() >= EVMC_OSAKA) {
+    if constexpr (traits::eip_7823_active()) {
         // EIP-7823: each of the length inputs (base, exponent and modulus) MUST
         // be less than or equal to 8192 bits (1024 bytes).
         if (base_len256 > 1024 || exp_len256 > 1024 || mod_len256 > 1024) {
@@ -315,9 +314,8 @@ uint64_t expmod_gas_cost(byte_string_view const input)
         expmod_iteration_count<traits>(exp_len256, bit_len)};
 
     runtime::uint256_t const max_length{std::max(mod_len256, base_len256)};
-    runtime::uint256_t gas = mult_complexity<traits>(max_length)
-                           * iteration_count
-                           / expmod_gas_denominator<traits>();
+    runtime::uint256_t gas = mult_complexity<traits>(max_length) *
+                             iteration_count / expmod_gas_denominator<traits>();
 
     if (runtime::count_significant_words(gas.as_words()) > 1) {
         return UINT64_MAX;

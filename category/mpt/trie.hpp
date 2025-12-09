@@ -110,8 +110,10 @@ struct read_short_update_sender
     : MONAD_ASYNC_NAMESPACE::read_single_buffer_sender
 {
     template <receiver Receiver>
-    explicit constexpr read_short_update_sender(Receiver const &receiver)
-        : read_single_buffer_sender(receiver.rd_offset, receiver.bytes_to_read)
+    explicit constexpr read_short_update_sender(
+        Receiver const &receiver, bool defer_submit = false)
+        : read_single_buffer_sender(
+              receiver.rd_offset, receiver.bytes_to_read, defer_submit)
     {
         MONAD_DEBUG_ASSERT(
             receiver.bytes_to_read <=
@@ -1030,12 +1032,13 @@ template <receiver Receiver>
         MONAD_ASYNC_NAMESPACE::compatible_sender_receiver<
             read_long_update_sender, Receiver> &&
         Receiver::lifetime_managed_internally)
-void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
+void async_read(
+    UpdateAuxImpl &aux, Receiver &&receiver, bool defer_submit = false)
 {
     [[likely]] if (
         receiver.bytes_to_read <=
         MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {
-        read_short_update_sender sender(receiver);
+        read_short_update_sender sender(receiver, defer_submit);
         auto iostate = aux.io->make_connected(
             std::move(sender), std::forward<Receiver>(receiver));
         iostate->initiate();

@@ -368,15 +368,37 @@ void AsyncIO::prepare_read_sqe_(
     io_uring_sqe_set_data(sqe, uring_data);
 }
 
-void AsyncIO::submit_request_sqe_(
+// Helper to prepare SQE without submitting
+void AsyncIO::prepare_read_sqe_(
     std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
     void *uring_data, enum erased_connected_operation::io_priority prio)
 {
     struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
     MONAD_ASSERT(sqe);
-
     prepare_read_sqe_(sqe, buffer, chunk_and_offset, uring_data, prio);
+}
+
+void AsyncIO::submit_request_sqe_(
+    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+    void *uring_data, enum erased_connected_operation::io_priority prio)
+{
+    prepare_read_sqe_(buffer, chunk_and_offset, uring_data, prio);
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
+    pending_sqes_since_submit_ = 0;
+}
+
+void AsyncIO::submit_request_deferred_(
+    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+    void *uring_data, enum erased_connected_operation::io_priority prio)
+{
+    prepare_read_sqe_(buffer, chunk_and_offset, uring_data, prio);
+    ++pending_sqes_since_submit_;
+
+    // Auto-flush when batch is full
+    if (pending_sqes_since_submit_ >= BATCH_SIZE) {
+        MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
+        pending_sqes_since_submit_ = 0;
+    }
 }
 
 void AsyncIO::submit_request_(
@@ -398,6 +420,7 @@ void AsyncIO::submit_request_(
 
     prepare_read_sqe_(sqe, buffers, chunk_and_offset, uring_data, prio);
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
+    pending_sqes_since_submit_ = 0;
 }
 
 void AsyncIO::submit_request_(
@@ -455,6 +478,7 @@ void AsyncIO::submit_request_(
 
     io_uring_sqe_set_data(sqe, uring_data);
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(wr_ring));
+    pending_sqes_since_submit_ = 0;
 }
 
 void AsyncIO::poll_uring_while_submission_queue_full_()
@@ -504,6 +528,7 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
 
     auto dequeue_concurrent_read_ios_pending = [&]() {
         if (concurrent_read_io_limit_ > 0) {
+            bool any_sqes_added = false;
             while (!concurrent_read_ios_pending_.empty() &&
                    records_.inflight_rd < concurrent_read_io_limit_ &&
                    io_uring_sq_space_left(other_ring) != 0) {
@@ -514,7 +539,14 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                 MONAD_ASSERT(sqe);
                 *sqe = stored_sqe;
 
-                MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(other_ring));
+                any_sqes_added = true;
+                ++pending_sqes_since_submit_;
+
+                // Submit if batch is full
+                if (pending_sqes_since_submit_ >= BATCH_SIZE) {
+                    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(other_ring));
+                    pending_sqes_since_submit_ = 0;
+                }
 
                 // Calculate read size from the SQE
                 size_t read_size;
@@ -537,6 +569,12 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
 
                 concurrent_read_ios_pending_.pop_front();
             }
+
+            // Submit remaining SQEs after exiting loop if any were processed
+            if (any_sqes_added && pending_sqes_since_submit_ > 0) {
+                MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(other_ring));
+                pending_sqes_since_submit_ = 0;
+            }
         }
     };
 
@@ -549,15 +587,6 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         if (wr_ring != nullptr && records_.inflight_wr > 0 &&
             (poll_rings_mask & 2) == 0) {
             ring = wr_ring;
-            if (wr_uring_->must_call_uring_submit() ||
-                !!(wr_ring->flags & IORING_SETUP_IOPOLL)) {
-                // If i/o polling is on, but there is no kernel thread to do the
-                // polling for us OR the kernel thread has gone to sleep, we
-                // need to call the io_uring_enter syscall from userspace to do
-                // the completions processing. From studying the liburing source
-                // code, this will do it.
-                MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(wr_ring));
-            }
             io_uring_peek_cqe(wr_ring, &cqe);
             if ((poll_rings_mask & 1) != 0) {
                 if (blocking && detail::AsyncIO_per_thread_state().empty()) {
@@ -571,17 +600,13 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         }
         if (cqe == nullptr) {
             ring = other_ring;
-            if (uring_.must_call_uring_submit() ||
-                !!(other_ring->flags & IORING_SETUP_IOPOLL)) {
-                // If i/o polling is on, but there is no kernel thread to do the
-                // polling for us OR the kernel thread has gone to sleep, we
-                // need to call the io_uring_enter syscall from userspace to do
-                // the completions processing. From studying the liburing source
-                // code, this will do it.
-                MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(other_ring));
-            }
             if (blocking && records_.inflight_wr == 0 &&
                 detail::AsyncIO_per_thread_state().empty()) {
+                // Blocking wait - submit pending SQEs first if any
+                if (pending_sqes_since_submit_ > 0) {
+                    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(other_ring));
+                    pending_sqes_since_submit_ = 0;
+                }
                 MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_wait_cqe(ring, &cqe));
             }
             else {
@@ -782,6 +807,14 @@ unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)
         if (mem != nullptr) {
             return mem;
         }
+    }
+}
+
+void AsyncIO::flush_pending_reads()
+{
+    if (pending_sqes_since_submit_ > 0) {
+        MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
+        pending_sqes_since_submit_ = 0;
     }
 }
 

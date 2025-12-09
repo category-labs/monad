@@ -82,11 +82,6 @@ public:
     {
         return params_.cq_entries;
     }
-
-    [[gnu::always_inline]] bool must_call_uring_submit() const
-    {
-        return !(params_.flags & IORING_SETUP_SQPOLL);
-    }
 };
 
 static_assert(sizeof(Ring) == 336);

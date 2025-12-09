@@ -418,6 +418,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             call_tracer_.on_finish(receipt.gas_used);
             trace::run_tracer<traits>(state_tracer_, state);
             block_state_.merge(state);
+            block_metrics_.record_accesses(state.access_stats());
             record_txn_output_events(
                 static_cast<uint32_t>(this->i_),
                 receipt,
@@ -444,6 +445,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         call_tracer_.on_finish(receipt.gas_used);
         trace::run_tracer<traits>(state_tracer_, state);
         block_state_.merge(state);
+        block_metrics_.record_accesses(state.access_stats());
         record_txn_output_events(
             static_cast<uint32_t>(this->i_),
             receipt,

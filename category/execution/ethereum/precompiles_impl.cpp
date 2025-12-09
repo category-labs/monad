@@ -267,16 +267,18 @@ uint64_t expmod_gas_cost(byte_string_view const input)
 {
     constexpr uint64_t min_gas{expmod_min_gas<traits>()};
 
-    if (input.size() < 96) {
-        return min_gas;
-    }
-
-    runtime::uint256_t base_len256 =
-        runtime::uint256_t::load_be_unsafe(&input.data()[0]);
-    runtime::uint256_t exp_len256 =
-        runtime::uint256_t::load_be_unsafe(&input.data()[32]);
-    runtime::uint256_t mod_len256 =
-        runtime::uint256_t::load_be_unsafe(&input.data()[64]);
+    runtime::uint256_t base_len256{runtime::uint256_t::load_be_unsafe(
+        &input.data()[0], std::min(32ul, input.length()))};
+    runtime::uint256_t exp_len256{
+        input.length() >= 32
+            ? runtime::uint256_t::load_be_unsafe(
+                  &input.data()[32], std::min(32ul, input.length() - 32))
+            : 0};
+    runtime::uint256_t mod_len256{
+        input.length() >= 64
+            ? runtime::uint256_t::load_be_unsafe(
+                  &input.data()[64], std::min(32ul, input.length() - 64))
+            : 0};
 
     if (base_len256 == 0 && mod_len256 == 0) {
         return min_gas;

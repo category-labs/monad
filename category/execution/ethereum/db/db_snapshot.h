@@ -40,7 +40,7 @@ bool monad_db_dump_snapshot(
     uint64_t (*write)(
         uint64_t shard, enum monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user),
-    void *user);
+    void *user, unsigned dump_concurrency_limit);
 
 struct monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t block, char const *const *dbname_paths, size_t len,

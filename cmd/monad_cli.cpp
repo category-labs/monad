@@ -797,6 +797,7 @@ int main(int argc, char *argv[])
     std::optional<std::filesystem::path> dump_binary_snapshot;
     std::optional<std::filesystem::path> load_binary_snapshot;
     uint64_t version;
+    unsigned dump_concurrency_limit = 2048;
 
     CLI::App cli{"monad_cli"};
     cli.add_option(
@@ -823,6 +824,10 @@ int main(int argc, char *argv[])
         "--dump_binary_snapshot",
         dump_binary_snapshot,
         "Dump a binary snapshot to directory");
+    cli_group->add_option(
+        "--dump_concurrency_limit",
+        dump_concurrency_limit,
+        "Read concurrency limit for snapshot dump");
     cli_group
         ->add_option(
             "--load_binary_snapshot",
@@ -889,7 +894,8 @@ int main(int argc, char *argv[])
             sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
             version,
             monad_db_snapshot_write_filesystem,
-            context);
+            context,
+            dump_concurrency_limit);
         LOG_INFO(
             "snapshot dump success={} version={} directory={} elapsed={}",
             success,

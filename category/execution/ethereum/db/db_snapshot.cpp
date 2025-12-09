@@ -296,16 +296,20 @@ bool monad_db_dump_snapshot(
     uint64_t (*write)(
         uint64_t shard, monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user),
-    void *const user)
+    void *const user, unsigned const dump_concurrency_limit)
 {
     using namespace monad;
     using namespace monad::mpt;
 
+    // Set all queue sizes to dump_concurrency_limit to avoid double queuing
     ReadOnlyOnDiskDbConfig const config{
+        .rd_buffers = dump_concurrency_limit,
+        .uring_entries = dump_concurrency_limit,
         .sq_thread_cpu = sq_thread_cpu != std::numeric_limits<unsigned>::max()
                              ? std::make_optional(sq_thread_cpu)
                              : std::nullopt,
-        .dbname_paths = {dbname_paths, dbname_paths + len}};
+        .dbname_paths = {dbname_paths, dbname_paths + len},
+        .concurrent_read_io_limit = dump_concurrency_limit};
     AsyncIOContext io_context{config};
     Db db{io_context};
 
@@ -349,7 +353,8 @@ bool monad_db_dump_snapshot(
 
     std::array<uint64_t, MONAD_SNAPSHOT_SHARDS> account_bytes_written{};
     MonadSnapshotTraverseMachine machine{account_bytes_written, write, user};
-    bool const success = db.traverse(finalized_root, machine, block);
+    bool const success =
+        db.traverse(finalized_root, machine, block, dump_concurrency_limit);
     if (!success) {
         LOG_INFO("db traverse for block {} unsuccessful", block);
     }

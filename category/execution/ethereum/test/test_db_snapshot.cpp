@@ -118,7 +118,9 @@ TEST(DbBinarySnapshot, Basic)
             static_cast<unsigned>(-1),
             100,
             monad_db_snapshot_write_filesystem,
-            context));
+            context,
+            2048 // dump_concurrency_limit
+            ));
 
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
 

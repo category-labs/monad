@@ -302,8 +302,8 @@ std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
         return UINT64_MAX;
     }
 
-    uint64_t base_len64{static_cast<uint64_t>(base_len256)};
-    uint64_t exp_len64{static_cast<uint64_t>(exp_len256)};
+    auto const base_len64{static_cast<uint64_t>(base_len256)};
+    auto const exp_len64{static_cast<uint64_t>(exp_len256)};
 
     uint256_t exp_head{0}; // first 32 bytes of the exponent
     auto const exp_index = 96 + base_len64;

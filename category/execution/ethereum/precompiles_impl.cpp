@@ -267,7 +267,7 @@ static uint256_t uint256_partial_load_be(uint8_t const *bytes, size_t len)
 }
 
 template <Traits traits>
-uint64_t expmod_gas_cost(byte_string_view const input)
+std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
 {
     static constexpr auto min_gas{expmod_min_gas<traits>()};
 
@@ -292,7 +292,7 @@ uint64_t expmod_gas_cost(byte_string_view const input)
         // EIP-7823: each of the length inputs (base, exponent and modulus) MUST
         // be less than or equal to 8192 bits (1024 bytes).
         if (base_len256 > 1024 || exp_len256 > 1024 || mod_len256 > 1024) {
-            return UINT64_MAX;
+            return std::nullopt; // invalid input
         }
     }
     else if (

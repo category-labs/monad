@@ -54,6 +54,13 @@ since(PrecompiledContract impl)
     return std::nullopt;
 }
 
+template <auto f>
+inline auto fmap_optional(auto a)
+{
+    auto r = f(a);
+    return std::optional<decltype(r)>{r};
+}
+
 template <Traits traits>
 std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 {
@@ -66,39 +73,51 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
     while (false)
 
     // Ethereum precompiles
-    CASE(0x01, ecrecover_gas_cost<traits>, ecrecover_execute);
-    CASE(0x02, sha256_gas_cost<traits>, sha256_execute);
-    CASE(0x03, ripemd160_gas_cost<traits>, ripemd160_execute);
-    CASE(0x04, identity_gas_cost, identity_execute);
+    CASE(0x01, fmap_optional<ecrecover_gas_cost<traits>>, ecrecover_execute);
+    CASE(0x02, fmap_optional<sha256_gas_cost<traits>>, sha256_execute);
+    CASE(0x03, fmap_optional<ripemd160_gas_cost<traits>>, ripemd160_execute);
+    CASE(0x04, fmap_optional<identity_gas_cost>, identity_execute);
 
     if constexpr (traits::evm_rev() >= EVMC_BYZANTIUM) {
         CASE(0x05, expmod_gas_cost<traits>, expmod_execute);
-        CASE(0x06, ecadd_gas_cost<traits>, ecadd_execute);
-        CASE(0x07, ecmul_gas_cost<traits>, ecmul_execute);
-        CASE(0x08, snarkv_gas_cost<traits>, snarkv_execute);
+        CASE(0x06, fmap_optional<ecadd_gas_cost<traits>>, ecadd_execute);
+        CASE(0x07, fmap_optional<ecmul_gas_cost<traits>>, ecmul_execute);
+        CASE(0x08, fmap_optional<snarkv_gas_cost<traits>>, snarkv_execute);
     }
 
     if constexpr (traits::evm_rev() >= EVMC_ISTANBUL) {
-        CASE(0x09, blake2bf_gas_cost<traits>, blake2bf_execute);
+        CASE(0x09, fmap_optional<blake2bf_gas_cost<traits>>, blake2bf_execute);
     }
 
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
-        CASE(0x0A, point_evaluation_gas_cost<traits>, point_evaluation_execute);
+        CASE(
+            0x0A,
+            fmap_optional<point_evaluation_gas_cost<traits>>,
+            point_evaluation_execute);
     }
 
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
-        CASE(0x0B, bls12_g1_add_gas_cost, bls12_g1_add_execute);
-        CASE(0x0C, bls12_g1_msm_gas_cost, bls12_g1_msm_execute);
-        CASE(0x0D, bls12_g2_add_gas_cost, bls12_g2_add_execute);
-        CASE(0x0E, bls12_g2_msm_gas_cost, bls12_g2_msm_execute);
-        CASE(0x0F, bls12_pairing_check_gas_cost, bls12_pairing_check_execute);
-        CASE(0x10, bls12_map_fp_to_g1_gas_cost, bls12_map_fp_to_g1_execute);
-        CASE(0x11, bls12_map_fp2_to_g2_gas_cost, bls12_map_fp2_to_g2_execute);
+        CASE(0x0B, fmap_optional<bls12_g1_add_gas_cost>, bls12_g1_add_execute);
+        CASE(0x0C, fmap_optional<bls12_g1_msm_gas_cost>, bls12_g1_msm_execute);
+        CASE(0x0D, fmap_optional<bls12_g2_add_gas_cost>, bls12_g2_add_execute);
+        CASE(0x0E, fmap_optional<bls12_g2_msm_gas_cost>, bls12_g2_msm_execute);
+        CASE(
+            0x0F,
+            fmap_optional<bls12_pairing_check_gas_cost>,
+            bls12_pairing_check_execute);
+        CASE(
+            0x10,
+            fmap_optional<bls12_map_fp_to_g1_gas_cost>,
+            bls12_map_fp_to_g1_execute);
+        CASE(
+            0x11,
+            fmap_optional<bls12_map_fp2_to_g2_gas_cost>,
+            bls12_map_fp2_to_g2_execute);
     }
 
     // Rollup precompiles
     if constexpr (traits::eip_7951_active()) {
-        CASE(0x0100, p256_verify_gas_cost, p256_verify_execute);
+        CASE(0x0100, fmap_optional<p256_verify_gas_cost>, p256_verify_execute);
     }
 
 #undef CASE
@@ -146,9 +165,15 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
     auto const [gas_cost_func, execute_func] = *maybe_precompile;
 
     byte_string_view const input{msg.input_data, msg.input_size};
-    uint64_t const cost = gas_cost_func(input);
+    std::optional<uint64_t> const cost = gas_cost_func(input);
 
-    if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
+    // If cost is std::nullopt, the gas function got an invalid input. This is
+    // currently only possible for EXPMOD with EIP-7823.
+    if (!cost.has_value()) {
+        return evmc::Result{evmc_status_code::EVMC_FAILURE};
+    }
+
+    if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost.value()))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
@@ -156,7 +181,7 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
     return evmc::Result{evmc_result{
         .status_code = status_code,
         .gas_left = (status_code == EVMC_SUCCESS)
-                        ? msg.gas - static_cast<int64_t>(cost)
+                        ? msg.gas - static_cast<int64_t>(cost.value())
                         : 0,
         .gas_refund = 0,
         .output_data = output_buffer,

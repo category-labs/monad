@@ -46,7 +46,7 @@ template <Traits traits>
 std::optional<evmc::Result>
 check_call_precompile(State &, CallTracerBase &, evmc_message const &);
 
-using precompiled_gas_cost_fn = uint64_t(byte_string_view);
+using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 
 template <Traits traits>
 uint64_t ecrecover_gas_cost(byte_string_view);
@@ -60,7 +60,7 @@ uint64_t ripemd160_gas_cost(byte_string_view);
 uint64_t identity_gas_cost(byte_string_view);
 
 template <Traits traits>
-uint64_t expmod_gas_cost(byte_string_view);
+std::optional<uint64_t> expmod_gas_cost(byte_string_view);
 
 template <Traits traits>
 uint64_t ecadd_gas_cost(byte_string_view);

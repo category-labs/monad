@@ -16,7 +16,6 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -43,9 +42,6 @@
 #include <silkpre/sha256.h>
 
 #include <cstring>
-
-using monad::vm::runtime::uint256_t;
-namespace runtime = monad::vm::runtime;
 
 namespace
 {
@@ -185,11 +181,10 @@ uint64_t blake2bf_gas_cost(byte_string_view const input)
 EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 
 template <Traits traits>
-static runtime::uint256_t
-mult_complexity(runtime::uint256_t const &max_len) noexcept
+static uint256_t mult_complexity(uint256_t const &max_len) noexcept
 {
     if constexpr (traits::evm_rev() < EVMC_BERLIN) {
-        runtime::uint256_t const max_len_squared{max_len * max_len};
+        uint256_t const max_len_squared{max_len * max_len};
         if (max_len <= 64) {
             return max_len_squared;
         }
@@ -201,7 +196,7 @@ mult_complexity(runtime::uint256_t const &max_len) noexcept
         }
     }
     else {
-        runtime::uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
+        uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
         if constexpr (traits::evm_rev() < EVMC_OSAKA) {
             return words * words;
         }
@@ -217,7 +212,7 @@ mult_complexity(runtime::uint256_t const &max_len) noexcept
 }
 
 template <Traits traits>
-static runtime::uint256_t expmod_gas_denominator() noexcept
+static uint256_t expmod_gas_denominator() noexcept
 {
     if constexpr (traits::eip_7883_active()) {
         return 1;
@@ -231,21 +226,19 @@ static runtime::uint256_t expmod_gas_denominator() noexcept
 }
 
 template <Traits traits>
-runtime::uint256_t
-expmod_iteration_count(runtime::uint256_t exp_len256, size_t bit_len) noexcept
+uint256_t expmod_iteration_count(uint256_t exp_len256, size_t bit_len) noexcept
 {
-    runtime::uint256_t adjusted_exponent_len{0};
+    uint256_t adjusted_exponent_len{0};
     if (exp_len256 > 32) {
-        constexpr runtime::uint256_t exp_mult{
-            traits::eip_7883_active() ? 16u : 8u};
+        constexpr uint256_t exp_mult{traits::eip_7883_active() ? 16u : 8u};
         adjusted_exponent_len = exp_mult * (exp_len256 - 32);
     }
     if (bit_len > 1) {
-        adjusted_exponent_len = adjusted_exponent_len +
-                                static_cast<runtime::uint256_t>(bit_len - 1);
+        adjusted_exponent_len =
+            adjusted_exponent_len + static_cast<uint256_t>(bit_len - 1);
     }
 
-    return std::max(adjusted_exponent_len, runtime::uint256_t{1});
+    return std::max(adjusted_exponent_len, uint256_t{1});
 }
 
 template <Traits traits>
@@ -262,21 +255,30 @@ constexpr uint64_t expmod_min_gas()
     }
 }
 
+// TODO(LH): Replace calls to this function with uint256_t::load_be_unsafe when
+// migrating off intx.
+static uint256_t uint256_load_be_unsafe(uint8_t const *bytes, size_t len)
+{
+    uint256_t result;
+    std::memcpy(intx::as_bytes(result) + (32 - len), bytes, len);
+    return intx::to_big_endian(result);
+}
+
 template <Traits traits>
 uint64_t expmod_gas_cost(byte_string_view const input)
 {
     constexpr uint64_t min_gas{expmod_min_gas<traits>()};
 
-    runtime::uint256_t base_len256{runtime::uint256_t::load_be_unsafe(
+    uint256_t base_len256{uint256_load_be_unsafe(
         &input.data()[0], std::min(32ul, input.length()))};
-    runtime::uint256_t exp_len256{
+    uint256_t exp_len256{
         input.length() >= 32
-            ? runtime::uint256_t::load_be_unsafe(
+            ? uint256_load_be_unsafe(
                   &input.data()[32], std::min(32ul, input.length() - 32))
             : 0};
-    runtime::uint256_t mod_len256{
+    uint256_t mod_len256{
         input.length() >= 64
-            ? runtime::uint256_t::load_be_unsafe(
+            ? uint256_load_be_unsafe(
                   &input.data()[64], std::min(32ul, input.length() - 64))
             : 0};
 
@@ -292,38 +294,38 @@ uint64_t expmod_gas_cost(byte_string_view const input)
         }
     }
     else if (
-        runtime::count_significant_bytes(base_len256) > 8 ||
-        runtime::count_significant_bytes(exp_len256) > 8 ||
-        runtime::count_significant_bytes(mod_len256) > 8) {
+        count_significant_bytes(base_len256) > 8 ||
+        count_significant_bytes(exp_len256) > 8 ||
+        count_significant_bytes(mod_len256) > 8) {
         return UINT64_MAX;
     }
 
     uint64_t base_len64{static_cast<uint64_t>(base_len256)};
     uint64_t exp_len64{static_cast<uint64_t>(exp_len256)};
 
-    runtime::uint256_t exp_head{0}; // first 32 bytes of the exponent
+    uint256_t exp_head{0}; // first 32 bytes of the exponent
     auto const exp_index = 96 + base_len64;
     if (input.length() > exp_index) { // input contains bytes of exponents
         auto const exp_input_len =
             std::min(exp_len64, input.length() - exp_index);
-        exp_head = runtime::uint256_t::load_be_unsafe(
+        exp_head = uint256_load_be_unsafe(
             &input.data()[exp_index],
             std::min(32ul, static_cast<size_t>(exp_input_len)));
     }
-    size_t bit_len{256 - runtime::countl_zero(exp_head)};
+    size_t bit_len{256 - clz(exp_head)};
 
-    runtime::uint256_t const iteration_count{
+    uint256_t const iteration_count{
         expmod_iteration_count<traits>(exp_len256, bit_len)};
 
-    runtime::uint256_t const max_length{std::max(mod_len256, base_len256)};
-    runtime::uint256_t gas = mult_complexity<traits>(max_length) *
-                             iteration_count / expmod_gas_denominator<traits>();
+    uint256_t const max_length{std::max(mod_len256, base_len256)};
+    uint256_t gas = mult_complexity<traits>(max_length) * iteration_count /
+                    expmod_gas_denominator<traits>();
 
-    if (runtime::count_significant_words(gas.as_words()) > 1) {
+    if (intx::count_significant_words(gas) > 1) {
         return UINT64_MAX;
     }
     else {
-        return std::max(min_gas, gas.as_words()[0]);
+        return std::max(min_gas, static_cast<uint64_t>(gas));
     }
 }
 

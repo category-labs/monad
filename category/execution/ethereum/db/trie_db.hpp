@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -44,9 +45,6 @@ MONAD_NAMESPACE_BEGIN
 class TrieDb final : public ::monad::Db
 {
     ::monad::mpt::Db &db_;
-    std::deque<mpt::Update> update_alloc_;
-    std::deque<byte_string> bytes_alloc_;
-    std::deque<hash256> hash_alloc_;
     uint64_t block_number_;
     // bytes32_t{} represent finalized
     bytes32_t proposal_block_id_;
@@ -67,6 +65,7 @@ public:
     virtual void set_block_and_prefix(
         uint64_t block_number,
         bytes32_t const &block_id = bytes32_t{}) override;
+
     virtual void commit(
         StateDeltas const &, Code const &, bytes32_t const &block_id,
         BlockHeader const &, std::vector<Receipt> const & = {},
@@ -75,6 +74,7 @@ public:
         std::vector<Transaction> const & = {},
         std::vector<BlockHeader> const &ommers = {},
         std::optional<std::vector<Withdrawal>> const & = std::nullopt) override;
+
     virtual void
     finalize(uint64_t block_number, bytes32_t const &block_id) override;
     virtual void update_verified_block(uint64_t block_number) override;

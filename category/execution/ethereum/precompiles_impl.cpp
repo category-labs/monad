@@ -35,6 +35,8 @@
 #include <evmc/evmc.h>
 #include <evmc/hex.hpp>
 
+#include <intx/intx.hpp>
+
 #include <setup/settings.h>
 #include <setup/setup.h>
 

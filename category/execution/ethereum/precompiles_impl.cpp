@@ -185,19 +185,18 @@ EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 template <Traits traits>
 static uint256_t mult_complexity(uint256_t const &max_len) noexcept
 {
-    if constexpr (traits::eip_7883_active() || traits::eip_2565_active()) {
+    if constexpr (traits::eip_7883_active()) {
         uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
-        if constexpr (traits::evm_rev() < EVMC_OSAKA) {
-            return words * words;
+        if (max_len > 32) {
+            return 2 * words * words;
         }
         else {
-            if (max_len > 32) {
-                return 2 * words * words;
-            }
-            else {
-                return 16;
-            }
+            return 16;
         }
+    }
+    else if constexpr (traits::eip_2565_active()) {
+        uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
+        return words * words;
     }
     else {
         uint256_t const max_len_squared{max_len * max_len};

@@ -169,7 +169,7 @@ namespace monad
 
         static consteval bool eip_2565_active() noexcept
         {
-            return EVMC_BERLIN <= evm_rev() && evm_rev() < EVMC_OSAKA;
+            return EVMC_BERLIN <= evm_rev();
         }
 
         static consteval bool eip_2929_active() noexcept

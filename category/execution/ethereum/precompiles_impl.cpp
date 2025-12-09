@@ -183,19 +183,7 @@ EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 template <Traits traits>
 static uint256_t mult_complexity(uint256_t const &max_len) noexcept
 {
-    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
-        uint256_t const max_len_squared{max_len * max_len};
-        if (max_len <= 64) {
-            return max_len_squared;
-        }
-        else if (max_len <= 1024) {
-            return (max_len_squared >> 2) + 96 * max_len - 3072;
-        }
-        else {
-            return (max_len_squared >> 4) + 480 * max_len - 199680;
-        }
-    }
-    else {
+    if constexpr (traits::eip_7883_active() || traits::eip_2565_active()) {
         uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
         if constexpr (traits::evm_rev() < EVMC_OSAKA) {
             return words * words;
@@ -207,6 +195,18 @@ static uint256_t mult_complexity(uint256_t const &max_len) noexcept
             else {
                 return 16;
             }
+        }
+    }
+    else {
+        uint256_t const max_len_squared{max_len * max_len};
+        if (max_len <= 64) {
+            return max_len_squared;
+        }
+        else if (max_len <= 1024) {
+            return (max_len_squared >> 2) + 96 * max_len - 3072;
+        }
+        else {
+            return (max_len_squared >> 4) + 480 * max_len - 199680;
         }
     }
 }
@@ -257,9 +257,10 @@ constexpr uint64_t expmod_min_gas()
 
 // TODO(LH): Replace calls to this function with uint256_t::load_be_unsafe when
 // migrating off intx.
-static uint256_t uint256_load_be_unsafe(uint8_t const *bytes, size_t len)
+static uint256_t uint256_partial_load_be(uint8_t const *bytes, size_t len)
 {
     uint256_t result;
+    MONAD_VM_ASSERT(32 >= len);
     std::memcpy(intx::as_bytes(result) + (32 - len), bytes, len);
     return intx::to_big_endian(result);
 }
@@ -267,20 +268,20 @@ static uint256_t uint256_load_be_unsafe(uint8_t const *bytes, size_t len)
 template <Traits traits>
 uint64_t expmod_gas_cost(byte_string_view const input)
 {
-    constexpr uint64_t min_gas{expmod_min_gas<traits>()};
+    static constexpr auto min_gas{expmod_min_gas<traits>()};
 
-    uint256_t base_len256{uint256_load_be_unsafe(
-        &input.data()[0], std::min(32ul, input.length()))};
-    uint256_t exp_len256{
+    auto base_len256 = uint256_partial_load_be(
+        &input.data()[0], std::min(32ul, input.length()));
+    auto exp_len256 =
         input.length() >= 32
-            ? uint256_load_be_unsafe(
+            ? uint256_partial_load_be(
                   &input.data()[32], std::min(32ul, input.length() - 32))
-            : 0};
-    uint256_t mod_len256{
+            : uint256_t{0};
+    auto mod_len256 =
         input.length() >= 64
-            ? uint256_load_be_unsafe(
+            ? uint256_partial_load_be(
                   &input.data()[64], std::min(32ul, input.length() - 64))
-            : 0};
+            : uint256_t{0};
 
     if (base_len256 == 0 && mod_len256 == 0) {
         return min_gas;
@@ -308,7 +309,7 @@ uint64_t expmod_gas_cost(byte_string_view const input)
     if (input.length() > exp_index) { // input contains bytes of exponents
         auto const exp_input_len =
             std::min(exp_len64, input.length() - exp_index);
-        exp_head = uint256_load_be_unsafe(
+        exp_head = uint256_partial_load_be(
             &input.data()[exp_index],
             std::min(32ul, static_cast<size_t>(exp_input_len)));
     }

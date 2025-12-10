@@ -56,15 +56,9 @@ since(PrecompiledContract impl)
 
 // Convert return value to std::optional if needed
 template <auto f>
-inline auto fmap_optional(auto a)
+static std::optional<uint64_t> fmap_optional(byte_string_view const a)
 {
-    auto r = f(a);
-    if constexpr (std::is_same_v<std::optional<uint64_t>, decltype(r)>) {
-        return r;
-    }
-    else {
-        return std::optional<decltype(r)>{r};
-    }
+    return f(a);
 }
 
 template <Traits traits>

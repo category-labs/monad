@@ -271,14 +271,14 @@ std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
 {
     static constexpr auto min_gas{expmod_min_gas<traits>()};
 
-    auto base_len256 = uint256_partial_load_be(
+    auto const base_len256 = uint256_partial_load_be(
         &input.data()[0], std::min(32ul, input.length()));
-    auto exp_len256 =
+    auto const exp_len256 =
         input.length() >= 32
             ? uint256_partial_load_be(
                   &input.data()[32], std::min(32ul, input.length() - 32))
             : uint256_t{0};
-    auto mod_len256 =
+    auto const mod_len256 =
         input.length() >= 64
             ? uint256_partial_load_be(
                   &input.data()[64], std::min(32ul, input.length() - 64))
@@ -299,7 +299,7 @@ std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
         count_significant_bytes(base_len256) > 8 ||
         count_significant_bytes(exp_len256) > 8 ||
         count_significant_bytes(mod_len256) > 8) {
-        return UINT64_MAX;
+        return std::numeric_limits<uint64_t>::max();
     }
 
     auto const base_len64{static_cast<uint64_t>(base_len256)};
@@ -314,17 +314,17 @@ std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
             &input.data()[exp_index],
             std::min(32ul, static_cast<size_t>(exp_input_len)));
     }
-    size_t bit_len{256 - clz(exp_head)};
+    size_t const bit_len{256 - clz(exp_head)};
 
     uint256_t const iteration_count{
         expmod_iteration_count<traits>(exp_len256, bit_len)};
 
     uint256_t const max_length{std::max(mod_len256, base_len256)};
-    uint256_t gas = mult_complexity<traits>(max_length) * iteration_count /
-                    expmod_gas_denominator<traits>();
+    uint256_t const gas = mult_complexity<traits>(max_length) *
+                          iteration_count / expmod_gas_denominator<traits>();
 
     if (intx::count_significant_words(gas) > 1) {
-        return UINT64_MAX;
+        return std::numeric_limits<uint64_t>::max();
     }
     else {
         return std::max(min_gas, static_cast<uint64_t>(gas));

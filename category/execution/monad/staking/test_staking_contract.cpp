@@ -330,13 +330,16 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     }
 };
 
-// StakeLatest is tests running on the latest revision. These tests are
-// independent of fork.
-using StakeLatest = StakeTraits<::detail::MonadRevisionConstant<MONAD_NEXT>>;
+// Used by any tests that specifically require <=`MONAD_FOUR` constants
+template <typename MonadRevisionT>
+class StakeBeforeActiveValidatorStakeFork : public StakeTraits<MonadRevisionT>
+{
+};
 
-// Used by any tests that specifically require `MONAD_FOUR` constants
-using StakeBeforeActiveValidatorStakeFork =
-    StakeTraits<::detail::MonadRevisionConstant<MONAD_FOUR>>;
+TYPED_TEST_SUITE(
+    StakeBeforeActiveValidatorStakeFork,
+    ::detail::MonadRevisionTypesBefore<MONAD_FIVE>,
+    ::detail::RevisionTestNameGenerator);
 
 // The StakeAllRevisions alias is for using TYPED_TEST to run against all
 // revisions
@@ -345,36 +348,41 @@ using StakeAllRevisions = StakeTraits<MonadRevisionT>;
 
 DEFINE_MONAD_TRAITS_FIXTURE(StakeAllRevisions);
 
-TEST_F(StakeLatest, invoke_fallback)
+TYPED_TEST(StakeAllRevisions, invoke_fallback)
 {
     auto const sender = 0xdeadbeef_address;
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
+    auto const value =
+        intx::be::store<evmc_uint256be>(TestFixture::MIN_VALIDATE_STAKE);
 
     byte_string_fixed<8> const signature_bytes = {0xff, 0xff, 0xff, 0xff};
     auto signature = to_byte_string_view(signature_bytes);
-    auto const [func, cost] = contract.precompile_dispatch<Trait>(signature);
+    auto const [func, cost] =
+        this->contract
+            .template precompile_dispatch<typename TestFixture::Trait>(
+                signature);
     EXPECT_EQ(cost, 40000);
 
-    auto const res = (contract.*func)(byte_string_view{}, sender, value);
+    auto const res = (this->contract.*func)(byte_string_view{}, sender, value);
     EXPECT_EQ(res.assume_error(), StakingError::MethodNotSupported);
 }
 
 // Check that accumulator is monotonically increasing - Done
 // Check that accumulator is updating principle + reward amount correctly
-TEST_F(StakeLatest, accumulator_is_monotonic_again)
+TYPED_TEST(StakeAllRevisions, accumulator_is_monotonic_again)
 {
     // Add validator
-    auto const val = add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+    auto const val = this->add_validator(
+        0xdeadbeef_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     EXPECT_FALSE(val.has_error());
 
     // Loop: call syscall_reward multiple times and test monotonicity
     uint256_t previous_accumulator = 0;
 
-    auto validator1 = contract.vars.val_execution(val.value().id);
+    auto validator1 = this->contract.vars.val_execution(val.value().id);
 
     ASSERT_TRUE(validator1.exists());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     fmt::println(
         "Initial Balance {} - accumulator: {}",
@@ -384,8 +392,9 @@ TEST_F(StakeLatest, accumulator_is_monotonic_again)
 
     constexpr size_t NUM_ITERATIONS = 10;
     for (size_t i = 0; i < NUM_ITERATIONS; ++i) {
-        EXPECT_FALSE(syscall_reward(val.value().sign_address).has_error());
-        auto validator = contract.vars.val_execution(val.value().id);
+        EXPECT_FALSE(
+            this->syscall_reward(val.value().sign_address).has_error());
+        auto validator = this->contract.vars.val_execution(val.value().id);
         auto current_accumulator =
             validator.accumulated_reward_per_token().load().native();
         fmt::println(
@@ -403,9 +412,9 @@ TEST_F(StakeLatest, accumulator_is_monotonic_again)
         previous_accumulator = current_accumulator;
     }
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    auto validator = contract.vars.val_execution(val.value().id);
+    auto validator = this->contract.vars.val_execution(val.value().id);
 
     ASSERT_TRUE(validator.exists());
 
@@ -419,40 +428,44 @@ TEST_F(StakeLatest, accumulator_is_monotonic_again)
 //////////////////////
 // Commission Tests //
 //////////////////////
-TEST_F(StakeLatest, revert_if_commission_too_high)
+TYPED_TEST(StakeAllRevisions, revert_if_commission_too_high)
 {
     auto const auth_address = 0xababab_address;
     constexpr auto bad_commission = 2000000000000000000_u256;
-    auto const res =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, bad_commission);
+    auto const res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, bad_commission);
     EXPECT_EQ(res.assume_error(), StakingError::CommissionTooHigh);
 
     // add a validator with no commission to set a bad commission
-    auto const res2 = add_validator(
-        auth_address, MIN_VALIDATE_STAKE, 0 /* starting commission */);
+    auto const res2 = this->add_validator(
+        auth_address,
+        TestFixture::MIN_VALIDATE_STAKE,
+        0 /* starting commission */);
     ASSERT_FALSE(res2.has_error());
     auto const res3 =
-        change_commission(res2.value().id, auth_address, bad_commission);
+        this->change_commission(res2.value().id, auth_address, bad_commission);
     EXPECT_EQ(res3.assume_error(), StakingError::CommissionTooHigh);
 }
 
-TEST_F(StakeLatest, non_auth_attempts_to_change_commission)
+TYPED_TEST(StakeAllRevisions, non_auth_attempts_to_change_commission)
 {
     // add a validator with no commission. have a random sender try to change
     // the commission.
     auto const auth_address = 0x600d_address;
     auto const bad_sender = 0xbadd_address;
 
-    auto const res = add_validator(
-        auth_address, MIN_VALIDATE_STAKE, 0 /* starting commission */);
+    auto const res = this->add_validator(
+        auth_address,
+        TestFixture::MIN_VALIDATE_STAKE,
+        0 /* starting commission */);
     ASSERT_FALSE(res.has_error());
-    auto const res2 =
-        change_commission(res.value().id, bad_sender, 200000000000000000_u256);
+    auto const res2 = this->change_commission(
+        res.value().id, bad_sender, 200000000000000000_u256);
     EXPECT_EQ(res2.assume_error(), StakingError::RequiresAuthAddress);
 }
 
 class StakeCommission
-    : public StakeLatest
+    : public StakeTraits<::detail::MonadRevisionConstant<MONAD_NEXT>>
     , public ::testing::WithParamInterface<std::tuple<uint64_t, uint256_t>>
 {
 };
@@ -505,14 +518,14 @@ TEST_P(StakeCommission, validator_has_commission)
         expected_commission + expected_delegator_reward);
 }
 
-TEST_F(StakeLatest, validator_changes_commission)
+TYPED_TEST(StakeAllRevisions, validator_changes_commission)
 {
     uint256_t const starting_commission = MON / 20; // 5% commission
     auto const auth_address = 0xdeadbeef_address;
     auto const delegator = 0xde1e_address;
 
-    auto const res = add_validator(
-        auth_address, ACTIVE_VALIDATOR_STAKE, starting_commission);
+    auto const res = this->add_validator(
+        auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE, starting_commission);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
@@ -520,20 +533,22 @@ TEST_F(StakeLatest, validator_changes_commission)
     // Otherwise, the auth delegator gets all the commission and this doesn't
     // test anything.
     EXPECT_FALSE(
-        delegate(val.id, delegator, 9 * ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val.id, delegator, 9 * TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // change validator's commission. this won't go live until the next epoch.
     uint256_t const new_commission = MON / 5; // 20%
-    EXPECT_FALSE(
-        change_commission(val.id, auth_address, new_commission).has_error());
+    EXPECT_FALSE(this->change_commission(val.id, auth_address, new_commission)
+                     .has_error());
 
     // reward this epoch, before and after the boundary, to verify both
     // consensus and snapshot views use the starting commission.
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // auth address has 5% commission and 10% of stake pool. Note that stake
     // pool rewards are applied after the commission, so he gets two rewards at
@@ -543,37 +558,49 @@ TEST_F(StakeLatest, validator_changes_commission)
     // the reward including commission is: C+S(1−C)
     uint256_t total_rewards = 2 * REWARD;
     uint256_t auth_running_rewards = REWARD * 29 / 100;
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, delegator);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, delegator);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         auth_running_rewards);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, delegator).rewards().load().native(),
+        this->contract.vars.delegator(val.id, delegator)
+            .rewards()
+            .load()
+            .native(),
         total_rewards - auth_running_rewards);
 
     // next epoch, new commission is live.
-    EXPECT_FALSE(
-        syscall_on_epoch_change(contract.vars.epoch.load().native() + 1)
-            .has_error());
+    EXPECT_FALSE(this->syscall_on_epoch_change(
+                         this->contract.vars.epoch.load().native() + 1)
+                     .has_error());
 
     // reward before and after the boundary again. uses the new commission.
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // auth address has 20% commission and 10% of stake pool. He gets 28%
     // commission per call (see the comment in the first epoch reward), or 56%
     // of one reward for both.
     total_rewards += 2 * REWARD;
     auth_running_rewards += REWARD * 56 / 100;
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, delegator);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, delegator);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         auth_running_rewards);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, delegator).rewards().load().native(),
+        this->contract.vars.delegator(val.id, delegator)
+            .rewards()
+            .load()
+            .native(),
         total_rewards - auth_running_rewards);
 }
 
@@ -581,28 +608,35 @@ TEST_F(StakeLatest, validator_changes_commission)
 // Input Validation Tests //
 ////////////////////////////
 
-TEST_F(StakeLatest, add_validator_revert_invalid_input_size)
+TYPED_TEST(StakeAllRevisions, add_validator_revert_invalid_input_size)
 {
     auto const sender = 0xdeadbeef_address;
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
+    auto const value =
+        intx::be::store<evmc_uint256be>(TestFixture::MIN_VALIDATE_STAKE);
 
     byte_string_view too_short{};
     auto res =
-        contract.precompile_add_validator<Trait>(too_short, sender, value);
+        this->contract
+            .template precompile_add_validator<typename TestFixture::Trait>(
+                too_short, sender, value);
     EXPECT_EQ(res.assume_error(), AbiDecodeError::InputTooShort);
 
     auto [too_long, _] =
-        craft_add_validator_input(sender, MIN_VALIDATE_STAKE, 0);
+        craft_add_validator_input(sender, TestFixture::MIN_VALIDATE_STAKE, 0);
     too_long.append({0xFF});
-    res = contract.precompile_add_validator<Trait>(too_long, sender, value);
+    res = this->contract
+              .template precompile_add_validator<typename TestFixture::Trait>(
+                  too_long, sender, value);
     EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
 }
 
-TEST_F(StakeLatest, add_validator_revert_bad_signature)
+TYPED_TEST(StakeAllRevisions, add_validator_revert_bad_signature)
 {
     auto const [message, good_secp_sig, good_bls_sig, _] =
-        craft_add_validator_input_raw(0xababab_address, MIN_VALIDATE_STAKE);
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
+        craft_add_validator_input_raw(
+            0xababab_address, TestFixture::MIN_VALIDATE_STAKE);
+    auto const value =
+        intx::be::store<evmc_uint256be>(TestFixture::MIN_VALIDATE_STAKE);
 
     // bad secp signature
     {
@@ -613,8 +647,10 @@ TEST_F(StakeLatest, add_validator_revert_bad_signature)
         encoder.add_bytes(message);
         encoder.add_bytes(to_byte_string_view(bad_secp_sig));
         encoder.add_bytes(good_bls_sig);
-        auto const res = contract.precompile_add_validator<Trait>(
-            encoder.encode_final(), 0xdead_address, value);
+        auto const res =
+            this->contract
+                .template precompile_add_validator<typename TestFixture::Trait>(
+                    encoder.encode_final(), 0xdead_address, value);
         EXPECT_EQ(
             res.assume_error(), StakingError::SecpSignatureVerificationFailed);
     }
@@ -628,126 +664,163 @@ TEST_F(StakeLatest, add_validator_revert_bad_signature)
         encoder.add_bytes(message);
         encoder.add_bytes(good_secp_sig);
         encoder.add_bytes(to_byte_string_view(bad_bls_sig));
-        auto const res = contract.precompile_add_validator<Trait>(
-            encoder.encode_final(), 0xdead_address, value);
+        auto const res =
+            this->contract
+                .template precompile_add_validator<typename TestFixture::Trait>(
+                    encoder.encode_final(), 0xdead_address, value);
         EXPECT_EQ(
             res.assume_error(), StakingError::BlsSignatureVerificationFailed);
     }
 }
 
-TEST_F(StakeLatest, add_validator_revert_msg_value_not_signed)
+TYPED_TEST(StakeAllRevisions, add_validator_revert_msg_value_not_signed)
 {
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
-    auto const [input, address] =
-        craft_add_validator_input(0xababab_address, 2 * MIN_VALIDATE_STAKE);
+    auto const value =
+        intx::be::store<evmc_uint256be>(TestFixture::MIN_VALIDATE_STAKE);
+    auto const [input, address] = craft_add_validator_input(
+        0xababab_address, 2 * TestFixture::MIN_VALIDATE_STAKE);
     auto const res =
-        contract.precompile_add_validator<Trait>(input, address, value);
+        this->contract
+            .template precompile_add_validator<typename TestFixture::Trait>(
+                input, address, value);
     EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
 }
 
-TEST_F(StakeLatest, add_validator_revert_already_exists)
+TYPED_TEST(StakeAllRevisions, add_validator_revert_already_exists)
 {
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
-    auto const [input, address] =
-        craft_add_validator_input(0xababab_address, MIN_VALIDATE_STAKE);
-    EXPECT_FALSE(contract.precompile_add_validator<Trait>(input, address, value)
-                     .has_error());
+    auto const value =
+        intx::be::store<evmc_uint256be>(TestFixture::MIN_VALIDATE_STAKE);
+    auto const [input, address] = craft_add_validator_input(
+        0xababab_address, TestFixture::MIN_VALIDATE_STAKE);
+    EXPECT_FALSE(
+        this->contract
+            .template precompile_add_validator<typename TestFixture::Trait>(
+                input, address, value)
+            .has_error());
     EXPECT_EQ(
-        contract.precompile_add_validator<Trait>(input, address, value)
+        this->contract
+            .template precompile_add_validator<typename TestFixture::Trait>(
+                input, address, value)
             .assume_error(),
         StakingError::ValidatorExists);
 }
 
-TEST_F(StakeLatest, add_validator_revert_minimum_stake_not_met)
+TYPED_TEST(StakeAllRevisions, add_validator_revert_minimum_stake_not_met)
 {
     auto const value = intx::be::store<evmc_uint256be>(uint256_t{1});
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, uint256_t{1});
     auto const res =
-        contract.precompile_add_validator<Trait>(input, address, value);
+        this->contract
+            .template precompile_add_validator<typename TestFixture::Trait>(
+                input, address, value);
     EXPECT_EQ(res.assume_error(), StakingError::InsufficientStake);
 }
 
-TEST_F(StakeLatest, nonpayable_functions_revert)
+TYPED_TEST(StakeAllRevisions, nonpayable_functions_revert)
 {
     // syscalls
     EXPECT_EQ(
-        contract.syscall_snapshot({}, 5 * MON).assume_error(),
+        this->contract.syscall_snapshot({}, 5 * MON).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.syscall_on_epoch_change({}, 5 * MON).assume_error(),
+        this->contract.syscall_on_epoch_change({}, 5 * MON).assume_error(),
         StakingError::ValueNonZero);
 
     // precompiles
     evmc_uint256be value = intx::be::store<evmc_uint256be>(5 * MON);
     EXPECT_EQ(
-        contract.precompile_undelegate<Trait>({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_compound<Trait>({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_withdraw({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_claim_rewards({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_change_commission({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_get_validator({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_get_delegator({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_get_withdrawal_request({}, {}, value)
+        this->contract
+            .template precompile_undelegate<typename TestFixture::Trait>(
+                {}, {}, value)
             .assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_get_consensus_valset({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_get_snapshot_valset({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_get_execution_valset({}, {}, value).assume_error(),
-        StakingError::ValueNonZero);
-    EXPECT_EQ(
-        contract.precompile_get_delegations<Trait>({}, {}, value)
+        this->contract
+            .template precompile_compound<typename TestFixture::Trait>(
+                {}, {}, value)
             .assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_get_delegators<Trait>({}, {}, value).assume_error(),
+        this->contract.precompile_withdraw({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_get_epoch({}, {}, value).assume_error(),
+        this->contract.precompile_claim_rewards({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_get_proposer_val_id({}, {}, value).assume_error(),
+        this->contract
+            .template precompile_get_delegations<typename TestFixture::Trait>(
+                {}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract
+            .template precompile_get_delegators<typename TestFixture::Trait>(
+                {}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract.precompile_get_delegator({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract.precompile_get_withdrawal_request({}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract.precompile_get_consensus_valset({}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract.precompile_get_snapshot_valset({}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract.precompile_get_execution_valset({}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract
+            .template precompile_get_delegations<typename TestFixture::Trait>(
+                {}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract
+            .template precompile_get_delegators<typename TestFixture::Trait>(
+                {}, {}, value)
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract.precompile_get_epoch({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        this->contract.precompile_get_proposer_val_id({}, {}, value)
+            .assume_error(),
         StakingError::ValueNonZero);
 }
 
-TEST_F(StakeLatest, auth_address_conflicts_with_linked_list)
+TYPED_TEST(StakeAllRevisions, auth_address_conflicts_with_linked_list)
 {
     // empty pointer
     Address empty{};
-    EXPECT_TRUE(add_validator(empty, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_TRUE(this->add_validator(empty, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                    .has_error());
 
     // sentinel
     Address sentinel{};
     std::memset(sentinel.bytes, 0xFF, sizeof(Address));
-    EXPECT_TRUE(add_validator(sentinel, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_TRUE(
+        this->add_validator(sentinel, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 }
 
-TEST_F(StakeLatest, linked_list_removal_state_override)
+TYPED_TEST(StakeAllRevisions, linked_list_removal_state_override)
 {
     // even though the empty address and the sentinel address are banned during
     // delegate, a user could state override and trigger unreachable code
     // during live execution via eth call.
 
-    contract.vars.epoch.store(10);
+    this->contract.vars.epoch.store(10);
 
     Address sentinel{};
     std::memset(sentinel.bytes, 0xFF, sizeof(Address));
@@ -755,19 +828,19 @@ TEST_F(StakeLatest, linked_list_removal_state_override)
     uint256_t const stake = 500 * MON;
 
     // state override invalid validator
-    auto validator = contract.vars.val_execution(1u);
+    auto validator = this->contract.vars.val_execution(1u);
     validator.address_flags().store(ValExecution::AddressFlags_t{
         .auth_address = sentinel, .flags = ValidatorFlagsOk});
     validator.stake().store(stake);
 
     // state override that the contract can process this withdrawal
-    state.add_to_balance(STAKING_CA, stake);
+    this->state.add_to_balance(STAKING_CA, stake);
 
     // state override the delegator
-    auto delegator = contract.vars.delegator(1u, sentinel);
+    auto delegator = this->contract.vars.delegator(1u, sentinel);
     delegator.stake().store(stake);
     EXPECT_THROW(
-        (void)undelegate(1u, sentinel, 1 /* withdrawal id */, stake),
+        (void)this->undelegate(1u, sentinel, 1 /* withdrawal id */, stake),
         MonadException);
 }
 
@@ -775,109 +848,124 @@ TEST_F(StakeLatest, linked_list_removal_state_override)
 // Add Validator Tests //
 /////////////////////////
 
-TEST_F(StakeLatest, add_validator_sufficent_balance)
+TYPED_TEST(StakeAllRevisions, add_validator_sufficent_balance)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
 
-    auto const val1 = add_validator(
-        auth_address, ACTIVE_VALIDATOR_STAKE, 0, bytes32_t{0x1000});
+    auto const val1 = this->add_validator(
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        0,
+        bytes32_t{0x1000});
     EXPECT_FALSE(val1.has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    auto val2 = add_validator(
+    auto val2 = this->add_validator(
         other_address,
-        ACTIVE_VALIDATOR_STAKE,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
         0 /* commission */,
         bytes32_t{0x1001});
     EXPECT_FALSE(val2.has_error());
 
-    inc_epoch();
+    this->inc_epoch();
 
-    EXPECT_FALSE(syscall_reward(val1.value().sign_address).has_error());
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 1);
-
-    EXPECT_EQ(contract.vars.val_execution(1).get_flags(), ValidatorFlagsOk);
-    EXPECT_EQ(contract.vars.val_execution(2).get_flags(), ValidatorFlagsOk);
-
-    skip_to_next_epoch();
-
-    EXPECT_FALSE(syscall_reward(val2.value().sign_address).has_error());
-
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 2);
-
-    EXPECT_EQ(contract.vars.val_execution(1).get_flags(), ValidatorFlagsOk);
-    EXPECT_EQ(contract.vars.val_execution(2).get_flags(), ValidatorFlagsOk);
+    EXPECT_FALSE(this->syscall_reward(val1.value().sign_address).has_error());
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 1);
 
     EXPECT_EQ(
-        contract.vars.this_epoch_view(1).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE);
+        this->contract.vars.val_execution(1).get_flags(), ValidatorFlagsOk);
     EXPECT_EQ(
-        contract.vars.this_epoch_view(2).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE);
+        this->contract.vars.val_execution(2).get_flags(), ValidatorFlagsOk);
+
+    this->skip_to_next_epoch();
+
+    EXPECT_FALSE(this->syscall_reward(val2.value().sign_address).has_error());
+
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 2);
 
     EXPECT_EQ(
-        contract.vars.val_execution(1).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE);
+        this->contract.vars.val_execution(1).get_flags(), ValidatorFlagsOk);
     EXPECT_EQ(
-        contract.vars.val_execution(2).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE);
-    EXPECT_EQ(contract.vars.val_execution(1).commission().load().native(), 0);
-    EXPECT_EQ(contract.vars.val_execution(2).commission().load().native(), 0);
+        this->contract.vars.val_execution(2).get_flags(), ValidatorFlagsOk);
+
+    EXPECT_EQ(
+        this->contract.vars.this_epoch_view(1).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE);
+    EXPECT_EQ(
+        this->contract.vars.this_epoch_view(2).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE);
+
+    EXPECT_EQ(
+        this->contract.vars.val_execution(1).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE);
+    EXPECT_EQ(
+        this->contract.vars.val_execution(2).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE);
+    EXPECT_EQ(
+        this->contract.vars.val_execution(1).commission().load().native(), 0);
+    EXPECT_EQ(
+        this->contract.vars.val_execution(2).commission().load().native(), 0);
 }
 
-TEST_F(StakeLatest, add_validator_insufficent_balance)
+TYPED_TEST(StakeAllRevisions, add_validator_insufficent_balance)
 {
     auto const auth_address = 0xdeadbeef_address;
 
-    auto const val1 = add_validator(
+    auto const val1 = this->add_validator(
         auth_address,
-        MIN_VALIDATE_STAKE,
+        TestFixture::MIN_VALIDATE_STAKE,
         1 /* commission */,
         bytes32_t{0x1000});
     EXPECT_FALSE(val1.has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    auto val2 = add_validator(
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    auto val2 = this->add_validator(
         auth_address,
-        ACTIVE_VALIDATOR_STAKE - 1,
+        TestFixture::ACTIVE_VALIDATOR_STAKE - 1,
         2 /* commission */,
         bytes32_t{0x1001});
     EXPECT_FALSE(val2.has_error());
 
-    inc_epoch();
+    this->inc_epoch();
 
     EXPECT_EQ(
         StakingError::NotInValidatorSet,
-        syscall_reward(val1.value().sign_address).assume_error());
+        this->syscall_reward(val1.value().sign_address).assume_error());
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 0);
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 0);
     EXPECT_EQ(
-        contract.vars.val_execution(1).get_flags(), ValidatorFlagsStakeTooLow);
+        this->contract.vars.val_execution(1).get_flags(),
+        ValidatorFlagsStakeTooLow);
     EXPECT_EQ(
-        contract.vars.val_execution(2).get_flags(), ValidatorFlagsStakeTooLow);
+        this->contract.vars.val_execution(2).get_flags(),
+        ValidatorFlagsStakeTooLow);
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     EXPECT_EQ(
         StakingError::NotInValidatorSet,
-        syscall_reward(val2.value().sign_address).assume_error());
+        this->syscall_reward(val2.value().sign_address).assume_error());
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 0);
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 0);
 
     EXPECT_EQ(
-        contract.vars.val_execution(1).get_flags(), ValidatorFlagsStakeTooLow);
+        this->contract.vars.val_execution(1).get_flags(),
+        ValidatorFlagsStakeTooLow);
     EXPECT_EQ(
-        contract.vars.val_execution(2).get_flags(), ValidatorFlagsStakeTooLow);
+        this->contract.vars.val_execution(2).get_flags(),
+        ValidatorFlagsStakeTooLow);
     EXPECT_EQ(
-        contract.vars.val_execution(1).stake().load().native(),
-        MIN_VALIDATE_STAKE);
+        this->contract.vars.val_execution(1).stake().load().native(),
+        TestFixture::MIN_VALIDATE_STAKE);
     EXPECT_EQ(
-        contract.vars.val_execution(2).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE - 1);
-    EXPECT_EQ(contract.vars.val_execution(1).commission().load().native(), 1);
-    EXPECT_EQ(contract.vars.val_execution(2).commission().load().native(), 2);
+        this->contract.vars.val_execution(2).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE - 1);
+    EXPECT_EQ(
+        this->contract.vars.val_execution(1).commission().load().native(), 1);
+    EXPECT_EQ(
+        this->contract.vars.val_execution(2).commission().load().native(), 2);
 }
 
 TYPED_TEST(StakeAllRevisions, add_validator_active_stake_fork)
@@ -906,757 +994,903 @@ TYPED_TEST(StakeAllRevisions, add_validator_active_stake_fork)
 // validator tests
 /////////////////////
 
-TEST_F(StakeLatest, validator_delegate_before_active)
+TYPED_TEST(StakeAllRevisions, validator_delegate_before_active)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
 
-    auto const val1 =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto const val1 = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     EXPECT_FALSE(val1.has_error());
 
-    EXPECT_FALSE(delegate(val1.value().id, auth_address, ACTIVE_VALIDATOR_STAKE)
+    EXPECT_FALSE(this->delegate(
+                         val1.value().id,
+                         auth_address,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE)
                      .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    auto val2 =
-        add_validator(other_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
+    auto val2 = this->add_validator(
+        other_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
     EXPECT_FALSE(val2.has_error());
-    EXPECT_FALSE(delegate(val2.value().id, auth_address, ACTIVE_VALIDATOR_STAKE)
+    EXPECT_FALSE(this->delegate(
+                         val2.value().id,
+                         auth_address,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE)
                      .has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
+    this->inc_epoch();
+    this->skip_to_next_epoch();
 
     // check val info
     EXPECT_EQ(
-        contract.vars.val_execution(val1.value().id).get_flags(),
+        this->contract.vars.val_execution(val1.value().id).get_flags(),
         ValidatorFlagsOk);
     EXPECT_EQ(
-        contract.vars.val_execution(val1.value().id).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE + MIN_VALIDATE_STAKE);
+        this->contract.vars.val_execution(val1.value().id)
+            .stake()
+            .load()
+            .native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + TestFixture::MIN_VALIDATE_STAKE);
     EXPECT_EQ(
-        contract.vars.val_execution(val2.value().id).get_flags(),
+        this->contract.vars.val_execution(val2.value().id).get_flags(),
         ValidatorFlagsOk);
     EXPECT_EQ(
-        contract.vars.val_execution(val2.value().id).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE + MIN_VALIDATE_STAKE);
+        this->contract.vars.val_execution(val2.value().id)
+            .stake()
+            .load()
+            .native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + TestFixture::MIN_VALIDATE_STAKE);
 
     // check del
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val1.value(),
         auth_address,
-        ACTIVE_VALIDATOR_STAKE + MIN_VALIDATE_STAKE,
+        TestFixture::ACTIVE_VALIDATOR_STAKE + TestFixture::MIN_VALIDATE_STAKE,
         0);
-    check_delegator_c_state(
-        val2.value(), auth_address, ACTIVE_VALIDATOR_STAKE, 0);
-    check_delegator_c_state(val2.value(), other_address, MIN_VALIDATE_STAKE, 0);
+    this->check_delegator_c_state(
+        val2.value(), auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE, 0);
+    this->check_delegator_c_state(
+        val2.value(), other_address, TestFixture::MIN_VALIDATE_STAKE, 0);
 }
 
-TEST_F(StakeLatest, validator_undelegate_before_delegator_active)
+TYPED_TEST(StakeAllRevisions, validator_undelegate_before_delegator_active)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
 
-    auto const val1 =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto const val1 = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     EXPECT_FALSE(val1.has_error());
-    EXPECT_FALSE(delegate(val1.value().id, auth_address, MIN_VALIDATE_STAKE)
-                     .has_error());
+    EXPECT_FALSE(
+        this->delegate(
+                val1.value().id, auth_address, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
     EXPECT_EQ(
-        undelegate(val1.value().id, auth_address, 1, 50).assume_error(),
+        this->undelegate(val1.value().id, auth_address, 1, 50).assume_error(),
         StakingError::InsufficientStake);
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    auto val2 =
-        add_validator(other_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    auto val2 = this->add_validator(
+        other_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
     EXPECT_FALSE(val2.has_error());
-    EXPECT_FALSE(delegate(val2.value().id, auth_address, ACTIVE_VALIDATOR_STAKE)
+    EXPECT_FALSE(this->delegate(
+                         val2.value().id,
+                         auth_address,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE)
                      .has_error());
     EXPECT_EQ(
-        undelegate(val2.value().id, auth_address, 1, 50).assume_error(),
+        this->undelegate(val2.value().id, auth_address, 1, 50).assume_error(),
         StakingError::InsufficientStake);
 
-    inc_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(undelegate(val1.value().id, auth_address, 1, 50).has_error());
-    EXPECT_FALSE(undelegate(val2.value().id, auth_address, 1, 50).has_error());
+    EXPECT_FALSE(
+        this->undelegate(val1.value().id, auth_address, 1, 50).has_error());
+    EXPECT_FALSE(
+        this->undelegate(val2.value().id, auth_address, 1, 50).has_error());
 }
 
-TEST_F(StakeLatest, validator_compound_before_active)
+TYPED_TEST(StakeAllRevisions, validator_compound_before_active)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
 
-    auto res =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
     EXPECT_FALSE(
-        delegate(val1.id, auth_address, MIN_VALIDATE_STAKE).has_error());
-    EXPECT_FALSE(compound(val1.id, auth_address).has_error());
+        this->delegate(val1.id, auth_address, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
+    EXPECT_FALSE(this->compound(val1.id, auth_address).has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res =
-        add_validator(other_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
+    res = this->add_validator(
+        other_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
     EXPECT_FALSE(res.has_error());
     auto const val2 = res.value();
 
     EXPECT_FALSE(
-        delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
-    EXPECT_FALSE(compound(val2.id, auth_address).has_error());
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    EXPECT_FALSE(this->compound(val2.id, auth_address).has_error());
 
-    inc_epoch();
+    this->inc_epoch();
 
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     EXPECT_EQ(
-        contract.vars.val_execution(val1.id).get_flags(),
+        this->contract.vars.val_execution(val1.id).get_flags(),
         ValidatorFlagsStakeTooLow);
     EXPECT_EQ(
-        contract.vars.val_execution(val1.id).stake().load().native(),
-        MIN_VALIDATE_STAKE + MIN_VALIDATE_STAKE);
+        this->contract.vars.val_execution(val1.id).stake().load().native(),
+        TestFixture::MIN_VALIDATE_STAKE + TestFixture::MIN_VALIDATE_STAKE);
     EXPECT_EQ(
-        contract.vars.val_execution(val2.id).get_flags(), ValidatorFlagsOk);
+        this->contract.vars.val_execution(val2.id).get_flags(),
+        ValidatorFlagsOk);
     EXPECT_EQ(
-        contract.vars.val_execution(val2.id).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE + MIN_VALIDATE_STAKE);
+        this->contract.vars.val_execution(val2.id).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + TestFixture::MIN_VALIDATE_STAKE);
 
-    check_delegator_c_state(
-        val1, auth_address, MIN_VALIDATE_STAKE + MIN_VALIDATE_STAKE, 0);
-    check_delegator_c_state(val2, auth_address, ACTIVE_VALIDATOR_STAKE, 0);
-    check_delegator_c_state(val2, other_address, MIN_VALIDATE_STAKE, 0);
+    this->check_delegator_c_state(
+        val1,
+        auth_address,
+        TestFixture::MIN_VALIDATE_STAKE + TestFixture::MIN_VALIDATE_STAKE,
+        0);
+    this->check_delegator_c_state(
+        val2, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE, 0);
+    this->check_delegator_c_state(
+        val2, other_address, TestFixture::MIN_VALIDATE_STAKE, 0);
 }
 
-TEST_F(StakeLatest, validator_withdrawal_before_active)
+TYPED_TEST(StakeAllRevisions, validator_withdrawal_before_active)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
     uint8_t const withdrawal_id{1};
 
-    auto res =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
     EXPECT_FALSE(
-        delegate(val1.id, auth_address, MIN_VALIDATE_STAKE).has_error());
+        this->delegate(val1.id, auth_address, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
     EXPECT_EQ(
-        withdraw(val1.id, auth_address, withdrawal_id).assume_error(),
+        this->withdraw(val1.id, auth_address, withdrawal_id).assume_error(),
         StakingError::UnknownWithdrawalId);
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res =
-        add_validator(other_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
+    res = this->add_validator(
+        other_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.value();
 
     EXPECT_FALSE(
-        delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
     EXPECT_EQ(
-        withdraw(val2.id, auth_address, withdrawal_id).assume_error(),
+        this->withdraw(val2.id, auth_address, withdrawal_id).assume_error(),
         StakingError::UnknownWithdrawalId);
 
-    inc_epoch();
-    skip_to_next_epoch();
+    this->inc_epoch();
+    this->skip_to_next_epoch();
 
     // check validator info
     // check delegator info
     EXPECT_EQ(
-        withdraw(val1.id, auth_address, withdrawal_id).assume_error(),
+        this->withdraw(val1.id, auth_address, withdrawal_id).assume_error(),
         StakingError::UnknownWithdrawalId);
     EXPECT_EQ(
-        withdraw(val2.id, auth_address, withdrawal_id).assume_error(),
+        this->withdraw(val2.id, auth_address, withdrawal_id).assume_error(),
         StakingError::UnknownWithdrawalId);
 }
 
-TEST_F(StakeLatest, validator_joins_in_epoch_delay_period)
+TYPED_TEST(StakeAllRevisions, validator_joins_in_epoch_delay_period)
 {
     auto const auth_address = 0xdeadbeef_address;
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
-    inc_epoch();
+    this->inc_epoch();
 
     // validator should be active
-    skip_to_next_epoch();
-    ASSERT_EQ(contract.vars.valset_consensus.length(), 1);
-    EXPECT_EQ(contract.vars.valset_consensus.get(0).load(), val.id);
+    this->skip_to_next_epoch();
+    ASSERT_EQ(this->contract.vars.valset_consensus.length(), 1);
+    EXPECT_EQ(this->contract.vars.valset_consensus.get(0).load(), val.id);
 }
 
-TEST_F(StakeLatest, validator_undelegates_and_redelegates_in_epoch_delay_period)
+TYPED_TEST(
+    StakeAllRevisions,
+    validator_undelegates_and_redelegates_in_epoch_delay_period)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     // activate validator
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // undelegate everything, deactivating him
-    EXPECT_FALSE(undelegate(val.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
-    pull_delegator_up_to_date(val.id, auth_address);
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    this->pull_delegator_up_to_date(val.id, auth_address);
     EXPECT_EQ(
-        contract.vars.val_execution(val.id).get_flags(),
+        this->contract.vars.val_execution(val.id).get_flags(),
         ValidatorFlagWithdrawn | ValidatorFlagsStakeTooLow);
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    EXPECT_EQ(contract.vars.valset_consensus.length(), 0);
+    EXPECT_EQ(this->contract.vars.valset_consensus.length(), 0);
 
     // redelegate during boundary
     EXPECT_FALSE(
-        delegate(val.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
-    inc_epoch();
+        this->delegate(
+                val.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    this->inc_epoch();
 
     // next epoch, this validator should be reactivated
-    skip_to_next_epoch();
-    ASSERT_EQ(contract.vars.valset_consensus.length(), 1);
-    EXPECT_EQ(contract.vars.valset_consensus.get(0).load(), val.id);
+    this->skip_to_next_epoch();
+    ASSERT_EQ(this->contract.vars.valset_consensus.length(), 1);
+    EXPECT_EQ(this->contract.vars.valset_consensus.get(0).load(), val.id);
 }
 
-TEST_F(StakeLatest, validator_activation_via_delegate)
+TYPED_TEST(StakeAllRevisions, validator_activation_via_delegate)
 {
     auto const auth_address = 0xdeadbeef_address;
 
     // create, minimum amount of stake to be a validator, but less than the
     // amount required to be put in the valset.
-    auto const res = add_validator(auth_address, MIN_VALIDATE_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::MIN_VALIDATE_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_EQ(
-        contract.vars.val_execution(val.id).get_flags(),
+        this->contract.vars.val_execution(val.id).get_flags(),
         ValidatorFlagsStakeTooLow);
-    skip_to_next_epoch();
-    EXPECT_TRUE(contract.vars.this_epoch_valset().empty());
+    this->skip_to_next_epoch();
+    EXPECT_TRUE(this->contract.vars.this_epoch_valset().empty());
 
     // a delegator stakes enough to activate the validator
     EXPECT_FALSE(
-        delegate(val.id, 0xabab_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val.id, 0xabab_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
     EXPECT_EQ(
-        contract.vars.val_execution(val.id).get_flags(), ValidatorFlagsOk);
-    skip_to_next_epoch();
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 1);
+        this->contract.vars.val_execution(val.id).get_flags(),
+        ValidatorFlagsOk);
+    this->skip_to_next_epoch();
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 1);
 
     // undelegate, once again deactivating this validator
-    EXPECT_FALSE(undelegate(val.id, 0xabab_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, 0xabab_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
     EXPECT_EQ(
-        contract.vars.val_execution(val.id).get_flags(),
+        this->contract.vars.val_execution(val.id).get_flags(),
         ValidatorFlagsStakeTooLow);
-    skip_to_next_epoch();
-    EXPECT_TRUE(contract.vars.this_epoch_valset().empty());
+    this->skip_to_next_epoch();
+    EXPECT_TRUE(this->contract.vars.this_epoch_valset().empty());
 }
 
-TEST_F(StakeLatest, validator_multiple_delegations)
+TYPED_TEST(StakeAllRevisions, validator_multiple_delegations)
 { // epoch 1
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     // epoch 2
-    skip_to_next_epoch();
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    this->skip_to_next_epoch();
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    check_delegator_c_state(val, auth_address, ACTIVE_VALIDATOR_STAKE, REWARD);
+    this->check_delegator_c_state(
+        val, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE, REWARD);
 
     for (uint32_t i = 0; i < 1; ++i) {
         EXPECT_FALSE(
-            delegate(val.id, auth_address, MIN_VALIDATE_STAKE).has_error());
+            this->delegate(
+                    val.id, auth_address, TestFixture::MIN_VALIDATE_STAKE)
+                .has_error());
     }
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, 2 * REWARD);
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    this->check_delegator_c_state(
+        val, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE, 2 * REWARD);
     EXPECT_FALSE(
-        delegate(val.id, auth_address, MIN_VALIDATE_STAKE).has_error());
+        this->delegate(val.id, auth_address, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
 
     // epoch 3
-    inc_epoch();
+    this->inc_epoch();
 
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val,
         auth_address,
-        ACTIVE_VALIDATOR_STAKE + MIN_VALIDATE_STAKE,
+        TestFixture::ACTIVE_VALIDATOR_STAKE + TestFixture::MIN_VALIDATE_STAKE,
         2 * REWARD);
     // epoch 4
-    skip_to_next_epoch();
-    check_delegator_c_state(
+    this->skip_to_next_epoch();
+    this->check_delegator_c_state(
         val,
         auth_address,
-        ACTIVE_VALIDATOR_STAKE + 2 * MIN_VALIDATE_STAKE,
+        TestFixture::ACTIVE_VALIDATOR_STAKE +
+            2 * TestFixture::MIN_VALIDATE_STAKE,
         2 * REWARD);
 }
 
 // compound a validator before and after snapshot
-TEST_F(StakeLatest, validator_compound)
+TYPED_TEST(StakeAllRevisions, validator_compound)
 { // epoch 1
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     // epoch 2
-    skip_to_next_epoch();
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    this->skip_to_next_epoch();
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    check_delegator_c_state(val, auth_address, ACTIVE_VALIDATOR_STAKE, REWARD);
+    this->check_delegator_c_state(
+        val, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE, REWARD);
 
     for (uint32_t i = 0; i < 1; ++i) {
-        EXPECT_FALSE(compound(val.id, auth_address).has_error());
+        EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
     }
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    check_delegator_c_state(val, auth_address, ACTIVE_VALIDATOR_STAKE, REWARD);
+    this->check_delegator_c_state(
+        val, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE, REWARD);
 
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
 
     // epoch 3
-    inc_epoch();
+    this->inc_epoch();
 
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE + REWARD, 0);
+    this->check_delegator_c_state(
+        val, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE + REWARD, 0);
     // epoch 4
-    skip_to_next_epoch();
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE + 2 * REWARD, 0);
+    this->skip_to_next_epoch();
+    this->check_delegator_c_state(
+        val, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE + 2 * REWARD, 0);
 }
 
-TEST_F(StakeLatest, validator_undelegate)
+TYPED_TEST(StakeAllRevisions, validator_undelegate)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
     uint8_t const withdrawal_id{1};
 
-    auto res =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
     EXPECT_FALSE(
-        delegate(val1.id, auth_address, MIN_VALIDATE_STAKE).has_error());
+        this->delegate(val1.id, auth_address, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res =
-        add_validator(other_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
+    res = this->add_validator(
+        other_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.value();
 
     EXPECT_FALSE(
-        delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     EXPECT_FALSE(
-        undelegate(val1.id, auth_address, 1, MIN_VALIDATE_STAKE).has_error());
-    EXPECT_FALSE(
-        undelegate(val1.id, auth_address, 2, MIN_VALIDATE_STAKE).has_error());
-    EXPECT_FALSE(
-        undelegate(val2.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE / 2)
+        this->undelegate(
+                val1.id, auth_address, 1, TestFixture::MIN_VALIDATE_STAKE)
             .has_error());
     EXPECT_FALSE(
-        undelegate(val2.id, auth_address, 2, ACTIVE_VALIDATOR_STAKE / 2)
+        this->undelegate(
+                val1.id, auth_address, 2, TestFixture::MIN_VALIDATE_STAKE)
             .has_error());
+    EXPECT_FALSE(this->undelegate(
+                         val2.id,
+                         auth_address,
+                         1,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+                     .has_error());
+    EXPECT_FALSE(this->undelegate(
+                         val2.id,
+                         auth_address,
+                         2,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+                     .has_error());
     EXPECT_EQ(
-        contract.vars.val_execution(val1.id).get_flags(),
+        this->contract.vars.val_execution(val1.id).get_flags(),
         ValidatorFlagWithdrawn | ValidatorFlagsStakeTooLow);
 
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(withdraw(val1.id, auth_address, withdrawal_id).has_error());
-    EXPECT_FALSE(withdraw(val2.id, auth_address, withdrawal_id).has_error());
+    EXPECT_FALSE(
+        this->withdraw(val1.id, auth_address, withdrawal_id).has_error());
+    EXPECT_FALSE(
+        this->withdraw(val2.id, auth_address, withdrawal_id).has_error());
 
     // check val info
     EXPECT_EQ(
-        contract.vars.val_execution(val1.id).get_flags(),
+        this->contract.vars.val_execution(val1.id).get_flags(),
         ValidatorFlagWithdrawn | ValidatorFlagsStakeTooLow);
-    EXPECT_EQ(contract.vars.val_execution(val1.id).stake().load().native(), 0);
     EXPECT_EQ(
-        contract.vars.val_execution(val2.id).get_flags(),
+        this->contract.vars.val_execution(val1.id).stake().load().native(), 0);
+    EXPECT_EQ(
+        this->contract.vars.val_execution(val2.id).get_flags(),
         ValidatorFlagsStakeTooLow);
     EXPECT_EQ(
-        contract.vars.val_execution(val2.id).stake().load().native(),
-        MIN_VALIDATE_STAKE);
+        this->contract.vars.val_execution(val2.id).stake().load().native(),
+        TestFixture::MIN_VALIDATE_STAKE);
 
     // check del
-    check_delegator_c_state(val1, auth_address, 0, 0);
-    check_delegator_c_state(val2, auth_address, 0, 0);
-    check_delegator_c_state(val2, other_address, MIN_VALIDATE_STAKE, 0);
+    this->check_delegator_c_state(val1, auth_address, 0, 0);
+    this->check_delegator_c_state(val2, auth_address, 0, 0);
+    this->check_delegator_c_state(
+        val2, other_address, TestFixture::MIN_VALIDATE_STAKE, 0);
 }
 
-TEST_F(StakeLatest, validator_exit_via_validator)
+TYPED_TEST(StakeAllRevisions, validator_exit_via_validator)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
     uint8_t const withdrawal_id{1};
 
-    auto res =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
     EXPECT_FALSE(
-        delegate(val1.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val1.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res =
-        add_validator(other_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
+    res = this->add_validator(
+        other_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.value();
 
     EXPECT_FALSE(
-        delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(undelegate(
-                     val1.id,
-                     auth_address,
-                     1,
-                     ACTIVE_VALIDATOR_STAKE + MIN_VALIDATE_STAKE - 1)
+    EXPECT_FALSE(this->undelegate(
+                         val1.id,
+                         auth_address,
+                         1,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE +
+                             TestFixture::MIN_VALIDATE_STAKE - 1)
                      .has_error());
     EXPECT_FALSE(
-        undelegate(val2.id, other_address, 1, MIN_VALIDATE_STAKE).has_error());
+        this->undelegate(
+                val2.id, other_address, 1, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
 
-    EXPECT_FALSE(delegate(
-                     val1.id,
-                     auth_address,
-                     ACTIVE_VALIDATOR_STAKE + MIN_VALIDATE_STAKE - 1)
+    EXPECT_FALSE(this->delegate(
+                         val1.id,
+                         auth_address,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE +
+                             TestFixture::MIN_VALIDATE_STAKE - 1)
                      .has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 1);
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 1);
 
     EXPECT_FALSE(
-        delegate(val2.id, other_address, MIN_VALIDATE_STAKE).has_error());
+        this->delegate(val2.id, other_address, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 2);
-    skip_to_next_epoch();
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 2);
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(withdraw(val1.id, auth_address, withdrawal_id).has_error());
-    EXPECT_FALSE(withdraw(val2.id, other_address, withdrawal_id).has_error());
+    EXPECT_FALSE(
+        this->withdraw(val1.id, auth_address, withdrawal_id).has_error());
+    EXPECT_FALSE(
+        this->withdraw(val2.id, other_address, withdrawal_id).has_error());
 }
 
-TEST_F(StakeLatest, validator_exit_via_delegator)
+TYPED_TEST(StakeAllRevisions, validator_exit_via_delegator)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
     uint8_t const withdrawal_id{1};
 
-    auto res =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
     EXPECT_FALSE(
-        delegate(val1.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val1.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res =
-        add_validator(other_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
+    res = this->add_validator(
+        other_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.value();
 
     EXPECT_FALSE(
-        delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
-
-    EXPECT_FALSE(undelegate(val1.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
-    EXPECT_FALSE(undelegate(val2.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     EXPECT_FALSE(
-        delegate(val1.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
-
-    skip_to_next_epoch();
-
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 1);
+        this->undelegate(
+                val1.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    EXPECT_FALSE(
+        this->undelegate(
+                val2.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     EXPECT_FALSE(
-        delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val1.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 2);
-    skip_to_next_epoch();
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 1);
 
-    EXPECT_FALSE(withdraw(val1.id, auth_address, withdrawal_id).has_error());
-    EXPECT_FALSE(withdraw(val2.id, auth_address, withdrawal_id).has_error());
+    EXPECT_FALSE(
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+
+    this->skip_to_next_epoch();
+
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 2);
+    this->skip_to_next_epoch();
+
+    EXPECT_FALSE(
+        this->withdraw(val1.id, auth_address, withdrawal_id).has_error());
+    EXPECT_FALSE(
+        this->withdraw(val2.id, auth_address, withdrawal_id).has_error());
 }
 
 // this test uses hardcoded values to sanity check rounding errors and relies on
 // MONAD_FOUR active stake.
-TEST_F(StakeBeforeActiveValidatorStakeFork, validator_exit_multiple_delegations)
+TYPED_TEST(
+    StakeBeforeActiveValidatorStakeFork, validator_exit_multiple_delegations)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
-    EXPECT_EQ(get_balance(auth_address), 0);
+    EXPECT_EQ(this->get_balance(auth_address), 0);
 
-    auto res =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
-    EXPECT_FALSE(delegate(val1.id, auth_address, ACTIVE_VALIDATOR_STAKE / 2)
-                     .has_error());
+    EXPECT_FALSE(
+        this->delegate(
+                val1.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
 
-    EXPECT_FALSE(delegate(val1.id, auth_address, ACTIVE_VALIDATOR_STAKE / 2)
-                     .has_error());
+    EXPECT_FALSE(
+        this->delegate(
+                val1.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res =
-        add_validator(other_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
+    res = this->add_validator(
+        other_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.value();
 
-    EXPECT_FALSE(delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE / 2)
+    EXPECT_FALSE(
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
+
+    EXPECT_FALSE(
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
+
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 2);
+
+    EXPECT_FALSE(
+        this->undelegate(
+                val1.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    EXPECT_FALSE(
+        this->undelegate(
+                val2.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    EXPECT_FALSE(this->syscall_reward(val1.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val2.sign_address).has_error());
+
+    EXPECT_FALSE(this->delegate(
+                         val1.id,
+                         auth_address,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE -
+                             TestFixture::MIN_VALIDATE_STAKE - 1)
                      .has_error());
 
-    EXPECT_FALSE(delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE / 2)
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+
+    EXPECT_FALSE(this->delegate(
+                         val2.id,
+                         auth_address,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE -
+                             TestFixture::MIN_VALIDATE_STAKE - 1)
                      .has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 2);
+    this->inc_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(undelegate(val1.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
-    EXPECT_FALSE(undelegate(val2.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
-    EXPECT_FALSE(syscall_reward(val1.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val2.sign_address).has_error());
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 0);
 
-    EXPECT_FALSE(delegate(
-                     val1.id,
-                     auth_address,
-                     ACTIVE_VALIDATOR_STAKE - MIN_VALIDATE_STAKE - 1)
-                     .has_error());
-
-    EXPECT_FALSE(syscall_snapshot().has_error());
-
-    EXPECT_FALSE(delegate(
-                     val2.id,
-                     auth_address,
-                     ACTIVE_VALIDATOR_STAKE - MIN_VALIDATE_STAKE - 1)
-                     .has_error());
-
-    inc_epoch();
-    skip_to_next_epoch();
-
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 0);
-
-    EXPECT_EQ(get_balance(auth_address), 0);
-    EXPECT_FALSE(claim_rewards(val2.id, auth_address).has_error());
-    EXPECT_EQ(get_balance(auth_address), 0);
-    EXPECT_FALSE(withdraw(val2.id, auth_address, 1).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), 0);
+    EXPECT_FALSE(this->claim_rewards(val2.id, auth_address).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), 0);
+    EXPECT_FALSE(this->withdraw(val2.id, auth_address, 1).has_error());
     EXPECT_EQ(
-        get_balance(auth_address), ACTIVE_VALIDATOR_STAKE + 996015936254980079);
+        this->get_balance(auth_address),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + 996015936254980079);
 
-    EXPECT_FALSE(claim_rewards(val2.id, other_address).has_error());
-    EXPECT_EQ(get_balance(other_address), 3984063745019920);
+    EXPECT_FALSE(this->claim_rewards(val2.id, other_address).has_error());
+    EXPECT_EQ(this->get_balance(other_address), 3984063745019920);
 
-    EXPECT_FALSE(claim_rewards(val1.id, auth_address).has_error());
-    EXPECT_FALSE(withdraw(val1.id, auth_address, 1).has_error());
+    EXPECT_FALSE(this->claim_rewards(val1.id, auth_address).has_error());
+    EXPECT_FALSE(this->withdraw(val1.id, auth_address, 1).has_error());
     EXPECT_EQ(
-        get_balance(auth_address),
-        ACTIVE_VALIDATOR_STAKE + (REWARD - 1) + ACTIVE_VALIDATOR_STAKE +
-            996015936254980079);
+        this->get_balance(auth_address),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + (REWARD - 1) +
+            TestFixture::ACTIVE_VALIDATOR_STAKE + 996015936254980079);
 }
 
 // this test uses hardcoded values to sanity check rounding errors and relies on
 // MONAD_FOUR active stake.
-TEST_F(
+TYPED_TEST(
     StakeBeforeActiveValidatorStakeFork,
     validator_exit_multiple_delegations_full_withdrawal)
 {
     constexpr auto smaller_stake = 1'000'000 * MON;
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
-    EXPECT_EQ(get_balance(auth_address), 0);
+    EXPECT_EQ(this->get_balance(auth_address), 0);
 
-    auto res = add_validator(auth_address, smaller_stake, 0, bytes32_t{0x1000});
+    auto res =
+        this->add_validator(auth_address, smaller_stake, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
-    EXPECT_FALSE(delegate(val1.id, auth_address, ACTIVE_VALIDATOR_STAKE / 2)
-                     .has_error());
+    EXPECT_FALSE(
+        this->delegate(
+                val1.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
 
-    EXPECT_FALSE(delegate(val1.id, auth_address, ACTIVE_VALIDATOR_STAKE / 2)
-                     .has_error());
+    EXPECT_FALSE(
+        this->delegate(
+                val1.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res = add_validator(other_address, smaller_stake, 0, bytes32_t{0x1001});
+    res =
+        this->add_validator(other_address, smaller_stake, 0, bytes32_t{0x1001});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.value();
 
-    EXPECT_FALSE(delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE / 2)
-                     .has_error());
+    EXPECT_FALSE(
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
 
-    EXPECT_FALSE(delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE / 2)
-                     .has_error());
+    EXPECT_FALSE(
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 2);
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 2);
 
-    EXPECT_FALSE(undelegate(val1.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
+    EXPECT_FALSE(
+        this->undelegate(
+                val1.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    EXPECT_FALSE(syscall_reward(val1.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val2.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val1.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val2.sign_address).has_error());
 
-    EXPECT_FALSE(undelegate(val2.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
+    EXPECT_FALSE(
+        this->undelegate(
+                val2.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+
+    EXPECT_FALSE(
+        this->delegate(
+                val1.id,
+                auth_address,
+                TestFixture::ACTIVE_VALIDATOR_STAKE - smaller_stake - 1)
+            .has_error());
+
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+
+    EXPECT_FALSE(
+        this->delegate(
+                val2.id,
+                auth_address,
+                TestFixture::ACTIVE_VALIDATOR_STAKE - smaller_stake - 1)
+            .has_error());
+
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 0);
+
+    EXPECT_EQ(this->get_balance(auth_address), 0);
+    EXPECT_FALSE(this->claim_rewards(val2.id, auth_address).has_error());
+    EXPECT_FALSE(this->withdraw(val2.id, auth_address, 1).has_error());
+    EXPECT_EQ(
+        this->get_balance(auth_address),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + 961538461538461538);
+
+    EXPECT_FALSE(this->claim_rewards(val2.id, other_address).has_error());
+    EXPECT_EQ(this->get_balance(other_address), 38461538461538461);
+
+    EXPECT_FALSE(this->claim_rewards(val1.id, auth_address).has_error());
+    EXPECT_FALSE(this->withdraw(val1.id, auth_address, 1).has_error());
+    EXPECT_EQ(
+        this->get_balance(auth_address),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + (REWARD - 1) +
+            TestFixture::ACTIVE_VALIDATOR_STAKE + 961538461538461538);
+
+    this->check_delegator_c_state(
+        val1, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE - 1, 0);
+    this->check_delegator_c_state(
+        val2,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE - smaller_stake - 1,
+        0);
+    this->check_delegator_c_state(val2, other_address, smaller_stake, 0);
+
+    EXPECT_FALSE(this->undelegate(
+                         val1.id,
+                         auth_address,
+                         1,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE - 1)
                      .has_error());
 
     EXPECT_FALSE(
-        delegate(
-            val1.id, auth_address, ACTIVE_VALIDATOR_STAKE - smaller_stake - 1)
+        this->undelegate(
+                val2.id,
+                auth_address,
+                1,
+                TestFixture::ACTIVE_VALIDATOR_STAKE - smaller_stake - 1)
             .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(
-        delegate(
-            val2.id, auth_address, ACTIVE_VALIDATOR_STAKE - smaller_stake - 1)
-            .has_error());
+    EXPECT_FALSE(this->claim_rewards(val2.id, auth_address).has_error());
+    EXPECT_FALSE(this->withdraw(val2.id, auth_address, 1).has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
+    EXPECT_FALSE(this->claim_rewards(val2.id, other_address).has_error());
+    EXPECT_EQ(this->get_balance(other_address), 38461538461538461);
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 0);
-
-    EXPECT_EQ(get_balance(auth_address), 0);
-    EXPECT_FALSE(claim_rewards(val2.id, auth_address).has_error());
-    EXPECT_FALSE(withdraw(val2.id, auth_address, 1).has_error());
+    EXPECT_FALSE(this->claim_rewards(val1.id, auth_address).has_error());
+    EXPECT_FALSE(this->withdraw(val1.id, auth_address, 1).has_error());
     EXPECT_EQ(
-        get_balance(auth_address), ACTIVE_VALIDATOR_STAKE + 961538461538461538);
-
-    EXPECT_FALSE(claim_rewards(val2.id, other_address).has_error());
-    EXPECT_EQ(get_balance(other_address), 38461538461538461);
-
-    EXPECT_FALSE(claim_rewards(val1.id, auth_address).has_error());
-    EXPECT_FALSE(withdraw(val1.id, auth_address, 1).has_error());
-    EXPECT_EQ(
-        get_balance(auth_address),
-        ACTIVE_VALIDATOR_STAKE + (REWARD - 1) + ACTIVE_VALIDATOR_STAKE +
-            961538461538461538);
-
-    check_delegator_c_state(val1, auth_address, ACTIVE_VALIDATOR_STAKE - 1, 0);
-    check_delegator_c_state(
-        val2, auth_address, ACTIVE_VALIDATOR_STAKE - smaller_stake - 1, 0);
-    check_delegator_c_state(val2, other_address, smaller_stake, 0);
-
-    EXPECT_FALSE(
-        undelegate(val1.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE - 1)
-            .has_error());
-
-    EXPECT_FALSE(undelegate(
-                     val2.id,
-                     auth_address,
-                     1,
-                     ACTIVE_VALIDATOR_STAKE - smaller_stake - 1)
-                     .has_error());
-
-    skip_to_next_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
-
-    EXPECT_FALSE(claim_rewards(val2.id, auth_address).has_error());
-    EXPECT_FALSE(withdraw(val2.id, auth_address, 1).has_error());
-
-    EXPECT_FALSE(claim_rewards(val2.id, other_address).has_error());
-    EXPECT_EQ(get_balance(other_address), 38461538461538461);
-
-    EXPECT_FALSE(claim_rewards(val1.id, auth_address).has_error());
-    EXPECT_FALSE(withdraw(val1.id, auth_address, 1).has_error());
-    EXPECT_EQ(
-        get_balance(auth_address),
-        ACTIVE_VALIDATOR_STAKE + (REWARD - 1) + ACTIVE_VALIDATOR_STAKE +
-            961538461538461538 + ACTIVE_VALIDATOR_STAKE - 1 +
-            ACTIVE_VALIDATOR_STAKE - smaller_stake - 1);
+        this->get_balance(auth_address),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + (REWARD - 1) +
+            TestFixture::ACTIVE_VALIDATOR_STAKE + 961538461538461538 +
+            TestFixture::ACTIVE_VALIDATOR_STAKE - 1 +
+            TestFixture::ACTIVE_VALIDATOR_STAKE - smaller_stake - 1);
 }
 
-TEST_F(StakeLatest, validator_exit_claim_rewards)
+TYPED_TEST(StakeAllRevisions, validator_exit_claim_rewards)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
 
     constexpr auto smaller_stake = 1'000'000 * MON;
     constexpr auto larger_stake = 50'000'000 * MON;
-    auto res = add_validator(auth_address, smaller_stake, 0, bytes32_t{0x1000});
+    auto res =
+        this->add_validator(auth_address, smaller_stake, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
-    EXPECT_FALSE(delegate(val1.id, auth_address, larger_stake).has_error());
+    EXPECT_FALSE(
+        this->delegate(val1.id, auth_address, larger_stake).has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res = add_validator(other_address, smaller_stake, 0, bytes32_t{0x1001});
+    res =
+        this->add_validator(other_address, smaller_stake, 0, bytes32_t{0x1001});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.value();
 
-    EXPECT_FALSE(delegate(val2.id, auth_address, larger_stake).has_error());
+    EXPECT_FALSE(
+        this->delegate(val2.id, auth_address, larger_stake).has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val1.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val2.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val1.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val2.sign_address).has_error());
 
     EXPECT_FALSE(
-        undelegate(val1.id, auth_address, 1, larger_stake).has_error());
+        this->undelegate(val1.id, auth_address, 1, larger_stake).has_error());
     EXPECT_FALSE(
-        undelegate(val2.id, auth_address, 1, larger_stake).has_error());
+        this->undelegate(val2.id, auth_address, 1, larger_stake).has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 0);
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 0);
 
-    EXPECT_EQ(get_balance(auth_address), 0);
-    EXPECT_FALSE(claim_rewards(val1.id, auth_address).has_error());
-    EXPECT_EQ(get_balance(auth_address), REWARD - 1);
-    EXPECT_FALSE(claim_rewards(val2.id, auth_address).has_error());
-    EXPECT_EQ(get_balance(auth_address), 980392156862745098 + (REWARD - 1));
+    EXPECT_EQ(this->get_balance(auth_address), 0);
+    EXPECT_FALSE(this->claim_rewards(val1.id, auth_address).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), REWARD - 1);
+    EXPECT_FALSE(this->claim_rewards(val2.id, auth_address).has_error());
+    EXPECT_EQ(
+        this->get_balance(auth_address), 980392156862745098 + (REWARD - 1));
 
-    EXPECT_EQ(get_balance(other_address), 0);
-    EXPECT_FALSE(claim_rewards(val2.id, other_address).has_error());
-    EXPECT_EQ(get_balance(other_address), 19607843137254901);
+    EXPECT_EQ(this->get_balance(other_address), 0);
+    EXPECT_FALSE(this->claim_rewards(val2.id, other_address).has_error());
+    EXPECT_EQ(this->get_balance(other_address), 19607843137254901);
 }
 
-TEST_F(StakeLatest, validator_exit_compound)
+TYPED_TEST(StakeAllRevisions, validator_exit_compound)
 {
     constexpr auto smaller_stake = 1'000'000 * MON;
     constexpr auto larger_stake = 50'000'000 * MON;
@@ -1664,112 +1898,125 @@ TEST_F(StakeLatest, validator_exit_compound)
     auto const other_address = 0xdeaddead_address;
     auto const reward = 60 * MON;
 
-    auto res = add_validator(auth_address, smaller_stake, 0, bytes32_t{0x1000});
+    auto res =
+        this->add_validator(auth_address, smaller_stake, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
-    EXPECT_FALSE(delegate(val1.id, auth_address, larger_stake).has_error());
+    EXPECT_FALSE(
+        this->delegate(val1.id, auth_address, larger_stake).has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res = add_validator(other_address, smaller_stake, 0, bytes32_t{0x1001});
+    res =
+        this->add_validator(other_address, smaller_stake, 0, bytes32_t{0x1001});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.value();
 
-    EXPECT_FALSE(delegate(val2.id, auth_address, larger_stake).has_error());
+    EXPECT_FALSE(
+        this->delegate(val2.id, auth_address, larger_stake).has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val1.sign_address, reward).has_error());
-    EXPECT_FALSE(syscall_reward(val2.sign_address, reward).has_error());
+    EXPECT_FALSE(this->syscall_reward(val1.sign_address, reward).has_error());
+    EXPECT_FALSE(this->syscall_reward(val2.sign_address, reward).has_error());
 
-    EXPECT_FALSE(compound(val1.id, auth_address).has_error());
-    EXPECT_FALSE(compound(val2.id, auth_address).has_error());
-    EXPECT_FALSE(compound(val2.id, other_address).has_error());
+    EXPECT_FALSE(this->compound(val1.id, auth_address).has_error());
+    EXPECT_FALSE(this->compound(val2.id, auth_address).has_error());
+    EXPECT_FALSE(this->compound(val2.id, other_address).has_error());
 
     EXPECT_FALSE(
-        undelegate(val1.id, auth_address, 1, larger_stake).has_error());
+        this->undelegate(val1.id, auth_address, 1, larger_stake).has_error());
     EXPECT_FALSE(
-        undelegate(val2.id, auth_address, 1, larger_stake).has_error());
+        this->undelegate(val2.id, auth_address, 1, larger_stake).has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 0);
-    EXPECT_FALSE(claim_rewards(val1.id, auth_address).has_error());
-    EXPECT_FALSE(claim_rewards(val2.id, auth_address).has_error());
-    EXPECT_FALSE(claim_rewards(val2.id, other_address).has_error());
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 0);
+    EXPECT_FALSE(this->claim_rewards(val1.id, auth_address).has_error());
+    EXPECT_FALSE(this->claim_rewards(val2.id, auth_address).has_error());
+    EXPECT_FALSE(this->claim_rewards(val2.id, other_address).has_error());
 
-    EXPECT_EQ(get_balance(auth_address), 0);
-    EXPECT_EQ(get_balance(other_address), 0);
+    EXPECT_EQ(this->get_balance(auth_address), 0);
+    EXPECT_EQ(this->get_balance(other_address), 0);
 
     constexpr uint256_t expected_reward1 =
         1176470588235294117_u256; // 1/51 of the reward
     constexpr uint256_t expected_reward2 =
         58823529411764705882_u256; // 50/51 of the reward
     EXPECT_LE(expected_reward1 + expected_reward2, reward);
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val2,
         other_address,
         smaller_stake + expected_reward1,
         0); // didn't undelegate
 
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val2, auth_address, expected_reward2, 0); // undelegated
 
-    check_delegator_c_state(val1, auth_address, smaller_stake + reward - 1, 0);
+    this->check_delegator_c_state(
+        val1, auth_address, smaller_stake + reward - 1, 0);
 }
 
-TEST_F(StakeLatest, validator_removes_self)
+TYPED_TEST(StakeAllRevisions, validator_removes_self)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, MIN_VALIDATE_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::MIN_VALIDATE_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_FALSE(
-        delegate(val.id, 0xabab_address, ACTIVE_VALIDATOR_STAKE).has_error());
-    skip_to_next_epoch();
+        this->delegate(
+                val.id, 0xabab_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    this->skip_to_next_epoch();
 
     uint8_t withdrawal_id{1};
-    EXPECT_FALSE(
-        undelegate(val.id, auth_address, withdrawal_id, MIN_VALIDATE_STAKE)
-            .has_error());
+    EXPECT_FALSE(this->undelegate(
+                         val.id,
+                         auth_address,
+                         withdrawal_id,
+                         TestFixture::MIN_VALIDATE_STAKE)
+                     .has_error());
 
     // check execution state
-    auto val_execution = contract.vars.val_execution(val.id);
-    EXPECT_EQ(val_execution.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+    auto val_execution = this->contract.vars.val_execution(val.id);
+    EXPECT_EQ(
+        val_execution.stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE);
     // despite having enough stake to be active, the primary validator has
     // withdrawn, rendering the validator inactive
     EXPECT_TRUE(val_execution.get_flags() & ValidatorFlagWithdrawn);
 
     // validator can still be rewarded this epoch because he's active
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // take snapshot
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
     // execution view and consensus view should both show validator removed
-    EXPECT_EQ(contract.vars.valset_consensus.length(), 0);
+    EXPECT_EQ(this->contract.vars.valset_consensus.length(), 0);
     // validate snapshot view since the current epoch is ongoing.
-    EXPECT_EQ(contract.vars.valset_snapshot.length(), 1);
+    EXPECT_EQ(this->contract.vars.valset_snapshot.length(), 1);
     EXPECT_EQ(
-        contract.vars.snapshot_view(val.id).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE + MIN_VALIDATE_STAKE);
+        this->contract.vars.snapshot_view(val.id).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + TestFixture::MIN_VALIDATE_STAKE);
 
     // rewards now reference the snapshot set and should continue to work
     // for this validator
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    inc_epoch();
+    this->inc_epoch();
 
     // consensus view doesn't include this validator, and reward fails
     EXPECT_EQ(
-        syscall_reward(val.sign_address).assume_error(),
+        this->syscall_reward(val.sign_address).assume_error(),
         StakingError::NotInValidatorSet);
 }
 
-TEST_F(StakeLatest, two_validators_remove_self)
+TYPED_TEST(StakeAllRevisions, two_validators_remove_self)
 {
     auto compare_sets = [](StorageArray<u64_be> &state_valset,
                            std::vector<u64_be> &expected_valset) {
@@ -1784,18 +2031,18 @@ TEST_F(StakeLatest, two_validators_remove_self)
     auto const auth_address = 0xdeadbeef_address;
 
     for (uint32_t i = 0; i < 13; ++i) {
-        auto const res = add_validator(
+        auto const res = this->add_validator(
             auth_address,
-            ACTIVE_VALIDATOR_STAKE,
+            TestFixture::ACTIVE_VALIDATOR_STAKE,
             0 /* commission */,
             bytes32_t{i + 1});
         ASSERT_FALSE(res.has_error());
         expected_full_valset.push_back(res.value().id);
     }
 
-    compare_sets(contract.vars.valset_execution, expected_full_valset);
-    skip_to_next_epoch();
-    compare_sets(contract.vars.valset_consensus, expected_full_valset);
+    compare_sets(this->contract.vars.valset_execution, expected_full_valset);
+    this->skip_to_next_epoch();
+    compare_sets(this->contract.vars.valset_consensus, expected_full_valset);
 
     // remove validator 9 and validator 4
     auto expected_valset_with_undelegations = expected_full_valset;
@@ -1803,119 +2050,141 @@ TEST_F(StakeLatest, two_validators_remove_self)
         expected_valset_with_undelegations.begin() + 9);
     expected_valset_with_undelegations.erase(
         expected_valset_with_undelegations.begin() + 4);
-    EXPECT_FALSE(
-        undelegate(
-            expected_full_valset[9], auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-            .has_error());
-    EXPECT_FALSE(
-        undelegate(
-            expected_full_valset[4], auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-            .has_error());
+    EXPECT_FALSE(this->undelegate(
+                         expected_full_valset[9],
+                         auth_address,
+                         1,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    EXPECT_FALSE(this->undelegate(
+                         expected_full_valset[4],
+                         auth_address,
+                         1,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
     compare_sets(
-        contract.vars.valset_execution, expected_valset_with_undelegations);
+        this->contract.vars.valset_execution,
+        expected_valset_with_undelegations);
     compare_sets(
-        contract.vars.valset_consensus, expected_valset_with_undelegations);
+        this->contract.vars.valset_consensus,
+        expected_valset_with_undelegations);
 
-    EXPECT_FALSE(
-        delegate(expected_full_valset[4], auth_address, ACTIVE_VALIDATOR_STAKE)
-            .has_error());
-    EXPECT_FALSE(
-        delegate(expected_full_valset[9], auth_address, ACTIVE_VALIDATOR_STAKE)
-            .has_error());
-    compare_sets(contract.vars.valset_execution, expected_full_valset);
-    skip_to_next_epoch();
-    compare_sets(contract.vars.valset_consensus, expected_full_valset);
+    EXPECT_FALSE(this->delegate(
+                         expected_full_valset[4],
+                         auth_address,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    EXPECT_FALSE(this->delegate(
+                         expected_full_valset[9],
+                         auth_address,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    compare_sets(this->contract.vars.valset_execution, expected_full_valset);
+    this->skip_to_next_epoch();
+    compare_sets(this->contract.vars.valset_consensus, expected_full_valset);
 }
 
-TEST_F(StakeLatest, validator_constant_validator_set)
+TYPED_TEST(StakeAllRevisions, validator_constant_validator_set)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
 
-    auto res =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
 
     EXPECT_FALSE(
-        delegate(val1.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val1.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    res =
-        add_validator(other_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
+    res = this->add_validator(
+        other_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1001});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.value();
 
     EXPECT_FALSE(
-        delegate(val2.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val2.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     uint8_t withdrawal_id{1};
 
     for (int i = 0; i < 10; ++i) {
+        EXPECT_FALSE(this->undelegate(
+                             val1.id,
+                             auth_address,
+                             withdrawal_id,
+                             TestFixture::MIN_VALIDATE_STAKE + 1)
+                         .has_error());
+
+        EXPECT_FALSE(this->undelegate(
+                             val2.id,
+                             auth_address,
+                             withdrawal_id,
+                             TestFixture::MIN_VALIDATE_STAKE + 1)
+                         .has_error());
+
         EXPECT_FALSE(
-            undelegate(
-                val1.id, auth_address, withdrawal_id, MIN_VALIDATE_STAKE + 1)
+            this->delegate(
+                    val1.id, auth_address, TestFixture::MIN_VALIDATE_STAKE + 1)
                 .has_error());
 
         EXPECT_FALSE(
-            undelegate(
-                val2.id, auth_address, withdrawal_id, MIN_VALIDATE_STAKE + 1)
+            this->delegate(
+                    val2.id, auth_address, TestFixture::MIN_VALIDATE_STAKE + 1)
                 .has_error());
-
-        EXPECT_FALSE(delegate(val1.id, auth_address, MIN_VALIDATE_STAKE + 1)
-                         .has_error());
-
-        EXPECT_FALSE(delegate(val2.id, auth_address, MIN_VALIDATE_STAKE + 1)
-                         .has_error());
 
         ++withdrawal_id;
     }
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 2);
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 2);
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 2);
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 2);
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 2);
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 2);
 }
 
-TEST_F(StakeLatest, validator_joining_boundary_rewards)
+TYPED_TEST(StakeAllRevisions, validator_joining_boundary_rewards)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto res = add_validator(
+    auto res = this->add_validator(
         auth_address,
-        ACTIVE_VALIDATOR_STAKE,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
         0 /* commission */,
         bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.value();
-    ValResult val2{};
+    typename TestFixture::ValResult val2{};
 
     // add a new validator before adding the snapshot. simulate the case
     // when a malicous consensus client rewards themselves early. all other
     // nodes will not reward him, indicated by the BLOCK_AUTHOR_NOT_IN_SET
     // error code, producing a state root mismatch on that block.
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
     unsigned DELAY_WINDOW = 6000;
     for (unsigned i = 0; i < DELAY_WINDOW; ++i) {
         EXPECT_EQ(
             StakingError::NotInValidatorSet,
-            syscall_reward(val1.sign_address).assume_error());
+            this->syscall_reward(val1.sign_address).assume_error());
 
         if (i == (DELAY_WINDOW - 100)) {
-            res = add_validator(
+            res = this->add_validator(
                 auth_address,
-                ACTIVE_VALIDATOR_STAKE,
+                TestFixture::ACTIVE_VALIDATOR_STAKE,
                 0 /* commission */,
                 bytes32_t{0x1001});
             ASSERT_FALSE(res.has_error());
@@ -1926,96 +2195,107 @@ TEST_F(StakeLatest, validator_joining_boundary_rewards)
     // joined after the boundary, not active
     EXPECT_EQ(
         StakingError::NotInValidatorSet,
-        syscall_reward(val2.sign_address).assume_error());
-    inc_epoch();
+        this->syscall_reward(val2.sign_address).assume_error());
+    this->inc_epoch();
 
     // joined before the boundary, now active
-    EXPECT_FALSE(syscall_reward(val1.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val1.sign_address).has_error());
 }
 
 // consensus misses a snapshot, validator cant join
-TEST_F(StakeLatest, validator_miss_snapshot_miss_activation)
+TYPED_TEST(StakeAllRevisions, validator_miss_snapshot_miss_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(
+    auto const res = this->add_validator(
         auth_address,
-        ACTIVE_VALIDATOR_STAKE,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
         0 /* commission */,
         bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
 
-    inc_epoch();
+    this->inc_epoch();
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 0);
-    EXPECT_EQ(contract.vars.val_execution(1).get_flags(), ValidatorFlagsOk);
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 0);
+    EXPECT_EQ(
+        this->contract.vars.val_execution(1).get_flags(), ValidatorFlagsOk);
 
     EXPECT_EQ(
-        contract.vars.val_execution(1).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE);
-    EXPECT_EQ(contract.vars.val_execution(1).commission().load().native(), 0);
+        this->contract.vars.val_execution(1).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE);
+    EXPECT_EQ(
+        this->contract.vars.val_execution(1).commission().load().native(), 0);
 }
 
 // consensus misses a snapshot, validator cant leave
-TEST_F(StakeLatest, validator_miss_snapshot_miss_deactivation)
+TYPED_TEST(StakeAllRevisions, validator_miss_snapshot_miss_deactivation)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(undelegate(val.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    inc_epoch();
+    this->inc_epoch();
 
-    EXPECT_EQ(contract.vars.this_epoch_valset().length(), 1);
+    EXPECT_EQ(this->contract.vars.this_epoch_valset().length(), 1);
     EXPECT_EQ(
-        contract.vars.val_execution(1).get_flags(),
+        this->contract.vars.val_execution(1).get_flags(),
         ValidatorFlagWithdrawn | ValidatorFlagsStakeTooLow);
 
     EXPECT_EQ(
-        contract.vars.this_epoch_view(1).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE);
-    EXPECT_EQ(contract.vars.val_execution(1).stake().load().native(), 0);
+        this->contract.vars.this_epoch_view(1).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE);
+    EXPECT_EQ(this->contract.vars.val_execution(1).stake().load().native(), 0);
 }
 
-TEST_F(StakeLatest, validator_external_rewards_failure_conditions)
+TYPED_TEST(StakeAllRevisions, validator_external_rewards_failure_conditions)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     EXPECT_EQ(
-        external_reward(val.id, auth_address, 20 * MON).assume_error(),
+        this->external_reward(val.id, auth_address, 20 * MON).assume_error(),
         StakingError::NotInValidatorSet);
-    skip_to_next_epoch(); // validator in set
+    this->skip_to_next_epoch(); // validator in set
 
     EXPECT_EQ(
-        external_reward(20 /* val id */, auth_address, 20 * MON).assume_error(),
+        this->external_reward(20 /* val id */, auth_address, 20 * MON)
+            .assume_error(),
         StakingError::UnknownValidator);
 
     EXPECT_EQ(
-        external_reward(val.id, auth_address, 5).assume_error(),
+        this->external_reward(val.id, auth_address, 5).assume_error(),
         StakingError::ExternalRewardTooSmall);
     EXPECT_EQ(
-        external_reward(val.id, auth_address, MIN_EXTERNAL_REWARD - 1)
+        this->external_reward(
+                val.id, auth_address, TestFixture::MIN_EXTERNAL_REWARD - 1)
             .assume_error(),
         StakingError::ExternalRewardTooSmall);
 
     EXPECT_EQ(
-        external_reward(val.id, auth_address, MAX_EXTERNAL_REWARD + 1)
+        this->external_reward(
+                val.id, auth_address, TestFixture::MAX_EXTERNAL_REWARD + 1)
             .assume_error(),
         StakingError::ExternalRewardTooLarge);
 
-    EXPECT_FALSE(external_reward(val.id, auth_address, 20 * MON).has_error());
+    EXPECT_FALSE(
+        this->external_reward(val.id, auth_address, 20 * MON).has_error());
 }
 
-TEST_F(StakeLatest, validator_external_rewards_uniform_reward_pool)
+TYPED_TEST(StakeAllRevisions, validator_external_rewards_uniform_reward_pool)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
@@ -2028,17 +2308,19 @@ TEST_F(StakeLatest, validator_external_rewards_uniform_reward_pool)
     for (auto const &d : delegators) {
         if (d != auth_address) {
             EXPECT_FALSE(
-                delegate(val.id, d, ACTIVE_VALIDATOR_STAKE).has_error());
+                this->delegate(val.id, d, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                    .has_error());
         }
     }
-    skip_to_next_epoch(); // validator in set, all delegators active.
+    this->skip_to_next_epoch(); // validator in set, all delegators active.
 
     // external reward distributed uniformly
-    EXPECT_FALSE(external_reward(val.id, auth_address, 20 * MON).has_error());
+    EXPECT_FALSE(
+        this->external_reward(val.id, auth_address, 20 * MON).has_error());
     for (auto const &d : delegators) {
-        pull_delegator_up_to_date(val.id, d);
+        this->pull_delegator_up_to_date(val.id, d);
         EXPECT_EQ(
-            contract.vars.delegator(val.id, d).rewards().load().native(),
+            this->contract.vars.delegator(val.id, d).rewards().load().native(),
             4 * MON);
     }
 }
@@ -2047,177 +2329,197 @@ TEST_F(StakeLatest, validator_external_rewards_uniform_reward_pool)
 // delegate tests
 /////////////////////
 
-TEST_F(StakeLatest, delegator_none_init)
+TYPED_TEST(StakeAllRevisions, delegator_none_init)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const delegator = 1337_address;
 
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     // 1. call get_delegator_info()
-    check_delegator_zero(val.id, delegator);
+    this->check_delegator_zero(val.id, delegator);
 
     // 2. undelegate
     EXPECT_EQ(
-        undelegate(val.id, delegator, 1, 100).assume_error(),
+        this->undelegate(val.id, delegator, 1, 100).assume_error(),
         StakingError::InsufficientStake);
-    check_delegator_zero(val.id, delegator);
+    this->check_delegator_zero(val.id, delegator);
 
-    EXPECT_FALSE(undelegate(val.id, delegator, 1, 0).has_error());
-    check_delegator_zero(val.id, delegator);
+    EXPECT_FALSE(this->undelegate(val.id, delegator, 1, 0).has_error());
+    this->check_delegator_zero(val.id, delegator);
 
     // 3. withdraw
     EXPECT_EQ(
-        withdraw(val.id, delegator, 1).assume_error(),
+        this->withdraw(val.id, delegator, 1).assume_error(),
         StakingError::UnknownWithdrawalId);
-    check_delegator_zero(val.id, delegator);
+    this->check_delegator_zero(val.id, delegator);
 
     // 4. compound
-    EXPECT_FALSE(compound(val.id, delegator).has_error());
-    check_delegator_zero(val.id, delegator);
+    EXPECT_FALSE(this->compound(val.id, delegator).has_error());
+    this->check_delegator_zero(val.id, delegator);
 
     // 5. claim
-    EXPECT_FALSE(claim_rewards(val.id, delegator).has_error());
-    check_delegator_zero(val.id, delegator);
-    EXPECT_EQ(get_balance(delegator), 0);
+    EXPECT_FALSE(this->claim_rewards(val.id, delegator).has_error());
+    this->check_delegator_zero(val.id, delegator);
+    EXPECT_EQ(this->get_balance(delegator), 0);
 }
 
-TEST_F(StakeLatest, random_delegator_not_allocated_state)
+TYPED_TEST(StakeAllRevisions, random_delegator_not_allocated_state)
 {
     auto const auth_address = 0xdeadbeef_address;
 
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // state should not be allocated
-    check_delegator_zero(val.id, 0xaaaabbbb_address);
+    this->check_delegator_zero(val.id, 0xaaaabbbb_address);
 }
 
-TEST_F(StakeLatest, delegator_state_cleared_after_withdraw)
+TYPED_TEST(StakeAllRevisions, delegator_state_cleared_after_withdraw)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const delegator = 1337_address;
 
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_FALSE(
-        delegate(val.id, delegator, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(val.id, delegator, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // this causes del.acc to be nonzero
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // clear rewards slot
-    EXPECT_FALSE(claim_rewards(val.id, delegator).has_error());
+    EXPECT_FALSE(this->claim_rewards(val.id, delegator).has_error());
     // remove stake, setting del.acc to zero.
     EXPECT_FALSE(
-        undelegate(val.id, delegator, 1, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->undelegate(
+                val.id, delegator, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     // state should be deallocated
-    check_delegator_zero(val.id, delegator);
+    this->check_delegator_zero(val.id, delegator);
 
     // just to be sure, let's redelegate again
     EXPECT_FALSE(
-        delegate(val.id, delegator, ACTIVE_VALIDATOR_STAKE).has_error());
-    skip_to_next_epoch();
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    pull_delegator_up_to_date(val.id, delegator);
-    pull_delegator_up_to_date(val.id, auth_address);
+        this->delegate(val.id, delegator, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    this->skip_to_next_epoch();
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    this->pull_delegator_up_to_date(val.id, delegator);
+    this->pull_delegator_up_to_date(val.id, auth_address);
 
     // check stake and rewards make sense
-    auto del = contract.vars.delegator(val.id, delegator);
-    EXPECT_EQ(del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+    auto del = this->contract.vars.delegator(val.id, delegator);
+    EXPECT_EQ(del.stake().load().native(), TestFixture::ACTIVE_VALIDATOR_STAKE);
     EXPECT_GT(del.rewards().load().native(), 0);
     EXPECT_GT(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         del.rewards().load().native());
 }
 
-TEST_F(StakeLatest, delegate_noop_add_zero_stake)
+TYPED_TEST(StakeAllRevisions, delegate_noop_add_zero_stake)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_EQ(
-        ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
-    skip_to_next_epoch();
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
+    this->skip_to_next_epoch();
 
     auto const d0 = 0xaaaabbbb_address;
-    EXPECT_FALSE(delegate(val.id, d0, 0).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, 0).has_error());
 
-    skip_to_next_epoch();
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    this->skip_to_next_epoch();
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD);
 }
 
-TEST_F(StakeLatest, delegate_noop_subsequent_zero_stake)
+TYPED_TEST(StakeAllRevisions, delegate_noop_subsequent_zero_stake)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const d0 = 0xaaaabbbb_address;
 
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
     EXPECT_EQ(
-        2 * ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
+        2 * TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // reward the validator.
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // validator should receive all the reward being the only active
     // delegator.
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD + REWARD / 2);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d0).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(),
         REWARD + REWARD / 2);
 
-    EXPECT_FALSE(delegate(val.id, d0, 0).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, 0).has_error());
 
-    ASSERT_FALSE(syscall_snapshot().has_error());
+    ASSERT_FALSE(this->syscall_snapshot().has_error());
 
-    EXPECT_FALSE(delegate(val.id, d0, 0).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, 0).has_error());
 
     {
-        auto del = contract.vars.delegator(val.id, d0);
+        auto del = this->contract.vars.delegator(val.id, d0);
 
         EXPECT_EQ(del.rewards().load().native(), REWARD + REWARD / 2);
-        EXPECT_EQ(del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        EXPECT_EQ(
+            del.stake().load().native(), TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(del.delta_stake().load().native(), 0);
         EXPECT_EQ(del.next_delta_stake().load().native(), 0);
         EXPECT_EQ(del.get_delta_epoch().native(), 0);
@@ -2225,52 +2527,60 @@ TEST_F(StakeLatest, delegate_noop_subsequent_zero_stake)
     }
 }
 
-TEST_F(StakeLatest, delegate_revert_unknown_validator)
+TYPED_TEST(StakeAllRevisions, delegate_revert_unknown_validator)
 {
     auto const d0 = 0xaaaabbbb_address;
     EXPECT_EQ(
-        delegate(3, d0, ACTIVE_VALIDATOR_STAKE).assume_error(),
+        this->delegate(3, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .assume_error(),
         StakingError::UnknownValidator);
 }
 
-TEST_F(StakeLatest, delegate_init)
+TYPED_TEST(StakeAllRevisions, delegate_init)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_EQ(
-        ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
 
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
-    ASSERT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
-    inc_epoch();
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    ASSERT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    this->inc_epoch();
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD / 3);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d0).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(),
         REWARD / 3);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d1).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d1).rewards().load().native(),
         REWARD / 3);
 
     {
-        auto del = contract.vars.delegator(val.id, d0);
+        auto del = this->contract.vars.delegator(val.id, d0);
 
-        EXPECT_EQ(del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        EXPECT_EQ(
+            del.stake().load().native(), TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(del.delta_stake().load().native(), 0);
         EXPECT_EQ(del.next_delta_stake().load().native(), 0);
         EXPECT_EQ(del.get_delta_epoch().native(), 0);
@@ -2278,9 +2588,10 @@ TEST_F(StakeLatest, delegate_init)
     }
 
     {
-        auto del = contract.vars.delegator(val.id, d1);
+        auto del = this->contract.vars.delegator(val.id, d1);
 
-        EXPECT_EQ(del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        EXPECT_EQ(
+            del.stake().load().native(), TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(del.delta_stake().load().native(), 0);
         EXPECT_EQ(del.next_delta_stake().load().native(), 0);
         EXPECT_EQ(del.get_delta_epoch().native(), 0);
@@ -2288,219 +2599,266 @@ TEST_F(StakeLatest, delegate_init)
     }
 }
 
-TEST_F(StakeLatest, delegate_redelegate_before_activation)
+TYPED_TEST(StakeAllRevisions, delegate_redelegate_before_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const other_address = 0xdeaddead_address;
 
-    auto const res = add_validator(
-        auth_address, ACTIVE_VALIDATOR_STAKE, 0, bytes32_t{0x1000});
+    auto const res = this->add_validator(
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        0,
+        bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(2, val.id)
+        this->contract.vars.accumulated_reward_per_token(2, val.id)
             .load()
             .refcount.native(),
         1);
 
     EXPECT_FALSE(
-        delegate(val.id, other_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val.id, other_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(2, val.id)
+        this->contract.vars.accumulated_reward_per_token(2, val.id)
             .load()
             .refcount.native(),
         2);
 
     EXPECT_FALSE(
-        delegate(val.id, other_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val.id, other_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(2, val.id)
+        this->contract.vars.accumulated_reward_per_token(2, val.id)
             .load()
             .refcount.native(),
         2);
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
     EXPECT_FALSE(
-        delegate(val.id, other_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val.id, other_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(3, val.id)
+        this->contract.vars.accumulated_reward_per_token(3, val.id)
             .load()
             .refcount.native(),
         1);
 
     EXPECT_FALSE(
-        delegate(val.id, other_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val.id, other_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(3, val.id)
+        this->contract.vars.accumulated_reward_per_token(3, val.id)
             .load()
             .refcount.native(),
         1);
 
-    inc_epoch();
+    this->inc_epoch();
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(2, val.id)
+        this->contract.vars.accumulated_reward_per_token(2, val.id)
             .load()
             .refcount.native(),
         1);
 
-    pull_delegator_up_to_date(val.id, other_address);
+    this->pull_delegator_up_to_date(val.id, other_address);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(2, val.id)
+        this->contract.vars.accumulated_reward_per_token(2, val.id)
             .load()
             .refcount.native(),
         0);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD / 3);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, other_address)
+        this->contract.vars.delegator(val.id, other_address)
             .rewards()
             .load()
             .native(),
         2 * REWARD / 3);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(2, val.id)
+        this->contract.vars.accumulated_reward_per_token(2, val.id)
             .load()
             .refcount.native(),
         0);
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, other_address);
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, other_address);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD / 3 + REWARD / 5);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, other_address)
+        this->contract.vars.delegator(val.id, other_address)
             .rewards()
             .load()
             .native(),
         2 * REWARD / 3 + (4 * REWARD / 5));
 
-    EXPECT_FALSE(contract.vars.accumulated_reward_per_token(2, val.id)
+    EXPECT_FALSE(this->contract.vars.accumulated_reward_per_token(2, val.id)
                      .load_checked()
                      .has_value());
-    EXPECT_FALSE(contract.vars.accumulated_reward_per_token(3, val.id)
+    EXPECT_FALSE(this->contract.vars.accumulated_reward_per_token(3, val.id)
                      .load_checked()
                      .has_value());
 }
 
-TEST_F(StakeLatest, delegate_redelegate_after_activation)
+TYPED_TEST(StakeAllRevisions, delegate_redelegate_after_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_EQ(
-        ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
-    skip_to_next_epoch();
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
+    this->skip_to_next_epoch();
 
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE / 2).has_error());
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE / 2).has_error());
+    EXPECT_FALSE(
+        this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
+    EXPECT_FALSE(
+        this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE / 2).has_error());
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE / 2).has_error());
+    EXPECT_FALSE(
+        this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
+    EXPECT_FALSE(
+        this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+            .has_error());
 
     EXPECT_EQ(
-        3 * ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
+        3 * TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
 
     // reward the validator.
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         0);
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    auto acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    auto acc =
+        this->contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 1);
 
     auto acc_boundary =
-        contract.vars.accumulated_reward_per_token(4, val.id).load();
+        this->contract.vars.accumulated_reward_per_token(4, val.id).load();
     EXPECT_EQ(acc_boundary.value.native(), 0);
     EXPECT_EQ(acc_boundary.refcount.native(), 1);
 
-    inc_epoch();
+    this->inc_epoch();
 
     // validator should receive all the reward being the only active
     // delegator.
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD * 3);
 
     // calling touch again should be a no-op
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD * 3);
 
     // secondary delegators were not active and should receive nothing.
-    EXPECT_EQ(contract.vars.delegator(val.id, d0).rewards().load().native(), 0);
-    EXPECT_EQ(contract.vars.delegator(val.id, d1).rewards().load().native(), 0);
+    EXPECT_EQ(
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(), 0);
+    EXPECT_EQ(
+        this->contract.vars.delegator(val.id, d1).rewards().load().native(), 0);
 
     // reward again with only 1 active delegator
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD * 3 + REWARD / 2);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d0).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(),
         REWARD / 2);
-    EXPECT_EQ(contract.vars.delegator(val.id, d1).rewards().load().native(), 0);
+    EXPECT_EQ(
+        this->contract.vars.delegator(val.id, d1).rewards().load().native(), 0);
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD * 3 + REWARD / 2 + REWARD / 3);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d0).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(),
         REWARD / 2 + REWARD / 3);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d1).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d1).rewards().load().native(),
         REWARD / 3);
 
-    acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 
-    acc_boundary = contract.vars.accumulated_reward_per_token(4, val.id).load();
+    acc_boundary =
+        this->contract.vars.accumulated_reward_per_token(4, val.id).load();
     EXPECT_EQ(acc_boundary.value.native(), 0);
     EXPECT_EQ(acc_boundary.refcount.native(), 0);
 
     {
-        auto del = contract.vars.delegator(val.id, d0);
+        auto del = this->contract.vars.delegator(val.id, d0);
 
-        EXPECT_EQ(del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        EXPECT_EQ(
+            del.stake().load().native(), TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(del.delta_stake().load().native(), 0);
         EXPECT_EQ(del.next_delta_stake().load().native(), 0);
         EXPECT_EQ(del.get_delta_epoch().native(), 0);
@@ -2508,9 +2866,10 @@ TEST_F(StakeLatest, delegate_redelegate_after_activation)
     }
 
     {
-        auto del = contract.vars.delegator(val.id, d1);
+        auto del = this->contract.vars.delegator(val.id, d1);
 
-        EXPECT_EQ(del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        EXPECT_EQ(
+            del.stake().load().native(), TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(del.delta_stake().load().native(), 0);
         EXPECT_EQ(del.next_delta_stake().load().native(), 0);
         EXPECT_EQ(del.get_delta_epoch().native(), 0);
@@ -2518,78 +2877,89 @@ TEST_F(StakeLatest, delegate_redelegate_after_activation)
     }
 }
 
-TEST_F(StakeLatest, delegate_undelegate_withdraw_redelegate)
+TYPED_TEST(StakeAllRevisions, delegate_undelegate_withdraw_redelegate)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_EQ(
-        ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
-    skip_to_next_epoch();
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
+    this->skip_to_next_epoch();
 
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
     // reward the validator.
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    inc_epoch();
+    this->inc_epoch();
 
     // reward again with only 1 active delegator
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD * 3 + REWARD / 2 + REWARD / 3);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d0).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(),
         REWARD / 2 + REWARD / 3);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d1).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d1).rewards().load().native(),
         REWARD / 3);
 
-    auto acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    auto acc =
+        this->contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 
     auto acc_boundary =
-        contract.vars.accumulated_reward_per_token(4, val.id).load();
+        this->contract.vars.accumulated_reward_per_token(4, val.id).load();
     EXPECT_EQ(acc_boundary.value.native(), 0);
     EXPECT_EQ(acc_boundary.refcount.native(), 0);
 
     uint8_t const withdrawal_id{1};
-    EXPECT_FALSE(undelegate(val.id, d0, withdrawal_id, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(undelegate(val.id, d1, withdrawal_id, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, d0, withdrawal_id, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, d1, withdrawal_id, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    inc_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->inc_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(withdraw(val.id, d0, withdrawal_id).has_error());
-    EXPECT_FALSE(withdraw(val.id, d1, withdrawal_id).has_error());
+    EXPECT_FALSE(this->withdraw(val.id, d0, withdrawal_id).has_error());
+    EXPECT_FALSE(this->withdraw(val.id, d1, withdrawal_id).has_error());
 
     {
-        auto del = contract.vars.delegator(val.id, d0);
+        auto del = this->contract.vars.delegator(val.id, d0);
 
         EXPECT_EQ(del.stake().load().native(), 0);
         EXPECT_EQ(del.delta_stake().load().native(), 0);
@@ -2599,7 +2969,7 @@ TEST_F(StakeLatest, delegate_undelegate_withdraw_redelegate)
     }
 
     {
-        auto del = contract.vars.delegator(val.id, d1);
+        auto del = this->contract.vars.delegator(val.id, d1);
 
         EXPECT_EQ(del.stake().load().native(), 0);
         EXPECT_EQ(del.delta_stake().load().native(), 0);
@@ -2608,179 +2978,196 @@ TEST_F(StakeLatest, delegate_undelegate_withdraw_redelegate)
         EXPECT_EQ(del.get_next_delta_epoch().native(), 0);
     }
 
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
     {
-        auto del = contract.vars.delegator(val.id, d0);
+        auto del = this->contract.vars.delegator(val.id, d0);
 
         EXPECT_EQ(del.stake().load().native(), 0);
-        EXPECT_EQ(del.delta_stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        EXPECT_EQ(
+            del.delta_stake().load().native(),
+            TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(del.next_delta_stake().load().native(), 0);
         EXPECT_EQ(del.get_delta_epoch().native(), 8);
         EXPECT_EQ(del.get_next_delta_epoch().native(), 0);
     }
 
     {
-        auto del = contract.vars.delegator(val.id, d1);
+        auto del = this->contract.vars.delegator(val.id, d1);
 
         EXPECT_EQ(del.stake().load().native(), 0);
         EXPECT_EQ(del.delta_stake().load().native(), 0);
         EXPECT_EQ(
-            del.next_delta_stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+            del.next_delta_stake().load().native(),
+            TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(del.get_delta_epoch().native(), 0);
         EXPECT_EQ(del.get_next_delta_epoch().native(), 9);
     }
 }
 
-TEST_F(StakeLatest, delegator_delegates_in_epoch_delay_period)
+TYPED_TEST(StakeAllRevisions, delegator_delegates_in_epoch_delay_period)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     auto const del_address = 0xaaaabbbb_address;
     EXPECT_FALSE(
-        delegate(val.id, del_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(val.id, del_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     // take snapshot and reward during the window. delegator *should not*
     // receive rewards.
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
     unsigned DELAY_WINDOW = 6000;
 
     for (unsigned i = 0; i < DELAY_WINDOW; ++i) {
         EXPECT_EQ(
-            contract.vars.this_epoch_view(val.id).stake().load().native(),
-            ACTIVE_VALIDATOR_STAKE);
+            this->contract.vars.this_epoch_view(val.id).stake().load().native(),
+            TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(
-            contract.vars.val_execution(val.id).stake().load().native(),
-            ACTIVE_VALIDATOR_STAKE * 2);
-        EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+            this->contract.vars.val_execution(val.id).stake().load().native(),
+            TestFixture::ACTIVE_VALIDATOR_STAKE * 2);
+        EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
     }
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, del_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, del_address);
 
     // validator should get all the rewards since the secondary delegator
     // does not become active in the consensus view until after the window
     // expires.
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD * DELAY_WINDOW);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, del_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, del_address)
+            .rewards()
+            .load()
+            .native(),
         0);
 }
 
-TEST_F(StakeLatest, delegate_redelegation_refcount_before_activation)
+TYPED_TEST(StakeAllRevisions, delegate_redelegation_refcount_before_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     // do a bunch of redelegations before snapshot
     for (int i = 0; i < 20; ++i) {
-        EXPECT_FALSE(delegate(val.id, auth_address, MON).has_error());
+        EXPECT_FALSE(this->delegate(val.id, auth_address, MON).has_error());
     }
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
     // and some more in the snapshot
     for (int i = 0; i < 20; ++i) {
-        EXPECT_FALSE(delegate(val.id, auth_address, MON).has_error());
+        EXPECT_FALSE(this->delegate(val.id, auth_address, MON).has_error());
     }
-    inc_epoch();
+    this->inc_epoch();
 
-    auto acc = contract.vars.accumulated_reward_per_token(2, val.id).load();
+    auto acc =
+        this->contract.vars.accumulated_reward_per_token(2, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 1);
 
-    acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 1);
 
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
 
-    acc = contract.vars.accumulated_reward_per_token(2, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(2, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 
-    acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 1);
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    inc_epoch();
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    this->inc_epoch();
 
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
 
-    acc = contract.vars.accumulated_reward_per_token(2, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(2, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 
-    acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 }
 
-TEST_F(StakeLatest, delegate_redelegation_refcount_after_activation)
+TYPED_TEST(StakeAllRevisions, delegate_redelegation_refcount_after_activation)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    inc_epoch();
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    this->inc_epoch();
 
     // do a bunch of redelegations before snapshot
     for (int i = 0; i < 20; ++i) {
-        EXPECT_FALSE(delegate(val.id, auth_address, MON).has_error());
+        EXPECT_FALSE(this->delegate(val.id, auth_address, MON).has_error());
     }
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
     // and some more in the snapshot
     for (int i = 0; i < 20; ++i) {
-        EXPECT_FALSE(delegate(val.id, auth_address, MON).has_error());
+        EXPECT_FALSE(this->delegate(val.id, auth_address, MON).has_error());
     }
 
-    auto acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    auto acc =
+        this->contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 1);
 
-    acc = contract.vars.accumulated_reward_per_token(4, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(4, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 1);
 
-    inc_epoch();
+    this->inc_epoch();
 
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
 
-    acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 
-    acc = contract.vars.accumulated_reward_per_token(4, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(4, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 1);
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    inc_epoch();
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    this->inc_epoch();
 
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
 
-    acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 
-    acc = contract.vars.accumulated_reward_per_token(4, val.id).load();
+    acc = this->contract.vars.accumulated_reward_per_token(4, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 }
@@ -2792,207 +3179,216 @@ TEST_F(StakeLatest, delegate_redelegation_refcount_after_activation)
 // zero
 // 3. delegator join in different snapshot window as validator and acc is
 // non zero
-TEST_F(StakeLatest, delegator_epoch_accumulator_same_snapshot)
+TYPED_TEST(StakeAllRevisions, delegator_epoch_accumulator_same_snapshot)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     // add 2 delegators in same snapshot window
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    inc_epoch();
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    this->inc_epoch();
 
     // 3 delegators become active. Therefore ref count should be 3 and acc
     // is 0
     EXPECT_EQ(
         0,
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .value.native());
     EXPECT_EQ(
         3,
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .refcount.native());
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     // acc and ref should be empty now
     EXPECT_EQ(
         0,
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .value.native());
     EXPECT_EQ(
         0,
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .refcount.native());
 }
 
-TEST_F(StakeLatest, delegator_epoch_accumulator_diff_snapshot)
+TYPED_TEST(StakeAllRevisions, delegator_epoch_accumulator_diff_snapshot)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
     // add 2 delegators in different snapshot window
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
-    inc_epoch();
+    this->inc_epoch();
 
     // 1 delegators become active. Therefore ref count should be 1 and acc
     // is 0
     EXPECT_EQ(
         0,
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .value.native());
     EXPECT_EQ(
         1,
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .refcount.native());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    inc_epoch();
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    this->inc_epoch();
 
     // 2 delegators become active. Therefore ref count should be 2 and acc
     // is 0 since no rewards
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .value.native(),
         0);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .refcount.native(),
         2);
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     // acc and ref should be empty now for both epochs
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .value.native(),
         0);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .refcount.native(),
         0);
 
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .value.native(),
         0);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .refcount.native(),
         0);
 }
 
-TEST_F(StakeLatest, delegator_epoch_nz_accumulator_diff_snapshot)
+TYPED_TEST(StakeAllRevisions, delegator_epoch_nz_accumulator_diff_snapshot)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
     // add 2 delegators in different snapshot window
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
-    inc_epoch();
+    this->inc_epoch();
 
     // 1 delegators become active. Therefore ref count should be 1 and acc
     // is 0
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .value.native(),
         0);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .refcount.native(),
         1);
 
     // validator is rewarded. next acc is nonzero.
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    inc_epoch();
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    this->inc_epoch();
 
     // 2 delegators become active. Therefore ref count should be 2 and acc
     // is nonzero
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .value.native(),
-        (REWARD * UNIT_BIAS) / ACTIVE_VALIDATOR_STAKE);
+        (REWARD * UNIT_BIAS) / TestFixture::ACTIVE_VALIDATOR_STAKE);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .refcount.native(),
         2);
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     // acc and ref should be empty now for both epochs
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .value.native(),
         0);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{2}, val.id)
             .load()
             .refcount.native(),
         0);
 
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .value.native(),
         0);
     EXPECT_EQ(
-        contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
+        this->contract.vars.accumulated_reward_per_token(u64_be{3}, val.id)
             .load()
             .refcount.native(),
         0);
     {
-        auto del = contract.vars.delegator(val.id, d0);
+        auto del = this->contract.vars.delegator(val.id, d0);
         EXPECT_GT(del.accumulated_reward_per_token().load().native(), 0);
     }
 }
 
-TEST_F(StakeLatest, validator_exit_delegator_boundary_nz_accumulator)
+TYPED_TEST(StakeAllRevisions, validator_exit_delegator_boundary_nz_accumulator)
 {
     // Scenario:
     // Add a validator in epoch N. Validator is active in epoch N+1.  During the
@@ -3002,45 +3398,50 @@ TEST_F(StakeLatest, validator_exit_delegator_boundary_nz_accumulator)
     // accumulator.
     auto const auth_address = 0xdeadbeef_address;
     auto del = 0xaaaabbbb_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
     // reward validator so his accumulator is nonzero
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(undelegate(val.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     // add delegator in the boundary
     // he greedily sets his future accumulator to val.acc
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(delegate(val.id, del, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(
+        this->delegate(val.id, del, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     // reward the validator in the boundary, so the greedy accumulator for N+2
     // is now stale.
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // goto epoch N+1. delegator is not active until N+2
-    inc_epoch();
+    this->inc_epoch();
 
-    EXPECT_TRUE(contract.vars.valset_execution.empty());
-    check_delegator_c_state(val, del, 0, 0);
+    EXPECT_TRUE(this->contract.vars.valset_execution.empty());
+    this->check_delegator_c_state(val, del, 0, 0);
 
     // goto epoch N+2
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // load accumulators
-    auto const epoch_acc =
-        contract.vars
-            .accumulated_reward_per_token(contract.vars.epoch.load(), val.id)
-            .load();
+    auto const epoch_acc = this->contract.vars
+                               .accumulated_reward_per_token(
+                                   this->contract.vars.epoch.load(), val.id)
+                               .load();
     EXPECT_EQ(epoch_acc.refcount.native(), 1);
-    auto const val_acc = contract.vars.val_execution(val.id)
+    auto const val_acc = this->contract.vars.val_execution(val.id)
                              .accumulated_reward_per_token()
                              .load()
                              .native();
@@ -3048,33 +3449,34 @@ TEST_F(StakeLatest, validator_exit_delegator_boundary_nz_accumulator)
     EXPECT_EQ(val_acc, epoch_acc.value.native());
 }
 
-TEST_F(StakeLatest, snapshot_set_same_order_as_consensus_set)
+TYPED_TEST(StakeAllRevisions, snapshot_set_same_order_as_consensus_set)
 {
     // Add five validators
     auto const auth_address = 0xdeadbeef_address;
     for (uint64_t i = 0; i < 5; ++i) {
-        auto const res = add_validator(
+        auto const res = this->add_validator(
             auth_address,
-            ACTIVE_VALIDATOR_STAKE,
+            TestFixture::ACTIVE_VALIDATOR_STAKE,
             0 /* commission */,
             bytes32_t{i + 1} /* unique keys*/);
         EXPECT_FALSE(res.has_error());
     }
 
     // validators join the consensus set
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // consensus set copied to snapshot set. they should be the same now
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // sets should be the same with ids in order.
     EXPECT_EQ(
-        contract.vars.valset_consensus.length(),
-        contract.vars.valset_snapshot.length());
-    for (uint64_t i = 0; i < contract.vars.valset_consensus.length(); ++i) {
+        this->contract.vars.valset_consensus.length(),
+        this->contract.vars.valset_snapshot.length());
+    for (uint64_t i = 0; i < this->contract.vars.valset_consensus.length();
+         ++i) {
         EXPECT_EQ(
-            contract.vars.valset_consensus.get(i).load().native(),
-            contract.vars.valset_snapshot.get(i).load().native());
+            this->contract.vars.valset_consensus.get(i).load().native(),
+            this->contract.vars.valset_snapshot.get(i).load().native());
     }
 }
 
@@ -3082,224 +3484,253 @@ TEST_F(StakeLatest, snapshot_set_same_order_as_consensus_set)
 // compound / redelegate tests
 /////////////////////
 
-TEST_F(StakeLatest, delegate_inter_compound_rewards)
+TYPED_TEST(StakeAllRevisions, delegate_inter_compound_rewards)
 { // epoch 1 - add validator and 2 delegators
     auto const auth_address = 0xdeadbeef_address;
     auto const reward_decimal_rounding = 999999999999999999;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_EQ(
-        contract.vars.val_execution(val.id).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE);
+        this->contract.vars.val_execution(val.id).stake().load().native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE);
 
     // add 2 delegators
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
     EXPECT_EQ(
-        2 * ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+        2 * TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
     EXPECT_EQ(
-        3 * ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
+        3 * TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
     // epoch 2 - 3 block reward. this should be split evenly.
 
     // auth account should get 1/3 of all rewards this epoch
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // auth account should get 2/4 rewards at next epoch
     EXPECT_FALSE(
-        delegate(val.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     // other delegators should get 1/3 of all rewards this epoch
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     EXPECT_EQ(
-        4 * ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
+        4 * TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
 
     // decimal inaccuracy. off by 1 wei
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         reward_decimal_rounding);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d0).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(),
         reward_decimal_rounding);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d1).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d1).rewards().load().native(),
         reward_decimal_rounding);
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
     // epoch 3 - 6 block reward. this should be 1/2 validator, 1/4 to each
     // delegator.
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // delegator rewards should be p*(accumulated_reward_per_token(epoch) -
     // accumulated_reward_per_token(del)) + p + r
     // *(accumulated_reward_per_token(curr) -
     // accumulated_reward_per_token(epoch))
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         2 * reward_decimal_rounding + REWARD / 2 + REWARD);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d0).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(),
         2 * reward_decimal_rounding + 3 * REWARD / 4);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d1).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d1).rewards().load().native(),
         2 * reward_decimal_rounding + 3 * REWARD / 4);
 }
 
-TEST_F(StakeLatest, delegate_intra_compound_rewards)
+TYPED_TEST(StakeAllRevisions, delegate_intra_compound_rewards)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const reward_decimal_rounding = 999999999999999999;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     EXPECT_EQ(
-        ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
 
     // add 2 delegators
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
     EXPECT_EQ(
-        contract.vars.val_execution(val.id).stake().load().native(),
-        2 * ACTIVE_VALIDATOR_STAKE);
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->contract.vars.val_execution(val.id).stake().load().native(),
+        2 * TestFixture::ACTIVE_VALIDATOR_STAKE);
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
     EXPECT_EQ(
-        contract.vars.val_execution(val.id).stake().load().native(),
-        3 * ACTIVE_VALIDATOR_STAKE);
+        this->contract.vars.val_execution(val.id).stake().load().native(),
+        3 * TestFixture::ACTIVE_VALIDATOR_STAKE);
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // auth account should get 1/3 of all rewards this epoch
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // auth account should get 2/4 rewards at next epoch
     EXPECT_FALSE(
-        delegate(val.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     // other delegators should get 1/3 of all rewards this epoch
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     EXPECT_EQ(
-        contract.vars.val_execution(val.id).stake().load().native(),
-        4 * ACTIVE_VALIDATOR_STAKE);
+        this->contract.vars.val_execution(val.id).stake().load().native(),
+        4 * TestFixture::ACTIVE_VALIDATOR_STAKE);
 
     // decimal inaccuracy. off by 1 wei
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         reward_decimal_rounding);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d0).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(),
         reward_decimal_rounding);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d1).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d1).rewards().load().native(),
         reward_decimal_rounding);
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // auth account should get 3/5 rewards at next epoch
     // other delegators should get 1/5 of all rewards next epoch
     EXPECT_FALSE(
-        delegate(val.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
+        this->delegate(
+                val.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         2 * reward_decimal_rounding + 9 * REWARD / 5);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d0).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d0).rewards().load().native(),
         2 * reward_decimal_rounding + 3 * REWARD / 5);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, d1).rewards().load().native(),
+        this->contract.vars.delegator(val.id, d1).rewards().load().native(),
         2 * reward_decimal_rounding + 3 * REWARD / 5);
 }
 
-TEST_F(StakeLatest, delegate_compound_boundary)
+TYPED_TEST(StakeAllRevisions, delegate_compound_boundary)
 {
     // Epoch 1 - Add validator
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // Epoch 2 - validator gets reward and compounds it in snapshot
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 
     for (uint32_t i = 0; i < 1; ++i) {
-        EXPECT_FALSE(compound(val.id, auth_address).has_error());
-        auto del = contract.vars.delegator(val.id, auth_address);
+        EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
+        auto del = this->contract.vars.delegator(val.id, auth_address);
         EXPECT_EQ(del.rewards().load().native(), 0);
-        EXPECT_EQ(del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        EXPECT_EQ(
+            del.stake().load().native(), TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(del.next_delta_stake().load().native(), REWARD);
         EXPECT_EQ(del.get_next_delta_epoch().native(), 4);
     }
 
-    inc_epoch();
+    this->inc_epoch();
 
     // Epoch 3 - validator compounds touchs state
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
     {
-        auto del = contract.vars.delegator(val.id, auth_address);
+        auto del = this->contract.vars.delegator(val.id, auth_address);
         EXPECT_EQ(del.rewards().load().native(), 0);
-        EXPECT_EQ(del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        EXPECT_EQ(
+            del.stake().load().native(), TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(del.delta_stake().load().native(), REWARD);
         EXPECT_EQ(del.next_delta_stake().load().native(), 0);
         EXPECT_EQ(del.get_delta_epoch().native(), 4);
         EXPECT_EQ(del.get_next_delta_epoch().native(), 0);
     }
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // Epoch 4 - Compound rewards should take effect now.
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
     {
-        auto del = contract.vars.delegator(val.id, auth_address);
+        auto del = this->contract.vars.delegator(val.id, auth_address);
 
         EXPECT_EQ(del.rewards().load().native(), 0);
-        EXPECT_EQ(del.stake().load().native(), ACTIVE_VALIDATOR_STAKE + REWARD);
+        EXPECT_EQ(
+            del.stake().load().native(),
+            TestFixture::ACTIVE_VALIDATOR_STAKE + REWARD);
         EXPECT_EQ(del.delta_stake().load().native(), 0);
         EXPECT_EQ(del.next_delta_stake().load().native(), 0);
         EXPECT_EQ(del.get_delta_epoch().native(), 0);
@@ -3308,10 +3739,11 @@ TEST_F(StakeLatest, delegate_compound_boundary)
 }
 
 // compound delegators before and after snapshots
-TEST_F(StakeLatest, delegate_compound)
+TYPED_TEST(StakeAllRevisions, delegate_compound)
 { // epoch 1
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     auto const reward = 50 * MON;
@@ -3320,307 +3752,375 @@ TEST_F(StakeLatest, delegate_compound)
     auto const d1 = 0xbbbbaaaa_address;
     auto const d2 = 0xbbbbaaaabbbb_address;
 
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
-    EXPECT_FALSE(delegate(val.id, d2, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    EXPECT_FALSE(this->delegate(val.id, d2, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
     EXPECT_EQ(
-        4 * ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
-    skip_to_next_epoch();
+        4 * TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
+    this->skip_to_next_epoch();
 
     // epoch 2
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
 
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
-
-    check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
-
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-
-    EXPECT_FALSE(compound(val.id, d0).has_error());
-
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
-
-    check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 2));
-
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-
-    EXPECT_FALSE(compound(val.id, d1).has_error());
-
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
-
-    check_delegator_c_state(
-        val, d2, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
-
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-
-    EXPECT_FALSE(compound(val.id, d2).has_error());
-
-    EXPECT_FALSE(syscall_snapshot().has_error());
-
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
-
-    check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
-
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-
-    EXPECT_FALSE(compound(val.id, d0).has_error());
-
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
-
-    check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
-
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-
-    EXPECT_FALSE(compound(val.id, d1).has_error());
-
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
-
-    check_delegator_c_state(
-        val, d2, ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
-
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-
-    EXPECT_FALSE(compound(val.id, d2).has_error());
-
-    inc_epoch();
-
-    // Epoch 3 - compound reward is now active
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 3), 0);
-
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val,
-        d0,
-        ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 1),
-        ((reward / 4) * 2));
-
-    check_delegator_c_state(
-        val,
-        d1,
-        ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 2),
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
         ((reward / 4) * 1));
 
-    check_delegator_c_state(
-        val, d2, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 3), 0);
+    this->check_delegator_c_state(
+        val, d0, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 1));
 
-    EXPECT_FALSE(compound(val.id, d0).has_error());
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->compound(val.id, d0).has_error());
 
-    EXPECT_FALSE(compound(val.id, d1).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
 
-    inc_epoch();
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, d0);
-    pull_delegator_up_to_date(val.id, d1);
-    pull_delegator_up_to_date(val.id, d2);
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        ((reward / 4) * 1));
 
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
-    check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
-    check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 5), 0);
-    check_delegator_c_state(
-        val, d2, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
+    this->check_delegator_c_state(
+        val, d1, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 2));
 
-    skip_to_next_epoch();
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
 
-    check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
+    EXPECT_FALSE(this->compound(val.id, d1).has_error());
+
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        ((reward / 4) * 1));
+
+    this->check_delegator_c_state(
+        val, d2, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
+
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
+
+    EXPECT_FALSE(this->compound(val.id, d2).has_error());
+
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        ((reward / 4) * 1));
+
+    this->check_delegator_c_state(
+        val, d0, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
+
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
+
+    EXPECT_FALSE(this->compound(val.id, d0).has_error());
+
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        ((reward / 4) * 1));
+
+    this->check_delegator_c_state(
+        val, d1, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
+
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
+
+    EXPECT_FALSE(this->compound(val.id, d1).has_error());
+
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        ((reward / 4) * 1));
+
+    this->check_delegator_c_state(
+        val, d2, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 4) * 3));
+
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
+
+    EXPECT_FALSE(this->compound(val.id, d2).has_error());
+
+    this->inc_epoch();
+
+    // Epoch 3 - compound reward is now active
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 3),
+        0);
+
+    this->check_delegator_c_state(
+        val,
+        d0,
+        TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 1),
+        ((reward / 4) * 2));
+
+    this->check_delegator_c_state(
+        val,
+        d1,
+        TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 2),
+        ((reward / 4) * 1));
+
+    this->check_delegator_c_state(
+        val, d2, TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 3), 0);
+
+    EXPECT_FALSE(this->compound(val.id, d0).has_error());
+
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+
+    EXPECT_FALSE(this->compound(val.id, d1).has_error());
+
+    this->inc_epoch();
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, d0);
+    this->pull_delegator_up_to_date(val.id, d1);
+    this->pull_delegator_up_to_date(val.id, d2);
+
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6),
+        0);
+    this->check_delegator_c_state(
+        val, d0, TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
+    this->check_delegator_c_state(
+        val, d1, TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 5), 0);
+    this->check_delegator_c_state(
+        val, d2, TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
+
+    this->skip_to_next_epoch();
+
+    this->check_delegator_c_state(
+        val, d1, TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 4) * 6), 0);
 }
 
 // compound delegators before and after snapshots then withdraw, val remains
 // active
-TEST_F(StakeLatest, undelegate_compound)
+TYPED_TEST(StakeAllRevisions, undelegate_compound)
 {
     auto const reward = 10 * MON;
     auto const auth_address = 0xdeadbeef_address;
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
     EXPECT_EQ(
-        3 * ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
-    skip_to_next_epoch();
+        3 * TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
+    this->skip_to_next_epoch();
 
     // epoch 2
 
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
 
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
-    check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
-    check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        ((reward / 3) * 2));
+    this->check_delegator_c_state(
+        val, d0, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
+    this->check_delegator_c_state(
+        val, d1, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
 
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-    EXPECT_FALSE(compound(val.id, d0).has_error());
-    EXPECT_FALSE(compound(val.id, d1).has_error());
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
+    EXPECT_FALSE(this->compound(val.id, d0).has_error());
+    EXPECT_FALSE(this->compound(val.id, d1).has_error());
 
     uint8_t const withdrawal_id{1};
 
-    EXPECT_FALSE(undelegate(val.id, d0, withdrawal_id, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
-    check_delegator_c_state(val, d0, 0, 0);
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, d0, withdrawal_id, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    this->check_delegator_c_state(val, d0, 0, 0);
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 1));
-    check_delegator_c_state(val, d0, 0, 0);
-
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-    EXPECT_FALSE(compound(val.id, d0).has_error());
-    EXPECT_FALSE(compound(val.id, d1).has_error());
-    EXPECT_FALSE(undelegate(val.id, d1, withdrawal_id, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
-
-    check_delegator_c_state(val, d1, 0, 0);
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-
-    inc_epoch();
-    // Epoch 3
-    check_delegator_c_state(
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+    this->check_delegator_c_state(
         val,
         auth_address,
-        ACTIVE_VALIDATOR_STAKE + ((reward / 3) * 2),
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        ((reward / 3) * 1));
+    this->check_delegator_c_state(val, d0, 0, 0);
+
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
+    EXPECT_FALSE(this->compound(val.id, d0).has_error());
+    EXPECT_FALSE(this->compound(val.id, d1).has_error());
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, d1, withdrawal_id, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+
+    this->check_delegator_c_state(val, d1, 0, 0);
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+
+    this->inc_epoch();
+    // Epoch 3
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 3) * 2),
         (reward / 3));
 
-    check_delegator_c_state(val, d0, ((reward / 3) * 2), 0);
-    check_delegator_c_state(val, d1, ((reward / 3) * 2), 0);
+    this->check_delegator_c_state(val, d0, ((reward / 3) * 2), 0);
+    this->check_delegator_c_state(val, d1, ((reward / 3) * 2), 0);
 
-    skip_to_next_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(withdraw(val.id, d0, withdrawal_id).has_error());
-    EXPECT_FALSE(withdraw(val.id, d1, withdrawal_id).has_error());
-    EXPECT_EQ(get_balance(d0), ACTIVE_VALIDATOR_STAKE + ((reward / 3) * 2));
-    EXPECT_EQ(get_balance(d1), ACTIVE_VALIDATOR_STAKE + ((reward / 3)));
+    EXPECT_FALSE(this->withdraw(val.id, d0, withdrawal_id).has_error());
+    EXPECT_FALSE(this->withdraw(val.id, d1, withdrawal_id).has_error());
+    EXPECT_EQ(
+        this->get_balance(d0),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 3) * 2));
+    EXPECT_EQ(
+        this->get_balance(d1),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 3)));
 }
 
-TEST_F(StakeLatest, undelegate_compound_partial)
+TYPED_TEST(StakeAllRevisions, undelegate_compound_partial)
 {
     auto const reward = 10 * MON;
     auto const auth_address = 0xdeadbeef_address;
     auto const d0 = 0xaaaabbbb_address;
     auto const d1 = 0xbbbbaaaa_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
-    EXPECT_FALSE(delegate(val.id, d0, ACTIVE_VALIDATOR_STAKE).has_error());
-    EXPECT_FALSE(delegate(val.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val.id, d0, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
+    EXPECT_FALSE(this->delegate(val.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
     EXPECT_EQ(
-        3 * ACTIVE_VALIDATOR_STAKE,
-        contract.vars.val_execution(val.id).stake().load().native());
-    skip_to_next_epoch();
+        3 * TestFixture::ACTIVE_VALIDATOR_STAKE,
+        this->contract.vars.val_execution(val.id).stake().load().native());
+    this->skip_to_next_epoch();
 
     // epoch 2
 
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
 
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
-    check_delegator_c_state(
-        val, d0, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
-    check_delegator_c_state(
-        val, d1, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
-
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-    EXPECT_FALSE(compound(val.id, d0).has_error());
-    EXPECT_FALSE(compound(val.id, d1).has_error());
-
-    uint8_t const withdrawal_id{1};
-    EXPECT_FALSE(
-        undelegate(val.id, d0, withdrawal_id, ACTIVE_VALIDATOR_STAKE / 2)
-            .has_error());
-    check_delegator_c_state(val, d0, ACTIVE_VALIDATOR_STAKE / 2, 0);
-
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-
-    check_delegator_c_state(
-        val, auth_address, ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 1));
-    check_delegator_c_state(val, d0, ACTIVE_VALIDATOR_STAKE / 2, (reward / 6));
-
-    EXPECT_FALSE(compound(val.id, auth_address).has_error());
-    EXPECT_FALSE(compound(val.id, d0).has_error());
-    EXPECT_FALSE(compound(val.id, d1).has_error());
-    EXPECT_FALSE(
-        undelegate(val.id, d1, withdrawal_id, ACTIVE_VALIDATOR_STAKE / 2)
-            .has_error());
-    check_delegator_c_state(val, d1, ACTIVE_VALIDATOR_STAKE / 2, 0);
-    EXPECT_FALSE(syscall_reward(val.sign_address, reward).has_error());
-
-    inc_epoch();
-    // Epoch 3
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val,
         auth_address,
-        ACTIVE_VALIDATOR_STAKE + ((reward / 3) * 2),
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        ((reward / 3) * 2));
+    this->check_delegator_c_state(
+        val, d0, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
+    this->check_delegator_c_state(
+        val, d1, TestFixture::ACTIVE_VALIDATOR_STAKE, ((reward / 3) * 2));
+
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
+    EXPECT_FALSE(this->compound(val.id, d0).has_error());
+    EXPECT_FALSE(this->compound(val.id, d1).has_error());
+
+    uint8_t const withdrawal_id{1};
+    EXPECT_FALSE(this->undelegate(
+                         val.id,
+                         d0,
+                         withdrawal_id,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+                     .has_error());
+    this->check_delegator_c_state(
+        val, d0, TestFixture::ACTIVE_VALIDATOR_STAKE / 2, 0);
+
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE,
+        ((reward / 3) * 1));
+    this->check_delegator_c_state(
+        val, d0, TestFixture::ACTIVE_VALIDATOR_STAKE / 2, (reward / 6));
+
+    EXPECT_FALSE(this->compound(val.id, auth_address).has_error());
+    EXPECT_FALSE(this->compound(val.id, d0).has_error());
+    EXPECT_FALSE(this->compound(val.id, d1).has_error());
+    EXPECT_FALSE(this->undelegate(
+                         val.id,
+                         d1,
+                         withdrawal_id,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE / 2)
+                     .has_error());
+    this->check_delegator_c_state(
+        val, d1, TestFixture::ACTIVE_VALIDATOR_STAKE / 2, 0);
+    EXPECT_FALSE(this->syscall_reward(val.sign_address, reward).has_error());
+
+    this->inc_epoch();
+    // Epoch 3
+    this->check_delegator_c_state(
+        val,
+        auth_address,
+        TestFixture::ACTIVE_VALIDATOR_STAKE + ((reward / 3) * 2),
         (reward / 3));
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val,
         d0,
-        ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2),
+        TestFixture::ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2),
         ((reward / 6)));
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val,
         d1,
-        ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2),
+        TestFixture::ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2),
         ((reward / 6)));
 
-    skip_to_next_epoch();
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(withdraw(val.id, d0, withdrawal_id).has_error());
-    EXPECT_FALSE(withdraw(val.id, d1, withdrawal_id).has_error());
-    EXPECT_EQ(get_balance(d0), ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3)));
-    EXPECT_EQ(get_balance(d1), ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 6)));
+    EXPECT_FALSE(this->withdraw(val.id, d0, withdrawal_id).has_error());
+    EXPECT_FALSE(this->withdraw(val.id, d1, withdrawal_id).has_error());
+    EXPECT_EQ(
+        this->get_balance(d0),
+        TestFixture::ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3)));
+    EXPECT_EQ(
+        this->get_balance(d1),
+        TestFixture::ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 6)));
 
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val,
         d0,
-        ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2) + ((reward / 6)),
+        TestFixture::ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2) +
+            ((reward / 6)),
         ((reward / 6)));
-    check_delegator_c_state(
+    this->check_delegator_c_state(
         val,
         d1,
-        ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2) + ((reward / 3)),
+        TestFixture::ACTIVE_VALIDATOR_STAKE / 2 + ((reward / 3) * 2) +
+            ((reward / 3)),
         (reward / 6));
 }
 
@@ -3628,289 +4128,354 @@ TEST_F(StakeLatest, undelegate_compound_partial)
 // undelegate tests
 /////////////////////
 
-TEST_F(StakeLatest, undelegate_revert_insufficent_funds)
+TYPED_TEST(StakeAllRevisions, undelegate_revert_insufficent_funds)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const del_address = 0xaaaabbbb_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_FALSE(
-        delegate(val.id, del_address, ACTIVE_VALIDATOR_STAKE).has_error());
-    skip_to_next_epoch();
+        this->delegate(val.id, del_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    this->skip_to_next_epoch();
 
     uint8_t const withdrawal_id{1};
     EXPECT_EQ(
-        undelegate(
-            val.id, del_address, withdrawal_id, 1 + ACTIVE_VALIDATOR_STAKE)
+        this->undelegate(
+                val.id,
+                del_address,
+                withdrawal_id,
+                1 + TestFixture::ACTIVE_VALIDATOR_STAKE)
             .assume_error(),
         StakingError::InsufficientStake);
 
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).stake().load().native(),
-        ACTIVE_VALIDATOR_STAKE);
+        this->contract.vars.delegator(val.id, auth_address)
+            .stake()
+            .load()
+            .native(),
+        TestFixture::ACTIVE_VALIDATOR_STAKE);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         0);
 
-    EXPECT_EQ(get_balance(del_address), 0);
+    EXPECT_EQ(this->get_balance(del_address), 0);
 }
 
-TEST_F(StakeLatest, undelegate_boundary_pool)
+TYPED_TEST(StakeAllRevisions, undelegate_boundary_pool)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const del_address = 0xaaaabbbb_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
     EXPECT_FALSE(
-        delegate(val.id, del_address, ACTIVE_VALIDATOR_STAKE).has_error());
-    skip_to_next_epoch();
+        this->delegate(val.id, del_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    this->skip_to_next_epoch();
 
     // undelegate this epoch
     uint8_t const withdrawal_id{1};
-    EXPECT_FALSE(
-        undelegate(val.id, del_address, withdrawal_id, ACTIVE_VALIDATOR_STAKE)
-            .has_error());
+    EXPECT_FALSE(this->undelegate(
+                         val.id,
+                         del_address,
+                         withdrawal_id,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
     // reward during the block boundary
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // skip delay
-    inc_epoch();
+    this->inc_epoch();
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, del_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, del_address);
 
     // validator should get all the rewards since the secondary delegator
     // does not become active in the consensus view until after the window
     // expires.
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD / 2);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, del_address).stake().load().native(),
+        this->contract.vars.delegator(val.id, del_address)
+            .stake()
+            .load()
+            .native(),
         0);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, del_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, del_address)
+            .rewards()
+            .load()
+            .native(),
         0);
 
     EXPECT_EQ(
-        withdraw(val.id, del_address, withdrawal_id).assume_error(),
+        this->withdraw(val.id, del_address, withdrawal_id).assume_error(),
         StakingError::WithdrawalNotReady);
 
     // reward the validator in this epoch which the delegator should not
     // get. he has a 1 epoch delay where he continues to deactivate, and
     // another epoch delay for the slashing window in which no rewards are
     // earned.
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // withdrawal should succeed
-    EXPECT_FALSE(withdraw(val.id, del_address, withdrawal_id).has_error());
+    EXPECT_FALSE(
+        this->withdraw(val.id, del_address, withdrawal_id).has_error());
 
     // primary delegator get all the rewards after the secondary delegator
     // becomes inactive.
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD + REWARD / 2);
 
     // delegator gets his principal and rewards accured during deactivation
     // period.
-    EXPECT_EQ(get_balance(del_address), ACTIVE_VALIDATOR_STAKE + REWARD / 2);
+    EXPECT_EQ(
+        this->get_balance(del_address),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + REWARD / 2);
 }
 
-TEST_F(StakeLatest, undelegate_snapshot_boundary_pool)
+TYPED_TEST(StakeAllRevisions, undelegate_snapshot_boundary_pool)
 {
     auto const auth_address = 0xdeadbeef_address;
     auto const del_address = 0xaaaabbbb_address;
-    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
     EXPECT_FALSE(
-        delegate(val.id, del_address, ACTIVE_VALIDATOR_STAKE).has_error());
-    skip_to_next_epoch();
+        this->delegate(val.id, del_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
+    this->skip_to_next_epoch();
 
     // undelegate this epoch
     uint8_t const withdrawal_id{1};
 
     // reward during the block boundary
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(
-        undelegate(val.id, del_address, withdrawal_id, ACTIVE_VALIDATOR_STAKE)
-            .has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->undelegate(
+                         val.id,
+                         del_address,
+                         withdrawal_id,
+                         TestFixture::ACTIVE_VALIDATOR_STAKE)
+                     .has_error());
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
     // skip delay
-    inc_epoch();
+    this->inc_epoch();
 
-    pull_delegator_up_to_date(val.id, auth_address);
-    pull_delegator_up_to_date(val.id, del_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, del_address);
 
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD / 2);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, del_address).stake().load().native(),
+        this->contract.vars.delegator(val.id, del_address)
+            .stake()
+            .load()
+            .native(),
         0);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, del_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, del_address)
+            .rewards()
+            .load()
+            .native(),
         0);
 
     EXPECT_EQ(
-        withdraw(val.id, del_address, withdrawal_id).assume_error(),
+        this->withdraw(val.id, del_address, withdrawal_id).assume_error(),
         StakingError::WithdrawalNotReady);
 
-    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+    EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
 
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // withdrawal should succeed
-    EXPECT_FALSE(withdraw(val.id, del_address, withdrawal_id).has_error());
+    EXPECT_FALSE(
+        this->withdraw(val.id, del_address, withdrawal_id).has_error());
 
-    pull_delegator_up_to_date(val.id, auth_address);
+    this->pull_delegator_up_to_date(val.id, auth_address);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        this->contract.vars.delegator(val.id, auth_address)
+            .rewards()
+            .load()
+            .native(),
         REWARD);
 
-    EXPECT_EQ(get_balance(del_address), ACTIVE_VALIDATOR_STAKE + REWARD);
+    EXPECT_EQ(
+        this->get_balance(del_address),
+        TestFixture::ACTIVE_VALIDATOR_STAKE + REWARD);
 }
 
 /////////////////////
 // withdraw tests
 /////////////////////
 
-TEST_F(StakeLatest, double_withdraw)
+TYPED_TEST(StakeAllRevisions, double_withdraw)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, MIN_VALIDATE_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::MIN_VALIDATE_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
     EXPECT_FALSE(
-        undelegate(val.id, auth_address, 1, MIN_VALIDATE_STAKE).has_error());
-    skip_to_next_epoch();
-    skip_to_next_epoch();
-    EXPECT_EQ(get_balance(auth_address), 0);
-    EXPECT_FALSE(withdraw(val.id, auth_address, 1).has_error());
-    EXPECT_EQ(get_balance(auth_address), MIN_VALIDATE_STAKE);
+        this->undelegate(
+                val.id, auth_address, 1, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    EXPECT_EQ(this->get_balance(auth_address), 0);
+    EXPECT_FALSE(this->withdraw(val.id, auth_address, 1).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), TestFixture::MIN_VALIDATE_STAKE);
     EXPECT_EQ(
-        withdraw(val.id, auth_address, 1).assume_error(),
+        this->withdraw(val.id, auth_address, 1).assume_error(),
         StakingError::UnknownWithdrawalId);
-    EXPECT_EQ(get_balance(auth_address), MIN_VALIDATE_STAKE);
+    EXPECT_EQ(this->get_balance(auth_address), TestFixture::MIN_VALIDATE_STAKE);
 }
 
-TEST_F(StakeLatest, withdraw_reusable_id)
+TYPED_TEST(StakeAllRevisions, withdraw_reusable_id)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const res = add_validator(auth_address, MIN_VALIDATE_STAKE);
+    auto const res =
+        this->add_validator(auth_address, TestFixture::MIN_VALIDATE_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
     EXPECT_FALSE(
-        undelegate(val.id, auth_address, 1, MIN_VALIDATE_STAKE).has_error());
-    skip_to_next_epoch();
-    skip_to_next_epoch();
-    EXPECT_FALSE(withdraw(val.id, auth_address, 1).has_error());
-
-    EXPECT_FALSE(
-        delegate(val.id, auth_address, ACTIVE_VALIDATOR_STAKE).has_error());
-
-    skip_to_next_epoch();
-    skip_to_next_epoch();
+        this->undelegate(
+                val.id, auth_address, 1, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    EXPECT_FALSE(this->withdraw(val.id, auth_address, 1).has_error());
 
     EXPECT_FALSE(
-        undelegate(val.id, auth_address, 1, MIN_VALIDATE_STAKE).has_error());
+        this->delegate(
+                val.id, auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    skip_to_next_epoch();
-    skip_to_next_epoch();
-    EXPECT_FALSE(withdraw(val.id, auth_address, 1).has_error());
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
+
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, auth_address, 1, TestFixture::MIN_VALIDATE_STAKE)
+            .has_error());
+
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    EXPECT_FALSE(this->withdraw(val.id, auth_address, 1).has_error());
 }
 
 /////////////////////
 // claim_rewards tests
 /////////////////////
 
-TEST_F(StakeLatest, claim_rewards)
+TYPED_TEST(StakeAllRevisions, claim_rewards)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const val = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const val =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(val.has_error());
-    skip_to_next_epoch();
-    EXPECT_FALSE(syscall_reward(val.value().sign_address).has_error());
-    EXPECT_EQ(get_balance(auth_address), 0);
-    EXPECT_FALSE(claim_rewards(val.value().id, auth_address).has_error());
-    EXPECT_EQ(get_balance(auth_address), REWARD);
+    this->skip_to_next_epoch();
+    EXPECT_FALSE(this->syscall_reward(val.value().sign_address).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), 0);
+    EXPECT_FALSE(this->claim_rewards(val.value().id, auth_address).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), REWARD);
 }
 
-TEST_F(StakeLatest, claim_noop)
+TYPED_TEST(StakeAllRevisions, claim_noop)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const val = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const val =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(val.has_error());
-    skip_to_next_epoch();
-    EXPECT_EQ(get_balance(auth_address), 0);
-    EXPECT_FALSE(claim_rewards(val.value().id, auth_address).has_error());
-    EXPECT_EQ(get_balance(auth_address), 0);
+    this->skip_to_next_epoch();
+    EXPECT_EQ(this->get_balance(auth_address), 0);
+    EXPECT_FALSE(this->claim_rewards(val.value().id, auth_address).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), 0);
 }
 
-TEST_F(StakeLatest, claim_rewards_compound)
+TYPED_TEST(StakeAllRevisions, claim_rewards_compound)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const val = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const val =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(val.has_error());
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
-    EXPECT_FALSE(syscall_reward(val.value().sign_address).has_error());
-    EXPECT_EQ(get_balance(auth_address), 0);
-    EXPECT_FALSE(claim_rewards(val.value().id, auth_address).has_error());
-    EXPECT_EQ(get_balance(auth_address), REWARD);
+    EXPECT_FALSE(this->syscall_reward(val.value().sign_address).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), 0);
+    EXPECT_FALSE(this->claim_rewards(val.value().id, auth_address).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), REWARD);
 
-    EXPECT_FALSE(compound(val.value().id, auth_address).has_error());
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_reward(val.value().sign_address).has_error());
+    EXPECT_FALSE(this->compound(val.value().id, auth_address).has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_reward(val.value().sign_address).has_error());
 
-    EXPECT_EQ(get_balance(auth_address), REWARD);
-    EXPECT_FALSE(claim_rewards(val.value().id, auth_address).has_error());
-    EXPECT_EQ(get_balance(auth_address), 2 * REWARD);
+    EXPECT_EQ(this->get_balance(auth_address), REWARD);
+    EXPECT_FALSE(this->claim_rewards(val.value().id, auth_address).has_error());
+    EXPECT_EQ(this->get_balance(auth_address), 2 * REWARD);
 
-    EXPECT_FALSE(compound(val.value().id, auth_address).has_error());
+    EXPECT_FALSE(this->compound(val.value().id, auth_address).has_error());
 
-    check_delegator_c_state(
-        val.value(), auth_address, ACTIVE_VALIDATOR_STAKE, 0);
-    inc_epoch();
-    check_delegator_c_state(
-        val.value(), auth_address, ACTIVE_VALIDATOR_STAKE, 0);
+    this->check_delegator_c_state(
+        val.value(), auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE, 0);
+    this->inc_epoch();
+    this->check_delegator_c_state(
+        val.value(), auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE, 0);
 }
 
 ///////////////////////
 // sys_call_reward tests
 ////////////////////////
 
-TEST_F(StakeLatest, reward_unknown_validator)
+TYPED_TEST(StakeAllRevisions, reward_unknown_validator)
 {
     auto const unknown = Address{0xabcdef};
     EXPECT_EQ(
-        syscall_reward(unknown).assume_error(),
+        this->syscall_reward(unknown).assume_error(),
         StakingError::NotInValidatorSet);
 }
 
-TEST_F(StakeLatest, reward_crash_no_snapshot_missing_validator)
+TYPED_TEST(StakeAllRevisions, reward_crash_no_snapshot_missing_validator)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto const val = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto const val =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(val.has_error());
-    inc_epoch();
+    this->inc_epoch();
     EXPECT_EQ(
-        syscall_reward(val.value().sign_address).assume_error(),
+        this->syscall_reward(val.value().sign_address).assume_error(),
         StakingError::NotInValidatorSet);
 }
 
@@ -3955,35 +4520,38 @@ TYPED_TEST(StakeAllRevisions, reward_sets_block_proposer)
 // sys_call_snapshot tests
 ////////////////////////
 
-TEST_F(StakeLatest, multiple_snapshot_error)
+TYPED_TEST(StakeAllRevisions, multiple_snapshot_error)
 {
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_TRUE(syscall_snapshot().has_error());
-    inc_epoch();
-    EXPECT_FALSE(syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_TRUE(this->syscall_snapshot().has_error());
+    this->inc_epoch();
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
 }
 
-TEST_F(StakeLatest, valset_exceeds_n)
+TYPED_TEST(StakeAllRevisions, valset_exceeds_n)
 {
     auto const auth_address = 0xdeadbeef_address;
-    static_assert(ACTIVE_VALSET_SIZE < 1000);
+    static_assert(TestFixture::ACTIVE_VALSET_SIZE < 1000);
 
     std::vector<std::pair<u64_be, uint256_t>> vals;
     for (uint32_t i = 1; i <= 1000u; ++i) {
-        uint256_t const stake = ACTIVE_VALIDATOR_STAKE + 1000 - i;
-        auto const val = add_validator(auth_address, stake, 0, bytes32_t{i});
+        uint256_t const stake = TestFixture::ACTIVE_VALIDATOR_STAKE + 1000 - i;
+        auto const val =
+            this->add_validator(auth_address, stake, 0, bytes32_t{i});
         ASSERT_FALSE(val.has_error());
         vals.emplace_back(val.value().id, stake);
     }
-    EXPECT_EQ(contract.vars.valset_execution.length(), 1000u);
+    EXPECT_EQ(this->contract.vars.valset_execution.length(), 1000u);
 
     // create the consensus valset
-    skip_to_next_epoch();
-    EXPECT_EQ(contract.vars.valset_snapshot.length(), 0);
-    EXPECT_EQ(contract.vars.valset_consensus.length(), ACTIVE_VALSET_SIZE);
+    this->skip_to_next_epoch();
+    EXPECT_EQ(this->contract.vars.valset_snapshot.length(), 0);
+    EXPECT_EQ(
+        this->contract.vars.valset_consensus.length(),
+        TestFixture::ACTIVE_VALSET_SIZE);
 
     auto is_in_valset = [&](u64_be const &val_id) -> bool {
-        auto const valset = contract.vars.valset_consensus;
+        auto const valset = this->contract.vars.valset_consensus;
         for (uint64_t i = 0; i < valset.length(); ++i) {
             if (valset.get(i).load() == val_id) {
                 return true;
@@ -3993,41 +4561,51 @@ TEST_F(StakeLatest, valset_exceeds_n)
     };
     for (uint32_t i = 1; i <= 1000; ++i) {
         auto const &[val_id, stake] = vals[i - 1];
-        if (i <= ACTIVE_VALSET_SIZE) {
+        if (i <= TestFixture::ACTIVE_VALSET_SIZE) {
             EXPECT_TRUE(is_in_valset(val_id));
             EXPECT_EQ(
-                contract.vars.consensus_view(val_id).stake().load().native(),
+                this->contract.vars.consensus_view(val_id)
+                    .stake()
+                    .load()
+                    .native(),
                 stake);
         }
         else {
             EXPECT_FALSE(is_in_valset(val_id));
             EXPECT_EQ(
-                contract.vars.consensus_view(val_id).stake().load().native(),
+                this->contract.vars.consensus_view(val_id)
+                    .stake()
+                    .load()
+                    .native(),
                 0);
         }
     }
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // now both valsets should be active valset size
-    EXPECT_EQ(contract.vars.valset_snapshot.length(), ACTIVE_VALSET_SIZE);
-    EXPECT_EQ(contract.vars.valset_consensus.length(), ACTIVE_VALSET_SIZE);
+    EXPECT_EQ(
+        this->contract.vars.valset_snapshot.length(),
+        TestFixture::ACTIVE_VALSET_SIZE);
+    EXPECT_EQ(
+        this->contract.vars.valset_consensus.length(),
+        TestFixture::ACTIVE_VALSET_SIZE);
 }
 
 ////////////////////////
 // sys_call_epoch_change tests
 ////////////////////////
 
-TEST_F(StakeLatest, epoch_goes_backwards)
+TYPED_TEST(StakeAllRevisions, epoch_goes_backwards)
 {
-    EXPECT_FALSE(syscall_on_epoch_change(3).has_error());
-    EXPECT_TRUE(syscall_on_epoch_change(1).has_error());
-    EXPECT_TRUE(syscall_on_epoch_change(2).has_error());
-    EXPECT_TRUE(syscall_on_epoch_change(3).has_error());
-    EXPECT_FALSE(syscall_on_epoch_change(4).has_error());
+    EXPECT_FALSE(this->syscall_on_epoch_change(3).has_error());
+    EXPECT_TRUE(this->syscall_on_epoch_change(1).has_error());
+    EXPECT_TRUE(this->syscall_on_epoch_change(2).has_error());
+    EXPECT_TRUE(this->syscall_on_epoch_change(3).has_error());
+    EXPECT_FALSE(this->syscall_on_epoch_change(4).has_error());
 }
 
-TEST_F(StakeLatest, contract_bootstrap)
+TYPED_TEST(StakeAllRevisions, contract_bootstrap)
 {
     // This test simulates the bootstrap flow for a live chain.
     //
@@ -4043,129 +4621,143 @@ TEST_F(StakeLatest, contract_bootstrap)
     // M, staking begins.
 
     constexpr uint64_t E = 20;
-    contract.vars.epoch.store(0);
+    this->contract.vars.epoch.store(0);
 
     // consensus initializes the epoch by calling epoch change
-    EXPECT_FALSE(syscall_on_epoch_change(E - 1).has_error());
+    EXPECT_FALSE(this->syscall_on_epoch_change(E - 1).has_error());
 
     // sets should be empty
-    EXPECT_EQ(contract.vars.valset_execution.length(), 0);
-    EXPECT_EQ(contract.vars.valset_snapshot.length(), 0);
-    EXPECT_EQ(contract.vars.valset_consensus.length(), 0);
-    EXPECT_EQ(contract.vars.epoch.load().native(), E - 1);
+    EXPECT_EQ(this->contract.vars.valset_execution.length(), 0);
+    EXPECT_EQ(this->contract.vars.valset_snapshot.length(), 0);
+    EXPECT_EQ(this->contract.vars.valset_consensus.length(), 0);
+    EXPECT_EQ(this->contract.vars.epoch.load().native(), E - 1);
 
     auto const auth_address = 0xdeadbeef_address;
 
     // Add two validators
-    auto res =
-        add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
+    auto res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1000});
     ASSERT_FALSE(res.has_error());
     auto const val1 = res.assume_value();
-    res = add_validator(auth_address, MIN_VALIDATE_STAKE, 0, bytes32_t{0x1002});
+    res = this->add_validator(
+        auth_address, TestFixture::MIN_VALIDATE_STAKE, 0, bytes32_t{0x1002});
     ASSERT_FALSE(res.has_error());
     auto const val2 = res.assume_value();
 
     // delegate with validator 1
     auto const d1 = 0xaaaabbbb_address;
-    EXPECT_FALSE(delegate(val1.id, d1, 10 * MON).has_error());
-    EXPECT_FALSE(delegate(val1.id, d1, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_FALSE(this->delegate(val1.id, d1, 10 * MON).has_error());
+    EXPECT_FALSE(
+        this->delegate(val1.id, d1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     // verify no undelegations before activation
-    EXPECT_TRUE(undelegate(val1.id, d1, 1, ACTIVE_VALIDATOR_STAKE).has_error());
+    EXPECT_TRUE(
+        this->undelegate(val1.id, d1, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     // verify withdrawals don't work
     for (uint16_t i = 0; i <= std::numeric_limits<uint8_t>::max(); ++i) {
         EXPECT_EQ(
-            withdraw(val1.id, d1, static_cast<uint8_t>(i)).assume_error(),
+            this->withdraw(val1.id, d1, static_cast<uint8_t>(i)).assume_error(),
             StakingError::UnknownWithdrawalId);
     }
 
-    EXPECT_FALSE(syscall_snapshot().has_error());
-    EXPECT_FALSE(syscall_on_epoch_change(E).has_error());
+    EXPECT_FALSE(this->syscall_snapshot().has_error());
+    EXPECT_FALSE(this->syscall_on_epoch_change(E).has_error());
 
     // All delegators have their principal (no rewards earned)
-    check_delegator_c_state(val1, auth_address, MIN_VALIDATE_STAKE, 0);
-    check_delegator_c_state(val1, d1, 10 * MON + ACTIVE_VALIDATOR_STAKE, 0);
-    check_delegator_c_state(val2, auth_address, MIN_VALIDATE_STAKE, 0);
+    this->check_delegator_c_state(
+        val1, auth_address, TestFixture::MIN_VALIDATE_STAKE, 0);
+    this->check_delegator_c_state(
+        val1, d1, 10 * MON + TestFixture::ACTIVE_VALIDATOR_STAKE, 0);
+    this->check_delegator_c_state(
+        val2, auth_address, TestFixture::MIN_VALIDATE_STAKE, 0);
 
     // only one of the validators had enough stake to be active.
-    EXPECT_EQ(contract.vars.valset_consensus.length(), 1);
-    EXPECT_EQ(contract.vars.valset_snapshot.length(), 0);
+    EXPECT_EQ(this->contract.vars.valset_consensus.length(), 1);
+    EXPECT_EQ(this->contract.vars.valset_snapshot.length(), 0);
     EXPECT_EQ(
-        contract.vars.valset_consensus.get(0).load().native(),
+        this->contract.vars.valset_consensus.get(0).load().native(),
         val1.id.native());
 
     // check: accumulator refcounts are cleared
     auto const acc =
-        contract.vars.accumulated_reward_per_token(E - 1, val1.id).load();
+        this->contract.vars.accumulated_reward_per_token(E - 1, val1.id).load();
     EXPECT_EQ(acc.refcount.native(), 0);
     EXPECT_EQ(acc.value.native(), 0);
     auto const acc2 =
-        contract.vars.accumulated_reward_per_token(E - 1, val2.id).load();
+        this->contract.vars.accumulated_reward_per_token(E - 1, val2.id).load();
     EXPECT_EQ(acc2.refcount.native(), 0);
     EXPECT_EQ(acc2.value.native(), 0);
 }
 
-TEST_F(StakeLatest, zero_reward_epochs)
+TYPED_TEST(StakeAllRevisions, zero_reward_epochs)
 {
     auto const auth_address = 0xdeadbeef_address;
     std::array<Address, 4> delegators{
         0xdead_address, 0xbeef_address, 0x600d_address, 0xbadd_address};
-    std::vector<ValResult> validators;
+    std::vector<typename TestFixture::ValResult> validators;
     uint256_t const DELEGATOR_STAKE = 1000000 * MON;
 
-    contract.vars.epoch.store(49); // start at epoch 49
+    this->contract.vars.epoch.store(49); // start at epoch 49
 
     for (uint64_t i = 0; i < 10; ++i) {
         // add validator
         uint256_t const commission = (i % 2 == 0) ? MON * 10 / 100 : 0;
-        auto const res = add_validator(
-            auth_address, ACTIVE_VALIDATOR_STAKE, commission, bytes32_t{i + 1});
+        auto const res = this->add_validator(
+            auth_address,
+            TestFixture::ACTIVE_VALIDATOR_STAKE,
+            commission,
+            bytes32_t{i + 1});
         ASSERT_FALSE(res.has_error());
         validators.push_back(res.value());
 
         // add some delegators to each validator
         for (auto const &d : delegators) {
             EXPECT_FALSE(
-                delegate(res.value().id, d, DELEGATOR_STAKE).has_error());
+                this->delegate(res.value().id, d, DELEGATOR_STAKE).has_error());
         }
     }
 
-    skip_to_next_epoch(); // epoch 50
+    this->skip_to_next_epoch(); // epoch 50
     for (uint64_t epoch = 51; epoch <= 60; ++epoch) {
         for (uint64_t block = 0; block < 50; ++block) {
             auto const proposer =
                 validators[block % validators.size()].sign_address;
             if (block == 40) {
-                EXPECT_FALSE(syscall_snapshot().has_error());
+                EXPECT_FALSE(this->syscall_snapshot().has_error());
             }
-            EXPECT_FALSE(syscall_reward(proposer, 0).has_error());
+            EXPECT_FALSE(this->syscall_reward(proposer, 0).has_error());
         }
-        EXPECT_FALSE(syscall_on_epoch_change(epoch).has_error());
+        EXPECT_FALSE(this->syscall_on_epoch_change(epoch).has_error());
     }
 
     // check no staking emissions occurred
     EXPECT_EQ(
-        get_balance(STAKING_CA),
-        ACTIVE_VALIDATOR_STAKE * validators.size() +
+        this->get_balance(STAKING_CA),
+        TestFixture::ACTIVE_VALIDATOR_STAKE * validators.size() +
             DELEGATOR_STAKE * delegators.size() * validators.size());
     for (auto const &v : validators) {
-        auto val_info = contract.vars.val_execution(v.id);
+        auto val_info = this->contract.vars.val_execution(v.id);
         EXPECT_EQ(
             val_info.stake().load().native(),
-            ACTIVE_VALIDATOR_STAKE + DELEGATOR_STAKE * delegators.size());
+            TestFixture::ACTIVE_VALIDATOR_STAKE +
+                DELEGATOR_STAKE * delegators.size());
         EXPECT_EQ(val_info.accumulated_reward_per_token().load().native(), 0);
         EXPECT_EQ(val_info.unclaimed_rewards().load().native(), 0);
 
-        pull_delegator_up_to_date(v.id, auth_address);
-        auto auth_del = contract.vars.delegator(v.id, auth_address);
-        EXPECT_EQ(auth_del.stake().load().native(), ACTIVE_VALIDATOR_STAKE);
+        this->pull_delegator_up_to_date(v.id, auth_address);
+        auto auth_del = this->contract.vars.delegator(v.id, auth_address);
+        EXPECT_EQ(
+            auth_del.stake().load().native(),
+            TestFixture::ACTIVE_VALIDATOR_STAKE);
         EXPECT_EQ(auth_del.accumulated_reward_per_token().load().native(), 0);
         EXPECT_EQ(auth_del.rewards().load().native(), 0);
 
         for (auto const &d : delegators) {
-            pull_delegator_up_to_date(v.id, d);
-            auto del_info = contract.vars.delegator(v.id, d);
+            this->pull_delegator_up_to_date(v.id, d);
+            auto del_info = this->contract.vars.delegator(v.id, d);
             EXPECT_EQ(del_info.stake().load().native(), DELEGATOR_STAKE);
             EXPECT_EQ(
                 del_info.accumulated_reward_per_token().load().native(), 0);
@@ -4178,18 +4770,19 @@ TEST_F(StakeLatest, zero_reward_epochs)
 // Getter Tests //
 //////////////////
 
-TEST_F(StakeLatest, get_valset_empty)
+TYPED_TEST(StakeAllRevisions, get_valset_empty)
 {
-    EXPECT_FALSE(get_valset(0).has_error());
-    EXPECT_FALSE(get_valset(std::numeric_limits<uint32_t>::max()).has_error());
+    EXPECT_FALSE(this->get_valset(0).has_error());
+    EXPECT_FALSE(
+        this->get_valset(std::numeric_limits<uint32_t>::max()).has_error());
 }
 
-TEST_F(StakeLatest, empty_get_delegators_for_validator_getter)
+TYPED_TEST(StakeAllRevisions, empty_get_delegators_for_validator_getter)
 {
     {
         // validator doesn't exist
         auto const [done, _, delegators] =
-            contract.get_delegators_for_validator(
+            this->contract.get_delegators_for_validator(
                 u64_be{1}, Address{}, std::numeric_limits<uint32_t>::max());
         EXPECT_TRUE(done);
         EXPECT_TRUE(delegators.empty());
@@ -4197,11 +4790,11 @@ TEST_F(StakeLatest, empty_get_delegators_for_validator_getter)
 
     {
         // validator exists, bogus delegator start pointer provided
-        auto const res =
-            add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+        auto const res = this->add_validator(
+            0xdeadbeef_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
         ASSERT_FALSE(res.has_error());
         auto const [done, _, delegators] =
-            contract.get_delegators_for_validator(
+            this->contract.get_delegators_for_validator(
                 res.value().id,
                 0x1337_address,
                 std::numeric_limits<uint32_t>::max());
@@ -4210,12 +4803,12 @@ TEST_F(StakeLatest, empty_get_delegators_for_validator_getter)
     }
 }
 
-TEST_F(StakeLatest, empty_get_validators_for_delegator_getter)
+TYPED_TEST(StakeAllRevisions, empty_get_validators_for_delegator_getter)
 {
     {
         // validator doesn't exist
         auto const [done, _, validators] =
-            contract.get_validators_for_delegator(
+            this->contract.get_validators_for_delegator(
                 Address{0x1337},
                 u64_be{},
                 std::numeric_limits<uint32_t>::max());
@@ -4225,11 +4818,11 @@ TEST_F(StakeLatest, empty_get_validators_for_delegator_getter)
 
     {
         // validator exists, bogus val_id start pointer provided
-        auto const res =
-            add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+        auto const res = this->add_validator(
+            0xdeadbeef_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
         ASSERT_FALSE(res.has_error());
         auto const [done, _, delegators] =
-            contract.get_validators_for_delegator(
+            this->contract.get_validators_for_delegator(
                 0xdeadbeef_address,
                 u64_be{200},
                 std::numeric_limits<uint32_t>::max());
@@ -4238,10 +4831,11 @@ TEST_F(StakeLatest, empty_get_validators_for_delegator_getter)
     }
 }
 
-TEST_F(StakeLatest, get_delegators_for_validator)
+TYPED_TEST(StakeAllRevisions, get_delegators_for_validator)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
@@ -4250,14 +4844,14 @@ TEST_F(StakeLatest, get_delegators_for_validator)
     for (uint32_t i = 0; i < 999; ++i) {
         // delegate twice to make sure dups are handled correctly
         auto const del = Address{i + 1};
-        ASSERT_FALSE(delegate(val.id, del, 100_u256 * MON).has_error());
-        ASSERT_FALSE(delegate(val.id, del, 100_u256 * MON).has_error());
+        ASSERT_FALSE(this->delegate(val.id, del, 100_u256 * MON).has_error());
+        ASSERT_FALSE(this->delegate(val.id, del, 100_u256 * MON).has_error());
         delegators.emplace(del);
     }
 
     {
         auto const [done, _, contract_delegators] =
-            contract.get_delegators_for_validator(
+            this->contract.get_delegators_for_validator(
                 val.id, Address{}, std::numeric_limits<uint32_t>::max());
         EXPECT_TRUE(done);
         EXPECT_EQ(delegators.size(), contract_delegators.size());
@@ -4267,22 +4861,22 @@ TEST_F(StakeLatest, get_delegators_for_validator)
     }
 
     // activate the stake so it can be undelegated
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // undelegate a couple
     ASSERT_FALSE(
-        undelegate(val.id, Address{20}, 1, 200_u256 * MON).has_error());
+        this->undelegate(val.id, Address{20}, 1, 200_u256 * MON).has_error());
     delegators.erase(Address{20});
     ASSERT_FALSE(
-        undelegate(val.id, Address{101}, 1, 200_u256 * MON).has_error());
+        this->undelegate(val.id, Address{101}, 1, 200_u256 * MON).has_error());
     delegators.erase(Address{101});
     ASSERT_FALSE(
-        undelegate(val.id, Address{500}, 1, 200_u256 * MON).has_error());
+        this->undelegate(val.id, Address{500}, 1, 200_u256 * MON).has_error());
     delegators.erase(Address{500});
 
     {
         auto const [done, _, contract_delegators] =
-            contract.get_delegators_for_validator(
+            this->contract.get_delegators_for_validator(
                 val.id, Address{}, std::numeric_limits<uint32_t>::max());
         EXPECT_TRUE(done);
         EXPECT_EQ(delegators.size(), contract_delegators.size());
@@ -4292,14 +4886,14 @@ TEST_F(StakeLatest, get_delegators_for_validator)
     }
 }
 
-TEST_F(StakeLatest, get_validators_for_delegator)
+TYPED_TEST(StakeAllRevisions, get_validators_for_delegator)
 {
     auto const auth_address = 0xdeadbeef_address;
     std::unordered_set<uint64_t> validators;
     for (uint32_t i = 0; i < 999; ++i) {
-        auto res = add_validator(
+        auto res = this->add_validator(
             auth_address,
-            ACTIVE_VALIDATOR_STAKE,
+            TestFixture::ACTIVE_VALIDATOR_STAKE,
             0 /* commission */,
             bytes32_t{i + 1000} /* secret */);
         ASSERT_FALSE(res.has_error());
@@ -4309,13 +4903,15 @@ TEST_F(StakeLatest, get_validators_for_delegator)
     auto const del = 0x1337_address;
     for (auto const val_id : validators) {
         // delegate twice with every validator
-        ASSERT_FALSE(delegate(u64_be{val_id}, del, 100_u256 * MON).has_error());
-        ASSERT_FALSE(delegate(u64_be{val_id}, del, 100_u256 * MON).has_error());
+        ASSERT_FALSE(
+            this->delegate(u64_be{val_id}, del, 100_u256 * MON).has_error());
+        ASSERT_FALSE(
+            this->delegate(u64_be{val_id}, del, 100_u256 * MON).has_error());
     }
 
     {
         auto const [done, _, contract_validators] =
-            contract.get_validators_for_delegator(
+            this->contract.get_validators_for_delegator(
                 del, u64_be{}, std::numeric_limits<uint32_t>::max());
         EXPECT_EQ(validators.size(), contract_validators.size());
         for (u64_be const val_id : contract_validators) {
@@ -4324,19 +4920,22 @@ TEST_F(StakeLatest, get_validators_for_delegator)
     }
 
     // activate the stake so it can be undelegated
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // undelegate a couple
-    ASSERT_FALSE(undelegate(u64_be{20}, del, 1, 200_u256 * MON).has_error());
+    ASSERT_FALSE(
+        this->undelegate(u64_be{20}, del, 1, 200_u256 * MON).has_error());
     validators.erase(20);
-    ASSERT_FALSE(undelegate(u64_be{101}, del, 1, 200_u256 * MON).has_error());
+    ASSERT_FALSE(
+        this->undelegate(u64_be{101}, del, 1, 200_u256 * MON).has_error());
     validators.erase(101);
-    ASSERT_FALSE(undelegate(u64_be{500}, del, 1, 200_u256 * MON).has_error());
+    ASSERT_FALSE(
+        this->undelegate(u64_be{500}, del, 1, 200_u256 * MON).has_error());
     validators.erase(500);
 
     {
         auto const [done, _, contract_validators] =
-            contract.get_validators_for_delegator(
+            this->contract.get_validators_for_delegator(
                 del, u64_be{}, std::numeric_limits<uint32_t>::max());
         EXPECT_TRUE(done);
         EXPECT_EQ(validators.size(), contract_validators.size());
@@ -4346,18 +4945,21 @@ TEST_F(StakeLatest, get_validators_for_delegator)
     }
 }
 
-TEST_F(StakeLatest, get_valset_paginated_reads)
+TYPED_TEST(StakeAllRevisions, get_valset_paginated_reads)
 {
     auto const auth_address = 0xdeadbeef_address;
     for (uint32_t i = 0; i < 999; ++i) {
-        auto res = add_validator(
-            auth_address, ACTIVE_VALIDATOR_STAKE, 0, bytes32_t{i + 1});
+        auto res = this->add_validator(
+            auth_address,
+            TestFixture::ACTIVE_VALIDATOR_STAKE,
+            0,
+            bytes32_t{i + 1});
         ASSERT_FALSE(res.has_error());
     }
 
     // read valset in one read
-    auto const [done1, _, valset_one_read] = contract.get_valset(
-        contract.vars.valset_execution,
+    auto const [done1, _, valset_one_read] = this->contract.get_valset(
+        this->contract.vars.valset_execution,
         0,
         std::numeric_limits<uint32_t>::max());
     EXPECT_TRUE(done1);
@@ -4368,10 +4970,10 @@ TEST_F(StakeLatest, get_valset_paginated_reads)
     u32_be next_index = 0;
     std::vector<u64_be> valset_paginated;
     do {
-        auto paginated_res = contract.get_valset(
-            contract.vars.valset_execution,
+        auto paginated_res = this->contract.get_valset(
+            this->contract.vars.valset_execution,
             next_index.native(),
-            ARRAY_PAGINATION);
+            StakeCommission::ARRAY_PAGINATION);
         std::vector<u64_be> valset_page;
         std::tie(done2, next_index, valset_page) = std::move(paginated_res);
         valset_paginated.insert_range(valset_paginated.end(), valset_page);
@@ -4453,74 +5055,83 @@ TYPED_TEST(StakeAllRevisions, get_proposer_val_id_fork)
 // Solvency Tests //
 ////////////////////
 
-TEST_F(StakeLatest, validator_insolvent)
+TYPED_TEST(StakeAllRevisions, validator_insolvent)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto res = add_validator(auth_address, MIN_VALIDATE_STAKE);
+    auto res =
+        this->add_validator(auth_address, TestFixture::MIN_VALIDATE_STAKE);
     auto const val = res.assume_value();
 
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // simulate an accumulator error
-    contract.vars.val_execution(val.id).accumulated_reward_per_token().store(
-        10_u256 * MON);
+    this->contract.vars.val_execution(val.id)
+        .accumulated_reward_per_token()
+        .store(10_u256 * MON);
 
     EXPECT_EQ(
-        claim_rewards(val.id, auth_address).assume_error(),
+        this->claim_rewards(val.id, auth_address).assume_error(),
         StakingError::SolvencyError);
 }
 
-TEST_F(StakeLatest, withdrawal_insolvent)
+TYPED_TEST(StakeAllRevisions, withdrawal_insolvent)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     auto const val = res.assume_value();
 
-    skip_to_next_epoch(); // activate the stake
-    EXPECT_FALSE(undelegate(val.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
+    this->skip_to_next_epoch(); // activate the stake
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
     // simulate an accumulator error before the epoch change.  this is so the
     // error becomes part of the pending undelegation during this epoch.
-    contract.vars.val_execution(val.id).accumulated_reward_per_token().store(
-        10_u256 * MON);
+    this->contract.vars.val_execution(val.id)
+        .accumulated_reward_per_token()
+        .store(10_u256 * MON);
 
-    skip_to_next_epoch(); // withdrawal is insolvent, but inactive
-    skip_to_next_epoch(); // withdrawal is insolvent and active.
+    this->skip_to_next_epoch(); // withdrawal is insolvent, but inactive
+    this->skip_to_next_epoch(); // withdrawal is insolvent and active.
 
     EXPECT_EQ(
-        withdraw(val.id, auth_address, 1).assume_error(),
+        this->withdraw(val.id, auth_address, 1).assume_error(),
         StakingError::SolvencyError);
 }
 
-TEST_F(StakeLatest, withdrawal_state_override)
+TYPED_TEST(StakeAllRevisions, withdrawal_state_override)
 {
     auto const auth_address = 0xdeadbeef_address;
-    auto res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    auto res =
+        this->add_validator(auth_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     auto const val = res.assume_value();
 
-    skip_to_next_epoch(); // activate the stake
-    EXPECT_FALSE(undelegate(val.id, auth_address, 1, ACTIVE_VALIDATOR_STAKE)
-                     .has_error());
+    this->skip_to_next_epoch(); // activate the stake
+    EXPECT_FALSE(
+        this->undelegate(
+                val.id, auth_address, 1, TestFixture::ACTIVE_VALIDATOR_STAKE)
+            .has_error());
 
-    skip_to_next_epoch(); // withdrawal inactive
-    skip_to_next_epoch(); // withdrawal active.
+    this->skip_to_next_epoch(); // withdrawal inactive
+    this->skip_to_next_epoch(); // withdrawal active.
 
     // make the contract insolvent. this could be achieved by an eth call state
     // override.
-    state.subtract_from_balance(
+    this->state.subtract_from_balance(
         STAKING_CA,
         intx::be::load<uint256_t>(
-            state.get_current_balance_pessimistic(STAKING_CA)));
+            this->state.get_current_balance_pessimistic(STAKING_CA)));
 
-    EXPECT_THROW((void)withdraw(val.id, auth_address, 1), MonadException);
+    EXPECT_THROW((void)this->withdraw(val.id, auth_address, 1), MonadException);
 }
 
 ////////////////
 // Dust Tests //
 ////////////////
 
-TEST_F(StakeLatest, dust_hunter)
+TYPED_TEST(StakeAllRevisions, dust_hunter)
 {
     // This test binary searches the space between [0, 10e18] and finds the
     // largest value that produces 0 rewards.
@@ -4540,8 +5151,11 @@ TEST_F(StakeLatest, dust_hunter)
     auto const rewards_fn = [this, &auth_address, &delegator](
                                 uint256_t const &stake,
                                 uint64_t &keydata) -> uint256_t {
-        auto const res = add_validator(
-            auth_address, ACTIVE_VALIDATOR_STAKE, 0, bytes32_t{keydata});
+        auto const res = this->add_validator(
+            auth_address,
+            TestFixture::ACTIVE_VALIDATOR_STAKE,
+            0,
+            bytes32_t{keydata});
         EXPECT_FALSE(res.has_error());
 
         ++keydata; // validator keys cannot be reused
@@ -4549,11 +5163,11 @@ TEST_F(StakeLatest, dust_hunter)
 
         // set the delegator's stake manually instead of going through
         // delegation precompile to bypass the dust threshold.
-        contract.vars.delegator(val.id, delegator).stake().store(stake);
-        skip_to_next_epoch();
-        EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
-        pull_delegator_up_to_date(val.id, delegator);
-        return contract.vars.delegator(val.id, delegator)
+        this->contract.vars.delegator(val.id, delegator).stake().store(stake);
+        this->skip_to_next_epoch();
+        EXPECT_FALSE(this->syscall_reward(val.sign_address).has_error());
+        this->pull_delegator_up_to_date(val.id, delegator);
+        return this->contract.vars.delegator(val.id, delegator)
             .rewards()
             .load()
             .native();
@@ -4572,86 +5186,107 @@ TEST_F(StakeLatest, dust_hunter)
     uint256_t const needle = lo;
     EXPECT_EQ(rewards_fn(needle, keydata), 0);
     EXPECT_GT(rewards_fn(needle + 1, keydata), 0);
-    EXPECT_GE(DUST_THRESHOLD, needle);
+    EXPECT_GE(TestFixture::DUST_THRESHOLD, needle);
 }
 
-TEST_F(StakeLatest, delegate_dust)
+TYPED_TEST(StakeAllRevisions, delegate_dust)
 {
     auto const delegator = 0xaaaa_address;
-    auto const res = add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res = this->add_validator(
+        0xdeadbeef_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // delegate
     EXPECT_EQ(
-        delegate(val.id, delegator, DUST_THRESHOLD / 2).assume_error(),
+        this->delegate(val.id, delegator, TestFixture::DUST_THRESHOLD / 2)
+            .assume_error(),
         StakingError::DelegationTooSmall);
     EXPECT_EQ(
-        delegate(val.id, delegator, DUST_THRESHOLD - 1).assume_error(),
+        this->delegate(val.id, delegator, TestFixture::DUST_THRESHOLD - 1)
+            .assume_error(),
         StakingError::DelegationTooSmall);
 
     // above the threshold
-    EXPECT_FALSE(delegate(val.id, delegator, DUST_THRESHOLD).has_error());
+    EXPECT_FALSE(this->delegate(val.id, delegator, TestFixture::DUST_THRESHOLD)
+                     .has_error());
 
     // compound (invokes delegate)
-    contract.vars.delegator(val.id, delegator)
+    this->contract.vars.delegator(val.id, delegator)
         .rewards()
-        .store(DUST_THRESHOLD / 2);
+        .store(TestFixture::DUST_THRESHOLD / 2);
     EXPECT_EQ(
-        compound(val.id, delegator).assume_error(),
+        this->compound(val.id, delegator).assume_error(),
         StakingError::DelegationTooSmall);
-    contract.vars.delegator(val.id, delegator)
+    this->contract.vars.delegator(val.id, delegator)
         .rewards()
-        .store(DUST_THRESHOLD - 1);
+        .store(TestFixture::DUST_THRESHOLD - 1);
     EXPECT_EQ(
-        compound(val.id, delegator).assume_error(),
+        this->compound(val.id, delegator).assume_error(),
         StakingError::DelegationTooSmall);
 
     // above the threshold
-    contract.vars.delegator(val.id, delegator).rewards().store(DUST_THRESHOLD);
-    EXPECT_FALSE(compound(val.id, delegator).has_error());
+    this->contract.vars.delegator(val.id, delegator)
+        .rewards()
+        .store(TestFixture::DUST_THRESHOLD);
+    EXPECT_FALSE(this->compound(val.id, delegator).has_error());
 }
 
-TEST_F(StakeLatest, undelegate_dust)
+TYPED_TEST(StakeAllRevisions, undelegate_dust)
 {
     auto const delegator = 0xaaaa_address;
-    auto const res = add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+    auto const res = this->add_validator(
+        0xdeadbeef_address, TestFixture::ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
-    skip_to_next_epoch();
+    this->skip_to_next_epoch();
 
     // delegate over the dust threshold, with an extra 300 wei dust.
-    EXPECT_FALSE(delegate(val.id, delegator, DUST_THRESHOLD + 300).has_error());
+    EXPECT_FALSE(
+        this->delegate(val.id, delegator, TestFixture::DUST_THRESHOLD + 300)
+            .has_error());
 
     // activate delegation
-    skip_to_next_epoch();
-    pull_delegator_up_to_date(val.id, delegator);
+    this->skip_to_next_epoch();
+    this->pull_delegator_up_to_date(val.id, delegator);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, delegator).stake().load().native(),
-        DUST_THRESHOLD + 300);
+        this->contract.vars.delegator(val.id, delegator)
+            .stake()
+            .load()
+            .native(),
+        TestFixture::DUST_THRESHOLD + 300);
 
     // undelegate, leaving the 300 wei in the delegator
-    EXPECT_FALSE(
-        undelegate(val.id, delegator, 1 /* withdrawal id */, DUST_THRESHOLD)
-            .has_error());
+    EXPECT_FALSE(this->undelegate(
+                         val.id,
+                         delegator,
+                         1 /* withdrawal id */,
+                         TestFixture::DUST_THRESHOLD)
+                     .has_error());
 
     // withdrawal request should include the dust
     auto const withdrawal_request =
-        contract.vars.withdrawal_request(val.id, delegator, 1).load_checked();
+        this->contract.vars.withdrawal_request(val.id, delegator, 1)
+            .load_checked();
     ASSERT_TRUE(withdrawal_request.has_value());
-    EXPECT_EQ(withdrawal_request->amount.native(), DUST_THRESHOLD + 300);
+    EXPECT_EQ(
+        withdrawal_request->amount.native(), TestFixture::DUST_THRESHOLD + 300);
 
     // delegator should have zero balance
-    pull_delegator_up_to_date(val.id, delegator);
+    this->pull_delegator_up_to_date(val.id, delegator);
     EXPECT_EQ(
-        contract.vars.delegator(val.id, delegator).stake().load().native(), 0);
+        this->contract.vars.delegator(val.id, delegator)
+            .stake()
+            .load()
+            .native(),
+        0);
 
-    skip_to_next_epoch(); // undelegation processed
-    skip_to_next_epoch(); // withdrawal available
+    this->skip_to_next_epoch(); // undelegation processed
+    this->skip_to_next_epoch(); // withdrawal available
     EXPECT_FALSE(
-        withdraw(val.id, delegator, 1 /* withdrawal id */).has_error());
-    EXPECT_EQ(get_balance(delegator), DUST_THRESHOLD + 300);
+        this->withdraw(val.id, delegator, 1 /* withdrawal id */).has_error());
+    EXPECT_EQ(this->get_balance(delegator), TestFixture::DUST_THRESHOLD + 300);
 }
 
 //////////////////

@@ -183,10 +183,152 @@ uint64_t blake2bf_gas_cost(byte_string_view const input)
 EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 
 template <Traits traits>
-uint64_t expmod_gas_cost(byte_string_view const input)
+static uint256_t mult_complexity(uint256_t const &max_len) noexcept
 {
-    return silkpre_expmod_gas(
-        input.data(), input.size(), static_cast<int>(traits::evm_rev()));
+    if constexpr (traits::eip_7883_active()) {
+        uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
+        if (max_len > 32) {
+            return 2 * words * words;
+        }
+        else {
+            return 16;
+        }
+    }
+    else if constexpr (traits::eip_2565_active()) {
+        uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
+        return words * words;
+    }
+    else {
+        uint256_t const max_len_squared{max_len * max_len};
+        if (max_len <= 64) {
+            return max_len_squared;
+        }
+        else if (max_len <= 1024) {
+            return (max_len_squared >> 2) + 96 * max_len - 3072;
+        }
+        else {
+            return (max_len_squared >> 4) + 480 * max_len - 199680;
+        }
+    }
+}
+
+template <Traits traits>
+static uint256_t expmod_gas_denominator() noexcept
+{
+    if constexpr (traits::eip_7883_active()) {
+        return 1;
+    }
+    else if constexpr (traits::eip_2565_active()) {
+        return 3;
+    }
+    else {
+        return 20; // Pre EIP-2565 (EIP-198)
+    }
+}
+
+template <Traits traits>
+uint256_t expmod_iteration_count(uint256_t exp_len256, size_t bit_len) noexcept
+{
+    uint256_t adjusted_exponent_len{0};
+    if (exp_len256 > 32) {
+        constexpr uint256_t exp_mult{traits::eip_7883_active() ? 16u : 8u};
+        adjusted_exponent_len = exp_mult * (exp_len256 - 32);
+    }
+    if (bit_len > 1) {
+        adjusted_exponent_len =
+            adjusted_exponent_len + static_cast<uint256_t>(bit_len - 1);
+    }
+
+    return std::max(adjusted_exponent_len, uint256_t{1});
+}
+
+template <Traits traits>
+constexpr uint64_t expmod_min_gas()
+{
+    if constexpr (traits::eip_7883_active()) {
+        return 500;
+    }
+    else if constexpr (traits::eip_2565_active()) {
+        return 200;
+    }
+    else {
+        return 0; // Pre EIP-2565 (EIP-198)
+    }
+}
+
+// TODO(LH): Replace calls to this function with uint256_t::load_be_unsafe when
+// migrating off intx.
+static uint256_t uint256_partial_load_be(uint8_t const *bytes, size_t len)
+{
+    uint256_t result;
+    MONAD_VM_ASSERT(32 >= len);
+    std::memcpy(intx::as_bytes(result) + (32 - len), bytes, len);
+    return intx::to_big_endian(result);
+}
+
+template <Traits traits>
+std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
+{
+    static constexpr auto min_gas{expmod_min_gas<traits>()};
+
+    auto const base_len256 = uint256_partial_load_be(
+        &input.data()[0], std::min(32ul, input.length()));
+    auto const exp_len256 =
+        input.length() >= 32
+            ? uint256_partial_load_be(
+                  &input.data()[32], std::min(32ul, input.length() - 32))
+            : uint256_t{0};
+    auto const mod_len256 =
+        input.length() >= 64
+            ? uint256_partial_load_be(
+                  &input.data()[64], std::min(32ul, input.length() - 64))
+            : uint256_t{0};
+
+    if (base_len256 == 0 && mod_len256 == 0) {
+        return min_gas;
+    }
+
+    if constexpr (traits::eip_7823_active()) {
+        // EIP-7823: each of the length inputs (base, exponent and modulus) MUST
+        // be less than or equal to 8192 bits (1024 bytes).
+        if (base_len256 > 1024 || exp_len256 > 1024 || mod_len256 > 1024) {
+            return std::nullopt; // invalid input
+        }
+    }
+    else if (
+        count_significant_bytes(base_len256) > 8 ||
+        count_significant_bytes(exp_len256) > 8 ||
+        count_significant_bytes(mod_len256) > 8) {
+        return std::numeric_limits<uint64_t>::max();
+    }
+
+    auto const base_len64{static_cast<uint64_t>(base_len256)};
+    auto const exp_len64{static_cast<uint64_t>(exp_len256)};
+
+    uint256_t exp_head{0}; // first 32 bytes of the exponent
+    auto const exp_index = 96 + base_len64;
+    if (input.length() > exp_index) { // input contains bytes of exponents
+        auto const exp_input_len =
+            std::min(exp_len64, input.length() - exp_index);
+        exp_head = uint256_partial_load_be(
+            &input.data()[exp_index],
+            std::min(32ul, static_cast<size_t>(exp_input_len)));
+    }
+    size_t const bit_len{256 - clz(exp_head)};
+
+    uint256_t const iteration_count{
+        expmod_iteration_count<traits>(exp_len256, bit_len)};
+
+    uint256_t const max_length{std::max(mod_len256, base_len256)};
+    uint256_t const gas = mult_complexity<traits>(max_length) *
+                          iteration_count / expmod_gas_denominator<traits>();
+
+    if (intx::count_significant_words(gas) > 1) {
+        return std::numeric_limits<uint64_t>::max();
+    }
+    else {
+        return std::max(min_gas, static_cast<uint64_t>(gas));
+    }
 }
 
 EXPLICIT_TRAITS(expmod_gas_cost);

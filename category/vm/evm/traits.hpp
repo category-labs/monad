@@ -44,8 +44,11 @@ namespace monad
         { T::evm_rev() } -> std::same_as<evmc_revision>;
 
         // Feature flags
+        { T::eip_2565_active() } -> std::same_as<bool>;
         { T::eip_2929_active() } -> std::same_as<bool>;
         { T::eip_4844_active() } -> std::same_as<bool>;
+        { T::eip_7823_active() } -> std::same_as<bool>;
+        { T::eip_7883_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
 
@@ -70,6 +73,11 @@ namespace monad
             return Rev;
         }
 
+        static consteval bool eip_2565_active() noexcept
+        {
+            return Rev >= EVMC_BERLIN;
+        }
+
         static consteval bool eip_2929_active() noexcept
         {
             return Rev >= EVMC_BERLIN;
@@ -78,6 +86,16 @@ namespace monad
         static consteval bool eip_4844_active() noexcept
         {
             return Rev >= EVMC_CANCUN;
+        }
+
+        static consteval bool eip_7823_active() noexcept
+        {
+            return Rev >= EVMC_OSAKA;
+        }
+
+        static consteval bool eip_7883_active() noexcept
+        {
+            return Rev >= EVMC_OSAKA;
         }
 
         static consteval bool eip_7951_active() noexcept
@@ -149,6 +167,11 @@ namespace monad
             return Rev;
         }
 
+        static consteval bool eip_2565_active() noexcept
+        {
+            return evm_rev() >= EVMC_BERLIN;
+        }
+
         static consteval bool eip_2929_active() noexcept
         {
             return evm_rev() >= EVMC_BERLIN;
@@ -160,6 +183,16 @@ namespace monad
             // such that execution (and consensus) is accounting for the blob
             // gas used (irrevocable) in the reserve balance calculation
             return false;
+        }
+
+        static consteval bool eip_7823_active() noexcept
+        {
+            return evm_rev() >= EVMC_OSAKA;
+        }
+
+        static consteval bool eip_7883_active() noexcept
+        {
+            return evm_rev() >= EVMC_OSAKA;
         }
 
         static consteval bool eip_7951_active() noexcept

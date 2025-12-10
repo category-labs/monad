@@ -407,10 +407,15 @@ TYPED_TEST(TraitsTest, modular_exponentiation)
         do_geth_tests<typename TestFixture::Trait>(
             "Modular Exponentiation", "modexp.json", 0x05_address);
     }
-    else {
+    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_OSAKA) {
         // EIP-2565 repricing since Berlin
         do_geth_tests<typename TestFixture::Trait>(
             "Modular Exponentiation", "modexp_eip2565.json", 0x05_address);
+    }
+    else {
+        // EIP-7883 repricing since Osaka
+        do_geth_tests<typename TestFixture::Trait>(
+            "Modular Exponentiation", "modexp_eip7883.json", 0x05_address);
     }
 }
 

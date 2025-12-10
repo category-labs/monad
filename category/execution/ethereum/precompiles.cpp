@@ -54,13 +54,20 @@ since(PrecompiledContract impl)
     return std::nullopt;
 }
 
+// Convert return value to std::optional if needed
+template <auto f>
+static std::optional<uint64_t> fmap_optional(byte_string_view const a)
+{
+    return f(a);
+}
+
 template <Traits traits>
 std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 {
 #define CASE(addr, gas_cost, execute)                                          \
     do {                                                                       \
         if (MONAD_UNLIKELY(Address{(addr)} == address)) {                      \
-            return PrecompiledContract{(gas_cost), (execute)};                 \
+            return PrecompiledContract{fmap_optional<(gas_cost)>, (execute)};  \
         }                                                                      \
     }                                                                          \
     while (false)
@@ -146,9 +153,15 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
     auto const [gas_cost_func, execute_func] = *maybe_precompile;
 
     byte_string_view const input{msg.input_data, msg.input_size};
-    uint64_t const cost = gas_cost_func(input);
+    std::optional<uint64_t> const cost = gas_cost_func(input);
 
-    if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
+    // If cost is std::nullopt, the gas function got an invalid input. This is
+    // currently only possible for EXPMOD with EIP-7823.
+    if (!cost.has_value()) {
+        return evmc::Result{evmc_status_code::EVMC_FAILURE};
+    }
+
+    if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost.value()))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
@@ -156,7 +169,7 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
     return evmc::Result{evmc_result{
         .status_code = status_code,
         .gas_left = (status_code == EVMC_SUCCESS)
-                        ? msg.gas - static_cast<int64_t>(cost)
+                        ? msg.gas - static_cast<int64_t>(cost.value())
                         : 0,
         .gas_refund = 0,
         .output_data = output_buffer,

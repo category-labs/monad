@@ -1531,6 +1531,9 @@ namespace monad::vm::llvm
             case Mul:
                 return llvm_binop(instr, &LLVMState::mul);
 
+            case Clz:
+                return llvm_unop(instr, &LLVMState::clz);
+
             default:
                 MONAD_VM_ASSERT(op == Add);
                 return llvm_binop(instr, &LLVMState::add);

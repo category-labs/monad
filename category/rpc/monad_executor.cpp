@@ -75,6 +75,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <span>
@@ -392,6 +393,22 @@ namespace
         trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
+    }
+
+    template <Traits traits>
+    Result<nlohmann::json> eth_simulate_impl(
+        Chain const &chain, std::vector<std::vector<Transaction>> const &calls,
+        std::vector<std::vector<Address>> const &senders,
+        std::span<monad_state_override const> state_overrides)
+    {
+        (void)chain;
+        (void)calls;
+        (void)senders;
+        (void)state_overrides;
+        return nlohmann::json::object({
+            {"foo", "bar"},
+            {"bar", "baz"},
+        });
     }
 
     std::pair<
@@ -1476,6 +1493,102 @@ struct monad_executor
                 }
             });
     }
+
+    void submit_eth_simulate_to_pool(
+        monad_chain_config const chain_config,
+        std::vector<std::vector<Transaction>> const &calls,
+        std::vector<std::vector<Address>> const &senders,
+        std::span<struct monad_state_override const> state_overrides,
+        BlockHeader const &block_header, uint64_t const block_number,
+        bytes32_t const &block_id,
+        void (*complete)(monad_executor_result *, void *user), void *const user)
+    {
+        monad_executor_result *const result = new monad_executor_result();
+        (void)block_number;
+        (void)block_id;
+
+        auto const priority =
+            call_seq_no_.fetch_add(1, std::memory_order_relaxed);
+        trace_block_group_.group->submit(
+            priority,
+            [this,
+             calls = calls,
+             senders = senders,
+             state_overrides = state_overrides,
+             block_header = block_header,
+             chain_config = chain_config,
+             complete = complete,
+             result = result,
+             user = user]() {
+                auto const res = [&]() -> Result<nlohmann::json> {
+                    auto const chain =
+                        [chain_config] -> std::unique_ptr<Chain> {
+                        switch (chain_config) {
+                        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                            return std::make_unique<EthereumMainnet>();
+                        case CHAIN_CONFIG_MONAD_DEVNET:
+                            return std::make_unique<MonadDevnet>();
+                        case CHAIN_CONFIG_MONAD_TESTNET:
+                            return std::make_unique<MonadTestnet>();
+                        case CHAIN_CONFIG_MONAD_MAINNET:
+                            return std::make_unique<MonadMainnet>();
+                        }
+                        MONAD_ASSERT(false);
+                    }();
+
+                    if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+                        evmc_revision const rev = chain->get_revision(
+                            block_header.number, block_header.timestamp);
+                        SWITCH_EVM_TRAITS(
+                            eth_simulate_impl,
+                            *chain,
+                            calls,
+                            senders,
+                            state_overrides);
+                        MONAD_ASSERT(false);
+                    }
+                    else {
+                        auto const rev =
+                            dynamic_cast<MonadChain *>(chain.get())
+                                ->get_monad_revision(block_header.timestamp);
+                        SWITCH_MONAD_TRAITS(
+                            eth_simulate_impl,
+                            *chain,
+                            calls,
+                            senders,
+                            state_overrides);
+                        MONAD_ASSERT(false);
+                    }
+                }();
+
+                if (MONAD_UNLIKELY(res.has_error())) {
+                    result->status_code = EVMC_REJECTED;
+                    result->message = strdup(res.error().message().c_str());
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                    return;
+                }
+
+                nlohmann::json const &trace = res.assume_value();
+                if (trace.empty()) {
+                    result->encoded_trace = nullptr;
+                    result->encoded_trace_len = 0;
+                }
+                else {
+                    std::vector<uint8_t> cbor_state_trace =
+                        nlohmann::json::to_cbor(trace);
+                    result->encoded_trace =
+                        new uint8_t[cbor_state_trace.size()];
+                    result->encoded_trace_len = cbor_state_trace.size();
+                    memcpy(
+                        (uint8_t *)result->encoded_trace,
+                        cbor_state_trace.data(),
+                        cbor_state_trace.size());
+                }
+
+                complete(result, user);
+            });
+    }
 };
 
 monad_executor *monad_executor_create(
@@ -1627,4 +1740,93 @@ void monad_executor_run_transactions(
         complete,
         user,
         tracer_config);
+}
+
+namespace
+{
+    template <auto Decoder>
+    using decoder_value_t = typename decltype(Decoder(
+        std::declval<byte_string_view &>()))::value_type;
+
+    template <auto Decoder, bool explicit_parse_string>
+    auto decode_nested_items(byte_string_view &input)
+        -> Result<std::vector<std::vector<decoder_value_t<Decoder>>>>
+    {
+        using Item = decoder_value_t<Decoder>;
+        auto ret = std::vector<std::vector<Item>>{};
+
+        BOOST_OUTCOME_TRY(auto outer_payload, rlp::parse_list_metadata(input));
+        while (!outer_payload.empty()) {
+            ret.emplace_back();
+
+            BOOST_OUTCOME_TRY(
+                auto inner_payload, rlp::parse_list_metadata(outer_payload));
+
+            if constexpr (explicit_parse_string) {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(
+                        auto item_payload,
+                        rlp::parse_string_metadata(inner_payload));
+                    BOOST_OUTCOME_TRY(Item item, Decoder(item_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+            else {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(Item item, Decoder(inner_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+        }
+
+        return ret;
+    }
+}
+
+void monad_executor_eth_simulate_submit(
+    struct monad_executor *executor, enum monad_chain_config chain_config,
+    uint8_t const *rlp_senders, size_t rlp_senders_len,
+    uint8_t const *rlp_calls, size_t rlp_calls_len, uint64_t block_number,
+    uint8_t const *rlp_header, size_t rlp_header_len,
+    uint8_t const *rlp_block_id, size_t rlp_block_id_len,
+    struct monad_state_override const *state_overrides,
+    void (*complete)(monad_executor_result *, void *user), void *user)
+{
+    byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
+    auto const maybe_senders =
+        decode_nested_items<rlp::decode_address, false>(rlp_senders_view);
+    MONAD_ASSERT(maybe_senders.has_value());
+    auto const senders = maybe_senders.assume_value();
+
+    byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
+    auto const maybe_txns =
+        decode_nested_items<rlp::decode_transaction, true>(rlp_calls_view);
+    MONAD_ASSERT(maybe_txns.has_value());
+    auto const txns = maybe_txns.assume_value();
+
+    MONAD_ASSERT(senders.size() == txns.size());
+    auto const n_blocks = txns.size();
+
+    byte_string_view rlp_header_view({rlp_header, rlp_header_len});
+    auto const block_header_result = rlp::decode_block_header(rlp_header_view);
+    MONAD_ASSERT(!block_header_result.has_error());
+    MONAD_ASSERT(rlp_header_view.empty());
+    auto const &block_header = block_header_result.value();
+
+    byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
+    auto const block_id_result = rlp::decode_bytes32(block_id_view);
+    MONAD_ASSERT(!block_id_result.has_error());
+    MONAD_ASSERT(block_id_view.empty());
+    auto const block_id = block_id_result.value();
+
+    executor->submit_eth_simulate_to_pool(
+        chain_config,
+        txns,
+        senders,
+        std::span{state_overrides, n_blocks},
+        block_header,
+        block_number,
+        block_id,
+        complete,
+        user);
 }

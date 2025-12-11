@@ -343,7 +343,7 @@ namespace trace
                     // the pattern (null, null).
                     MONAD_ASSERT(original_account.has_value());
                     MONAD_ASSERT(current_account.has_value());
-                    pre[address_key] = account_to_json(original_account, state);
+
                     if (original_account->balance != current_account->balance) {
                         post[address_key]["balance"] = std::format(
                             "0x{}",
@@ -362,6 +362,12 @@ namespace trace
                     if (original_account->nonce != current_account->nonce) {
                         post[address_key]["nonce"] = current_account->nonce;
                     }
+
+                    if (state_delta.storage.empty() &&
+                        post.find(address_key) == post.end()) {
+                        continue;
+                    }
+                    pre[address_key] = account_to_json(original_account, state);
                 }
             }
             // Storage

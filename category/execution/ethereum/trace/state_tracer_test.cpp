@@ -1045,3 +1045,75 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
         EXPECT_EQ(storage, nlohmann::json::parse(json_string));
     }
 }
+
+TEST(PrestateTracer, prestate_access_storage)
+{
+    // Setup matter
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    Account const a{.balance = 0, .nonce = 1};
+
+    // Block 0
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, a},
+                 .storage = {StorageDeltas{
+                     {key1, {bytes32_t{}, value1}},
+                     {key2, {bytes32_t{}, value2}}}}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    State s(bs, Incarnation{0, 0});
+
+    // Touch some of the account's storage.
+    // First access the account to bring it into the state object; this is a
+    // prerequisite for accessing the storage.
+    EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
+    EXPECT_TRUE(s.original().find(ADDR_A) != s.original().end());
+    EXPECT_TRUE(s.current().find(ADDR_A) != s.current().end());
+    EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
+    {
+        // Run prestate tracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace};
+        tracer.encode(s.original(), s);
+
+        auto const json_str = R"(
+        {
+            "0x0000000000000000000000000000000000000100": {
+                "balance": "0x0",
+                "nonce": 1,
+                "storage": {
+                    "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c": "0x0000000000000000000000000000000000000000000000000000000000000007"
+                }
+            }
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+        tracer.encode(tracer.trace(s), s);
+
+        // We only read the storage, so no changes are recorded in the
+        // statediff.
+        auto const json_str = R"(
+        {
+            "post": {},
+            "pre": {}
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}

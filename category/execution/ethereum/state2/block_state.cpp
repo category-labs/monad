@@ -51,6 +51,7 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm)
     : db_{db}
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
+    , final_state_(std::make_unique<StateDeltas>())
 {
 }
 
@@ -211,6 +212,7 @@ void BlockState::merge(State const &state)
     }
 
     MONAD_ASSERT(state_);
+    MONAD_ASSERT(final_state_);
     for (auto const &[address, stack] : current) {
         auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
@@ -218,6 +220,18 @@ void BlockState::merge(State const &state)
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
         it->second.account.second = account;
+        StateDeltas::accessor final_it{};
+        if (final_state_->find(final_it, address)) {
+            MONAD_ASSERT(
+                final_it->second.account.first == it->second.account.first);
+            final_it->second.account.second = account;
+        }
+        else {
+            final_state_->emplace(
+                final_it,
+                address,
+                StateDelta{.account = it->second.account, .storage = {}});
+        }
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
@@ -226,12 +240,20 @@ void BlockState::merge(State const &state)
                 }
                 else {
                     it->second.storage.emplace(
-                        key, std::make_pair(bytes32_t{}, value));
+                        it2, key, std::make_pair(bytes32_t{}, value));
+                }
+                StorageDeltas::accessor final_it2{};
+                if (final_it->second.storage.find(final_it2, key)) {
+                    final_it2->second.second = value;
+                }
+                else {
+                    final_it->second.storage.emplace(key, it2->second);
                 }
             }
         }
         else {
             it->second.storage.clear();
+            final_it->second.storage.clear();
         }
     }
 }
@@ -246,7 +268,7 @@ void BlockState::commit(
     std::optional<std::vector<Withdrawal>> const &withdrawals)
 {
     db_.commit(
-        std::move(state_),
+        std::move(final_state_),
         code_,
         block_id,
         header,
@@ -262,6 +284,7 @@ void BlockState::log_debug()
 {
     MONAD_ASSERT(state_);
     LOG_DEBUG("State Deltas: {}", *state_);
+    LOG_DEBUG("Final States: {}", *final_state_);
     LOG_DEBUG("Code Deltas: {}", code_);
 }
 

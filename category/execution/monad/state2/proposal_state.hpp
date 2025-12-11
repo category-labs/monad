@@ -86,6 +86,35 @@ public:
         }
         return false;
     }
+
+    bool try_read_account_blocknum(Address const &address) const
+    {
+        StateDeltas::const_accessor it{};
+        if (state_->find(it, address)) {
+            return true;
+        }
+        return false;
+    }
+
+    bool try_read_storage_blocknum(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key) const
+    {
+        StateDeltas::const_accessor it{};
+        if (!state_->find(it, address)) {
+            return false;
+        }
+        auto const &account = it->second.account.second;
+        if (!account || incarnation != account->incarnation) {
+            return true;
+        }
+        auto const &storage = it->second.storage;
+        StorageDeltas::const_accessor it2{};
+        if (storage.find(it2, key)) {
+            return true;
+        }
+        return false;
+    }
 };
 
 class Proposals
@@ -134,6 +163,25 @@ public:
                 return ps.try_read_storage(address, incarnation, key, result);
             };
         return try_read(fn, truncated);
+    }
+
+    bool try_read_account_blocknum(
+        Address const &address, uint64_t &result, bool &truncated) const
+    {
+        auto const fn = [&address](ProposalState const &ps) {
+            return ps.try_read_account_blocknum(address);
+        };
+        return try_read_blocknum(fn, result, truncated);
+    }
+
+    bool try_read_storage_blocknum(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key, uint64_t &result, bool &truncated) const
+    {
+        auto const fn = [&address, incarnation, &key](ProposalState const &ps) {
+            return ps.try_read_storage_blocknum(address, incarnation, key);
+        };
+        return try_read_blocknum(fn, result, truncated);
     }
 
     void
@@ -227,6 +275,53 @@ private:
             }
             std::tie(block_number, block_id) = ps->parent_info();
         }
+        return false;
+    }
+
+    template <class Func>
+    bool try_read_blocknum(
+        Func const try_read_fn, uint64_t &result, bool &truncated) const
+    {
+        constexpr int DEPTH_LIMIT = 5;
+        int depth = 1;
+        bytes32_t block_id = block_id_;
+        uint64_t block_number = block_;
+        while (true) {
+            if (block_id == finalized_block_id_) {
+                break;
+            }
+            MONAD_ASSERT_PRINTF(
+                block_number > finalized_block_,
+                "block_number %lu is not greater than last finalized block "
+                "%lu. block_id = %s, block_ %lu, block_id_ %s, "
+                "finalized_block_id_ = %s, depth = %d",
+                block_number,
+                finalized_block_,
+                evmc::hex(to_byte_string_view(block_id.bytes)).c_str(),
+                block_,
+                evmc::hex(to_byte_string_view(block_id_.bytes)).c_str(),
+                evmc::hex(to_byte_string_view(finalized_block_id_.bytes))
+                    .c_str(),
+                depth);
+            auto const it =
+                proposal_map_.find(std::make_pair(block_number, block_id));
+            if (it == proposal_map_.end()) {
+                truncated = true;
+                break;
+            }
+            ProposalState const *ps = it->second.get();
+            MONAD_ASSERT(ps);
+            if (try_read_fn(*ps)) {
+                result = block_number;
+                return true;
+            }
+            if (++depth > DEPTH_LIMIT) {
+                truncated = true;
+                break;
+            }
+            std::tie(block_number, block_id) = ps->parent_info();
+        }
+        result = mpt::INVALID_BLOCK_NUM;
         return false;
     }
 

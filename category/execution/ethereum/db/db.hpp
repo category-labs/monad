@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/mpt/util.hpp>
 #include <category/vm/vm.hpp>
 
 #include <cstdint>
@@ -40,6 +41,17 @@ struct Db
 
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
+
+    virtual uint64_t read_account_blocknum(Address const &)
+    {
+        return ::monad::mpt::INVALID_BLOCK_NUM;
+    }
+
+    virtual uint64_t
+    read_storage_blocknum(Address const &, Incarnation, bytes32_t const &)
+    {
+        return ::monad::mpt::INVALID_BLOCK_NUM;
+    }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 

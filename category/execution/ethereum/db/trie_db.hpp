@@ -64,6 +64,9 @@ public:
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
+    virtual uint64_t read_account_blocknum(Address const &) override;
+    virtual uint64_t read_storage_blocknum(
+        Address const &, Incarnation, bytes32_t const &key) override;
     virtual void set_block_and_prefix(
         uint64_t block_number,
         bytes32_t const &block_id = bytes32_t{}) override;

@@ -327,8 +327,9 @@ namespace
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = in.substr(0, sizeof(bytes32_t)),
                     .value = bytes_alloc_.emplace_back(encode_storage_db(
-                        bytes32_t{}, // TODO: update this when binary checkpoint
-                                     // includes unhashed storage slot
+                        bytes32_t{}, // TODO: update this when binary
+                                     // checkpoint includes unhashed storage
+                                     // slot
                         unaligned_load<bytes32_t>(
                             in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
                                 .data()))),
@@ -565,7 +566,7 @@ void MachineBase::down(unsigned char const nibble)
          nibble == TRANSACTION_NIBBLE || nibble == BLOCKHEADER_NIBBLE ||
          nibble == WITHDRAWAL_NIBBLE || nibble == OMMER_NIBBLE ||
          nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE) ||
-        depth != prefix_length);
+        nibble == BLOCK_ACCESS_NIBBLE || depth != prefix_length);
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
         if (nibble == STATE_NIBBLE) {
@@ -597,6 +598,9 @@ void MachineBase::down(unsigned char const nibble)
         }
         else if (nibble == CALL_FRAME_NIBBLE) {
             table = TableType::CallFrame;
+        }
+        else if (nibble == BLOCK_ACCESS_NIBBLE) {
+            table = TableType::AccessBlock;
         }
         else {
             MONAD_ABORT_PRINTF("Invalid nibble %u", (unsigned)nibble);
@@ -754,6 +758,18 @@ Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
     }
     return res.second;
 };
+
+Result<uint64_t> decode_block_number_db(byte_string_view &enc)
+{
+
+    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(
+        auto const block_number, rlp::decode_unsigned<uint64_t>(payload));
+    if (MONAD_UNLIKELY(!enc.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    return block_number;
+}
 
 void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,

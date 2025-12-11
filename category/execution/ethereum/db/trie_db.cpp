@@ -174,6 +174,45 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
     return vm::make_shared_intercode(res.value().node->value());
 }
 
+uint64_t TrieDb::read_account_blocknum(Address const &addr)
+{
+
+    auto const res = db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            BLOCK_ACCESS_NIBBLE,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+        block_number_);
+    if (res.has_error()) {
+        return INVALID_BLOCK_NUM;
+    }
+    auto encoded_blocknum = res.value().node->value();
+    auto const block_number = decode_block_number_db(encoded_blocknum);
+    MONAD_ASSERT(!block_number.has_error());
+    return block_number.value();
+}
+
+uint64_t TrieDb::read_storage_blocknum(
+    Address const &addr, Incarnation, bytes32_t const &key)
+{
+    auto const res = db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            BLOCK_ACCESS_NIBBLE,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+        block_number_);
+    if (res.has_error()) {
+        return INVALID_BLOCK_NUM;
+    }
+    auto encoded_blocknum = res.value().node->value();
+    auto const block_number = decode_block_number_db(encoded_blocknum);
+    MONAD_ASSERT(!block_number.has_error());
+    return block_number.value();
+}
+
 void TrieDb::commit(
     StateDeltas const &state_deltas, Code const &code,
     bytes32_t const &block_id, BlockHeader const &header,
@@ -245,6 +284,53 @@ void TrieDb::commit(
         }
     }
 
+    // TODO: can be merged with the loop above. Separate for clarity now.
+    uint64_t num_account_accessed = 0;
+    uint64_t num_storage_accessed = 0;
+    auto const &encoded_block_number =
+        bytes_alloc_.emplace_back(rlp::encode_unsigned(header.number));
+    UpdateList access_updates;
+    for (auto const &[addr, delta] : state_deltas) {
+        UpdateList storage_updates;
+        auto const &account = delta.account.second;
+        if (account.has_value()) {
+            ++num_account_accessed;
+            for (auto const &[key, delta] : delta.storage) {
+                if (delta.second != bytes32_t{}) {
+                    storage_updates.push_front(
+                        update_alloc_.emplace_back(Update{
+                            .key = hash_alloc_.emplace_back(
+                                keccak256({key.bytes, sizeof(key.bytes)})),
+                            .value = encoded_block_number,
+                            .incarnation = false,
+                            .next = UpdateList{},
+                            .version = static_cast<int64_t>(block_number_)}));
+                    ++num_storage_accessed;
+                }
+            }
+            bool const incarnation =
+                account.has_value() && delta.account.first.has_value() &&
+                delta.account.first->incarnation != account->incarnation;
+            access_updates.push_front(update_alloc_.emplace_back(Update{
+                .key = hash_alloc_.emplace_back(
+                    keccak256({addr.bytes, sizeof(addr.bytes)})),
+                .value = encoded_block_number,
+                .incarnation = incarnation,
+                .next = std::move(storage_updates),
+                .version = static_cast<int64_t>(block_number_)}));
+        }
+        else {
+            // TODO: discuss if we plan to delete access record when account is
+            // deleted
+        }
+    }
+    LOG_INFO(
+        "Committed {} account access records and {} storage access records for "
+        "block number {}",
+        num_account_accessed,
+        num_storage_accessed,
+        block_number_);
+
     UpdateList code_updates;
     for (auto const &[hash, icode] : code) {
         // TODO write intercode object
@@ -265,8 +351,6 @@ void TrieDb::commit(
     MONAD_ASSERT(transactions.size() == senders.size());
     MONAD_ASSERT(receipts.size() == call_frames.size());
     MONAD_ASSERT(receipts.size() <= std::numeric_limits<uint32_t>::max());
-    auto const &encoded_block_number =
-        bytes_alloc_.emplace_back(rlp::encode_unsigned(header.number));
     std::vector<byte_string> index_alloc;
     index_alloc.reserve(std::max(
         receipts.size(),
@@ -369,6 +453,12 @@ void TrieDb::commit(
         .incarnation = false,
         .next = std::move(tx_hash_updates),
         .version = static_cast<int64_t>(block_number_)};
+    auto access_block_update = Update{
+        .key = block_access_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(access_updates),
+        .version = static_cast<int64_t>(block_number_)};
     updates.push_front(state_update);
     updates.push_front(code_update);
     updates.push_front(receipt_update);
@@ -376,6 +466,7 @@ void TrieDb::commit(
     updates.push_front(transaction_update);
     updates.push_front(ommer_update);
     updates.push_front(tx_hash_update);
+    updates.push_front(access_block_update);
     UpdateList withdrawal_updates;
     if (withdrawals.has_value()) {
         // only commit withdrawals when the optional has value

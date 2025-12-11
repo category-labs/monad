@@ -61,9 +61,11 @@ class DbCache final : public Db
 
     using AddressHashCompare = BytesHashCompare<Address>;
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
-    using AccountsCache =
-        LruCache<Address, std::optional<Account>, AddressHashCompare>;
-    using StorageCache = LruCache<StorageKey, bytes32_t, StorageKeyHashCompare>;
+    using AccountsCache = LruCache<
+        Address, std::pair<std::optional<Account>, uint64_t>,
+        AddressHashCompare>;
+    using StorageCache = LruCache<
+        StorageKey, std::pair<bytes32_t, uint64_t>, StorageKeyHashCompare>;
 
     AccountsCache accounts_{10'000'000};
     StorageCache storage_{10'000'000};
@@ -85,7 +87,7 @@ public:
         if (!truncated) {
             AccountsCache::ConstAccessor acc{};
             if (accounts_.find(acc, address)) {
-                return acc->second.value_;
+                return acc->second.value_.first;
             }
         }
         return db_.read_account(address);
@@ -105,10 +107,48 @@ public:
             StorageKey const skey{address, incarnation, key};
             StorageCache::ConstAccessor acc{};
             if (storage_.find(acc, skey)) {
-                return acc->second.value_;
+                return acc->second.value_.first;
             }
         }
         return db_.read_storage(address, incarnation, key);
+    }
+
+    virtual uint64_t read_account_blocknum(Address const &address) override
+    {
+        bool truncated = false;
+        uint64_t result;
+        if (proposals_.try_read_account_blocknum(address, result, truncated)) {
+            return result;
+        }
+        if (MONAD_LIKELY(!truncated)) {
+            AccountsCache::ConstAccessor acc{};
+            if (accounts_.find(acc, address)) {
+                return acc->second.value_.second;
+            }
+            return mpt::INVALID_BLOCK_NUM;
+        }
+        return db_.read_account_blocknum(address);
+    }
+
+    virtual uint64_t read_storage_blocknum(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key) override
+    {
+        bool truncated = false;
+        uint64_t result;
+        if (proposals_.try_read_storage_blocknum(
+                address, incarnation, key, result, truncated)) {
+            return result;
+        }
+        if (MONAD_LIKELY(!truncated)) {
+            StorageKey const skey{address, incarnation, key};
+            StorageCache::ConstAccessor acc{};
+            if (storage_.find(acc, skey)) {
+                return acc->second.value_.second;
+            }
+            return mpt::INVALID_BLOCK_NUM;
+        }
+        return db_.read_storage_blocknum(address, incarnation, key);
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
@@ -130,7 +170,7 @@ public:
         std::unique_ptr<ProposalState> const ps =
             proposals_.finalize(block_number, block_id);
         if (ps) {
-            insert_in_lru_caches(ps->state());
+            insert_in_lru_caches(ps->state(), block_number);
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.
@@ -231,14 +271,16 @@ public:
     }
 
 private:
-    void insert_in_lru_caches(StateDeltas const &state_deltas)
+    void
+    insert_in_lru_caches(StateDeltas const &state_deltas, uint64_t block_number)
     {
         for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
             auto const &address = it->first;
             auto const &account_delta = it->second.account;
-            accounts_.insert(address, account_delta.second);
+            accounts_.insert(address, {account_delta.second, block_number});
             auto const &storage = it->second.storage;
             auto const &account = account_delta.second;
+            // TODO: Do not update block number for deleted accounts and storage
             if (account.has_value()) {
                 for (auto it2 = storage.cbegin(); it2 != storage.cend();
                      ++it2) {
@@ -247,7 +289,7 @@ private:
                     auto const incarnation = account->incarnation;
                     storage_.insert(
                         StorageKey(address, incarnation, key),
-                        storage_delta.second);
+                        {storage_delta.second, block_number});
                 }
             }
         }

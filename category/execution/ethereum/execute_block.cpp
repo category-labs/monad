@@ -449,7 +449,7 @@ Result<std::vector<Receipt>> execute_block_sync(
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     RevertTransactionFn const &revert_transaction)
 {
-    auto submit_fn = [](auto const, auto &&task) {
+    auto submit_fn = [](auto, auto &&task) {
         std::forward<decltype(task)>(task)();
     };
 

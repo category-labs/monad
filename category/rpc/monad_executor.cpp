@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#define TODO(name, type) name = [] -> type { std::unreachable(); }();
+
 #include <category/rpc/monad_executor.h>
 
 #include <category/core/assert.h>
@@ -78,6 +80,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -397,18 +400,128 @@ namespace
 
     template <Traits traits>
     Result<nlohmann::json> eth_simulate_impl(
-        Chain const &chain, std::vector<std::vector<Transaction>> const &calls,
-        std::vector<std::vector<Address>> const &senders,
+        Chain const &chain, std::vector<std::vector<Transaction>> calls,
+        BlockHeader const &header, uint64_t const block_number,
+        bytes32_t const &block_id, std::vector<std::vector<Address>> senders,
+        TrieRODb &tdb, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
         std::span<monad_state_override const> state_overrides)
     {
+        (void)header;
         (void)chain;
-        (void)calls;
-        (void)senders;
+        (void)block_hash_buffer;
+
+        auto const authorities =
+            std::vector<std::vector<std::vector<std::optional<Address>>>>{};
+        // TODO(
+        //     auto const authorities,
+        //     std::vector<std::vector<std::vector<std::optional<Address>>>>);
+        // TODO(auto const revert_transaction, RevertTransactionFn);
+
+        // TODO(BSC): recover authorities
+
+        // TODO(BSC): initialise txn revert logic properly (treat chain context
+        // as a ring buffer and rotate entries?)
+
+        // MONAD_ASSERT(calls.size() == senders.size());
+        // MONAD_ASSERT(calls.size() == authorities.size());
+        // MONAD_ASSERT(calls.size() == state_overrides.size());
+
+        tdb.set_block_and_prefix(block_number, block_id);
+        auto start_header = tdb.read_eth_header();
+
+        auto result = nlohmann::json::array();
+
+        for (auto i = 0u; i < calls.size(); ++i) {
+            auto entry = nlohmann::json::object();
+
+            // TODO(BSC): apply state overrides
+            // TODO(BSC): apply block overrides
+
+            auto const block = Block{
+                .header = std::move(start_header),
+                .transactions = std::move(calls[i]),
+            };
+
+            // TODO(BSC): rehydrate transactions properly and set default values
+            // per the simulate_v1 spec
+
+            auto block_metrics = BlockMetrics{};
+            (void)block_metrics;
+            auto block_state = BlockState{tdb, vm};
+            (void)block_state;
+
+            std::vector<std::vector<CallFrame>> call_frames{};
+            std::vector<std::unique_ptr<CallTracerBase>> call_tracers{};
+            std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
+
+            call_frames.reserve(block.transactions.size());
+            call_tracers.reserve(block.transactions.size());
+            state_tracers.reserve(block.transactions.size());
+
+            for (size_t j = 0; j < block.transactions.size(); ++j) {
+                call_frames.emplace_back();
+                call_tracers.emplace_back(std::make_unique<CallTracer>(
+                    block.transactions[j], call_frames[j]));
+                state_tracers.emplace_back(
+                    std::make_unique<trace::StateTracer>(std::monostate{}));
+            }
+
+            auto const receipts =
+                std::vector<Receipt>(block.transactions.size());
+            MONAD_ASSERT(receipts.size() == call_frames.size());
+
+            // BOOST_OUTCOME_TRY(
+            //     auto const receipts,
+            //     execute_block_sync<traits>(
+            //         chain,
+            //         block,
+            //         senders[i],
+            //         authorities[i],
+            //         block_state,
+            //         block_hash_buffer,
+            //         block_metrics,
+            //         call_tracers,
+            //         state_tracers,
+            //         revert_transaction));
+
+            (void)tdb; // TODO(BSC): commit via read through database overlay
+            auto const output_header =
+                tdb.read_eth_header(); // TODO(BSC): read back from DB
+
+            entry["calls"] = nlohmann::json::array();
+            auto &txns = entry["calls"];
+
+            for (auto const &[receipt, frames] :
+                 std::ranges::zip_view(receipts, call_frames)) {
+                auto call_entry = nlohmann::json::object();
+
+                call_entry["returnData"] =
+                    std::format("0x{}", evmc::hex(frames.front().output));
+                call_entry["logs"] = nlohmann::json::array();
+
+                txns.push_back(std::move(call_entry));
+            }
+
+            entry["baseFeePerGas"] = std::format(
+                "0x{}",
+                intx::to_string(output_header.base_fee_per_gas.value_or(0)));
+            entry["blobGasUsed"] =
+                std::format("0x{:x}", output_header.blob_gas_used.value_or(0));
+            entry["difficulty"] =
+                std::format("0x{}", intx::to_string(output_header.difficulty));
+            entry["excessBlobGas"] = std::format(
+                "0x{:x}", output_header.excess_blob_gas.value_or(0));
+            entry["extraData"] =
+                std::format("0x{}", evmc::hex(output_header.extra_data));
+
+            result.push_back(std::move(entry));
+        }
+
         (void)state_overrides;
-        return nlohmann::json::object({
-            {"foo", "bar"},
-            {"bar", "baz"},
-        });
+        (void)senders;
+        (void)authorities;
+
+        return result;
     }
 
     std::pair<
@@ -1496,27 +1609,29 @@ struct monad_executor
 
     void submit_eth_simulate_to_pool(
         monad_chain_config const chain_config,
-        std::vector<std::vector<Transaction>> const &calls,
-        std::vector<std::vector<Address>> const &senders,
+        std::vector<std::vector<Transaction>> calls,
+        std::vector<std::vector<Address>> senders,
         std::span<struct monad_state_override const> state_overrides,
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
-        (void)block_number;
         (void)block_id;
 
         auto const priority =
             call_seq_no_.fetch_add(1, std::memory_order_relaxed);
         trace_block_group_.group->submit(
             priority,
-            [this,
-             calls = calls,
-             senders = senders,
+            [calls = std::move(calls),
+             senders = std::move(senders),
              state_overrides = state_overrides,
              block_header = block_header,
+             block_number = block_number,
+             block_id = block_id,
              chain_config = chain_config,
+             &db = db_,
+             &vm = vm_,
              complete = complete,
              result = result,
              user = user]() {
@@ -1536,6 +1651,9 @@ struct monad_executor
                         MONAD_ASSERT(false);
                     }();
 
+                    LazyBlockHash block_hash_buffer{db, block_number};
+                    TrieRODb tdb{db};
+
                     if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
                         evmc_revision const rev = chain->get_revision(
                             block_header.number, block_header.timestamp);
@@ -1543,7 +1661,13 @@ struct monad_executor
                             eth_simulate_impl,
                             *chain,
                             calls,
+                            block_header,
+                            block_number,
+                            block_id,
                             senders,
+                            tdb,
+                            vm,
+                            block_hash_buffer,
                             state_overrides);
                         MONAD_ASSERT(false);
                     }
@@ -1555,7 +1679,13 @@ struct monad_executor
                             eth_simulate_impl,
                             *chain,
                             calls,
+                            block_header,
+                            block_number,
+                            block_id,
                             senders,
+                            tdb,
+                            vm,
+                            block_hash_buffer,
                             state_overrides);
                         MONAD_ASSERT(false);
                     }
@@ -1821,8 +1951,8 @@ void monad_executor_eth_simulate_submit(
 
     executor->submit_eth_simulate_to_pool(
         chain_config,
-        txns,
-        senders,
+        std::move(txns),
+        std::move(senders),
         std::span{state_overrides, n_blocks},
         block_header,
         block_number,

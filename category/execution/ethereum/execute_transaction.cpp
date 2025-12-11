@@ -161,7 +161,7 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
 
         // 7. Add PER_EMPTY_ACCOUNT_COST - PER_AUTH_BASE_COST gas to the global
         // refund counter if authority is not empty.
-        if (!is_empty(*state.recent_account(*authority))) {
+        if (!state.account_is_empty(*authority)) {
             refund += (25'000u - 12'500u);
         }
 

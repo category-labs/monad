@@ -79,6 +79,8 @@ private:
 
     std::optional<Account> &current_account(Address const &);
 
+    std::optional<Account> const &recent_account(Address const &);
+
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
 
@@ -103,13 +105,15 @@ public:
 
     vm::VM &vm();
 
-    std::optional<Account> const &recent_account(Address const &);
+    std::optional<Account> const &recent_account_pessimistic(Address const &);
 
     void set_original_nonce(Address const &, uint64_t nonce);
 
     ////////////////////////////////////////
 
     bool account_exists(Address const &);
+
+    bool account_is_empty(Address const &);
 
     bool account_is_dead(Address const &);
 

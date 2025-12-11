@@ -1906,8 +1906,8 @@ namespace
                     st2.add_to_balance(addr, delta);
                 }
                 else if (action < RANDOM_DEL) {
-                    auto const account1 = st1.recent_account(addr);
-                    auto const account2 = st2.recent_account(addr);
+                    auto const account1 = st1.recent_account_pessimistic(addr);
+                    auto const account2 = st2.recent_account_pessimistic(addr);
                     MONAD_ASSERT(account1 == account2);
                     if (account1.has_value()) {
                         uint256_t const bal = account1->balance;

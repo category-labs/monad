@@ -272,7 +272,7 @@ namespace
                  state_overrides.override_sets) {
                 // This would avoid seg-fault on storage override for
                 // non-existing accounts
-                auto const &account = state.recent_account(address);
+                auto const &account = state.recent_account_pessimistic(address);
                 if (MONAD_UNLIKELY(!account.has_value())) {
                     state.create_contract(address);
                 }
@@ -331,9 +331,8 @@ namespace
         // However, eth_call doesn't take a nonce parameter.
         // Solving the issue by manually setting nonce to match with the
         // expected nonce
-        auto const &acct = state.recent_account(sender);
+        auto const &acct = state.recent_account_pessimistic(sender);
         enriched_txn.nonce = acct.has_value() ? acct.value().nonce : 0;
-
         // validate_transaction expects the sender of a transaction is EOA, not
         // CA. However, eth_call allows the sender to be CA to simulate a
         // subroutine. Solving this issue by manually setting account to be EOA

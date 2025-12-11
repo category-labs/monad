@@ -183,6 +183,13 @@ std::optional<Account> const &State::recent_account(Address const &address)
     return recent_account_state(address).account_;
 }
 
+std::optional<Account> const &
+State::recent_account_pessimistic(Address const &address)
+{
+    original_account_state(address).set_validate_exact_balance();
+    return recent_account(address);
+}
+
 void State::set_original_nonce(Address const &address, uint64_t const nonce)
 {
     auto &account_state = original_account_state(address);
@@ -198,9 +205,19 @@ bool State::account_exists(Address const &address)
     return recent_account(address).has_value();
 }
 
+bool State::account_is_empty(Address const &address)
+{
+    auto const &account = recent_account(address);
+
+    if (MONAD_UNLIKELY(!account.has_value())) {
+        return true;
+    }
+    return is_empty(account.value());
+}
+
 bool State::account_is_dead(Address const &address)
 {
-    return is_dead(recent_account(address));
+    return account_is_empty(address);
 }
 
 uint64_t State::get_nonce(Address const &address)

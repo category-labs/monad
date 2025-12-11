@@ -173,7 +173,7 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
 template <Traits traits>
 Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
 {
-    auto const sender_account = state.recent_account(sender_);
+    auto const sender_account = state.recent_account_pessimistic(sender_);
     BOOST_OUTCOME_TRY(validate_system_transaction(tx_, sender_account));
 
     auto const nonce = state.get_nonce(sender_);

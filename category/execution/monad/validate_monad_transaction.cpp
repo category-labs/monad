@@ -34,7 +34,7 @@ Result<void> validate_monad_transaction(
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities)
 {
-    auto const acct = state.recent_account(sender);
+    auto const acct = state.recent_account_pessimistic(sender);
     auto const icode = state.get_code(sender)->intercode();
     auto res = ::monad::validate_transaction(
         rev, tx, acct, {icode->code(), icode->size()});

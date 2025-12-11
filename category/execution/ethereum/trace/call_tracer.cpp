@@ -97,7 +97,7 @@ void CallTracer::on_enter(evmc_message const &msg)
     positions_.top()++;
     positions_.push(0);
 
-    depth_ = static_cast<uint64_t>(msg.depth);
+    auto const depth = static_cast<uint64_t>(msg.depth);
 
     // This is to conform with quicknode RPC
     Address const from =
@@ -136,14 +136,14 @@ void CallTracer::on_enter(evmc_message const &msg)
         .from = from,
         .to = to,
         .value = intx::be::load<uint256_t>(msg.value),
-        .gas = depth_ == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
+        .gas = depth == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
         .gas_used = 0,
         .input = msg.input_data == nullptr
                      ? byte_string{}
                      : byte_string{msg.input_data, msg.input_size},
         .output = {},
         .status = EVMC_FAILURE,
-        .depth = depth_,
+        .depth = depth,
         .logs = std::vector<CallFrame::Log>{},
     });
 
@@ -192,11 +192,12 @@ void CallTracer::on_log(Receipt::Log log)
 
 void CallTracer::on_self_destruct(Address const &from, Address const &to)
 {
+    MONAD_ASSERT(!last_.empty());
     MONAD_ASSERT(!positions_.empty());
     positions_.top()++;
 
-    // we don't change depth_ here, because exit and enter combined
-    // together here
+    auto const &parent = frames_.at(last_.top());
+
     frames_.emplace_back(CallFrame{
         .type = CallType::SELFDESTRUCT,
         .flags = 0,
@@ -208,7 +209,7 @@ void CallTracer::on_self_destruct(Address const &from, Address const &to)
         .input = {},
         .output = {},
         .status = EVMC_SUCCESS, // TODO
-        .depth = depth_ + 1,
+        .depth = parent.depth + 1,
         .logs = std::vector<CallFrame::Log>{},
     });
 }
@@ -224,7 +225,6 @@ void CallTracer::reset()
 {
     frames_.clear();
     last_ = std::stack<size_t>{};
-    depth_ = 0;
 
     positions_ = std::stack<size_t>{};
     positions_.push(0);

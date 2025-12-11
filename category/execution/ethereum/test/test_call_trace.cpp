@@ -443,3 +443,95 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
         EXPECT_TRUE(frame.logs.has_value());
     }
 }
+
+// Regression test for a bug where selfdestruct call frames would be incorrectly
+// grouped together at the same depth when they occur consecutively. The buggy
+// behaviour is, with depths in square brackets:
+//
+//   [0] Create A
+//   [1] ---> Create B
+//   [2] ---|---> Self Destruct B
+//   [2] ---|---> Self Destruct A
+//
+// This is incorrect, because the self-destruct of A should be a child of the
+// creation of A, not the creation of B. The behaviour we want is:
+//
+//   [0] Create A
+//   [1] ---> Create B
+//   [2] ---|---> Self Destruct B
+//   [1] ---> Self Destruct A
+//
+TYPED_TEST(TraitsTest, selfdestruct_depth)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    // Tries to deploy a contract that selfdestructs in its constructor, then
+    // selfdestructs itself in the constructor. See diagram above.
+    auto const initcode =
+        evmc::from_hex(
+            "0x6080604052348015600f57600080fd5b50604051601a906036565b6040518091"
+            "03906000f080158015603057600080fd5b50329050ff5b60148060428339019056"
+            "fe6080604052348015600f57600080fd5b5032fffe")
+            .value();
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max()}}}}},
+        Code{},
+        BlockHeader{});
+
+    BlockState bs{tdb, vm};
+    Incarnation const incarnation{0, 0};
+    State s{bs, incarnation};
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 1'000'000,
+        .value = 0,
+        .to = std::nullopt,
+        .data = initcode,
+    };
+
+    auto const &sender = ADDR_A;
+    auto const &beneficiary = ADDR_A;
+
+    evmc_tx_context const tx_context{};
+    BlockHashBufferFinalized buffer{};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+    EvmcHost<typename TestFixture::Trait> host{
+        call_tracer, tx_context, buffer, s};
+
+    auto const result =
+        ExecuteTransactionNoValidation<typename TestFixture::Trait>(
+            EthereumMainnet{},
+            tx,
+            sender,
+            authorities_empty,
+            BlockHeader{.beneficiary = beneficiary},
+            0)(s, host);
+    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+
+    EXPECT_EQ(call_frames.size(), 4);
+
+    EXPECT_EQ(call_frames[0].type, CallType::CREATE);
+    EXPECT_EQ(call_frames[0].depth, 0);
+
+    EXPECT_EQ(call_frames[1].type, CallType::CREATE);
+    EXPECT_EQ(call_frames[1].depth, 1);
+
+    EXPECT_EQ(call_frames[2].type, CallType::SELFDESTRUCT);
+    EXPECT_EQ(call_frames[2].depth, 2);
+
+    EXPECT_EQ(call_frames[3].type, CallType::SELFDESTRUCT);
+    EXPECT_EQ(call_frames[3].depth, 1);
+}

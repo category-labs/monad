@@ -61,7 +61,6 @@ class CallTracer final : public CallTracerBase
     std::vector<CallFrame> &frames_;
     std::stack<size_t> last_{};
     std::stack<size_t> positions_{};
-    uint64_t depth_{0};
     Transaction const &tx_;
 
 public:

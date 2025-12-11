@@ -1618,7 +1618,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         }
 
         EXPECT_EQ(
-            state_to_json(expected, s),
+            state_to_json(expected, s, header.beneficiary),
             nlohmann::json::from_cbor(encoded_pre_state_trace));
     }
 
@@ -1744,8 +1744,12 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
                 prestate_ctx.result->encoded_trace_len);
 
         auto const *const expected = R"({
-            "0x0000000000000000000000000000000000000000":{"balance":"0x0"},
-            "0xbd770416a3345f91e4b34576cb804a576fa48eb1":{"balance":"0x0"}
+            "0x0000000000000000000000000000000000000000": {
+                "balance": "0x0"
+            },
+            "0xbd770416a3345f91e4b34576cb804a576fa48eb1": {
+                "balance": "0x0"
+            }
         })";
         EXPECT_EQ(
             nlohmann::json::parse(expected),
@@ -1783,14 +1787,14 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
 
         auto const *const expected = R"({
             "post":{
-                "0x0000000000000000000000000000000000000000":{
-                    "balance":"0x0",
-                    "nonce":1
+                "0x0000000000000000000000000000000000000000": {
+                    "balance": "0x0",
+                    "nonce": 1
                 },
-                "0xbd770416a3345f91e4b34576cb804a576fa48eb1":{
-                    "balance":"0x0",
-                    "code":"0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3",
-                    "nonce":1
+                "0xbd770416a3345f91e4b34576cb804a576fa48eb1": {
+                    "balance": "0x0",
+                    "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3",
+                    "nonce": 1
                 }
             },
             "pre":{}
@@ -1925,9 +1929,6 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
         auto const *const expected = R"([
             {
                 "result": {
-                    "0x0000000000000000000000000000000000000000": {
-                        "balance": "0x0"
-                    },
                     "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
                         "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                         "nonce": 1
@@ -1941,9 +1942,6 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             },
             {
                 "result": {
-                    "0x0000000000000000000000000000000000000000": {
-                        "balance": "0x0"
-                    },
                     "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                         "balance": "0xabbb",
                         "nonce": 1
@@ -2167,9 +2165,6 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
                 prestate_ctx_1.result->encoded_trace_len);
 
         auto const *const expected_1 = R"({
-            "0x0000000000000000000000000000000000000000": {
-                "balance": "0x0"
-            },
             "0x4bbec6f9d3d530b49a622955e402a87adcbe99c2": {
                 "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                 "nonce": 1
@@ -2211,9 +2206,6 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
                 prestate_ctx_2.result->encoded_trace_len);
 
         auto const *const expected_2 = R"({
-            "0x0000000000000000000000000000000000000000": {
-                "balance": "0x0"
-            },
             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                 "balance": "0xabbb",
                 "nonce": 1
@@ -2712,9 +2704,6 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
                 block1_prestate_ctx.result->encoded_trace_len);
 
         auto const *const expected = R"({
-            "0x0000000000000000000000000000000000000000": {
-                "balance": "0x0"
-            },
             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                 "balance": "0x1",
                 "nonce": 1
@@ -2771,9 +2760,6 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
                 block2_prestate_ctx.result->encoded_trace_len);
 
         auto const *const expected = R"({
-            "0x0000000000000000000000000000000000000000": {
-                "balance": "0x0"
-            },
             "0xa6b8a0d6cbd7623be3a45d2164c436e6d3462d99": {
                 "balance": "0xffffffffffffffff",
                 "nonce": 1
@@ -3817,4 +3803,323 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
 
     monad_executor_destroy(executor);
     monad_state_override_destroy(state_override);
+}
+
+// Similar to `trace_transaction_with_prestate`, but with base fee per gas set,
+// which means the beneficiary is given the tx rewards.
+TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
+{
+    static constexpr Address ADDR_A =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+
+    static constexpr Address BENEFICIARY =
+        0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_address;
+
+    {
+        // Initial state.
+        StateDeltas const deltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{uint64_t{0x01}}, .nonce = 1}}}},
+            {BENEFICIARY,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{uint64_t{0x0}}, .nonce = 1}}}},
+        };
+
+        commit_sequential(tdb, deltas, {}, BlockHeader{.number = 0});
+    }
+
+    // Advance to block 256
+    for (uint64_t i = 1; i < 255; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    // Setup block 256 transactions. Before committing them, we setup the
+    // transaction senders and put them in block 255.
+    auto const next_sig = [&]() -> SignatureAndChain {
+        static uint64_t r = 1;
+        MonadDevnet const devnet;
+        return SignatureAndChain{r++, 1, devnet.get_chain_id(), 1};
+    };
+
+    auto const make_tx = [&]() -> Transaction {
+        static uint64_t next_tx_nonce = 1;
+
+        Transaction tx;
+        tx.gas_limit = 200000u;
+        tx.nonce = next_tx_nonce++;
+        tx.to = ADDR_A;
+        tx.sc = next_sig();
+        tx.value = uint256_t{uint64_t{0xABBA}};
+        tx.max_fee_per_gas = 10;
+        return tx;
+    };
+    std::vector<Transaction> const transactions = {make_tx(), make_tx()};
+
+    std::vector<Address> senders{};
+    StateDeltas senders_state{};
+    for (auto const &transaction : transactions) {
+        auto const sender = recover_sender(transaction);
+        ASSERT_TRUE(sender.has_value());
+        senders.push_back(*sender);
+        senders_state.emplace(
+            *sender,
+            StateDelta{
+                .account = {
+                    std::nullopt,
+                    Account{
+                        .balance = std::numeric_limits<uint256_t>::max(),
+                        .nonce = transaction.nonce}}});
+    }
+    commit_sequential(tdb, senders_state, {}, BlockHeader{.number = 255});
+
+    // Now commit block 256.
+    BlockHeader const header{
+        .number = 256, .beneficiary = BENEFICIARY, .base_fee_per_gas = 1};
+    std::vector<Receipt> const receipts = {
+        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u},
+        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u}};
+
+    std::vector<std::vector<CallFrame>> const call_frames = {{}, {}};
+
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+    auto const rlp_parent_id = to_vec(rlp::encode_bytes32(bytes32_t{255}));
+    auto const rlp_grandparent_id = to_vec(rlp::encode_bytes32(bytes32_t{254}));
+
+    commit_sequential(
+        tdb, {}, {}, header, receipts, call_frames, senders, transactions);
+
+    auto *executor = create_executor(dbname.string());
+
+    struct callback_context prestate_ctx_1;
+    struct callback_context prestate_ctx_2;
+    struct callback_context statediff_ctx_1;
+    struct callback_context statediff_ctx_2;
+
+    // PreState trace
+    {
+        boost::fibers::future<void> f_1 = prestate_ctx_1.promise.get_future();
+        monad_executor_run_transactions(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_header.data(),
+            rlp_header.size(),
+            256,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_parent_id.data(),
+            rlp_parent_id.size(),
+            rlp_grandparent_id.data(),
+            rlp_grandparent_id.size(),
+            0,
+            complete_callback,
+            (void *)&prestate_ctx_1,
+            PRESTATE_TRACER);
+        f_1.get();
+
+        ASSERT_TRUE(prestate_ctx_1.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_pre_state_trace_1(
+            prestate_ctx_1.result->encoded_trace,
+            prestate_ctx_1.result->encoded_trace +
+                prestate_ctx_1.result->encoded_trace_len);
+
+        auto const *const expected_1 = R"({
+            "0x927ca6d0574809a7e9de2fbbb1a94ecb299a135c": {
+                "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "nonce": 1
+            },
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                "balance": "0x1",
+                "nonce": 1
+            },
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+                "balance": "0x0",
+                "nonce": 1
+            }
+        })";
+
+        EXPECT_EQ(
+            nlohmann::json::parse(expected_1),
+            nlohmann::json::from_cbor(encoded_pre_state_trace_1));
+
+        boost::fibers::future<void> f_2 = prestate_ctx_2.promise.get_future();
+        monad_executor_run_transactions(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_header.data(),
+            rlp_header.size(),
+            256,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_parent_id.data(),
+            rlp_parent_id.size(),
+            rlp_grandparent_id.data(),
+            rlp_grandparent_id.size(),
+            1,
+            complete_callback,
+            (void *)&prestate_ctx_2,
+            PRESTATE_TRACER);
+        f_2.get();
+
+        ASSERT_TRUE(prestate_ctx_2.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_pre_state_trace_2(
+            prestate_ctx_2.result->encoded_trace,
+            prestate_ctx_2.result->encoded_trace +
+                prestate_ctx_2.result->encoded_trace_len);
+
+        auto const *const expected_2 = R"({
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                "balance": "0xabbb",
+                "nonce": 1
+            },
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+                "balance": "0x1b7740",
+                "nonce": 1
+            },
+            "0xea4f2322426da1c68b6b7b8cc244c4fa0f14b7d3": {
+                "balance":
+                "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "nonce": 2
+            }
+        })";
+        EXPECT_EQ(
+            nlohmann::json::parse(expected_2),
+            nlohmann::json::from_cbor(encoded_pre_state_trace_2));
+    }
+
+    // StateDelta Trace
+    {
+        boost::fibers::future<void> f_1 = statediff_ctx_1.promise.get_future();
+        monad_executor_run_transactions(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_header.data(),
+            rlp_header.size(),
+            256,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_parent_id.data(),
+            rlp_parent_id.size(),
+            rlp_grandparent_id.data(),
+            rlp_grandparent_id.size(),
+            0,
+            complete_callback,
+            (void *)&statediff_ctx_1,
+            STATEDIFF_TRACER);
+        f_1.get();
+
+        ASSERT_TRUE(statediff_ctx_1.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_state_diff_trace_1(
+            statediff_ctx_1.result->encoded_trace,
+            statediff_ctx_1.result->encoded_trace +
+                statediff_ctx_1.result->encoded_trace_len);
+
+        auto const *const expected_1 = R"({
+            "post": {
+                "0x927ca6d0574809a7e9de2fbbb1a94ecb299a135c": {
+                    "balance":
+                    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0cfc5",
+                    "nonce": 2
+                },
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0xabbb"
+                },
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+                    "balance": "0x1b7740"
+                }
+            },
+            "pre": {
+                "0x927ca6d0574809a7e9de2fbbb1a94ecb299a135c": {
+                    "balance":
+                    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    "nonce": 1
+                },
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0x1",
+                    "nonce": 1
+                },
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+                    "balance": "0x0",
+                    "nonce": 1
+                }
+            }
+        })";
+
+        EXPECT_EQ(
+            nlohmann::json::parse(expected_1),
+            nlohmann::json::from_cbor(encoded_state_diff_trace_1));
+
+        boost::fibers::future<void> f_2 = statediff_ctx_2.promise.get_future();
+        monad_executor_run_transactions(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_header.data(),
+            rlp_header.size(),
+            256,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_parent_id.data(),
+            rlp_parent_id.size(),
+            rlp_grandparent_id.data(),
+            rlp_grandparent_id.size(),
+            1,
+            complete_callback,
+            (void *)&statediff_ctx_2,
+            STATEDIFF_TRACER);
+        f_2.get();
+
+        ASSERT_TRUE(statediff_ctx_2.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_state_diff_trace_2(
+            statediff_ctx_2.result->encoded_trace,
+            statediff_ctx_2.result->encoded_trace +
+                statediff_ctx_2.result->encoded_trace_len);
+
+        auto const *const expected_2 = R"({
+            "post": {
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0x15775"
+                },
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+                    "balance": "0x36ee80"
+                },
+                "0xea4f2322426da1c68b6b7b8cc244c4fa0f14b7d3": {
+                    "balance":
+                    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0cfc5",
+                    "nonce": 3
+                }
+            },
+            "pre": {
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+                    "balance": "0xabbb",
+                    "nonce": 1
+                },
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+                    "balance": "0x1b7740",
+                    "nonce": 1
+                },
+                "0xea4f2322426da1c68b6b7b8cc244c4fa0f14b7d3": {
+                    "balance":
+                    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    "nonce": 2
+                }
+            }
+        })";
+
+        EXPECT_EQ(
+            nlohmann::json::parse(expected_2),
+            nlohmann::json::from_cbor(encoded_state_diff_trace_2));
+    }
+
+    monad_executor_destroy(executor);
 }

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
@@ -111,7 +112,9 @@ TEST(PrestateTracer, pre_state_to_json)
         
     })";
 
-    EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_to_json(prestate, s, std::nullopt),
+        nlohmann::json::parse(json_str));
 }
 
 TEST(PrestateTracer, zero_nonce)
@@ -141,7 +144,9 @@ TEST(PrestateTracer, zero_nonce)
         
     })";
 
-    EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_to_json(prestate, s, std::nullopt),
+        nlohmann::json::parse(json_str));
 }
 
 TEST(PrestateTracer, state_deltas_to_json)
@@ -501,7 +506,9 @@ TEST(PrestateTracer, geth_example_prestate)
         }
     })";
 
-    EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_to_json(prestate, s, std::nullopt),
+        nlohmann::json::parse(json_str));
 }
 
 TEST(PrestateTracer, geth_example_statediff)
@@ -562,7 +569,8 @@ TEST(PrestateTracer, prestate_empty)
 
     auto const json_str = R"({})";
 
-    EXPECT_EQ(state_to_json(prestate, s), nlohmann::json::parse(json_str));
+    EXPECT_EQ(
+        state_to_json(prestate, s, Address{}), nlohmann::json::parse(json_str));
 }
 
 TEST(PrestateTracer, statediff_empty)
@@ -1083,7 +1091,7 @@ TEST(PrestateTracer, prestate_access_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace};
+        trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
         auto const json_str = R"(
@@ -1108,6 +1116,541 @@ TEST(PrestateTracer, prestate_access_storage)
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
+        auto const json_str = R"(
+        {
+            "post": {},
+            "pre": {}
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}
+
+TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
+{
+    // Setup matter
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    Account const a{.balance = 0, .nonce = 1};
+
+    // Block 0
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    // Modify the storage of the beneficiary, which implies it must show up in
+    // the prestate trace.
+    s.set_storage(ADDR_A, key1, value1);
+
+    {
+        // Run pretracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace, ADDR_A};
+        tracer.encode(s.original(), s);
+
+        auto const json_str = R"(
+        {
+            "0x0000000000000000000000000000000000000100":{
+                "balance": "0x0",
+                "nonce": 1
+            }
+
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+        tracer.encode(tracer.trace(s), s);
+
+        auto const json_str = R"(
+        {
+            "post": {
+                "0x0000000000000000000000000000000000000100": {
+                    "storage": {
+                        "0x00000000000000000000000000000000000000000000000000000000cafebabe": "0x0000000000000000000000000000000000000000000000000000000000000003"
+                    }
+                }
+            },
+            "pre": {
+                "0x0000000000000000000000000000000000000100": {
+                    "balance": "0x0",
+                    "nonce": 1
+                }
+            }
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}
+
+TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
+{
+    // Setup matter
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    Account const a{.balance = 0, .nonce = 1};
+
+    // Block 0
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, a},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    // Modify the storage of the beneficiary, which implies it must show up
+    // in the prestate trace.
+    s.set_storage(ADDR_A, key1, value2);
+
+    {
+        // Run prestate tracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace, ADDR_A};
+        tracer.encode(s.original(), s);
+
+        auto const json_str = R"(
+        {
+            "0x0000000000000000000000000000000000000100":{
+                "balance":"0x0",
+                "nonce":1,
+                "storage":{
+                    "0x00000000000000000000000000000000000000000000000000000000cafebabe": "0x0000000000000000000000000000000000000000000000000000000000000003"
+                }
+            }
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+        tracer.encode(tracer.trace(s), s);
+
+        auto const json_str = R"(
+        {
+            "post": {
+                "0x0000000000000000000000000000000000000100": {
+                    "storage": {
+                        "0x00000000000000000000000000000000000000000000000000000000cafebabe": "0x0000000000000000000000000000000000000000000000000000000000000007"
+                    }
+                }
+            },
+            "pre": {
+                "0x0000000000000000000000000000000000000100": {
+                    "balance":"0x0",
+                    "nonce":1,
+                    "storage":{
+                        "0x00000000000000000000000000000000000000000000000000000000cafebabe": "0x0000000000000000000000000000000000000000000000000000000000000003"
+                    }
+                }
+            }
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}
+
+TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
+{
+    // Setup matter
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    Account const a{.balance = 0, .nonce = 1};
+
+    // Block 0
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    // Modify the balance of the beneficiary, which implies it
+    // must show up in the prestate trace.
+    s.add_to_balance(ADDR_A, uint256_t{42});
+
+    {
+        // Run prestate tracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace, ADDR_A};
+
+        // Run tracer
+        tracer.encode(s.original(), s);
+
+        auto const json_str = R"(
+        {
+            "0x0000000000000000000000000000000000000100":{
+                "balance":"0x0",
+                "nonce":1
+            }
+
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+
+        // Run tracer
+        tracer.encode(tracer.trace(s), s);
+
+        auto const json_str = R"(
+        {
+            "post": {
+                "0x0000000000000000000000000000000000000100":{
+                    "balance": "0x2a"
+                }
+            },
+            "pre": {
+                "0x0000000000000000000000000000000000000100":{
+                    "balance":"0x0",
+                    "nonce":1
+                }
+            }
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}
+
+TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
+{
+    // Setup matter
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    Account const a{.balance = 0, .nonce = 1};
+
+    // Block 0
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    // Modify the nonce of the beneficiary, which implies it
+    // must show up in the prestate trace.
+    s.set_nonce(ADDR_A, 2);
+
+    {
+        // Run prestate tracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace, ADDR_A};
+        tracer.encode(s.original(), s);
+
+        auto const json_str = R"(
+        {
+            "0x0000000000000000000000000000000000000100":{
+                "balance":"0x0",
+                "nonce":1
+            }
+
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+        tracer.encode(tracer.trace(s), s);
+
+        auto const json_str = R"(
+        {
+            "post": {
+                "0x0000000000000000000000000000000000000100": {
+                    "nonce": 2
+                }
+            },
+            "pre": {
+                "0x0000000000000000000000000000000000000100": {
+                    "balance": "0x0",
+                    "nonce": 1
+                }
+            }
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}
+
+TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
+{
+    // Setup matter
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    Account const a{.balance = 0, .nonce = 1};
+
+    // Block 0
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}},
+        Code{{A_CODE_HASH, A_ICODE}},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    State s(bs, Incarnation{0, 0});
+
+    // Modify the code hash of the beneficiary, which implies it
+    // must show up in the prestate trace.
+    s.set_code_hash(ADDR_A, A_CODE_HASH);
+
+    {
+        // Run prestate tracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace, ADDR_A};
+        tracer.encode(s.original(), s);
+
+        auto const json_str = R"(
+        {
+            "0x0000000000000000000000000000000000000100":{
+                "balance":"0x0",
+                "nonce":1
+            }
+
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+        tracer.encode(tracer.trace(s), s);
+
+        auto const json_str = R"(
+        {
+            "post": {
+                "0x0000000000000000000000000000000000000100": {
+                    "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500"
+                }
+            },
+            "pre": {
+                "0x0000000000000000000000000000000000000100":{
+                    "balance":"0x0",
+                    "nonce":1
+                }
+            }
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}
+
+// Similar to `prestate_access_storage`, but tests that the beneficiary is not
+// erroneously omitted.
+TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
+{
+    // Setup matter
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    Account const a{.balance = 0, .nonce = 1};
+
+    // Block 0
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, a},
+                 .storage = {StorageDeltas{
+                     {key1, {bytes32_t{}, value1}},
+                     {key2, {bytes32_t{}, value2}}}}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    State s(bs, Incarnation{0, 0});
+
+    // Touch some of the account's storage.
+    // First access the account to bring it into the state object; this is a
+    // prerequisite for accessing the storage.
+    EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
+    EXPECT_TRUE(s.original().find(ADDR_A) != s.original().end());
+    EXPECT_TRUE(s.current().find(ADDR_A) != s.current().end());
+    EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
+    {
+        // Run prestate tracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace, ADDR_A};
+        tracer.encode(s.original(), s);
+
+        auto const json_str = R"(
+        {
+            "0x0000000000000000000000000000000000000100": {
+                "balance": "0x0",
+                "nonce": 1,
+                "storage": {
+                    "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c": "0x0000000000000000000000000000000000000000000000000000000000000007"
+                }
+            }
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+        tracer.encode(tracer.trace(s), s);
+
+        // We only read the storage, so no changes are recorded in the
+        // statediff.
+        auto const json_str = R"(
+        {
+            "post": {},
+            "pre": {}
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}
+
+TEST(PrestateTracer, prestate_omit_beneficiary)
+{
+    // Setup matter
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    Account const a{.balance = 0, .nonce = 1};
+
+    // Block 0
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+
+    State s(bs, Incarnation{0, 0});
+
+    // Touch the account, so it shows up in `state.original` and
+    // `state.current`.
+    EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
+    EXPECT_TRUE(s.original().find(ADDR_A) != s.original().end());
+    EXPECT_TRUE(s.current().find(ADDR_A) != s.current().end());
+
+    {
+        // Run prestate tracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace, ADDR_A};
+        tracer.encode(s.original(), s);
+
+        auto const json_str = "null";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+        tracer.encode(tracer.trace(s), s);
+
+        auto const json_str = R"(
+        {
+            "post": {},
+            "pre": {}
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}
+
+TEST(PrestateTracer, prestate_empty_block_no_reward)
+{
+    // Setup matter
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    BlockHeader header{.number = 0, .beneficiary = ADDR_A};
+    Block const block{header, {}, {}};
+
+    // Block 0
+    commit_sequential(tdb, {}, {}, header);
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    // Apply block reward.
+    apply_block_reward<MonadTraits<MONAD_NEXT>>(s, block);
+    EXPECT_TRUE(s.original().find(ADDR_A) == s.original().end());
+    EXPECT_TRUE(s.current().find(ADDR_A) == s.current().end());
+
+    {
+        // Run prestate tracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace, ADDR_A};
+        tracer.encode(s.original(), s);
+
+        auto const json_str = "null";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+        tracer.encode(tracer.trace(s), s);
+
         auto const json_str = R"(
         {
             "post": {},

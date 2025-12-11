@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
+#include <ankerl/unordered_dense.h>
 #include <nlohmann/json.hpp>
 
 #include <format>
@@ -49,10 +50,77 @@ namespace trace
         return std::format("0x{}", evmc::hex(view));
     }
 
+    bool PrestateTracer::retain_beneficiary(State const &state) const
+    {
+        // The following logic determines whether to include the beneficiary in
+        // the prestate trace. Since the Shanghai revision, we access the
+        // beneficiary before execution, which causes the beneficiary to show up
+        // in the prestate trace, even if it did not participate in the block.
+
+        // First check that the beneficiary is in the `original` accounts and
+        // `current` accounts. If not, then just return.
+        auto const orig_it = state.original().find(beneficiary_);
+        auto const curr_it = state.current().find(beneficiary_);
+        if (orig_it == state.original().end() ||
+            curr_it == state.current().end()) {
+            return true;
+        }
+
+        OriginalAccountState const &original_state = orig_it->second;
+        AccountState const &current_state = curr_it->second.recent();
+
+        // If the original state has no account, then the beneficiary was
+        // created during the block and if the current state has an account,
+        // then it means that the account is still alive. Thus we must retain it
+        // in the prestate trace.
+        if (!original_state.has_account() && current_state.has_account()) {
+            return true;
+        }
+
+        // If neither the original state or the current state have an account,
+        // then the beneficiary was created and destroyed during the block,
+        // hence we omit it from the prestate trace.
+        if (!original_state.has_account() && !current_state.has_account()) {
+            return false;
+        }
+
+        // If the current state has no account, then the beneficiary was
+        // destroyed during the block. Thus we must retain it in the prestate
+        // trace.
+        if (!current_state.has_account()) {
+            return true;
+        }
+
+        Account const &original =
+            get_account_for_trace(orig_it->second).value();
+        Account const &current =
+            get_account_for_trace(curr_it->second.recent()).value();
+
+        // If `original` and `current` are the same and *have* empty storages,
+        // then it must be that the beneficiary did not participate in the block
+        // and show up here because of the pre-execution access. Therefore we
+        // can omit the beneficiary account from the prestate trace.
+        if (original == current &&
+            // NOTE(dhil): We piggyback on the fact that the `storage_`
+            // is lazily populated, i.e. a slot binding appears only if
+            // the slot has been read or written to during execution.
+            original_state.storage_.empty() && current_state.storage_.empty()) {
+            return false;
+        }
+
+        // Otherwise the beneficiary must have participate in the block.
+        return true;
+    }
+
     void PrestateTracer::encode(
         Map<Address, OriginalAccountState> const &prestate, State &state)
     {
-        state_to_json(prestate, state, storage_);
+        state_to_json(
+            prestate,
+            state,
+            retain_beneficiary(state) ? std::nullopt
+                                      : std::optional<Address>{beneficiary_},
+            storage_);
     }
 
     StorageDeltas StateDiffTracer::generate_storage_deltas(
@@ -251,9 +319,13 @@ namespace trace
 
     void PrestateTracer::state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
-        json &result)
+        std::optional<Address> const &beneficiary, json &result)
     {
         for (auto const &[address, account_state] : trace) {
+            // Skip beneficiary account, if present
+            if (address == beneficiary) {
+                continue;
+            }
             // TODO: Because this address is "touched". Should we keep this for
             // monad?
             if (MONAD_UNLIKELY(address == monad::ripemd_address)) {
@@ -265,24 +337,26 @@ namespace trace
     }
 
     json PrestateTracer::state_to_json(
-        Map<Address, OriginalAccountState> const &trace, State &state)
+        Map<Address, OriginalAccountState> const &trace, State &state,
+        std::optional<Address> const &beneficiary)
     {
         json result = json::object();
-        state_to_json(trace, state, result);
+        state_to_json(trace, state, beneficiary, result);
         return result;
     }
 
     void state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
-        json &result)
+        std::optional<Address> const &beneficiary, json &result)
     {
-        PrestateTracer::state_to_json(trace, state, result);
+        PrestateTracer::state_to_json(trace, state, beneficiary, result);
     }
 
-    json
-    state_to_json(Map<Address, OriginalAccountState> const &trace, State &state)
+    json state_to_json(
+        Map<Address, OriginalAccountState> const &trace, State &state,
+        std::optional<Address> const &beneficiary)
     {
-        return PrestateTracer::state_to_json(trace, state);
+        return PrestateTracer::state_to_json(trace, state, beneficiary);
     }
 
     void state_deltas_to_json(

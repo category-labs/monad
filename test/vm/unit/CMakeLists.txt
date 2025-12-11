@@ -25,6 +25,7 @@ target_sources(vm-unit-tests PRIVATE
     monad_vm_interface_tests.cpp
     utils_tests.cpp
     uint256_tests.cpp
+    non_temporal_memory_tests.cpp
     rc_ptr_tests.cpp
     strongly_connected_components_tests.cpp
     transactional_unordered_map_tests.cpp

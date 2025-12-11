@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
@@ -39,17 +40,34 @@ static_assert(alignof(Bin<31>) == alignof(uint32_t));
 static_assert(std::is_standard_layout_v<Bin<31>>);
 
 extern "C" void monad_vm_runtime_increase_capacity(
-    Context *ctx, uint32_t old_size, Bin<31> new_size)
+    Context *ctx, uint32_t old_size, Bin<30> new_size)
 {
-    MONAD_VM_DEBUG_ASSERT(old_size < *new_size);
     MONAD_VM_DEBUG_ASSERT((*new_size & 31) == 0);
-    uint32_t const new_capacity = *shl<1>(new_size);
-    std::uint8_t *new_data = static_cast<uint8_t *>(std::malloc(new_capacity));
-    std::memcpy(new_data, ctx->memory.data, old_size);
-    std::memset(new_data + old_size, 0, new_capacity - old_size);
-    ctx->memory.dealloc(ctx->memory.data);
-    ctx->memory.capacity = new_capacity;
-    ctx->memory.data = new_data;
+    MONAD_VM_DEBUG_ASSERT(old_size < *new_size);
+
+    Bin<30> const parent_total_size = ctx->memory.parent_total_size();
+
+    Bin<31> const old_total_size =
+        parent_total_size + Bin<30>::unsafe_from(old_size);
+    Bin<31> const new_total_size = parent_total_size + new_size;
+
+    MONAD_VM_DEBUG_ASSERT((*new_total_size & 31) == 0);
+
+    Bin<32> const new_total_capacity = shl<1>(new_total_size);
+
+    MONAD_VM_DEBUG_ASSERT((*new_total_capacity & 31) == 0);
+
+    auto *const new_handle =
+        static_cast<uint8_t *>(std::aligned_alloc(32, *new_total_capacity));
+
+    non_temporal_memcpy(new_handle, ctx->memory.data_handle, *old_total_size);
+    non_temporal_bzero(
+        new_handle + *old_total_size, *new_total_capacity - *old_total_size);
+
+    ctx->memory.release();
+    ctx->memory.capacity = *new_total_capacity - *parent_total_size;
+    ctx->memory.data_handle = new_handle;
+    ctx->memory.data = new_handle + *parent_total_size;
 }
 
 namespace monad::vm::runtime
@@ -91,7 +109,8 @@ namespace monad::vm::runtime
                     .tx_context = host->get_tx_context(context),
                 },
             .result = {},
-            .memory = Memory(alloc),
+            .memory = Memory(
+                alloc, msg->memory_handle, msg->memory, msg->memory_capacity),
         };
     }
 
@@ -119,11 +138,11 @@ namespace monad::vm::runtime
                     .tx_context = {},
                 },
             .result = {},
-            .memory = Memory(EvmMemoryAllocator{}),
+            .memory = Memory(EvmMemoryAllocator{}, nullptr, nullptr, 0),
         };
     }
 
-    void Context::increase_capacity(uint32_t old_size, Bin<31> new_size)
+    void Context::increase_capacity(uint32_t old_size, Bin<30> new_size)
     {
         monad_vm_runtime_increase_capacity(this, old_size, new_size);
     }

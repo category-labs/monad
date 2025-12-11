@@ -126,12 +126,7 @@ namespace monad::vm
         runtime::EvmMemoryAllocator memory_allocator_;
 
     public:
-        explicit VM(
-            bool enable_async = true,
-            std::size_t max_stack_cache_byte_size =
-                runtime::EvmStackAllocator::DEFAULT_MAX_CACHE_BYTE_SIZE,
-            std::size_t max_memory_cache_byte_size =
-                runtime::EvmMemoryAllocator::DEFAULT_MAX_CACHE_BYTE_SIZE);
+        explicit VM(bool enable_async = true);
 
         std::optional<SharedVarcode>
         find_varcode(evmc::bytes32 const &code_hash)
@@ -177,27 +172,22 @@ namespace monad::vm
         /// Like `execute`, but without stack unwind support.
         template <Traits traits>
         evmc::Result execute_raw(
-            evmc_host_interface const *host, evmc_host_context *host_ctx,
-            evmc_message const *msg, evmc::bytes32 const &code_hash,
+            runtime::Context &rt_ctx, evmc::bytes32 const &code_hash,
             SharedVarcode const &vcode);
-
-        /// Like `execute_bytecode`, but without stack unwind support.
-        template <Traits traits>
-        evmc::Result execute_bytecode_raw(
-            evmc_host_interface const *host, evmc_host_context *host_ctx,
-            evmc_message const *msg, std::span<uint8_t const> code);
 
         /// Execute with interpreter, without stack unwind support.
         template <Traits traits>
         evmc::Result execute_intercode_raw(
-            evmc_host_interface const *host, evmc_host_context *host_ctx,
-            evmc_message const *msg, SharedIntercode const &icode);
+            runtime::Context &rt_ctx, SharedIntercode const &icode);
+
+        /// Like `execute_bytecode`, but without stack unwind support.
+        template <Traits traits>
+        evmc::Result execute_bytecode_raw(
+            runtime::Context &rt_ctx, std::span<uint8_t const> code);
 
         /// Execute the entrypoint, without stack unwind support.
         evmc::Result execute_native_entrypoint_raw(
-            evmc_host_interface const *, evmc_host_context *,
-            evmc_message const *, SharedIntercode const &,
-            compiler::native::entrypoint_t);
+            runtime::Context &, compiler::native::entrypoint_t);
 
         [[nodiscard]]
         std::string print_and_reset_block_counts()
@@ -216,22 +206,6 @@ namespace monad::vm
         }
 
     private:
-        template <Traits traits>
-        evmc::Result execute_impl(
-            runtime::Context &rt_ctx, evmc::bytes32 const &code_hash,
-            SharedVarcode const &vcode);
-
-        template <Traits traits>
-        evmc::Result execute_bytecode_impl(
-            runtime::Context &rt_ctx, std::span<uint8_t const> code);
-
-        template <Traits traits>
-        evmc::Result execute_intercode_impl(
-            runtime::Context &rt_ctx, SharedIntercode const &icode);
-
-        evmc::Result execute_native_entrypoint_impl(
-            runtime::Context &, compiler::native::entrypoint_t);
-
         VmStats stats_;
     };
 }

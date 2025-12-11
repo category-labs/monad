@@ -1219,6 +1219,9 @@ namespace monad::vm::fuzzing
             .code_address = target,
             .code = code.data(),
             .code_size = code.size(),
+            .memory_handle = nullptr,
+            .memory = nullptr,
+            .memory_capacity = 0,
         }};
     }
 

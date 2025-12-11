@@ -15,8 +15,10 @@
 
 #pragma once
 
+#include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -91,10 +93,24 @@ namespace monad::vm::runtime
     struct Memory
     {
         EvmMemoryAllocator allocator_;
+        // Size of the memory region for current call frame:
         std::uint32_t size;
+        // Capacity of the memory region for current call frame:
         std::uint32_t capacity;
+        // Start of memory region for current call frame:
         std::uint8_t *data;
+        // Current accumulated memory cost for current call frame:
         std::int64_t cost;
+        // Pointer to the beginning of the transaction wide memory:
+        std::uint8_t *data_handle;
+        // The `parent_handle` is a pointer to the original transaction wide
+        // memory (the transaction wide memory at the beginning of the
+        // current call frame).
+        // The `parent_handle` is kept around to allow for lazily freeing the
+        // memory pointed to by `parent_handle`. This memory is lazily freed,
+        // because the call data for the current call frame is potentially a
+        // pointer into the `parent_handle` memory.
+        std::uint8_t *parent_handle;
 
         static constexpr auto initial_capacity = 4096;
 
@@ -104,65 +120,105 @@ namespace monad::vm::runtime
 
         Memory() = delete;
 
-        explicit Memory(EvmMemoryAllocator allocator)
+        explicit Memory(
+            EvmMemoryAllocator allocator, std::uint8_t *han, std::uint8_t *dat,
+            std::uint32_t cap)
             : allocator_{allocator}
             , size{}
-            , capacity{initial_capacity}
-            , data{allocator_.aligned_alloc_cached()}
             , cost{}
         {
-            memset(data, 0, capacity);
+            if (han) {
+                capacity = cap;
+                data_handle = han;
+                data = dat;
+                parent_handle = han;
+            }
+            else {
+                capacity = initial_capacity;
+                // Allocate the initial memory handle:
+                parent_handle = data_handle = data =
+                    allocator_.aligned_alloc_cached();
+            }
         }
 
-        Memory(Memory &&m) noexcept
-            : allocator_{m.allocator_}
-            , size{m.size}
-            , capacity{m.capacity}
-            , data{m.data}
-            , cost{m.cost}
-        {
-            m.clear();
-        }
-
-        Memory &operator=(Memory &&m) noexcept
-        {
-            dealloc(data);
-
-            size = m.size;
-            capacity = m.capacity;
-            data = m.data;
-            cost = m.cost;
-
-            m.clear();
-            return *this;
-        }
-
+        Memory(Memory &&m) = delete;
+        Memory &operator=(Memory &&m) = delete;
         Memory(Memory const &) = delete;
-
         Memory &operator=(Memory const &) = delete;
 
         ~Memory()
         {
-            dealloc(data);
+            // Under the production circumstances, this destructor is not
+            // necessary, because the `Context::return_to` function will take
+            // care of clearing and freeing memory. However relying on calling
+            // `Context::return_to` seems unreasonable in general.
+            if (MONAD_VM_UNLIKELY(data_handle)) {
+                MONAD_VM_ASSERT(size <= capacity);
+                MONAD_VM_ASSERT(data == data_handle);
+                dealloc();
+            }
         }
 
         [[gnu::always_inline]]
-        void clear()
+        Bin<30> parent_total_size() const
         {
-            size = 0;
-            capacity = 0;
-            data = nullptr;
-            cost = 0;
+            MONAD_VM_DEBUG_ASSERT(data >= data_handle);
+
+            auto const x = static_cast<std::uintptr_t>(data - data_handle);
+
+            MONAD_VM_DEBUG_ASSERT((x & 31) == 0);
+
+            // The following check is a non-debug assertion, because it is not
+            // an internal invariant, and not part of the fast path. The check
+            // will hold if transaction gas limit is not larger than 2 billion
+            // and max call depth is 1024. To see this, notice that the
+            // maximum amount of memory usage is achieved by evenly splitting
+            // memory consumption across the maximal 1024 call frames. By
+            // splitting Bin<30>::upper = 2^30 - 1 into 1024 call frames, each
+            // call frame will use
+            //   (2^30 - 1) / 1024 > 2^20 - 1 bytes
+            // of memory.
+            // Therefore if the total memory size of the parent call frame is
+            // larger than Bin<30>::upper, the transaction has accessed a
+            // memory index larger than Bin<30>::upper. Hence a lower bound on
+            // current gas consumption is
+            //   max_call_depth * memory_cost_from_word_count(2^20 - 1)
+            //   = 1024 * ((c * c) / 512 + (3 * c))
+            //   > 2 billion
+            //   for c = floor((2^20 - 1) / 32).
+            // This means that more than 2 billion gas must have been consumed
+            // already by the current transaction for the following assertion
+            // to fail:
+            MONAD_VM_ASSERT(x <= Bin<30>::upper);
+
+            return Bin<30>::unsafe_from(static_cast<std::uint32_t>(x));
         }
 
         [[gnu::always_inline]]
-        void dealloc(uint8_t *d)
+        void dealloc()
         {
-            if (capacity == initial_capacity) {
-                allocator_.free_cached(d);
+            if (parent_handle == data_handle) {
+                non_temporal_bzero(data_handle, size);
+                allocator_.free_cached(data_handle);
             }
             else {
-                std::free(d);
+                non_temporal_bzero(parent_handle, initial_capacity);
+                allocator_.free_cached(parent_handle);
+                std::free(data_handle);
+            }
+        }
+
+        [[gnu::always_inline]]
+        void release()
+        {
+            if (data_handle != parent_handle) {
+                // Only free if data_handle is not the parent_handle. The
+                // parent_handle is potentially used for call data.
+                // Note that data_handle will never be the initial memory
+                // handle in this case. This is because if the data_handle
+                // is the initial memory handle, then it is necessarily also
+                // the parent_handle.
+                std::free(data_handle);
             }
         }
     };
@@ -210,19 +266,21 @@ namespace monad::vm::runtime
         static constexpr int64_t
         memory_cost_from_word_count(Bin<32> const word_count) noexcept
         {
+            // The implementation of `parent_total_size` depends on this
+            // large expansion cost to avoid overflow.
             auto const c = static_cast<uint64_t>(*word_count);
             return static_cast<int64_t>((c * c) / 512 + (3 * c));
         }
 
-        void increase_capacity(uint32_t old_size, Bin<31> new_size);
+        void increase_capacity(uint32_t old_size, Bin<30> new_size);
 
-        void expand_memory(Bin<30> min_size)
+        void expand_memory(Bin<29> min_size)
         {
             if (memory.size < *min_size) {
                 auto const wsize = shr_ceil<5>(min_size);
                 std::int64_t const new_cost =
                     memory_cost_from_word_count(wsize);
-                Bin<31> const new_size = shl<5>(wsize);
+                Bin<30> const new_size = shl<5>(wsize);
                 MONAD_VM_DEBUG_ASSERT(new_cost >= memory.cost);
                 std::int64_t const expansion_cost = new_cost - memory.cost;
                 // Gas check before increasing capacity:
@@ -244,6 +302,29 @@ namespace monad::vm::runtime
                 exit(StatusCode::OutOfGas);
             }
             return Memory::Offset::unsafe_from(static_cast<uint32_t>(offset));
+        }
+
+        template <Traits traits>
+        [[gnu::always_inline]]
+        void return_to(Context *parent)
+        {
+            if (parent != nullptr) {
+                non_temporal_bzero(memory.data, memory.size);
+                auto &p = parent->memory;
+                MONAD_VM_DEBUG_ASSERT(memory.parent_handle == p.data_handle);
+                if (memory.data_handle != memory.parent_handle) {
+                    p.release();
+                    p.data = memory.data - p.size;
+                    p.capacity = memory.capacity + p.size;
+                    p.data_handle = memory.data_handle;
+                }
+            }
+            else {
+                memory.dealloc();
+            }
+            // Clear the data_handle to prevent the memory destructor from
+            // double freeing it:
+            memory.data_handle = nullptr;
         }
 
         [[gnu::always_inline]]
@@ -307,7 +388,7 @@ namespace monad::vm::runtime
 
 extern "C" void monad_vm_runtime_increase_capacity(
     monad::vm::runtime::Context *, uint32_t old_size,
-    monad::vm::runtime::Bin<31> new_size);
+    monad::vm::runtime::Bin<30> new_size);
 
 extern "C" void monad_vm_runtime_increase_memory(
     monad::vm::runtime::Bin<30> min_size, monad::vm::runtime::Context *);

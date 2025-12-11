@@ -105,6 +105,8 @@ private:
     monad::vm::CompilerConfig base_config;
     CodeMap<evmone::baseline::CodeAnalysis> code_analyses_;
     CodeMap<monad::vm::SharedIntercode> intercodes_;
+    monad::vm::runtime::Context *rt_ctx_;
+    monad::vm::runtime::EvmMemoryAllocator memory_allocator_;
 #ifdef MONAD_COMPILER_LLVM
     monad::vm::llvm::VM llvm_vm_;
 #endif

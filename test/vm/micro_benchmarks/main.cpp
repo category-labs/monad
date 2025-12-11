@@ -147,6 +147,9 @@ static double execute_iteration(
         .code_address = code_address,
         .code = bytecode.data(),
         .code_size = bytecode.size(),
+        .memory_handle = nullptr,
+        .memory = nullptr,
+        .memory_capacity = 0,
     };
 
     auto const start = std::chrono::steady_clock::now();

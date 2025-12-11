@@ -15,9 +15,11 @@
 
 #pragma once
 
+#include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <memory>
@@ -60,11 +62,15 @@ namespace monad::vm::runtime
             elements = e;
         }
 
+        template <bool zeroed>
         CachedAllocatorElement *pop()
         {
             MONAD_VM_DEBUG_ASSERT(!empty());
             auto *ptr = elements;
             elements = ptr->next;
+            if constexpr (zeroed) {
+                std::memset(ptr, 0, sizeof(CachedAllocatorElement));
+            }
             return ptr;
         }
 
@@ -85,6 +91,7 @@ namespace monad::vm::runtime
         { T::size } -> std::same_as<size_t const &>;
         { T::alignment } -> std::same_as<size_t const &>;
         { T::cache_list } -> std::same_as<CachedAllocatorList &>;
+        { T::zeroed } -> std::same_as<bool const &>;
     };
 
     template <CachedAllocable T>
@@ -95,6 +102,8 @@ namespace monad::vm::runtime
             sizeof(typename T::base_type) * T::size;
         static constexpr size_t DEFAULT_MAX_CACHE_BYTE_SIZE = 4096 * alloc_size;
 
+        static_assert(T::alignment >= 32);
+        static_assert(alignof(CachedAllocatorElement) <= T::alignment);
         static_assert(alloc_size % T::alignment == 0);
         static_assert(sizeof(CachedAllocatorElement) <= alloc_size);
 
@@ -110,11 +119,16 @@ namespace monad::vm::runtime
         uint8_t *aligned_alloc_cached() const
         {
             if (T::cache_list.empty()) {
-                return reinterpret_cast<uint8_t *>(
+                auto *const p = reinterpret_cast<uint8_t *>(
                     std::aligned_alloc(T::alignment, alloc_size));
+                if constexpr (T::zeroed) {
+                    non_temporal_bzero(p, alloc_size);
+                }
+                return p;
             }
             else {
-                return reinterpret_cast<uint8_t *>(T::cache_list.pop());
+                return reinterpret_cast<uint8_t *>(
+                    T::cache_list.template pop<T::zeroed>());
             }
         }
 
@@ -122,13 +136,19 @@ namespace monad::vm::runtime
         void debug_clear_cache() const
         {
             while (!T::cache_list.empty()) {
-                std::free(T::cache_list.pop());
+                std::free(T::cache_list.template pop<false>());
             }
         }
 
         /// Free memory allocated with `aligned_alloc_cached`.
         void free_cached(uint8_t *ptr) const
         {
+            if constexpr (T::zeroed) {
+                MONAD_VM_DEBUG_ASSERT(
+                    std::all_of(ptr, ptr + alloc_size, [](auto const &x) {
+                        return x == 0;
+                    }));
+            }
             if (T::cache_list.size() >= max_slots_in_cache) {
                 std::free(ptr);
             }

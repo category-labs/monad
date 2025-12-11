@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/runtime/allocator.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -114,6 +115,12 @@ namespace monad::vm::compiler::test
 
             auto icode = make_shared_intercode(code);
 
+            auto rt_ctx = runtime::Context::from(
+                runtime::EvmMemoryAllocator{},
+                &host_.get_interface(),
+                host_.to_context(),
+                &msg_,
+                code);
             if (impl == Compiler) {
                 auto ncode =
                     vm_.compiler().compile<typename TraitsTest<T>::Trait>(
@@ -121,19 +128,12 @@ namespace monad::vm::compiler::test
 
                 ASSERT_TRUE(ncode->entrypoint() != nullptr);
                 result_ = evmc::Result{vm_.execute_native_entrypoint_raw(
-                    &host_.get_interface(),
-                    host_.to_context(),
-                    &msg_,
-                    icode,
-                    ncode->entrypoint())};
+                    rt_ctx, ncode->entrypoint())};
             }
             else if (impl == Interpreter) {
                 result_ =
                     vm_.execute_intercode_raw<typename TraitsTest<T>::Trait>(
-                        &host_.get_interface(),
-                        host_.to_context(),
-                        &msg_,
-                        icode);
+                        rt_ctx, icode);
             }
             else {
                 MONAD_VM_ASSERT(impl == Evmone);

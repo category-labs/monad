@@ -109,6 +109,9 @@ namespace
             .code_address = {},
             .code = code_buffer,
             .code_size = code.size(),
+            .memory_handle = nullptr,
+            .memory = nullptr,
+            .memory_capacity = 0,
         });
 
         return benchmark_case{name, std::move(msg)};
@@ -299,6 +302,9 @@ namespace
                         .code_address = recipient,
                         .code = nullptr,
                         .code_size = 0,
+                        .memory_handle = nullptr,
+                        .memory = nullptr,
+                        .memory_capacity = 0,
                     };
 
                     std::vector<std::string> const failure_tests = {

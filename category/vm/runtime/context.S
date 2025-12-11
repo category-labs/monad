@@ -45,12 +45,12 @@ monad_vm_runtime_increase_memory_raw:
     mov rcx, rsi
     sub rcx, [rbx + memory_cost_offset]
 
-    // ctx->memory.cost = rsi;
-    mov [rbx + memory_cost_offset], rsi
-
     // deduct_gas(rcx);
     sub [rbx + gas_remaining_offset], rcx
     js .error_exit
+
+    // ctx->memory.cost = rsi;
+    mov [rbx + memory_cost_offset], rsi
 
     // esi = ctx->memory.size; // uint32_t old_size
     mov esi, [rbx + memory_size_offset]

@@ -27,7 +27,6 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -36,12 +35,10 @@ namespace monad::vm
 {
     using namespace monad::vm::utils;
 
-    VM::VM(
-        bool enable_async, std::size_t max_stack_cache,
-        std::size_t max_memory_cache)
+    VM::VM(bool enable_async)
         : compiler_{enable_async}
-        , stack_allocator_{max_stack_cache}
-        , memory_allocator_{max_memory_cache}
+        , stack_allocator_{}
+        , memory_allocator_{}
     {
     }
 
@@ -59,7 +56,9 @@ namespace monad::vm
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
 
-        auto result = execute_impl<traits>(rt_ctx, code_hash, vcode);
+        auto result = execute_raw<traits>(rt_ctx, code_hash, vcode);
+
+        rt_ctx.return_to<traits>(prev_rt_ctx);
 
         // Re-install previous runtime context:
         (void)host.set_runtime_context(prev_rt_ctx);
@@ -83,7 +82,9 @@ namespace monad::vm
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
 
-        auto result = execute_bytecode_impl<traits>(rt_ctx, code);
+        auto result = execute_bytecode_raw<traits>(rt_ctx, code);
+
+        rt_ctx.return_to<traits>(prev_rt_ctx);
 
         // Re-install previous runtime context:
         (void)host.set_runtime_context(prev_rt_ctx);
@@ -97,44 +98,6 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute_raw(
-        evmc_host_interface const *host, evmc_host_context *host_ctx,
-        evmc_message const *msg, evmc::bytes32 const &code_hash,
-        SharedVarcode const &vcode)
-    {
-        auto const &icode = vcode->intercode();
-        auto rt_ctx = runtime::Context::from(
-            memory_allocator_, host, host_ctx, msg, icode->code_span());
-        return execute_impl<traits>(rt_ctx, code_hash, vcode);
-    }
-
-    EXPLICIT_TRAITS_MEMBER(VM::execute_raw);
-
-    template <Traits traits>
-    evmc::Result VM::execute_bytecode_raw(
-        evmc_host_interface const *host, evmc_host_context *host_ctx,
-        evmc_message const *msg, std::span<uint8_t const> code)
-    {
-        auto rt_ctx = runtime::Context::from(
-            memory_allocator_, host, host_ctx, msg, code);
-        return execute_bytecode_impl<traits>(rt_ctx, code);
-    }
-
-    EXPLICIT_TRAITS_MEMBER(VM::execute_bytecode_raw);
-
-    template <Traits traits>
-    evmc::Result VM::execute_intercode_raw(
-        evmc_host_interface const *host, evmc_host_context *host_ctx,
-        evmc_message const *msg, SharedIntercode const &icode)
-    {
-        auto rt_ctx = runtime::Context::from(
-            memory_allocator_, host, host_ctx, msg, icode->code_span());
-        return execute_intercode_impl<traits>(rt_ctx, icode);
-    }
-
-    EXPLICIT_TRAITS_MEMBER(VM::execute_intercode_raw);
-
-    template <Traits traits>
-    evmc::Result VM::execute_impl(
         runtime::Context &rt_ctx, evmc::bytes32 const &code_hash,
         SharedVarcode const &vcode)
     {
@@ -149,28 +112,28 @@ namespace monad::vm
                 // new revision. Execute with interpreter in the meantime.
                 compiler_.async_compile<traits>(
                     code_hash, icode, compiler_config_);
-                return execute_intercode_impl<traits>(rt_ctx, icode);
+                return execute_intercode_raw<traits>(rt_ctx, icode);
             }
             auto const entry = ncode->entrypoint();
             if (MONAD_VM_UNLIKELY(entry == nullptr)) {
                 // Compilation has failed in this revision, so just execute
                 // with interpreter.
-                return execute_intercode_impl<traits>(rt_ctx, icode);
+                return execute_intercode_raw<traits>(rt_ctx, icode);
             }
             // Bytecode has been successfully compiled for the right
             // revision.
-            return execute_native_entrypoint_impl(rt_ctx, entry);
+            return execute_native_entrypoint_raw(rt_ctx, entry);
         }
         if (!compiler_.is_varcode_cache_warm()) {
             // If cache is not warm then start async compilation
             // immediately, and execute with interpreter in the meantime.
             compiler_.async_compile<traits>(code_hash, icode, compiler_config_);
-            return execute_intercode_impl<traits>(rt_ctx, icode);
+            return execute_intercode_raw<traits>(rt_ctx, icode);
         }
         // Execute with interpreter. We will start async compilation when
         // the accumulated execution gas spent by interpreter on the
         // bytecode becomes sufficiently high.
-        auto result = execute_intercode_impl<traits>(rt_ctx, icode);
+        auto result = execute_intercode_raw<traits>(rt_ctx, icode);
         auto const bound = compiler::native::max_code_size(
             compiler_config_.max_code_size_offset, icode->code_size());
         MONAD_VM_DEBUG_ASSERT(result.gas_left >= 0);
@@ -185,10 +148,10 @@ namespace monad::vm
         return result;
     }
 
-    EXPLICIT_TRAITS_MEMBER(VM::execute_impl);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_raw);
 
     template <Traits traits>
-    evmc::Result VM::execute_bytecode_impl(
+    evmc::Result VM::execute_bytecode_raw(
         runtime::Context &rt_ctx, std::span<uint8_t const> code)
     {
         stats_.event_execute_bytecode();
@@ -199,10 +162,10 @@ namespace monad::vm
         return rt_ctx.copy_to_evmc_result();
     }
 
-    EXPLICIT_TRAITS_MEMBER(VM::execute_bytecode_impl);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_bytecode_raw);
 
     template <Traits traits>
-    evmc::Result VM::execute_intercode_impl(
+    evmc::Result VM::execute_intercode_raw(
         runtime::Context &rt_ctx, SharedIntercode const &icode)
     {
         stats_.event_execute_intercode();
@@ -213,19 +176,9 @@ namespace monad::vm
         return rt_ctx.copy_to_evmc_result();
     }
 
-    EXPLICIT_TRAITS_MEMBER(VM::execute_intercode_impl);
+    EXPLICIT_TRAITS_MEMBER(VM::execute_intercode_raw);
 
     evmc::Result VM::execute_native_entrypoint_raw(
-        evmc_host_interface const *host, evmc_host_context *host_ctx,
-        evmc_message const *msg, SharedIntercode const &icode,
-        compiler::native::entrypoint_t entry)
-    {
-        auto rt_ctx = runtime::Context::from(
-            memory_allocator_, host, host_ctx, msg, icode->code_span());
-        return execute_native_entrypoint_impl(rt_ctx, entry);
-    }
-
-    evmc::Result VM::execute_native_entrypoint_impl(
         runtime::Context &rt_ctx, compiler::native::entrypoint_t entry)
     {
         stats_.event_execute_native_entrypoint();

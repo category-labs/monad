@@ -211,6 +211,9 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message() const
         .code_address = to_address.second,
         .code = nullptr, // TODO
         .code_size = 0, // TODO
+        .memory_handle = nullptr,
+        .memory = nullptr,
+        .memory_capacity = 0,
     };
     intx::be::store(msg.value.bytes, tx_.value);
     return msg;

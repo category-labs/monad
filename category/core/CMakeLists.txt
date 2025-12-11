@@ -148,6 +148,7 @@ add_library(
   "rlp/config.hpp"
   "rlp/encode.hpp"
   # runtime
+  "runtime/non_temporal_memory.hpp"
   "runtime/uint256.cpp"
   "runtime/uint256.hpp"
   # test

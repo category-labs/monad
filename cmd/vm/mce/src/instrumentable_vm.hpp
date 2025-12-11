@@ -108,6 +108,9 @@ public:
             .code_address = {},
             .code = nullptr,
             .code_size = 0,
+            .memory_handle = nullptr,
+            .memory = nullptr,
+            .memory_capacity = 0,
         };
 
         auto vm = evmc::VM(this);

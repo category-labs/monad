@@ -158,7 +158,8 @@ namespace
                     .tx_context = tx_context,
                 },
             .result = test_result(),
-            .memory = monad::vm::runtime::Memory(runtime::EvmMemoryAllocator{}),
+            .memory = monad::vm::runtime::Memory(
+                runtime::EvmMemoryAllocator{}, nullptr, nullptr, 0),
             .exit_stack_ptr = nullptr};
     }
 
@@ -3624,6 +3625,9 @@ TEST(Emitter, msize)
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0xffffffff);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0xffffffff);
+
+    // Override back to 0 to prevent memory invariant violation
+    ctx.memory.size = 0;
 }
 
 TEST(Emitter, MemoryInstructions)

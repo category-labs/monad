@@ -156,6 +156,9 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
         .code_address = *tx_.to,
         .code = nullptr,
         .code_size = 0,
+        .memory_handle = nullptr,
+        .memory = nullptr,
+        .memory_capacity = 0,
     };
     intx::be::store(msg.value.bytes, tx_.value);
     return msg;

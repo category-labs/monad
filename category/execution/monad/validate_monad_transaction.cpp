@@ -34,7 +34,7 @@ Result<void> validate_monad_transaction(
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities)
 {
-    auto const acct = state.recent_account_pessimistic(sender);
+    auto &acct = state.original_account_state(sender);
     auto const icode = state.get_code(sender)->intercode();
     auto res = ::monad::validate_transaction(
         rev, tx, acct, {icode->code(), icode->size()});
@@ -44,10 +44,10 @@ Result<void> validate_monad_transaction(
             return res;
         }
 
-        uint256_t const balance = acct.has_value() ? acct.value().balance : 0;
         uint256_t const gas_fee =
             uint256_t{tx.gas_limit} * gas_price(rev, tx, base_fee_per_gas);
-        if (MONAD_UNLIKELY(balance < gas_fee)) {
+        if (MONAD_UNLIKELY(
+                !state.record_balance_constraint_for_debit(sender, gas_fee))) {
             return MonadTransactionError::InsufficientBalanceForFee;
         }
 

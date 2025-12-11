@@ -119,7 +119,7 @@ Result<void> EthereumMainnet::validate_transaction(
     uint256_t const &, std::span<std::optional<Address> const>) const
 {
     evmc_revision const rev = get_revision(block_number, timestamp);
-    auto const sender_account = state.recent_account_pessimistic(sender);
+    auto &sender_account = state.original_account_state(sender);
     auto const icode = state.get_code(sender)->intercode();
     return ::monad::validate_transaction(
         rev, tx, sender_account, {icode->code(), icode->size()});

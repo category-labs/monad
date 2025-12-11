@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/rpc/monad_executor.h>
 
 #include <category/core/assert.h>
@@ -341,10 +342,12 @@ namespace
         if (eoa.has_value()) {
             eoa.value().code_hash = NULL_HASH;
         }
+        OriginalAccountState sender_state{eoa};
 
         // Safe to pass empty code to validation here because the above override
         // will always mark this transaction as coming from an EOA.
-        BOOST_OUTCOME_TRY(validate_transaction<traits>(enriched_txn, eoa, {}));
+        BOOST_OUTCOME_TRY(
+            validate_transaction<traits>(enriched_txn, sender_state, {}));
 
         auto const senders = std::vector{sender};
         auto const authorities_vec =

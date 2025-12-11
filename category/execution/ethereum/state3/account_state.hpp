@@ -211,6 +211,28 @@ private:
             min_balance_ = value;
         }
     }
+
+public:
+    bool record_balance_constraint_for_debit(uint256_t const &debit)
+    {
+        auto const balance = account_.has_value() ? account_->balance : 0;
+        if (balance >= debit) {
+            set_min_balance(debit);
+            return true;
+        }
+        set_validate_exact_balance();
+        return false;
+    }
+
+    bool record_balance_constraint_for_debit(uint512_t const &debit)
+    {
+        if (debit > uint512_t{std::numeric_limits<uint256_t>::max()}) {
+            set_validate_exact_balance();
+            return false;
+        }
+        return record_balance_constraint_for_debit(
+            static_cast<uint256_t>(debit));
+    }
 };
 
 MONAD_NAMESPACE_END

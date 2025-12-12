@@ -72,7 +72,7 @@ namespace
 
 TEST(PrestateTracer, pre_state_to_json)
 {
-    Account const a{.balance = 1000, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account const a{1000, A_CODE_HASH, 1};
     OriginalAccountState as{a};
     as.storage_ = as.storage_.insert({key1, value1});
     as.storage_ = as.storage_.insert({key2, value2});
@@ -116,7 +116,7 @@ TEST(PrestateTracer, pre_state_to_json)
 
 TEST(PrestateTracer, zero_nonce)
 {
-    Account const a{.balance = 1000, .code_hash = NULL_HASH, .nonce = 0};
+    Account const a{1000};
     OriginalAccountState as{a};
 
     trace::Map<Address, OriginalAccountState> prestate{};
@@ -146,7 +146,7 @@ TEST(PrestateTracer, zero_nonce)
 
 TEST(PrestateTracer, state_deltas_to_json)
 {
-    Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account a{500, A_CODE_HASH, 1};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -193,7 +193,7 @@ TEST(PrestateTracer, state_deltas_to_json)
 
 TEST(PrestateTracer, statediff_account_creation)
 {
-    Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account a{500, A_CODE_HASH, 1};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -230,10 +230,10 @@ TEST(PrestateTracer, statediff_account_creation)
 
 TEST(PrestateTracer, statediff_balance_nonce_update)
 {
-    Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account a{500, A_CODE_HASH, 1};
     Account b = a;
     b.nonce += 1;
-    b.balance -= 100;
+    b.subtract_from_balance_unsafe(100);
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -275,10 +275,10 @@ TEST(PrestateTracer, statediff_balance_nonce_update)
 
 TEST(PrestateTracer, statediff_delete_storage)
 {
-    Account const a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account const a{500, A_CODE_HASH, 1};
     Account b = a;
     b.nonce += 1;
-    b.balance -= 100;
+    b.subtract_from_balance_unsafe(100);
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -333,8 +333,8 @@ TEST(PrestateTracer, statediff_delete_storage)
 
 TEST(PrestateTracer, statediff_multiple_fields_update)
 {
-    Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
-    Account b{.balance = 42, .code_hash = B_CODE_HASH, .nonce = 2};
+    Account a{500, A_CODE_HASH, 1};
+    Account b{42, B_CODE_HASH, 2};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -393,7 +393,7 @@ TEST(PrestateTracer, statediff_multiple_fields_update)
 
 TEST(PrestateTracer, statediff_account_deletion)
 {
-    Account a{.balance = 32, .code_hash = NULL_HASH, .nonce = 1};
+    Account a{32, NULL_HASH, 1};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -437,22 +437,18 @@ TEST(PrestateTracer, geth_example_prestate)
     // The only difference between this test and the Geth prestate tracer
     // example is the code/codehash. Here we use one from our test resources,
     // because the code in the Geth example is truncated.
-    Account const a{.balance = 0, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account const a{0, A_CODE_HASH, 1};
     OriginalAccountState as{a};
     as.storage_ = as.storage_.insert({key4, value4});
     as.storage_ = as.storage_.insert({key5, value5});
     as.storage_ = as.storage_.insert({key6, value6});
     as.storage_ = as.storage_.insert({key7, value7});
 
-    Account const b{
-        .balance = 0x7a48734599f7284, .code_hash = NULL_HASH, .nonce = 1133};
+    Account const b{0x7a48734599f7284, NULL_HASH, 1133};
     OriginalAccountState bs{b};
-    Account const c{
-        .balance = intx::from_string<uint256_t>("0x2638035a26d133809"),
-        .code_hash = NULL_HASH,
-        .nonce = 0};
+    Account const c{intx::from_string<uint256_t>("0x2638035a26d133809")};
     OriginalAccountState cs{c};
-    Account const d{.balance = 0x0, .code_hash = NULL_HASH, .nonce = 0};
+    Account const d{};
     OriginalAccountState ds{d};
 
     trace::Map<Address, OriginalAccountState> prestate{};
@@ -506,10 +502,8 @@ TEST(PrestateTracer, geth_example_prestate)
 
 TEST(PrestateTracer, geth_example_statediff)
 {
-    Account const a{
-        .balance = 0x7a48429e177130a, .code_hash = NULL_HASH, .nonce = 1134};
-    Account const b{
-        .balance = 0x7a48429e177130a, .code_hash = NULL_HASH, .nonce = 1135};
+    Account const a{0x7a48429e177130a, NULL_HASH, 1134};
+    Account const b{0x7a48429e177130a, NULL_HASH, 1135};
 
     StateDeltas state_deltas{
         {addr3, StateDelta{.account = {a, b}, .storage = {}}},

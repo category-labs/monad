@@ -306,13 +306,13 @@ namespace
                     Address{}, // TODO: Update this when binary checkpoint
                                // includes unhashed address
                     Account{
-                        .balance = unaligned_load<uint256_t>(
+                        unaligned_load<uint256_t>(
                             curr.substr(balance_offset, sizeof(uint256_t))
                                 .data()),
-                        .code_hash = unaligned_load<bytes32_t>(
+                        unaligned_load<bytes32_t>(
                             curr.substr(code_hash_offset, sizeof(bytes32_t))
                                 .data()),
-                        .nonce = unaligned_load<uint64_t>(
+                        unaligned_load<uint64_t>(
                             curr.substr(nonce_offset, sizeof(uint64_t))
                                 .data())})),
                 .incarnation = false,
@@ -466,8 +466,9 @@ namespace
             auto const incarnation, rlp::decode_unsigned<uint64_t>(payload));
         acct.incarnation = Incarnation::from_int(incarnation);
         BOOST_OUTCOME_TRY(acct.nonce, rlp::decode_unsigned<uint64_t>(payload));
-        BOOST_OUTCOME_TRY(
-            acct.balance, rlp::decode_unsigned<uint256_t>(payload));
+        uint256_t balance;
+        BOOST_OUTCOME_TRY(balance, rlp::decode_unsigned<uint256_t>(payload));
+        acct.set_balance(balance);
         if (!payload.empty()) {
             BOOST_OUTCOME_TRY(acct.code_hash, rlp::decode_bytes32(payload));
         }
@@ -688,7 +689,7 @@ byte_string encode_account_db(Address const &address, Account const &account)
     encoded_account += rlp::encode_address(address);
     encoded_account += rlp::encode_unsigned(account.incarnation.to_int());
     encoded_account += rlp::encode_unsigned(account.nonce);
-    encoded_account += rlp::encode_unsigned(account.balance);
+    encoded_account += rlp::encode_unsigned(account.get_balance_unsafe());
     if (account.code_hash != NULL_HASH) {
         encoded_account += rlp::encode_bytes32(account.code_hash);
     }

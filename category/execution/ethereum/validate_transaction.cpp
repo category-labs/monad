@@ -210,7 +210,7 @@ EXPLICIT_TRAITS(static_validate_transaction);
 template <Traits traits>
 Result<void> validate_transaction(
     Transaction const &tx, std::optional<Account> const &sender_account,
-    std::span<uint8_t const> code)
+    OriginalAccountState &orig_state, std::span<uint8_t const> code)
 {
     // YP (70)
     uint512_t v0 = tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
@@ -247,11 +247,8 @@ Result<void> validate_transaction(
     }
 
     // YP (71)
-    // RELAXED MERGE
-    // note this passes because `v0` includes gas which is later deducted in
-    // `irrevocable_change` before relaxed merge logic in `sender_has_balance`
-    // this is fragile as it depends on values in two locations matching
-    if (MONAD_UNLIKELY(sender_account->balance < v0)) {
+    ConstBalanceAccessor const bal_accessor{sender_account, orig_state};
+    if (MONAD_UNLIKELY(!bal_accessor.check_min_balance(v0))) {
         return TransactionError::InsufficientBalance;
     }
 
@@ -266,9 +263,10 @@ EXPLICIT_TRAITS(validate_transaction);
 Result<void> validate_transaction(
     evmc_revision const rev, Transaction const &tx,
     std::optional<Account> const &sender_account,
-    std::span<uint8_t const> const code)
+    OriginalAccountState &orig_state, std::span<uint8_t const> const code)
 {
-    SWITCH_EVM_TRAITS(validate_transaction, tx, sender_account, code);
+    SWITCH_EVM_TRAITS(
+        validate_transaction, tx, sender_account, orig_state, code);
     MONAD_ABORT("invalid revision");
 }
 

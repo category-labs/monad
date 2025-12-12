@@ -95,10 +95,9 @@ struct AccountAccessInfo
             return {0, false};
         }
 
-        std::optional<Account> const &prestate_account =
-            get_account_for_trace(*prestate);
+        std::optional<Account> const &prestate_account = prestate->account_;
         std::optional<Account> const &modified_account =
-            get_account_for_trace(*modified_state);
+            modified_state->account_;
 
         uint64_t const prestate_nonce =
             is_dead(prestate_account) ? 0 : prestate_account->nonce;
@@ -113,15 +112,16 @@ struct AccountAccessInfo
             return {0, false};
         }
 
-        std::optional<Account> const &prestate_account =
-            get_account_for_trace(*prestate);
+        std::optional<Account> const &prestate_account = prestate->account_;
         std::optional<Account> const &modified_account =
-            get_account_for_trace(*modified_state);
+            modified_state->account_;
 
         uint256_t const prestate_balance =
-            is_dead(prestate_account) ? 0 : prestate_account->balance;
+            is_dead(prestate_account) ? 0
+                                      : prestate_account->get_balance_unsafe();
         uint256_t const modified_balance =
-            is_dead(modified_account) ? 0 : modified_account->balance;
+            is_dead(modified_account) ? 0
+                                      : modified_account->get_balance_unsafe();
         return {modified_balance, prestate_balance != modified_balance};
     }
 };
@@ -190,11 +190,12 @@ void record_account_events(
     MONAD_ASSERT(account_info.prestate);
     monad_c_eth_account_state initial_state;
     std::optional<Account> const &prestate_account =
-        get_account_for_trace(*account_info.prestate);
+        account_info.prestate->account_;
     bool const prestate_valid = !is_dead(prestate_account);
 
     initial_state.nonce = prestate_valid ? prestate_account->nonce : 0;
-    initial_state.balance = prestate_valid ? prestate_account->balance : 0;
+    initial_state.balance =
+        prestate_valid ? prestate_account->get_balance_unsafe() : 0;
     initial_state.code_hash =
         prestate_valid ? prestate_account->code_hash : NULL_HASH;
 

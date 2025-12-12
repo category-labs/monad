@@ -42,8 +42,8 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
     for (auto const &item : json.items()) {
         Address const addr = evmc::from_hex<Address>(item.key()).value();
         Account account{};
-        account.balance =
-            intx::from_string<uint256_t>(item.value()["wei_balance"]);
+        account.set_balance(
+            intx::from_string<uint256_t>(item.value()["wei_balance"]));
         deltas.emplace(addr, StateDelta{.account = {std::nullopt, account}});
     }
     db.commit(

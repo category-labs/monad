@@ -387,11 +387,7 @@ TEST_F(StateSyncFixture, sync_from_some)
                 {ADDR1,
                  {.account =
                       {std::nullopt,
-                       Account{
-                           .balance = 1337,
-                           .code_hash = code_hash,
-                           .nonce = 1,
-                           .incarnation = Incarnation{3, 0}}},
+                       Account{1337, code_hash, 1, Incarnation{3, 0}}},
                   .storage =
                       {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                         {{},
@@ -566,8 +562,7 @@ TEST_F(StateSyncFixture, sync_one_account)
         StateDeltas{
             {ADDR_A,
              StateDelta{
-                 .account = {std::nullopt, Account{.balance = 100}},
-                 .storage = {}}}},
+                 .account = {std::nullopt, Account{100}}, .storage = {}}}},
         Code{},
         BlockHeader{.number = N});
     init();
@@ -662,7 +657,7 @@ TEST_F(StateSyncFixture, account_updated_after_storage)
         StateDeltas{
             {ADDR_A,
              StateDelta{
-                 .account = {std::nullopt, Account{.balance = 100}},
+                 .account = {std::nullopt, Account{100}},
                  .storage =
                      {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                        {bytes32_t{},
@@ -683,8 +678,7 @@ TEST_F(StateSyncFixture, account_updated_after_storage)
         StateDeltas{
             {ADDR_A,
              StateDelta{
-                 .account = {Account{.balance = 100}, Account{.balance = 200}},
-                 .storage = {}}}},
+                 .account = {Account{100}, Account{200}}, .storage = {}}}},
         Code{},
         hdr);
     init();
@@ -709,7 +703,7 @@ TEST_F(StateSyncFixture, account_deleted_after_storage)
         StateDeltas{
             {ADDR_A,
              StateDelta{
-                 .account = {std::nullopt, Account{.balance = 100}},
+                 .account = {std::nullopt, Account{100}},
                  .storage =
                      {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                        {bytes32_t{},
@@ -730,8 +724,7 @@ TEST_F(StateSyncFixture, account_deleted_after_storage)
         StateDeltas{
             {ADDR_A,
              StateDelta{
-                 .account = {Account{.balance = 100}, std::nullopt},
-                 .storage = {}}}},
+                 .account = {Account{100}, std::nullopt}, .storage = {}}}},
         Code{},
         hdr);
     EXPECT_EQ(sctx.state_root(), NULL_ROOT);
@@ -755,8 +748,7 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
         StateDeltas{
             {ADDR_A,
              StateDelta{
-                 .account = {std::nullopt, Account{.balance = 100}},
-                 .storage = {}}}},
+                 .account = {std::nullopt, Account{100}}, .storage = {}}}},
         Code{},
         hdr);
     EXPECT_EQ(sctx.state_root(), hdr.state_root);
@@ -772,8 +764,7 @@ TEST_F(StateSyncFixture, account_deleted_and_prefix_skipped)
         StateDeltas{
             {ADDR_A,
              StateDelta{
-                 .account = {Account{.balance = 100}, std::nullopt},
-                 .storage = {}}}},
+                 .account = {Account{100}, std::nullopt}, .storage = {}}}},
         Code{},
         hdr);
     EXPECT_EQ(sctx.state_root(), hdr.state_root);
@@ -797,7 +788,7 @@ TEST_F(StateSyncFixture, delete_updated_account)
     BlockHeader hdr{.parent_hash = NULL_HASH};
     commit_sequential(sctx, StateDeltas{}, Code{}, hdr);
 
-    Account const a{.balance = 100, .incarnation = Incarnation{1, 0}};
+    Account const a{100, NULL_HASH, 0, Incarnation{1, 0}};
 
     hdr.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
@@ -852,7 +843,7 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
 {
     init();
 
-    Account const a{.balance = 100, .incarnation = Incarnation{1, 0}};
+    Account const a{100, NULL_HASH, 0, Incarnation{1, 0}};
 
     bytes32_t parent_hash{NULL_HASH};
     uint64_t const block_number = 1'000'000 - 257;
@@ -948,11 +939,7 @@ TEST_F(StateSyncFixture, update_contract_twice)
     auto const code_hash = to_bytes(keccak256(code));
     auto const icode = vm::make_shared_intercode(code);
 
-    Account const a{
-        .balance = 1337,
-        .code_hash = code_hash,
-        .nonce = 1,
-        .incarnation = Incarnation{1, 0}};
+    Account const a{1337, code_hash, 1, Incarnation{1, 0}};
 
     hdr.state_root =
         0x3dda8f21af5ec3d4caea2b3b2bddd988e3f1ff1fbfdbaa87a6477bbfce356d26_bytes32;
@@ -1018,7 +1005,7 @@ TEST_F(StateSyncFixture, benchmark)
         v.emplace_back(
             i,
             StateDelta{
-                .account = {std::nullopt, Account{.balance = i, .nonce = i}},
+                .account = {std::nullopt, Account{i, NULL_HASH, i}},
                 .storage = {}});
     }
 

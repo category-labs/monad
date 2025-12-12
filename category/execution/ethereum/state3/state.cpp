@@ -215,16 +215,18 @@ uint64_t State::get_nonce(Address const &address)
 bytes32_t State::get_current_balance_pessimistic(Address const &address)
 {
     auto const &account = recent_account(address);
-    original_account_state(address).set_validate_exact_balance();
-    if (MONAD_LIKELY(account.has_value())) {
-        return intx::be::store<bytes32_t>(account.value().balance);
-    }
-    return {};
+    ConstBalanceAccessor const balance_accessor{
+        account, original_account_state(address)};
+    return intx::be::store<bytes32_t>(balance_accessor.get_balance());
 }
 
-bytes32_t State::get_original_balance_pessimistic(Address const &address)
+void State::set_balance(Address const &address, uint256_t const &balance)
 {
-    return original_account_state(address).get_balance_pessimistic();
+    auto &account = current_account(address);
+    if (MONAD_UNLIKELY(!account.has_value())) {
+        account = Account{};
+    }
+    account->set_balance(balance);
 }
 
 bytes32_t State::get_code_hash(Address const &address)
@@ -302,7 +304,7 @@ void State::set_nonce(Address const &address, uint64_t const nonce)
 {
     auto &account = current_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
-        account = Account{.incarnation = incarnation_};
+        account = Account{0, NULL_HASH, 0, incarnation_};
     }
     account.value().nonce = nonce;
 }
@@ -312,15 +314,15 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
-        account = Account{.incarnation = incarnation_};
+        account = Account{0, NULL_HASH, 0, incarnation_};
     }
 
     MONAD_ASSERT_THROW(
         std::numeric_limits<uint256_t>::max() - delta >=
-            account.value().balance,
+            account.value().get_balance_unsafe(),
         "balance overflow");
 
-    account.value().balance += delta;
+    account.value().add_to_balance(delta);
     account_state.touch();
 }
 
@@ -330,13 +332,22 @@ void State::subtract_from_balance(
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
-        account = Account{.incarnation = incarnation_};
+        account = Account{0, NULL_HASH, 0, incarnation_};
     }
 
-    MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
-
-    account.value().balance -= delta;
+    BalanceAccessor const balance_accessor{
+        account, original_account_state(address)};
+    MONAD_ASSERT_THROW(
+        balance_accessor.check_min_balance(delta), "balance underflow");
+    balance_accessor.subtract_from_balance(delta);
     account_state.touch();
+}
+
+bool State::check_min_balance(Address const &address, uint256_t const &value)
+{
+    ConstBalanceAccessor const balance_accessor{
+        recent_account(address), original_account_state(address)};
+    return balance_accessor.check_min_balance(value);
 }
 
 void State::set_code_hash(Address const &address, bytes32_t const &hash)
@@ -408,15 +419,17 @@ bool State::selfdestruct(Address const &address, Address const &beneficiary)
     MONAD_ASSERT(account.has_value());
 
     if constexpr (traits::evm_rev() < EVMC_CANCUN) {
-        add_to_balance(beneficiary, account.value().balance);
-        account.value().balance = 0;
-        original_account_state(address).set_validate_exact_balance();
+        ConstBalanceAccessor const balance_accessor{
+            account, original_account_state(address)};
+        add_to_balance(beneficiary, balance_accessor.get_balance());
+        account.value().set_balance(0);
     }
     else {
         if (address != beneficiary || account->incarnation == incarnation_) {
-            add_to_balance(beneficiary, account.value().balance);
-            account.value().balance = 0;
-            original_account_state(address).set_validate_exact_balance();
+            ConstBalanceAccessor const balance_accessor{
+                account, original_account_state(address)};
+            add_to_balance(beneficiary, balance_accessor.get_balance());
+            account.value().set_balance(0);
         }
     }
 
@@ -566,7 +579,7 @@ void State::create_contract(Address const &address)
         account->incarnation = incarnation_;
     }
     else {
-        account = Account{.incarnation = incarnation_};
+        account = Account{0, NULL_HASH, 0, incarnation_};
     }
 }
 
@@ -587,10 +600,10 @@ void State::create_account_no_rollback(Address const &address)
     auto &account = current_account(address);
     MONAD_ASSERT(!account.has_value());
     account = Account{
-        .incarnation = Incarnation{
-            incarnation_.get_block(),
-            Incarnation::LAST_TX,
-        }};
+        0,
+        NULL_HASH,
+        0,
+        Incarnation{incarnation_.get_block(), Incarnation::LAST_TX}};
 }
 
 immer::vector<Receipt::Log> const &State::logs()
@@ -608,7 +621,7 @@ void State::set_to_state_incarnation(Address const &address)
 {
     auto &account = current_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
-        account = Account{.incarnation = incarnation_};
+        account = Account{0, NULL_HASH, 0, incarnation_};
     }
     account.value().incarnation = incarnation_;
 }
@@ -639,7 +652,8 @@ bool State::try_fix_account_mismatch(
     if (original->nonce != actual->nonce) {
         return false;
     }
-    MONAD_ASSERT(original->balance != actual->balance);
+    MONAD_ASSERT(
+        original->get_balance_unsafe() != actual->get_balance_unsafe());
     // is relaxed merge disabled
     if (!relaxed_validation_) {
         return false;
@@ -648,7 +662,7 @@ bool State::try_fix_account_mismatch(
         return false;
     }
     // original balance does not meet min required
-    if (actual->balance < original_state.min_balance()) {
+    if (actual->get_balance_unsafe() < original_state.min_balance()) {
         return false;
     }
     // adjust balances
@@ -660,54 +674,26 @@ bool State::try_fix_account_mismatch(
         if (!recent) {
             return false;
         }
-        if (actual->balance > original->balance) {
-            recent->balance += actual->balance - original->balance;
+        if (actual->get_balance_unsafe() > original->get_balance_unsafe()) {
+            recent->add_to_balance(
+                actual->get_balance_unsafe() - original->get_balance_unsafe());
         }
         else {
             MONAD_ASSERT(
-                recent->balance >= (original->balance - actual->balance));
-            recent->balance -= original->balance - actual->balance;
+                recent->get_balance_unsafe() >=
+                (original->get_balance_unsafe() -
+                 actual->get_balance_unsafe()));
+            recent->subtract_from_balance_unsafe(
+                original->get_balance_unsafe() - actual->get_balance_unsafe());
         }
     }
-    original->balance = actual->balance;
+    original->set_balance(actual->get_balance_unsafe());
 
     // not necessary as can_merge() wont be called
     // anymore, but just being defensive, and this makes
     // it easier to write the class invariant
     original_state.set_validate_exact_balance();
     return true;
-}
-
-bool State::record_balance_constraint_for_debit(
-    Address const &address, uint256_t const &debit)
-{
-    auto const &account = recent_account(address);
-    uint256_t const balance = account.has_value() ? account->balance : 0;
-
-    auto &original_state = original_account_state(address);
-    // RELAXED MERGE
-    // if current balance  >= `debit`, then:
-    // 1. compute the amount that current balance exceeds `debit`
-    // 2. require that the original balance at merge time is at least the
-    // original balance used during this execution less said excess
-    if (balance >= debit) {
-        uint256_t const diff = balance - debit;
-        auto const &original = original_state.account_;
-        uint256_t const original_balance =
-            original.has_value() ? original->balance : 0;
-        if (original_balance > diff) { // avoid underflow when <= diff
-            uint256_t const min_balance =
-                original_balance -
-                diff; // original balance - current balance + debit
-            original_state.set_min_balance(min_balance);
-        }
-        return true;
-    }
-
-    // otherwise require that original balance at merge time matches
-    // original balance used during this execution exactly
-    original_state.set_validate_exact_balance();
-    return false;
 }
 
 MONAD_NAMESPACE_END

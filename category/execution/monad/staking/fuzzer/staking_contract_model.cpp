@@ -48,8 +48,7 @@ namespace monad::staking::test
             StateDeltas{
                 {STAKING_CA,
                  StateDelta{
-                     .account =
-                         {std::nullopt, Account{.balance = 0, .nonce = 1}}}}},
+                     .account = {std::nullopt, Account{0, NULL_HASH, 1}}}}},
             Code{},
             NULL_HASH_BLAKE3,
             BlockHeader{},

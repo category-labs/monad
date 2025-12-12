@@ -131,22 +131,13 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = 0xffffffffffffffffffffffffffffffff_u128,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
+                      Account{0xffffffffffffffffffffffffffffffff_u128}}}},
             {to,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = 0x0fffffffffffff,
-                          .code_hash = STRESS_TEST_CODE_HASH}}}},
-            {ca,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}}},
+                      Account{0x0fffffffffffff, STRESS_TEST_CODE_HASH}}}},
+            {ca, StateDelta{.account = {std::nullopt, Account{0x1b58}}}}},
         Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE}},
         BlockHeader{.number = 0});
 
@@ -256,17 +247,14 @@ TYPED_TEST(TraitsTest, assertion_exception)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
+                      Account{std::numeric_limits<uint256_t>::max()}}}},
             {to,
              StateDelta{
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = STRESS_TEST_CODE_HASH}}}}},
+                          std::numeric_limits<uint256_t>::max(),
+                          STRESS_TEST_CODE_HASH}}}}},
         Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE}},
         BlockHeader{.number = 0});
 
@@ -350,29 +338,14 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     commit_sequential(
         tdb,
         StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x989680,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
+            {from, StateDelta{.account = {std::nullopt, Account{0x989680}}}},
             {to,
              StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x0,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x01}}}},
+                 .account = {std::nullopt, Account{0x0, NULL_HASH, 0x01}}}},
             {ca,
              StateDelta{
                  .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x1b58,
-                          .code_hash = REFUND_TEST_CODE_HASH}},
+                     {std::nullopt, Account{0x1b58, REFUND_TEST_CODE_HASH}},
                  .storage =
                      {{bytes32_t{0x01}, {bytes32_t{}, bytes32_t{0x01}}},
                       {bytes32_t{0x02}, {bytes32_t{}, bytes32_t{0x01}}},

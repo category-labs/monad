@@ -188,18 +188,8 @@ namespace
             tdb,
             StateDeltas{
                 {ADDR_A,
-                 StateDelta{
-                     .account =
-                         {std::nullopt,
-                          Account{
-                              .balance = 20'000'000u,
-                              .code_hash = NULL_HASH,
-                              .nonce = 0x0}}}},
-                {ADDR_B,
-                 StateDelta{
-                     .account =
-                         {std::nullopt,
-                          Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+                 StateDelta{.account = {std::nullopt, Account{20'000'000u}}}},
+                {ADDR_B, StateDelta{.account = {std::nullopt, Account{}}}}},
             Code{},
             header);
 
@@ -685,18 +675,12 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
     commit_sequential(
         tdb,
         StateDeltas{
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 1, .code_hash = NULL_HASH}}}},
+            {from, StateDelta{.account = {std::nullopt, Account{1}}}},
             {to,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = NULL_HASH}}}}},
+                      Account{std::numeric_limits<uint256_t>::max()}}}}},
         Code{},
         BlockHeader{.number = 0});
 
@@ -776,23 +760,13 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
     commit_sequential(
         tdb,
         StateDeltas{
-            {addr1,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 1, .code_hash = NULL_HASH}}}},
-            {addr2,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 1, .code_hash = hash2}}}},
+            {addr1, StateDelta{.account = {std::nullopt, Account{1}}}},
+            {addr2, StateDelta{.account = {std::nullopt, Account{1, hash2}}}},
             {addr3,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max() - 1,
-                          .code_hash = NULL_HASH}}}}},
+                      Account{std::numeric_limits<uint256_t>::max() - 1}}}}},
         Code{{hash2, icode2}},
         BlockHeader{.number = 0});
 
@@ -859,9 +833,7 @@ TEST_F(EthCallFixture, loop_out_of_gas)
         StateDeltas{
             {ca,
              StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0x1b58, .code_hash = code_hash}}}}},
+                 .account = {std::nullopt, Account{0x1b58, code_hash}}}}},
         Code{{code_hash, icode}},
         BlockHeader{.number = 0});
 
@@ -978,9 +950,7 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
         StateDeltas{
             {ca,
              StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0x1b58, .code_hash = code_hash}}}}},
+                 .account = {std::nullopt, Account{0x1b58, code_hash}}}}},
         Code{{code_hash, icode}},
         BlockHeader{.number = 0});
 
@@ -1045,9 +1015,7 @@ TEST_F(EthCallFixture, from_contract_account)
         StateDeltas{
             {ca,
              StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0x1b58, .code_hash = code_hash}}}}},
+                 .account = {std::nullopt, Account{0x1b58, code_hash}}}}},
         Code{{code_hash, icode}},
         BlockHeader{.number = 0});
 
@@ -1114,10 +1082,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
                     {ca,
                      StateDelta{
                          .account =
-                             {std::nullopt,
-                              Account{
-                                  .balance = 0x1b58,
-                                  .code_hash = code_hash}}}}},
+                             {std::nullopt, Account{0x1b58, code_hash}}}}},
                 Code{{code_hash, icode}},
                 BlockHeader{.number = i});
         }
@@ -1239,29 +1204,15 @@ TEST_F(EthCallFixture, call_trace_with_logs)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = NULL_HASH}}}},
+                      Account{std::numeric_limits<uint256_t>::max()}}}},
             {a_address,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = a_code_hash}}}},
+             StateDelta{.account = {std::nullopt, Account{0, a_code_hash}}}},
             {b_address,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = b_code_hash}}}},
+             StateDelta{.account = {std::nullopt, Account{0, b_code_hash}}}},
             {c_address,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = c_code_hash}}}},
+             StateDelta{.account = {std::nullopt, Account{0, c_code_hash}}}},
             {d_address,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = d_code_hash}}}}},
+             StateDelta{.account = {std::nullopt, Account{0, d_code_hash}}}}},
         Code{
             {a_code_hash, a_icode},
             {b_code_hash, b_icode},
@@ -1440,16 +1391,9 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
     commit_sequential(
         tdb,
         StateDeltas{
-            {ADDR_A,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 22000,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
+            {ADDR_A, StateDelta{.account = {std::nullopt, Account{22000}}}},
             {precompile_address,
-             StateDelta{.account = {std::nullopt, Account{.nonce = 6}}}}},
+             StateDelta{.account = {std::nullopt, Account{0, NULL_HASH, 6}}}}},
         Code{},
         header);
 
@@ -1537,11 +1481,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
 
     BlockHeader const header{.number = 256};
 
-    Account const acct_from{
-        .balance = 0x200000,
-        .code_hash = NULL_HASH,
-        .nonce = 0x0,
-    };
+    Account const acct_from{0x200000};
 
     Account const acct_to{};
 
@@ -1657,15 +1597,9 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             {ADDR_A,
              StateDelta{
                  .account =
-                     {Account{.balance = 0x200000, .nonce = 0},
-                      Account{
-                          .balance = 0x200000 - 0x10000 - 500'000u,
-                          .nonce = 1}}}},
-            {ADDR_B,
-             StateDelta{
-                 .account =
-                     {Account{.balance = 0, .nonce = 0},
-                      Account{.balance = 0x10000}}}},
+                     {Account{0x200000},
+                      Account{0x200000 - 0x10000 - 500'000u, NULL_HASH, 1}}}},
+            {ADDR_B, StateDelta{.account = {Account{}, Account{0x10000}}}},
         };
 
         EXPECT_EQ(
@@ -1816,8 +1750,7 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{uint64_t{0x01}}, .nonce = 1}}}},
+                      Account{uint256_t{uint64_t{0x01}}, NULL_HASH, 1}}}},
         };
 
         commit_sequential(tdb, deltas, {}, BlockHeader{.number = 0});
@@ -1861,8 +1794,9 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
                 .account = {
                     std::nullopt,
                     Account{
-                        .balance = std::numeric_limits<uint256_t>::max(),
-                        .nonce = transaction.nonce}}});
+                        std::numeric_limits<uint256_t>::max(),
+                        NULL_HASH,
+                        transaction.nonce}}});
     }
     commit_sequential(tdb, senders_state, {}, BlockHeader{.number = 255});
 
@@ -2058,8 +1992,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{uint64_t{0x01}}, .nonce = 1}}}},
+                      Account{uint256_t{uint64_t{0x01}}, NULL_HASH, 1}}}},
         };
 
         commit_sequential(tdb, deltas, {}, BlockHeader{.number = 0});
@@ -2103,8 +2036,9 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
                 .account = {
                     std::nullopt,
                     Account{
-                        .balance = std::numeric_limits<uint256_t>::max(),
-                        .nonce = transaction.nonce}}});
+                        std::numeric_limits<uint256_t>::max(),
+                        NULL_HASH,
+                        transaction.nonce}}});
     }
     commit_sequential(tdb, senders_state, {}, BlockHeader{.number = 255});
 
@@ -2382,8 +2316,7 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
 
     Address const sender = recover_sender(tx).value();
     Account const sender_acc{
-        .balance = uint256_t{initial_balance_mon} * 1000000000000000000ULL,
-        .nonce = 1};
+        uint256_t{initial_balance_mon} * 1000000000000000000ULL, NULL_HASH, 1};
     {
         // Initial state.
         StateDeltas const deltas{
@@ -2609,23 +2542,23 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{uint64_t{0x01}}, .nonce = 1}}}},
+                      Account{uint256_t{uint64_t{0x01}}, NULL_HASH, 1}}}},
             {block1_tx_sender,
              StateDelta{
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .nonce = block1_tx.nonce}}}},
+                          std::numeric_limits<uint256_t>::max(),
+                          NULL_HASH,
+                          block1_tx.nonce}}}},
             {block2_tx_sender,
              StateDelta{
                  .account = {
                      std::nullopt,
                      Account{
-                         .balance =
-                             uint256_t{std::numeric_limits<uint64_t>::max()},
-                         .nonce = block2_tx.nonce}}}}};
+                         uint256_t{std::numeric_limits<uint64_t>::max()},
+                         NULL_HASH,
+                         block2_tx.nonce}}}}};
 
         commit_sequential(tdb, deltas, {}, BlockHeader{.number = 0});
     }
@@ -2817,15 +2750,10 @@ TEST_F(EthCallFixture, access_list_trace)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = NULL_HASH}}}},
+                      Account{std::numeric_limits<uint256_t>::max()}}}},
             {contract_address,
              StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0, .code_hash = contract_code_hash}}}}},
+                 .account = {std::nullopt, Account{0, contract_code_hash}}}}},
         Code{
             {contract_code_hash, contract_icode},
         },
@@ -2919,15 +2847,10 @@ TEST_F(EthCallFixture, access_list_trace_empty)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = NULL_HASH}}}},
+                      Account{std::numeric_limits<uint256_t>::max()}}}},
             {contract_address,
              StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0, .code_hash = contract_code_hash}}}}},
+                 .account = {std::nullopt, Account{0, contract_code_hash}}}}},
         Code{
             {contract_code_hash, contract_icode},
         },
@@ -3008,19 +2931,11 @@ TEST_F(EthCallFixture, access_list_trace_nested)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = NULL_HASH}}}},
+                      Account{std::numeric_limits<uint256_t>::max()}}}},
             {a_address,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = a_code_hash}}}},
+             StateDelta{.account = {std::nullopt, Account{0, a_code_hash}}}},
             {b_address,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = b_code_hash}}}}},
+             StateDelta{.account = {std::nullopt, Account{0, b_code_hash}}}}},
         Code{
             {a_code_hash, a_icode},
             {b_code_hash, b_icode},
@@ -3281,14 +3196,7 @@ TEST_F(EthCallFixture, prestate_override_state)
     StateDeltas const deltas{
         {CONTRACT_ADDR,
          StateDelta{
-             .account =
-                 AccountDelta{
-                     std::nullopt,
-                     Account{
-                         .balance = 0x0,
-                         .code_hash = code_hash,
-                         .nonce = 1,
-                     }},
+             .account = AccountDelta{std::nullopt, Account{0x0, code_hash, 1}},
              .storage =
                  StorageDeltas{{storage_key, {bytes32_t{}, storage_value}}}}}};
 
@@ -3548,32 +3456,18 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{1'000'000'000'000'000'000} * 100,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0}}}},
+                      Account{uint256_t{1'000'000'000'000'000'000} * 100}}}},
             {delegated_eoa,
              StateDelta{
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = uint256_t{1'000'000'000'000'000'000} * 7,
-                          .code_hash = delegated_eoa_code_hash,
-                          .nonce = 0}}}},
+                          uint256_t{1'000'000'000'000'000'000} * 7,
+                          delegated_eoa_code_hash}}}},
             {contract,
              StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0,
-                          .code_hash = contract_code_hash,
-                          .nonce = 0}}}},
-            {recipient,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0, .code_hash = NULL_HASH, .nonce = 0}}}},
+                 .account = {std::nullopt, Account{0, contract_code_hash}}}},
+            {recipient, StateDelta{.account = {std::nullopt, Account{}}}},
         },
         Code{
             {contract_code_hash, contract_icode},
@@ -3648,16 +3542,8 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{1'000'000'000'000'000'000} * 12,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0}}}},
-            {recipient,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0, .code_hash = NULL_HASH, .nonce = 0}}}},
+                      Account{uint256_t{1'000'000'000'000'000'000} * 12}}}},
+            {recipient, StateDelta{.account = {std::nullopt, Account{}}}},
         },
         Code{},
         header);
@@ -3750,23 +3636,12 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = uint256_t{1'000'000'000'000'000'000} * 12,
-                          .code_hash = delegated_eoa_code_hash,
-                          .nonce = 0}}}},
+                          uint256_t{1'000'000'000'000'000'000} * 12,
+                          delegated_eoa_code_hash}}}},
             {contract,
              StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0,
-                          .code_hash = contract_code_hash,
-                          .nonce = 0}}}},
-            {recipient,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0, .code_hash = NULL_HASH, .nonce = 0}}}},
+                 .account = {std::nullopt, Account{0, contract_code_hash}}}},
+            {recipient, StateDelta{.account = {std::nullopt, Account{}}}},
         },
         Code{
             {delegated_eoa_code_hash, delegated_eoa_icode},

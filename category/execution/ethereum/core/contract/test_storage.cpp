@@ -51,8 +51,7 @@ struct Storage : public ::testing::Test
             StateDeltas{
                 {ADDRESS,
                  StateDelta{
-                     .account =
-                         {std::nullopt, Account{.balance = 1, .nonce = 1}}}}},
+                     .account = {std::nullopt, Account{1, NULL_HASH, 1}}}}},
             Code{},
             BlockHeader{});
         state.touch(ADDRESS);

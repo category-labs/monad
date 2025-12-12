@@ -40,7 +40,7 @@ struct fmt::formatter<monad::Account> : public monad::BasicFormatter
             "nonce={}, "
             "incarnation={}"
             "}}",
-            a.balance,
+            a.get_balance_unsafe(),
             a.code_hash,
             a.nonce,
             a.incarnation);

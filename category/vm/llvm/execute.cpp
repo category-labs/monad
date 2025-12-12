@@ -16,6 +16,7 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/llvm/dependency_blocks.hpp>
 #include <category/vm/llvm/emitter.hpp>
@@ -134,13 +135,12 @@ namespace monad::vm::llvm
     };
 
     template <Traits traits>
-    std::shared_ptr<LLVMState>
-    compile_impl(std::span<uint8_t const> code, std::string const &dbg_nm = "")
+    std::shared_ptr<LLVMState> compile_basicblocks_impl(
+        BasicBlocksIR const &ir, std::string const &dbg_nm = "")
     {
         auto ptr = make_shared_llvm_state();
         LLVMState &llvm = *ptr;
 
-        BasicBlocksIR ir = unsafe_make_ir<traits>(code);
         DependencyBlocksIR dep_ir = make_DependencyBlocksIR<traits>(ir);
 
         if (!dbg_nm.empty()) {
@@ -166,6 +166,16 @@ namespace monad::vm::llvm
         llvm.set_contract_addr(dbg_nm);
 
         return ptr;
+    }
+
+    EXPLICIT_TRAITS(compile_basicblocks_impl);
+
+    template <Traits traits>
+    std::shared_ptr<LLVMState>
+    compile_impl(std::span<uint8_t const> code, std::string const &dbg_nm = "")
+    {
+        BasicBlocksIR const ir = unsafe_make_ir<traits>(code);
+        return compile_basicblocks_impl<traits>(ir, dbg_nm);
     }
 
     std::shared_ptr<LLVMState>

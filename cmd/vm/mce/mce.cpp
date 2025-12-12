@@ -64,6 +64,7 @@ struct arguments
     std::optional<std::string> asm_log_file;
     bool wall_clock_time = false;
     bool report_result = false;
+    bool use_llvm = false;
 };
 
 static arguments parse_args(int const argc, char **const argv)
@@ -112,7 +113,10 @@ static arguments parse_args(int const argc, char **const argv)
         "-u",
         args.timeunit_s,
         std::format("Wall clock time unit (default: {})", args.timeunit_s));
-
+    app.add_flag(
+        "--llvm",
+        args.use_llvm,
+        std::format("Use llvm backend (default: {})", args.use_llvm));
     try {
         app.parse(argc, argv);
         args.timeunit = timeunit_of_short_string(args.timeunit_s);
@@ -209,35 +213,31 @@ int mce_main(arguments const &args)
         return 1;
     }
 
+    Binary bin;
+
     asmjit::JitRuntime rt{};
+
     native::CompilerConfig config{};
     if (args.asm_log_file) {
         config.asm_log_path = args.asm_log_file->c_str();
     }
-    std::shared_ptr<native::Nativecode> const ncode = [&]() {
-        if (args.instrument_compile) {
-            InstrumentableCompiler<true> compiler(rt, config);
-            return compiler.compile<traits>(*ir, device);
-        }
-        else {
-            InstrumentableCompiler<false> compiler(rt, config);
-            return compiler.compile<traits>(*ir, device);
-        }
-    }();
-
-    if (!ncode->entrypoint()) {
-        std::cerr << "Compilation failed" << std::endl;
-        return 1;
+    if (args.instrument_compile) {
+        InstrumentableCompiler<true> compiler(rt, config);
+        bin = compiler.compile<traits>(*ir, device, args.use_llvm);
+    }
+    else {
+        InstrumentableCompiler<false> compiler(rt, config);
+        bin = compiler.compile<traits>(*ir, device, args.use_llvm);
     }
 
     evmc::Result const result = [&]() {
         if (args.instrument_execute) {
             InstrumentableVM<true> vm(rt);
-            return vm.execute<traits>(ncode->entrypoint(), device);
+            return vm.execute<traits>(bin, device);
         }
         else {
             InstrumentableVM<false> vm(rt);
-            return vm.execute<traits>(ncode->entrypoint(), device);
+            return vm.execute<traits>(bin, device);
         }
     }();
 

@@ -91,6 +91,8 @@ add_library(
   # ethereum/db
   "ethereum/db/block_db.cpp"
   "ethereum/db/block_db.hpp"
+  "ethereum/db/commit_builder.cpp"
+  "ethereum/db/commit_builder.hpp"
   "ethereum/db/db.hpp"
   "ethereum/db/db_cache.hpp"
   "ethereum/db/db_snapshot.cpp"

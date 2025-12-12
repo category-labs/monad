@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -53,7 +54,7 @@ template <Traits traits>
 bool dipped_into_reserve(
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i,
-    MonadChainContext const &ctx, State &state)
+    ChainContext<traits> const &ctx, State &state)
 {
     MONAD_ASSERT(i < ctx.senders.size());
     MONAD_ASSERT(i < ctx.authorities.size());
@@ -130,10 +131,10 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-bool revert_monad_transaction(
+bool revert_transaction(
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
-    MonadChainContext const &ctx)
+    ChainContext<traits> const &ctx)
 {
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         return dipped_into_reserve<traits>(
@@ -144,25 +145,22 @@ bool revert_monad_transaction(
     }
 }
 
-EXPLICIT_MONAD_TRAITS(revert_monad_transaction);
+EXPLICIT_MONAD_TRAITS(revert_transaction);
 
+template <Traits traits>
+    requires is_monad_trait_v<traits>
 bool can_sender_dip_into_reserve(
     Address const &sender, uint64_t const i, bool const sender_is_delegated,
-    MonadChainContext const &ctx)
+    ChainContext<traits> const &ctx)
 {
     if (sender_is_delegated) { // delegated accounts cannot dip
         return false;
     }
 
     // check pending blocks
-    for (ankerl::unordered_dense::segmented_set<Address> const
-             *const senders_and_authorities :
-         {ctx.grandparent_senders_and_authorities,
-          ctx.parent_senders_and_authorities}) {
-        if (senders_and_authorities &&
-            senders_and_authorities->contains(sender)) {
-            return false;
-        }
+    if (ctx.grandparent_senders_and_authorities.contains(sender) ||
+        ctx.parent_senders_and_authorities.contains(sender)) {
+        return false;
     }
 
     // check current block
@@ -179,6 +177,8 @@ bool can_sender_dip_into_reserve(
 
     return true; // Allow dipping into reserve if no restrictions found
 }
+
+EXPLICIT_MONAD_TRAITS(can_sender_dip_into_reserve);
 
 template <Traits traits>
 uint256_t get_max_reserve(Address const &)

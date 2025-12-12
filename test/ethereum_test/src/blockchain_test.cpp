@@ -169,6 +169,9 @@ struct TraitsMainnet : MonadChain
 
 static fiber::PriorityPool *pool_ = nullptr;
 
+static ankerl::unordered_dense::segmented_set<Address> const
+    empty_senders_and_authorities{};
+
 BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
 {
     BlockHeader block_header{};
@@ -368,16 +371,23 @@ Result<BlockExecOutput> execute(
         }
     }
 
-    MonadChainContext chain_context{
-        .grandparent_senders_and_authorities =
-            (block.header.number > 1
-                 ? &senders_and_authorities_map[block.header.number - 2]
-                 : nullptr),
-        .parent_senders_and_authorities =
-            &senders_and_authorities_map[block.header.number - 1],
-        .senders_and_authorities = senders_and_authorities,
-        .senders = senders,
-        .authorities = recovered_authorities};
+    ChainContext<traits> chain_context = [&] {
+        if constexpr (is_monad_trait_v<traits>) {
+            return ChainContext<traits>{
+                .grandparent_senders_and_authorities =
+                    (block.header.number > 1
+                         ? senders_and_authorities_map[block.header.number - 2]
+                         : empty_senders_and_authorities),
+                .parent_senders_and_authorities =
+                    senders_and_authorities_map[block.header.number - 1],
+                .senders_and_authorities = senders_and_authorities,
+                .senders = senders,
+                .authorities = recovered_authorities};
+        }
+        else {
+            return ChainContext<traits>{};
+        }
+    }();
 
     BOOST_OUTCOME_TRY(
         receipts,
@@ -392,26 +402,7 @@ Result<BlockExecOutput> execute(
             metrics,
             call_tracers,
             state_tracers,
-            [&block, &chain_context](
-                Address const &sender,
-                Transaction const &tx,
-                uint64_t const i,
-                State &state) {
-                if constexpr (is_monad_trait_v<traits>) {
-                    return revert_monad_transaction<traits>(
-                        sender,
-                        tx,
-                        block.header.base_fee_per_gas.value_or(0),
-                        i,
-                        state,
-                        chain_context);
-                }
-                else {
-                    (void)block;
-                    (void)chain_context;
-                    return false;
-                }
-            }));
+            chain_context));
 
     block_state.log_debug();
     block_state.commit(

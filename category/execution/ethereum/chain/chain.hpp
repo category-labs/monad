@@ -20,6 +20,7 @@
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -51,6 +52,15 @@ struct Chain
         uint64_t block_number, uint64_t timestamp, Transaction const &,
         Address const &sender, State &, uint256_t const &base_fee_per_gas,
         std::span<std::optional<Address> const> authorities) const = 0;
+};
+
+template <typename T>
+struct ChainContext;
+
+template <typename T>
+    requires is_evm_trait_v<T>
+struct ChainContext<T>
+{
 };
 
 MONAD_NAMESPACE_END

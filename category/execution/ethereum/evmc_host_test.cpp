@@ -25,6 +25,8 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
+
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
@@ -69,6 +71,32 @@ bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
                lhs.block_base_fee.bytes,
                rhs.block_base_fee.bytes,
                sizeof(evmc_bytes32));
+}
+
+namespace
+{
+    static ankerl::unordered_dense::segmented_set<Address> const
+        empty_senders_and_authorities{};
+    static std::vector<Address> const empty_senders{Address{0}};
+    static std::vector<std::vector<std::optional<Address>>> const
+        empty_authorities{{}};
+
+    template <Traits traits>
+    ChainContext<traits> empty_chain_ctx()
+    {
+        if constexpr (is_monad_trait_v<traits>) {
+            return ChainContext<traits>{
+                .grandparent_senders_and_authorities =
+                    empty_senders_and_authorities,
+                .parent_senders_and_authorities = empty_senders_and_authorities,
+                .senders_and_authorities = empty_senders_and_authorities,
+                .senders = empty_senders,
+                .authorities = empty_authorities};
+        }
+        else {
+            return ChainContext<traits>{};
+        }
+    }
 }
 
 TYPED_TEST(TraitsTest, get_tx_context)
@@ -138,8 +166,18 @@ TYPED_TEST(TraitsTest, emit_log)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     host.emit_log(
         from,
@@ -167,8 +205,18 @@ TYPED_TEST(TraitsTest, access_precompile)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, state};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

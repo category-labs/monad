@@ -130,10 +130,7 @@ inline void load_db(TrieDb &db, uint64_t const n)
             {ADDR_A,
              StateDelta{
                  .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = A_CODE_HASH}},
+                     {std::nullopt, Account{0xba1a9ce0ba1a9ce, A_CODE_HASH}},
                  .storage =
                      {{bytes32_t{},
                        {bytes32_t{},
@@ -141,46 +138,29 @@ inline void load_db(TrieDb &db, uint64_t const n)
             {ADDR_B,
              StateDelta{
                  .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = B_CODE_HASH}}}},
+                     {std::nullopt, Account{0xba1a9ce0ba1a9ce, B_CODE_HASH}}}},
             {0x0000000000000000000000000000000000000102_address,
              StateDelta{
                  .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = C_CODE_HASH}}}},
+                     {std::nullopt, Account{0xba1a9ce0ba1a9ce, C_CODE_HASH}}}},
             {0x0000000000000000000000000000000000000103_address,
              StateDelta{
                  .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = D_CODE_HASH}}}},
+                     {std::nullopt, Account{0xba1a9ce0ba1a9ce, D_CODE_HASH}}}},
             {0x0000000000000000000000000000000000000104_address,
              StateDelta{
                  .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9ce,
-                          .code_hash = E_CODE_HASH}}}},
+                     {std::nullopt, Account{0xba1a9ce0ba1a9ce, E_CODE_HASH}}}},
             {0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 0x7024c}}}},
+             StateDelta{.account = {std::nullopt, Account{0x7024c}}}},
             {0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address,
              StateDelta{
                  .account =
-                     {std::nullopt,
-                      Account{.balance = 0xba1a9ce0b9aa781, .nonce = 1}}}},
+                     {std::nullopt, Account{0xba1a9ce0b9aa781, NULL_HASH, 1}}}},
             {0xcccccccccccccccccccccccccccccccccccccccc_address,
              StateDelta{
                  .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xba1a9ce0ba1a9cf,
-                          .code_hash = H_CODE_HASH}}}}},
+                     {std::nullopt, Account{0xba1a9ce0ba1a9cf, H_CODE_HASH}}}}},
         Code{
             {A_CODE_HASH, A_ICODE},
             {B_CODE_HASH, B_ICODE},

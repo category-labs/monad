@@ -124,8 +124,7 @@ namespace
             Address{state.end},
             StateDelta{
                 .account = AccountDelta{
-                    std::nullopt,
-                    Account{.balance = n, .incarnation = incarnation}}});
+                    std::nullopt, Account{n, NULL_HASH, 0, incarnation}}});
         MONAD_ASSERT(success);
         ++state.end;
     }
@@ -147,10 +146,11 @@ namespace
                 .account = AccountDelta{
                     orig,
                     Account{
-                        .balance = n,
-                        .incarnation = reincarnate
-                                           ? incarnation
-                                           : orig.value().incarnation}}});
+                        n,
+                        NULL_HASH,
+                        0,
+                        reincarnate ? incarnation
+                                    : orig.value().incarnation}}});
         MONAD_ASSERT(success);
         if (reincarnate) {
             state.storage.erase(addr);

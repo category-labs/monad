@@ -83,8 +83,7 @@ TEST(DbBinarySnapshot, Basic)
             deltas.emplace(
                 Address{i},
                 StateDelta{
-                    .account =
-                        {std::nullopt, Account{.balance = i, .nonce = i}},
+                    .account = {std::nullopt, Account{i, NULL_HASH, i}},
                     .storage = storage});
         }
         for (uint64_t i = 0; i < 1'000; ++i) {

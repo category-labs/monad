@@ -278,17 +278,9 @@ namespace
                 }
 
                 if (state_delta.balance.has_value()) {
-                    auto const balance = state_delta.balance.value();
-                    auto const pessimistic_balance = intx::be::load<uint256_t>(
-                        state.get_current_balance_pessimistic(address));
-                    if (balance > pessimistic_balance) {
-                        state.add_to_balance(
-                            address, balance - pessimistic_balance);
-                    }
-                    else {
-                        state.subtract_from_balance(
-                            address, pessimistic_balance - balance);
-                    }
+                    uint256_t const override_balance =
+                        state_delta.balance.value();
+                    state.set_balance(address, override_balance);
                 }
 
                 if (state_delta.nonce.has_value()) {
@@ -345,7 +337,8 @@ namespace
 
         // Safe to pass empty code to validation here because the above override
         // will always mark this transaction as coming from an EOA.
-        BOOST_OUTCOME_TRY(validate_transaction<traits>(enriched_txn, eoa, {}));
+        BOOST_OUTCOME_TRY(validate_transaction<traits>(
+            enriched_txn, eoa, state.original_account_state(sender), {}));
 
         auto const senders = std::vector{sender};
         auto const authorities_vec =

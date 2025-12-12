@@ -194,7 +194,7 @@ TEST(DBTest, read_only)
         mpt::Db db{machine, mpt::OnDiskDbConfig{.dbname_paths = {name}}};
         TrieDb rw(db);
 
-        Account const acct1{.nonce = 1};
+        Account const acct1{0, NULL_HASH, 1};
         commit_sequential(
             rw,
             StateDeltas{
@@ -202,7 +202,7 @@ TEST(DBTest, read_only)
                  StateDelta{.account = {std::nullopt, acct1}, .storage = {}}}},
             Code{},
             BlockHeader{.number = 0});
-        Account const acct2{.nonce = 2};
+        Account const acct2{0, NULL_HASH, 2};
         commit_sequential(
             rw,
             StateDeltas{
@@ -215,11 +215,11 @@ TEST(DBTest, read_only)
         mpt::Db ro_db{io_ctx};
         TrieDb ro{ro_db};
         ASSERT_EQ(ro.get_block_number(), 1);
-        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account(0, NULL_HASH, 2));
         ro.set_block_and_prefix(0);
-        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account(0, NULL_HASH, 1));
 
-        Account const acct3{.nonce = 3};
+        Account const acct3{0, NULL_HASH, 3};
         commit_sequential(
             rw,
             StateDeltas{
@@ -227,23 +227,23 @@ TEST(DBTest, read_only)
             Code{},
             BlockHeader{.number = 2});
         // Read block 0
-        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 1});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account(0, NULL_HASH, 1));
         // Go forward to block 2
         ro.set_block_and_prefix(2);
-        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 3});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account(0, NULL_HASH, 3));
         // Go backward to block 1
         ro.set_block_and_prefix(1);
-        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account(0, NULL_HASH, 2));
         // Setting the same block number is no-op.
         ro.set_block_and_prefix(1);
-        EXPECT_EQ(ro.read_account(ADDR_A), Account{.nonce = 2});
+        EXPECT_EQ(ro.read_account(ADDR_A), Account(0, NULL_HASH, 2));
     }
     std::filesystem::remove(name);
 }
 
 TYPED_TEST(DBTest, read_storage)
 {
-    Account acct{.nonce = 1};
+    Account acct{0, NULL_HASH, 1};
     TrieDb tdb{this->db};
     commit_sequential(
         tdb,
@@ -283,7 +283,7 @@ TYPED_TEST(DBTest, read_storage)
 
 TYPED_TEST(DBTest, read_code)
 {
-    Account acct_a{.balance = 1, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account acct_a{1, A_CODE_HASH, 1};
     TrieDb tdb{this->db};
     commit_sequential(
         tdb,
@@ -294,7 +294,7 @@ TYPED_TEST(DBTest, read_code)
     auto const a_icode = tdb.read_code(A_CODE_HASH);
     EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->size()), A_CODE);
 
-    Account acct_b{.balance = 0, .code_hash = B_CODE_HASH, .nonce = 1};
+    Account acct_b{0, B_CODE_HASH, 1};
     commit_sequential(
         tdb,
         StateDeltas{{ADDR_B, StateDelta{.account = {std::nullopt, acct_b}}}},
@@ -358,7 +358,7 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
 {
-    Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
+    Account acct{1'000'000, {}, 1337};
     TrieDb tdb{this->db};
     commit_sequential(
         tdb,
@@ -404,7 +404,7 @@ TYPED_TEST(DBTest, touch_without_modify_regression)
 
 TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 {
-    Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
+    Account acct{1'000'000, {}, 1337};
     TrieDb tdb{this->db};
     commit_sequential(
         tdb,
@@ -436,7 +436,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 
 TYPED_TEST(DBTest, storage_deletion)
 {
-    Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
+    Account acct{1'000'000, {}, 1337};
 
     TrieDb tdb{this->db};
     commit_sequential(

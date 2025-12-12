@@ -109,8 +109,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
             StateDeltas{
                 {STAKING_CA,
                  StateDelta{
-                     .account =
-                         {std::nullopt, Account{.balance = 0, .nonce = 1}}}}},
+                     .account = {std::nullopt, Account{0, NULL_HASH, 1}}}}},
             Code{},
             BlockHeader{});
         state.add_to_balance(STAKING_CA, 0); // create account like a txn would

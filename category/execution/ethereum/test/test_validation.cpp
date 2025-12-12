@@ -116,12 +116,11 @@ TYPED_TEST(TraitsTest, validate_deployed_code)
 
     Transaction const tx{.gas_limit = 60'500};
     Account const sender_account{
-        .balance = 56'939'568'773'815'811,
-        .code_hash = some_non_null_hash,
-        .nonce = 24};
+        56'939'568'773'815'811, some_non_null_hash, 24};
 
+    OriginalAccountState orig_state{sender_account};
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender_account, orig_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
 }
@@ -133,12 +132,12 @@ TYPED_TEST(TraitsTest, validate_deployed_code_delegated)
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
 
     Transaction const tx{.gas_limit = 60'500};
-    Account const sender_account{
-        .balance = 56'939'568'773'815'811, .code_hash = some_non_null_hash};
-
+    Account const sender_account{56'939'568'773'815'811, some_non_null_hash};
+    OriginalAccountState orig_state{sender_account};
     auto const result = validate_transaction<typename TestFixture::Trait>(
         tx,
         sender_account,
+        orig_state,
         std::vector<uint8_t>{
             0xEF, 0x01, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
             0x11, 0x22, 0x33, 0x44, 0x55, 0x11, 0x22, 0x33,
@@ -160,11 +159,10 @@ TYPED_TEST(TraitsTest, validate_nonce)
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
-    Account const sender_account{
-        .balance = 56'939'568'773'815'811, .nonce = 24};
-
+    Account const sender_account{56'939'568'773'815'811, NULL_HASH, 24};
+    OriginalAccountState orig_state{sender_account};
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender_account, orig_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
@@ -176,11 +174,10 @@ TYPED_TEST(TraitsTest, validate_nonce_optimistically)
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
-    Account const sender_account{
-        .balance = 56'939'568'773'815'811, .nonce = 24};
-
+    Account const sender_account{56'939'568'773'815'811, NULL_HASH, 24};
+    OriginalAccountState orig_state{sender_account};
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender_account, orig_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
@@ -196,10 +193,10 @@ TYPED_TEST(TraitsTest, validate_enough_balance)
         .to = b,
         .max_priority_fee_per_gas = 100'000'000,
     };
-    Account const sender_account{.balance = 55'939'568'773'815'811};
-
+    Account const sender_account{55'939'568'773'815'811};
+    OriginalAccountState orig_state{sender_account};
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender_account, orig_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
@@ -215,16 +212,16 @@ TYPED_TEST(TraitsTest, successful_validation)
         .gas_limit = 27'500,
         .value = 55'939'568'773'815'811,
         .to = b};
-    Account const sender_account{
-        .balance = 56'939'568'773'815'811, .nonce = 25};
+    Account const sender_account{56'939'568'773'815'811, NULL_HASH, 25};
 
     auto const result1 =
         static_validate_transaction<typename TestFixture::Trait>(
             tx, 0, std::nullopt, 1);
     EXPECT_TRUE(result1.has_value());
 
+    OriginalAccountState orig_state{sender_account};
     auto const result2 = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender_account, orig_state, {});
     EXPECT_TRUE(result2.has_value());
 }
 
@@ -275,11 +272,10 @@ TYPED_TEST(TraitsTest, insufficent_balance_overflow)
         .gas_limit = 1000,
         .value = 0,
         .to = b};
-    Account const sender_account{
-        .balance = std::numeric_limits<uint256_t>::max()};
-
+    Account const sender_account{std::numeric_limits<uint256_t>::max()};
+    OriginalAccountState orig_state{sender_account};
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender_account, orig_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }

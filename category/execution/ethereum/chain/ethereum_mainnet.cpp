@@ -122,7 +122,11 @@ Result<void> EthereumMainnet::validate_transaction(
     auto const sender_account = state.recent_account(sender);
     auto const icode = state.get_code(sender)->intercode();
     return ::monad::validate_transaction(
-        rev, tx, sender_account, {icode->code(), icode->size()});
+        rev,
+        tx,
+        sender_account,
+        state.original_account_state(sender),
+        {icode->code(), icode->size()});
 }
 
 MONAD_NAMESPACE_END

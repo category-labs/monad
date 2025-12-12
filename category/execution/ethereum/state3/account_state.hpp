@@ -39,33 +39,13 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class State;
-class BlockState;
-
-namespace trace
-{
-    struct PrestateTracer;
-    struct StateDiffTracer;
-}
-
 class AccountState : public AccountSubstate
 {
 public: // TODO
     using StorageMap = immer::map<
         bytes32_t, bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
 
-protected:
     std::optional<Account> account_{};
-
-private:
-    friend class State;
-    friend class BlockState;
-
-    friend std::optional<Account> const &
-    get_account_for_trace(AccountState const &as)
-    {
-        return as.account_;
-    }
 
 public:
     StorageMap storage_{};
@@ -191,25 +171,98 @@ public:
         validate_exact_balance_ = true;
     }
 
-    bytes32_t get_balance_pessimistic()
-    {
-        set_validate_exact_balance();
-        if (account_.has_value()) {
-            return intx::be::store<bytes32_t>(account_->balance);
-        }
-        return {};
-    }
-
-private:
-    friend class State;
-
     void set_min_balance(uint256_t const &value)
     {
-        MONAD_ASSERT(account_.has_value());
-        MONAD_ASSERT(account_->balance >= value);
         if (value > min_balance_) {
             min_balance_ = value;
         }
+    }
+};
+
+class ConstBalanceAccessor
+{
+    std::optional<Account> const &account_;
+    OriginalAccountState &orig_state_;
+
+public:
+    ConstBalanceAccessor(
+        std::optional<Account> const &account, OriginalAccountState &orig_state)
+        : account_{account}
+        , orig_state_{orig_state}
+    {
+    }
+
+    uint256_t get_balance() const
+    {
+        orig_state_.set_validate_exact_balance();
+        return account_ ? account_->get_balance_unsafe() : 0;
+    }
+
+    bool check_min_balance(uint512_t const &value) const
+    {
+        if (value > uint512_t{std::numeric_limits<uint256_t>::max()}) {
+            orig_state_.set_validate_exact_balance();
+            return false;
+        }
+        else {
+            return check_min_balance(static_cast<uint256_t>(value));
+        }
+    }
+
+    bool check_min_balance(uint256_t const &value) const
+    {
+        uint256_t const balance = account_ ? account_->get_balance_unsafe() : 0;
+        if (balance >= value) {
+            uint256_t const orig_balance =
+                orig_state_.account_
+                    ? orig_state_.account_->get_balance_unsafe()
+                    : 0;
+            if (balance < orig_balance) {
+                orig_state_.set_min_balance(value + (orig_balance - balance));
+            }
+            else {
+                uint256_t const diff = balance - orig_balance;
+                if (value > diff) {
+                    orig_state_.set_min_balance(value - diff);
+                }
+            }
+            return true;
+        }
+        else {
+            orig_state_.set_validate_exact_balance();
+            return false;
+        }
+    }
+};
+
+class BalanceAccessor
+{
+    std::optional<Account> &account_;
+    ConstBalanceAccessor const const_accessor_;
+
+public:
+    BalanceAccessor(
+        std::optional<Account> &account, OriginalAccountState &orig_state)
+        : account_{account}
+        , const_accessor_{account, orig_state}
+    {
+    }
+
+    uint256_t get_balance() const
+    {
+        return const_accessor_.get_balance();
+    }
+
+    bool check_min_balance(uint256_t const &value) const
+    {
+        return const_accessor_.check_min_balance(value);
+    }
+
+    void subtract_from_balance(uint256_t const &delta) const
+    {
+        MONAD_ASSERT(account_.has_value());
+        MONAD_ASSERT(const_accessor_.check_min_balance(delta));
+        account_->subtract_from_balance_unsafe(delta);
     }
 };
 

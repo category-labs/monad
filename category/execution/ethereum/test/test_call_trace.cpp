@@ -120,19 +120,8 @@ TYPED_TEST(TraitsTest, execute_success)
     commit_sequential(
         tdb,
         StateDeltas{
-            {ADDR_A,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x200000,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
-            {ADDR_B,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+            {ADDR_A, StateDelta{.account = {std::nullopt, Account{0x200000}}}},
+            {ADDR_B, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{},
         BlockHeader{});
 
@@ -194,19 +183,8 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     commit_sequential(
         tdb,
         StateDeltas{
-            {ADDR_A,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x10000,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
-            {ADDR_B,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+            {ADDR_A, StateDelta{.account = {std::nullopt, Account{0x10000}}}},
+            {ADDR_B, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{},
         BlockHeader{});
 
@@ -277,13 +255,9 @@ TYPED_TEST(TraitsTest, create_call_trace)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max()}}}},
+                      Account{std::numeric_limits<uint256_t>::max()}}}},
             {ADDR_B,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = code_hash}}}}},
+             StateDelta{.account = {std::nullopt, Account{0, code_hash}}}}},
         Code{
             {code_hash, icode},
         },
@@ -389,13 +363,9 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max()}}}},
+                      Account{std::numeric_limits<uint256_t>::max()}}}},
             {ADDR_B,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = code_hash}}}}},
+             StateDelta{.account = {std::nullopt, Account{0, code_hash}}}}},
         Code{
             {code_hash, icode},
         },
@@ -484,8 +454,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max()}}}}},
+                      Account{std::numeric_limits<uint256_t>::max()}}}}},
         Code{},
         BlockHeader{});
 

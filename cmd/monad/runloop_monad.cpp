@@ -79,6 +79,9 @@ using BlockCache =
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
+static ankerl::unordered_dense::segmented_set<Address>
+    empty_senders_and_authorities{};
+
 void log_tps(
     uint64_t const block_num, bytes32_t const &block_id, uint64_t const ntxs,
     uint64_t const gas, std::chrono::steady_clock::time_point const begin)
@@ -169,6 +172,7 @@ Result<void> validate_live_execution_outputs(
 }
 
 template <Traits traits, class MonadConsensusBlockHeader>
+    requires is_monad_trait_v<traits>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
@@ -245,29 +249,39 @@ Result<BlockExecOutput> propose_block(
             std::make_unique<trace::StateTracer>(std::monostate{})};
     }
 
-    MonadChainContext chain_context{
-        .grandparent_senders_and_authorities = nullptr,
-        .parent_senders_and_authorities = nullptr,
+    auto const
+        &[grandparent_senders_and_authorities, parent_senders_and_authorities] =
+            [&]() -> std::tuple<
+                      ankerl::unordered_dense::segmented_set<Address> const &,
+                      ankerl::unordered_dense::segmented_set<Address> const &> {
+        if (block.header.number > 1) {
+            bytes32_t const &parent_id = consensus_header.parent_id();
+            MONAD_ASSERT(block_cache.contains(parent_id));
+            BlockCacheEntry const &parent_entry = block_cache.at(parent_id);
+            if (block.header.number > 2) {
+                bytes32_t const &grandparent_id = parent_entry.parent_id;
+                MONAD_ASSERT(block_cache.contains(grandparent_id));
+                BlockCacheEntry const &grandparent_entry =
+                    block_cache.at(grandparent_id);
+                return {
+                    grandparent_entry.senders_and_authorities,
+                    parent_entry.senders_and_authorities};
+            }
+            return {
+                empty_senders_and_authorities,
+                parent_entry.senders_and_authorities};
+        }
+        return {empty_senders_and_authorities, empty_senders_and_authorities};
+    }();
+
+    ChainContext<traits> const chain_context{
+        .grandparent_senders_and_authorities =
+            grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = parent_senders_and_authorities,
         .senders_and_authorities =
             block_cache.at(block_id).senders_and_authorities,
         .senders = senders,
         .authorities = recovered_authorities};
-
-    if (block.header.number > 1) {
-        bytes32_t const &parent_id = consensus_header.parent_id();
-        MONAD_ASSERT(block_cache.contains(parent_id));
-        BlockCacheEntry const &parent_entry = block_cache.at(parent_id);
-        chain_context.parent_senders_and_authorities =
-            &parent_entry.senders_and_authorities;
-        if (block.header.number > 2) {
-            bytes32_t const &grandparent_id = parent_entry.parent_id;
-            MONAD_ASSERT(block_cache.contains(grandparent_id));
-            BlockCacheEntry const &grandparent_entry =
-                block_cache.at(grandparent_id);
-            chain_context.grandparent_senders_and_authorities =
-                &grandparent_entry.senders_and_authorities;
-        }
-    }
 
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
@@ -294,19 +308,7 @@ Result<BlockExecOutput> propose_block(
             block_metrics,
             call_tracers,
             state_tracers,
-            [&block, &chain_context](
-                Address const &sender,
-                Transaction const &tx,
-                uint64_t const i,
-                State &state) {
-                return revert_monad_transaction<traits>(
-                    sender,
-                    tx,
-                    block.header.base_fee_per_gas.value_or(0),
-                    i,
-                    state,
-                    chain_context);
-            }));
+            chain_context));
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)

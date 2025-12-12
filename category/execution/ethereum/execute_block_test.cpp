@@ -185,6 +185,37 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    for (Address const &sender : senders) {
+        senders_and_authorities.insert(sender);
+    }
+    for (std::vector<std::optional<Address>> const &authorities :
+         recovered_authorities) {
+        for (std::optional<Address> const &authority : authorities) {
+            if (authority.has_value()) {
+                senders_and_authorities.insert(authority.value());
+            }
+        }
+    }
+
+    ChainContext<typename TestFixture::Trait> chain_ctx = [&] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            return ChainContext<typename TestFixture::Trait>{
+                .grandparent_senders_and_authorities =
+                    empty_senders_and_authorities,
+                .parent_senders_and_authorities = empty_senders_and_authorities,
+                .senders_and_authorities = senders_and_authorities,
+                .senders = senders,
+                .authorities = recovered_authorities,
+            };
+        }
+        else {
+            return ChainContext<typename TestFixture::Trait>{};
+        }
+    }();
+
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
             chain,
@@ -196,7 +227,8 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             pool.fiber_group(),
             metrics,
             call_tracers,
-            state_tracers);
+            state_tracers,
+            chain_ctx);
     };
 
     auto const receipts = [&] {
@@ -305,6 +337,37 @@ TYPED_TEST(TraitsTest, assertion_exception)
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    for (Address const &sender : senders) {
+        senders_and_authorities.insert(sender);
+    }
+    for (std::vector<std::optional<Address>> const &authorities :
+         recovered_authorities) {
+        for (std::optional<Address> const &authority : authorities) {
+            if (authority.has_value()) {
+                senders_and_authorities.insert(authority.value());
+            }
+        }
+    }
+
+    ChainContext<typename TestFixture::Trait> chain_ctx = [&] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            return ChainContext<typename TestFixture::Trait>{
+                .grandparent_senders_and_authorities =
+                    empty_senders_and_authorities,
+                .parent_senders_and_authorities = empty_senders_and_authorities,
+                .senders_and_authorities = senders_and_authorities,
+                .senders = senders,
+                .authorities = recovered_authorities,
+            };
+        }
+        else {
+            return ChainContext<typename TestFixture::Trait>{};
+        }
+    }();
+
     auto execute = [&](Chain const &chain) {
         (void)execute_block<typename TestFixture::Trait>(
             chain,
@@ -316,7 +379,8 @@ TYPED_TEST(TraitsTest, assertion_exception)
             pool.fiber_group(),
             metrics,
             call_tracers,
-            state_tracers);
+            state_tracers,
+            chain_ctx);
     };
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
@@ -418,6 +482,37 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    for (Address const &sender : senders) {
+        senders_and_authorities.insert(sender);
+    }
+    for (std::vector<std::optional<Address>> const &authorities :
+         recovered_authorities) {
+        for (std::optional<Address> const &authority : authorities) {
+            if (authority.has_value()) {
+                senders_and_authorities.insert(authority.value());
+            }
+        }
+    }
+
+    ChainContext<typename TestFixture::Trait> chain_ctx = [&] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            return ChainContext<typename TestFixture::Trait>{
+                .grandparent_senders_and_authorities =
+                    empty_senders_and_authorities,
+                .parent_senders_and_authorities = empty_senders_and_authorities,
+                .senders_and_authorities = senders_and_authorities,
+                .senders = senders,
+                .authorities = recovered_authorities,
+            };
+        }
+        else {
+            return ChainContext<typename TestFixture::Trait>{};
+        }
+    }();
+
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
             chain,
@@ -429,7 +524,8 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             pool.fiber_group(),
             metrics,
             call_tracers,
-            state_tracers);
+            state_tracers,
+            chain_ctx);
     };
 
     auto const receipts = [&] {

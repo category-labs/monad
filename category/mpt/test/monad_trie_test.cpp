@@ -530,7 +530,7 @@ int main(int argc, char *argv[])
                 }
             };
 
-            auto aux = in_memory ? UpdateAux<>() : UpdateAux<>(io, history_len);
+            auto aux = in_memory ? UpdateAux() : UpdateAux(io, history_len);
             monad::test::StateMachineMerkleWithPrefix<prefix_len> sm{};
 
             Node::SharedPtr root{};
@@ -673,8 +673,8 @@ int main(int argc, char *argv[])
 
             auto load_db = [&] {
                 auto ret = std::make_unique<
-                    std::tuple<UpdateAux<>, Node::SharedPtr, NodeCursor>>();
-                UpdateAux<> &aux = std::get<0>(*ret);
+                    std::tuple<UpdateAux, Node::SharedPtr, NodeCursor>>();
+                UpdateAux &aux = std::get<0>(*ret);
                 Node::SharedPtr &root = std::get<1>(*ret);
                 NodeCursor &state_start = std::get<2>(*ret);
                 if (!in_memory) {
@@ -692,7 +692,7 @@ int main(int argc, char *argv[])
             };
             {
                 auto db = load_db();
-                UpdateAux<> &aux = std::get<0>(*db);
+                UpdateAux &aux = std::get<0>(*db);
                 NodeCursor const state_start = std::get<2>(*db);
                 printf(
                     "\n********************************************************"
@@ -802,7 +802,7 @@ int main(int argc, char *argv[])
 
             {
                 auto db = load_db();
-                UpdateAux<> &aux = std::get<0>(*db);
+                UpdateAux &aux = std::get<0>(*db);
                 NodeCursor const state_start = std::get<2>(*db);
                 printf(
                     "\n********************************************************"
@@ -878,7 +878,7 @@ int main(int argc, char *argv[])
 
             {
                 auto db = load_db();
-                UpdateAux<> &aux = std::get<0>(*db);
+                UpdateAux &aux = std::get<0>(*db);
                 NodeCursor const state_start = std::get<2>(*db);
                 printf(
                     "\n********************************************************"

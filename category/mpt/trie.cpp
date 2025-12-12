@@ -118,72 +118,61 @@ Node::SharedPtr upsert(
     UpdateAuxImpl &aux, uint64_t const version, StateMachine &sm,
     Node::SharedPtr old, UpdateList &&updates, bool const write_root)
 {
-    auto impl = [&] {
-        aux.reset_stats();
-        auto sentinel = make_tnode(1 /*mask*/);
-        ChildData &entry = sentinel->children[0];
-        sentinel->children[0] = ChildData{.branch = 0};
-        if (old) {
-            if (updates.empty()) {
-                auto const old_path = old->path_nibble_view();
-                auto const old_path_nibbles_len = old_path.nibble_size();
-                for (unsigned n = 0; n < old_path_nibbles_len; ++n) {
-                    sm.down(old_path.get(n));
-                }
-                // simply dispatch empty update and potentially do compaction
-                Requests requests;
-                Node const &old_node = *old;
-                dispatch_updates_impl_(
-                    aux,
-                    sm,
-                    *sentinel,
-                    entry,
-                    std::move(old),
-                    requests,
-                    old_path_nibbles_len,
-                    old_path,
-                    old_node.opt_value(),
-                    old_node.version);
-                sm.up(old_path_nibbles_len);
+    aux.reset_stats();
+    auto sentinel = make_tnode(1 /*mask*/);
+    ChildData &entry = sentinel->children[0];
+    sentinel->children[0] = ChildData{.branch = 0};
+    if (old) {
+        if (updates.empty()) {
+            auto const old_path = old->path_nibble_view();
+            auto const old_path_nibbles_len = old_path.nibble_size();
+            for (unsigned n = 0; n < old_path_nibbles_len; ++n) {
+                sm.down(old_path.get(n));
             }
-            else {
-                upsert_(
-                    aux,
-                    sm,
-                    *sentinel,
-                    entry,
-                    std::move(old),
-                    INVALID_OFFSET,
-                    std::move(updates));
-            }
-            if (sentinel->npending) {
-                aux.io->flush();
-                MONAD_ASSERT(sentinel->npending == 0);
-            }
+            // simply dispatch empty update and potentially do compaction
+            Requests requests;
+            Node const &old_node = *old;
+            dispatch_updates_impl_(
+                aux,
+                sm,
+                *sentinel,
+                entry,
+                std::move(old),
+                requests,
+                old_path_nibbles_len,
+                old_path,
+                old_node.opt_value(),
+                old_node.version);
+            sm.up(old_path_nibbles_len);
         }
         else {
-            create_new_trie_(
-                aux, sm, sentinel->version, entry, std::move(updates));
+            upsert_(
+                aux,
+                sm,
+                *sentinel,
+                entry,
+                std::move(old),
+                INVALID_OFFSET,
+                std::move(updates));
         }
-        auto root = entry.ptr;
-        if (aux.is_on_disk() && root) {
-            if (write_root) {
-                write_new_root_node(aux, *root, version);
-            }
-            else {
-                flush_buffered_writes(aux);
-            }
+        if (sentinel->npending) {
+            aux.io->flush();
+            MONAD_ASSERT(sentinel->npending == 0);
         }
-        return root;
-    };
-    if (aux.is_current_thread_upserting()) {
-        return impl();
     }
     else {
-        auto g(aux.unique_lock());
-        auto g2(aux.set_current_upsert_tid());
-        return impl();
+        create_new_trie_(aux, sm, sentinel->version, entry, std::move(updates));
     }
+    auto root = entry.ptr;
+    if (aux.is_on_disk() && root) {
+        if (write_root) {
+            write_new_root_node(aux, *root, version);
+        }
+        else {
+            flush_buffered_writes(aux);
+        }
+    }
+    return root;
 }
 
 struct load_all_impl_
@@ -232,7 +221,6 @@ struct load_all_impl_
             MONAD_ASSERT(buffer_);
             // load node from read buffer
             {
-                auto g(impl->aux.unique_lock());
                 MONAD_ASSERT(root.node->next(branch_index) == nullptr);
                 root.node->set_next(
                     branch_index,

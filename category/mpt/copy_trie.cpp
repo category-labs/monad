@@ -290,31 +290,21 @@ Node::SharedPtr copy_trie_to_dest(
     Node::SharedPtr dest_root, NibblesView const dest_prefix,
     uint64_t const dest_version, bool const write_root)
 {
-    auto impl = [&]() -> Node::SharedPtr {
-        dest_root = copy_trie_impl(
-            aux,
-            std::move(src_root),
-            src_prefix,
-            std::move(dest_root),
-            dest_prefix,
-            dest_version);
-        if (aux.is_on_disk() && write_root) {
-            write_new_root_node(aux, *dest_root, dest_version);
-            MONAD_ASSERT(aux.db_history_max_version() >= dest_version);
-        }
-        if (aux.is_on_disk()) {
-            MONAD_ASSERT(dest_root->value_len == sizeof(uint32_t) * 2);
-        }
-        return dest_root;
-    };
-    if (aux.is_current_thread_upserting()) {
-        return impl();
+    dest_root = copy_trie_impl(
+        aux,
+        std::move(src_root),
+        src_prefix,
+        std::move(dest_root),
+        dest_prefix,
+        dest_version);
+    if (aux.is_on_disk() && write_root) {
+        write_new_root_node(aux, *dest_root, dest_version);
+        MONAD_ASSERT(aux.db_history_max_version() >= dest_version);
     }
-    else {
-        auto g(aux.unique_lock());
-        auto g2(aux.set_current_upsert_tid());
-        return impl();
+    if (aux.is_on_disk()) {
+        MONAD_ASSERT(dest_root->value_len == sizeof(uint32_t) * 2);
     }
+    return dest_root;
 }
 
 MONAD_MPT_NAMESPACE_END

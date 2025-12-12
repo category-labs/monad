@@ -312,12 +312,12 @@ namespace monad::test
     };
 
     // merkle tries
-    template <monad::mpt::lockable_or_void LockType, class Base>
+    template <class Base>
     class InMemoryTrieBase : public Base
     {
     public:
         Node::SharedPtr root;
-        UpdateAux<LockType> aux;
+        UpdateAux aux;
 
         InMemoryTrieBase()
             : root()
@@ -341,7 +341,7 @@ namespace monad::test
         }
     };
 
-    template <monad::mpt::lockable_or_void LockType, class Base>
+    template <class Base>
     class OnDiskTrieBase : public Base
     {
     private:
@@ -353,7 +353,7 @@ namespace monad::test
 
     public:
         Node::SharedPtr root;
-        UpdateAux<LockType> aux;
+        UpdateAux aux;
 
         OnDiskTrieBase()
             : ring1(monad::io::RingConfig{2})
@@ -444,9 +444,7 @@ namespace monad::test
         bool use_anonymous_inode{true};
     };
 
-    template <
-        FillDBWithChunksConfig Config, monad::mpt::lockable_or_void LockType,
-        class Base>
+    template <FillDBWithChunksConfig Config, class Base>
     struct FillDBWithChunks : public Base
     {
         struct state_t
@@ -494,7 +492,7 @@ namespace monad::test
             MerkleCompute comp;
             Node::SharedPtr root;
             StateMachineAlwaysMerkle sm;
-            UpdateAux<LockType> aux{
+            UpdateAux aux{
                 io, Config.history_len}; // trie section starts from account
             monad::small_prng rand;
             std::vector<std::pair<monad::byte_string, size_t>> keys;

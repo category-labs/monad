@@ -452,6 +452,15 @@ namespace monad::vm::llvm
             return equ(lit_word(0), a);
         };
 
+        Value *clz(Value *a)
+        {
+            if (clz_f == nullptr) {
+                clz_f = ::llvm::Intrinsic::getDeclaration(
+                    &m, ::llvm::Intrinsic::ctlz, {word_ty});
+            }
+            return call(clz_f, {a, bool_(false)}, "clz");
+        };
+
         Value *xor_(Value *a, Value *b)
         {
             return ir.CreateXor(a, b, "xor");
@@ -663,6 +672,7 @@ namespace monad::vm::llvm
         MangleAndInterner mangle = MangleAndInterner(es, dl);
 
         Function *bswap_f = nullptr;
+        Function *clz_f = nullptr;
 
         std::vector<BasicBlock *> insert_lbls;
         SymbolMap opcode_syms;

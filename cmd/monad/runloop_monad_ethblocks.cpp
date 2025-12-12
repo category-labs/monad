@@ -108,15 +108,16 @@ void get_block_with_retry(
 
 // Process a single Monad block stored in Ethereum format
 template <Traits traits>
+    requires is_monad_trait_v<traits>
 Result<void> process_monad_block(
     MonadChain const &chain, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing,
     ankerl::unordered_dense::segmented_set<Address> const
-        *grandparent_senders_and_authorities,
+        &grandparent_senders_and_authorities,
     ankerl::unordered_dense::segmented_set<Address> const
-        *parent_senders_and_authorities,
+        &parent_senders_and_authorities,
     ankerl::unordered_dense::segmented_set<Address>
         &senders_and_authorities_out)
 {
@@ -179,7 +180,7 @@ Result<void> process_monad_block(
 
     senders_and_authorities_out = senders_and_authorities;
 
-    MonadChainContext chain_context{
+    ChainContext<traits> chain_context{
         .grandparent_senders_and_authorities =
             grandparent_senders_and_authorities,
         .parent_senders_and_authorities = parent_senders_and_authorities,
@@ -208,19 +209,7 @@ Result<void> process_monad_block(
             block_metrics,
             call_tracers,
             state_tracers,
-            [&block, &chain_context](
-                Address const &sender,
-                Transaction const &tx,
-                uint64_t const i,
-                State &state) {
-                return revert_monad_transaction<traits>(
-                    sender,
-                    tx,
-                    block.header.base_fee_per_gas.value_or(0),
-                    i,
-                    state,
-                    chain_context);
-            }));
+            chain_context));
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
@@ -315,10 +304,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     bytes32_t parent_block_id{};
     uint64_t block_num = finalized_block_num;
 
-    std::optional<ankerl::unordered_dense::segmented_set<Address>>
-        parent_senders_and_authorities;
-    std::optional<ankerl::unordered_dense::segmented_set<Address>>
+    ankerl::unordered_dense::segmented_set<Address>
         grandparent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address>
+        parent_senders_and_authorities;
 
     if (block_num > 1) {
         Block parent_block;
@@ -402,12 +391,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 block_id,
                 parent_block_id,
                 enable_tracing,
-                grandparent_senders_and_authorities.has_value()
-                    ? &grandparent_senders_and_authorities.value()
-                    : nullptr,
-                parent_senders_and_authorities.has_value()
-                    ? &parent_senders_and_authorities.value()
-                    : nullptr,
+                grandparent_senders_and_authorities,
+                parent_senders_and_authorities,
                 senders_and_authorities);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());

@@ -163,9 +163,8 @@ void post_call(State &state, evmc::Result const &result)
 }
 
 template <Traits traits>
-evmc::Result create(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg,
-    std::function<bool()> const &revert_transaction)
+evmc::Result
+create(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
@@ -260,7 +259,7 @@ evmc::Result create(
             state, contract_address, std::move(result));
     }
 
-    if (msg.depth == 0 && revert_transaction()) {
+    if (msg.depth == 0 && host->revert_transaction()) {
         result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
     }
 
@@ -288,9 +287,8 @@ evmc::Result create(
 EXPLICIT_TRAITS(create);
 
 template <Traits traits>
-evmc::Result call(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg,
-    std::function<bool()> const &revert_transaction)
+evmc::Result
+call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -316,7 +314,7 @@ evmc::Result call(
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }
 
-    if (msg.depth == 0 && revert_transaction()) {
+    if (msg.depth == 0 && host->revert_transaction()) {
         result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
         result.gas_refund = 0;
     }

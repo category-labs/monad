@@ -183,7 +183,7 @@ namespace detail
                         this->completed(success());
                     }
                     else {
-                        nested_sender_errc_with_payload_code sec(
+                        nested_sender_errc_with_payload_code const sec(
                             std::move(r).assume_error());
                         std::visit(
                             [&](auto &v) {

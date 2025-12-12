@@ -28,6 +28,7 @@
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/address.hpp>
@@ -209,33 +210,6 @@ namespace
     }
 
     template <Traits traits>
-    auto make_revert_lambda(
-        BlockHeader const &header, MonadChainContext const &chain_context)
-    {
-        if constexpr (is_monad_trait_v<traits>) {
-            return [&header, &chain_context](
-                       Address const &sender,
-                       Transaction const &tx,
-                       uint64_t const i,
-                       State &state) -> bool {
-                return revert_monad_transaction<traits>(
-                    sender,
-                    tx,
-                    header.base_fee_per_gas.value_or(0),
-                    i,
-                    state,
-                    chain_context);
-            };
-        }
-        else {
-            return [](Address const &,
-                      Transaction const &,
-                      uint64_t const,
-                      State &) -> bool { return false; };
-        }
-    }
-
-    template <Traits traits>
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, bytes32_t const &block_id,
@@ -345,6 +319,10 @@ namespace
                 validate_transaction<traits>(enriched_txn, sender, state));
         }
 
+        ankerl::unordered_dense::segmented_set<Address> const
+            grandparent_senders_and_authorities;
+        ankerl::unordered_dense::segmented_set<Address> const
+            parent_senders_and_authorities;
         auto const senders = std::vector{sender};
         auto const authorities_vec =
             std::vector<std::vector<std::optional<Address>>>{{authorities}};
@@ -355,18 +333,36 @@ namespace
         // does not consider the parent and grandparent blocks. This means that
         // every transaction simulated will be allowed to empty an undelegated
         // sender's balance.
-        auto const chain_context = MonadChainContext{
-            .grandparent_senders_and_authorities = nullptr,
-            .parent_senders_and_authorities = nullptr,
-            .senders_and_authorities = senders_and_authorities,
-            .senders = senders,
-            .authorities = authorities_vec,
-        };
+        auto const chain_context = [&] {
+            if constexpr (is_monad_trait_v<traits>) {
+                return ChainContext<traits>{
+                    .grandparent_senders_and_authorities =
+                        grandparent_senders_and_authorities,
+                    .parent_senders_and_authorities =
+                        parent_senders_and_authorities,
+                    .senders_and_authorities = senders_and_authorities,
+                    .senders = senders,
+                    .authorities = authorities_vec,
+                };
+            }
+            else {
+                return ChainContext<traits>{};
+            }
+        }();
 
         auto const tx_context = get_tx_context<traits>(
             enriched_txn, sender, header, chain.get_chain_id());
 
-        EvmcHost<traits> host{call_tracer, tx_context, buffer, state};
+        EvmcHost<traits> host{
+            call_tracer,
+            tx_context,
+            buffer,
+            state,
+            sender,
+            enriched_txn,
+            header.base_fee_per_gas,
+            0,
+            chain_context};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
             chain,
             enriched_txn,
@@ -374,7 +370,7 @@ namespace
             authorities,
             header,
             0,
-            make_revert_lambda<traits>(header, chain_context),
+            chain_context,
         }(state, host);
 
         // compute gas_refund and gas_used
@@ -421,14 +417,22 @@ namespace
 
     template <Traits traits>
     Result<nlohmann::json> eth_trace_block_or_transaction_impl(
-        Chain const &chain, MonadChainContext const &chain_context,
+        Chain const &chain,
+        ankerl::unordered_dense::segmented_set<Address> const
+            &grandparent_senders_and_authorities,
+        ankerl::unordered_dense::segmented_set<Address> const
+            &parent_senders_and_authorities,
+        ankerl::unordered_dense::segmented_set<Address> const
+            &senders_and_authorities,
+        std::vector<Address> const &senders,
+        std::vector<std::vector<std::optional<Address>>> const &authorities,
         BlockHeader const &header, std::vector<Transaction> const &transactions,
         bool const trace_transaction, uint64_t const transaction_index,
         BlockState &block_state, LazyBlockHash const &buffer,
         fiber::FiberGroup &tx_exec_pool, enum monad_tracer_config tracer_config)
     {
-        MONAD_ASSERT(transactions.size() == chain_context.senders.size());
-        MONAD_ASSERT(transactions.size() == chain_context.authorities.size());
+        MONAD_ASSERT(transactions.size() == senders.size());
+        MONAD_ASSERT(transactions.size() == authorities.size());
 
         size_t const transactions_size = [&]() {
             if (trace_transaction) {
@@ -443,10 +447,9 @@ namespace
         std::span<Transaction const> const transactions_view{
             transactions.data(), transactions_size};
         std::span<Address const> const senders_view{
-            chain_context.senders.data(), transactions_size};
+            senders.data(), transactions_size};
         std::span<std::vector<std::optional<Address>> const> const
-            authorities_view{
-                chain_context.authorities.data(), transactions_size};
+            authorities_view{authorities.data(), transactions_size};
 
         // Execute block header
         execute_block_header<traits>(chain, block_state, header);
@@ -465,8 +468,22 @@ namespace
         std::span<std::unique_ptr<CallTracerBase>> const noop_call_tracers_view{
             noop_call_tracers.data(), transactions_size};
 
-        auto const revert_transaction =
-            make_revert_lambda<traits>(header, chain_context);
+        auto const chain_context = [&] {
+            if constexpr (is_monad_trait_v<traits>) {
+                return ChainContext<traits>{
+                    .grandparent_senders_and_authorities =
+                        grandparent_senders_and_authorities,
+                    .parent_senders_and_authorities =
+                        parent_senders_and_authorities,
+                    .senders_and_authorities = senders_and_authorities,
+                    .senders = senders,
+                    .authorities = authorities,
+                };
+            }
+            else {
+                return ChainContext<traits>{};
+            }
+        }();
 
         // Trace single transaction
         if (trace_transaction) {
@@ -501,7 +518,7 @@ namespace
                 metrics,
                 noop_call_tracers_view,
                 state_tracers_view,
-                revert_transaction));
+                chain_context));
             return Result<nlohmann::json>{std::move(trace)};
         }
         else {
@@ -551,7 +568,7 @@ namespace
                 metrics,
                 noop_call_tracers_view,
                 state_tracers_view,
-                revert_transaction));
+                chain_context));
 
             // Compose state traces
             return Result<nlohmann::json>{std::move(traces)};
@@ -1338,12 +1355,10 @@ struct monad_executor
                         combine_senders_and_authorities(senders, authorities);
 
                     // Load parent and grandparent senders and authorities
-                    std::unique_ptr<
-                        ankerl::unordered_dense::segmented_set<Address>>
-                        parent_senders_and_authorities = nullptr;
-                    std::unique_ptr<
-                        ankerl::unordered_dense::segmented_set<Address>>
-                        grandparent_senders_and_authorities = nullptr;
+                    ankerl::unordered_dense::segmented_set<Address>
+                        parent_senders_and_authorities;
+                    ankerl::unordered_dense::segmented_set<Address>
+                        grandparent_senders_and_authorities;
 
                     if (MONAD_LIKELY(block_number > 1)) {
                         auto const parent_transactions =
@@ -1355,10 +1370,9 @@ struct monad_executor
                         auto const &[parent_senders, parent_authorities] =
                             recover_senders_and_authorities(
                                 parent_transactions.assume_value());
-                        parent_senders_and_authorities = std::make_unique<
-                            ankerl::unordered_dense::segmented_set<Address>>(
+                        parent_senders_and_authorities =
                             combine_senders_and_authorities(
-                                parent_senders, parent_authorities));
+                                parent_senders, parent_authorities);
                     }
                     if (MONAD_LIKELY(block_number > 2)) {
                         auto const grandparent_transactions =
@@ -1371,24 +1385,10 @@ struct monad_executor
                             &[grandparent_senders, grandparent_authorities] =
                                 recover_senders_and_authorities(
                                     grandparent_transactions.assume_value());
-                        grandparent_senders_and_authorities = std::make_unique<
-                            ankerl::unordered_dense::segmented_set<Address>>(
+                        grandparent_senders_and_authorities =
                             combine_senders_and_authorities(
-                                grandparent_senders, grandparent_authorities));
+                                grandparent_senders, grandparent_authorities);
                     }
-
-                    MonadChainContext const chain_context{
-                        .grandparent_senders_and_authorities =
-                            grandparent_senders_and_authorities
-                                ? grandparent_senders_and_authorities.get()
-                                : nullptr,
-                        .parent_senders_and_authorities =
-                            parent_senders_and_authorities
-                                ? parent_senders_and_authorities.get()
-                                : nullptr,
-                        .senders_and_authorities = senders_and_authorities,
-                        .senders = senders,
-                        .authorities = authorities};
 
                     // Set db to parent block state
                     TrieRODb tdb{db};
@@ -1403,7 +1403,11 @@ struct monad_executor
                             SWITCH_EVM_TRAITS(
                                 eth_trace_block_or_transaction_impl,
                                 *chain,
-                                chain_context,
+                                grandparent_senders_and_authorities,
+                                parent_senders_and_authorities,
+                                senders_and_authorities,
+                                senders,
+                                authorities,
                                 block_header,
                                 transactions,
                                 trace_transaction,
@@ -1419,10 +1423,15 @@ struct monad_executor
                                 dynamic_cast<MonadChain *>(chain.get())
                                     ->get_monad_revision(
                                         block_header.timestamp);
+                            // NOLINTBEGIN(clang-analyzer-core.CallAndMessage)
                             SWITCH_MONAD_TRAITS(
                                 eth_trace_block_or_transaction_impl,
                                 *chain,
-                                chain_context,
+                                grandparent_senders_and_authorities,
+                                parent_senders_and_authorities,
+                                senders_and_authorities,
+                                senders,
+                                authorities,
                                 block_header,
                                 transactions,
                                 trace_transaction,
@@ -1431,6 +1440,7 @@ struct monad_executor
                                 block_hash_buffer,
                                 *tx_exec_group->group,
                                 tracer_config);
+                            // NOLINTEND(clang-analyzer-core.CallAndMessage)
                             MONAD_ASSERT(false);
                         }
                     }();

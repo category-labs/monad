@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
@@ -41,10 +42,6 @@ struct EvmcHost;
 class State;
 struct Transaction;
 
-using RevertTransactionFn = std::function<bool(
-    Address const & /* sender */, Transaction const &, uint64_t /* i */,
-    State &)>;
-
 template <Traits traits>
 class ExecuteTransactionNoValidation
 {
@@ -59,15 +56,13 @@ protected:
     std::span<std::optional<Address> const> const authorities_;
     BlockHeader const &header_;
     uint64_t i_;
-    RevertTransactionFn revert_transaction_;
+    ChainContext<traits> const &chain_ctx_;
 
 public:
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
-        uint64_t i,
-        RevertTransactionFn const & = [](Address const &, Transaction const &,
-                                         uint64_t, State &) { return false; });
+        uint64_t i, ChainContext<traits> const &chain_ctx);
 
     evmc::Result operator()(State &, EvmcHost<traits> &);
 };
@@ -81,7 +76,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     using ExecuteTransactionNoValidation<traits>::authorities_;
     using ExecuteTransactionNoValidation<traits>::header_;
     using ExecuteTransactionNoValidation<traits>::i_;
-    using ExecuteTransactionNoValidation<traits>::revert_transaction_;
+    using ExecuteTransactionNoValidation<traits>::chain_ctx_;
 
     BlockHashBuffer const &block_hash_buffer_;
     BlockState &block_state_;
@@ -99,9 +94,7 @@ public:
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
-        trace::StateTracer &,
-        RevertTransactionFn const & = [](Address const &, Transaction const &,
-                                         uint64_t, State &) { return false; });
+        trace::StateTracer &, ChainContext<traits> const &chain_ctx);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

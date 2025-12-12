@@ -308,6 +308,8 @@ Result<BlockExecOutput> BlockchainTest::execute(
             std::make_unique<trace::StateTracer>(std::monostate{})};
     }
 
+    ChainContext<traits> chain_ctx{};
+
     BOOST_OUTCOME_TRY(
         receipts,
         execute_block<traits>(
@@ -320,7 +322,8 @@ Result<BlockExecOutput> BlockchainTest::execute(
             pool_->fiber_group(),
             metrics,
             call_tracers,
-            state_tracers));
+            state_tracers,
+            chain_ctx));
 
     block_state.log_debug();
     block_state.commit(

@@ -163,9 +163,8 @@ void post_call(State &state, evmc::Result const &result)
 }
 
 template <Traits traits>
-evmc::Result create(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg,
-    std::function<bool()> const &revert_transaction)
+evmc::Result
+create(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
@@ -260,8 +259,16 @@ evmc::Result create(
             state, contract_address, std::move(result));
     }
 
-    if (msg.depth == 0 && revert_transaction()) {
-        result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
+    if constexpr (is_monad_trait_v<traits>) {
+        if (msg.depth == 0 && revert_monad_transaction<traits>(
+                                  host->sender_,
+                                  host->tx_,
+                                  host->base_fee_per_gas_.value_or(0),
+                                  host->i_,
+                                  state,
+                                  host->chain_ctx_)) {
+            result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
+        }
     }
 
     if (result.status_code == EVMC_SUCCESS) {
@@ -288,9 +295,8 @@ evmc::Result create(
 EXPLICIT_TRAITS(create);
 
 template <Traits traits>
-evmc::Result call(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg,
-    std::function<bool()> const &revert_transaction)
+evmc::Result
+call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -316,9 +322,17 @@ evmc::Result call(
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }
 
-    if (msg.depth == 0 && revert_transaction()) {
-        result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
-        result.gas_refund = 0;
+    if constexpr (is_monad_trait_v<traits>) {
+        if (msg.depth == 0 && revert_monad_transaction<traits>(
+                                  host->sender_,
+                                  host->tx_,
+                                  host->base_fee_per_gas_.value_or(0),
+                                  host->i_,
+                                  state,
+                                  host->chain_ctx_)) {
+            result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
+            result.gas_refund = 0;
+        }
     }
 
     post_call(state, result);

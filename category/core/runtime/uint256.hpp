@@ -691,7 +691,6 @@ namespace monad::vm::runtime
     static_assert(std::is_trivially_copyable_v<uint256_t>);
 
     uint256_t signextend(uint256_t const &byte_index, uint256_t const &x);
-    inline uint256_t byte(uint256_t const &byte_index_256, uint256_t const &x);
 
     [[gnu::always_inline]]
     inline uint256_t sar(uint256_t const &shift, uint256_t const &x)

@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/delegation.hpp>
 
 #include <evmc/bytes.hpp>
@@ -34,7 +33,7 @@ namespace monad::vm::evm
         inline constexpr std::array<uint8_t, 3>
             delegation_indicator_prefix_bytes{0xef, 0x01, 0x00};
 
-        inline constexpr auto delegation_indicator_size =
+        inline constexpr size_t delegation_indicator_size =
             delegation_indicator_prefix_bytes.size() + sizeof(evmc_address);
     }
 
@@ -63,15 +62,9 @@ namespace monad::vm::evm
         // whether the code begins with the prefix 0xEF0100, if so,
         // then drop these three bytes and interpret the remainder as
         // the delegate address.
-        constexpr uint8_t indicator[] = {0xef, 0x01, 0x00};
-        constexpr size_t indicator_size = std::size(indicator);
-        constexpr size_t expected_code_size =
-            indicator_size + sizeof(evmc_address);
-        static_assert(expected_code_size == 23);
-
-        uint8_t code_buffer[expected_code_size + 1];
-        size_t const actual_code_size =
-            host->copy_code(ctx, &addr, 0, code_buffer, expected_code_size + 1);
+        uint8_t code_buffer[delegation_indicator_size + 1];
+        size_t const actual_code_size = host->copy_code(
+            ctx, &addr, 0, code_buffer, delegation_indicator_size + 1);
 
         std::span const code{code_buffer, actual_code_size};
 
@@ -82,7 +75,8 @@ namespace monad::vm::evm
         // Copy the delegate address from the code buffer.
         evmc::address designation;
         std::ranges::copy(
-            code.subspan(indicator_size, sizeof(evmc_address)),
+            code.subspan(
+                delegation_indicator_prefix_bytes.size(), sizeof(evmc_address)),
             designation.bytes);
         return designation;
     }

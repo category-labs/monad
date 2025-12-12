@@ -24,36 +24,31 @@
 namespace monad::test
 {
     struct InMemoryMerkleTrieGTest
-        : public MerkleTrie<InMemoryTrieBase<void, ::testing::Test>>
+        : public MerkleTrie<InMemoryTrieBase<::testing::Test>>
     {
-        using MerkleTrie<
-            InMemoryTrieBase<void, ::testing::Test>>::InMemoryTrieBase;
+        using MerkleTrie<InMemoryTrieBase<::testing::Test>>::InMemoryTrieBase;
     };
 
     struct OnDiskMerkleTrieGTest
-        : public MerkleTrie<OnDiskTrieBase<void, ::testing::Test>>
+        : public MerkleTrie<OnDiskTrieBase<::testing::Test>>
     {
-        using MerkleTrie<OnDiskTrieBase<void, ::testing::Test>>::OnDiskTrieBase;
+        using MerkleTrie<OnDiskTrieBase<::testing::Test>>::OnDiskTrieBase;
     };
 
     struct InMemoryTrieGTest
-        : public PlainTrie<InMemoryTrieBase<void, ::testing::Test>>
+        : public PlainTrie<InMemoryTrieBase<::testing::Test>>
     {
     };
 
-    struct OnDiskTrieGTest
-        : public PlainTrie<OnDiskTrieBase<void, ::testing::Test>>
+    struct OnDiskTrieGTest : public PlainTrie<OnDiskTrieBase<::testing::Test>>
     {
     };
 
-    template <
-        FillDBWithChunksConfig Config,
-        monad::mpt::lockable_or_void LockType = void>
+    template <FillDBWithChunksConfig Config>
     struct FillDBWithChunksGTest
-        : public FillDBWithChunks<Config, LockType, ::testing::Test>
+        : public FillDBWithChunks<Config, ::testing::Test>
     {
-        using FillDBWithChunks<
-            Config, LockType, ::testing::Test>::FillDBWithChunks;
+        using FillDBWithChunks<Config, ::testing::Test>::FillDBWithChunks;
     };
 
     inline std::filesystem::path create_temp_file(long size_gb)

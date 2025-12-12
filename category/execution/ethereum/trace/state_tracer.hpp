@@ -43,27 +43,33 @@ namespace trace
 
     struct PrestateTracer
     {
-        explicit PrestateTracer(nlohmann::json &storage)
+        explicit PrestateTracer(
+            nlohmann::json &storage, Address const &beneficiary)
             : storage_(storage)
+            , beneficiary_(beneficiary)
         {
         }
 
         void encode(Map<Address, OriginalAccountState> const &, State &);
 
     private:
+        bool retain_beneficiary(State const &state) const;
         static nlohmann::json
         account_state_to_json(OriginalAccountState const &, State &);
         static void state_to_json(
             Map<Address, OriginalAccountState> const &, State &,
-            nlohmann::json &);
-        static nlohmann::json
-        state_to_json(Map<Address, OriginalAccountState> const &, State &);
+            std::optional<Address> const &, nlohmann::json &);
+        static nlohmann::json state_to_json(
+            Map<Address, OriginalAccountState> const &, State &,
+            std::optional<Address> const &);
         friend void state_to_json(
             Map<Address, OriginalAccountState> const &, State &,
-            nlohmann::json &);
-        friend nlohmann::json
-        state_to_json(Map<Address, OriginalAccountState> const &, State &);
+            std::optional<Address> const &, nlohmann::json &);
+        friend nlohmann::json state_to_json(
+            Map<Address, OriginalAccountState> const &, State &,
+            std::optional<Address> const &);
         nlohmann::json &storage_;
+        Address const &beneficiary_;
     };
 
     struct StateDiffTracer
@@ -106,10 +112,12 @@ namespace trace
     template <Traits traits>
     void run_tracer(StateTracer &tracer, State &state);
 
-    nlohmann::json
-    state_to_json(Map<Address, OriginalAccountState> const &, State &);
+    nlohmann::json state_to_json(
+        Map<Address, OriginalAccountState> const &, State &,
+        std::optional<Address> const &);
     void state_to_json(
-        Map<Address, OriginalAccountState> const &, State &, nlohmann::json &);
+        Map<Address, OriginalAccountState> const &, State &,
+        std::optional<Address> const &, nlohmann::json &);
     nlohmann::json state_deltas_to_json(StateDeltas const &, State &);
     void state_deltas_to_json(StateDeltas const &, State &, nlohmann::json &);
 }

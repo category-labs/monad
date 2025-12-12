@@ -484,7 +484,7 @@ namespace
             state_tracers.emplace_back(
                 tracer_config == PRESTATE_TRACER
                     ? std::make_unique<trace::StateTracer>(
-                          trace::PrestateTracer{trace})
+                          trace::PrestateTracer{trace, header.beneficiary})
                     : std::make_unique<trace::StateTracer>(
                           trace::StateDiffTracer{trace}));
 
@@ -528,7 +528,8 @@ namespace
                 if (tracer_config == PRESTATE_TRACER) {
                     state_tracers.emplace_back(
                         std::make_unique<trace::StateTracer>(
-                            trace::PrestateTracer{traces[i]["result"]}));
+                            trace::PrestateTracer{
+                                traces[i]["result"], header.beneficiary}));
                 }
                 else {
                     state_tracers.emplace_back(
@@ -1045,7 +1046,8 @@ struct monad_executor
                         case CALL_TRACER:
                             return std::monostate{};
                         case PRESTATE_TRACER:
-                            return trace::PrestateTracer{state_trace};
+                            return trace::PrestateTracer{
+                                state_trace, block_header.beneficiary};
                         case STATEDIFF_TRACER:
                             return trace::StateDiffTracer{state_trace};
                         case ACCESS_LIST_TRACER:

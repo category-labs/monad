@@ -29,19 +29,14 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct MonadChainContext;
 class State;
 struct Transaction;
 
 template <Traits traits>
-bool revert_monad_transaction(
-    Address const &sender, Transaction const &,
-    uint256_t const &base_fee_per_gas, uint64_t i, State &,
-    MonadChainContext const &);
-
+    requires is_monad_trait_v<traits>
 bool can_sender_dip_into_reserve(
     Address const &sender, uint64_t i, bool sender_is_delegated,
-    MonadChainContext const &);
+    ChainContext<traits> const &);
 
 template <Traits traits>
 uint256_t get_max_reserve(Address const &);

@@ -36,13 +36,9 @@ evmc::Result
 deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
 
 template <Traits traits>
-evmc::Result create(
-    EvmcHost<traits> *, State &, evmc_message const &,
-    std::function<bool()> const &revert_transaction = [] { return false; });
+evmc::Result create(EvmcHost<traits> *, State &, evmc_message const &);
 
 template <Traits traits>
-evmc::Result call(
-    EvmcHost<traits> *, State &, evmc_message const &,
-    std::function<bool()> const &revert_transaction = [] { return false; });
+evmc::Result call(EvmcHost<traits> *, State &, evmc_message const &);
 
 MONAD_NAMESPACE_END

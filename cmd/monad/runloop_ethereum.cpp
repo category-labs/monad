@@ -133,6 +133,8 @@ Result<void> process_ethereum_block(
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
+
+    ChainContext<traits> const chain_ctx{};
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<traits>(
@@ -145,7 +147,8 @@ Result<void> process_ethereum_block(
             priority_pool.fiber_group(),
             block_metrics,
             call_tracers,
-            state_tracers));
+            state_tracers,
+            chain_ctx));
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();

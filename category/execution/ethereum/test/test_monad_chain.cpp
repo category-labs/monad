@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -149,6 +150,7 @@ static_assert(
     (1 << (AuthorityInTransaction + 1)) == PREVENT_DIP_BITS_POWERSET_SIZE);
 
 template <Traits traits>
+    requires is_monad_trait_v<traits>
 void run_revert_transaction_test(
     uint8_t const prevent_dip_bitset, uint64_t const initial_balance_mon,
     uint64_t const gas_fee_mon, uint64_t const value_mon, bool const expected)
@@ -216,7 +218,7 @@ void run_revert_transaction_test(
         authorities.push_back({});
     }
 
-    // Create sets for the new MonadChainContext structure
+    // Create sets for the new ChainContext structure
     ankerl::unordered_dense::segmented_set<Address>
         grandparent_senders_and_authorities;
     if (prevent_dip_bitset & (1 << SenderOrAuthorityInGrandparent)) {
@@ -230,10 +232,10 @@ void run_revert_transaction_test(
     ankerl::unordered_dense::segmented_set<Address> const
         senders_and_authorities = {SENDER};
 
-    MonadChainContext chain_context{
+    ChainContext<traits> chain_context{
         .grandparent_senders_and_authorities =
-            &grandparent_senders_and_authorities,
-        .parent_senders_and_authorities = &parent_senders_and_authorities,
+            grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = parent_senders_and_authorities,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
         .authorities = authorities};
@@ -243,7 +245,7 @@ void run_revert_transaction_test(
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
         state.subtract_from_balance(SENDER, value);
-        bool should_revert = revert_monad_transaction<traits>(
+        bool should_revert = revert_transaction<traits>(
             SENDER,
             tx,
             BASE_FEE_PER_GAS,
@@ -341,18 +343,24 @@ TYPED_TEST(MonadTraitsTest, revert_transaction_dip_false)
     );
 }
 
-TEST(MonadChain, can_sender_dip_into_reserve)
+TYPED_TEST(MonadTraitsTest, can_sender_dip_into_reserve)
 {
     // False because of pending txns
     {
+        ankerl::unordered_dense::segmented_set<Address> const
+            empty_grandparent_senders_and_authorities;
+        ankerl::unordered_dense::segmented_set<Address> const
+            empty_parent_senders_and_authorities;
         std::vector<Address> const senders = {{Address{1}, Address{1}}};
         std::vector<std::vector<std::optional<Address>>> const authorities = {
             {}, {}};
         ankerl::unordered_dense::segmented_set<Address> const
             senders_and_authorities{{Address{1}}};
-        MonadChainContext const context{
-            .grandparent_senders_and_authorities = nullptr,
-            .parent_senders_and_authorities = nullptr,
+        ChainContext<typename TestFixture::Trait> const context{
+            .grandparent_senders_and_authorities =
+                empty_grandparent_senders_and_authorities,
+            .parent_senders_and_authorities =
+                empty_parent_senders_and_authorities,
             .senders_and_authorities = senders_and_authorities,
             .senders = senders,
             .authorities = authorities,
@@ -363,20 +371,26 @@ TEST(MonadChain, can_sender_dip_into_reserve)
 
     // False because of authority
     {
+        ankerl::unordered_dense::segmented_set<Address> const
+            empty_grandparent_senders_and_authorities;
+        ankerl::unordered_dense::segmented_set<Address> const
+            empty_parent_senders_and_authorities;
         std::vector<Address> const senders = {{Address{2}, Address{1}}};
         std::vector<std::vector<std::optional<Address>>> const authorities = {
             {}, {Address{1}}};
         ankerl::unordered_dense::segmented_set<Address> const
             senders_and_authorities{{Address{1}}};
-        MonadChainContext const context{
-            .grandparent_senders_and_authorities = nullptr,
-            .parent_senders_and_authorities = nullptr,
+        ChainContext<typename TestFixture::Trait> const context{
+            .grandparent_senders_and_authorities =
+                empty_grandparent_senders_and_authorities,
+            .parent_senders_and_authorities =
+                empty_parent_senders_and_authorities,
             .senders_and_authorities = senders_and_authorities,
             .senders = senders,
             .authorities = authorities,
         };
-        EXPECT_FALSE(
-            can_sender_dip_into_reserve(Address{1}, 1, false, context));
+        EXPECT_FALSE(can_sender_dip_into_reserve<typename TestFixture::Trait>(
+            Address{1}, 1, false, context));
     }
 }
 
@@ -413,13 +427,18 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     uint256_t const gas_cost =
         uint256_t{BASE_FEE_PER_GAS} * uint256_t{tx.gas_limit};
 
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_grandparent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_parent_senders_and_authorities;
     std::vector<Address> const senders = {SENDER};
     std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
     ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
     senders_and_authorities.insert(SENDER);
-    MonadChainContext const context{
-        .grandparent_senders_and_authorities = nullptr,
-        .parent_senders_and_authorities = nullptr,
+    ChainContext<traits> const context{
+        .grandparent_senders_and_authorities =
+            empty_grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = empty_parent_senders_and_authorities,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
         .authorities = authorities};
@@ -434,7 +453,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     State state{bs, Incarnation{1, 1}};
     prepare_state(state);
 
-    bool const should_revert = revert_monad_transaction<traits>(
+    bool const should_revert = revert_transaction<traits>(
         SENDER, tx, BASE_FEE_PER_GAS, 0, state, context);
 
     if constexpr (traits::monad_rev() < MONAD_FOUR) {

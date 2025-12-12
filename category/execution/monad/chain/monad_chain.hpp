@@ -38,12 +38,14 @@ struct BlockHeader;
 struct Transaction;
 class AccountState;
 
-struct MonadChainContext
+template <typename T>
+    requires is_monad_trait_v<T>
+struct ChainContext<T>
 {
     ankerl::unordered_dense::segmented_set<Address> const
-        *grandparent_senders_and_authorities;
+        &grandparent_senders_and_authorities;
     ankerl::unordered_dense::segmented_set<Address> const
-        *parent_senders_and_authorities;
+        &parent_senders_and_authorities;
     ankerl::unordered_dense::segmented_set<Address> const
         &senders_and_authorities;
     std::vector<Address> const &senders;

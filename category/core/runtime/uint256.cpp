@@ -54,21 +54,6 @@ namespace monad::vm::runtime
         return ret;
     }
 
-    uint256_t byte(uint256_t const &byte_index_256, uint256_t const &x)
-    {
-        if (byte_index_256 >= 32) {
-            return 0;
-        }
-        uint64_t const byte_index = 31 - byte_index_256[0];
-        uint64_t const word_index = byte_index >> 3;
-        uint64_t const word = x[word_index];
-        uint64_t const bit_index = (byte_index & 7) * 8;
-        uint64_t const byte = static_cast<uint8_t>(word >> bit_index);
-        uint256_t ret{0};
-        ret[0] = byte;
-        return ret;
-    }
-
     uint256_t countr_zero(uint256_t const &x)
     {
         int total_count = 0;

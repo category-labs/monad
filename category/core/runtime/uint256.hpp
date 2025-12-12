@@ -691,7 +691,7 @@ namespace monad::vm::runtime
     static_assert(std::is_trivially_copyable_v<uint256_t>);
 
     uint256_t signextend(uint256_t const &byte_index, uint256_t const &x);
-    uint256_t byte(uint256_t const &byte_index, uint256_t const &x);
+    inline uint256_t byte(uint256_t const &byte_index_256, uint256_t const &x);
 
     [[gnu::always_inline]]
     inline uint256_t sar(uint256_t const &shift, uint256_t const &x)
@@ -1352,6 +1352,22 @@ namespace monad::vm::runtime
             }
         }
         return result;
+    }
+
+    [[gnu::always_inline]]
+    inline uint256_t byte(uint256_t const &byte_index_256, uint256_t const &x)
+    {
+        if (byte_index_256 >= 32) {
+            return 0;
+        }
+        uint64_t const byte_index = 31 - byte_index_256[0];
+        uint64_t const word_index = byte_index >> 3;
+        uint64_t const word = x[word_index];
+        uint64_t const bit_index = (byte_index & 7) * 8;
+        uint64_t const byte = static_cast<uint8_t>(word >> bit_index);
+        uint256_t ret{0};
+        ret[0] = byte;
+        return ret;
     }
 
     [[gnu::always_inline]] inline constexpr uint256_t

@@ -31,11 +31,6 @@
 #include <deque>
 #include <limits>
 
-inline constexpr unsigned MONAD_SNAPSHOT_SHARD_NIBBLES = 2;
-inline constexpr unsigned MONAD_SNAPSHOT_SHARDS =
-    1 << (MONAD_SNAPSHOT_SHARD_NIBBLES * 4);
-static_assert(MONAD_SNAPSHOT_SHARDS == 256);
-
 struct monad_db_snapshot_loader
 {
     uint64_t block;
@@ -219,19 +214,23 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         uint64_t shard, monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user);
     void *user;
+    uint64_t total_shards;
+    uint64_t shard_number;
 
     MonadSnapshotTraverseMachine(
         std::array<uint64_t, MONAD_SNAPSHOT_SHARDS> &account_bytes_written,
         uint64_t (*write)(
             uint64_t shard, monad_snapshot_type, unsigned char const *bytes,
             size_t len, void *user),
-        void *user)
+        void *user, uint64_t const total_shards, uint64_t const shard_number)
         : nibble{monad::mpt::INVALID_BRANCH}
         , path{}
         , account_bytes_written{account_bytes_written}
         , account_offset{std::numeric_limits<uint64_t>::max()}
         , write(write)
         , user{user}
+        , total_shards{total_shards}
+        , shard_number{shard_number}
     {
     }
 
@@ -254,11 +253,23 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
 
         path.append(branch, node.path_nibble_view());
 
-        if (!node.has_value()) {
+        // Path not long enough to determine shard yet, continue traversing
+        if (path.length() < MONAD_SNAPSHOT_SHARD_NIBBLES) {
             return true;
         }
 
         uint64_t const shard = get_shard(path.view());
+
+        // Return false to skip entire subtree since all descendants have same
+        // shard
+        if (shard % total_shards != shard_number) {
+            return false;
+        }
+
+        // If intermediate node (no value), continue traversing deeper
+        if (!node.has_value()) {
+            return true;
+        }
 
         byte_string_view const val = node.value();
         if (nibble == CODE_NIBBLE) {
@@ -346,10 +357,19 @@ bool monad_db_dump_snapshot(
     uint64_t (*write)(
         uint64_t shard, monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user),
-    void *const user, unsigned const dump_concurrency_limit)
+    void *const user, unsigned const dump_concurrency_limit,
+    uint64_t const total_shards, uint64_t const shard_number)
 {
     using namespace monad;
     using namespace monad::mpt;
+
+    MONAD_ASSERT_PRINTF(
+        total_shards >= 1, "total_shards must be >= 1, got %lu", total_shards);
+    MONAD_ASSERT_PRINTF(
+        shard_number < total_shards,
+        "shard_number (%lu) must be < total_shards (%lu)",
+        shard_number,
+        total_shards);
 
     // Set all queue sizes to dump_concurrency_limit to avoid double queuing
     ReadOnlyOnDiskDbConfig const config{
@@ -364,6 +384,11 @@ bool monad_db_dump_snapshot(
     Db db{io_context};
 
     for (uint64_t b = block < 256 ? 0 : block - 255; b <= block; ++b) {
+        uint64_t const header_shard = block - b;
+        if (header_shard % total_shards != shard_number) {
+            continue;
+        }
+
         auto const header_cursor_res = db.find(
             concat(FINALIZED_NIBBLE, NibblesView{block_header_nibbles}), b);
         if (!header_cursor_res.has_value()) {
@@ -376,7 +401,7 @@ bool monad_db_dump_snapshot(
         auto const header_view = header_cursor_res.value().node->value();
         MONAD_ASSERT(
             write(
-                block - b,
+                header_shard,
                 MONAD_SNAPSHOT_ETH_HEADER,
                 header_view.data(),
                 header_view.size(),
@@ -402,7 +427,8 @@ bool monad_db_dump_snapshot(
     }
 
     std::array<uint64_t, MONAD_SNAPSHOT_SHARDS> account_bytes_written{};
-    MonadSnapshotTraverseMachine machine{account_bytes_written, write, user};
+    MonadSnapshotTraverseMachine machine{
+        account_bytes_written, write, user, total_shards, shard_number};
     bool const success =
         db.traverse(finalized_root, machine, block, dump_concurrency_limit);
     if (!success) {

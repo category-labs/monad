@@ -20,6 +20,12 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
+
+inline constexpr unsigned MONAD_SNAPSHOT_SHARD_NIBBLES = 2;
+inline constexpr unsigned MONAD_SNAPSHOT_SHARDS =
+    1 << (MONAD_SNAPSHOT_SHARD_NIBBLES * 4);
+static_assert(MONAD_SNAPSHOT_SHARDS == 256);
+
 extern "C"
 {
 #endif
@@ -40,7 +46,8 @@ bool monad_db_dump_snapshot(
     uint64_t (*write)(
         uint64_t shard, enum monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user),
-    void *user, unsigned dump_concurrency_limit);
+    void *user, unsigned dump_concurrency_limit, uint64_t total_shards,
+    uint64_t shard_number);
 
 struct monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t block, char const *const *dbname_paths, size_t len,

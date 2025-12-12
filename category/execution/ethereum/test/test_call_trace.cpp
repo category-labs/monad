@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
@@ -54,6 +55,26 @@ namespace
     constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
 
     static constexpr std::vector<std::optional<Address>> authorities_empty{};
+
+    static ankerl::unordered_dense::segmented_set<Address> const
+        empty_senders_and_authorities{};
+    static constexpr std::vector<Address> empty_senders{};
+    static constexpr std::vector<std::vector<std::optional<Address>>>
+        empty_authorities{};
+
+    template <typename T>
+    ChainContext<T> empty_chain_ctx()
+    {
+        if constexpr (is_monad_trait_v<T>) {
+            return ChainContext<T>{
+                .senders_and_authorities = empty_senders_and_authorities,
+                .senders = empty_senders,
+                .authorities = empty_authorities};
+        }
+        else {
+            return ChainContext<T>{};
+        }
+    }
 }
 
 TEST(CallFrame, to_json)
@@ -154,8 +175,10 @@ TYPED_TEST(TraitsTest, execute_success)
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -164,7 +187,8 @@ TYPED_TEST(TraitsTest, execute_success)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary},
-            0)(s, host);
+            0,
+            chain_ctx)(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -228,8 +252,10 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -238,7 +264,8 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary},
-            0)(s, host);
+            0,
+            chain_ctx)(s, host);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -307,8 +334,10 @@ TYPED_TEST(TraitsTest, create_call_trace)
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -317,7 +346,8 @@ TYPED_TEST(TraitsTest, create_call_trace)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary},
-            0)(s, host);
+            0,
+            chain_ctx)(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 2);
 
@@ -420,8 +450,10 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -430,7 +462,8 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary},
-            0)(s, host);
+            0,
+            chain_ctx)(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 
     EXPECT_EQ(call_frames.size(), 4);
@@ -508,8 +541,10 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s};
+        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -518,7 +553,8 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary},
-            0)(s, host);
+            0,
+            chain_ctx)(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 
     EXPECT_EQ(call_frames.size(), 4);

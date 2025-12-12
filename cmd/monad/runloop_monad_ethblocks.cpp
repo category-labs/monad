@@ -108,6 +108,7 @@ void get_block_with_retry(
 
 // Process a single Monad block stored in Ethereum format
 template <Traits traits>
+    requires is_monad_trait_v<traits>
 Result<void> process_monad_block(
     MonadChain const &chain, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
@@ -179,7 +180,7 @@ Result<void> process_monad_block(
 
     senders_and_authorities_out = senders_and_authorities;
 
-    MonadChainContext chain_context{
+    ChainContext<traits> chain_context{
         .grandparent_senders_and_authorities =
             grandparent_senders_and_authorities,
         .parent_senders_and_authorities = parent_senders_and_authorities,
@@ -208,19 +209,7 @@ Result<void> process_monad_block(
             block_metrics,
             call_tracers,
             state_tracers,
-            [&block, &chain_context](
-                Address const &sender,
-                Transaction const &tx,
-                uint64_t const i,
-                State &state) {
-                return revert_monad_transaction<traits>(
-                    sender,
-                    tx,
-                    block.header.base_fee_per_gas.value_or(0),
-                    i,
-                    state,
-                    chain_context);
-            }));
+            chain_context));
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();

@@ -149,6 +149,7 @@ static_assert(
     (1 << (AuthorityInTransaction + 1)) == PREVENT_DIP_BITS_POWERSET_SIZE);
 
 template <Traits traits>
+    requires is_monad_trait_v<traits>
 void run_revert_transaction_test(
     uint8_t const prevent_dip_bitset, uint64_t const initial_balance_mon,
     uint64_t const gas_fee_mon, uint64_t const value_mon, bool const expected)
@@ -230,7 +231,7 @@ void run_revert_transaction_test(
     ankerl::unordered_dense::segmented_set<Address> const
         senders_and_authorities = {SENDER};
 
-    MonadChainContext chain_context{
+    ChainContext<traits> chain_context{
         .grandparent_senders_and_authorities =
             &grandparent_senders_and_authorities,
         .parent_senders_and_authorities = &parent_senders_and_authorities,
@@ -341,7 +342,7 @@ TYPED_TEST(MonadTraitsTest, revert_transaction_dip_false)
     );
 }
 
-TEST(MonadChain, can_sender_dip_into_reserve)
+TYPED_TEST(MonadTraitsTest, can_sender_dip_into_reserve)
 {
     // False because of pending txns
     {
@@ -350,15 +351,15 @@ TEST(MonadChain, can_sender_dip_into_reserve)
             {}, {}};
         ankerl::unordered_dense::segmented_set<Address> const
             senders_and_authorities{{Address{1}}};
-        MonadChainContext const context{
+        ChainContext<typename TestFixture::Trait> const context{
             .grandparent_senders_and_authorities = nullptr,
             .parent_senders_and_authorities = nullptr,
             .senders_and_authorities = senders_and_authorities,
             .senders = senders,
             .authorities = authorities,
         };
-        EXPECT_FALSE(
-            can_sender_dip_into_reserve(Address{1}, 1, false, context));
+        EXPECT_FALSE(can_sender_dip_into_reserve<typename TestFixture::Trait>(
+            Address{1}, 1, false, context));
     }
 
     // False because of authority
@@ -368,15 +369,15 @@ TEST(MonadChain, can_sender_dip_into_reserve)
             {}, {Address{1}}};
         ankerl::unordered_dense::segmented_set<Address> const
             senders_and_authorities{{Address{1}}};
-        MonadChainContext const context{
+        ChainContext<typename TestFixture::Trait> const context{
             .grandparent_senders_and_authorities = nullptr,
             .parent_senders_and_authorities = nullptr,
             .senders_and_authorities = senders_and_authorities,
             .senders = senders,
             .authorities = authorities,
         };
-        EXPECT_FALSE(
-            can_sender_dip_into_reserve(Address{1}, 1, false, context));
+        EXPECT_FALSE(can_sender_dip_into_reserve<typename TestFixture::Trait>(
+            Address{1}, 1, false, context));
     }
 }
 
@@ -417,7 +418,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
     ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
     senders_and_authorities.insert(SENDER);
-    MonadChainContext const context{
+    ChainContext<traits> const context{
         .grandparent_senders_and_authorities = nullptr,
         .parent_senders_and_authorities = nullptr,
         .senders_and_authorities = senders_and_authorities,

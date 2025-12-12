@@ -169,6 +169,7 @@ Result<void> validate_live_execution_outputs(
 }
 
 template <Traits traits, class MonadConsensusBlockHeader>
+    requires is_monad_trait_v<traits>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
@@ -245,7 +246,7 @@ Result<BlockExecOutput> propose_block(
             std::make_unique<trace::StateTracer>(std::monostate{})};
     }
 
-    MonadChainContext chain_context{
+    ChainContext<traits> chain_context{
         .grandparent_senders_and_authorities = nullptr,
         .parent_senders_and_authorities = nullptr,
         .senders_and_authorities =
@@ -294,19 +295,7 @@ Result<BlockExecOutput> propose_block(
             block_metrics,
             call_tracers,
             state_tracers,
-            [&block, &chain_context](
-                Address const &sender,
-                Transaction const &tx,
-                uint64_t const i,
-                State &state) {
-                return revert_monad_transaction<traits>(
-                    sender,
-                    tx,
-                    block.header.base_fee_per_gas.value_or(0),
-                    i,
-                    state,
-                    chain_context);
-            }));
+            chain_context));
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)

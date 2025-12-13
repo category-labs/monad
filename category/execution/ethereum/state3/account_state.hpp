@@ -205,6 +205,9 @@ private:
 
     void set_min_balance(uint256_t const &value)
     {
+        if (value == 0) {
+            return;
+        }
         MONAD_ASSERT(account_.has_value());
         MONAD_ASSERT(account_->balance >= value);
         if (value > min_balance_) {

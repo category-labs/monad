@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/rpc/monad_executor.h>
 
 #include <category/core/assert.h>
@@ -272,23 +273,14 @@ namespace
                  state_overrides.override_sets) {
                 // This would avoid seg-fault on storage override for
                 // non-existing accounts
-                auto const &account = state.recent_account(address);
+                auto const &account = state.recent_account_pessimistic(address);
                 if (MONAD_UNLIKELY(!account.has_value())) {
                     state.create_contract(address);
                 }
 
                 if (state_delta.balance.has_value()) {
-                    auto const balance = state_delta.balance.value();
-                    auto const pessimistic_balance = intx::be::load<uint256_t>(
-                        state.get_current_balance_pessimistic(address));
-                    if (balance > pessimistic_balance) {
-                        state.add_to_balance(
-                            address, balance - pessimistic_balance);
-                    }
-                    else {
-                        state.subtract_from_balance(
-                            address, pessimistic_balance - balance);
-                    }
+                    auto const balance_override = state_delta.balance.value();
+                    state.set_current_balance(address, balance_override);
                 }
 
                 if (state_delta.nonce.has_value()) {
@@ -331,9 +323,8 @@ namespace
         // However, eth_call doesn't take a nonce parameter.
         // Solving the issue by manually setting nonce to match with the
         // expected nonce
-        auto const &acct = state.recent_account(sender);
+        auto const &acct = state.recent_account_pessimistic(sender);
         enriched_txn.nonce = acct.has_value() ? acct.value().nonce : 0;
-
         // validate_transaction expects the sender of a transaction is EOA, not
         // CA. However, eth_call allows the sender to be CA to simulate a
         // subroutine. Solving this issue by manually setting account to be EOA
@@ -342,10 +333,12 @@ namespace
         if (eoa.has_value()) {
             eoa.value().code_hash = NULL_HASH;
         }
+        OriginalAccountState sender_state{eoa};
 
         // Safe to pass empty code to validation here because the above override
         // will always mark this transaction as coming from an EOA.
-        BOOST_OUTCOME_TRY(validate_transaction<traits>(enriched_txn, eoa, {}));
+        BOOST_OUTCOME_TRY(
+            validate_transaction<traits>(enriched_txn, sender_state, {}));
 
         auto const senders = std::vector{sender};
         auto const authorities_vec =

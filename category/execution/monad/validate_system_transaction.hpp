@@ -53,7 +53,7 @@ Result<void> static_validate_system_transaction(
     Transaction const &tx, Address const &sender);
 
 Result<void> validate_system_transaction(
-    Transaction const &, std::optional<Account> const &sender_account);
+    Transaction const &, OriginalAccountState &sender_account);
 
 MONAD_NAMESPACE_END
 

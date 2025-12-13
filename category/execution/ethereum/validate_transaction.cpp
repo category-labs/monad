@@ -209,7 +209,7 @@ EXPLICIT_TRAITS(static_validate_transaction);
 
 template <Traits traits>
 Result<void> validate_transaction(
-    Transaction const &tx, std::optional<Account> const &sender_account,
+    Transaction const &tx, OriginalAccountState &sender_account,
     std::span<uint8_t const> code)
 {
     // YP (70)
@@ -218,7 +218,7 @@ Result<void> validate_transaction(
         v0 += tx.max_fee_per_blob_gas * get_total_blob_gas(tx);
     }
 
-    if (MONAD_UNLIKELY(!sender_account.has_value())) {
+    if (MONAD_UNLIKELY(!sender_account.has_account())) {
         // YP (71)
         if (tx.nonce) {
             return TransactionError::BadNonce;
@@ -231,7 +231,7 @@ Result<void> validate_transaction(
     }
 
     // YP (71)
-    bool sender_is_eoa = sender_account->code_hash == NULL_HASH;
+    bool sender_is_eoa = sender_account.get_code_hash() == NULL_HASH;
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         // EIP-7702
         sender_is_eoa = sender_is_eoa || vm::evm::is_delegated(code);
@@ -242,7 +242,7 @@ Result<void> validate_transaction(
     }
 
     // YP (71)
-    if (MONAD_UNLIKELY(sender_account->nonce != tx.nonce)) {
+    if (MONAD_UNLIKELY(sender_account.get_nonce() != tx.nonce)) {
         return TransactionError::BadNonce;
     }
 
@@ -251,7 +251,8 @@ Result<void> validate_transaction(
     // note this passes because `v0` includes gas which is later deducted in
     // `irrevocable_change` before relaxed merge logic in `sender_has_balance`
     // this is fragile as it depends on values in two locations matching
-    if (MONAD_UNLIKELY(sender_account->balance < v0)) {
+    if (MONAD_UNLIKELY(
+            !sender_account.record_balance_constraint_for_debit(v0))) {
         return TransactionError::InsufficientBalance;
     }
 
@@ -265,8 +266,7 @@ EXPLICIT_TRAITS(validate_transaction);
 
 Result<void> validate_transaction(
     evmc_revision const rev, Transaction const &tx,
-    std::optional<Account> const &sender_account,
-    std::span<uint8_t const> const code)
+    OriginalAccountState &sender_account, std::span<uint8_t const> const code)
 {
     SWITCH_EVM_TRAITS(validate_transaction, tx, sender_account, code);
     MONAD_ABORT("invalid revision");

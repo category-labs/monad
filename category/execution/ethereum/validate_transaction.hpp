@@ -19,6 +19,7 @@
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -68,12 +69,12 @@ Result<void> static_validate_transaction(
 
 template <Traits traits>
 Result<void> validate_transaction(
-    Transaction const &, std::optional<Account> const &sender_account,
+    Transaction const &, OriginalAccountState &sender_account,
     std::span<uint8_t const>);
 
 Result<void> validate_transaction(
-    evmc_revision, Transaction const &,
-    std::optional<Account> const &sender_account, std::span<uint8_t const>);
+    evmc_revision, Transaction const &, OriginalAccountState &sender_account,
+    std::span<uint8_t const>);
 
 MONAD_NAMESPACE_END
 

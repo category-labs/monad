@@ -119,9 +119,10 @@ TYPED_TEST(TraitsTest, validate_deployed_code)
         .balance = 56'939'568'773'815'811,
         .code_hash = some_non_null_hash,
         .nonce = 24};
+    OriginalAccountState sender_state{sender_account};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+    auto const result =
+        validate_transaction<typename TestFixture::Trait>(tx, sender_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
 }
@@ -135,10 +136,11 @@ TYPED_TEST(TraitsTest, validate_deployed_code_delegated)
     Transaction const tx{.gas_limit = 60'500};
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .code_hash = some_non_null_hash};
+    OriginalAccountState sender_state{sender_account};
 
     auto const result = validate_transaction<typename TestFixture::Trait>(
         tx,
-        sender_account,
+        sender_state,
         std::vector<uint8_t>{
             0xEF, 0x01, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
             0x11, 0x22, 0x33, 0x44, 0x55, 0x11, 0x22, 0x33,
@@ -162,9 +164,10 @@ TYPED_TEST(TraitsTest, validate_nonce)
         .value = 55'939'568'773'815'811};
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 24};
+    OriginalAccountState sender_state{sender_account};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+    auto const result =
+        validate_transaction<typename TestFixture::Trait>(tx, sender_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
@@ -178,9 +181,10 @@ TYPED_TEST(TraitsTest, validate_nonce_optimistically)
         .value = 55'939'568'773'815'811};
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 24};
+    OriginalAccountState sender_state{sender_account};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+    auto const result =
+        validate_transaction<typename TestFixture::Trait>(tx, sender_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
@@ -197,9 +201,10 @@ TYPED_TEST(TraitsTest, validate_enough_balance)
         .max_priority_fee_per_gas = 100'000'000,
     };
     Account const sender_account{.balance = 55'939'568'773'815'811};
+    OriginalAccountState sender_state{sender_account};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+    auto const result =
+        validate_transaction<typename TestFixture::Trait>(tx, sender_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
@@ -217,14 +222,15 @@ TYPED_TEST(TraitsTest, successful_validation)
         .to = b};
     Account const sender_account{
         .balance = 56'939'568'773'815'811, .nonce = 25};
+    OriginalAccountState sender_state{sender_account};
 
     auto const result1 =
         static_validate_transaction<typename TestFixture::Trait>(
             tx, 0, std::nullopt, 1);
     EXPECT_TRUE(result1.has_value());
 
-    auto const result2 = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+    auto const result2 =
+        validate_transaction<typename TestFixture::Trait>(tx, sender_state, {});
     EXPECT_TRUE(result2.has_value());
 }
 
@@ -277,9 +283,10 @@ TYPED_TEST(TraitsTest, insufficent_balance_overflow)
         .to = b};
     Account const sender_account{
         .balance = std::numeric_limits<uint256_t>::max()};
+    OriginalAccountState sender_state{sender_account};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+    auto const result =
+        validate_transaction<typename TestFixture::Trait>(tx, sender_state, {});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }

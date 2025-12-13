@@ -324,6 +324,19 @@ void State::set_nonce(Address const &address, uint64_t const nonce)
     account.value().nonce = nonce;
 }
 
+void State::set_current_balance(
+    Address const &address, uint256_t const &new_balance)
+{
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    if (MONAD_UNLIKELY(!account.has_value())) {
+        account = Account{.incarnation = incarnation_};
+    }
+
+    account.value().balance = new_balance;
+    account_state.touch();
+}
+
 void State::add_to_balance(Address const &address, uint256_t const &delta)
 {
     auto &account_state = current_account_state(address);

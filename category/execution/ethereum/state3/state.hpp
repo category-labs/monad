@@ -138,6 +138,7 @@ public:
     void add_to_balance(Address const &, uint256_t const &delta);
 
     void subtract_from_balance(Address const &, uint256_t const &delta);
+    void set_current_balance(Address const &, uint256_t const &balance);
 
     void set_code_hash(Address const &, bytes32_t const &hash);
 

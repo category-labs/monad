@@ -218,6 +218,7 @@ try {
     fs::path trace_log = fs::absolute("trace");
     cli.add_option("--trace_log", trace_log, "path to output trace file");
 #endif
+    cli.set_config("--config", {}, "Read config options from a TOML file");
 
     try {
         cli.parse(argc, argv);

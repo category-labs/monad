@@ -216,7 +216,8 @@ CREATE TABLE IF NOT EXISTS instruction_operands (
   general_reg INTEGER NULL,
   avx_reg INTEGER NULL,
   stack_offset INTEGER NULL,
-  deferred_comparison BOOLEAN NULL
+  deferred_comparison BOOLEAN NULL,
+  bit_upper_bound INTEGER NULL
 );
 
 -- Instructions have outputs
@@ -228,7 +229,8 @@ CREATE TABLE IF NOT EXISTS instruction_outputs (
   general_reg INTEGER NULL,
   avx_reg INTEGER NULL,
   stack_offset INTEGER NULL,
-  deferred_comparison BOOLEAN NULL
+  deferred_comparison BOOLEAN NULL,
+  bit_upper_bound INTEGER NULL
 );
 
 -- Create indices

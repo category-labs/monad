@@ -85,13 +85,27 @@ def all_instructions(blocks):
   )
 
 def contract_instruction_operands(instruction_ids, blocks):
-  return [ (instruction_id, operand_ix, operand.get("literal", None), operand.get("general_reg", None), operand.get("avx_reg", None), operand.get("stack_offset", None), "deferred_comparison" in operand)
+  return [ ( instruction_id
+           , operand_ix
+           , operand.get("literal", None)
+           , operand.get("general_reg", None)
+           , operand.get("avx_reg", None)
+           , operand.get("stack_offset", None)
+           , "deferred_comparison" in operand
+           , operand.get("bit_upper_bound", None))
            for instruction_id, instruction in zip(instruction_ids, all_instructions(blocks))
            for operand_ix, operand in enumerate(instruction.get("operands", []))
          ]
 
 def contract_instruction_outputs(instruction_ids, blocks):
-  return [ (instruction_id, output_ix, output.get("literal", None), output.get("general_reg", None), output.get("avx_reg", None), output.get("stack_offset", None), "deferred_comparison" in output)
+  return [ ( instruction_id
+           , output_ix
+           , output.get("literal", None)
+           , output.get("general_reg", None)
+           , output.get("avx_reg", None)
+           , output.get("stack_offset", None)
+           , "deferred_comparison" in output
+           , output.get("bit_upper_bound", None))
            for instruction_id, instruction in zip(instruction_ids, all_instructions(blocks))
            for output_ix, output in enumerate(instruction.get("outputs", []))
          ]

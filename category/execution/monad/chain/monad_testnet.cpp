@@ -58,13 +58,18 @@ uint256_t MonadTestnet::get_chain_id() const
 
 GenesisState MonadTestnet::get_genesis_state() const
 {
-    BlockHeader header;
-    header.difficulty = 17179869184;
-    header.gas_limit = 5000;
-    intx::be::unsafe::store<uint64_t>(header.nonce.data(), 66);
-    header.extra_data = evmc::from_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33a"
-                                       "db3db69cbdb7a38e1e50b1b82fa")
-                            .value();
+    BlockHeader const header{
+        .gas_limit = 5000,
+        .extra_data = evmc::from_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33a"
+                                     "db3db69cbdb7a38e1e50b1b82fa")
+                          .value(),
+        .base_fee_per_gas = 0,
+        .withdrawals_root = NULL_ROOT,
+        .blob_gas_used = 0,
+        .excess_blob_gas = 0,
+        .parent_beacon_block_root = NULL_ROOT,
+        .requests_hash = NULL_HASH,
+    };
     return {header, MONAD_TESTNET_ALLOC};
 }
 

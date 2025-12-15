@@ -100,7 +100,6 @@ jobs:
                   CC=${{ matrix.compiler.CC }}
                   CXX=${{ matrix.compiler.CXX }}
                   CMAKE_BUILD_TYPE=${{ matrix.build.CMAKE_BUILD_TYPE }}
-                  SKIP_LLVM_TESTS=${{ matrix.build.CMAKE_BUILD_TYPE == 'Debug' && 'true' || 'false' }}
                   TOOLCHAIN=${{ matrix.build.TOOLCHAIN }}
                 target: build_and_test_vm
                 cache-from: type=gha,scope=base

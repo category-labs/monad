@@ -285,7 +285,12 @@ static void run_benchmark(CommandArguments const &args, Benchmark const &bench)
         return;
     }
 
-    for (auto const impl : {Interpreter, Compiler, LLVM, Evmone}) {
+#ifdef MONAD_COMPILER_LLVM
+    static constexpr auto all_impls = {Interpreter, Compiler, LLVM, Evmone};
+#else
+    static constexpr auto all_impls = {Interpreter, Compiler, Evmone};
+#endif
+    for (auto const impl : all_impls) {
         run_implementation_benchmark(args, impl, bench);
     }
 }

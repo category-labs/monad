@@ -85,6 +85,12 @@ namespace
                               "BlockchainTests" / "GeneralStateTests" /
                               "VMTests" / "vmPerformance";
 
+#ifdef MONAD_COMPILER_LLVM
+    static constexpr auto all_impls = {Interpreter, Compiler, LLVM, Evmone};
+#else
+    static constexpr auto all_impls = {Interpreter, Compiler, Evmone};
+#endif
+
     auto make_benchmark(
         std::string const &name, std::span<std::uint8_t const> code,
         std::span<std::uint8_t const> input)
@@ -227,7 +233,7 @@ namespace
 
     void register_benchmark(std::string_view const name, evmc_message const msg)
     {
-        for (auto const impl : {Interpreter, Compiler, LLVM, Evmone}) {
+        for (auto const impl : all_impls) {
             benchmark::RegisterBenchmark(
                 std::format(
                     "execute/{}/{}", name, BlockchainTestVM::impl_name(impl)),
@@ -301,8 +307,7 @@ namespace
                             failure_tests.end(),
                             test.name) == failure_tests.end();
 
-                    for (auto const impl :
-                         {Interpreter, Compiler, LLVM, Evmone}) {
+                    for (auto const impl : all_impls) {
                         benchmark::RegisterBenchmark(
                             std::format(
                                 "execute/{}/{}/{}/{}",

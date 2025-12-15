@@ -406,10 +406,6 @@ namespace
         TrieRODb &tdb, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
         std::span<monad_state_override const> state_overrides)
     {
-        (void)header;
-        (void)chain;
-        (void)block_hash_buffer;
-
         auto const authorities =
             std::vector<std::vector<std::vector<std::optional<Address>>>>{};
         // TODO(
@@ -427,10 +423,70 @@ namespace
         // MONAD_ASSERT(calls.size() == state_overrides.size());
 
         tdb.set_block_and_prefix(block_number, block_id);
-        auto start_header = tdb.read_eth_header();
 
+        auto current_header = header;
         auto result = nlohmann::json::array();
 
+        for (auto block_idx = 0u; block_idx < calls.size(); ++block_idx) {
+            auto entry = nlohmann::json::object();
+
+            auto block_metrics = BlockMetrics{};
+            auto block_state = BlockState{tdb, vm};
+            (void)block_metrics;
+            (void)block_state;
+            (void)block_hash_buffer;
+            (void)chain;
+
+            for (auto tx_idx = 0u; tx_idx < calls[block_idx].size(); ++tx_idx) {
+                entry["calls"] = nlohmann::json::array();
+                auto &txns = entry["calls"];
+                (void)txns;
+
+                auto prev = boost::fibers::promise<void>{};
+                prev.set_value();
+                auto call_tracer = NoopCallTracer{};
+                auto state_tracer = trace::StateTracer{};
+
+                auto const top_revert = [](auto &&...) { return false; };
+
+                auto exec = ExecuteTransactionNoValidation<traits>{
+                    chain,
+                    calls[block_idx][tx_idx],
+                    senders[block_idx][tx_idx],
+                    authorities[block_idx][tx_idx],
+                    current_header,
+                    tx_idx,
+                    top_revert};
+
+                auto const tx_context = get_tx_context<traits>(
+                    calls[block_idx][tx_idx],
+                    senders[block_idx][tx_idx],
+                    current_header,
+                    chain.get_chain_id());
+
+                auto state =
+                    State{block_state, Incarnation{block_number, tx_idx}};
+
+                auto host = EvmcHost<traits>{
+                    call_tracer,
+                    tx_context,
+                    block_hash_buffer,
+                    state,
+                    [&state,
+                     &top_revert,
+                     &sender = senders[block_idx][tx_idx],
+                     &tx = calls[block_idx][tx_idx],
+                     &i = tx_idx]() {
+                        return top_revert(sender, tx, i, state);
+                    }};
+
+                auto const execution_result = exec(state, host);
+            }
+
+            result.push_back(std::move(entry));
+        }
+
+#if 0
         for (auto i = 0u; i < calls.size(); ++i) {
             auto entry = nlohmann::json::object();
 
@@ -438,7 +494,7 @@ namespace
             // TODO(BSC): apply block overrides
 
             auto const block = Block{
-                .header = std::move(start_header),
+                .header = current_header,
                 .transactions = std::move(calls[i]),
             };
 
@@ -485,8 +541,7 @@ namespace
             //         revert_transaction));
 
             (void)tdb; // TODO(BSC): commit via read through database overlay
-            auto const output_header =
-                tdb.read_eth_header(); // TODO(BSC): read back from DB
+            auto const output_header = block.header;
 
             entry["calls"] = nlohmann::json::array();
             auto &txns = entry["calls"];
@@ -516,6 +571,7 @@ namespace
 
             result.push_back(std::move(entry));
         }
+#endif
 
         (void)state_overrides;
         (void)senders;
@@ -602,8 +658,8 @@ namespace
 
         // Trace single transaction
         if (trace_transaction) {
-            // We allocate just one trace entry here as we only need to return
-            // the trace result of `transactions[transaction_index]`.
+            // We allocate just one trace entry here as we only need to
+            // return the trace result of `transactions[transaction_index]`.
 
             for (size_t i = 0; i < transactions_size - 1; ++i) {
                 state_tracers.emplace_back(
@@ -638,7 +694,8 @@ namespace
         }
         else {
             // Helper to create a trace log entry of the form:
-            //   {"result": { execution trace goes here }, "txHash": "0x..."}
+            //   {"result": { execution trace goes here }, "txHash":
+            //   "0x..."}
             auto const trace_entry =
                 [&transactions](
                     uint64_t const transaction_index) -> nlohmann::json {
@@ -980,8 +1037,8 @@ struct monad_executor
     Group trace_block_group_; // Limits concurrent trace requests
     Group trace_tx_exec_group_; // Executes transactions within trace blocks
 
-    // Sequence number for each call. This is used as a priority of the request,
-    // requests started earlier have higher priority.
+    // Sequence number for each call. This is used as a priority of the
+    // request, requests started earlier have higher priority.
     std::atomic<uint64_t> call_seq_no_{0};
 
     mpt::RODb db_;

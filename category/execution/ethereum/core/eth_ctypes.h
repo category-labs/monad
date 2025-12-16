@@ -95,6 +95,17 @@ struct monad_c_eth_txn_header
     uint32_t auth_list_count;            ///< # of EIP-7702 AuthorizationList entries
 };
 
+/// Components of intrinsic gas (g_0)
+struct monad_c_eth_intrinsic_gas
+{
+    uint64_t base;           ///< Base cost of transaction
+    uint64_t data;           ///< Cost of calldata
+    uint64_t creation;       ///< Cost of contract creation
+    uint64_t init_code;      ///< Cost of EIP-3860 initcode metering
+    uint64_t access_list;    ///< Cost of EIP-2930 access list entries
+    uint64_t authorizations; ///< Cost of EIP-7702 authorizations
+};
+
 /// Result of executing a valid transaction
 ///
 /// This type is designed for incremental, out-of-order reporting of transaction

@@ -224,7 +224,7 @@ struct cli_tool_fixture
                         1,
                         monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
                 monad::async::AsyncIO testio(pool, testrwbuf);
-                monad::mpt::UpdateAux<> const aux{testio};
+                monad::mpt::UpdateAux const aux{testio};
                 monad::mpt::Node::SharedPtr root_ptr{read_node_blocking(
                     aux,
                     aux.get_latest_root_offset(),
@@ -327,7 +327,7 @@ struct cli_tool_fixture
                             1,
                             monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
                     monad::async::AsyncIO testio(pool, testrwbuf);
-                    monad::mpt::UpdateAux<> const aux{testio};
+                    monad::mpt::UpdateAux const aux{testio};
                     monad::mpt::Node::SharedPtr root_ptr{read_node_blocking(
                         aux,
                         aux.get_latest_root_offset(),

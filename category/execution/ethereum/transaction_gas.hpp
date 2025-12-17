@@ -23,6 +23,8 @@
 
 #include <cstdint>
 
+struct monad_c_eth_intrinsic_gas;
+
 MONAD_NAMESPACE_BEGIN
 
 struct Transaction;
@@ -30,6 +32,11 @@ struct BlockHeader;
 
 template <Traits traits>
 uint64_t g_data(Transaction const &) noexcept;
+
+template <Traits traits>
+monad_c_eth_intrinsic_gas intrinsic_gas_breakdown(Transaction const &) noexcept;
+
+uint64_t sum(monad_c_eth_intrinsic_gas const &) noexcept;
 
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &) noexcept;

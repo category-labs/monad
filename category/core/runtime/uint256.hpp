@@ -1362,7 +1362,7 @@ namespace monad::vm::runtime
         uint64_t const byte_index = 31 - byte_index_256[0];
         uint64_t const word_index = byte_index >> 3;
         uint64_t const word = x[word_index];
-        uint64_t const bit_index = (byte_index & 7) * 8;
+        uint64_t const bit_index = (byte_index & 7) << 3;
         uint64_t const byte = static_cast<uint8_t>(word >> bit_index);
         uint256_t ret{0};
         ret[0] = byte;

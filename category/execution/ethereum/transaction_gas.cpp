@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/core/eth_ctypes.h>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -107,26 +108,47 @@ uint64_t g_data(Transaction const &tx) noexcept
 EXPLICIT_TRAITS(g_data);
 
 template <Traits traits>
-uint64_t intrinsic_gas(Transaction const &tx) noexcept
+monad_c_eth_intrinsic_gas
+intrinsic_gas_breakdown(Transaction const &tx) noexcept
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
-    uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx);
+    monad_c_eth_intrinsic_gas gas = {
+        .base = 21'000,
+        .data = g_data<traits>(tx),
+        .creation = g_txn_create(tx),
+        .init_code = 0,
+        .access_list = 0,
+        .authorizations = 0};
 
     // EIP-2930: access-list and storage-key cost (Berlin)
     if constexpr (traits::evm_rev() >= MONAD_ETH_BERLIN) {
-        gas += g_access_and_storage(tx);
+        gas.access_list = g_access_and_storage(tx);
     }
     // EIP-3860: per-word initcode cost (Shanghai)
     if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
-        gas += g_extra_cost_init(tx);
+        gas.init_code = g_extra_cost_init(tx);
     }
     // EIP-7702: authorization-list cost (Prague)
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        gas += g_authorization(tx);
+        gas.authorizations += g_authorization(tx);
     }
 
     return gas;
+}
+
+EXPLICIT_TRAITS(intrinsic_gas_breakdown);
+
+uint64_t sum(monad_c_eth_intrinsic_gas const &g) noexcept
+{
+    return g.base + g.data + g.creation + g.init_code + g.access_list +
+           g.authorizations;
+}
+
+template <Traits traits>
+uint64_t intrinsic_gas(Transaction const &tx) noexcept
+{
+    return sum(intrinsic_gas_breakdown<traits>(tx));
 }
 
 EXPLICIT_TRAITS(intrinsic_gas);

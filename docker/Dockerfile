@@ -77,6 +77,6 @@ RUN cd src && cmake --build build -t monad-compiler-fuzzer
 RUN cd src && ./scripts/vm/ci-fuzzer.sh
 
 FROM base AS runner
-COPY --from=build_and_test /src/build/category/mpt/monad_mpt /usr/local/bin/
+COPY --from=build_and_test /src/build/category/mpt/monad-mpt /usr/local/bin/
 COPY --from=build_and_test /src/build/cmd/monad_cli /usr/local/bin/
 COPY --from=build_and_test /src/build/cmd/monad /usr/local/bin/

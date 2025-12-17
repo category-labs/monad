@@ -76,9 +76,9 @@ target_link_libraries(monad_trie PRIVATE Boost::boost)
 target_link_libraries(monad_trie PUBLIC concurrentqueue)
 target_link_libraries(monad_trie PUBLIC monad_async)
 target_link_libraries(monad_trie PUBLIC quill::quill) # TODO: remove
-add_executable(monad_mpt "cli_tool_main.cpp" "cli_tool_impl.cpp")
-monad_compile_options(monad_mpt)
-target_link_libraries(monad_mpt PUBLIC monad_execution PkgConfig::zstd
+add_executable(monad-mpt "cli_tool_main.cpp" "cli_tool_impl.cpp")
+monad_compile_options(monad-mpt)
+target_link_libraries(monad-mpt PUBLIC monad_execution PkgConfig::zstd
                                        PkgConfig::archive CLI11::CLI11)
 
 function(add_trie_test)

@@ -309,31 +309,56 @@ namespace
     }
 
     [[gnu::always_inline]]
-    inline void
-    post_instruction_emit(Emitter &emit, CompilerConfig const &config)
+    inline void pre_instruction_emit(
+        Emitter &emit, CompilerConfig const &config, size_t block_id,
+        size_t instr_index, Instruction const &instr)
     {
         (void)emit;
         (void)config;
+        (void)block_id;
+        (void)instr_index;
+        (void)instr;
+#ifdef MONAD_COMPILER_TESTING
+        if (config.pre_instruction_emit_hook) {
+            config.pre_instruction_emit_hook(
+                emit, block_id, instr_index, instr);
+        }
+#endif
+    }
+
+    [[gnu::always_inline]]
+    inline void post_instruction_emit(
+        Emitter &emit, CompilerConfig const &config, size_t block_id,
+        size_t instr_index, Instruction const &instr)
+    {
+        (void)emit;
+        (void)config;
+        (void)block_id;
+        (void)instr_index;
+        (void)instr;
 #ifdef MONAD_COMPILER_TESTING
         if (config.post_instruction_emit_hook) {
-            config.post_instruction_emit_hook(emit);
+            config.post_instruction_emit_hook(
+                emit, block_id, instr_index, instr);
         }
 #endif
     }
 
     template <Traits traits>
     void emit_instrs(
-        Emitter &emit, Block const &block, int64_t instr_gas,
+        Emitter &emit, size_t block_id, Block const &block, int64_t instr_gas,
         native_code_size_t max_native_size, CompilerConfig const &config)
     {
         int64_t remaining_base_gas = instr_gas;
-        for (auto const &instr : block.instrs) {
+        for (size_t i = 0; i < block.instrs.size(); ++i) {
+            auto const &instr = block.instrs[i];
             MONAD_VM_DEBUG_ASSERT(
                 remaining_base_gas >= instr.static_gas_cost());
+            pre_instruction_emit(emit, config, block_id, i, instr);
             remaining_base_gas -= instr.static_gas_cost();
             emit_instr<traits>(emit, instr, remaining_base_gas);
             require_code_size_in_bound(emit, max_native_size);
-            post_instruction_emit(emit, config);
+            post_instruction_emit(emit, config, block_id, i, instr);
         }
     }
 
@@ -435,13 +460,14 @@ namespace monad::vm::compiler::native
         }
         native_code_size_t const max_native_size =
             max_code_size(config.max_code_size_offset, ir.codesize);
-        for (Block const &block : ir.blocks()) {
+        for (size_t block_id = 0; block_id < ir.blocks().size(); ++block_id) {
+            Block const &block = ir.blocks()[block_id];
             bool const can_enter_block = emit.begin_new_block(block);
             if (can_enter_block) {
                 int64_t const base_gas = block_base_gas<traits>(block);
                 emit_gas_decrement(emit, ir, block, base_gas);
                 emit_instrs<traits>(
-                    emit, block, base_gas, max_native_size, config);
+                    emit, block_id, block, base_gas, max_native_size, config);
                 emit_terminator<traits>(emit, ir, block);
             }
             require_code_size_in_bound(emit, max_native_size);

@@ -101,6 +101,12 @@ namespace monad::vm::compiler::native
                    : *stack_indices_.begin();
     }
 
+    bool StackElem::is_deferred_comparison() const
+    {
+        return stack_.deferred_comparison_.stack_elem == this ||
+               stack_.deferred_comparison_.negated_stack_elem == this;
+    }
+
     void StackElem::deferred_comparison(Comparison c)
     {
         MONAD_VM_ASSERT(stack_.deferred_comparison_.stack_elem == nullptr);

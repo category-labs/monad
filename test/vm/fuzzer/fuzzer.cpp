@@ -481,13 +481,15 @@ static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
 {
     using enum BlockchainTestVM::Implementation;
 
-    monad::vm::compiler::native::EmitterHook hook = nullptr;
+    monad::vm::compiler::native::PreEmitterHook pre_hook = nullptr;
+    monad::vm::compiler::native::PostEmitterHook post_hook = nullptr;
 
     if (args.implementation == Compiler) {
-        hook = compiler_emit_hook(engine);
+        post_hook = compiler_emit_hook(engine);
     }
 
-    return evmc::VM(new BlockchainTestVM(args.implementation, hook));
+    return evmc::VM(
+        new BlockchainTestVM(args.implementation, pre_hook, post_hook));
 }
 
 // Coin toss, biased whenever p != 0.5

@@ -7,22 +7,24 @@
 # The csv files are saved in the current directory.
 #
 # To insert the data into the database, use the following commands:
+# DBNAME="monad" # Whatever database name you want to use
+# CSV_DIR="~/results/csv" # Directory where the csv files are located
 # Drop the database, if it already exists:
-#   dropdb monad
+#   dropdb "$DBNAME"
 # Create the database:
-#   createdb monad
+#   createdb "$DBNAME"
 # Initialize db with the schema:
-#   psql -d monad -f cmd/vm/mce/scripts/schema.sql
+#   psql -d "$DBNAME" -f cmd/vm/mce/scripts/schema.sql
 # Import the csv files:
-#   psql --db monad -c "\copy contracts            FROM '~/evm_contracts/results/csv/contracts.csv'            WITH (FORMAT CSV)"
-#   psql --db monad -c "\copy contract_addresses   FROM '~/evm_contracts/results/csv/contract_addresses.csv'   WITH (FORMAT CSV)"
-#   psql --db monad -c "\copy basic_blocks         FROM '~/evm_contracts/results/csv/basic_blocks.csv'         WITH (FORMAT CSV)"
-#   psql --db monad -c "\copy instructions         FROM '~/evm_contracts/results/csv/instructions.csv'         WITH (FORMAT CSV)"
-#   psql --db monad -c "\copy instruction_operands FROM '~/evm_contracts/results/csv/instruction_operands.csv' WITH (FORMAT CSV)"
-#   psql --db monad -c "\copy instruction_outputs  FROM '~/evm_contracts/results/csv/instruction_outputs.csv'  WITH (FORMAT CSV)"
+#   psql --db "$DBNAME" -c "\copy contracts            FROM '$CSV_DIR/contracts.csv'            WITH (FORMAT CSV)"
+#   psql --db "$DBNAME" -c "\copy basic_blocks         FROM '$CSV_DIR/basic_blocks.csv'         WITH (FORMAT CSV)"
+#   psql --db "$DBNAME" -c "\copy instructions         FROM '$CSV_DIR/instructions.csv'         WITH (FORMAT CSV)"
+#   psql --db "$DBNAME" -c "\copy instruction_operands FROM '$CSV_DIR/instruction_operands.csv' WITH (FORMAT CSV)"
+#   psql --db "$DBNAME" -c "\copy instruction_outputs  FROM '$CSV_DIR/instruction_outputs.csv'  WITH (FORMAT CSV)"
+# If address_directory was provided to to_csv.py:
+#   psql --db "$DBNAME" -c "\copy contract_addresses   FROM '$CSV_DIR/contract_addresses.csv'   WITH (FORMAT CSV)"
 # To drop all data and start fresh without recreating the database:
-#   psql --db monad -c "TRUNCATE contracts CASCADE"
-
+#   psql --db "$DBNAME" -c "TRUNCATE contracts CASCADE"
 import csv
 import glob
 import json

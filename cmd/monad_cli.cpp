@@ -801,7 +801,7 @@ int main(int argc, char *argv[])
     uint64_t total_shards = 1;
     uint64_t shard_number = 0;
 
-    CLI::App cli{"monad_cli"};
+    CLI::App cli{"monad-cli"};
     cli.add_option(
            "--db",
            dbname_paths,

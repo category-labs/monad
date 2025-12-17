@@ -35,9 +35,9 @@ monad_compile_options(monad)
 
 target_link_libraries(monad PRIVATE monad_execution CLI11::CLI11)
 
-add_executable(monad_cli monad_cli.cpp)
-monad_compile_options(monad_cli)
-target_link_libraries(monad_cli PUBLIC monad_execution CLI11::CLI11)
+add_executable(monad-cli monad_cli.cpp)
+monad_compile_options(monad-cli)
+target_link_libraries(monad-cli PUBLIC monad_execution CLI11::CLI11)
 
 if(DEFINED ENV{GIT_COMMIT_HASH})
   set(GIT_COMMIT_HASH $ENV{GIT_COMMIT_HASH})
@@ -50,7 +50,7 @@ else()
 endif()
 
 target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
-target_compile_definitions(monad_cli
+target_compile_definitions(monad-cli
                            PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 
 add_subdirectory(vm/parser)

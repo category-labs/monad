@@ -128,8 +128,9 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
         {
         }
 
-        virtual bool
-        down(unsigned char const branch_in_parent, Node const &node) override
+        virtual bool down(
+            unsigned char const branch_in_parent, Node const &node,
+            NibblesView const) override
         {
             ++level; // increment level counter
 
@@ -160,7 +161,8 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
         }
 
         virtual void
-        up(unsigned char const branch_in_parent, Node const &node) override
+        up(unsigned char const branch_in_parent, Node const &node,
+           NibblesView const) override
         {
             --level;
 

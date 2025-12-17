@@ -245,12 +245,14 @@ namespace
         {
         }
 
-        virtual bool down(unsigned char branch, Node const &node) override
+        virtual bool down(
+            unsigned char branch, Node const &node,
+            NibblesView const node_relpath) override
         {
             if (branch == INVALID_BRANCH) {
                 return true;
             }
-            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+            path = concat(NibblesView{path}, branch, node_relpath);
 
             if (node.has_value()) {
                 if (times != nullptr && (num_leaves & 4095) == 0) {
@@ -262,7 +264,9 @@ namespace
             return true;
         }
 
-        virtual void up(unsigned char branch, Node const &node) override
+        virtual void
+        up(unsigned char branch, Node const &,
+           NibblesView const node_relpath) override
         {
             auto const path_view = NibblesView{path};
             auto const rem_size = [&] {
@@ -270,12 +274,12 @@ namespace
                     MONAD_ASSERT(path_view.nibble_size() == 0);
                     return 0;
                 }
-                int const rem_size = path_view.nibble_size() - 1 -
-                                     node.path_nibble_view().nibble_size();
+                int const rem_size =
+                    path_view.nibble_size() - 1 - node_relpath.nibble_size();
                 MONAD_ASSERT(rem_size >= 0);
                 MONAD_ASSERT(
                     path_view.substr(static_cast<unsigned>(rem_size)) ==
-                    concat(branch, node.path_nibble_view()));
+                    concat(branch, node_relpath));
                 return rem_size;
             }();
             path = path_view.substr(0, static_cast<unsigned>(rem_size));
@@ -540,6 +544,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_access_multi_version)
 
 TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
 {
+    auto const num_blocks = db.get_history_length();
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
         new boost::fibers::promise<void>[num_blocks]};
 
@@ -567,9 +572,11 @@ TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
     for (unsigned b = 0; b < num_blocks; ++b) {
         pool.submit(0, [b = b, &db = ro_db, promises = promises] {
             for (unsigned i = 0; i < keys_per_block; ++i) {
+                ASSERT_TRUE(db.find({}, b).has_value());
                 auto kv_bytes = keccak_int_to_string(i);
                 auto const res = db.find(kv_bytes, b);
-                ASSERT_TRUE(res.has_value());
+                ASSERT_TRUE(res.has_value())
+                    << "block " << b << ", key i " << i;
                 EXPECT_EQ(res.value().node->value(), kv_bytes);
             }
             ASSERT_TRUE(
@@ -586,7 +593,7 @@ TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
     }
 }
 
-TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
+TEST_F(OnDiskDbWithFileAsyncFixture, async_rodb_single_thread)
 {
     auto const &kv = fixed_updates::kv;
 
@@ -887,12 +894,14 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
         {
         }
 
-        virtual bool down(unsigned char branch, Node const &node) override
+        virtual bool down(
+            unsigned char branch, Node const &,
+            NibblesView const node_relpath) override
         {
             if (branch == INVALID_BRANCH) {
                 return true;
             }
-            path = concat(NibblesView{path}, branch, node.path_nibble_view());
+            path = concat(NibblesView{path}, branch, node_relpath);
             if (path.nibble_size() == KECCAK256_SIZE * 2 &&
                 has_done_callback == false) {
                 upsert_callback();
@@ -902,7 +911,9 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
             return true;
         }
 
-        virtual void up(unsigned char branch, Node const &node) override
+        virtual void
+        up(unsigned char branch, Node const &,
+           NibblesView const node_relpath) override
         {
             auto const path_view = NibblesView{path};
             auto const rem_size = [&] {
@@ -910,12 +921,12 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
                     MONAD_ASSERT(path_view.nibble_size() == 0);
                     return 0;
                 }
-                int const rem_size = path_view.nibble_size() - 1 -
-                                     node.path_nibble_view().nibble_size();
+                int const rem_size =
+                    path_view.nibble_size() - 1 - node_relpath.nibble_size();
                 MONAD_ASSERT(rem_size >= 0);
                 MONAD_ASSERT(
                     path_view.substr(static_cast<unsigned>(rem_size)) ==
-                    concat(branch, node.path_nibble_view()));
+                    concat(branch, node_relpath));
                 return rem_size;
             }();
             path = path_view.substr(0, static_cast<unsigned>(rem_size));
@@ -1486,7 +1497,9 @@ TYPED_TEST(DbTraverseTest, traverse)
         {
         }
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool down(
+            unsigned char const branch, Node const &node,
+            NibblesView const node_relpath) override
         {
             if (node.has_value() && branch != INVALID_BRANCH) {
                 ++num_leaves;
@@ -1494,57 +1507,54 @@ TYPED_TEST(DbTraverseTest, traverse)
             if (branch == INVALID_BRANCH) {
                 // root is always a leaf
                 EXPECT_TRUE(node.has_value());
-                EXPECT_EQ(node.path_nibbles_len(), 0);
+                EXPECT_EQ(node_relpath.nibble_size(), 0);
                 EXPECT_GT(node.mask, 0);
             }
             else if (branch == 0) { // immediate node under root
                 EXPECT_EQ(node.mask, 0b10);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), monad::byte_string_view{});
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x0}));
+                EXPECT_GT(node_relpath.nibble_size(), 0);
+                EXPECT_EQ(node_relpath, make_nibbles({0x0}));
             }
             else if (branch == 1) {
                 EXPECT_EQ(node.number_of_children(), 2);
                 EXPECT_EQ(node.mask, 0b11000);
                 EXPECT_FALSE(node.has_value());
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x2}));
+                EXPECT_GT(node_relpath.nibble_size(), 0);
+                EXPECT_EQ(node_relpath, make_nibbles({0x2}));
             }
             else if (branch == 3) {
                 EXPECT_EQ(node.number_of_children(), 2);
                 EXPECT_EQ(node.mask, 0b1100000);
                 EXPECT_FALSE(node.has_value());
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(node.path_nibble_view(), make_nibbles({0x4}));
+                EXPECT_GT(node_relpath.nibble_size(), 0);
+                EXPECT_EQ(node_relpath, make_nibbles({0x4}));
             }
             else if (branch == 4) {
                 EXPECT_EQ(node.number_of_children(), 0);
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), 0xdeadbabe_bytes);
-                EXPECT_TRUE(node.has_path());
+                EXPECT_GT(node_relpath.nibble_size(), 0);
                 EXPECT_EQ(
-                    node.path_nibble_view(),
-                    make_nibbles({0x4, 0x5, 0x6, 0x7, 0x8}));
+                    node_relpath, make_nibbles({0x4, 0x5, 0x6, 0x7, 0x8}));
             }
             else if (branch == 5) {
                 EXPECT_EQ(node.number_of_children(), 0);
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), 0xcafebabe_bytes);
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(
-                    node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
+                EXPECT_GT(node_relpath.nibble_size(), 0);
+                EXPECT_EQ(node_relpath, make_nibbles({0x6, 0x7, 0x8}));
             }
             else if (branch == 6) {
                 EXPECT_EQ(node.number_of_children(), 0);
                 EXPECT_EQ(node.mask, 0);
                 EXPECT_TRUE(node.has_value());
                 EXPECT_EQ(node.value(), 0xdeadbeef_bytes);
-                EXPECT_TRUE(node.has_path());
-                EXPECT_EQ(
-                    node.path_nibble_view(), make_nibbles({0x6, 0x7, 0x8}));
+                EXPECT_GT(node_relpath.nibble_size(), 0);
+                EXPECT_EQ(node_relpath, make_nibbles({0x6, 0x7, 0x8}));
             }
             else {
                 MONAD_ASSERT(false);
@@ -1553,7 +1563,8 @@ TYPED_TEST(DbTraverseTest, traverse)
             return true;
         }
 
-        virtual void up(unsigned char const, Node const &) override
+        virtual void
+        up(unsigned char const, Node const &, NibblesView const) override
         {
             ++num_up;
         }
@@ -1606,9 +1617,11 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
         {
         }
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool down(
+            unsigned char const branch, Node const &node,
+            NibblesView const node_relpath) override
         {
-            if (node.path_nibbles_len() == 3 && branch == 5) {
+            if (node_relpath.nibble_size() == 3 && branch == 5) {
                 // trim one leaf
                 return false;
             }
@@ -1619,7 +1632,8 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
             return true;
         }
 
-        virtual void up(unsigned char const, Node const &) override
+        virtual void
+        up(unsigned char const, Node const &, NibblesView const) override
         {
             --curr_level;
         }

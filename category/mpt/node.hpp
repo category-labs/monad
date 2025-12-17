@@ -146,14 +146,15 @@ public:
     {
         /* does node have a value, value_len is not necessarily positive */
         bool has_value : 1 {false};
-        bool path_nibble_index_start : 1 {false};
+        bool terminating : 1 {false};
         /* size (in byte) of intermediate cache for branch hash */
         uint8_t data_len : 6 {0};
+        bool path_begin_nibble : 1 {false};
+        uint8_t path_end_nibble : 7 {0};
     } bitpacked{false};
 
-    static_assert(sizeof(bitpacked) == 1);
+    static_assert(sizeof(bitpacked) == 2);
 
-    uint8_t path_nibble_index_end{0};
     /* size (in byte) of user-passed leaf data */
     uint32_t value_len{0};
     /* A note on definition of node version:
@@ -177,7 +178,7 @@ public:
     * `data_offset` array: size-n array each stores a specific child data's
     starting offset
     * `path`: a few bytes for relative path, size depends on
-    path_nibble_index_start, path_nibble_index_end
+    bitpacked.path_begin_nibble, bitpacked.path_end_nibble
     * `value`: user-passed leaf data of value_len bytes
     * `data`: intermediate hash cached for a implicit branch node, which
     exists in leaf nodes that have child.
@@ -205,7 +206,7 @@ public:
     Node(
         prevent_public_construction_tag tag, uint16_t mask,
         std::optional<byte_string_view> value, size_t data_size,
-        NibblesView path, int64_t version);
+        NibblesView path, bool terminating, int64_t version);
 
     Node(Node const &) = delete;
     Node(Node &&) = default;
@@ -235,6 +236,8 @@ public:
     unsigned to_child_index(unsigned branch) const noexcept;
 
     unsigned number_of_children() const noexcept;
+
+    unsigned child_path_start_index() const noexcept;
 
     //! fnext array that stores physical chunk offset of each child
     chunk_offset_t const fnext(unsigned index) const noexcept;
@@ -270,13 +273,12 @@ public:
     unsigned child_data_len();
 
     //! path
+    bool terminating() const noexcept;
     unsigned char *path_data() noexcept;
     unsigned char const *path_data() const noexcept;
     unsigned path_nibbles_len() const noexcept;
-    bool has_path() const noexcept;
     unsigned path_bytes() const noexcept;
     NibblesView path_nibble_view() const noexcept;
-    unsigned path_start_nibble() const noexcept;
 
     //! value
     unsigned char *value_data() noexcept;
@@ -325,18 +327,36 @@ static_assert(std::is_standard_layout_v<Node>, "required by offsetof");
 static_assert(sizeof(Node) == 16);
 static_assert(alignof(Node) == 8);
 
-// ChildData is for temporarily holding a child's info, including child ptr,
-// file offset and hash data, in the update recursion.
-struct ChildData
+struct ChildSubtrieInfo
 {
-    Node::SharedPtr ptr{nullptr};
-    chunk_offset_t offset{INVALID_OFFSET}; // physical offsets
-    unsigned char data[32] = {0};
-    int64_t subtrie_min_version{std::numeric_limits<int64_t>::max()};
+    chunk_offset_t offset{INVALID_OFFSET};
     compact_virtual_chunk_offset_t min_offset_fast{
         INVALID_COMPACT_VIRTUAL_OFFSET};
     compact_virtual_chunk_offset_t min_offset_slow{
         INVALID_COMPACT_VIRTUAL_OFFSET};
+    int64_t min_version{std::numeric_limits<int64_t>::max()};
+
+    ChildSubtrieInfo() = default;
+
+    ChildSubtrieInfo(Node &parent, unsigned const child_index)
+        : offset{parent.fnext(child_index)}
+        , min_offset_fast(parent.min_offset_fast(child_index))
+        , min_offset_slow(parent.min_offset_slow(child_index))
+        , min_version(parent.subtrie_min_version(child_index))
+    {
+    }
+};
+
+static_assert(sizeof(ChildSubtrieInfo) == 24);
+static_assert(alignof(ChildSubtrieInfo) == 8);
+
+// ChildData is for temporarily holding a child's info, including child ptr,
+// file offset and hash data, in the update recursion.
+struct ChildData // TODO: rename to PendingChild
+{
+    Node::SharedPtr ptr{nullptr};
+    unsigned char data[32] = {0};
+    ChildSubtrieInfo subtrie{};
 
     uint8_t branch{INVALID_BRANCH};
     uint8_t len{0};
@@ -344,8 +364,12 @@ struct ChildData
 
     bool is_valid() const;
     void erase();
-    void finalize(Node::SharedPtr, Compute &, bool cache);
-    void copy_old_child(Node *old, unsigned i);
+    void finalize(
+        Node::SharedPtr, unsigned relpath_start_index, Compute &, bool cache);
+    void copy_old_child(Node *old, unsigned child_branch);
+    void recompute_data_with_truncated_path(
+        unsigned old_child_branch, Node::SharedPtr old_node, ChildSubtrieInfo,
+        unsigned new_path_start_index, Compute &, bool cache);
 };
 
 static_assert(sizeof(ChildData) == 80);
@@ -378,21 +402,22 @@ constexpr size_t MAX_VALUE_LEN_OF_LEAF =
         KECCAK256_SIZE /* path_size */, KECCAK256_SIZE /* data_size*/);
 
 Node::SharedPtr make_node(
-    Node &from, NibblesView path, std::optional<byte_string_view> value,
-    int64_t version);
+    Node &from, NibblesView fullpath, bool terminating,
+    std::optional<byte_string_view> value, int64_t version);
 
 Node::SharedPtr make_node(
-    uint16_t mask, std::span<ChildData>, NibblesView path,
+    uint16_t mask, std::span<ChildData>, NibblesView fullpath, bool terminating,
     std::optional<byte_string_view> value, size_t data_size, int64_t version);
 
 Node::SharedPtr make_node(
-    uint16_t mask, std::span<ChildData>, NibblesView path,
+    uint16_t mask, std::span<ChildData>, NibblesView fullpath, bool terminating,
     std::optional<byte_string_view> value, byte_string_view data,
     int64_t version);
 
 // create node: either branch/extension, with or without leaf
 Node::SharedPtr create_node_with_children(
-    Compute &, uint16_t mask, std::span<ChildData> children, NibblesView path,
+    Compute &, uint16_t mask, std::span<ChildData> children,
+    NibblesView fullpath, bool terminating, NibblesView relpath,
     std::optional<byte_string_view> value, int64_t version);
 
 void serialize_node_to_buffer(

@@ -218,7 +218,9 @@ bool statesync_server_handle_request(
         {
         }
 
-        virtual bool down(unsigned char const branch, Node const &node) override
+        virtual bool down(
+            unsigned char const branch, Node const &node,
+            NibblesView const node_relpath) override
         {
             if (branch == INVALID_BRANCH) {
                 MONAD_ASSERT(depth == 0);
@@ -232,13 +234,12 @@ bool statesync_server_handle_request(
             MONAD_ASSERT(nibble == STATE_NIBBLE || nibble == CODE_NIBBLE);
             MONAD_ASSERT(
                 depth >= prefix.nibble_size() || prefix.get(depth) == branch);
-            auto const ext = node.path_nibble_view();
             for (auto i = depth + 1; i < prefix.nibble_size(); ++i) {
                 auto const j = i - (depth + 1);
-                if (j >= ext.nibble_size()) {
+                if (j >= node_relpath.nibble_size()) {
                     break;
                 }
-                if (ext.get(j) != prefix.get(i)) {
+                if (node_relpath.get(j) != prefix.get(i)) {
                     return false;
                 }
             }
@@ -249,7 +250,7 @@ bool statesync_server_handle_request(
                 return false;
             }
 
-            depth += 1 + ext.nibble_size();
+            depth += 1 + node_relpath.nibble_size();
 
             constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
             bool const account = depth == HASH_SIZE && nibble == STATE_NIBBLE;
@@ -295,13 +296,15 @@ bool statesync_server_handle_request(
             return true;
         }
 
-        virtual void up(unsigned char const, Node const &node) override
+        virtual void
+        up(unsigned char const, Node const &,
+           NibblesView const node_relpath) override
         {
             if (depth == 0) {
                 nibble = INVALID_BRANCH;
                 return;
             }
-            unsigned const subtrahend = 1 + node.path_nibbles_len();
+            unsigned const subtrahend = 1 + node_relpath.nibble_size();
             MONAD_ASSERT(depth >= subtrahend);
             depth -= subtrahend;
         }

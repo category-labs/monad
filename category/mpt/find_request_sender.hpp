@@ -48,7 +48,8 @@ struct inflight_node_hasher
 // as well.
 using AsyncInflightNodes = ankerl::unordered_dense::segmented_map<
     std::pair<virtual_chunk_offset_t, Node *>,
-    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor)>>,
+    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
+        std::shared_ptr<Node>)>>,
     inflight_node_hasher>;
 
 template <class T>
@@ -196,7 +197,7 @@ struct find_request_sender<T>::find_receiver
             auto const pendings = std::move(it->second);
             sender->inflights_.erase(it);
             for (auto const &invoc : pendings) {
-                MONAD_ASSERT(invoc(NodeCursor{sp}));
+                MONAD_ASSERT(invoc(sp));
             }
         }
     }
@@ -244,6 +245,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             return success();
         }
         MONAD_ASSERT(prefix_index < key_.nibble_size());
+        MONAD_ASSERT(node_prefix_index == node->path_nibbles_len());
         if (unsigned char const branch = key_.get(prefix_index);
             node->mask & (1u << branch)) {
             MONAD_DEBUG_ASSERT(
@@ -262,7 +264,8 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             }
             if (node_cache_.find(acc, virt_offset)) {
                 // found in LRU - no IO necessary
-                root_ = {acc->second->val.first};
+                root_ = {
+                    acc->second->val.first, node->child_path_start_index()};
                 MONAD_ASSERT(root_.is_valid());
                 continue;
             }
@@ -274,8 +277,15 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
                 }
                 tid_checked_ = true;
             }
-            auto cont = [this, io_state](NodeCursor root) -> result<void> {
-                return this->resume_(io_state, root);
+            // `node_prefix_index` must be captured here to because the same
+            // node in inflights can be used in continuations for different
+            // versions where the starting prefix index can be different
+            auto cont = [this,
+                         io_state,
+                         node_prefix_index = node->child_path_start_index()](
+                            std::shared_ptr<Node> node) -> result<void> {
+                return this->resume_(
+                    io_state, NodeCursor{node, node_prefix_index});
             };
             auto const offset_node = std::pair(virt_offset, node);
             if (auto lt = inflights_.find(offset_node);

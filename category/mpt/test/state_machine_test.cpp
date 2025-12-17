@@ -78,10 +78,12 @@ namespace
 
         virtual void up(size_t n) override
         {
-            EXPECT_LE(n, path.size());
-            // can invoke up() at same path for multiple times with async
-            up_calls.emplace(path, n);
-            path = path.substr(0, path.size() - n);
+            if (n > 0) {
+                EXPECT_LE(n, path.size());
+                // can invoke up() at same path for multiple times with async
+                up_calls.emplace(path, n);
+                path = path.substr(0, path.size() - n);
+            }
         }
 
         virtual Compute &get_compute() const override

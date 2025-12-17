@@ -599,14 +599,16 @@ void do_node_stats(DbStateMachine &sm)
 
         Traverse(Traverse const &other) = default;
 
-        virtual bool down(unsigned char const, Node const &node) override
+        virtual bool
+        down(unsigned char const, Node const &node, NibblesView const) override
         {
             had_values_.push_back(node.has_value());
             ++metadata_[had_values_];
             return true;
         }
 
-        virtual void up(unsigned char const, Node const &) override
+        virtual void
+        up(unsigned char const, Node const &, NibblesView const) override
         {
             had_values_.pop_back();
         }

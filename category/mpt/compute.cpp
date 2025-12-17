@@ -37,7 +37,7 @@ unsigned encode_two_pieces(
 {
     constexpr size_t max_compact_encode_size = KECCAK256_SIZE + 1;
 
-    MONAD_DEBUG_ASSERT(path.data_size() <= KECCAK256_SIZE);
+    MONAD_DEBUG_ASSERT(path.nibble_size() <= KECCAK256_SIZE * 2);
 
     unsigned char path_arr[max_compact_encode_size];
     auto const first = compact_encode(path_arr, path, has_value);

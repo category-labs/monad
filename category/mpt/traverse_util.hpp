@@ -62,14 +62,15 @@ public:
     {
     }
 
-    virtual bool down(unsigned char const branch, Node const &node) override
+    virtual bool down(
+        unsigned char const branch, Node const &node,
+        NibblesView const node_relpath) override
     {
         if (MONAD_UNLIKELY(branch == INVALID_BRANCH)) {
             return true;
         }
 
-        auto next_path =
-            concat(NibblesView{path_}, branch, node.path_nibble_view());
+        auto next_path = concat(NibblesView{path_}, branch, node_relpath);
         if (!does_key_intersect_with_range(next_path)) {
             return false;
         }
@@ -82,7 +83,9 @@ public:
         return true;
     }
 
-    void up(unsigned char const branch, Node const &node) override
+    void
+    up(unsigned char const branch, Node const &,
+       NibblesView const node_relpath) override
     {
         auto const path_view = NibblesView{path_};
         unsigned const rem_size = [&] {
@@ -91,7 +94,7 @@ public:
             }
             constexpr unsigned BRANCH_SIZE = 1;
             return path_view.nibble_size() - BRANCH_SIZE -
-                   node.path_nibble_view().nibble_size();
+                   node_relpath.nibble_size();
         }();
         path_ = path_view.substr(0, rem_size);
     }
@@ -122,27 +125,31 @@ public:
 
     GetAllMachine(GetAllMachine const &other) = default;
 
-    virtual bool down(unsigned char const branch, Node const &node) override
+    virtual bool down(
+        unsigned char const branch, Node const &node,
+        NibblesView const node_relpath) override
     {
         if (MONAD_UNLIKELY(branch == INVALID_BRANCH)) {
             MONAD_ASSERT(path_.nibble_size() == 0);
             return true;
         }
 
-        path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
+        path_ = concat(NibblesView{path_}, branch, node_relpath);
         if (node.has_value()) {
             callback_(path_, node.value());
         }
         return true;
     }
 
-    virtual void up(unsigned char const branch, Node const &node) override
+    virtual void
+    up(unsigned char const branch, Node const &,
+       NibblesView const node_relpath) override
     {
         auto const path_view = NibblesView{path_};
         unsigned const prefix_size =
             branch == INVALID_BRANCH
                 ? 0
-                : path_view.nibble_size() - node.path_nibbles_len() - 1;
+                : path_view.nibble_size() - node_relpath.nibble_size() - 1;
         path_ = path_view.substr(0, prefix_size);
     }
 

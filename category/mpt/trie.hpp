@@ -1094,14 +1094,15 @@ using find_owning_cursor_result_type = find_result_type<NodeCursor>;
 
 using inflight_map_t = ankerl::unordered_dense::segmented_map<
     chunk_offset_t,
-    std::vector<
-        std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor const &)>>,
+    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
+        std::shared_ptr<Node>)>>,
     chunk_offset_t_hasher>;
 
+// TODO: rename
 using inflight_map_owning_t = ankerl::unordered_dense::segmented_map<
     virtual_chunk_offset_t,
-    std::vector<
-        std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor const &)>>,
+    std::vector<std::function<MONAD_ASYNC_NAMESPACE::result<void>(
+        std::shared_ptr<Node>)>>,
     virtual_chunk_offset_t_hasher>;
 
 // The request type to put to the fiber buffered channel for triedb thread

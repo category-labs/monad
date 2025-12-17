@@ -40,8 +40,10 @@ struct TraverseMachine
     virtual ~TraverseMachine() = default;
     // Implement the logic to decide when to stop, return true for continue,
     // false for stop
-    virtual bool down(unsigned char branch, Node const &) = 0;
-    virtual void up(unsigned char branch, Node const &) = 0;
+    virtual bool
+    down(unsigned char branch, Node const &, NibblesView node_relpath) = 0;
+    virtual void
+    up(unsigned char branch, Node const &, NibblesView node_relpath) = 0;
     virtual std::unique_ptr<TraverseMachine> clone() const = 0;
 
     virtual bool should_visit(Node const &, unsigned char)
@@ -62,15 +64,17 @@ namespace detail
     void async_parallel_preorder_traverse_impl(
         TraverseSender &sender,
         async::erased_connected_operation *traverse_state, Node const &node,
-        TraverseMachine &machine, unsigned char const branch);
+        NibblesView node_relpath, TraverseMachine &machine,
+        unsigned char const branch);
 
     // current implementation does not contaminate triedb node caching
     inline bool preorder_traverse_blocking_impl(
         UpdateAuxImpl &aux, unsigned char const branch, Node const &node,
-        TraverseMachine &traverse, uint64_t const version)
+        NibblesView const node_relpath, TraverseMachine &traverse,
+        uint64_t const version)
     {
         ++traverse.level;
-        if (!traverse.down(branch, node)) {
+        if (!traverse.down(branch, node, node_relpath)) {
             --traverse.level;
             return true;
         }
@@ -79,9 +83,15 @@ namespace detail
                 if (Node::SharedPtr const &next = node.next(idx);
                     next != nullptr) {
                     if (!preorder_traverse_blocking_impl(
-                            aux, next_branch, *next, traverse, version)) {
+                            aux,
+                            next_branch,
+                            *next,
+                            next->path_nibble_view().substr(
+                                node.child_path_start_index()),
+                            traverse,
+                            version)) {
                         --traverse.level;
-                        traverse.up(branch, node);
+                        traverse.up(branch, node, node_relpath);
                         return false;
                     }
                     continue;
@@ -89,20 +99,23 @@ namespace detail
                 MONAD_ASSERT(aux.is_on_disk());
                 auto const next_node_ondisk =
                     read_node_blocking(aux, node.fnext(idx), version);
-                if (!next_node_ondisk || !preorder_traverse_blocking_impl(
-                                             aux,
-                                             next_branch,
-                                             *next_node_ondisk,
-                                             traverse,
-                                             version)) {
+                if (!next_node_ondisk ||
+                    !preorder_traverse_blocking_impl(
+                        aux,
+                        next_branch,
+                        *next_node_ondisk,
+                        next_node_ondisk->path_nibble_view().substr(
+                            node.child_path_start_index()),
+                        traverse,
+                        version)) {
                     --traverse.level;
-                    traverse.up(branch, node);
+                    traverse.up(branch, node, node_relpath);
                     return false;
                 }
             }
         }
         --traverse.level;
-        traverse.up(branch, node);
+        traverse.up(branch, node, node_relpath);
         return true;
     }
 
@@ -130,19 +143,22 @@ namespace detail
             async::erased_connected_operation *const traverse_state;
             std::unique_ptr<TraverseMachine> machine;
             chunk_offset_t rd_offset{0, 0};
-            unsigned bytes_to_read;
             uint16_t buffer_off;
             unsigned char const branch;
+            unsigned bytes_to_read;
+            unsigned next_relpath_start_index;
 
             receiver_t(
                 TraverseSender *sender,
                 async::erased_connected_operation *const traverse_state,
                 unsigned char const branch, chunk_offset_t const offset,
+                unsigned const next_relpath_start_index,
                 std::unique_ptr<TraverseMachine> machine)
                 : sender(sender)
                 , traverse_state(traverse_state)
                 , machine(std::move(machine))
                 , branch(branch)
+                , next_relpath_start_index(next_relpath_start_index)
             {
                 auto const num_pages_to_load_node =
                     node_disk_pages_spare_15{offset}.to_pages();
@@ -181,6 +197,8 @@ namespace detail
                         *sender,
                         traverse_state,
                         *next_node_on_disk,
+                        next_node_on_disk->path_nibble_view().substr(
+                            next_relpath_start_index),
                         *machine,
                         branch);
                     sender->within_recursion_count--;
@@ -197,7 +215,7 @@ namespace detail
             }
         };
 
-        static_assert(sizeof(receiver_t) == 40);
+        static_assert(sizeof(receiver_t) == 48);
         static_assert(alignof(receiver_t) == 8);
 
         using result_type = async::result<bool>;
@@ -277,7 +295,7 @@ namespace detail
     {
         sender.within_recursion_count++;
         async_parallel_preorder_traverse_impl(
-            sender, traverse_state, node, *sender.machine, INVALID_BRANCH);
+            sender, traverse_state, node, {}, *sender.machine, INVALID_BRANCH);
         sender.within_recursion_count--;
         MONAD_ASSERT(sender.within_recursion_count == 0);
 
@@ -291,7 +309,8 @@ namespace detail
     inline void async_parallel_preorder_traverse_impl(
         TraverseSender &sender,
         async::erased_connected_operation *traverse_state, Node const &node,
-        TraverseMachine &machine, unsigned char const branch)
+        NibblesView const node_relpath, TraverseMachine &machine,
+        unsigned char const branch)
     {
         // How many children are considered left side for depth first preference
         // Two and four was benchmarked as slightly worse than three, so three
@@ -303,7 +322,7 @@ namespace detail
         // arbitrary and means nothing.
         MONAD_ASSERT(machine.level < 256);
         ++machine.level;
-        if (!machine.down(branch, node)) {
+        if (!machine.down(branch, node, node_relpath)) {
             --machine.level;
             return;
         }
@@ -327,6 +346,7 @@ namespace detail
                         traverse_state,
                         branch,
                         node.fnext(idx),
+                        node.child_path_start_index(),
                         machine.clone());
                     unsigned const this_child_read = children_read++;
                     if (sender.outstanding_reads >=
@@ -360,7 +380,13 @@ namespace detail
                 }
                 else {
                     async_parallel_preorder_traverse_impl(
-                        sender, traverse_state, *next, machine, branch);
+                        sender,
+                        traverse_state,
+                        *next,
+                        next->path_nibble_view().substr(
+                            node.child_path_start_index()),
+                        machine,
+                        branch);
                     if (sender.version_expired_before_complete) {
                         return;
                     }
@@ -368,7 +394,7 @@ namespace detail
             }
         }
         --machine.level;
-        machine.up(branch, node);
+        machine.up(branch, node, node_relpath);
     }
 }
 
@@ -378,7 +404,7 @@ inline bool preorder_traverse_blocking(
     uint64_t const version)
 {
     auto const ret = detail::preorder_traverse_blocking_impl(
-        aux, INVALID_BRANCH, node, traverse, version);
+        aux, INVALID_BRANCH, node, {}, traverse, version);
     MONAD_ASSERT(traverse.level == 0);
     return ret;
 }

@@ -234,8 +234,9 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
     {
     }
 
-    virtual bool
-    down(unsigned char const branch, monad::mpt::Node const &node) override
+    virtual bool down(
+        unsigned char const branch, monad::mpt::Node const &node,
+        monad::mpt::NibblesView const node_relpath) override
     {
         using namespace monad;
         using namespace monad::mpt;
@@ -251,7 +252,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         }
         MONAD_ASSERT(nibble == STATE_NIBBLE || nibble == CODE_NIBBLE);
 
-        path.append(branch, node.path_nibble_view());
+        path.append(branch, node_relpath);
 
         // Path not long enough to determine shard yet, continue traversing
         if (path.length() < MONAD_SNAPSHOT_SHARD_NIBBLES) {
@@ -314,14 +315,17 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         return true;
     }
 
-    virtual void up(unsigned char const, monad::mpt::Node const &node) override
+    virtual void
+    up(unsigned char const, monad::mpt::Node const &,
+       monad::mpt::NibblesView const node_relpath) override
     {
         if (path.length() == 0) {
             nibble = monad::mpt::INVALID_BRANCH;
             return;
         }
-        // Remove branch nibble + node path nibbles that were added in down()
-        path.pop(static_cast<uint8_t>(1 + node.path_nibbles_len()));
+        // Remove branch nibble + node relative path nibbles that were added in
+        // down()
+        path.pop(static_cast<uint8_t>(1 + node_relpath.nibble_size()));
     }
 
     virtual std::unique_ptr<TraverseMachine> clone() const override

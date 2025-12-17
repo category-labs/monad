@@ -45,6 +45,7 @@ static constexpr uint8_t INVALID_BRANCH = 255;
 static constexpr uint8_t INVALID_PATH_INDEX = 255;
 static constexpr uint64_t INVALID_BLOCK_NUM = uint64_t(-1);
 static constexpr uint64_t MIN_HISTORY_LENGTH = 257;
+static constexpr uint8_t MAX_PATH_NIBBLES = (1 << 7) - 1; // 127 nibbles
 
 static byte_string const empty_trie_hash = [] {
     using namespace ::monad::literals;

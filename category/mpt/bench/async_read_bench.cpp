@@ -185,13 +185,15 @@ int main(int argc, char *const argv[])
 
             std::vector<Nibbles> &keys;
 
-            virtual bool down(unsigned char branch, Node const &node) override
+            virtual bool down(
+                unsigned char branch, Node const &node,
+                NibblesView const node_relpath) override
             {
                 if (branch != INVALID_BRANCH) {
                     if (path_.empty() && branch != 0x1) {
                         return false;
                     }
-                    path_ = concat(path_, branch, node.path_nibble_view());
+                    path_ = concat(path_, branch, node_relpath);
                 }
 
                 if (branch != INVALID_BRANCH && node.has_value()) {
@@ -201,7 +203,8 @@ int main(int argc, char *const argv[])
             }
 
             virtual void
-            up(unsigned char /*branch*/, Node const & /*node*/) override
+            up(unsigned char /*branch*/, Node const & /*node*/,
+               NibblesView const) override
             {
             }
 
@@ -412,14 +415,14 @@ int main(int argc, char *const argv[])
                 {
                 }
 
-                virtual bool
-                down(unsigned char branch, Node const &node) override
+                virtual bool down(
+                    unsigned char branch, Node const &node,
+                    NibblesView const node_relpath) override
                 {
                     if (branch == INVALID_BRANCH) {
                         return true;
                     }
-                    path = concat(
-                        NibblesView{path}, branch, node.path_nibble_view());
+                    path = concat(NibblesView{path}, branch, node_relpath);
 
                     if (node.has_value()) {
                         MONAD_ASSERT(path.nibble_size() == KECCAK256_SIZE * 2);
@@ -438,7 +441,9 @@ int main(int argc, char *const argv[])
                     return !g_done;
                 }
 
-                virtual void up(unsigned char branch, Node const &node) override
+                virtual void
+                up(unsigned char branch, Node const &,
+                   NibblesView const node_relpath) override
                 {
                     auto const path_view = NibblesView{path};
                     auto const rem_size = [&] {
@@ -446,13 +451,12 @@ int main(int argc, char *const argv[])
                             MONAD_ASSERT(path_view.nibble_size() == 0);
                             return 0;
                         }
-                        int const rem_size =
-                            path_view.nibble_size() - 1 -
-                            node.path_nibble_view().nibble_size();
+                        int const rem_size = path_view.nibble_size() - 1 -
+                                             node_relpath.nibble_size();
                         MONAD_ASSERT(rem_size >= 0);
                         MONAD_ASSERT(
                             path_view.substr(static_cast<unsigned>(rem_size)) ==
-                            concat(branch, node.path_nibble_view()));
+                            concat(branch, node_relpath));
                         return rem_size;
                     }();
                     path = path_view.substr(0, static_cast<unsigned>(rem_size));

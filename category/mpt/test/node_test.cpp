@@ -52,7 +52,8 @@ struct DummyCompute final : Compute
         return 0;
     }
 
-    virtual unsigned compute(unsigned char *buffer, Node *) override
+    virtual unsigned
+    compute(unsigned char *buffer, Node *, NibblesView) override
     {
         buffer[0] = 0xa;
         return 1;
@@ -65,7 +66,7 @@ auto const path = 0xabcdabcdabcdabcd_bytes;
 TEST(NodeTest, leaf)
 {
     NibblesView const path1{1, 10, path.data()};
-    Node::SharedPtr node{make_node(0, {}, path1, value, {}, 0)};
+    Node::SharedPtr node{make_node(0, {}, path1, true, value, {}, 0)};
 
     EXPECT_EQ(node->mask, 0);
     EXPECT_EQ(node->value(), value);
@@ -83,11 +84,11 @@ TEST(NodeTest, leaf_single_branch)
     children[0].len = 1;
     children[0].data[0] = 0xa;
     children[0].branch = 0xc;
-    children[0].ptr = make_node(0, {}, path1, value, {}, 0);
+    children[0].ptr = make_node(0, {}, path1, true, value, {}, 0);
     NibblesView const path2{1, 10, path.data()};
     uint16_t const mask = 1u << 0xc;
-    Node::SharedPtr node{
-        create_node_with_children(comp, mask, children, path2, value, 0)};
+    Node::SharedPtr node{create_node_with_children(
+        comp, mask, children, path2, true, path2, value, 0)};
 
     EXPECT_EQ(node->value(), value);
     EXPECT_EQ(node->path_nibble_view(), path2);
@@ -106,13 +107,13 @@ TEST(NodeTest, leaf_multiple_branches)
     children[1].data[0] = 0xa;
     children[0].branch = 0xa;
     children[1].branch = 0xc;
-    children[0].ptr = make_node(0, {}, path1, value, {}, 0);
-    children[1].ptr = make_node(0, {}, path1, value, {}, 0);
+    children[0].ptr = make_node(0, {}, path1, true, value, {}, 0);
+    children[1].ptr = make_node(0, {}, path1, true, value, {}, 0);
 
     NibblesView const path2{1, 10, path.data()};
     uint16_t const mask = (1u << 0xa) | (1u << 0xc);
-    Node::SharedPtr node{
-        create_node_with_children(comp, mask, children, path2, value, 0)};
+    Node::SharedPtr node{create_node_with_children(
+        comp, mask, children, path2, true, path2, value, 0)};
 
     EXPECT_EQ(node->value(), value);
     EXPECT_EQ(node->path_nibble_view(), path2);
@@ -131,13 +132,13 @@ TEST(NodeTest, branch_node)
     children[1].data[0] = 0xa;
     children[0].branch = 0xa;
     children[1].branch = 0xc;
-    children[0].ptr = make_node(0, {}, path1, value, {}, 0);
-    children[1].ptr = make_node(0, {}, path1, value, {}, 0);
+    children[0].ptr = make_node(0, {}, path1, true, value, {}, 0);
+    children[1].ptr = make_node(0, {}, path1, true, value, {}, 0);
 
     NibblesView const path2{1, 1, path.data()}; // path2 is empty
     uint16_t const mask = (1u << 0xa) | (1u << 0xc);
     Node::SharedPtr node{create_node_with_children(
-        comp, mask, children, path2, std::nullopt, 0)};
+        comp, mask, children, path2, true, path2, std::nullopt, 0)};
 
     EXPECT_EQ(node->value_len, 0);
     EXPECT_EQ(node->bitpacked.data_len, 0);
@@ -156,13 +157,13 @@ TEST(NodeTest, extension_node)
     children[1].data[0] = 0xa;
     children[0].branch = 0xa;
     children[1].branch = 0xc;
-    children[0].ptr = make_node(0, {}, path1, value, {}, 0);
-    children[1].ptr = make_node(0, {}, path1, value, {}, 0);
+    children[0].ptr = make_node(0, {}, path1, true, value, {}, 0);
+    children[1].ptr = make_node(0, {}, path1, true, value, {}, 0);
 
     NibblesView const path2{1, 10, path.data()};
     uint16_t const mask = (1u << 0xa) | (1u << 0xc);
     Node::SharedPtr node{create_node_with_children(
-        comp, mask, children, path2, std::nullopt, 0)};
+        comp, mask, children, path2, true, path2, std::nullopt, 0)};
 
     EXPECT_EQ(node->value_len, 0);
     EXPECT_EQ(node->path_nibble_view(), path2);
@@ -176,7 +177,7 @@ TEST(NodeTest, super_large_node)
     DummyCompute const comp{};
     size_t const value_len = 255 * 1024 * 1024;
     monad::byte_string value(value_len, 0);
-    Node::SharedPtr node{make_node(0, {}, {}, value, {}, 0)};
+    Node::SharedPtr node{make_node(0, {}, {}, true, value, {}, 0)};
     EXPECT_EQ(node->value_len, value_len);
     EXPECT_EQ(node->bitpacked.data_len, 0);
     EXPECT_EQ(node->get_mem_size(), value_len + sizeof(Node));

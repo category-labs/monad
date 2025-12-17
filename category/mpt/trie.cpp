@@ -60,12 +60,13 @@ using namespace MONAD_ASYNC_NAMESPACE;
 void dispatch_updates_impl_(
     UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
     Node::SharedPtr old, Requests &, unsigned prefix_index, NibblesView path,
+    bool terminating, unsigned relpath_start_index,
     std::optional<byte_string_view> opt_leaf_data, int64_t version);
 
 void mismatch_handler_(
     UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
-    Node::SharedPtr old, Requests &, NibblesView path,
-    unsigned old_prefix_index, unsigned prefix_index);
+    Node::SharedPtr old, ChildSubtrieInfo, Requests &, NibblesView path,
+    unsigned relpath_start_index, unsigned prefix_index);
 
 void create_new_trie_(
     UpdateAuxImpl &aux, StateMachine &sm, int64_t &parent_version,
@@ -73,13 +74,14 @@ void create_new_trie_(
 
 void create_new_trie_from_requests_(
     UpdateAuxImpl &, StateMachine &, int64_t &parent_version, ChildData &,
-    Requests &, NibblesView path, unsigned prefix_index,
+    Requests &, NibblesView path, bool terminating,
+    unsigned relpath_start_index, unsigned prefix_index,
     std::optional<byte_string_view> opt_leaf_data, int64_t version);
 
 void upsert_(
     UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
-    Node::SharedPtr old, chunk_offset_t offset, UpdateList &&,
-    unsigned prefix_index = 0, unsigned old_prefix_index = 0);
+    Node::SharedPtr old, ChildSubtrieInfo, UpdateList &&,
+    unsigned prefix_index = 0);
 
 void create_node_compute_data_possibly_async(
     UpdateAuxImpl &, StateMachine &, UpdateTNode &parent, ChildData &,
@@ -142,18 +144,22 @@ Node::SharedPtr upsert(
                     requests,
                     old_path_nibbles_len,
                     old_path,
+                    old_node.terminating(),
+                    0,
                     old_node.opt_value(),
                     old_node.version);
                 sm.up(old_path_nibbles_len);
             }
             else {
+                ChildSubtrieInfo old_subtrie_info;
+                old_subtrie_info.min_version = calc_min_version(*old);
                 upsert_(
                     aux,
                     sm,
                     *sentinel,
                     entry,
                     std::move(old),
-                    INVALID_OFFSET,
+                    old_subtrie_info,
                     std::move(updates));
             }
             if (sentinel->npending) {
@@ -240,7 +246,10 @@ struct load_all_impl_
                         std::move(buffer_), buffer_off, io_state));
                 impl->nodes_loaded++;
             }
-            impl->process(NodeCursor{root.node->next(branch_index)}, *sm);
+            auto const next_prefix_index = root.node->child_path_start_index();
+            Node::SharedPtr next_node = root.node->next(branch_index);
+            MONAD_ASSERT(next_prefix_index <= next_node->path_nibbles_len());
+            impl->process(NodeCursor{next_node, next_prefix_index}, *sm);
         }
     };
 
@@ -267,7 +276,10 @@ struct load_all_impl_
                     async_read(aux, std::move(receiver));
                 }
                 else {
-                    process(NodeCursor{std::move(next)}, sm);
+                    auto const next_prefix_index =
+                        node->child_path_start_index();
+                    MONAD_ASSERT(next_prefix_index <= next->path_nibbles_len());
+                    process(NodeCursor{std::move(next), next_prefix_index}, sm);
                 }
             }
             sm.up(1 + nv.nibble_size());
@@ -296,8 +308,7 @@ void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode *tnode)
         auto *parent = tnode->parent;
         auto &entry = parent->children[tnode->child_index()];
         // put created node and compute to entry in parent
-        size_t const level_up =
-            tnode->path.nibble_size() + !parent->is_sentinel();
+        size_t const level_up = tnode->relpath_size() + !parent->is_sentinel();
         create_node_compute_data_possibly_async(
             aux, sm, *parent, entry, tnode_unique_ptr{tnode});
         sm.up(level_up);
@@ -361,56 +372,37 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
         auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
         auto const child_index = orig->to_child_index(child_branch);
         auto single_child = orig->move_next(child_index);
-        if (!single_child) {
-            node_receiver_t recv{
-                [aux = &aux,
-                 sm = sm.clone(),
-                 tnode = std::move(tnode),
-                 child_branch](Node::SharedPtr read_node) mutable {
-                    auto new_node = make_node(
-                        *read_node,
-                        concat(
-                            tnode->node->path_nibble_view(),
-                            child_branch,
-                            read_node->path_nibble_view()),
-                        read_node->opt_value(),
-                        read_node->version);
-                    fillin_parent_after_expiration(
-                        *aux,
-                        std::move(new_node),
-                        tnode->parent,
-                        tnode->index,
-                        tnode->branch,
-                        tnode->cache_node);
-                    // upward update
-                    auto *parent = tnode->parent;
-                    while (!parent->npending) {
-                        if (parent->type == tnode_type::update) {
-                            upward_update(*aux, *sm, (UpdateTNode *)parent);
-                            return;
-                        }
-                        auto *next_parent = parent->parent;
-                        MONAD_ASSERT(next_parent);
-                        try_fillin_parent_after_expiration(
-                            *aux, *sm, ExpireTNode::unique_ptr_type{parent});
-                        // go one level up
-                        parent = next_parent;
-                    }
-                },
-                orig->fnext(child_index)};
-            async_read(aux, std::move(recv));
-            return {false, nullptr};
+        if (single_child) {
+            return {true, std::move(single_child)};
         }
-        return {
-            true,
-            make_node(
-                *single_child,
-                concat(
-                    orig->path_nibble_view(),
-                    child_branch,
-                    single_child->path_nibble_view()),
-                single_child->opt_value(),
-                single_child->version)};
+        node_receiver_t recv{
+            [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
+                Node::SharedPtr read_node) mutable {
+                fillin_parent_after_expiration(
+                    *aux,
+                    std::move(read_node),
+                    tnode->parent,
+                    tnode->index,
+                    tnode->branch,
+                    tnode->cache_node);
+                // upward update
+                auto *parent = tnode->parent;
+                while (!parent->npending) {
+                    if (parent->type == tnode_type::update) {
+                        upward_update(*aux, *sm, (UpdateTNode *)parent);
+                        return;
+                    }
+                    auto *next_parent = parent->parent;
+                    MONAD_ASSERT(next_parent);
+                    try_fillin_parent_after_expiration(
+                        *aux, *sm, ExpireTNode::unique_ptr_type{parent});
+                    // go one level up
+                    parent = next_parent;
+                }
+            },
+            orig->fnext(child_index)};
+        async_read(aux, std::move(recv));
+        return {false, nullptr};
     }
     uint16_t total_child_data_size = 0;
     // no need to update version (max of children or itself)
@@ -436,6 +428,7 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
         orig->opt_value(),
         (size_t)orig->bitpacked.data_len,
         orig->path_nibble_view(),
+        orig->terminating(),
         orig->version);
 
     std::copy_n(
@@ -467,33 +460,29 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
 Node::SharedPtr create_node_from_children_if_any(
     UpdateAuxImpl &aux, StateMachine &sm, uint16_t const orig_mask,
     uint16_t const mask, std::span<ChildData> const children,
-    NibblesView const path, std::optional<byte_string_view> const leaf_data,
-    int64_t const version)
+    NibblesView const path, bool const terminating,
+    unsigned const relpath_start_index,
+    std::optional<byte_string_view> const leaf_data, int64_t const version)
 {
     aux.collect_number_nodes_created_stats();
     // handle non child and single child cases
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
     if (number_of_children == 0) {
-        return leaf_data.has_value()
-                   ? make_node(0, {}, path, leaf_data.value(), {}, version)
-                   : Node::SharedPtr{};
+        return leaf_data.has_value() ? make_node(
+                                           0,
+                                           {},
+                                           path,
+                                           terminating,
+                                           leaf_data.value(),
+                                           {},
+                                           version)
+                                     : Node::SharedPtr{};
     }
     else if (number_of_children == 1 && !leaf_data.has_value()) {
         auto const j = bitmask_index(
             orig_mask, static_cast<unsigned>(std::countr_zero(mask)));
-        MONAD_DEBUG_ASSERT(children[j].ptr);
-        auto node = std::move(children[j].ptr);
-        /* Note: there's a potential superfluous extension hash recomputation
-        when node coaleases upon erases, because we compute node hash when path
-        is not yet the final form. There's not yet a good way to avoid this
-        unless we delay all the compute() after all child branches finish
-        creating nodes and return in the recursion */
-        return make_node(
-            *node,
-            concat(path, children[j].branch, node->path_nibble_view()),
-            node->has_value() ? std::make_optional(node->value())
-                              : std::nullopt,
-            version); // node is deallocated
+        MONAD_ASSERT(children[j].ptr);
+        return std::move(children[j].ptr);
     }
     MONAD_DEBUG_ASSERT(
         number_of_children > 1 ||
@@ -501,24 +490,28 @@ Node::SharedPtr create_node_from_children_if_any(
     // write children to disk, free any if exceeds the cache level limit
     if (aux.is_on_disk()) {
         for (auto &child : children) {
-            if (child.is_valid() && child.offset == INVALID_OFFSET) {
+            if (child.is_valid() && child.subtrie.offset == INVALID_OFFSET) {
                 // write updated node or node to be compacted to disk
                 // won't duplicate write of unchanged old child
                 MONAD_DEBUG_ASSERT(child.branch < 16);
                 MONAD_DEBUG_ASSERT(child.ptr);
-                child.offset =
+                child.subtrie.offset =
                     async_write_node_set_spare(aux, *child.ptr, true);
                 auto const child_virtual_offset =
-                    aux.physical_to_virtual(child.offset);
+                    aux.physical_to_virtual(child.subtrie.offset);
                 MONAD_DEBUG_ASSERT(
                     child_virtual_offset != INVALID_VIRTUAL_OFFSET);
-                std::tie(child.min_offset_fast, child.min_offset_slow) =
+                std::tie(
+                    child.subtrie.min_offset_fast,
+                    child.subtrie.min_offset_slow) =
                     calc_min_offsets(*child.ptr, child_virtual_offset);
                 if (sm.compact()) {
                     MONAD_DEBUG_ASSERT(
-                        child.min_offset_fast >= aux.compact_offset_fast);
+                        child.subtrie.min_offset_fast >=
+                        aux.compact_offset_fast);
                     MONAD_DEBUG_ASSERT(
-                        child.min_offset_slow >= aux.compact_offset_slow);
+                        child.subtrie.min_offset_slow >=
+                        aux.compact_offset_slow);
                 }
             }
             // apply cache based on state machine state, always cache node that
@@ -529,7 +522,14 @@ Node::SharedPtr create_node_from_children_if_any(
         }
     }
     return create_node_with_children(
-        sm.get_compute(), mask, children, path, leaf_data, version);
+        sm.get_compute(),
+        mask,
+        children,
+        path,
+        terminating,
+        path.substr(relpath_start_index),
+        leaf_data,
+        version);
 }
 
 void create_node_compute_data_possibly_async(
@@ -542,10 +542,10 @@ void create_node_compute_data_possibly_async(
             static_cast<unsigned>(std::countr_zero(tnode->mask)))];
         if (!child.ptr) {
             MONAD_DEBUG_ASSERT(aux.is_on_disk());
-            MONAD_ASSERT(child.offset != INVALID_OFFSET);
+            MONAD_ASSERT(child.subtrie.offset != INVALID_OFFSET);
             { // some sanity checks
                 auto const virtual_child_offset =
-                    aux.physical_to_virtual(child.offset);
+                    aux.physical_to_virtual(child.subtrie.offset);
                 MONAD_DEBUG_ASSERT(
                     virtual_child_offset != INVALID_VIRTUAL_OFFSET);
                 // child offset is older than current node writer's start offset
@@ -568,13 +568,13 @@ void create_node_compute_data_possibly_async(
                         tnode->orig_mask,
                         static_cast<unsigned>(std::countr_zero(tnode->mask)))];
                     child.ptr = std::move(read_node);
-                    auto const path_size = tnode->path.nibble_size();
+                    auto const path_size = tnode->relpath_size();
                     create_node_compute_data_possibly_async(
                         *aux, *sm, *parent, entry, std::move(tnode), false);
                     sm->up(path_size + !parent->is_sentinel());
                     upward_update(*aux, *sm, parent);
                 },
-                child.offset};
+                child.subtrie.offset};
             async_read(aux, std::move(recv));
             MONAD_DEBUG_ASSERT(parent.npending);
             return;
@@ -586,18 +586,22 @@ void create_node_compute_data_possibly_async(
         tnode->orig_mask,
         tnode->mask,
         tnode->children,
-        tnode->path,
+        tnode->fullpath,
+        tnode->terminating,
+        tnode->relpath_start_index,
         tnode->opt_leaf_data,
         tnode->version);
     MONAD_DEBUG_ASSERT(entry.branch < 16);
     if (node) {
         parent.version = std::max(parent.version, node->version);
-        entry.finalize(std::move(node), sm.get_compute(), sm.cache());
-        if (sm.auto_expire()) {
-            MONAD_ASSERT(
-                entry.subtrie_min_version >=
-                aux.curr_upsert_auto_expire_version);
-        }
+        entry.finalize(
+            std::move(node),
+            tnode->relpath_start_index,
+            sm.get_compute(),
+            sm.cache());
+        MONAD_ASSERT(
+            !sm.auto_expire() ||
+            entry.subtrie.min_version >= aux.curr_upsert_auto_expire_version);
     }
     else {
         parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
@@ -608,7 +612,8 @@ void create_node_compute_data_possibly_async(
 
 void update_value_and_subtrie_(
     UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::SharedPtr old, NibblesView const path, Update &update)
+    Node::SharedPtr old, NibblesView const fullpath,
+    unsigned const relpath_start_index, Update &update)
 {
     if (update.is_deletion()) {
         parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
@@ -628,7 +633,9 @@ void update_value_and_subtrie_(
             parent.version,
             entry,
             requests,
-            path,
+            fullpath,
+            true,
+            relpath_start_index,
             0,
             update.value,
             update.version);
@@ -646,7 +653,9 @@ void update_value_and_subtrie_(
             std::move(old),
             requests,
             0,
-            path,
+            fullpath,
+            true,
+            relpath_start_index,
             opt_leaf,
             update.version);
     }
@@ -666,9 +675,9 @@ void create_new_trie_(
     if (updates.size() == 1) {
         Update &update = updates.front();
         MONAD_DEBUG_ASSERT(update.value.has_value());
-        auto const path = update.key.substr(prefix_index);
-        for (auto i = 0u; i < path.nibble_size(); ++i) {
-            sm.down(path.get(i));
+        auto const relpath = update.key.substr(prefix_index);
+        for (auto i = 0u; i < relpath.nibble_size(); ++i) {
+            sm.down(relpath.get(i));
         }
         MONAD_DEBUG_ASSERT(update.value.has_value());
         MONAD_ASSERT(
@@ -685,14 +694,13 @@ void create_new_trie_(
             parent_version,
             entry,
             requests,
-            path,
+            update.key,
+            true,
+            prefix_index,
             0,
             update.value,
             update.version);
-
-        if (path.nibble_size()) {
-            sm.up(path.nibble_size());
-        }
+        sm.up(relpath.nibble_size());
         return;
     }
     // Requests contain more than 2 updates
@@ -722,19 +730,19 @@ void create_new_trie_(
         parent_version,
         entry,
         requests,
-        requests.get_first_path().substr(
-            prefix_index_start, prefix_index - prefix_index_start),
+        requests.get_first_path().substr(0, prefix_index),
+        false,
+        prefix_index_start,
         prefix_index,
         requests.opt_leaf.and_then(&Update::value),
         requests.opt_leaf.has_value() ? requests.opt_leaf.value().version : 0);
-    if (prefix_index_start != prefix_index) {
-        sm.up(prefix_index - prefix_index_start);
-    }
+    sm.up(prefix_index - prefix_index_start);
 }
 
 void create_new_trie_from_requests_(
     UpdateAuxImpl &aux, StateMachine &sm, int64_t &parent_version,
     ChildData &entry, Requests &requests, NibblesView const path,
+    bool const terminating, unsigned const relpath_start_index,
     unsigned const prefix_index,
     std::optional<byte_string_view> const opt_leaf_data, int64_t version)
 {
@@ -755,14 +763,23 @@ void create_new_trie_from_requests_(
     }
     // can have empty children
     auto node = create_node_from_children_if_any(
-        aux, sm, mask, mask, children, path, opt_leaf_data, version);
+        aux,
+        sm,
+        mask,
+        mask,
+        children,
+        path,
+        terminating,
+        relpath_start_index,
+        opt_leaf_data,
+        version);
     MONAD_ASSERT(node);
     parent_version = std::max(parent_version, node->version);
-    entry.finalize(std::move(node), sm.get_compute(), sm.cache());
-    if (sm.auto_expire()) {
-        MONAD_ASSERT(
-            entry.subtrie_min_version >= aux.curr_upsert_auto_expire_version);
-    }
+    entry.finalize(
+        std::move(node), relpath_start_index, sm.get_compute(), sm.cache());
+    MONAD_ASSERT(
+        !sm.auto_expire() ||
+        entry.subtrie.min_version >= aux.curr_upsert_auto_expire_version);
 }
 
 /////////////////////////////////////////////////////
@@ -771,8 +788,8 @@ void create_new_trie_from_requests_(
 
 void upsert_(
     UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::SharedPtr old, chunk_offset_t const old_offset, UpdateList &&updates,
-    unsigned prefix_index, unsigned old_prefix_index)
+    Node::SharedPtr old, ChildSubtrieInfo const old_subtrie_info,
+    UpdateList &&updates, unsigned prefix_index)
 {
     MONAD_ASSERT(!updates.empty());
     // Variable-length tables support only a one-time insert; no deletions or
@@ -786,6 +803,7 @@ void upsert_(
             [aux = &aux,
              entry = &entry,
              prefix_index = prefix_index,
+             old_subtrie_info = old_subtrie_info,
              sm = sm.clone(),
              parent = &parent,
              updates = std::move(updates)](Node::SharedPtr read_node) mutable {
@@ -796,36 +814,41 @@ void upsert_(
                     *parent,
                     *entry,
                     std::move(read_node),
-                    INVALID_OFFSET,
+                    old_subtrie_info,
                     std::move(updates),
                     prefix_index);
                 sm->up(1);
                 upward_update(*aux, *sm, parent);
             },
-            old_offset};
+            old_subtrie_info.offset};
         async_read(aux, std::move(recv));
         return;
     }
-    MONAD_ASSERT(old_prefix_index != INVALID_PATH_INDEX);
-    auto const old_prefix_index_start = old_prefix_index;
     auto const prefix_index_start = prefix_index;
     Requests requests;
+    auto const old_path = old->path_nibble_view();
     while (true) {
-        NibblesView path = old->path_nibble_view().substr(
-            old_prefix_index_start, old_prefix_index - old_prefix_index_start);
         if (updates.size() == 1 &&
             prefix_index == updates.front().key.nibble_size()) {
             auto &update = updates.front();
-            MONAD_ASSERT(old->path_nibbles_len() == old_prefix_index);
             MONAD_ASSERT(old->has_value());
+            MONAD_ASSERT(prefix_index == old_path.nibble_size());
             update_value_and_subtrie_(
-                aux, sm, parent, entry, std::move(old), path, update);
+                aux,
+                sm,
+                parent,
+                entry,
+                std::move(old),
+                old_path,
+                prefix_index_start,
+                update);
             break;
         }
         unsigned const number_of_sublists = requests.split_into_sublists(
             std::move(updates), prefix_index); // NOLINT
+        NibblesView const path = old_path.substr(0, prefix_index);
         MONAD_ASSERT(requests.mask > 0);
-        if (old_prefix_index == old->path_nibbles_len()) {
+        if (prefix_index == old->path_nibbles_len()) {
             MONAD_ASSERT(
                 !requests.opt_leaf.has_value(),
                 "Invalid update detected: cannot apply variable-length "
@@ -841,18 +864,19 @@ void upsert_(
                 requests,
                 prefix_index,
                 path,
+                false,
+                prefix_index_start,
                 opt_leaf_data,
                 version);
             break;
         }
-        if (auto old_nibble = old->path_nibble_view().get(old_prefix_index);
+        if (auto const old_nibble = old_path.get(prefix_index);
             number_of_sublists == 1 &&
             requests.get_first_branch() == old_nibble) {
             MONAD_DEBUG_ASSERT(requests.opt_leaf == std::nullopt);
             updates = std::move(requests)[old_nibble];
             sm.down(old_nibble);
             ++prefix_index;
-            ++old_prefix_index;
             continue;
         }
         // meet a mismatch or split, not till the end of old path
@@ -862,15 +886,14 @@ void upsert_(
             parent,
             entry,
             std::move(old),
+            old_subtrie_info,
             requests,
             path,
-            old_prefix_index,
+            prefix_index_start,
             prefix_index);
         break;
     }
-    if (prefix_index_start != prefix_index) {
-        sm.up(prefix_index - prefix_index_start);
-    }
+    sm.up(prefix_index - prefix_index_start);
 }
 
 void fillin_entry(
@@ -891,8 +914,9 @@ void fillin_entry(
 void dispatch_updates_impl_(
     UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
     Node::SharedPtr old_ptr, Requests &requests, unsigned const prefix_index,
-    NibblesView const path, std::optional<byte_string_view> const opt_leaf_data,
-    int64_t const version)
+    NibblesView const path, bool const terminating,
+    unsigned const relpath_start_index,
+    std::optional<byte_string_view> const opt_leaf_data, int64_t const version)
 {
     Node *old = old_ptr.get();
     uint16_t const orig_mask = old->mask | requests.mask;
@@ -902,6 +926,8 @@ void dispatch_updates_impl_(
         &parent,
         entry.branch,
         path,
+        relpath_start_index,
+        terminating,
         version,
         opt_leaf_data,
         opt_leaf_data.has_value() ? old_ptr : Node::SharedPtr{});
@@ -914,13 +940,14 @@ void dispatch_updates_impl_(
             children[index].branch = branch;
             sm.down(branch);
             if ((1 << branch) & old->mask) {
+                unsigned const old_child_index = old->to_child_index(branch);
                 upsert_(
                     aux,
                     sm,
                     *tnode,
                     children[index],
-                    old->move_next(old->to_child_index(branch)),
-                    old->fnext(old->to_child_index(branch)),
+                    old->move_next(old_child_index),
+                    ChildSubtrieInfo{*old, old_child_index},
                     std::move(requests)[branch],
                     prefix_index + 1);
                 sm.up(1);
@@ -942,27 +969,28 @@ void dispatch_updates_impl_(
             child.copy_old_child(old, branch);
             if (aux.is_on_disk()) {
                 if (sm.auto_expire() &&
-                    child.subtrie_min_version <
+                    child.subtrie.min_version <
                         aux.curr_upsert_auto_expire_version) {
                     // expire_() is similar to dispatch_updates() except that it
                     // can cut off some branches for data expiration
                     auto expire_tnode = ExpireTNode::make(
                         tnode.get(), branch, index, std::move(child.ptr));
-                    expire_(aux, sm, std::move(expire_tnode), child.offset);
+                    expire_(
+                        aux, sm, std::move(expire_tnode), child.subtrie.offset);
                 }
                 else if (
                     sm.compact() &&
-                    (child.min_offset_fast < aux.compact_offset_fast ||
-                     child.min_offset_slow < aux.compact_offset_slow)) {
+                    (child.subtrie.min_offset_fast < aux.compact_offset_fast ||
+                     child.subtrie.min_offset_slow < aux.compact_offset_slow)) {
                     bool const copy_node_for_fast =
-                        child.min_offset_fast < aux.compact_offset_fast;
+                        child.subtrie.min_offset_fast < aux.compact_offset_fast;
                     auto compact_tnode = CompactTNode::make(
                         tnode.get(), index, std::move(child.ptr));
                     compact_(
                         aux,
                         sm,
                         std::move(compact_tnode),
-                        child.offset,
+                        child.subtrie.offset,
                         copy_node_for_fast);
                 }
                 else {
@@ -981,19 +1009,20 @@ void dispatch_updates_impl_(
 // prefix_index to `requests`, which can have 1 or more sublists.
 void mismatch_handler_(
     UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::SharedPtr old_ptr, Requests &requests, NibblesView const path,
-    unsigned const old_prefix_index, unsigned const prefix_index)
+    Node::SharedPtr old_ptr, ChildSubtrieInfo const old_subtrie,
+    Requests &requests, NibblesView const path,
+    unsigned const relpath_start_index, unsigned const prefix_index)
 {
     MONAD_ASSERT(old_ptr);
     Node &old = *old_ptr;
-    MONAD_DEBUG_ASSERT(old.has_path());
+    MONAD_DEBUG_ASSERT(old.path_nibbles_len() > relpath_start_index);
     // Note: no leaf can be created at an existing non-leaf node
     MONAD_DEBUG_ASSERT(!requests.opt_leaf.has_value());
-    unsigned char const old_nibble =
-        old.path_nibble_view().get(old_prefix_index);
+    unsigned char const old_nibble = old.path_nibble_view().get(prefix_index);
     uint16_t const orig_mask =
         static_cast<uint16_t>(1u << old_nibble | requests.mask);
-    auto tnode = make_tnode(orig_mask, &parent, entry.branch, path);
+    auto tnode = make_tnode(
+        orig_mask, &parent, entry.branch, path, relpath_start_index, false);
     auto const number_of_children =
         static_cast<unsigned>(std::popcount(orig_mask));
     MONAD_DEBUG_ASSERT(
@@ -1011,10 +1040,9 @@ void mismatch_handler_(
                     *tnode,
                     children[index],
                     std::move(old_ptr),
-                    INVALID_OFFSET,
+                    old_subtrie,
                     std::move(requests)[branch],
-                    prefix_index + 1,
-                    old_prefix_index + 1);
+                    prefix_index + 1);
             }
             else {
                 create_new_trie_(
@@ -1031,39 +1059,35 @@ void mismatch_handler_(
         else if (branch == old_nibble) {
             sm.down(old_nibble);
             // nexts[j] is a path-shortened old node, trim prefix
-            NibblesView const path_suffix =
-                old.path_nibble_view().substr(old_prefix_index + 1);
-            for (auto i = 0u; i < path_suffix.nibble_size(); ++i) {
-                sm.down(path_suffix.get(i));
+            auto const child_relpath_start_index = prefix_index + 1;
+            NibblesView const child_relpath =
+                old.path_nibble_view().substr(child_relpath_start_index);
+            for (auto i = 0u; i < child_relpath.nibble_size(); ++i) {
+                sm.down(child_relpath.get(i));
             }
             auto &child = children[index];
-            child.branch = branch;
-            // Updated node inherits the version number directly from old node
-            child.finalize(
-                make_node(old, path_suffix, old.opt_value(), old.version),
+            child.recompute_data_with_truncated_path(
+                branch,
+                std::move(old_ptr),
+                old_subtrie,
+                child_relpath_start_index,
                 sm.get_compute(),
                 sm.cache());
-            MONAD_DEBUG_ASSERT(child.offset == INVALID_OFFSET);
-            // Note that it is possible that we recreate this node later after
-            // done expiring all subtries under it
-            sm.up(path_suffix.nibble_size() + 1);
+            sm.up(child_relpath.nibble_size() + 1);
             if (aux.is_on_disk()) {
                 if (sm.auto_expire() &&
-                    child.subtrie_min_version <
+                    child.subtrie.min_version <
                         aux.curr_upsert_auto_expire_version) {
                     auto expire_tnode = ExpireTNode::make(
                         tnode.get(), branch, index, std::move(child.ptr));
                     expire_(aux, sm, std::move(expire_tnode), INVALID_OFFSET);
                 }
-                else if (auto const [min_offset_fast, min_offset_slow] =
-                             calc_min_offsets(*child.ptr);
-                         // same as old, TODO: can optimize by passing in the
-                         // min offsets stored in old's parent
-                         sm.compact() &&
-                         (min_offset_fast < aux.compact_offset_fast ||
-                          min_offset_slow < aux.compact_offset_slow)) {
+                else if (
+                    sm.compact() &&
+                    (child.subtrie.min_offset_fast < aux.compact_offset_fast ||
+                     child.subtrie.min_offset_slow < aux.compact_offset_slow)) {
                     bool const copy_node_for_fast =
-                        min_offset_fast < aux.compact_offset_fast;
+                        child.subtrie.min_offset_fast < aux.compact_offset_fast;
                     auto compact_tnode = CompactTNode::make(
                         tnode.get(), index, std::move(child.ptr));
                     compact_(
@@ -1178,6 +1202,9 @@ void fillin_parent_after_expiration(
         }
     }
     else {
+        // TODO: it is possible that node is being rewritten while it doesn't
+        // have to, it's not worth the optimization as we are upgrading to the
+        // new auto expiration algorithm soon
         auto const new_offset =
             async_write_node_set_spare(aux, *new_node, true);
         auto const new_node_virtual_offset =
@@ -1193,12 +1220,12 @@ void fillin_parent_after_expiration(
         if (parent->type == tnode_type::update) {
             auto &child = ((UpdateTNode *)parent)->children[index];
             MONAD_ASSERT(!child.ptr); // been transferred to tnode
-            child.offset = new_offset;
+            child.subtrie.offset = new_offset;
             MONAD_DEBUG_ASSERT(cache_node);
             child.ptr = std::move(new_node);
-            child.min_offset_fast = min_offset_fast;
-            child.min_offset_slow = min_offset_slow;
-            child.subtrie_min_version = min_version;
+            child.subtrie.min_offset_fast = min_offset_fast;
+            child.subtrie.min_offset_slow = min_offset_slow;
+            child.subtrie.min_version = min_version;
         }
         else {
             MONAD_ASSERT(parent->type == tnode_type::expire);
@@ -1366,9 +1393,9 @@ void try_fillin_parent_with_rewritten_node(
         MONAD_DEBUG_ASSERT(tnode->cache_node);
         auto &child = p->children[index];
         child.ptr = std::move(tnode->node);
-        child.offset = new_offset;
-        child.min_offset_fast = min_offset_fast;
-        child.min_offset_slow = min_offset_slow;
+        child.subtrie.offset = new_offset;
+        child.subtrie.min_offset_fast = min_offset_fast;
+        child.subtrie.min_offset_slow = min_offset_slow;
     }
     else {
         MONAD_DEBUG_ASSERT(

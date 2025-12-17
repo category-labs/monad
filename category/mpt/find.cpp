@@ -61,10 +61,10 @@ find_cursor_result_type find_blocking(
                     node->set_next(idx, std::move(next_node_ondisk));
                 }
             }
+            node_prefix_index = node->child_path_start_index();
+            ++prefix_index;
             node = node->next(node->to_child_index(nibble));
             MONAD_ASSERT(node);
-            node_prefix_index = 0;
-            ++prefix_index;
             continue;
         }
         if (nibble != node->path_nibble_view().get(node_prefix_index)) {

@@ -183,10 +183,10 @@ TYPED_TEST(PlainTrieTest, var_length_trie)
     EXPECT_EQ(node0->mask, 0);
     EXPECT_EQ(node1->mask, 1u << 1 | 1u << 0xa | 1u << 0xb);
     EXPECT_EQ(
-        node0->path_nibble_view(), (NibblesView{1, 8, kv[0].first.data()}));
+        node0->path_nibble_view(), (NibblesView{kv[0].first}.substr(0, 8)));
     EXPECT_EQ(node0->value(), kv[0].second);
     EXPECT_EQ(
-        node1->path_nibble_view(), (NibblesView{1, 3, kv[1].first.data()}));
+        node1->path_nibble_view(), (NibblesView{kv[1].first}.substr(0, 3)));
 
     auto node1111 = node1->next(0);
     auto node111a = node1->next(1);
@@ -198,7 +198,7 @@ TYPED_TEST(PlainTrieTest, var_length_trie)
     EXPECT_EQ(node1111_aa->next(0)->value(), kv[2].second);
     EXPECT_EQ(node1111_aa->next(1)->value(), kv[3].second);
     EXPECT_EQ(
-        node111a->path_nibble_view(), (NibblesView{4, 8, kv[4].first.data()}));
+        node111a->path_nibble_view(), (NibblesView{kv[4].first}.substr(0, 8)));
     EXPECT_EQ(node111a->value(), kv[4].second);
     EXPECT_EQ(node111b->value(), kv[5].second);
     EXPECT_EQ(node111b->mask, 1u << 0xa | 1u << 0xb);
@@ -206,12 +206,12 @@ TYPED_TEST(PlainTrieTest, var_length_trie)
         node111b->next(node111b->to_child_index(0xa))->value(), kv[6].second);
     EXPECT_EQ(
         node111b->next(node111b->to_child_index(0xa))->path_nibble_view(),
-        (NibblesView{9, 16, kv[6].first.data()}));
+        kv[6].first);
     EXPECT_EQ(
         node111b->next(node111b->to_child_index(0xb))->value(), kv[7].second);
     EXPECT_EQ(
         node111b->next(node111b->to_child_index(0xb))->path_nibble_view(),
-        (NibblesView{9, 16, kv[7].first.data()}));
+        kv[7].first);
 }
 
 TYPED_TEST(PlainTrieTest, mismatch)
@@ -298,11 +298,11 @@ TYPED_TEST(PlainTrieTest, mismatch)
     auto node3 = this->root->next(0);
     EXPECT_EQ(node3->mask, 1u << 4 | 1u << 0xa);
     EXPECT_EQ(node3->bitpacked.data_len, 0);
-    EXPECT_EQ(node3->path_bytes(), 0);
+    EXPECT_EQ(node3->path_bytes(), 2);
     auto node34 = node3->next(0);
     EXPECT_EQ(node34->mask, 0b11100000);
     EXPECT_EQ(node34->bitpacked.data_len, 0);
-    EXPECT_EQ(node34->path_bytes(), 0);
+    EXPECT_EQ(node34->path_bytes(), 2);
     EXPECT_EQ(node34->next(0)->value_len, 2);
     EXPECT_EQ(node34->next(0)->value(), kv[0].second);
     EXPECT_EQ(node34->next(1)->value(), kv[1].second);
@@ -622,52 +622,67 @@ TYPED_TEST(PlainTrieTest, node_version)
         this->aux,
         *this->sm,
         std::move(this->root),
-        make_update(keys[3], value, false, {}, 3));
+        make_update(keys[0], value, false, {}, 3));
     EXPECT_EQ(this->root->version, 3);
+    EXPECT_EQ(calc_min_version(*this->root), 1);
+
+    this->root = upsert_updates(
+        this->aux,
+        *this->sm,
+        std::move(this->root),
+        make_update(keys[3], value, false, {}, 4));
+    EXPECT_EQ(this->root->version, 4);
+    EXPECT_EQ(this->root->subtrie_min_version(0), 1);
+    EXPECT_EQ(this->root->subtrie_min_version(1), 4);
+
     if (this->root->next(0)) {
-        EXPECT_EQ(this->root->next(0)->version, 2);
+        EXPECT_EQ(this->root->next(0)->version, 3);
     }
     else {
-        EXPECT_EQ(read_child(*this->root, 0)->version, 2);
+        EXPECT_EQ(read_child(*this->root, 0)->version, 3);
     }
     if (this->root->next(1)) {
-        EXPECT_EQ(this->root->next(1)->version, 3);
+        EXPECT_EQ(this->root->next(1)->version, 4);
     }
     else {
-        EXPECT_EQ(read_child(*this->root, 1)->version, 3);
+        EXPECT_EQ(read_child(*this->root, 1)->version, 4);
     }
 
     this->root = upsert_updates(
         this->aux,
         *this->sm,
         std::move(this->root),
-        make_update(keys[4], value, false, {}, 4));
-    EXPECT_EQ(this->root->version, 4);
+        make_update(keys[4], value, false, {}, 5));
+    EXPECT_EQ(this->root->version, 5);
     if (this->root->next(0)) {
-        EXPECT_EQ(this->root->next(0)->version, 2);
+        EXPECT_EQ(this->root->next(0)->version, 3);
     }
     else {
-        EXPECT_EQ(read_child(*this->root, 0)->version, 2);
+        EXPECT_EQ(read_child(*this->root, 0)->version, 3);
     }
 
     if (!this->root->next(1)) {
         this->root->set_next(1, read_child(*this->root, 1));
     }
-    EXPECT_EQ(this->root->next(1)->version, 4);
+    EXPECT_EQ(this->root->next(1)->version, 5);
+    EXPECT_EQ(this->root->subtrie_min_version(0), 1);
+    EXPECT_EQ(this->root->subtrie_min_version(1), 4);
 
     if (this->root->next(1)->next(0)) {
-        EXPECT_EQ(this->root->next(1)->next(0)->version, 3);
+        EXPECT_EQ(this->root->next(1)->next(0)->version, 4);
     }
     else {
-        EXPECT_EQ(read_child(*this->root->next(1), 0)->version, 3);
+        EXPECT_EQ(read_child(*this->root->next(1), 0)->version, 4);
     }
 
     // erase should not update the version of interior nodes
     this->root = upsert_updates(
         this->aux, *this->sm, std::move(this->root), make_erase(keys[4]));
-    EXPECT_EQ(this->root->version, 4);
+    EXPECT_EQ(this->root->version, 5);
+    EXPECT_NE(this->root->next(0), nullptr);
+    EXPECT_EQ(this->root->next(0)->version, 3);
+    EXPECT_EQ(this->root->subtrie_min_version(0), 1);
     EXPECT_NE(this->root->next(1), nullptr);
     EXPECT_EQ(this->root->next(1)->version, 4);
-    EXPECT_NE(this->root->next(0), nullptr);
-    EXPECT_EQ(this->root->next(0)->version, 2);
+    EXPECT_EQ(this->root->subtrie_min_version(1), 4);
 }

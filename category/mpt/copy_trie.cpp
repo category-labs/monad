@@ -46,13 +46,16 @@ Node::SharedPtr create_node_add_new_branch(
             auto &child = children[j];
             child.branch = (unsigned char)i;
             child.ptr = std::move(new_child);
-            child.subtrie_min_version = calc_min_version(*child.ptr);
+            child.subtrie.min_version = calc_min_version(*child.ptr);
             if (aux.is_on_disk()) {
-                child.offset =
+                child.subtrie.offset =
                     async_write_node_set_spare(aux, *child.ptr, true);
-                std::tie(child.min_offset_fast, child.min_offset_slow) =
+                std::tie(
+                    child.subtrie.min_offset_fast,
+                    child.subtrie.min_offset_slow) =
                     calc_min_offsets(
-                        *child.ptr, aux.physical_to_virtual(child.offset));
+                        *child.ptr,
+                        aux.physical_to_virtual(child.subtrie.offset));
             }
             ++j;
         }
@@ -60,12 +63,12 @@ Node::SharedPtr create_node_add_new_branch(
             auto &child = children[j];
             child.branch = (unsigned char)i;
             child.ptr = node->move_next(old_j);
-            child.subtrie_min_version = node->subtrie_min_version(old_j);
+            child.subtrie.min_version = node->subtrie_min_version(old_j);
             if (aux.is_on_disk()) {
-                child.min_offset_fast = node->min_offset_fast(old_j);
-                child.min_offset_slow = node->min_offset_slow(old_j);
-                child.offset = node->fnext(old_j);
-                MONAD_ASSERT(child.offset != INVALID_OFFSET);
+                child.subtrie.min_offset_fast = node->min_offset_fast(old_j);
+                child.subtrie.min_offset_slow = node->min_offset_slow(old_j);
+                child.subtrie.offset = node->fnext(old_j);
+                MONAD_ASSERT(child.subtrie.offset != INVALID_OFFSET);
             }
             ++old_j;
             ++j;
@@ -75,6 +78,7 @@ Node::SharedPtr create_node_add_new_branch(
         mask,
         children,
         node->path_nibble_view(),
+        node->terminating(),
         opt_value,
         0,
         static_cast<int64_t>(new_version));
@@ -94,22 +98,26 @@ Node::SharedPtr create_node_with_two_children(
     {
         auto &child = children[!zero_comes_first];
         child.ptr = std::move(child0);
-        child.subtrie_min_version = calc_min_version(*child.ptr);
+        child.subtrie.min_version = calc_min_version(*child.ptr);
         child.branch = branch0;
         if (aux.is_on_disk()) {
-            child.offset = async_write_node_set_spare(aux, *child.ptr, true);
-            std::tie(child.min_offset_fast, child.min_offset_slow) =
+            child.subtrie.offset =
+                async_write_node_set_spare(aux, *child.ptr, true);
+            std::tie(
+                child.subtrie.min_offset_fast, child.subtrie.min_offset_slow) =
                 calc_min_offsets(*child.ptr);
         }
     }
     {
         auto &child = children[zero_comes_first];
         child.ptr = std::move(child1);
-        child.subtrie_min_version = calc_min_version(*child.ptr);
+        child.subtrie.min_version = calc_min_version(*child.ptr);
         child.branch = branch1;
         if (aux.is_on_disk()) {
-            child.offset = async_write_node_set_spare(aux, *child.ptr, true);
-            std::tie(child.min_offset_fast, child.min_offset_slow) =
+            child.subtrie.offset =
+                async_write_node_set_spare(aux, *child.ptr, true);
+            std::tie(
+                child.subtrie.min_offset_fast, child.subtrie.min_offset_slow) =
                 calc_min_offsets(*child.ptr);
         }
     }
@@ -117,6 +125,7 @@ Node::SharedPtr create_node_with_two_children(
         mask,
         std::span(children),
         path,
+        false,
         opt_value,
         0,
         static_cast<int64_t>(new_version));
@@ -134,22 +143,26 @@ Node::SharedPtr copy_trie_impl(
     if (!dest_root) {
         auto new_node = make_node(
             src_node,
-            dest_prefix.substr(1),
+            dest_prefix,
+            src_node.terminating(),
             src_node.opt_value(),
             static_cast<int64_t>(dest_version));
         ChildData child{
             .ptr = std::move(new_node), .branch = dest_prefix.get(0)};
-        child.subtrie_min_version = calc_min_version(*child.ptr);
+        child.subtrie.min_version = calc_min_version(*child.ptr);
         if (aux.is_on_disk()) {
-            child.offset = async_write_node_set_spare(aux, *child.ptr, true);
-            std::tie(child.min_offset_fast, child.min_offset_slow) =
+            child.subtrie.offset =
+                async_write_node_set_spare(aux, *child.ptr, true);
+            std::tie(
+                child.subtrie.min_offset_fast, child.subtrie.min_offset_slow) =
                 calc_min_offsets(
-                    *child.ptr, aux.physical_to_virtual(child.offset));
+                    *child.ptr, aux.physical_to_virtual(child.subtrie.offset));
         }
         return make_node(
             static_cast<uint16_t>(1u << child.branch),
             {&child, 1},
             {},
+            false, /* new branch node path is not terminating */
             src_root->value(),
             0,
             static_cast<int64_t>(dest_version));
@@ -189,16 +202,14 @@ Node::SharedPtr copy_trie_impl(
             // memory children to `dest` node
             auto dest_latter_half = make_node(
                 src_node,
-                dest_prefix.substr(
-                    static_cast<unsigned char>(prefix_index) + 1u),
+                dest_prefix,
+                src_node.terminating(),
                 src_node.opt_value(),
                 src_node.version);
-            auto node_latter_half = make_node(
-                *node,
-                node_path.substr(
-                    static_cast<unsigned char>(node_prefix_index) + 1),
-                node->opt_value(),
-                node->version);
+            // move node to under new_node
+            auto node_latter_half =
+                parent ? parent->move_next(parent->to_child_index(branch))
+                       : dest_root;
             new_node = create_node_with_two_children(
                 aux,
                 node_path.substr(0, node_prefix_index),
@@ -225,16 +236,17 @@ Node::SharedPtr copy_trie_impl(
             parent = node.get();
             branch = nibble;
             parents_and_indexes.emplace(std::make_pair(parent, index));
-            node = node->next(index);
-            node_prefix_index = 0;
+            node_prefix_index = node->child_path_start_index();
             ++prefix_index;
+            node = node->next(index);
             continue;
         }
         MONAD_DEBUG_ASSERT(
             prefix_index < std::numeric_limits<unsigned char>::max());
         auto dest_node = make_node(
             src_node,
-            dest_prefix.substr(static_cast<unsigned char>(prefix_index) + 1u),
+            dest_prefix,
+            src_node.terminating(),
             src_node.opt_value(),
             src_node.version);
         new_node = create_node_add_new_branch(
@@ -255,6 +267,7 @@ Node::SharedPtr copy_trie_impl(
         new_node = make_node(
             src_node,
             node->path_nibble_view(),
+            src_node.terminating(),
             src_node.opt_value(),
             static_cast<int64_t>(dest_version));
     }

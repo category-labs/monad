@@ -60,7 +60,8 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         {
         }
 
-        virtual bool down(unsigned char, Node const &node) override
+        virtual bool
+        down(unsigned char, Node const &node, NibblesView const) override
         {
             records.push(ExpectedSubtrieVersion{
                 .root = const_cast<Node *>(&node),
@@ -69,7 +70,9 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
             return true;
         }
 
-        virtual void up(unsigned char const branch, Node const &node) override
+        virtual void
+        up(unsigned char const branch, Node const &node,
+           NibblesView const) override
         {
             auto const node_record = records.top();
             ASSERT_TRUE(node_record.root == &node);

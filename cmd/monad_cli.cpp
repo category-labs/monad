@@ -798,7 +798,7 @@ int main(int argc, char *argv[])
     std::optional<std::filesystem::path> load_binary_snapshot;
     uint64_t version;
 
-    CLI::App cli{"monad_cli"};
+    CLI::App cli{"monad-cli"};
     cli.add_option(
            "--db",
            dbname_paths,

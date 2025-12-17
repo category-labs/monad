@@ -401,6 +401,7 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
                 }
             },
             orig->fnext(child_index)};
+        aux.collect_expire_stats(true);
         async_read(aux, std::move(recv));
         return {false, nullptr};
     }

@@ -566,7 +566,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
                     "Storage pool source %s was initialised with a "
                     "configuration different to this storage pool. Is a device "
                     "missing or is there an extra device from when the pool "
-                    "was first created?\n\nYou should use the monad_mpt tool "
+                    "was first created?\n\nYou should use the monad-mpt tool "
                     "to copy and move databases around, NOT by copying "
                     "partition contents!",
                     device.current_path().c_str());
@@ -576,9 +576,9 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
                     "Storage pool source %s was initialised with a "
                     "configuration different to this storage pool. Is a device "
                     "missing or is there an extra device from when the pool "
-                    "was first created?\n\nYou should use the monad_mpt tool "
+                    "was first created?\n\nYou should use the monad-mpt tool "
                     "to copy and move databases around, NOT by copying "
-                    "partition contents!\n\nSince the monad_mpt tool was "
+                    "partition contents!\n\nSince the monad-mpt tool was "
                     "added, the flag disable_mismatching_storage_pool_check is "
                     "no longer needed and has been disabled.",
                     device.current_path().c_str());

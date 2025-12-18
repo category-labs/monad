@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/compiler/ir/bound_inferrence.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
@@ -331,7 +332,13 @@ namespace
             MONAD_VM_DEBUG_ASSERT(
                 remaining_base_gas >= instr.static_gas_cost());
             remaining_base_gas -= instr.static_gas_cost();
+            auto const result_bound = compute_result_bound(emit, instr);
             emit_instr<traits>(emit, instr, remaining_base_gas);
+            if (instr.stack_increase() > 0) {
+                emit.get_stack()
+                    .get(emit.get_stack().top_index())
+                    ->set_bit_upper_bound(result_bound);
+            }
             require_code_size_in_bound(emit, max_native_size);
             post_instruction_emit(emit, config);
         }

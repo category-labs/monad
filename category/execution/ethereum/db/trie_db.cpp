@@ -409,6 +409,78 @@ void TrieDb::commit(
         }
     }
 
+    // Calculate total sizes of all updates in bytes
+    size_t account_updates_size = 0;
+    for (auto const &update : account_updates) {
+        if (update.value.has_value()) {
+            account_updates_size += update.value->size();
+        }
+        for (auto const &storage_update : update.next) {
+            if (storage_update.value.has_value()) {
+                account_updates_size += storage_update.value->size();
+            }
+        }
+    }
+
+    size_t access_updates_size = 0;
+    for (auto const &update : access_updates) {
+        if (update.value.has_value()) {
+            access_updates_size += update.value->size();
+        }
+        for (auto const &storage_update : update.next) {
+            if (storage_update.value.has_value()) {
+                access_updates_size += storage_update.value->size();
+            }
+        }
+    }
+
+    size_t code_updates_size = 0;
+    for (auto const &update : code_updates) {
+        if (update.value.has_value()) {
+            code_updates_size += update.value->size();
+        }
+    }
+
+    size_t receipt_updates_size = 0;
+    for (auto const &update : receipt_updates) {
+        if (update.value.has_value()) {
+            receipt_updates_size += update.value->size();
+        }
+    }
+
+    size_t transaction_updates_size = 0;
+    for (auto const &update : transaction_updates) {
+        if (update.value.has_value()) {
+            transaction_updates_size += update.value->size();
+        }
+    }
+
+    size_t tx_hash_updates_size = 0;
+    for (auto const &update : tx_hash_updates) {
+        if (update.value.has_value()) {
+            tx_hash_updates_size += update.value->size();
+        }
+    }
+
+    size_t call_frame_updates_size = 0;
+    for (auto const &update : call_frame_updates) {
+        if (update.value.has_value()) {
+            call_frame_updates_size += update.value->size();
+        }
+    }
+
+    LOG_INFO(
+        "Update sizes in bytes for block {}: account={}, access={}, code={}, "
+        "receipt={}, transaction={}, tx_hash={}, call_frame={}",
+        block_number_,
+        account_updates_size,
+        access_updates_size,
+        code_updates_size,
+        receipt_updates_size,
+        transaction_updates_size,
+        tx_hash_updates_size,
+        call_frame_updates_size);
+
     UpdateList updates;
 
     auto state_update = Update{

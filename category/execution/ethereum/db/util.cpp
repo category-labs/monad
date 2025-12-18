@@ -600,7 +600,7 @@ void MachineBase::down(unsigned char const nibble)
             table = TableType::CallFrame;
         }
         else if (nibble == BLOCK_ACCESS_NIBBLE) {
-            table = TableType::AccessBlock;
+            table = TableType::BlockAccess;
         }
         else {
             MONAD_ABORT_PRINTF("Invalid nibble %u", (unsigned)nibble);

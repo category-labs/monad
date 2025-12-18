@@ -109,7 +109,7 @@ public:
             STATS_EVENT_INSERT_FOUND();
             acc->second.value_ = value;
             ListNode *const node = acc->second.node_;
-            update_lru(node);
+            try_update_lru(node);
             return false;
         }
         ListNode *const node = pool_.new_obj(key);

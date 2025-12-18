@@ -27,7 +27,7 @@ Result<Receipt> dispatch_transaction(
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &, RevertTransactionFn const &revert_transaction);
 
 MONAD_NAMESPACE_END

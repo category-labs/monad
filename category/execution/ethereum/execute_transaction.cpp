@@ -38,7 +38,7 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <boost/fiber/future/promise.hpp>
+#include <boost/fiber/future/future.hpp>
 #include <boost/outcome/try.hpp>
 #include <intx/intx.hpp>
 
@@ -285,7 +285,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer,
     RevertTransactionFn const &revert_transaction)
     : ExecuteTransactionNoValidation<
@@ -407,7 +407,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.get_future().wait();
+            prev_.wait();
         }
 
         if (block_state_.can_merge(state)) {

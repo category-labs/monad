@@ -23,7 +23,7 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <boost/fiber/future/promise.hpp>
+#include <boost/fiber/future/future.hpp>
 
 #include <cstdint>
 #include <functional>
@@ -52,7 +52,7 @@ Result<Receipt> dispatch_transaction(
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer,
     RevertTransactionFn const &revert_transaction);
 

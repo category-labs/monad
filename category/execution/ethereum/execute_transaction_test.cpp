@@ -96,8 +96,9 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     BlockHeader const header{.beneficiary = bene};
     BlockHashBufferFinalized const block_hash_buffer;
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> promise{};
+    auto prev = promise.get_future();
+    promise.set_value();
 
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
@@ -207,8 +208,9 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> promise{};
+    auto prev = promise.get_future();
+    promise.set_value();
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadTestnet{},
@@ -357,8 +359,9 @@ TYPED_TEST(TraitsTest, refunds_delete)
         BlockHeader const header{.beneficiary = bene};
         BlockHashBufferFinalized const block_hash_buffer;
 
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> promise{};
+        auto prev = promise.get_future();
+        promise.set_value();
 
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
@@ -412,8 +415,9 @@ TYPED_TEST(TraitsTest, refunds_delete)
         BlockHeader const header{.beneficiary = bene};
         BlockHashBufferFinalized const block_hash_buffer;
 
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> promise{};
+        auto prev = promise.get_future();
+        promise.set_value();
 
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
@@ -514,8 +518,9 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
         BlockHeader const header{.beneficiary = bene};
         BlockHashBufferFinalized const block_hash_buffer;
 
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> promise{};
+        auto prev = promise.get_future();
+        promise.set_value();
 
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};

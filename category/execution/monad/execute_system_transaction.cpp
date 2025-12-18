@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <boost/fiber/future/promise.hpp>
+#include <boost/fiber/future/future.hpp>
 #include <boost/outcome/try.hpp>
 #include <category/core/assert.h>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -62,7 +62,7 @@ template <Traits traits>
 ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
-    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
+    BlockMetrics &block_metrics, boost::fibers::future<void> &prev,
     CallTracerBase &call_tracer)
     : chain_{chain}
     , i_{i}
@@ -106,7 +106,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.get_future().wait();
+            prev_.wait();
         }
 
         if (block_state_.can_merge(state)) {

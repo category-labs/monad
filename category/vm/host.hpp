@@ -44,10 +44,17 @@ namespace monad::vm
         /// leaks due to missing deallocation of the current active exception.
         /// IMPORTANT: Since `stack_unwind` never returns, make sure there are
         /// no stack objects with uninvoked destructor.
-        [[noreturn]] void stack_unwind() const noexcept
+        [[noreturn]] void stack_unwind() const
         {
             MONAD_VM_ASSERT(active_exception_);
-            MONAD_VM_ASSERT(runtime_context_)
+            // rethrow exceptions when running outside of vm execution context
+            // (i.e. when runtime_context_ is unset)
+            if (runtime_context_ == nullptr) {
+                auto e = active_exception_;
+                active_exception_ = std::exception_ptr{};
+                std::rethrow_exception(std::move(e));
+            }
+
             runtime_context_->stack_unwind();
         }
 

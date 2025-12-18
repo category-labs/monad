@@ -14,7 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
-#include <category/vm/compiler/ir/bound_inferrence.hpp>
+#include <category/vm/compiler/ir/bound_inference.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>

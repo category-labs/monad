@@ -22,7 +22,6 @@
 
 #include <evmc/evmc.h>
 
-#include <cstddef>
 #include <cstdint>
 
 using namespace monad::vm::compiler;
@@ -82,18 +81,16 @@ namespace
         case Sub:
             {
                 // No bound can be inferred because of negative numbers unless
-                // the lhs is a literal and rhs is bounded
+                // the lhs is a literal and rhs is bounded by lhs.
                 auto const lhs = stack.get(top_index);
                 auto const lhs_bound = lhs->bit_upper_bound();
                 auto const rhs_bound = stack.get(top_index - 1)->bit_upper_bound();
-                if (lhs->literal() && rhs_bound < 256 && (2u << rhs_bound) - 1 < lhs->literal()->value) {
+                if (lhs->literal() && lhs_bound > rhs_bound) {
                     // Result will not go negative, worst case is subtracting 0
                     return lhs_bound;
                 } else {
                     return 256;
                 }
-
-                return 256;
             }
         case AddMod:
         case MulMod:
@@ -149,7 +146,7 @@ namespace
             else {
                 // shift is not a literal, assume maximum shift (bounded by
                 // 2**16 - 1) to prevent overflows.
-                auto const max_shift = (2u << std::min(16u, shift_bound)) - 1;
+                auto const max_shift = (1u << std::min(16u, shift_bound)) - 1;
                 return val_bound + max_shift;
             }
         }

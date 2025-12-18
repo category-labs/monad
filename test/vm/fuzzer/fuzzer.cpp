@@ -487,6 +487,17 @@ static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
         hook = compiler_emit_hook(engine);
     }
 
+    hook = [prev_hook = std::move(hook)](auto &emit, auto const &instr) {
+        if (prev_hook) {
+            prev_hook(emit, instr);
+        }
+
+        // Assert that inferred bounds of stack elements are correct
+        if (instr.increases_stack()) {
+            emit.assert_runtime_result_bound(emit.get_stack().top());
+        }
+    };
+
     return evmc::VM(new BlockchainTestVM(args.implementation, hook));
 }
 

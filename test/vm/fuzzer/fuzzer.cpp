@@ -487,26 +487,21 @@ static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
         hook = compiler_emit_hook(engine);
     }
 
-    hook = [prev_hook = std::move(hook)](auto &emit, auto const &instr) {
+    hook = [prev_hook = std::move(hook),
+            &engine](auto &emit, auto const &instr) {
         if (prev_hook) {
             prev_hook(emit, instr);
         }
 
         // Assert that inferred bounds of stack elements are correct
-        if (instr.increases_stack()) {
+        // Don't do this every time since this discharge deferred comparisons
+        // and write AVX stack elements to memory.
+        if (instr.increases_stack() && toss(engine, 0.1)) {
             emit.assert_runtime_result_bound(emit.get_stack().top());
         }
     };
 
     return evmc::VM(new BlockchainTestVM(args.implementation, hook));
-}
-
-// Coin toss, biased whenever p != 0.5
-template <typename Engine>
-static bool toss(Engine &engine, double p)
-{
-    std::bernoulli_distribution dist(p);
-    return dist(engine);
 }
 
 static void do_run(std::size_t const run_index, arguments const &args)

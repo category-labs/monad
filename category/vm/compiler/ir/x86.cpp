@@ -311,13 +311,14 @@ namespace
 
     [[gnu::always_inline]]
     inline void
-    post_instruction_emit(Emitter &emit, CompilerConfig const &config)
+    post_instruction_emit(Emitter &emit, Instruction const &instr, CompilerConfig const &config)
     {
         (void)emit;
+        (void)instr;
         (void)config;
 #ifdef MONAD_COMPILER_TESTING
         if (config.post_instruction_emit_hook) {
-            config.post_instruction_emit_hook(emit);
+            config.post_instruction_emit_hook(emit, instr);
         }
 #endif
     }
@@ -340,7 +341,7 @@ namespace
                     ->set_bit_upper_bound(result_bound);
             }
             require_code_size_in_bound(emit, max_native_size);
-            post_instruction_emit(emit, config);
+            post_instruction_emit(emit, instr, config);
         }
     }
 

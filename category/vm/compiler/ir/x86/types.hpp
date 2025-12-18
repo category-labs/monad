@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/runtime.hpp>
@@ -130,7 +131,7 @@ namespace monad::vm::compiler::native
 
     class Emitter;
 
-    using EmitterHook = std::function<void(Emitter &)>;
+    using EmitterHook = std::function<void(Emitter &, Instruction const &)>;
 
     struct CompilerConfig
     {

@@ -221,8 +221,10 @@ namespace monad::vm::compiler::native
             // If the stack element is a literal, tighten the bound to the
             // literal's actual bound.
             if (literal_) {
-                bit_upper_bound_ = static_cast<std::uint32_t>(bit_width(literal_->value));
-            } else {
+                bit_upper_bound_ =
+                    static_cast<std::uint32_t>(bit_width(literal_->value));
+            }
+            else {
                 bit_upper_bound_ = bits;
             }
         }

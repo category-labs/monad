@@ -30,10 +30,12 @@ using namespace monad::vm::compiler::native;
 namespace
 {
     // Compute bounds on the result of an instruction, if possible.
-    // This function may return values greater than 256, use compute_result_bound.
-    // It may also not compute the tightest possible bound for instructions that
-    // are constant folded, i.e. composed only of literals.
-    std::uint32_t compute_result_bound_unsafe(Emitter &emit, Instruction const &instr)
+    // This function may return values greater than 256, use
+    // compute_result_bound. It may also not compute the tightest possible bound
+    // for instructions that are constant folded, i.e. composed only of
+    // literals.
+    std::uint32_t
+    compute_result_bound_unsafe(Emitter &emit, Instruction const &instr)
     {
         using enum OpCode;
         auto &stack = emit.get_stack();
@@ -51,47 +53,47 @@ namespace
             // Max bound corresponds to case where denominator = 1.
             return stack.get(top_index)->bit_upper_bound();
         case Div:
-        case SDiv:
-            {
-                // When both sides are non-negative, SDiv === Div
-                auto const lhs_bound = stack.get(top_index)->bit_upper_bound();
-                auto const rhs_bound = stack.get(top_index - 1)->bit_upper_bound();
-                if (instr.opcode() == Div || (lhs_bound < 256 && rhs_bound < 256)) {
-                    // Worst case: negative number divided by 1
-                    return lhs_bound;
-                } else {
-                    // Signed division with possible negative numbers
-                    return 256;
-                }
+        case SDiv: {
+            // When both sides are non-negative, SDiv === Div
+            auto const lhs_bound = stack.get(top_index)->bit_upper_bound();
+            auto const rhs_bound = stack.get(top_index - 1)->bit_upper_bound();
+            if (instr.opcode() == Div || (lhs_bound < 256 && rhs_bound < 256)) {
+                // Worst case: negative number divided by 1
+                return lhs_bound;
             }
+            else {
+                // Signed division with possible negative numbers
+                return 256;
+            }
+        }
         case Mod:
-        case SMod:
-            {
-                // When both sides are non-negative, SMod === Mod
-                auto const lhs_bound = stack.get(top_index)->bit_upper_bound();
-                auto const rhs_bound = stack.get(top_index - 1)->bit_upper_bound();
-                if (instr.opcode() == Mod || (lhs_bound < 256 && rhs_bound < 256)) {
-                    // Result is always less than the modulus.
-                    return rhs_bound;
-                } else {
-                    // Signed modulus with possible negative numbers
-                    return 256;
-                }
+        case SMod: {
+            // When both sides are non-negative, SMod === Mod
+            auto const lhs_bound = stack.get(top_index)->bit_upper_bound();
+            auto const rhs_bound = stack.get(top_index - 1)->bit_upper_bound();
+            if (instr.opcode() == Mod || (lhs_bound < 256 && rhs_bound < 256)) {
+                // Result is always less than the modulus.
+                return rhs_bound;
             }
-        case Sub:
-            {
-                // No bound can be inferred because of negative numbers unless
-                // the lhs is a literal and rhs is bounded by lhs.
-                auto const lhs = stack.get(top_index);
-                auto const lhs_bound = lhs->bit_upper_bound();
-                auto const rhs_bound = stack.get(top_index - 1)->bit_upper_bound();
-                if (lhs->literal() && lhs_bound > rhs_bound) {
-                    // Result will not go negative, worst case is subtracting 0
-                    return lhs_bound;
-                } else {
-                    return 256;
-                }
+            else {
+                // Signed modulus with possible negative numbers
+                return 256;
             }
+        }
+        case Sub: {
+            // No bound can be inferred because of negative numbers unless
+            // the lhs is a literal and rhs is bounded by lhs.
+            auto const lhs = stack.get(top_index);
+            auto const lhs_bound = lhs->bit_upper_bound();
+            auto const rhs_bound = stack.get(top_index - 1)->bit_upper_bound();
+            if (lhs->literal() && lhs_bound > rhs_bound) {
+                // Result will not go negative, worst case is subtracting 0
+                return lhs_bound;
+            }
+            else {
+                return 256;
+            }
+        }
         case AddMod:
         case MulMod:
             // Result is always less than the modulus.
@@ -284,7 +286,8 @@ namespace
         }
     }
 
-    std::uint32_t compute_result_bound(Emitter &emit, Instruction const &instr) {
+    std::uint32_t compute_result_bound(Emitter &emit, Instruction const &instr)
+    {
         return std::min(256u, compute_result_bound_unsafe(emit, instr));
     }
 }

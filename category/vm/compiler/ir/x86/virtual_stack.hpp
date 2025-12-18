@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/utils/rc_ptr.hpp>
 
@@ -213,6 +214,27 @@ namespace monad::vm::compiler::native
             return !stack_indices_.empty();
         }
 
+        uint32_t bit_upper_bound() const
+        {
+            return bit_upper_bound_;
+        }
+
+        bool is_bounded_by(std::uint32_t bits) const
+        {
+            return bit_upper_bound_ <= bits;
+        }
+
+        void set_bit_upper_bound(std::uint32_t bits)
+        {
+            // If the stack element is a literal, tighten the bound to the
+            // literal's actual bound.
+            if (literal_) {
+                bit_upper_bound_ = static_cast<std::uint32_t>(bit_width(literal_->value));
+            } else {
+                bit_upper_bound_ = bits;
+            }
+        }
+
         // Remember to match this with a call to `unreserve_avx_reg`.
         void reserve_avx_reg()
         {
@@ -264,6 +286,7 @@ namespace monad::vm::compiler::native
         std::optional<AvxReg> avx_reg_;
         std::optional<GeneralReg> general_reg_;
         std::optional<Literal> literal_;
+        uint32_t bit_upper_bound_ = 256u; // Bounded by 2^{256} by default.
     };
 
     using StackElemRef = utils::RcPtr<StackElem, StackElemDeleter>;

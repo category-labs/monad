@@ -310,8 +310,8 @@ namespace
     }
 
     [[gnu::always_inline]]
-    inline void
-    post_instruction_emit(Emitter &emit, Instruction const &instr, CompilerConfig const &config)
+    inline void post_instruction_emit(
+        Emitter &emit, Instruction const &instr, CompilerConfig const &config)
     {
         (void)emit;
         (void)instr;

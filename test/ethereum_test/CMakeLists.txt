@@ -45,13 +45,13 @@ target_link_libraries(monad-ethereum-test PRIVATE nlohmann_json::nlohmann_json
 target_sources(
   monad-ethereum-test
   PRIVATE include/blockchain_test.hpp
-          include/ethereum_test.hpp
           include/event.hpp
           include/from_json.hpp
+          include/revision_map.hpp
           include/transaction_test.hpp
           src/blockchain_test.cpp
-          src/ethereum_test.cpp
           src/event.cpp
+          src/from_json.cpp
           src/main.cpp
           src/transaction_test.cpp)
 

@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
@@ -272,8 +273,7 @@ namespace
                  state_overrides.override_sets) {
                 // This would avoid seg-fault on storage override for
                 // non-existing accounts
-                auto const &account = state.recent_account(address);
-                if (MONAD_UNLIKELY(!account.has_value())) {
+                if (MONAD_UNLIKELY(!state.account_exists(address))) {
                     state.create_contract(address);
                 }
 
@@ -331,14 +331,13 @@ namespace
         // However, eth_call doesn't take a nonce parameter.
         // Solving the issue by manually setting nonce to match with the
         // expected nonce
-        auto const &acct = state.recent_account(sender);
-        enriched_txn.nonce = acct.has_value() ? acct.value().nonce : 0;
+        enriched_txn.nonce = state.get_nonce(sender);
 
         // validate_transaction expects the sender of a transaction is EOA, not
         // CA. However, eth_call allows the sender to be CA to simulate a
         // subroutine. Solving this issue by manually setting account to be EOA
         // for validation
-        std::optional<Account> eoa = acct;
+        std::optional<Account> eoa = state.recent_account(sender);
         if (eoa.has_value()) {
             eoa.value().code_hash = NULL_HASH;
         }

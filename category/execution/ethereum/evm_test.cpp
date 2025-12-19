@@ -585,8 +585,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
         if constexpr (TestFixture::Trait::evm_rev() == EVMC_FRONTIER) {
             EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
             EXPECT_EQ(r2.create_address, a);
-            auto const &account = s.recent_account(a);
-            EXPECT_TRUE(account.has_value());
+            EXPECT_TRUE(s.account_exists(a));
             auto const icode = s.get_code(a)->intercode();
             EXPECT_EQ(icode->size(), 0);
         }

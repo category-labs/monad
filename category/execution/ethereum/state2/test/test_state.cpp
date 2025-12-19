@@ -1906,12 +1906,15 @@ namespace
                     st2.add_to_balance(addr, delta);
                 }
                 else if (action < RANDOM_DEL) {
-                    auto const account1 = st1.recent_account(addr);
-                    auto const account2 = st2.recent_account(addr);
-                    MONAD_ASSERT(account1 == account2);
-                    if (account1.has_value()) {
-                        uint256_t const bal = account1->balance;
-                        MONAD_ASSERT(account2->balance == bal);
+                    MONAD_ASSERT(
+                        st1.get_current_balance_pessimistic(addr) ==
+                        st2.get_current_balance_pessimistic(addr));
+                    MONAD_ASSERT(
+                        st1.get_code_hash(addr) == st2.get_code_hash(addr));
+                    MONAD_ASSERT(st1.get_nonce(addr) == st2.get_nonce(addr));
+                    if (st1.account_exists(addr)) {
+                        uint256_t const bal = intx::be::load<uint256_t>(
+                            st1.get_current_balance_pessimistic(addr));
                         LOG_INFO(
                             "Account_del_ a_{} {}", addr.bytes[19] % 10, bal);
                         st1.subtract_from_balance(addr, bal);

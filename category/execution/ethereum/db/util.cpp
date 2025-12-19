@@ -429,8 +429,10 @@ namespace
         }
     };
 
-    using AccountMerkleCompute = MerkleComputeBase<AccountLeafProcessor>;
-    using StorageMerkleCompute = MerkleComputeBase<StorageLeafProcessor>;
+    using AccountMerkleCompute =
+        MerkleComputeBase<Keccak256Hasher, AccountLeafProcessor>;
+    using StorageMerkleCompute =
+        MerkleComputeBase<Keccak256Hasher, StorageLeafProcessor>;
 
     struct StoragePrefixMerkleCompute final : public EmptyCompute
     {
@@ -439,7 +441,7 @@ namespace
         compute(unsigned char *const buffer, Node const &node) override
         {
             MONAD_ASSERT(node.has_value());
-            return encode_two_pieces(
+            return encode_two_pieces<Keccak256Hasher>(
                 buffer,
                 node.path_nibble_view(),
                 AccountLeafProcessor::process(node),
@@ -504,13 +506,16 @@ mpt::Compute &MachineBase::get_compute() const
     static StorageRootMerkleCompute storage_root_compute;
     static StoragePrefixMerkleCompute storage_prefix_compute;
 
-    static VarLenMerkleCompute generic_merkle_compute;
-    static RootVarLenMerkleCompute generic_root_merkle_compute;
+    static VarLenMerkleCompute<Keccak256Hasher> generic_merkle_compute;
+    static RootVarLenMerkleCompute<Keccak256Hasher> generic_root_merkle_compute;
 
-    static VarLenMerkleCompute<ReceiptLeafProcessor> receipt_compute;
-    static RootVarLenMerkleCompute<ReceiptLeafProcessor> receipt_root_compute;
-    static VarLenMerkleCompute<TransactionLeafProcessor> transaction_compute;
-    static RootVarLenMerkleCompute<TransactionLeafProcessor>
+    static VarLenMerkleCompute<Keccak256Hasher, ReceiptLeafProcessor>
+        receipt_compute;
+    static RootVarLenMerkleCompute<Keccak256Hasher, ReceiptLeafProcessor>
+        receipt_root_compute;
+    static VarLenMerkleCompute<Keccak256Hasher, TransactionLeafProcessor>
+        transaction_compute;
+    static RootVarLenMerkleCompute<Keccak256Hasher, TransactionLeafProcessor>
         transaction_root_compute;
 
     auto const prefix_length = prefix_len();

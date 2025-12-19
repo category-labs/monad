@@ -82,9 +82,9 @@ static_validate_system_transaction(Transaction const &tx, Address const &sender)
 EXPLICIT_MONAD_TRAITS(static_validate_system_transaction)
 
 Result<void> validate_system_transaction(
-    Transaction const &tx, std::optional<Account> const &sender_account)
+    Transaction const &tx, Address const &sender, State &state)
 {
-    if (MONAD_UNLIKELY(!sender_account.has_value())) {
+    if (MONAD_UNLIKELY(!state.account_exists(sender))) {
         // YP (71)
         if (tx.nonce) {
             return TransactionError::BadNonce;
@@ -93,7 +93,7 @@ Result<void> validate_system_transaction(
     }
 
     // YP (71)
-    if (MONAD_UNLIKELY(sender_account->nonce != tx.nonce)) {
+    if (MONAD_UNLIKELY(state.get_nonce(sender) != tx.nonce)) {
         return TransactionError::BadNonce;
     }
     return success();

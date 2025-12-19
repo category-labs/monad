@@ -15,7 +15,6 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -46,6 +45,7 @@ enum class SystemTransactionError
     NonEmptyAuthorizationList,
 };
 
+class State;
 struct Transaction;
 
 template <Traits traits>
@@ -53,7 +53,7 @@ Result<void> static_validate_system_transaction(
     Transaction const &tx, Address const &sender);
 
 Result<void> validate_system_transaction(
-    Transaction const &, std::optional<Account> const &sender_account);
+    Transaction const &, Address const &sender, State &);
 
 MONAD_NAMESPACE_END
 

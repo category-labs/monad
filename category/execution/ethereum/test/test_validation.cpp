@@ -18,12 +18,21 @@
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/dao.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/test/test_traits_state.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/mpt/db.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
@@ -41,6 +50,7 @@ using namespace monad;
 
 namespace
 {
+    using namespace ::monad::literals;
     using intx::operator""_u256;
 
     static constexpr auto r{
@@ -51,11 +61,15 @@ namespace
     template <evmc_revision r>
     using rev = std::integral_constant<evmc_revision, r>;
 
+    static constexpr auto sender =
+        0x000000000000000000000000000000000000000a_address;
+
+    static constexpr auto to =
+        0x5353535353535353535353535353535353535353_address;
 }
 
 TYPED_TEST(TraitsTest, validate_enough_gas)
 {
-
     static Transaction const t{
         .sc = {.r = r, .s = s},
         .max_fee_per_gas = 29'443'849'433,
@@ -109,41 +123,29 @@ TYPED_TEST(TraitsTest, validate_floor_gas)
     }
 }
 
-TYPED_TEST(TraitsTest, validate_deployed_code)
+TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code)
 {
-    static constexpr auto some_non_null_hash{
-        0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-
+    this->state.add_to_balance(sender, 56'939'568'773'815'811);
+    this->state.set_nonce(sender, 24);
+    this->state.set_code(sender, 0x00_bytes);
     Transaction const tx{.gas_limit = 60'500};
-    Account const sender_account{
-        .balance = 56'939'568'773'815'811,
-        .code_hash = some_non_null_hash,
-        .nonce = 24};
 
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
 }
 
 // EIP-7702
-TYPED_TEST(TraitsTest, validate_deployed_code_delegated)
+TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code_delegated)
 {
-    static constexpr auto some_non_null_hash{
-        0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
-
+    this->state.add_to_balance(sender, 56'939'568'773'815'811);
+    this->state.set_code(
+        sender, 0xEF01001122334455112233445511223344551122334455_bytes);
     Transaction const tx{.gas_limit = 60'500};
-    Account const sender_account{
-        .balance = 56'939'568'773'815'811, .code_hash = some_non_null_hash};
 
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx,
-        sender_account,
-        std::vector<uint8_t>{
-            0xEF, 0x01, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x11, 0x22, 0x33,
-            0x44, 0x55, 0x11, 0x22, 0x33, 0x44, 0x55,
-        });
+        tx, sender, this->state);
     if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
         EXPECT_TRUE(result.has_value());
     }
@@ -153,70 +155,66 @@ TYPED_TEST(TraitsTest, validate_deployed_code_delegated)
     }
 }
 
-TYPED_TEST(TraitsTest, validate_nonce)
+TYPED_TEST(InMemoryStateTraitsTest, validate_nonce)
 {
+    this->state.add_to_balance(sender, 56'939'568'773'815'811);
+    this->state.set_nonce(sender, 24);
     Transaction const tx{
         .nonce = 23,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
-    Account const sender_account{
-        .balance = 56'939'568'773'815'811, .nonce = 24};
 
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
-TYPED_TEST(TraitsTest, validate_nonce_optimistically)
+TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_optimistically)
 {
+    this->state.add_to_balance(sender, 56'939'568'773'815'811);
+    this->state.set_nonce(sender, 24);
     Transaction const tx{
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
-    Account const sender_account{
-        .balance = 56'939'568'773'815'811, .nonce = 24};
 
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
-TYPED_TEST(TraitsTest, validate_enough_balance)
+TYPED_TEST(InMemoryStateTraitsTest, validate_enough_balance)
 {
-    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
-
+    this->state.add_to_balance(sender, 55'939'568'773'815'811);
     Transaction const tx{
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .value = 55'939'568'773'815'811,
-        .to = b,
+        .to = to,
         .max_priority_fee_per_gas = 100'000'000,
     };
-    Account const sender_account{.balance = 55'939'568'773'815'811};
 
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
 
-TYPED_TEST(TraitsTest, successful_validation)
+TYPED_TEST(InMemoryStateTraitsTest, successful_validation)
 {
-    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
-
+    this->state.add_to_balance(sender, 56'939'568'773'815'811);
+    this->state.set_nonce(sender, 25);
     Transaction const tx{
         .sc = {.r = r, .s = s},
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .value = 55'939'568'773'815'811,
-        .to = b};
-    Account const sender_account{
-        .balance = 56'939'568'773'815'811, .nonce = 25};
+        .to = to};
 
     auto const result1 =
         static_validate_transaction<typename TestFixture::Trait>(
@@ -224,20 +222,18 @@ TYPED_TEST(TraitsTest, successful_validation)
     EXPECT_TRUE(result1.has_value());
 
     auto const result2 = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender, this->state);
     EXPECT_TRUE(result2.has_value());
 }
 
 TYPED_TEST(TraitsTest, max_fee_less_than_base)
 {
-    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
-
     static Transaction const t{
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .value = 55'939'568'773'815'811,
-        .to = b,
+        .to = to,
         .max_priority_fee_per_gas = 100'000'000};
 
     auto const result =
@@ -249,14 +245,12 @@ TYPED_TEST(TraitsTest, max_fee_less_than_base)
 
 TYPED_TEST(TraitsTest, priority_fee_greater_than_max)
 {
-    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
-
     static Transaction const t{
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
         .value = 48'979'750'000'000'000,
-        .to = b,
+        .to = to,
         .max_priority_fee_per_gas = 100'000'000'000};
 
     auto const result =
@@ -266,20 +260,17 @@ TYPED_TEST(TraitsTest, priority_fee_greater_than_max)
     EXPECT_EQ(result.error(), TransactionError::PriorityFeeGreaterThanMax);
 }
 
-TYPED_TEST(TraitsTest, insufficent_balance_overflow)
+TYPED_TEST(InMemoryStateTraitsTest, insufficent_balance_overflow)
 {
-    static constexpr auto b{0x5353535353535353535353535353535353535353_address};
-
+    this->state.add_to_balance(sender, std::numeric_limits<uint256_t>::max());
     Transaction const tx{
         .max_fee_per_gas = std::numeric_limits<uint256_t>::max() - 1,
         .gas_limit = 1000,
         .value = 0,
-        .to = b};
-    Account const sender_account{
-        .balance = std::numeric_limits<uint256_t>::max()};
+        .to = to};
 
     auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender_account, {});
+        tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }

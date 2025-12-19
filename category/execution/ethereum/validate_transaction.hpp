@@ -18,7 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -59,6 +59,7 @@ enum class TransactionError
     EmptyAuthorizationList,
 };
 
+class State;
 struct Transaction;
 
 template <Traits traits>
@@ -67,13 +68,11 @@ Result<void> static_validate_transaction(
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id);
 
 template <Traits traits>
-Result<void> validate_transaction(
-    Transaction const &, std::optional<Account> const &sender_account,
-    std::span<uint8_t const>);
+Result<void>
+validate_transaction(Transaction const &, Address const &sender, State &);
 
 Result<void> validate_transaction(
-    evmc_revision, Transaction const &,
-    std::optional<Account> const &sender_account, std::span<uint8_t const>);
+    evmc_revision, Transaction const &, Address const &sender, State &);
 
 MONAD_NAMESPACE_END
 

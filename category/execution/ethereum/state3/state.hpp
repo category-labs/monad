@@ -77,6 +77,8 @@ private:
 
     AccountState &current_account_state(Address const &);
 
+    std::optional<Account> const &recent_account(Address const &);
+
     std::optional<Account> &current_account(Address const &);
 
 public:
@@ -103,8 +105,7 @@ public:
 
     vm::VM &vm();
 
-    std::optional<Account> const &recent_account(Address const &);
-
+public:
     void set_original_nonce(Address const &, uint64_t nonce);
 
     ////////////////////////////////////////

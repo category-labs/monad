@@ -30,7 +30,6 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
-#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
@@ -333,18 +332,18 @@ namespace
         // expected nonce
         enriched_txn.nonce = state.get_nonce(sender);
 
-        // validate_transaction expects the sender of a transaction is EOA, not
-        // CA. However, eth_call allows the sender to be CA to simulate a
-        // subroutine. Solving this issue by manually setting account to be EOA
-        // for validation
-        std::optional<Account> eoa = state.recent_account(sender);
-        if (eoa.has_value()) {
-            eoa.value().code_hash = NULL_HASH;
-        }
-
         // Safe to pass empty code to validation here because the above override
         // will always mark this transaction as coming from an EOA.
-        BOOST_OUTCOME_TRY(validate_transaction<traits>(enriched_txn, eoa, {}));
+        {
+            State state{block_state, incarnation};
+            // validate_transaction expects the sender of a transaction is EOA,
+            // not CA. However, eth_call allows the sender to be CA to simulate
+            // a subroutine. Solving this issue by manually setting account to
+            // be EOA for validation
+            state.set_code(sender, {});
+            BOOST_OUTCOME_TRY(
+                validate_transaction<traits>(enriched_txn, sender, state));
+        }
 
         auto const senders = std::vector{sender};
         auto const authorities_vec =

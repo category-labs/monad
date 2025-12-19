@@ -19,7 +19,9 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -208,9 +210,8 @@ Result<void> static_validate_transaction(
 EXPLICIT_TRAITS(static_validate_transaction);
 
 template <Traits traits>
-Result<void> validate_transaction(
-    Transaction const &tx, std::optional<Account> const &sender_account,
-    std::span<uint8_t const> code)
+Result<void>
+validate_transaction(Transaction const &tx, Address const &sender, State &state)
 {
     // YP (70)
     uint512_t v0 = tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
@@ -218,7 +219,7 @@ Result<void> validate_transaction(
         v0 += tx.max_fee_per_blob_gas * get_total_blob_gas(tx);
     }
 
-    if (MONAD_UNLIKELY(!sender_account.has_value())) {
+    if (MONAD_UNLIKELY(!state.account_exists(sender))) {
         // YP (71)
         if (tx.nonce) {
             return TransactionError::BadNonce;
@@ -231,10 +232,12 @@ Result<void> validate_transaction(
     }
 
     // YP (71)
-    bool sender_is_eoa = sender_account->code_hash == NULL_HASH;
+    bool sender_is_eoa = state.get_code_hash(sender) == NULL_HASH;
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
         // EIP-7702
-        sender_is_eoa = sender_is_eoa || vm::evm::is_delegated(code);
+        auto const icode = state.get_code(sender)->intercode();
+        sender_is_eoa = sender_is_eoa ||
+                        vm::evm::is_delegated({icode->code(), icode->size()});
     }
 
     if (MONAD_UNLIKELY(!sender_is_eoa)) {
@@ -242,7 +245,7 @@ Result<void> validate_transaction(
     }
 
     // YP (71)
-    if (MONAD_UNLIKELY(sender_account->nonce != tx.nonce)) {
+    if (MONAD_UNLIKELY(state.get_nonce(sender) != tx.nonce)) {
         return TransactionError::BadNonce;
     }
 
@@ -251,7 +254,7 @@ Result<void> validate_transaction(
     // note this passes because `v0` includes gas which is later deducted in
     // `irrevocable_change` before relaxed merge logic in `sender_has_balance`
     // this is fragile as it depends on values in two locations matching
-    if (MONAD_UNLIKELY(sender_account->balance < v0)) {
+    if (MONAD_UNLIKELY(state.get_balance(sender) < v0)) {
         return TransactionError::InsufficientBalance;
     }
 
@@ -264,11 +267,10 @@ Result<void> validate_transaction(
 EXPLICIT_TRAITS(validate_transaction);
 
 Result<void> validate_transaction(
-    evmc_revision const rev, Transaction const &tx,
-    std::optional<Account> const &sender_account,
-    std::span<uint8_t const> const code)
+    evmc_revision const rev, Transaction const &tx, Address const &sender,
+    State &state)
 {
-    SWITCH_EVM_TRAITS(validate_transaction, tx, sender_account, code);
+    SWITCH_EVM_TRAITS(validate_transaction, tx, sender, state);
     MONAD_ABORT("invalid revision");
 }
 

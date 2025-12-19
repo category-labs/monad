@@ -36,12 +36,14 @@ class ExecuteSystemTransaction
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
     CallTracerBase &call_tracer_;
+    trace::StateTracer &state_tracer_;
 
 public:
     ExecuteSystemTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
         BlockHeader const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, CallTracerBase &);
+        boost::fibers::promise<void> &prev, CallTracerBase &,
+        trace::StateTracer &);
 
     Result<Receipt> operator()();
 

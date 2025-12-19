@@ -63,7 +63,7 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
     BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
-    CallTracerBase &call_tracer)
+    CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
     : chain_{chain}
     , i_{i}
     , tx_{tx}
@@ -73,6 +73,7 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     , block_metrics_{block_metrics}
     , prev_{prev}
     , call_tracer_{call_tracer}
+    , state_tracer_{state_tracer}
 {
     record_txn_header_events(static_cast<uint32_t>(i), tx, sender, {});
 }
@@ -115,11 +116,6 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             }
             auto const receipt = execute_final(state);
             block_state_.merge(state);
-            record_txn_output_events(
-                static_cast<uint32_t>(this->i_),
-                receipt,
-                call_tracer_.get_call_frames(),
-                state);
             return receipt;
         }
     }
@@ -139,11 +135,6 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         }
         auto const receipt = execute_final(state);
         block_state_.merge(state);
-        record_txn_output_events(
-            static_cast<uint32_t>(this->i_),
-            receipt,
-            call_tracer_.get_call_frames(),
-            state);
         return receipt;
     }
 }
@@ -197,6 +188,12 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
         receipt.add_log(std::move(log));
     }
     call_tracer_.on_finish(receipt.gas_used);
+    trace::run_tracer<traits>(state_tracer_, state);
+    record_txn_output_events(
+        static_cast<uint32_t>(this->i_),
+        receipt,
+        call_tracer_.get_call_frames(),
+        state);
     return receipt;
 }
 

@@ -41,7 +41,8 @@ namespace monad::test
         }
     };
 
-    using MerkleCompute = ::monad::mpt::MerkleComputeBase<DummyComputeLeafData>;
+    using MerkleCompute =
+        ::monad::mpt::MerkleComputeBase<Keccak256Hasher, DummyComputeLeafData>;
 
     struct RootMerkleCompute : public MerkleCompute
     {
@@ -137,8 +138,8 @@ namespace monad::test
 
         virtual Compute &get_compute() const override
         {
-            static VarLenMerkleCompute m{};
-            static RootVarLenMerkleCompute rm{};
+            static VarLenMerkleCompute<Keccak256Hasher> m{};
+            static RootVarLenMerkleCompute<Keccak256Hasher> rm{};
             static EmptyCompute e{};
             if (MONAD_LIKELY(depth > prefix_len)) {
                 return m;
@@ -231,7 +232,7 @@ namespace monad::test
     using StateMachineAlwaysEmpty = StateMachineAlways<EmptyCompute>;
     using StateMachineAlwaysMerkle = StateMachineAlways<MerkleCompute>;
     using StateMachineAlwaysVarLen = StateMachineAlways<
-        VarLenMerkleCompute<>,
+        VarLenMerkleCompute<Keccak256Hasher>,
         StateMachineConfig{.variable_length_start_depth = 0}>;
     using StateMachinePlainVarLen = StateMachineAlways<
         EmptyCompute, StateMachineConfig{.variable_length_start_depth = 0}>;

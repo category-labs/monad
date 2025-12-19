@@ -47,11 +47,8 @@ namespace
                        stack.get(top_index - 1)->bit_upper_bound()) +
                    1;
         case Mul:
-            return stack.get(top_index)->bit_upper_bound() *
+            return stack.get(top_index)->bit_upper_bound() +
                    stack.get(top_index - 1)->bit_upper_bound();
-
-            // Max bound corresponds to case where denominator = 1.
-            return stack.get(top_index)->bit_upper_bound();
         case Div:
         case SDiv: {
             // When both sides are non-negative, SDiv === Div
@@ -164,7 +161,8 @@ namespace
             if (!signed_shift && shift->literal()) {
                 // Unsigned shift with a literal shift amount
                 auto const shift_lit = shift->literal()->value;
-                if (shift_lit >= 256) {
+                if (shift_lit >= 256 ||
+                    static_cast<std::uint32_t>(shift_lit) >= val_bound) {
                     return 0; // All bits shifted out of range
                 }
                 else {
@@ -266,9 +264,9 @@ namespace
         case Push:
             return instr.index() * 8; // number of bits pushed
         case Dup:
-            return 256; // same as the duplicated value
+            return stack.get(top_index + 1 - instr.index())->bit_upper_bound();
         case Swap:
-            return 256; // same as the swapped value
+            return stack.get(top_index - instr.index())->bit_upper_bound();
         case Log:
             return 256; // no result pushed
         case Create:

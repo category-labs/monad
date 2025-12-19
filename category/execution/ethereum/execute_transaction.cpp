@@ -87,6 +87,7 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     , authorities_{authorities}
     , header_{header}
     , i_{i}
+    , intrinsic_gas_{intrinsic_gas_breakdown<traits>(tx)}
     , revert_transaction_{revert_transaction}
 {
 }
@@ -201,7 +202,7 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message() const
         .kind = to_address.first,
         .flags = 0,
         .depth = 0,
-        .gas = static_cast<int64_t>(tx_.gas_limit - intrinsic_gas<traits>(tx_)),
+        .gas = static_cast<int64_t>(tx_.gas_limit - sum(this->intrinsic_gas_)),
         .recipient = to_address.second,
         .sender = sender_,
         .input_data = tx_.data.data(),
@@ -420,7 +421,10 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             block_state_.merge(state);
             record_txn_output_events(
                 static_cast<uint32_t>(this->i_),
+                this->tx_,
                 receipt,
+                static_cast<uint64_t>(result.value().gas_left),
+                this->intrinsic_gas_,
                 call_tracer_.get_call_frames(),
                 state);
             return receipt;
@@ -446,7 +450,10 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         block_state_.merge(state);
         record_txn_output_events(
             static_cast<uint32_t>(this->i_),
+            this->tx_,
             receipt,
+            static_cast<uint64_t>(result.value().gas_left),
+            this->intrinsic_gas_,
             call_tracer_.get_call_frames(),
             state);
         return receipt;

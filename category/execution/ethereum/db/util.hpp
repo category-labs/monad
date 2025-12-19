@@ -79,7 +79,8 @@ struct MachineBase : public mpt::StateMachine
 
     constexpr uint8_t max_depth(uint8_t const prefix_length) const
     {
-        return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
+        return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2 +
+               1;
     }
 };
 
@@ -115,6 +116,7 @@ inline constexpr unsigned char TX_HASH_NIBBLE = 7;
 inline constexpr unsigned char BLOCK_HASH_NIBBLE = 8;
 inline constexpr unsigned char CALL_FRAME_NIBBLE = 9;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
+
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
 inline mpt::Nibbles const receipt_nibbles = mpt::concat(RECEIPT_NIBBLE);
@@ -126,6 +128,10 @@ inline mpt::Nibbles const ommer_nibbles = mpt::concat(OMMER_NIBBLE);
 inline mpt::Nibbles const withdrawal_nibbles = mpt::concat(WITHDRAWAL_NIBBLE);
 inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
 inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
+
+inline constexpr unsigned char STORAGE_PREFIX_NIBBLE = 0;
+inline mpt::Nibbles const storage_prefix_nibbles =
+    mpt::concat(STORAGE_PREFIX_NIBBLE);
 
 //////////////////////////////////////////////////////////
 // Proposed and finialized subtries. Active on all tables.

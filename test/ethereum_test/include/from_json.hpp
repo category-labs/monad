@@ -31,6 +31,12 @@
 #include <charconv>
 #include <format>
 
+MONAD_NAMESPACE_BEGIN
+
+class State;
+
+MONAD_NAMESPACE_END
+
 /**
  * Parses an integer from a hex string. This is needed for the primitives
  * uint8_t, uint64_t, int64_t because we need to convert into these types from a
@@ -269,4 +275,11 @@ namespace nlohmann
             }
         }
     };
+
+    template <>
+    struct adl_serializer<monad::State>
+    {
+        static void from_json(json const &j, monad::State &state);
+    };
+
 }

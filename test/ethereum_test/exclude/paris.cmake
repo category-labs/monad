@@ -1,4 +1,4 @@
-set(merge_excluded_tests
+set(paris_excluded_tests
     "BlockchainTests.InvalidBlocks/bcEIP1559/badBlocks.json" # BaseFee
     "BlockchainTests.InvalidBlocks/bcEIP1559/badUncles.json" # Mixed
     "BlockchainTests.InvalidBlocks/bcEIP1559/gasLimit20m.json" # ParentHeader
@@ -17,4 +17,11 @@ set(merge_excluded_tests
     "BlockchainTests.InvalidBlocks/bcMultiChainTest/UncleFromSideChain.json" # Uncle
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding01.json"
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding127.json"
+
+    # Stricter validation of base fee
+    "BlockchainTests.london/validation/test_invalid_header.json"
+
+    # EIP-7610
+    "BlockchainTests.paris/eip7610_create_collision/test_init_collision_create_opcode.json"
+    "BlockchainTests.paris/eip7610_create_collision/test_init_collision_create_tx.json"
 )

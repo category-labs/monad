@@ -43,7 +43,7 @@ struct monad_db_snapshot_loader
     std::array<
         ankerl::unordered_dense::segmented_map<uint64_t, monad::mpt::Update>,
         MONAD_SNAPSHOT_SHARDS>
-        account_offset_to_update;
+        account_offset_to_storage_prefix_update;
     monad::mpt::UpdateList state_updates;
     monad::mpt::UpdateList code_updates;
     uint64_t bytes_read;
@@ -121,7 +121,7 @@ void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
         false);
     loader->hash_alloc.clear();
     loader->update_alloc.clear();
-    for (auto &map : loader->account_offset_to_update) {
+    for (auto &map : loader->account_offset_to_storage_prefix_update) {
         map.clear();
     }
     loader->state_updates.clear();
@@ -142,17 +142,25 @@ uint64_t monad_db_snapshot_loader_read_account(
     auto const [address, account] = res.value();
     MONAD_ASSERT(address.size() == sizeof(Address));
     uint64_t const bytes_consumed = before.size() - bytes.size();
+
+    UpdateList storage_prefix_updates;
     auto const [it, success] =
-        loader->account_offset_to_update.at(shard).emplace(
+        loader->account_offset_to_storage_prefix_update.at(shard).emplace(
             account_offset,
             Update{
-                .key = loader->hash_alloc.emplace_back(keccak256(address)),
-                .value = before.substr(0, bytes_consumed),
-                .incarnation = false,
+                .key = storage_prefix_nibbles,
+                .value = byte_string_view{},
                 .next = UpdateList{},
                 .version = static_cast<int64_t>(loader->block)});
     MONAD_ASSERT(success);
-    loader->state_updates.push_front(it->second);
+    storage_prefix_updates.push_front(it->second);
+    loader->state_updates.push_front(loader->update_alloc.emplace_back(Update{
+        .key = loader->hash_alloc.emplace_back(keccak256(address)),
+        .value = before.substr(0, bytes_consumed),
+        .incarnation = false,
+        .next = std::move(storage_prefix_updates),
+        .version = static_cast<int64_t>(loader->block)}));
+
     loader->bytes_read += bytes_consumed;
     return bytes_consumed;
 }
@@ -160,10 +168,11 @@ uint64_t monad_db_snapshot_loader_read_account(
 class NibblePath
 {
 private:
-    // 128 nibbles max: 64 (account hash) + 64 (storage hash)
-    // Note: finalized and code/data nibbles are handled separately and not
-    // stored in path
-    std::array<unsigned char, 64> buffer_{};
+    // 129 nibbles max: 64 (account hash) + 1 (storage_prefix) + 64 (storage
+    // hash)
+    // Note: finalized and code/data nibbles are handled separately and
+    // not stored in path
+    std::array<unsigned char, 65> buffer_{};
     uint8_t length_{0};
 
 public:
@@ -288,6 +297,9 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         }
         else {
             MONAD_ASSERT(nibble == STATE_NIBBLE);
+            if (path.length() == (HASH_SIZE + 1)) { // storage prefix node
+                return true;
+            }
             monad_snapshot_type type;
             if (path.length() == HASH_SIZE) {
                 type = MONAD_SNAPSHOT_ACCOUNT;
@@ -295,7 +307,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
                 account_bytes_written.at(shard) += val.size();
             }
             else {
-                MONAD_ASSERT(path.length() == (HASH_SIZE * 2));
+                MONAD_ASSERT(path.length() == (HASH_SIZE * 2) + 1);
                 type = MONAD_SNAPSHOT_STORAGE;
                 MONAD_ASSERT(
                     write(
@@ -474,12 +486,13 @@ void monad_db_snapshot_loader_load(
     if (storage) {
         MONAD_ASSERT(account);
         byte_string_view storage_view{storage, storage_len};
-        auto &account_offset_to_update =
-            loader->account_offset_to_update.at(shard);
+        auto &account_offset_to_storage_prefix_update =
+            loader->account_offset_to_storage_prefix_update.at(shard);
         while (!storage_view.empty()) {
             uint64_t const account_offset =
                 unaligned_load<uint64_t>(storage_view.data());
-            if (!account_offset_to_update.contains(account_offset)) {
+            if (!account_offset_to_storage_prefix_update.contains(
+                    account_offset)) {
                 monad_db_snapshot_loader_read_account(
                     loader, shard, account_offset, {account, account_len});
             }
@@ -487,7 +500,8 @@ void monad_db_snapshot_loader_load(
             byte_string_view const before{storage_view};
             auto const res = decode_storage_db_raw(storage_view);
             MONAD_ASSERT(res.has_value());
-            auto &update = account_offset_to_update.at(account_offset);
+            auto &update =
+                account_offset_to_storage_prefix_update.at(account_offset);
             uint64_t const consumed = before.size() - storage_view.size();
             update.next.push_front(loader->update_alloc.emplace_back(Update{
                 .key = loader->hash_alloc.emplace_back(

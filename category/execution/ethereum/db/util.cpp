@@ -414,8 +414,10 @@ namespace
         }
     };
 
-    using AccountMerkleCompute = MerkleComputeBase<ComputeAccountLeaf>;
-    using StorageMerkleCompute = MerkleComputeBase<ComputeStorageLeaf>;
+    using AccountMerkleCompute =
+        MerkleComputeBase<Keccak256Hasher, ComputeAccountLeaf>;
+    using StorageMerkleCompute =
+        MerkleComputeBase<Keccak256Hasher, ComputeStorageLeaf>;
 
     struct StorageRootMerkleCompute : public StorageMerkleCompute
     {
@@ -423,7 +425,7 @@ namespace
         compute(unsigned char *const buffer, Node *const node) override
         {
             MONAD_ASSERT(node->has_value());
-            return encode_two_pieces(
+            return encode_two_pieces<hasher>(
                 buffer,
                 node->path_nibble_view(),
                 ComputeAccountLeaf::compute(*node),
@@ -493,13 +495,16 @@ mpt::Compute &MachineBase::get_compute() const
     static StorageMerkleCompute storage_compute;
     static StorageRootMerkleCompute storage_root_compute;
 
-    static VarLenMerkleCompute generic_merkle_compute;
-    static RootVarLenMerkleCompute generic_root_merkle_compute;
+    static VarLenMerkleCompute<Keccak256Hasher> generic_merkle_compute;
+    static RootVarLenMerkleCompute<Keccak256Hasher> generic_root_merkle_compute;
 
-    static VarLenMerkleCompute<ReceiptLeafProcessor> receipt_compute;
-    static RootVarLenMerkleCompute<ReceiptLeafProcessor> receipt_root_compute;
-    static VarLenMerkleCompute<TransactionLeafProcess> transaction_compute;
-    static RootVarLenMerkleCompute<TransactionLeafProcess>
+    static VarLenMerkleCompute<Keccak256Hasher, ReceiptLeafProcessor>
+        receipt_compute;
+    static RootVarLenMerkleCompute<Keccak256Hasher, ReceiptLeafProcessor>
+        receipt_root_compute;
+    static VarLenMerkleCompute<Keccak256Hasher, TransactionLeafProcess>
+        transaction_compute;
+    static RootVarLenMerkleCompute<Keccak256Hasher, TransactionLeafProcess>
         transaction_root_compute;
 
     auto const prefix_length = prefix_len();

@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/eth_ctypes.h>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -56,6 +57,7 @@ protected:
     Address const &sender_;
     std::span<std::optional<Address> const> const authorities_;
     BlockHeader const &header_;
+    monad_c_eth_intrinsic_gas intrinsic_gas_;
 
 public:
     ExecuteTransactionNoValidation(

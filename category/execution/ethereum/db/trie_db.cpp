@@ -127,6 +127,7 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
             prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            STORAGE_PREFIX_NIBBLE,
             NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
         block_number_);
     if (res.has_error()) {
@@ -403,7 +404,8 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
                 handle_account(node);
             }
             else if (
-                path.nibble_size() == ((KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
+                path.nibble_size() ==
+                ((KECCAK256_SIZE + KECCAK256_SIZE) * 2 + 1)) {
                 handle_storage(node);
             }
             return true;
@@ -470,7 +472,7 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             auto const key = fmt::format(
                 "{}",
                 NibblesView{path}.substr(
-                    KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
+                    KECCAK256_SIZE * 2 + 1, KECCAK256_SIZE * 2));
 
             auto storage_data_json = nlohmann::json::object();
             storage_data_json["slot"] = fmt::format(

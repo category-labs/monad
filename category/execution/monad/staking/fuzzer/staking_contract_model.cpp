@@ -67,8 +67,7 @@ namespace monad::staking::test
 
     uint256_t StakingContractModel::balance_of(Address const &a)
     {
-        return intx::be::load<uint256_t>(
-            state_.get_current_balance_pessimistic(a));
+        return state_.get_balance(a);
     }
 
     std::unordered_set<uint8_t> const &

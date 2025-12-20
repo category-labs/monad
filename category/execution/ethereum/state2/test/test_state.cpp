@@ -203,9 +203,9 @@ TEST_F(InMemoryStateTest, get_balance)
 
     State s{bs, Incarnation{1, 1}};
 
-    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{10'000});
-    EXPECT_EQ(s.get_current_balance_pessimistic(b), bytes32_t{0});
-    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{0});
+    EXPECT_EQ(s.get_balance(a), 10'000);
+    EXPECT_EQ(s.get_balance(b), 0);
+    EXPECT_EQ(s.get_balance(c), 0);
 }
 
 TEST_F(InMemoryStateTest, add_to_balance)
@@ -222,8 +222,8 @@ TEST_F(InMemoryStateTest, add_to_balance)
     s.add_to_balance(a, 10'000);
     s.add_to_balance(b, 20'000);
 
-    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{10'001});
-    EXPECT_EQ(s.get_current_balance_pessimistic(b), bytes32_t{20'000});
+    EXPECT_EQ(s.get_balance(a), 10'001);
+    EXPECT_EQ(s.get_balance(b), 20'000);
 }
 
 TEST_F(InMemoryStateTest, get_nonce)
@@ -302,13 +302,13 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
     s.add_to_balance(b, 28'000);
 
     EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, c));
-    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{});
-    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{56'000});
+    EXPECT_EQ(s.get_balance(a), 0);
+    EXPECT_EQ(s.get_balance(c), 56'000);
     EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(a, c));
 
     EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(b, c));
-    EXPECT_EQ(s.get_current_balance_pessimistic(b), bytes32_t{});
-    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{84'000});
+    EXPECT_EQ(s.get_balance(b), 0);
+    EXPECT_EQ(s.get_balance(c), 84'000);
     EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(b, c));
 
     s.destruct_suicides<typename TestFixture::Trait>();
@@ -347,8 +347,8 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
     State s{bs, Incarnation{1, 2}};
 
     EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, c));
-    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{});
-    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{56'000});
+    EXPECT_EQ(s.get_balance(a), 0);
+    EXPECT_EQ(s.get_balance(c), 56'000);
     EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(a, c));
 
     s.destruct_suicides<typename TestFixture::Trait>();
@@ -386,8 +386,8 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_same_tx)
     State s{bs, Incarnation{1, 1}};
 
     EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, c));
-    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{});
-    EXPECT_EQ(s.get_current_balance_pessimistic(c), bytes32_t{56'000});
+    EXPECT_EQ(s.get_balance(a), 0);
+    EXPECT_EQ(s.get_balance(c), 56'000);
     EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(a, c));
 
     s.destruct_suicides<typename TestFixture::Trait>();
@@ -409,18 +409,17 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_separate_tx)
     State s{bs, Incarnation{1, 1}};
 
     EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, a));
-    auto balance_after_selfdestruct = s.get_current_balance_pessimistic(a);
+    uint256_t const balance_after_selfdestruct = s.get_balance(a);
     s.destruct_suicides<typename TestFixture::Trait>();
 
     if constexpr (TestFixture::Trait::evm_rev() < EVMC_CANCUN) {
         // Pre-cancun behavior
-        EXPECT_EQ(balance_after_selfdestruct, bytes32_t{});
+        EXPECT_EQ(balance_after_selfdestruct, 0);
         EXPECT_FALSE(s.account_exists(a));
     }
     else {
         // Post-cancun behavior
-        EXPECT_EQ(
-            balance_after_selfdestruct, bytes32_t{18'000}); // no ether burned
+        EXPECT_EQ(balance_after_selfdestruct, 18'000); // no ether burned
         EXPECT_TRUE(s.account_exists(a));
     }
 }
@@ -445,7 +444,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx)
 
     // Behavior doesn't change in cancun if in same txn
     EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, a));
-    EXPECT_EQ(s.get_current_balance_pessimistic(a), bytes32_t{});
+    EXPECT_EQ(s.get_balance(a), 0);
 
     s.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_FALSE(s.account_exists(a));
@@ -1907,14 +1906,12 @@ namespace
                 }
                 else if (action < RANDOM_DEL) {
                     MONAD_ASSERT(
-                        st1.get_current_balance_pessimistic(addr) ==
-                        st2.get_current_balance_pessimistic(addr));
+                        st1.get_balance(addr) == st2.get_balance(addr));
                     MONAD_ASSERT(
                         st1.get_code_hash(addr) == st2.get_code_hash(addr));
                     MONAD_ASSERT(st1.get_nonce(addr) == st2.get_nonce(addr));
                     if (st1.account_exists(addr)) {
-                        uint256_t const bal = intx::be::load<uint256_t>(
-                            st1.get_current_balance_pessimistic(addr));
+                        uint256_t const bal = st1.get_balance(addr);
                         LOG_INFO(
                             "Account_del_ a_{} {}", addr.bytes[19] % 10, bal);
                         st1.subtract_from_balance(addr, bal);

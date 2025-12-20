@@ -70,48 +70,24 @@ TYPED_TEST(TraitsTest, apply_block_reward)
     apply_block_reward<typename TestFixture::Trait>(as, block);
 
     if constexpr (TestFixture::Trait::evm_rev() < EVMC_BYZANTIUM) {
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(a)),
-            5'312'500'000'000'000'000);
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(b)),
-            4'375'000'000'000'000'000);
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(c)),
-            3'750'000'000'000'000'000);
+        EXPECT_EQ(as.get_balance(a), 5'312'500'000'000'000'000);
+        EXPECT_EQ(as.get_balance(b), 4'375'000'000'000'000'000);
+        EXPECT_EQ(as.get_balance(c), 3'750'000'000'000'000'000);
     }
     else if constexpr (TestFixture::Trait::evm_rev() < EVMC_PETERSBURG) {
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(a)),
-            3'187'500'000'000'000'000);
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(b)),
-            2'625'000'000'000'000'000);
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(c)),
-            2'250'000'000'000'000'000);
+        EXPECT_EQ(as.get_balance(a), 3'187'500'000'000'000'000);
+        EXPECT_EQ(as.get_balance(b), 2'625'000'000'000'000'000);
+        EXPECT_EQ(as.get_balance(c), 2'250'000'000'000'000'000);
     }
     else if constexpr (TestFixture::Trait::evm_rev() < EVMC_PARIS) {
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(a)),
-            2'125'000'000'000'000'000);
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(b)),
-            1'750'000'000'000'000'000);
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(c)),
-            1'500'000'000'000'000'000);
+        EXPECT_EQ(as.get_balance(a), 2'125'000'000'000'000'000);
+        EXPECT_EQ(as.get_balance(b), 1'750'000'000'000'000'000);
+        EXPECT_EQ(as.get_balance(c), 1'500'000'000'000'000'000);
     }
     else {
         // No reward since Paris EIP-3675
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(a)),
-            0u);
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(b)),
-            0u);
-        EXPECT_EQ(
-            intx::be::load<uint256_t>(as.get_current_balance_pessimistic(c)),
-            0u);
+        EXPECT_EQ(as.get_balance(a), 0u);
+        EXPECT_EQ(as.get_balance(b), 0u);
+        EXPECT_EQ(as.get_balance(c), 0u);
     }
 }

@@ -115,9 +115,9 @@ public:
 
     uint64_t get_nonce(Address const &);
 
-    bytes32_t get_current_balance_pessimistic(Address const &);
+    uint256_t get_balance(Address const &);
 
-    bytes32_t get_original_balance_pessimistic(Address const &);
+    uint256_t get_original_balance(Address const &);
 
     bytes32_t get_code_hash(Address const &);
 

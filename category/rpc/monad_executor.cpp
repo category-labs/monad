@@ -278,9 +278,9 @@ namespace
                 }
 
                 if (state_delta.balance.has_value()) {
-                    auto const balance = state_delta.balance.value();
-                    auto const pessimistic_balance = intx::be::load<uint256_t>(
-                        state.get_current_balance_pessimistic(address));
+                    uint256_t const balance = state_delta.balance.value();
+                    uint256_t const pessimistic_balance =
+                        state.get_balance(address);
                     if (balance > pessimistic_balance) {
                         state.add_to_balance(
                             address, balance - pessimistic_balance);

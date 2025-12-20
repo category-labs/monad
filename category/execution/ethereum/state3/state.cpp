@@ -212,17 +212,17 @@ uint64_t State::get_nonce(Address const &address)
     return 0;
 }
 
-bytes32_t State::get_current_balance_pessimistic(Address const &address)
+uint256_t State::get_balance(Address const &address)
 {
     auto const &account = recent_account(address);
     original_account_state(address).set_validate_exact_balance();
     if (MONAD_LIKELY(account.has_value())) {
-        return intx::be::store<bytes32_t>(account.value().balance);
+        return account.value().balance;
     }
-    return {};
+    return 0;
 }
 
-bytes32_t State::get_original_balance_pessimistic(Address const &address)
+uint256_t State::get_original_balance(Address const &address)
 {
     return original_account_state(address).get_balance_pessimistic();
 }

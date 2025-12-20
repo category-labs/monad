@@ -191,13 +191,13 @@ public:
         validate_exact_balance_ = true;
     }
 
-    bytes32_t get_balance_pessimistic()
+    uint256_t get_balance_pessimistic()
     {
         set_validate_exact_balance();
         if (account_.has_value()) {
-            return intx::be::store<bytes32_t>(account_->balance);
+            return account_->balance;
         }
-        return {};
+        return 0;
     }
 
 private:

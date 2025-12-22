@@ -43,7 +43,6 @@ target_sources(monad-vm-compiler PRIVATE
     "ir/poly_typed/unify.hpp"
     # bound inference
     "ir/bound_inference.hpp"
-    "ir/bound_inference.cpp"
     # untyped ir
     "ir/untyped.hpp"
     "ir/untyped.cpp"

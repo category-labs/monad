@@ -128,9 +128,11 @@ namespace
             if (!ncode->entrypoint()) {
                 return state.SkipWithError("Failed to compile contract");
             }
+
+            state.counters["MachineCodeSize"] = static_cast<double>(*ncode->code_size_estimate());
         }
 
-        state.counters["codesize"] = static_cast<double>(program.size());
+        state.counters["EVMCodeSize"] = static_cast<double>(program.size());
     }
 
     auto benchmark_tests()

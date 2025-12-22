@@ -333,7 +333,7 @@ namespace
             MONAD_VM_DEBUG_ASSERT(
                 remaining_base_gas >= instr.static_gas_cost());
             remaining_base_gas -= instr.static_gas_cost();
-            auto const result_bound = compute_result_bound(emit, instr);
+            auto const result_bound = bound_inference::compute_result_bound(emit, instr);
             emit_instr<traits>(emit, instr, remaining_base_gas);
             if (instr.stack_increase() > 0) {
                 emit.get_stack()

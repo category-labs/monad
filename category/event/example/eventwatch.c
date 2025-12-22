@@ -34,10 +34,20 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/mman.h>
-#include <syscall.h>
 #include <sysexits.h>
 #include <time.h>
 #include <unistd.h>
+
+#if defined(__linux__)
+    #include <syscall.h>
+constexpr bool PLATFORM_LINUX = true;
+#else
+constexpr bool PLATFORM_LINUX = false;
+    #define SYS_pidfd_open -1
+    #if defined(__clang__)
+        #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    #endif
+#endif
 
 #include <category/core/event/event_iterator.h>
 #include <category/core/event/event_metadata.h>
@@ -105,6 +115,10 @@ static void handle_signal(int)
 
 static bool process_has_exited(int pidfd)
 {
+    if (pidfd == -1) {
+        // pidfd being -1 means "disable the detection feature"
+        return false;
+    }
     struct pollfd pfd = {.fd = pidfd, .events = POLLIN};
     return poll(&pfd, 1, 0) == -1 || (pfd.revents & POLLIN) == POLLIN;
 }
@@ -162,7 +176,7 @@ static void print_event(
 
     // An optimization to only do the string formatting of the %H:%M:%S part
     // of the time each second when it changes, because strftime(3) is slow
-    time_parts = ldiv(event->record_epoch_nanos, 1'000'000'000L);
+    time_parts = ldiv((long)event->record_epoch_nanos, 1'000'000'000L);
     if (time_parts.quot != last_second) {
         // A new second has ticked. Reformat the per-second time buffer.
         struct tm;
@@ -268,9 +282,7 @@ static void event_loop(
     }
 }
 
-static void find_initial_iteration_point(
-    struct monad_event_ring const *event_ring,
-    struct monad_event_iterator *iter)
+static void find_initial_iteration_point(struct monad_event_iterator *iter)
 {
     // This function is not strictly necessary, but it is probably useful for
     // most use cases. When an iterator is initialized via a call to
@@ -361,26 +373,26 @@ int main(int argc, char **argv)
         goto Error;
     }
 
-    // A helper function allows us to find the pids of all processes which have
-    // opened the event ring for writing. For the execution event ring, we
-    // expect there will only be one writer (the execution daemon). We'll use
-    // this to open a pidfd_open(2) descriptor referring to the execution
-    // process to detect when it dies.
-    pid_t writer_pid;
-    size_t n_pids = 1;
-    if (monad_event_ring_find_writer_pids(ring_fd, &writer_pid, &n_pids) != 0) {
-        goto Error;
+    // A helper function allows us to find the pid of a process which has opened
+    // an event ring for exclusive access. For the execution event ring, we
+    // expect there will only be one writer (the execution daemon). Once we've
+    // discovered the pid of the execution daemon, we'll open a pidfd_open(2)
+    // descriptor referring to its process, to easily detect when it dies.
+    int pidfd = -1;
+    if (PLATFORM_LINUX) {
+        pid_t writer_pid;
+        if (monad_event_ring_query_excl_writer_pid(ring_fd, &writer_pid) != 0) {
+            goto Error;
+        }
+        pidfd = (int)syscall(SYS_pidfd_open, writer_pid, 0);
+        if (pidfd == -1) {
+            err(EX_OSERR, "pidfd_open of writer pid %d failed", writer_pid);
+        }
     }
-    if (n_pids == 0) {
-        errno = EOWNERDEAD;
-        err(EX_SOFTWARE,
-            "writer of event ring `%s` has exited",
-            event_ring_pathbuf);
-    }
-    int pidfd = (int)syscall(SYS_pidfd_open, writer_pid, 0);
-    if (pidfd == -1) {
-    }
-    // We no longer need the event ring file descriptor
+
+    // After we have mmap'ed the event ring file's shared memory segments into
+    // our address space and (optionally) created the pidfd, we no longer need
+    // to keep the file descriptor open
     (void)close(ring_fd);
 
     // Create an iterator to read from the event ring
@@ -390,7 +402,7 @@ int main(int argc, char **argv)
     }
 
     // Move the iterator to the start of the most recently produced block
-    find_initial_iteration_point(&exec_ring, &iter);
+    find_initial_iteration_point(&iter);
 
     // Read events from the ring until SIGINT or the monad process exits
     event_loop(&exec_ring, &iter, pidfd, stdout);

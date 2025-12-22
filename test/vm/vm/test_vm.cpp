@@ -48,6 +48,8 @@ using namespace monad;
 using namespace monad::vm::compiler;
 using namespace monad::vm::interpreter;
 
+namespace runtime = monad::vm::runtime;
+
 using namespace evmc::literals;
 
 namespace fs = std::filesystem;
@@ -111,10 +113,9 @@ BlockchainTestVM::BlockchainTestVM(
     : evmc_vm{EVMC_ABI_VERSION, "monad-compiler-blockchain-test-vm", "0.0.0", ::destroy, ::execute, ::get_capabilities, nullptr}
     , impl_{impl_from_env(impl)}
     , debug_dir_{std::getenv("MONAD_COMPILER_ASM_DIR")}
-    , base_config{
-          .runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(),
-          .max_code_size_offset = code_size_t::max(),
-          .post_instruction_emit_hook = post_hook}
+    , base_config{.runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(), .max_code_size_offset = code_size_t::max(), .post_instruction_emit_hook = post_hook}
+    , rt_ctx_{nullptr}
+    , memory_allocator_{}
 {
     MONAD_VM_ASSERT(!debug_dir_ || fs::is_directory(debug_dir_));
 }
@@ -124,26 +125,43 @@ evmc::Result BlockchainTestVM::execute(
     evmc_revision rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
 {
-    if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2 ||
-        msg->sender == SYSTEM_ADDRESS) {
-        return evmc::Result{evmone_vm_.execute(
-            &evmone_vm_, host, context, rev, msg, code, code_size)};
-    }
-    else if (impl_ == Implementation::Evmone) {
-        return execute_evmone(host, context, rev, msg, code, code_size);
-    }
-    else if (impl_ == Implementation::Compiler) {
-        return execute_compiler(host, context, rev, msg, code, code_size);
-    }
+    auto *const prev_rt_ctx = rt_ctx_;
+    auto new_rt_ctx = runtime::Context::from(
+        memory_allocator_, host, context, msg, {code, code_size});
+    rt_ctx_ = &new_rt_ctx;
+
+    auto res = [&] {
+        if (msg->sender == SYSTEM_ADDRESS) {
+            return evmc::Result{evmone_vm_.execute(
+                &evmone_vm_, host, context, rev, msg, code, code_size)};
+        }
+        else if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2) {
+            SWITCH_EVM_TRAITS(
+                monad_vm_.execute_bytecode_raw, *rt_ctx_, {code, code_size});
+            MONAD_VM_ASSERT(false);
+        }
+        else if (impl_ == Implementation::Evmone) {
+            return execute_evmone(host, context, rev, msg, code, code_size);
+        }
+        else if (impl_ == Implementation::Compiler) {
+            return execute_compiler(host, context, rev, msg, code, code_size);
+        }
 #ifdef MONAD_COMPILER_LLVM
-    else if (impl_ == Implementation::LLVM) {
-        return execute_llvm(host, context, rev, msg, code, code_size);
-    }
+        else if (impl_ == Implementation::LLVM) {
+            return execute_llvm(host, context, rev, msg, code, code_size);
+        }
 #endif
-    else {
-        MONAD_VM_ASSERT(impl_ == Implementation::Interpreter);
-        return execute_interpreter(host, context, rev, msg, code, code_size);
-    }
+        else {
+            MONAD_VM_ASSERT(impl_ == Implementation::Interpreter);
+            return execute_interpreter(
+                host, context, rev, msg, code, code_size);
+        }
+    }();
+
+    [&] -> void { SWITCH_EVM_TRAITS(rt_ctx_->return_to, prev_rt_ctx); }();
+
+    rt_ctx_ = prev_rt_ctx;
+    return res;
 }
 
 evmone::baseline::CodeAnalysis const &BlockchainTestVM::get_code_analysis(
@@ -263,7 +281,7 @@ evmc::Result BlockchainTestVM::execute_compiler(
 
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr)
     return monad_vm_.execute_native_entrypoint_raw(
-        host, context, msg, icode, ncode->entrypoint());
+        *rt_ctx_, ncode->entrypoint());
 }
 
 #ifdef MONAD_COMPILER_LLVM
@@ -293,7 +311,6 @@ evmc::Result BlockchainTestVM::execute_interpreter(
 {
     auto code_hash = host->get_code_hash(context, &msg->code_address);
     auto const &icode = get_intercode(code_hash, code, code_size);
-    SWITCH_EVM_TRAITS(
-        monad_vm_.execute_intercode_raw, host, context, msg, icode);
+    SWITCH_EVM_TRAITS(monad_vm_.execute_intercode_raw, *rt_ctx_, icode);
     MONAD_VM_ASSERT(false);
 }

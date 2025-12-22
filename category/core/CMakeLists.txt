@@ -150,6 +150,8 @@ add_library(
   # runtime
   "runtime/uint256.cpp"
   "runtime/uint256.hpp"
+  "runtime/vm_memory.cpp"
+  "runtime/vm_memory.hpp"
   # test
   "test_util/gtest_signal_stacktrace_printer.hpp"
   # util

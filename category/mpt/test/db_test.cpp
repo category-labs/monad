@@ -517,7 +517,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_access_multi_version)
              root = roots[i],
              &db = db,
              promises = promises,
-             kv_bytes = bytes_alloc[0]] {
+             kv_bytes = bytes_alloc[0]](auto const &) {
                 auto const res = db.find(root, kv_bytes, i);
                 if (i == 0) {
                     // Verify that the outdated version is no longer accessible
@@ -545,7 +545,7 @@ TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
 
     // read all keys
     for (unsigned b = 0; b < num_blocks; ++b) {
-        pool.submit(0, [b = b, &db = ro_db, promises = promises] {
+        pool.submit(0, [b = b, &db = ro_db, promises = promises](auto const &) {
             unsigned const start_index = b * keys_per_block;
             for (unsigned i = start_index; i < start_index + keys_per_block;
                  ++i) {
@@ -565,7 +565,7 @@ TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
     // read the same set of keys from all blocks, and invalid blocks and keys
     promises.reset(new boost::fibers::promise<void>[num_blocks]);
     for (unsigned b = 0; b < num_blocks; ++b) {
-        pool.submit(0, [b = b, &db = ro_db, promises = promises] {
+        pool.submit(0, [b = b, &db = ro_db, promises = promises](auto const &) {
             for (unsigned i = 0; i < keys_per_block; ++i) {
                 auto kv_bytes = keccak_int_to_string(i);
                 auto const res = db.find(kv_bytes, b);

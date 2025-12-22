@@ -17,6 +17,7 @@
 
 #include <category/core/fiber/config.hpp>
 #include <category/core/fiber/priority_task.hpp>
+#include <category/core/runtime/vm_memory.hpp>
 
 #include <boost/fiber/buffered_channel.hpp>
 #include <boost/fiber/fiber.hpp>
@@ -53,6 +54,8 @@ class FiberGroup final
 
     std::promise<void> start_{};
 
+    std::vector<vm::runtime::VmMemory> vm_memory_;
+
     friend class FiberThreadPool;
 
     FiberGroup(FiberThreadPool &pool, unsigned n_fibers);
@@ -67,7 +70,9 @@ public:
     void submit(uint64_t const priority, F &&task)
     {
         channel_.push(
-            {priority, std::move_only_function<void()>(std::forward<F>(task))});
+            {priority,
+             std::move_only_function<void(vm::runtime::VmMemory const &)>(
+                 std::forward<F>(task))});
     }
 
     unsigned num_fibers() const

@@ -974,7 +974,7 @@ struct monad_executor
              state_overrides = overrides,
              tracer_config = tracer_config,
              gas_specified = gas_specified,
-             active_pool = &active_pool] {
+             active_pool = &active_pool](vm::runtime::VmMemory const &) {
                 active_pool->queued_count.fetch_sub(
                     1, std::memory_order_relaxed);
                 active_pool->executing_count.fetch_add(
@@ -1296,7 +1296,7 @@ struct monad_executor
              tracer_config = tracer_config,
              trace_transaction = trace_transaction,
              transaction_index = transaction_index,
-             user = user]() {
+             user = user](vm::runtime::VmMemory const &) {
                 fiber_group->queued_count.fetch_sub(
                     1, std::memory_order_relaxed);
                 fiber_group->executing_count.fetch_add(

@@ -59,11 +59,12 @@ TEST(PriorityPool, benchmark)
 
     std::vector<count_t> counts(std::thread::hardware_concurrency());
     std::atomic<size_t> countsidx{0};
-    std::function<void()> const task([&] {
-        static thread_local size_t const mycountidx =
-            countsidx.fetch_add(1, std::memory_order_acq_rel);
-        counts[mycountidx].count.fetch_add(1, std::memory_order_acq_rel);
-    });
+    std::function<void(monad::vm::runtime::VmMemory const &)> const task(
+        [&](auto const &) {
+            static thread_local size_t const mycountidx =
+                countsidx.fetch_add(1, std::memory_order_acq_rel);
+            counts[mycountidx].count.fetch_add(1, std::memory_order_acq_rel);
+        });
     auto sum = [&] {
         unsigned ret = 0;
         for (auto const &i : counts) {
@@ -105,10 +106,11 @@ TEST(PriorityPool, benchmark)
         i.count.store(0, std::memory_order_release);
     }
     counts.resize(counts.size() + 1);
+    monad::vm::runtime::VmMemory tmp_vm_memory{0};
     begin = std::chrono::steady_clock::now();
     for (;;) {
         for (size_t n = 0; n < 100000; n++) {
-            task();
+            task(tmp_vm_memory);
         }
         end = std::chrono::steady_clock::now();
         if (end - begin >= std::chrono::seconds(5)) {
@@ -136,7 +138,7 @@ TEST(PriorityPool, move_only_functor)
     std::atomic<bool> done{false};
 
     auto ptr = std::make_unique<int>(42);
-    ppool.submit(1, [&result, &done, p = std::move(ptr)]() {
+    ppool.submit(1, [&result, &done, p = std::move(ptr)](auto const &) {
         result.store(*p, std::memory_order_release);
         done.store(true, std::memory_order_release);
     });

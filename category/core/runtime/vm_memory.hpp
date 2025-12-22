@@ -15,21 +15,34 @@
 
 #pragma once
 
-#include <category/core/fiber/config.hpp>
-#include <category/core/runtime/vm_memory.hpp>
+#include <category/core/assert.h>
 
 #include <cstdint>
-#include <functional>
 
-MONAD_FIBER_NAMESPACE_BEGIN
-
-struct PriorityTask
+namespace monad::vm::runtime
 {
-    uint64_t priority{0};
-    std::move_only_function<void(vm::runtime::VmMemory const &)> task{};
-};
+    class VmMemory
+    {
+        std::uint8_t *memory_;
+        std::uint32_t capacity_;
 
-static_assert(sizeof(PriorityTask) == 48);
-static_assert(alignof(PriorityTask) == 8);
+    public:
+        VmMemory();
+        explicit VmMemory(std::uint32_t memory_capacity);
 
-MONAD_FIBER_NAMESPACE_END
+        VmMemory(VmMemory &&);
+        VmMemory &operator=(VmMemory &&);
+
+        ~VmMemory();
+
+        std::uint32_t capacity() const
+        {
+            return capacity_;
+        }
+
+        std::uint8_t *memory()
+        {
+            return memory_;
+        }
+    };
+}

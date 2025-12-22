@@ -20,6 +20,7 @@
 #include <category/core/fiber/fiber_thread_pool.hpp>
 #include <category/core/fiber/priority_properties.hpp>
 #include <category/core/fiber/priority_task.hpp>
+#include <category/core/runtime/non_temporal_memory.hpp>
 
 #include <boost/fiber/channel_op_status.hpp>
 #include <boost/fiber/fiber.hpp>
@@ -40,6 +41,11 @@ FiberGroup::FiberGroup(FiberThreadPool &pool, unsigned const n_fibers)
 
     pool_.register_group();
     fibers_.reserve(n_fibers);
+    vm_memory_.reserve(n_fibers);
+
+    for (unsigned i = 0; i < n_fibers; ++i) {
+        vm_memory_.emplace_back(8 * 1024 * 1024);
+    }
 
     // Create fibers via bootstrap channel so they're created on a thread with
     // the proper scheduler configured.
@@ -51,13 +57,13 @@ FiberGroup::FiberGroup(FiberThreadPool &pool, unsigned const n_fibers)
                 std::allocator_arg,
                 boost::fibers::protected_fixedsize_stack{
                     static_cast<size_t>(8 * 1024 * 1024)},
-                [this, properties] {
+                [this, i, properties] {
                     PriorityTask task;
                     while (channel_.pop(task) ==
                            boost::fibers::channel_op_status::success) {
                         properties->set_priority(task.priority);
                         boost::this_fiber::yield();
-                        task.task();
+                        task.task(vm_memory_[i]);
                         properties->set_priority(0);
                     }
                 }};

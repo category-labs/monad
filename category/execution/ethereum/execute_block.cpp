@@ -127,7 +127,7 @@ std::vector<std::optional<Address>> recover_senders(
             [i = i,
              promises = promises,
              &sender = senders[i],
-             &transaction = transactions[i]] {
+             &transaction = transactions[i]](auto const &) {
                 sender = recover_sender(transaction);
                 promises[i].set_value();
             });
@@ -161,7 +161,8 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
                 [j = j,
                  auth_promises = promises[i],
                  &auth = authorities[i][j],
-                 &auth_entry = transactions[i].authorization_list[j]]() {
+                 &auth_entry =
+                     transactions[i].authorization_list[j]](auto const &) {
                     auth = recover_authority(auth_entry);
                     auth_promises[j].set_value();
                 });
@@ -254,7 +255,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &call_tracer = *call_tracers[i],
              &state_tracer = *state_tracers[i],
              &txn_exec_finished,
-             &revert_transaction = revert_transaction] {
+             &revert_transaction =
+                 revert_transaction](vm::runtime::VmMemory const &) {
                 record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
                 try {
                     results[i] = dispatch_transaction<traits>(

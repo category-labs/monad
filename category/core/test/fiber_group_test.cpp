@@ -54,7 +54,7 @@ TEST(FiberGroup, shared_thread_pool_cross_submit)
 
     // Submit work to group1 that will submit work to group2
     for (int i = 0; i < 10; ++i) {
-        group1->submit(1, [&, i] {
+        group1->submit(1, [&, i](auto const &) {
             group1_count.fetch_add(1, std::memory_order_relaxed);
 
             // Submit work to group2 from within group1's fiber
@@ -62,7 +62,7 @@ TEST(FiberGroup, shared_thread_pool_cross_submit)
                 std::make_shared<boost::fibers::promise<int>>();
             auto future = promise->get_future();
 
-            group2->submit(1, [&, i, promise] {
+            group2->submit(1, [&, i, promise](auto const &) {
                 group2_count.fetch_add(1, std::memory_order_relaxed);
                 cross_submit_count.fetch_add(1, std::memory_order_relaxed);
                 promise->set_value(i * 2);
@@ -76,8 +76,9 @@ TEST(FiberGroup, shared_thread_pool_cross_submit)
 
     // Also submit work directly to group2
     for (int i = 0; i < 5; ++i) {
-        group2->submit(
-            1, [&] { group2_count.fetch_add(1, std::memory_order_relaxed); });
+        group2->submit(1, [&](auto const &) {
+            group2_count.fetch_add(1, std::memory_order_relaxed);
+        });
     }
 
     // Wait for all work to complete by destroying the groups
@@ -107,13 +108,13 @@ TEST(FiberGroup, multiple_groups_prevent_deadlock)
     // Submit multiple outer tasks that each spawn inner tasks
     // This simulates trace_block submitting to trace_tx_exec
     for (int i = 0; i < 4; ++i) {
-        outer_group->submit(1, [&] {
+        outer_group->submit(1, [&](auto const &) {
             auto const promise =
                 std::make_shared<boost::fibers::promise<void>>();
             auto const future = promise->get_future();
 
             // Submit inner work (like executing transactions)
-            inner_group->submit(1, [&, promise] {
+            inner_group->submit(1, [&, promise](auto const &) {
                 // Simulate some work
                 boost::this_fiber::sleep_for(std::chrono::milliseconds(10));
                 promise->set_value();
@@ -148,8 +149,9 @@ TEST(FiberGroup, concurrent_multi_group_access)
     // Submit work to all three groups concurrently
     auto submit_work = [&](FiberGroup &group) {
         for (int i = 0; i < work_per_group; ++i) {
-            group.submit(
-                1, [&] { total_work.fetch_add(1, std::memory_order_relaxed); });
+            group.submit(1, [&](auto const &) {
+                total_work.fetch_add(1, std::memory_order_relaxed);
+            });
         }
     };
 

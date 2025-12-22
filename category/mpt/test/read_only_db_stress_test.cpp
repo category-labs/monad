@@ -526,7 +526,7 @@ int main(int argc, char *const argv[])
                      inflight_req_ptr = &inflight_requests,
                      key_index = key_index,
                      value = values_overwrite_keys_mode[key_index],
-                     version = version] {
+                     version = version](auto const &) {
                         Nibbles const key{to_key(key_index)};
                         // get random key
                         auto res = ro_db->find(key, version);

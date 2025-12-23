@@ -37,6 +37,19 @@ using bytes32_t = ::evmc::bytes32;
 static_assert(sizeof(bytes32_t) == 32);
 static_assert(alignof(bytes32_t) == 1);
 
+struct bytes4k_t
+{
+    bytes4k_t()
+        : bytes{}
+    {
+    }
+
+    uint8_t bytes[4096];
+};
+
+static_assert(sizeof(bytes4k_t) == 4096);
+static_assert(alignof(bytes4k_t) == 1);
+
 constexpr bytes32_t to_bytes(uint256_t const n) noexcept
 {
     return std::bit_cast<bytes32_t>(n);
@@ -57,6 +70,18 @@ constexpr bytes32_t to_bytes(byte_string_view const data) noexcept
         data.size(),
         byte.bytes + sizeof(bytes32_t) - data.size());
     return byte;
+}
+
+constexpr bytes4k_t to_page(byte_string_view const data) noexcept
+{
+    MONAD_ASSERT(data.size() <= sizeof(bytes4k_t));
+
+    bytes4k_t page;
+    std::copy_n(
+        data.begin(),
+        data.size(),
+        page.bytes + sizeof(bytes4k_t) - data.size());
+    return page;
 }
 
 using namespace evmc::literals;

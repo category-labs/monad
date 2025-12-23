@@ -141,6 +141,29 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
     return to_bytes(storage.value());
 };
 
+bytes4k_t TrieDb::read_block_storage(
+    Address const &addr, Incarnation, bytes32_t const &key)
+{
+    auto const res = db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            STATE_NIBBLE,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            BLOCK_STORAGE_PREFIX_NIBBLE,
+            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+        block_number_);
+    if (res.has_error()) {
+        stats_storage_no_value();
+        return {};
+    }
+    stats_storage_value();
+    auto encoded_storage = res.value().node->value();
+    auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+    MONAD_ASSERT(!storage.has_error());
+    return to_page(storage.value());
+}
+
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
     // TODO read intercode object

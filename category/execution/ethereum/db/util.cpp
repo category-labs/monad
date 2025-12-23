@@ -439,26 +439,6 @@ namespace
         }
     };
 
-    struct EmptyCompute final : Compute
-    {
-        virtual unsigned compute_len(
-            std::span<ChildData>, uint16_t, NibblesView,
-            std::optional<byte_string_view>) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute_branch(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-    };
-
     Result<Account> decode_account_db_helper(byte_string_view &payload)
     {
         Account acct;

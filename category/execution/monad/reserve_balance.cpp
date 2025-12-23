@@ -53,7 +53,7 @@ template <Traits traits>
 bool dipped_into_reserve(
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i,
-    MonadChainContext const &ctx, State &state)
+    ChainContext<traits> const &ctx, State &state)
 {
     MONAD_ASSERT(i < ctx.senders.size());
     MONAD_ASSERT(i < ctx.authorities.size());
@@ -130,10 +130,11 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
+    requires is_monad_trait_v<traits>
 bool revert_monad_transaction(
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
-    MonadChainContext const &ctx)
+    ChainContext<traits> const &ctx)
 {
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         return dipped_into_reserve<traits>(
@@ -146,9 +147,11 @@ bool revert_monad_transaction(
 
 EXPLICIT_MONAD_TRAITS(revert_monad_transaction);
 
+template <Traits traits>
+    requires is_monad_trait_v<traits>
 bool can_sender_dip_into_reserve(
     Address const &sender, uint64_t const i, bool const sender_is_delegated,
-    MonadChainContext const &ctx)
+    ChainContext<traits> const &ctx)
 {
     if (sender_is_delegated) { // delegated accounts cannot dip
         return false;
@@ -156,11 +159,10 @@ bool can_sender_dip_into_reserve(
 
     // check pending blocks
     for (ankerl::unordered_dense::segmented_set<Address> const
-             *const senders_and_authorities :
+             &senders_and_authorities :
          {ctx.grandparent_senders_and_authorities,
           ctx.parent_senders_and_authorities}) {
-        if (senders_and_authorities &&
-            senders_and_authorities->contains(sender)) {
+        if (senders_and_authorities.contains(sender)) {
             return false;
         }
     }
@@ -179,6 +181,8 @@ bool can_sender_dip_into_reserve(
 
     return true; // Allow dipping into reserve if no restrictions found
 }
+
+EXPLICIT_MONAD_TRAITS(can_sender_dip_into_reserve);
 
 template <Traits traits>
 uint256_t get_max_reserve(Address const &)

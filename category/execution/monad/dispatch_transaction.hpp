@@ -28,6 +28,6 @@ Result<Receipt> dispatch_transaction(
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &, RevertTransactionFn const &revert_transaction);
+    trace::StateTracer &, ChainContext<traits> const &chain_ctx);
 
 MONAD_NAMESPACE_END

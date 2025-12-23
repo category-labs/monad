@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -41,10 +42,6 @@ struct CallTracerBase;
 struct Chain;
 struct Transaction;
 
-using RevertTransactionFn = std::function<bool(
-    Address const & /* sender */, Transaction const &, uint64_t /* i */,
-    State &)>;
-
 template <Traits traits>
 Result<Receipt> dispatch_transaction(
     Chain const &chain, uint64_t const i, Transaction const &transaction,
@@ -53,7 +50,6 @@ Result<Receipt> dispatch_transaction(
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer,
-    RevertTransactionFn const &revert_transaction);
+    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx);
 
 MONAD_NAMESPACE_END

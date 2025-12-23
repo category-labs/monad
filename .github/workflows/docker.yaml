@@ -13,15 +13,6 @@ jobs:
     runs-on: ubuntu-24.04-32
 
     steps:
-      - name: Generate app token
-        id: generate_token
-        uses: tibdex/github-app-token@v1
-        with:
-          app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
-          private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
-          permissions: >-
-            {"contents": "read"}
-
       - name: Tell git to do submodules in parallel
         run: |
            git config --global submodule.fetchJobs 8
@@ -30,7 +21,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ steps.generate_token.outputs.token }}
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3

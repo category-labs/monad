@@ -128,6 +128,8 @@ add_library(
   "fiber/config.hpp"
   "fiber/fiber_group.cpp"
   "fiber/fiber_group.hpp"
+  "fiber/fiber_local_storage.cpp"
+  "fiber/fiber_local_storage.hpp"
   "fiber/fiber_thread_pool.cpp"
   "fiber/fiber_thread_pool.hpp"
   "fiber/priority_algorithm.cpp"
@@ -150,6 +152,8 @@ add_library(
   # runtime
   "runtime/uint256.cpp"
   "runtime/uint256.hpp"
+  "runtime/vm_memory.cpp"
+  "runtime/vm_memory.hpp"
   # test
   "test_util/gtest_signal_stacktrace_printer.hpp"
   # util

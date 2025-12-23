@@ -70,6 +70,16 @@ Result<std::vector<Receipt>> execute_block(
     RevertTransactionFn const & = [](Address const &, Transaction const &,
                                      uint64_t, State &) { return false; });
 
+template <Traits traits>
+Result<std::vector<Receipt>> execute_block_sync(
+    Chain const &, Block const &, std::span<Address const> senders,
+    std::span<std::vector<std::optional<Address>> const> authorities,
+    BlockState &, BlockHashBuffer const &, BlockMetrics &,
+    std::span<std::unique_ptr<CallTracerBase>>,
+    std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
+    RevertTransactionFn const & = [](Address const &, Transaction const &,
+                                     uint64_t, State &) { return false; });
+
 std::vector<std::optional<Address>>
 recover_senders(std::span<Transaction const>, fiber::PriorityPool &);
 

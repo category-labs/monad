@@ -408,7 +408,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{block_state_, Incarnation{header_.number, i_ + 1}, true};
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();

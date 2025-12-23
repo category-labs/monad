@@ -130,6 +130,7 @@ inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
 inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
 
 inline constexpr unsigned char STORAGE_PREFIX_NIBBLE = 0;
+inline constexpr unsigned char BLOCK_STORAGE_PREFIX_NIBBLE = 1;
 inline mpt::Nibbles const storage_prefix_nibbles =
     mpt::concat(STORAGE_PREFIX_NIBBLE);
 
@@ -153,6 +154,9 @@ Result<std::pair<byte_string_view, byte_string_view>>
 decode_storage_db_raw(byte_string_view &);
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
 Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
+
+Result<std::pair<bytes32_t, bytes4k_t>>
+decode_block_storage_db(byte_string_view &);
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);
 Result<std::pair<Transaction, Address>>

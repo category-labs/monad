@@ -232,6 +232,12 @@ bytes32_t monad_statesync_server_context::read_storage(
     return rw.read_storage(addr, incarnation, key);
 }
 
+bytes4k_t monad_statesync_server_context::read_block_storage(
+    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+{
+    return rw.read_block_storage(addr, incarnation, key);
+}
+
 monad::vm::SharedIntercode
 monad_statesync_server_context::read_code(bytes32_t const &hash)
 {

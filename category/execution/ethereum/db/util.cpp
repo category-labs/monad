@@ -774,6 +774,16 @@ Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
     return res.second;
 };
 
+Result<std::pair<bytes32_t, bytes4k_t>>
+decode_block_storage_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto res, decode_storage_db_raw(enc));
+    if (MONAD_UNLIKELY(!enc.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    return {to_bytes(res.first), to_page(res.second)};
+}
+
 void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,
     uint64_t const block_number)

@@ -64,9 +64,12 @@ class DbCache final : public Db
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
     using StorageCache = LruCache<StorageKey, bytes32_t, StorageKeyHashCompare>;
+    using BlockStorageCache =
+        LruCache<StorageKey, bytes4k_t, StorageKeyHashCompare>;
 
     AccountsCache accounts_{10'000'000};
     StorageCache storage_{10'000'000};
+    BlockStorageCache block_storage_{78'125};
     Proposals proposals_;
 
 public:
@@ -109,6 +112,26 @@ public:
             }
         }
         return db_.read_storage(address, incarnation, key);
+    }
+
+    virtual bytes4k_t read_block_storage(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key) override
+    {
+        bool truncated = false;
+        bytes4k_t result;
+        if (proposals_.try_read_block_storage(
+                address, incarnation, key, result, truncated)) {
+            return result;
+        }
+        if (!truncated) {
+            StorageKey const skey{address, incarnation, key};
+            BlockStorageCache::ConstAccessor acc{};
+            if (block_storage_.find(acc, skey)) {
+                return acc->second.value_;
+            }
+        }
+        return db_.read_block_storage(address, incarnation, key);
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
@@ -238,16 +261,26 @@ private:
             auto const &account_delta = it->second.account;
             accounts_.insert(address, account_delta.second);
             auto const &storage = it->second.storage;
+            auto const &block_storage = it->second.block_storage;
             auto const &account = account_delta.second;
             if (account.has_value()) {
+                auto const incarnation = account->incarnation;
                 for (auto it2 = storage.cbegin(); it2 != storage.cend();
                      ++it2) {
                     auto const &key = it2->first;
                     auto const &storage_delta = it2->second;
-                    auto const incarnation = account->incarnation;
                     storage_.insert(
                         StorageKey(address, incarnation, key),
                         storage_delta.second);
+                }
+                for (auto it2 = block_storage.cbegin();
+                     it2 != block_storage.cend();
+                     ++it2) {
+                    auto const &key = it2->first;
+                    auto const &bstorage_delta = it2->second;
+                    block_storage_.insert(
+                        StorageKey(address, incarnation, key),
+                        bstorage_delta.second);
                 }
             }
         }

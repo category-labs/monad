@@ -54,13 +54,24 @@ using StorageDeltas = oneapi::tbb::concurrent_hash_map<
 static_assert(sizeof(StorageDeltas) == 576);
 static_assert(alignof(StorageDeltas) == 8);
 
+using BlockStorageDelta = Delta<bytes4k_t>;
+static_assert(sizeof(BlockStorageDelta) == 8192);
+static_assert(alignof(BlockStorageDelta) == 1);
+
+using BlockStorageDeltas = oneapi::tbb::concurrent_hash_map<
+    bytes32_t, BlockStorageDelta, BytesHashCompare<bytes32_t>>;
+
+static_assert(sizeof(BlockStorageDeltas) == 576);
+static_assert(alignof(BlockStorageDeltas) == 8);
+
 struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+    BlockStorageDeltas block_storage{};
 };
 
-static_assert(sizeof(StateDelta) == 752);
+static_assert(sizeof(StateDelta) == 1328);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<

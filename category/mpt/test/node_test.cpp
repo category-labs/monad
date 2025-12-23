@@ -47,7 +47,7 @@ struct DummyCompute final : Compute
         return len >= 32 ? 32 : len;
     }
 
-    virtual unsigned set_node_data(unsigned char *) override
+    virtual unsigned set_node_data(unsigned char *, unsigned) override
     {
         return 0;
     }

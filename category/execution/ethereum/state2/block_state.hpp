@@ -52,6 +52,9 @@ public:
 
     bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
 
+    bytes4k_t
+    read_block_storage(Address const &, Incarnation, bytes32_t const &key);
+
     vm::SharedVarcode read_code(bytes32_t const &);
 
     bool can_merge(State &) const;

@@ -337,7 +337,14 @@ namespace
                     .version = static_cast<int64_t>(block_id_)}));
                 in = in.substr(storage_entry_size);
             }
-            return storage_updates;
+            UpdateList storage_prefix_updates;
+            storage_prefix_updates.push_front(update_alloc_.emplace_back(Update{
+                .key = storage_prefix_nibbles,
+                .value = byte_string_view{},
+                .incarnation = false,
+                .next = std::move(storage_updates),
+                .version = static_cast<int64_t>(block_id_)}));
+            return storage_prefix_updates;
         }
     };
 
@@ -356,11 +363,17 @@ namespace
             auto const acct = decode_account_db_ignore_address(encoded_account);
             MONAD_ASSERT(!acct.has_error());
             MONAD_ASSERT(encoded_account.empty());
+            // TODO: update this when bstore trie is added
+            MONAD_ASSERT(
+                node.mask == 0x0 || node.mask == 1u << STORAGE_PREFIX_NIBBLE);
             bytes32_t storage_root = NULL_ROOT;
-            if (node.number_of_children()) {
-                MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
+            if (node.mask == 1u << STORAGE_PREFIX_NIBBLE &&
+                node.child_data_len(STORAGE_PREFIX_NIBBLE) ==
+                    sizeof(bytes32_t)) {
                 std::copy_n(
-                    node.data().data(), sizeof(bytes32_t), storage_root.bytes);
+                    node.child_data(STORAGE_PREFIX_NIBBLE),
+                    sizeof(bytes32_t),
+                    storage_root.bytes);
             }
             return rlp::encode_account(acct.value(), storage_root);
         }
@@ -417,8 +430,9 @@ namespace
     using AccountMerkleCompute = MerkleComputeBase<ComputeAccountLeaf>;
     using StorageMerkleCompute = MerkleComputeBase<ComputeStorageLeaf>;
 
-    struct StorageRootMerkleCompute : public StorageMerkleCompute
+    struct StoragePrefixMerkleCompute final : public EmptyCompute
     {
+        // storage root hash is stored as account leaf node's first child data
         virtual unsigned
         compute(unsigned char *const buffer, Node *const node) override
         {
@@ -431,29 +445,23 @@ namespace
         }
     };
 
-    struct AccountRootMerkleCompute : public AccountMerkleCompute
+    struct StorageRootMerkleCompute : public StorageMerkleCompute
     {
-        virtual unsigned compute(unsigned char *const, Node *const) override
+        virtual unsigned
+        compute(unsigned char *const buffer, Node *const node) override
         {
-            return 0;
+            if (node->mask == 0) {
+                return 0;
+            }
+            MONAD_ASSERT(node->data().size() == sizeof(bytes32_t));
+            memcpy(buffer, node->data().data(), node->data().size());
+            return sizeof(bytes32_t);
         }
     };
 
-    struct EmptyCompute final : Compute
+    struct AccountRootMerkleCompute : public AccountMerkleCompute
     {
-        virtual unsigned compute_len(
-            std::span<ChildData>, uint16_t, NibblesView,
-            std::optional<byte_string_view>) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute_branch(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute(unsigned char *, Node *) override
+        virtual unsigned compute(unsigned char *const, Node *const) override
         {
             return 0;
         }
@@ -492,6 +500,7 @@ mpt::Compute &MachineBase::get_compute() const
     static AccountRootMerkleCompute account_root_compute;
     static StorageMerkleCompute storage_compute;
     static StorageRootMerkleCompute storage_root_compute;
+    static StoragePrefixMerkleCompute storage_prefix_compute;
 
     static VarLenMerkleCompute generic_merkle_compute;
     static RootVarLenMerkleCompute generic_root_merkle_compute;
@@ -512,6 +521,9 @@ mpt::Compute &MachineBase::get_compute() const
             return account_compute;
         }
         else if (depth == prefix_length + 2 * sizeof(bytes32_t)) {
+            return storage_prefix_compute;
+        }
+        else if (depth == prefix_length + 2 * sizeof(bytes32_t) + 1) {
             return storage_root_compute;
         }
         else {

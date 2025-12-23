@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 
 namespace monad::vm
 {
@@ -68,5 +69,15 @@ namespace monad::vm
         auto vcode = std::make_shared<Varcode>(icode);
         (void)weight_cache_.try_insert(code_hash, vcode, weight);
         return vcode;
+    }
+
+    SharedVarcode VarcodeCache::try_set_raw(
+        evmc::bytes32 const &code_hash, std::span<uint8_t const> code)
+    {
+        WeightCache::ConstAccessor acc;
+        if (!weight_cache_.find(acc, code_hash)) {
+            return try_set(code_hash, make_shared_intercode(code));
+        }
+        return acc->second.value_;
     }
 }

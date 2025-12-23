@@ -196,6 +196,30 @@ namespace
     };
 }
 
+TEST(MonadVmInterface, VarcodeCacheEmptyCode)
+{
+    static uint32_t const bytecode_cache_weight = 3;
+    static uint32_t const warm_cache_kb = 2 * bytecode_cache_weight;
+    static uint32_t const max_cache_kb = warm_cache_kb;
+
+    VarcodeCache cache{max_cache_kb, warm_cache_kb};
+
+    uint8_t *const p = nullptr;
+    std::span<uint8_t const> empty_code{p, 0};
+    auto code_hash = std::bit_cast<evmc::bytes32>(
+        ethash::keccak256(empty_code.data(), empty_code.size()));
+
+    auto vcode0 = cache.try_set(code_hash, make_shared_intercode(empty_code));
+
+    ASSERT_EQ(vcode0, cache.get(code_hash));
+    ASSERT_EQ(vcode0->intercode()->size(), 0);
+    ASSERT_EQ(vcode0->nativecode(), nullptr);
+
+    auto vcode1 = cache.try_set_raw(code_hash, empty_code);
+
+    ASSERT_EQ(vcode0, vcode1);
+}
+
 TEST(MonadVmInterface, VarcodeCache)
 {
     static uint32_t const bytecode_cache_weight = 3;
@@ -224,6 +248,7 @@ TEST(MonadVmInterface, VarcodeCache)
     ASSERT_EQ(vcode0.value()->intercode(), icode0);
     ASSERT_EQ(vcode0.value()->nativecode(), ncode0);
     ASSERT_EQ(vcode0, cache.get(hash0));
+    ASSERT_EQ(vcode0, cache.try_set_raw(hash0, bytecode0));
 
     auto [bytecode1, hash1] = make_bytecode(1);
     ASSERT_EQ(
@@ -241,6 +266,7 @@ TEST(MonadVmInterface, VarcodeCache)
     ASSERT_EQ(vcode1->nativecode(), nullptr);
     ASSERT_EQ(vcode1, cache.get(hash1).value());
     ASSERT_EQ(vcode0, cache.get(hash0).value());
+    ASSERT_EQ(vcode1, cache.try_set_raw(hash1, bytecode1));
 
     auto [bytecode2, hash2] = make_bytecode(2);
     ASSERT_EQ(
@@ -260,6 +286,32 @@ TEST(MonadVmInterface, VarcodeCache)
     ASSERT_EQ(vcode2, cache.get(hash2).value());
     ASSERT_EQ(vcode1, cache.get(hash1).value());
     ASSERT_FALSE(cache.get(hash0).has_value());
+    ASSERT_EQ(vcode2, cache.try_set_raw(hash2, bytecode2));
+
+    auto [bytecode3, hash3] = make_bytecode(3);
+    ASSERT_EQ(
+        VarcodeCache::code_size_to_cache_weight(
+            static_cast<uint32_t>(bytecode3.size())),
+        bytecode_cache_weight);
+
+    auto vcode3 = cache.try_set_raw(hash3, bytecode3);
+
+    ASSERT_TRUE(cache.is_warm());
+
+    ASSERT_NE(vcode3, vcode0.value());
+    ASSERT_NE(vcode3, vcode1);
+    ASSERT_NE(vcode3, vcode2);
+    auto vcode3_span = vcode3->intercode()->code_span();
+    ASSERT_TRUE(std::equal(
+        std::begin(vcode3_span),
+        std::end(vcode3_span),
+        std::begin(bytecode3),
+        std::end(bytecode3)));
+    ASSERT_EQ(vcode3->nativecode(), nullptr);
+    ASSERT_EQ(vcode3, cache.get(hash3).value());
+    ASSERT_EQ(vcode2, cache.get(hash2).value());
+    ASSERT_FALSE(cache.get(hash1).has_value()); // evicted
+    ASSERT_FALSE(cache.get(hash0).has_value()); // still evicted
 }
 
 TEST(MonadVmInterface, compile)
@@ -346,6 +398,7 @@ TEST(MonadVmInterface, try_insert_varcode)
     ASSERT_EQ(vcode1->intercode(), icode1);
     ASSERT_EQ(vcode1->nativecode(), nullptr);
     ASSERT_EQ(vm.try_insert_varcode(hash1, icode1), vcode1);
+    ASSERT_EQ(vm.try_insert_varcode_raw(hash1, bytecode1), vcode1);
 }
 
 TEST(MonadVmInterface, execute_bytecode_raw)

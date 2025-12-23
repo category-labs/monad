@@ -33,6 +33,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <span>
 #include <thread>
 
 namespace monad::vm
@@ -186,6 +187,12 @@ namespace monad::vm
             evmc::bytes32 const &code_hash, SharedIntercode const &icode)
         {
             return varcode_cache_.try_set(code_hash, icode);
+        }
+
+        SharedVarcode try_insert_varcode_raw(
+            evmc::bytes32 const &code_hash, std::span<uint8_t const> code)
+        {
+            return varcode_cache_.try_set_raw(code_hash, code);
         }
 
         bool is_varcode_cache_warm()

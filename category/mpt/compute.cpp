@@ -101,25 +101,25 @@ std::span<unsigned char> encode_16_children(
 }
 
 std::span<unsigned char>
-encode_16_children(Node *node, std::span<unsigned char> result)
+encode_16_children(Node const &node, std::span<unsigned char> result)
 {
 
     for (unsigned i = 0, bit = 1; i < 16; ++i, bit <<= 1) {
-        if (node->mask & bit) {
-            auto const child_index = node->to_child_index(i);
+        if (node.mask & bit) {
+            auto const child_index = node.to_child_index(i);
             MONAD_DEBUG_ASSERT(
-                node->child_data_len(child_index) <= KECCAK256_SIZE);
+                node.child_data_len(child_index) <= KECCAK256_SIZE);
             result =
-                (node->child_data_len(child_index) < KECCAK256_SIZE)
+                (node.child_data_len(child_index) < KECCAK256_SIZE)
                     ? [&] {
                           memcpy(
                               result.data(),
-                              node->child_data(child_index),
-                              node->child_data_len(child_index));
+                              node.child_data(child_index),
+                              node.child_data_len(child_index));
                           return result.subspan(
-                              node->child_data_len(child_index));
+                              node.child_data_len(child_index));
                       }()
-                    : rlp::encode_string(result, node->child_data_view(child_index));
+                    : rlp::encode_string(result, node.child_data_view(child_index));
         }
         else {
             result = encode_empty_string(result);

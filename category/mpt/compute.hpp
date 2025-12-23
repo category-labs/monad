@@ -55,7 +55,7 @@ std::span<unsigned char>
 encode_16_children(std::span<ChildData>, std::span<unsigned char> result);
 
 std::span<unsigned char>
-encode_16_children(Node *, std::span<unsigned char> result);
+encode_16_children(Node const &, std::span<unsigned char> result);
 
 unsigned encode_two_pieces(
     unsigned char *const dest, NibblesView const path,
@@ -76,7 +76,7 @@ struct Compute
     set_node_data(unsigned char *buffer, unsigned max_size) = 0;
     //! compute the hash data of a trie rooted at `node`, write it into
     //! `buffer`, and return the number of bytes written.
-    virtual unsigned compute(unsigned char *buffer, Node *node) = 0;
+    virtual unsigned compute(unsigned char *buffer, Node const &node) = 0;
 };
 
 struct EmptyCompute : Compute
@@ -93,7 +93,7 @@ struct EmptyCompute : Compute
         return 0;
     }
 
-    virtual unsigned compute(unsigned char *, Node *) override
+    virtual unsigned compute(unsigned char *, Node const &) override
     {
         return 0;
     }
@@ -182,21 +182,21 @@ struct MerkleComputeBase : Compute
     }
 
     virtual unsigned
-    compute(unsigned char *const buffer, Node *const node) override
+    compute(unsigned char *const buffer, Node const &node) override
     {
-        if (node->has_value()) {
+        if (node.has_value()) {
             return encode_two_pieces(
                 buffer,
-                node->path_nibble_view(),
-                LeafValueProcessor::process(*node), // processed leaf data
+                node.path_nibble_view(),
+                LeafValueProcessor::process(node), // processed leaf data
                 true);
         }
-        MONAD_DEBUG_ASSERT(node->number_of_children() > 1);
-        if (node->has_path()) {
+        MONAD_DEBUG_ASSERT(node.number_of_children() > 1);
+        if (node.has_path()) {
             unsigned char reference[KECCAK256_SIZE];
             unsigned len = compute_branch_reference_(reference, node);
             return encode_two_pieces(
-                buffer, node->path_nibble_view(), {reference, len}, false);
+                buffer, node.path_nibble_view(), {reference, len}, false);
         }
         return compute_branch_reference_(buffer, node);
     }
@@ -219,16 +219,16 @@ private:
                                   unsigned char branch_hash[KECCAK256_SIZE];
                                   return {
                                       branch_hash,
-                                      compute_branch_reference_(branch_hash, node)};
+                                      compute_branch_reference_(branch_hash, *node)};
                               }())
                             : byte_string_view{single_child.data, single_child.len})),
                 node->has_value());
     }
 
     unsigned
-    compute_branch_reference_(unsigned char *const buffer, Node *const node)
+    compute_branch_reference_(unsigned char *const buffer, Node const &node)
     {
-        MONAD_ASSERT(node->number_of_children());
+        MONAD_ASSERT(node.number_of_children());
         unsigned char branch_str_rlp[max_branch_rlp_size];
         auto result = encode_16_children(node, {branch_str_rlp});
         // encode empty value string
@@ -304,26 +304,23 @@ struct VarLenMerkleCompute : Compute
         return len;
     }
 
-    virtual unsigned compute(unsigned char *buffer, Node *node) override
+    virtual unsigned compute(unsigned char *buffer, Node const &node) override
     {
         // Ethereum leaf: leaf node hash without child
-        if (node->number_of_children() == 0) {
-            MONAD_ASSERT(node->has_value());
+        if (node.number_of_children() == 0) {
+            MONAD_ASSERT(node.has_value());
             return encode_two_pieces(
                 buffer,
-                node->path_nibble_view(),
-                LeafValueProcessor::process(*node),
+                node.path_nibble_view(),
+                LeafValueProcessor::process(node),
                 true);
         }
         // Ethereum extension: there is non-empty path
         // rlp(encoded path, inline branch hash)
-        if (node->has_path()) { // extension node, rlp encode with path too
-            MONAD_ASSERT(node->bitpacked.data_len);
+        if (node.has_path()) { // extension node, rlp encode with path too
+            MONAD_ASSERT(node.bitpacked.data_len);
             return encode_two_pieces(
-                buffer,
-                node->path_nibble_view(),
-                node->data(),
-                node->has_value());
+                buffer, node.path_nibble_view(), node.data(), node.has_value());
         }
         // Ethereum branch
         return compute_branch_reference_(buffer, node);
@@ -357,16 +354,16 @@ protected:
         return state.len;
     }
 
-    unsigned compute_branch_reference_(unsigned char *buffer, Node *node)
+    unsigned compute_branch_reference_(unsigned char *buffer, Node const &node)
     {
-        MONAD_ASSERT(node->number_of_children());
+        MONAD_ASSERT(node.number_of_children());
         // compute branch node hash
-        byte_string branch_str_rlp(calc_rlp_max_size(node->value_len), 0);
+        byte_string branch_str_rlp(calc_rlp_max_size(node.value_len), 0);
         auto result = encode_16_children(node, branch_str_rlp);
         // encode vt
         result =
-            (node->has_value() && node->value_len)
-                ? rlp::encode_string(result, LeafValueProcessor::process(*node))
+            (node.has_value() && node.value_len)
+                ? rlp::encode_string(result, LeafValueProcessor::process(node))
                 : encode_empty_string(result);
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp.data());
@@ -384,7 +381,7 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafValueProcessor>
     using Base::compute_branch_reference_;
     using Base::state;
 
-    virtual unsigned compute(unsigned char *const, Node *const) override
+    virtual unsigned compute(unsigned char *const, Node const &) override
     {
         return 0;
     }
@@ -434,7 +431,7 @@ private:
                        unsigned char branch_hash[KECCAK256_SIZE];
                        return {
                            branch_hash,
-                           compute_branch_reference_(branch_hash, node)};
+                           compute_branch_reference_(branch_hash, *node)};
                    }())
                               : LeafValueProcessor::process(*node),
                    node->has_value());

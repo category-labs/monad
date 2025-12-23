@@ -336,6 +336,12 @@ unsigned char *Node::child_data(unsigned const index) noexcept
     return child_data() + child_data_offset(index);
 }
 
+unsigned char const *Node::child_data(unsigned const index) const noexcept
+{
+    MONAD_DEBUG_ASSERT(index < number_of_children());
+    return child_data() + child_data_offset(index);
+}
+
 void Node::set_child_data(unsigned const index, byte_string_view data) noexcept
 {
     // called after data_off array is calculated
@@ -433,7 +439,7 @@ void ChildData::finalize(
 {
     MONAD_DEBUG_ASSERT(is_valid());
     ptr = std::move(node);
-    auto const length = compute.compute(data, ptr.get());
+    auto const length = compute.compute(data, *ptr);
     MONAD_DEBUG_ASSERT(length <= std::numeric_limits<uint8_t>::max());
     len = static_cast<uint8_t>(length);
     cache_node = cache;

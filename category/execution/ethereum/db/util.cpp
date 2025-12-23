@@ -422,20 +422,20 @@ namespace
     struct StorageRootMerkleCompute : public StorageMerkleCompute
     {
         virtual unsigned
-        compute(unsigned char *const buffer, Node *const node) override
+        compute(unsigned char *const buffer, Node const &node) override
         {
-            MONAD_ASSERT(node->has_value());
+            MONAD_ASSERT(node.has_value());
             return encode_two_pieces(
                 buffer,
-                node->path_nibble_view(),
-                AccountLeafProcessor::process(*node),
+                node.path_nibble_view(),
+                AccountLeafProcessor::process(node),
                 true);
         }
     };
 
     struct AccountRootMerkleCompute : public AccountMerkleCompute
     {
-        virtual unsigned compute(unsigned char *const, Node *const) override
+        virtual unsigned compute(unsigned char *const, Node const &) override
         {
             return 0;
         }

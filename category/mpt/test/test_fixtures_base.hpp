@@ -43,26 +43,6 @@ namespace monad::test
 
     using MerkleCompute = ::monad::mpt::MerkleComputeBase<DummyComputeLeafData>;
 
-    struct EmptyCompute final : Compute
-    {
-        virtual unsigned compute_len(
-            std::span<ChildData>, uint16_t, NibblesView,
-            std::optional<byte_string_view>) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute_branch(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-    };
-
     struct RootMerkleCompute : public MerkleCompute
     {
         virtual unsigned compute(unsigned char *const, Node *const) override

@@ -581,11 +581,12 @@ Node::SharedPtr create_node_with_children(
     int64_t const version)
 {
     MONAD_ASSERT(mask);
-    auto const data_size = comp.compute_len(children, mask, path, value);
+    auto const data_size =
+        comp.compute_node_data_len(children, mask, path, value);
     auto node = make_node(mask, children, path, value, data_size, version);
     MONAD_DEBUG_ASSERT(node);
     if (data_size) {
-        comp.compute_branch(node->data_data(), node.get());
+        comp.set_node_data(node->data_data());
     }
     return node;
 }

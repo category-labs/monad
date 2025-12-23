@@ -72,7 +72,8 @@ struct Compute
         std::optional<byte_string_view> value) = 0;
     //! Write computed node data to buffer and return the number of bytes
     //! written.
-    virtual unsigned set_node_data(unsigned char *buffer) = 0;
+    virtual unsigned
+    set_node_data(unsigned char *buffer, unsigned max_size) = 0;
     //! compute the hash data of a trie rooted at `node`, write it into
     //! `buffer`, and return the number of bytes written.
     virtual unsigned compute(unsigned char *buffer, Node *node) = 0;
@@ -87,7 +88,7 @@ struct EmptyCompute : Compute
         return 0;
     }
 
-    virtual unsigned set_node_data(unsigned char *) override
+    virtual unsigned set_node_data(unsigned char *, unsigned) override
     {
         return 0;
     }
@@ -165,12 +166,14 @@ struct MerkleComputeBase : Compute
         return KECCAK256_SIZE;
     }
 
-    virtual unsigned set_node_data(unsigned char *const buffer) override
+    virtual unsigned
+    set_node_data(unsigned char *const buffer, unsigned const max_size) override
     {
         if (state.len == 0) {
             return 0;
         }
         unsigned const len = state.len;
+        MONAD_ASSERT(len <= max_size);
         // a simple memcpy if already computed to internal state
         std::memcpy(buffer, state.buffer, state.len);
         // reset state
@@ -293,13 +296,15 @@ struct VarLenMerkleCompute : Compute
         return do_compute_node_data_len(children, value);
     }
 
-    virtual unsigned set_node_data(unsigned char *buffer) override
+    virtual unsigned
+    set_node_data(unsigned char *buffer, unsigned const max_size) override
     {
         // copy from internal state
         if (state.len == 0) {
             return 0;
         }
         unsigned const len = state.len;
+        MONAD_ASSERT(len <= max_size);
         // a simple memcpy if already computed to internal state
         std::memcpy(buffer, state.buffer, state.len);
         // reset state
@@ -415,9 +420,10 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafDataProcessor>
         return KECCAK256_SIZE;
     }
 
-    virtual unsigned set_node_data(unsigned char *buffer) override
+    virtual unsigned
+    set_node_data(unsigned char *buffer, unsigned const max_size) override
     {
-        return Base::set_node_data(buffer);
+        return Base::set_node_data(buffer, max_size);
     }
 
 private:

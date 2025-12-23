@@ -228,6 +228,14 @@ Result<std::vector<Receipt>> execute_block_transactions(
 
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
         new boost::fibers::promise<void>[transactions.size() + 1]};
+    std::vector<boost::fibers::future<void>> futures;
+    futures.reserve(transactions.size() + 1);
+
+    auto const last_future = transactions.size();
+    for (unsigned i = 0; i <= last_future; ++i) {
+        futures.push_back(promises[i].get_future());
+    }
+
     promises[0].set_value();
 
     std::shared_ptr<std::optional<Result<Receipt>>[]> const results{
@@ -243,6 +251,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
              i = i,
              results = results,
              promises = promises,
+             &futures = futures,
              &transaction = transactions[i],
              &sender = senders[i],
              &authorities = authorities[i],
@@ -266,7 +275,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         block_hash_buffer,
                         block_state,
                         block_metrics,
-                        promises[i],
+                        futures[i],
                         call_tracer,
                         state_tracer,
                         revert_transaction);
@@ -283,8 +292,15 @@ Result<std::vector<Receipt>> execute_block_transactions(
             });
     }
 
-    auto const last = static_cast<std::ptrdiff_t>(transactions.size());
-    promises[last].get_future().get();
+    // Exception propagation via future.get()
+    for (size_t i = 0; i < last_future; ++i) {
+        // Wait for dependent transaction, beacuse calling future.wait() after
+        // future.get() is undefined behavior:
+        futures[i + 1].wait();
+        futures[i].get();
+    }
+    futures[last_future].get();
+
     block_metrics.set_tx_exec_time(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin));

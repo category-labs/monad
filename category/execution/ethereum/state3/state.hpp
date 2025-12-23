@@ -209,17 +209,17 @@ public:
     bool try_fix_account_mismatch(
         Address const &, std::optional<Account> const &actual);
 
-    /**
-     * Checks whether the account currently has enough balance to cover `debit`
-     * and records the relaxed-merge constraints needed for that debit.
-     *
-     * NOTE: This method mutates the account's OriginalAccountState by either
-     * tightening the recorded `min_balance` or demanding exact balance
-     * validation when the balance is insufficient. Callers should treat it as
-     * a stateful helper rather than a pure predicate.
-     */
-    bool record_balance_constraint_for_debit(
-        Address const &, uint256_t const &debit);
+    // These functions check whether the account associated with the input
+    // address has enough balance to cover the input amount and record the
+    // corresponding relaxed-merge validation requirements.
+    bool check_min_original_balance(Address const &, uint256_t const &);
+    bool check_min_balance(Address const &, uint256_t const &);
+    bool check_min_balance(Address const &, uint512_t const &);
+
+private:
+    bool check_account_min_balance(
+        OriginalAccountState &, std::optional<Account> const &,
+        uint256_t const &);
 };
 
 MONAD_NAMESPACE_END

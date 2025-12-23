@@ -86,9 +86,11 @@ bool dipped_into_reserve(
         // Check if dipped into reserve
         std::optional<uint256_t> const violation_threshold =
             [&] -> std::optional<uint256_t> {
-            uint256_t const orig_balance = state.get_original_balance(addr);
+            uint256_t const max_reserve = get_max_reserve<traits>(addr);
             uint256_t const reserve =
-                std::min(get_max_reserve<traits>(addr), orig_balance);
+                state.check_min_original_balance(addr, max_reserve)
+                    ? max_reserve
+                    : state.get_original_balance(addr);
             if (addr == sender) {
                 if (gas_fees > reserve) { // must be dipping
                     return std::nullopt;
@@ -97,9 +99,8 @@ bool dipped_into_reserve(
             }
             return reserve;
         }();
-        uint256_t const curr_balance = state.get_balance(addr);
         if (!violation_threshold.has_value() ||
-            curr_balance < violation_threshold.value()) {
+            !state.check_min_balance(addr, violation_threshold.value())) {
             if (addr == sender) {
                 if (!can_sender_dip_into_reserve(
                         sender, i, effective_is_delegated, ctx)) {

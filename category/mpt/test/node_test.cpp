@@ -33,7 +33,7 @@ using namespace monad::literals;
 struct DummyCompute final : Compute
 {
     // hash length = 1
-    virtual unsigned compute_len(
+    virtual unsigned compute_node_data_len(
         std::span<ChildData> const children, uint16_t const, NibblesView const,
         std::optional<monad::byte_string_view> const value) override
     {
@@ -47,12 +47,12 @@ struct DummyCompute final : Compute
         return len >= 32 ? 32 : len;
     }
 
-    virtual unsigned compute_branch(unsigned char *, Node *) override
+    virtual unsigned set_node_data(unsigned char *, unsigned) override
     {
         return 0;
     }
 
-    virtual unsigned compute(unsigned char *buffer, Node *) override
+    virtual unsigned compute(unsigned char *buffer, Node const &) override
     {
         buffer[0] = 0xa;
         return 1;

@@ -35,7 +35,7 @@ namespace monad::test
     {
         // TEMPORARY for POC
         // compute leaf data as - concat(input_leaf, hash);
-        static byte_string compute(Node const &node)
+        static byte_string process(Node const &node)
         {
             return byte_string{node.value()} + byte_string{node.data()};
         }
@@ -43,29 +43,9 @@ namespace monad::test
 
     using MerkleCompute = ::monad::mpt::MerkleComputeBase<DummyComputeLeafData>;
 
-    struct EmptyCompute final : Compute
-    {
-        virtual unsigned compute_len(
-            std::span<ChildData>, uint16_t, NibblesView,
-            std::optional<byte_string_view>) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute_branch(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-    };
-
     struct RootMerkleCompute : public MerkleCompute
     {
-        virtual unsigned compute(unsigned char *const, Node *const) override
+        virtual unsigned compute(unsigned char *const, Node const &) override
         {
             return 0;
         }
@@ -415,8 +395,8 @@ namespace monad::test
         {
             if (this->root.get()) {
                 monad::byte_string res(32, 0);
-                auto const len = this->sm->get_compute().compute(
-                    res.data(), this->root.get());
+                auto const len =
+                    this->sm->get_compute().compute(res.data(), *this->root);
                 if (len < KECCAK256_SIZE) {
                     keccak256(res.data(), len, res.data());
                 }
@@ -668,8 +648,7 @@ namespace monad::test
             {
                 if (this->root.get()) {
                     monad::byte_string res(32, 0);
-                    this->sm.get_compute().compute(
-                        res.data(), this->root.get());
+                    this->sm.get_compute().compute(res.data(), *this->root);
                     return res;
                 }
                 return empty_trie_hash;

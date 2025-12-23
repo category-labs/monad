@@ -341,9 +341,9 @@ namespace
         }
     };
 
-    struct ComputeAccountLeaf
+    struct AccountLeafProcessor
     {
-        static byte_string compute(Node const &node)
+        static byte_string process(mpt::Node const &node)
         {
             MONAD_ASSERT(node.has_value());
 
@@ -366,9 +366,9 @@ namespace
         }
     };
 
-    struct ComputeStorageLeaf
+    struct StorageLeafProcessor
     {
-        static byte_string compute(Node const &node)
+        static byte_string process(mpt::Node const &node)
         {
             MONAD_ASSERT(node.has_value());
             auto encoded_storage = node.value();
@@ -387,10 +387,11 @@ namespace
 
     struct ReceiptLeafProcessor
     {
-        static byte_string_view process(byte_string_view enc)
+        static byte_string_view process(mpt::Node const &node)
         {
+            byte_string_view leaf_value = node.value();
             auto const enc_receipt =
-                parse_encoded_receipt_ignore_log_index(enc);
+                parse_encoded_receipt_ignore_log_index(leaf_value);
             MONAD_ASSERT(!enc_receipt.has_error());
             return enc_receipt.value();
         }
@@ -403,57 +404,38 @@ namespace
         return rlp::decode_string(enc);
     }
 
-    struct TransactionLeafProcess
+    struct TransactionLeafProcessor
     {
-        static byte_string_view process(byte_string_view enc)
+        static byte_string_view process(mpt::Node const &node)
         {
+            byte_string_view leaf_value = node.value();
             auto const enc_transaction =
-                parse_encoded_transaction_ignore_sender(enc);
+                parse_encoded_transaction_ignore_sender(leaf_value);
             MONAD_ASSERT(!enc_transaction.has_error());
             return enc_transaction.value();
         }
     };
 
-    using AccountMerkleCompute = MerkleComputeBase<ComputeAccountLeaf>;
-    using StorageMerkleCompute = MerkleComputeBase<ComputeStorageLeaf>;
+    using AccountMerkleCompute = MerkleComputeBase<AccountLeafProcessor>;
+    using StorageMerkleCompute = MerkleComputeBase<StorageLeafProcessor>;
 
     struct StorageRootMerkleCompute : public StorageMerkleCompute
     {
         virtual unsigned
-        compute(unsigned char *const buffer, Node *const node) override
+        compute(unsigned char *const buffer, Node const &node) override
         {
-            MONAD_ASSERT(node->has_value());
+            MONAD_ASSERT(node.has_value());
             return encode_two_pieces(
                 buffer,
-                node->path_nibble_view(),
-                ComputeAccountLeaf::compute(*node),
+                node.path_nibble_view(),
+                AccountLeafProcessor::process(node),
                 true);
         }
     };
 
     struct AccountRootMerkleCompute : public AccountMerkleCompute
     {
-        virtual unsigned compute(unsigned char *const, Node *const) override
-        {
-            return 0;
-        }
-    };
-
-    struct EmptyCompute final : Compute
-    {
-        virtual unsigned compute_len(
-            std::span<ChildData>, uint16_t, NibblesView,
-            std::optional<byte_string_view>) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute_branch(unsigned char *, Node *) override
-        {
-            return 0;
-        }
-
-        virtual unsigned compute(unsigned char *, Node *) override
+        virtual unsigned compute(unsigned char *const, Node const &) override
         {
             return 0;
         }
@@ -498,8 +480,8 @@ mpt::Compute &MachineBase::get_compute() const
 
     static VarLenMerkleCompute<ReceiptLeafProcessor> receipt_compute;
     static RootVarLenMerkleCompute<ReceiptLeafProcessor> receipt_root_compute;
-    static VarLenMerkleCompute<TransactionLeafProcess> transaction_compute;
-    static RootVarLenMerkleCompute<TransactionLeafProcess>
+    static VarLenMerkleCompute<TransactionLeafProcessor> transaction_compute;
+    static RootVarLenMerkleCompute<TransactionLeafProcessor>
         transaction_root_compute;
 
     auto const prefix_length = prefix_len();

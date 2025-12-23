@@ -35,7 +35,7 @@ namespace monad::test
     {
         // TEMPORARY for POC
         // compute leaf data as - concat(input_leaf, hash);
-        static byte_string compute(Node const &node)
+        static byte_string process(Node const &node)
         {
             return byte_string{node.value()} + byte_string{node.data()};
         }

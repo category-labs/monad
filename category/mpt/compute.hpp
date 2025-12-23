@@ -100,11 +100,11 @@ struct EmptyCompute : Compute
 };
 
 template <typename T>
-concept compute_leaf_data = requires {
-    { T::compute(std::declval<Node const &>()) } -> std::same_as<byte_string>;
+concept leaf_processor = requires(Node const &node) {
+    { T::process(node) } -> std::convertible_to<byte_string_view>;
 };
 
-template <compute_leaf_data TComputeLeafData>
+template <leaf_processor LeafValueProcessor>
 struct MerkleComputeBase : Compute
 {
     static constexpr auto max_branch_rlp_size = rlp::list_length(
@@ -188,7 +188,7 @@ struct MerkleComputeBase : Compute
             return encode_two_pieces(
                 buffer,
                 node->path_nibble_view(),
-                TComputeLeafData::compute(*node), // computed leaf data
+                LeafValueProcessor::process(*node), // processed leaf data
                 true);
         }
         MONAD_DEBUG_ASSERT(node->number_of_children() > 1);
@@ -213,7 +213,7 @@ private:
                 state.buffer,
                 concat(single_child.branch, node->path_nibble_view()),
                 (node->has_value()
-                     ? TComputeLeafData::compute(*node)
+                     ? LeafValueProcessor::process(*node)
                      : (node->has_path()
                             ? ([&] -> byte_string {
                                   unsigned char branch_hash[KECCAK256_SIZE];
@@ -253,23 +253,15 @@ in the middle of a variable length trie.
 
 TODO for vicky: consolidate VarLenMerkleCompute and MerkleCompute into one.
 */
-
-template <typename T>
-concept leaf_processor = requires {
-    {
-        T::process(std::declval<byte_string_view>())
-    } -> std::same_as<byte_string_view>;
-};
-
 struct NoopProcessor
 {
-    static byte_string_view process(byte_string_view const in)
+    static byte_string_view process(Node const &node)
     {
-        return in;
+        return node.value();
     }
 };
 
-template <leaf_processor LeafDataProcessor = NoopProcessor>
+template <leaf_processor LeafValueProcessor = NoopProcessor>
 struct VarLenMerkleCompute : Compute
 {
     static constexpr auto calc_rlp_max_size =
@@ -320,7 +312,7 @@ struct VarLenMerkleCompute : Compute
             return encode_two_pieces(
                 buffer,
                 node->path_nibble_view(),
-                LeafDataProcessor::process(node->value()),
+                LeafValueProcessor::process(*node),
                 true);
         }
         // Ethereum extension: there is non-empty path
@@ -350,10 +342,10 @@ protected:
 
         byte_string branch_str_rlp(branch_str_max_len, 0);
         auto result = encode_16_children(children, branch_str_rlp);
-        // encode vt
+        // encode vt (branch values are not processed, already in correct
+        // format)
         result = (value.has_value() && value.value().size())
-                     ? rlp::encode_string(
-                           result, LeafDataProcessor::process(value.value()))
+                     ? rlp::encode_string(result, value.value())
                      : encode_empty_string(result);
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp.data());
@@ -372,10 +364,10 @@ protected:
         byte_string branch_str_rlp(calc_rlp_max_size(node->value_len), 0);
         auto result = encode_16_children(node, branch_str_rlp);
         // encode vt
-        result = (node->has_value() && node->value_len)
-                     ? rlp::encode_string(
-                           result, LeafDataProcessor::process(node->value()))
-                     : encode_empty_string(result);
+        result =
+            (node->has_value() && node->value_len)
+                ? rlp::encode_string(result, LeafValueProcessor::process(*node))
+                : encode_empty_string(result);
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp.data());
         byte_string branch_rlp(rlp::list_length(concat_len), 0);
@@ -385,10 +377,10 @@ protected:
     }
 };
 
-template <leaf_processor LeafDataProcessor = NoopProcessor>
-struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafDataProcessor>
+template <leaf_processor LeafValueProcessor = NoopProcessor>
+struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafValueProcessor>
 {
-    using Base = VarLenMerkleCompute<LeafDataProcessor>;
+    using Base = VarLenMerkleCompute<LeafValueProcessor>;
     using Base::compute_branch_reference_;
     using Base::state;
 
@@ -444,7 +436,7 @@ private:
                            branch_hash,
                            compute_branch_reference_(branch_hash, node)};
                    }())
-                              : LeafDataProcessor::process(node->value()),
+                              : LeafValueProcessor::process(*node),
                    node->has_value());
     }
 };

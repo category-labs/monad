@@ -19,6 +19,8 @@
 #include <category/vm/utils/evmc_utils.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
+#include <span>
+
 namespace monad::vm
 {
     class VarcodeCache
@@ -48,6 +50,12 @@ namespace monad::vm
         /// Find varcode under `code_hash`, otherwise insert into cache.
         SharedVarcode
         try_set(evmc::bytes32 const &code_hash, SharedIntercode const &);
+
+        /// Find varcode under `code_hash`, otherwise construct a
+        /// `SharedVarcode` object from the given bytecodes and insert it into
+        /// cache.
+        SharedVarcode try_set_raw(
+            evmc::bytes32 const &code_hash, std::span<uint8_t const> code);
 
         /// Whether the cache is warmed up.
         bool is_warm()

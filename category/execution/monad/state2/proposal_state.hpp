@@ -86,6 +86,28 @@ public:
         }
         return false;
     }
+
+    bool try_read_block_storage(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key, bytes4k_t &result) const
+    {
+        StateDeltas::const_accessor it{};
+        if (!state_->find(it, address)) {
+            return false;
+        }
+        auto const &account = it->second.account.second;
+        if (!account || incarnation != account->incarnation) {
+            result = bytes4k_t{};
+            return true;
+        }
+        auto const &bstorage = it->second.block_storage;
+        BlockStorageDeltas::const_accessor it2{};
+        if (bstorage.find(it2, key)) {
+            result = it2->second.second;
+            return true;
+        }
+        return false;
+    }
 };
 
 class Proposals
@@ -133,6 +155,17 @@ public:
             [&address, incarnation, &key, &result](ProposalState const &ps) {
                 return ps.try_read_storage(address, incarnation, key, result);
             };
+        return try_read(fn, truncated);
+    }
+
+    bool try_read_block_storage(
+        Address const &address, Incarnation incarnation, bytes32_t const &key,
+        bytes4k_t &result, bool &truncated) const
+    {
+        auto const fn = [&address, incarnation, &key, &result](
+                            ProposalState const &ps) {
+            return ps.try_read_block_storage(address, incarnation, key, result);
+        };
         return try_read(fn, truncated);
     }
 

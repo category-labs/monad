@@ -26,6 +26,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <functional>
@@ -36,6 +37,27 @@ using bytes32_t = ::evmc::bytes32;
 
 static_assert(sizeof(bytes32_t) == 32);
 static_assert(alignof(bytes32_t) == 1);
+
+struct monad_bytes4k
+{
+    uint8_t bytes[4096];
+};
+
+struct bytes4k_t : public monad_bytes4k
+{
+    constexpr explicit bytes4k_t(monad_bytes4k const init = {}) noexcept
+        : monad_bytes4k{init}
+    {
+    }
+
+    constexpr bool operator==(bytes4k_t const &other) const
+    {
+        return std::ranges::equal(bytes, other.bytes);
+    }
+};
+
+static_assert(sizeof(bytes4k_t) == 4096);
+static_assert(alignof(bytes4k_t) == 1);
 
 constexpr bytes32_t to_bytes(uint256_t const n) noexcept
 {
@@ -57,6 +79,18 @@ constexpr bytes32_t to_bytes(byte_string_view const data) noexcept
         data.size(),
         byte.bytes + sizeof(bytes32_t) - data.size());
     return byte;
+}
+
+constexpr bytes4k_t to_page(byte_string_view const data) noexcept
+{
+    MONAD_ASSERT(data.size() <= sizeof(bytes4k_t));
+
+    bytes4k_t page;
+    std::copy_n(
+        data.begin(),
+        data.size(),
+        page.bytes + sizeof(bytes4k_t) - data.size());
+    return page;
 }
 
 using namespace evmc::literals;

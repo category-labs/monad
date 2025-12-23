@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/blake3.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/db.hpp>
@@ -112,6 +113,30 @@ public:
         auto const storage = decode_storage_db_ignore_slot(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
         return to_bytes(storage.value());
+    }
+
+    virtual bytes4k_t read_block_storage(
+        Address const &addr, Incarnation, bytes32_t const &key) override
+    {
+        auto storage_leaf_res = db_.find(
+            prefix_cursor_,
+            mpt::concat(
+                STATE_NIBBLE,
+                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                BLOCK_STORAGE_PREFIX_NIBBLE,
+                mpt::NibblesView{blake3({key.bytes, sizeof(key.bytes)})}),
+            block_number_);
+        if (!storage_leaf_res.has_value()) {
+            MONAD_ASSERT_THROW(
+                storage_leaf_res.assume_error() !=
+                    ::monad::mpt::DbError::version_no_longer_exist,
+                "Block was invalidated in db while execution was in progress");
+            return bytes4k_t{};
+        }
+        auto encoded_storage = storage_leaf_res.value().node->value();
+        auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+        MONAD_ASSERT(!storage.has_error());
+        return to_page(storage.value());
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override

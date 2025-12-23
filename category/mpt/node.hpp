@@ -295,6 +295,7 @@ public:
     unsigned char const *child_data() const noexcept;
     byte_string_view child_data_view(unsigned index) const noexcept;
     unsigned char *child_data(unsigned index) noexcept;
+    unsigned char const *child_data(unsigned index) const noexcept;
     void set_child_data(unsigned index, byte_string_view data) noexcept;
 
     //! next pointers

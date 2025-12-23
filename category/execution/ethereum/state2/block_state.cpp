@@ -121,6 +121,51 @@ bytes32_t BlockState::read_storage(
     }
 }
 
+bytes4k_t BlockState::read_block_storage(
+    Address const &address, Incarnation const incarnation, bytes32_t const &key)
+{
+    bool read_storage = false;
+    // block state
+    {
+        StateDeltas::const_accessor it{};
+        MONAD_ASSERT(state_);
+        MONAD_ASSERT(state_->find(it, address));
+        auto const &account = it->second.account.second;
+        if (!account || incarnation != account->incarnation) {
+            return {};
+        }
+        auto const &storage = it->second.block_storage;
+        {
+            BlockStorageDeltas::const_accessor it2{};
+            if (MONAD_LIKELY(storage.find(it2, key))) {
+                return it2->second.second;
+            }
+        }
+        auto const &orig_account = it->second.account.first;
+        if (orig_account && incarnation == orig_account->incarnation) {
+            read_storage = true;
+        }
+    }
+    // database
+    {
+        auto const result =
+            read_storage ? db_.read_block_storage(address, incarnation, key)
+                         : bytes4k_t{};
+        StateDeltas::accessor it{};
+        MONAD_ASSERT(state_->find(it, address));
+        auto const &account = it->second.account.second;
+        if (!account || incarnation != account->incarnation) {
+            return result;
+        }
+        auto &storage = it->second.block_storage;
+        {
+            BlockStorageDeltas::const_accessor it2{};
+            storage.emplace(it2, key, std::make_pair(result, result));
+            return it2->second.second;
+        }
+    }
+}
+
 vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
 {
     // vm

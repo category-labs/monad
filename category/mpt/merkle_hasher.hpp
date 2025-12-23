@@ -15,31 +15,31 @@
 
 #pragma once
 
-#include <category/core/byte_string.hpp>
-#include <category/core/rlp/encode.hpp>
+#include <category/core/keccak.h>
 #include <category/mpt/config.hpp>
-#include <category/mpt/merkle_hasher.hpp>
 
-#include <cstdint>
-#include <cstring>
+#include <concepts>
+#include <cstddef>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-// Stores the content of `rlp` in a buffer `dest`. `dest` is at most 32 bytes.
-// If the data is less than 32 bytes, it is copied into buf, otherwise it is
-// hashed.
-template <MerkleHasher Hasher>
-inline unsigned
-to_node_reference(byte_string_view const rlp, unsigned char *dest) noexcept
+// Hash output size for all merkle hasher traits
+inline constexpr unsigned HASH_SIZE = 32;
+
+template <typename T>
+concept MerkleHasher =
+    requires(unsigned char const *in, size_t len, unsigned char *out) {
+        { T::hash(in, len, out) } -> std::same_as<void>;
+    };
+
+struct Keccak256Hasher
 {
-    if (MONAD_LIKELY(rlp.size() >= HASH_SIZE)) {
-        Hasher::hash(rlp.data(), rlp.size(), dest);
-        return HASH_SIZE;
+    static_assert(KECCAK256_SIZE == HASH_SIZE);
+
+    static void hash(unsigned char const *in, size_t len, unsigned char *out)
+    {
+        keccak256(in, static_cast<unsigned long>(len), out);
     }
-    else {
-        std::memcpy(dest, rlp.data(), rlp.size());
-        return static_cast<unsigned>(rlp.size());
-    }
-}
+};
 
 MONAD_MPT_NAMESPACE_END

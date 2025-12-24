@@ -15,11 +15,11 @@
 
 #pragma once
 
-#include <ethereum_test.hpp>
-
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/config.hpp>
@@ -32,6 +32,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <variant>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -45,29 +46,34 @@ MONAD_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
 
+using db_t = monad::TrieDb;
+
 class BlockchainTest : public testing::Test
 {
     static fiber::PriorityPool *pool_;
 
     std::filesystem::path const file_;
-    std::optional<evmc_revision> const revision_;
+    std::optional<std::variant<evmc_revision, monad_revision>> const revision_;
     bool enable_tracing_;
 
     template <Traits traits>
     static Result<std::vector<Receipt>> execute_and_record(
-        Block &, test::db_t &, vm::VM &, BlockHashBuffer const &, bool);
+        Block &, test::db_t &, vm::VM &, BlockHashBuffer const &,
+        std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>> &,
+        bool);
 
     template <Traits traits>
     static Result<BlockExecOutput> execute(
-        Block &, test::db_t &, vm::VM &, BlockHashBuffer const &, bool,
-        std::vector<Receipt> &, std::vector<std::vector<CallFrame>> &);
+        Block &, test::db_t &, vm::VM &, BlockHashBuffer const &,
+        std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>> &,
+        bool, std::vector<Receipt> &, std::vector<std::vector<CallFrame>> &);
 
-    static Result<std::vector<Receipt>> execute_dispatch(
-        evmc_revision, Block &, test::db_t &, vm::VM &, BlockHashBuffer const &,
-        bool);
+    template <Traits traits>
+    static void process_test(std::string const &, nlohmann::json const &, bool);
 
-    static void
-    validate_post_state(nlohmann::json const &json, nlohmann::json const &db);
+    static void process_test(
+        std::variant<evmc_revision, monad_revision> const, std::string const &,
+        nlohmann::json const &, bool);
 
 public:
     static void SetUpTestSuite();
@@ -75,7 +81,8 @@ public:
 
     BlockchainTest(
         std::filesystem::path const &file,
-        std::optional<evmc_revision> const &revision,
+        std::optional<std::variant<evmc_revision, monad_revision>> const
+            &revision,
         bool enable_tracing) noexcept
         : file_{file}
         , revision_{revision}
@@ -86,6 +93,11 @@ public:
     void TestBody() override;
 };
 
-void register_blockchain_tests(std::optional<evmc_revision> const &, bool);
+void register_blockchain_tests_path(
+    std::filesystem::path const &,
+    std::optional<std::variant<evmc_revision, monad_revision>> const &, bool);
+
+void register_blockchain_tests(
+    std::optional<std::variant<evmc_revision, monad_revision>> const &, bool);
 
 MONAD_TEST_NAMESPACE_END

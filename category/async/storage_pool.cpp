@@ -350,7 +350,7 @@ storage_pool::device_t storage_pool::make_device_(
             path.c_str(),
             ((flags.open_read_only || flags.open_read_only_allow_dirty)
                  ? O_RDONLY
-                 : O_RDWR) |
+                 : (O_RDWR | O_DSYNC)) |
                 O_CLOEXEC);
         MONAD_ASSERT_PRINTF(
             readwritefd != -1, "open failed due to %s", std::strerror(errno));

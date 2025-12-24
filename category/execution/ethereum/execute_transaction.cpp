@@ -381,6 +381,14 @@ Receipt ExecuteTransaction<traits>::execute_final(
         receipt.add_log(std::move(log));
     }
 
+    call_tracer_.on_finish(receipt.gas_used);
+    trace::run_tracer<traits>(state_tracer_, state);
+    record_txn_output_events(
+        static_cast<uint32_t>(this->i_),
+        receipt,
+        call_tracer_.get_call_frames(),
+        state);
+
     return receipt;
 }
 
@@ -415,14 +423,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
                 return std::move(result.error());
             }
             auto const receipt = execute_final(state, result.value());
-            call_tracer_.on_finish(receipt.gas_used);
-            trace::run_tracer<traits>(state_tracer_, state);
             block_state_.merge(state);
-            record_txn_output_events(
-                static_cast<uint32_t>(this->i_),
-                receipt,
-                call_tracer_.get_call_frames(),
-                state);
             return receipt;
         }
     }
@@ -441,14 +442,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             return std::move(result.error());
         }
         auto const receipt = execute_final(state, result.value());
-        call_tracer_.on_finish(receipt.gas_used);
-        trace::run_tracer<traits>(state_tracer_, state);
         block_state_.merge(state);
-        record_txn_output_events(
-            static_cast<uint32_t>(this->i_),
-            receipt,
-            call_tracer_.get_call_frames(),
-            state);
         return receipt;
     }
 }

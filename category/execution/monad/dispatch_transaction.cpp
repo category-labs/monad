@@ -45,7 +45,8 @@ Result<Receipt> dispatch_transaction(
             block_state,
             block_metrics,
             prev,
-            call_tracer}();
+            call_tracer,
+            state_tracer}();
     }
     else {
         return ExecuteTransaction<traits>{

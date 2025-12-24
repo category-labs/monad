@@ -233,6 +233,7 @@ namespace monad::vm::compiler::native
         void checked_debug_comment(std::string const &msg);
         void swap_general_regs(StackElem &, StackElem &);
         void swap_general_reg_indices(GeneralReg, uint8_t, uint8_t);
+        void assert_runtime_result_bound(StackElemRef);
 
         uint32_t exponential_constant_fold_counter() const
         {
@@ -353,6 +354,8 @@ namespace monad::vm::compiler::native
 
         template <typename T, size_t N>
         void array_leading_zeros(std::array<T, N> const &);
+        template <typename T, size_t N>
+        void array_bit_width(std::array<T, N> const &);
         template <typename T, size_t N>
         void array_byte_width(std::array<T, N> const &);
 

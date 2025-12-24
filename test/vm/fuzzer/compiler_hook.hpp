@@ -63,9 +63,12 @@ namespace monad::vm::fuzzing
                 artificial_avx_prob,
                 artificial_general_prob,
                 artificial_top2_prob,
-                &engine](vm::compiler::native::Emitter &emit) {
+                &engine](
+                   vm::compiler::native::Emitter &emit, auto const &instr) {
             using monad::vm::compiler::native::GENERAL_REG_COUNT;
             using monad::vm::compiler::native::GeneralReg;
+
+            (void)instr;
 
             auto &stack = emit.get_stack();
             if (stack.top_index() < stack.min_delta()) {

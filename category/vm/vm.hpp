@@ -145,6 +145,12 @@ namespace monad::vm
             return compiler_.try_insert_varcode(code_hash, icode);
         }
 
+        SharedVarcode try_insert_varcode_raw(
+            evmc::bytes32 const &code_hash, std::span<uint8_t const> code)
+        {
+            return compiler_.try_insert_varcode_raw(code_hash, code);
+        }
+
         Compiler &compiler()
         {
             return compiler_;

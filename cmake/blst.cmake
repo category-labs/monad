@@ -8,7 +8,7 @@ add_library(blst STATIC
 
 target_include_directories(blst PUBLIC ${BLST_SOURCE_DIR}/bindings)
 
-# The compilation options and defintions match what build.sh would do; if you
+# The compilation options and definitions match what build.sh would do; if you
 # upgrade libblst, ensure this is still the case
 target_compile_options(blst PRIVATE -Wall -Wextra -Werror)
 target_compile_definitions(blst PRIVATE __ADX__)

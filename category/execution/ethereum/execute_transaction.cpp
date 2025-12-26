@@ -188,7 +188,9 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
 }
 
 template <Traits traits>
-evmc_message ExecuteTransactionNoValidation<traits>::to_message() const
+evmc_message ExecuteTransactionNoValidation<traits>::to_message(
+    vm::MemoryPool::Ref &msg_memory,
+    std::uint32_t const msg_memory_capacity) const
 {
     auto const to_address = [this] {
         if (tx_.to) {
@@ -209,9 +211,9 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message() const
         .value = {},
         .create2_salt = {},
         .code_address = to_address.second,
-        .memory_handle = nullptr,
-        .memory = nullptr,
-        .memory_capacity = 0,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = msg_memory_capacity,
     };
     intx::be::store(msg.value.bytes, tx_.value);
     return msg;
@@ -250,7 +252,8 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         state.access_account(*tx_.to);
     }
 
-    auto msg = to_message();
+    auto msg_memory = state.vm().message_memory_ref();
+    auto msg = to_message(msg_memory, state.vm().message_memory_capacity());
 
     // EIP-7702
     if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {

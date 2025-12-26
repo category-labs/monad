@@ -96,7 +96,7 @@ struct Benchmark
 };
 
 static double execute_iteration(
-    evmc::VM &vm, evmc::address const &code_address,
+    evmc::VM &vm, MemoryPool &memory_pool, evmc::address const &code_address,
     std::vector<uint8_t> const &bytecode, test::KernelCalldata const &calldata)
 {
     evmc::address sender_address{200};
@@ -133,6 +133,7 @@ static double execute_iteration(
     auto const *interface = &host.get_interface();
     auto *ctx = host.to_context();
 
+    auto msg_memory = memory_pool.alloc_ref();
     evmc_message msg{
         .kind = EVMC_CALL,
         .flags = 0,
@@ -145,9 +146,9 @@ static double execute_iteration(
         .value = {},
         .create2_salt = {},
         .code_address = code_address,
-        .memory_handle = nullptr,
-        .memory = nullptr,
-        .memory_capacity = 0,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = memory_pool.alloc_capacity(),
     };
 
     auto const start = std::chrono::steady_clock::now();
@@ -168,7 +169,8 @@ static double execute_iteration(
 }
 
 static std::pair<double, double> execute_against_base(
-    evmc::VM &vm, evmc::address const &base_code_address,
+    evmc::VM &vm, MemoryPool &memory_pool,
+    evmc::address const &base_code_address,
     std::vector<uint8_t> const &base_bytecode,
     test::KernelCalldata const &base_calldata,
     evmc::address const &code_address, std::vector<uint8_t> const &bytecode,
@@ -177,17 +179,19 @@ static std::pair<double, double> execute_against_base(
     for (uint32_t i = 0; i < (iteration_count >> 4) + 1; ++i) {
         // warmup
         (void)execute_iteration(
-            vm, base_code_address, base_bytecode, base_calldata);
-        (void)execute_iteration(vm, code_address, bytecode, calldata);
+            vm, memory_pool, base_code_address, base_bytecode, base_calldata);
+        (void)execute_iteration(
+            vm, memory_pool, code_address, bytecode, calldata);
     }
 
     double base_best = std::numeric_limits<double>::max();
     double best = std::numeric_limits<double>::max();
     for (size_t i = 0; i < iteration_count; ++i) {
         auto const base_t = execute_iteration(
-            vm, base_code_address, base_bytecode, base_calldata);
+            vm, memory_pool, base_code_address, base_bytecode, base_calldata);
         base_best = std::min(base_t, base_best);
-        auto const t = execute_iteration(vm, code_address, bytecode, calldata);
+        auto const t = execute_iteration(
+            vm, memory_pool, code_address, bytecode, calldata);
         best = std::min(t, best);
     }
     return {base_best, best};
@@ -195,7 +199,7 @@ static std::pair<double, double> execute_against_base(
 
 static void run_implementation_benchmark(
     CommandArguments const &args, BlockchainTestVM::Implementation impl,
-    Benchmark const &bench)
+    MemoryPool &memory_pool, Benchmark const &bench)
 {
     auto *bvm = new BlockchainTestVM{impl};
     auto vm = evmc::VM(bvm);
@@ -254,6 +258,7 @@ static void run_implementation_benchmark(
 
         auto const [base_time, time] = execute_against_base(
             vm,
+            memory_pool,
             address_from_uint256(base_code_address),
             base_bytecode,
             base_calldata,
@@ -289,13 +294,15 @@ static BlockchainTestVM::Implementation const all_impls[] = {
 #endif
 };
 
-static void run_benchmark(CommandArguments const &args, Benchmark const &bench)
+static void run_benchmark(
+    CommandArguments const &args, MemoryPool &memory_pool,
+    Benchmark const &bench)
 {
     if (!filter_search(bench.title, args.title_filters)) {
         return;
     }
     for (auto const impl : all_impls) {
-        run_implementation_benchmark(args, impl, bench);
+        run_implementation_benchmark(args, impl, memory_pool, bench);
     }
 }
 
@@ -395,6 +402,7 @@ struct BenchmarkBuilder
         , baseline_seq_{std::move(data.baseline_seq)}
         , subject_seqs_{std::move(data.subject_seqs)}
         , effect_free_subject_seqs_{std::move(data.effect_free_subject_seqs)}
+        , memory_pool_{100 * 1024} // arbitrary 100 kB alloc capacity
     {
     }
 
@@ -418,6 +426,7 @@ private:
     std::vector<EvmBuilder<traits>> subject_seqs_;
     std::optional<std::vector<EvmBuilder<traits>>> effect_free_subject_seqs_;
     std::vector<uint8_t> calldata_;
+    MemoryPool memory_pool_;
 };
 
 BenchmarkBuilder &BenchmarkBuilder::run_throughput_benchmark()
@@ -436,6 +445,7 @@ BenchmarkBuilder &BenchmarkBuilder::run_throughput_benchmark()
 
     run_benchmark(
         command_arguments_,
+        memory_pool_,
         Benchmark{
             .title = title_ + ", throughput",
             .num_inputs = num_inputs_,
@@ -480,6 +490,7 @@ BenchmarkBuilder &BenchmarkBuilder::run_latency_benchmark()
 
     run_benchmark(
         command_arguments_,
+        memory_pool_,
         Benchmark{
             .title = title_ + ", latency",
             .num_inputs = num_inputs_,

@@ -34,6 +34,7 @@ namespace
     template <Traits traits>
     class MemoryTestMachine
     {
+        vm::test::TestMemory init_memory_;
         Context *prev_rt_ctx_;
         evmc::MockedHost &host_;
 
@@ -54,13 +55,15 @@ namespace
                 msg.memory_capacity = m.capacity - m.size;
                 MONAD_VM_ASSERT(m.size <= m.capacity);
             }
+            else {
+                // init_memory = std::make_optional<vm::test::TestMemory>();
+                msg.memory_handle = init_memory_.data;
+                msg.memory = init_memory_.data;
+                msg.memory_capacity = init_memory_.capacity;
+            }
 
             Context rt_ctx = Context::from(
-                EvmMemoryAllocator{},
-                &host_.get_interface(),
-                host_.to_context(),
-                &msg,
-                {});
+                &host_.get_interface(), host_.to_context(), &msg, {});
             rt_ctx.gas_remaining = 100'000'000;
 
             auto const tmp_rt_ctx = prev_rt_ctx_;
@@ -328,12 +331,13 @@ TEST_F(RuntimeTest, ExpandMemory)
 {
     ctx_.gas_remaining = 1'000'000;
 
-    ASSERT_EQ(ctx_.memory.capacity, Memory::initial_capacity);
+    ASSERT_EQ(ctx_.memory.capacity, vm::test::TestMemory::capacity);
 
-    uint32_t const new_capacity = (Memory::initial_capacity + 32) * 2;
+    uint32_t const new_capacity = (vm::test::TestMemory::capacity + 32) * 2;
 
-    ctx_.expand_memory(Bin<29>::unsafe_from(Memory::initial_capacity + 1));
-    ASSERT_EQ(ctx_.memory.size, Memory::initial_capacity + 32);
+    ctx_.expand_memory(
+        Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 1));
+    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity + 32);
     ASSERT_EQ(ctx_.memory.capacity, new_capacity);
     ASSERT_EQ(ctx_.memory.cost, 419);
     ASSERT_TRUE(std::all_of(
@@ -341,8 +345,9 @@ TEST_F(RuntimeTest, ExpandMemory)
             return b == 0;
         }));
 
-    ctx_.expand_memory(Bin<29>::unsafe_from(Memory::initial_capacity + 90));
-    ASSERT_EQ(ctx_.memory.size, Memory::initial_capacity + 96);
+    ctx_.expand_memory(
+        Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 90));
+    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity + 96);
     ASSERT_EQ(ctx_.memory.capacity, new_capacity);
     ASSERT_EQ(ctx_.memory.cost, 426);
     ASSERT_TRUE(std::all_of(
@@ -359,9 +364,11 @@ TEST_F(RuntimeTest, ExpandMemory)
             return b == 0;
         }));
 
-    ctx_.expand_memory(Bin<29>::unsafe_from(Memory::initial_capacity * 4 + 1));
-    ASSERT_EQ(ctx_.memory.size, Memory::initial_capacity * 4 + 32);
-    ASSERT_EQ(ctx_.memory.capacity, (Memory::initial_capacity * 4 + 32) * 2);
+    ctx_.expand_memory(
+        Bin<29>::unsafe_from(vm::test::TestMemory::capacity * 4 + 1));
+    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity * 4 + 32);
+    ASSERT_EQ(
+        ctx_.memory.capacity, (vm::test::TestMemory::capacity * 4 + 32) * 2);
     ASSERT_EQ(ctx_.memory.cost, 2053);
     ASSERT_TRUE(std::all_of(
         ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {
@@ -369,32 +376,17 @@ TEST_F(RuntimeTest, ExpandMemory)
         }));
 }
 
-TEST_F(RuntimeTest, ExpandMemoryNotUsingCachedAllocatorFreeRegression)
-{
-    ctx_.memory.allocator_.debug_clear_cache();
-
-    ASSERT_EQ(EvmMemoryAllocatorMeta::cache_list.size(), 0);
-
-    ctx_.gas_remaining = 1'000'000;
-    ctx_.expand_memory(Bin<29>::unsafe_from(Memory::initial_capacity + 1));
-
-    ctx_.memory.dealloc();
-    ctx_.memory.data_handle = nullptr; // mark deallocated
-
-    ASSERT_EQ(EvmMemoryAllocatorMeta::cache_list.size(), 1);
-}
-
 TEST_F(RuntimeTest, RuntimeIncreaseMemory)
 {
     ctx_.gas_remaining = 1'000'000;
 
-    ASSERT_EQ(ctx_.memory.capacity, Memory::initial_capacity);
+    ASSERT_EQ(ctx_.memory.capacity, vm::test::TestMemory::capacity);
 
-    uint32_t const new_capacity = (Memory::initial_capacity + 32) * 2;
+    uint32_t const new_capacity = (vm::test::TestMemory::capacity + 32) * 2;
 
     monad_vm_runtime_increase_memory(
-        Bin<29>::unsafe_from(Memory::initial_capacity + 1), &ctx_);
-    ASSERT_EQ(ctx_.memory.size, Memory::initial_capacity + 32);
+        Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 1), &ctx_);
+    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity + 32);
     ASSERT_EQ(ctx_.memory.capacity, new_capacity);
     ASSERT_EQ(ctx_.memory.cost, 419);
     ASSERT_TRUE(std::all_of(
@@ -403,8 +395,8 @@ TEST_F(RuntimeTest, RuntimeIncreaseMemory)
         }));
 
     monad_vm_runtime_increase_memory(
-        Bin<29>::unsafe_from(Memory::initial_capacity + 90), &ctx_);
-    ASSERT_EQ(ctx_.memory.size, Memory::initial_capacity + 96);
+        Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 90), &ctx_);
+    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity + 96);
     ASSERT_EQ(ctx_.memory.capacity, new_capacity);
     ASSERT_EQ(ctx_.memory.cost, 426);
     ASSERT_TRUE(std::all_of(
@@ -422,9 +414,10 @@ TEST_F(RuntimeTest, RuntimeIncreaseMemory)
         }));
 
     monad_vm_runtime_increase_memory(
-        Bin<29>::unsafe_from(Memory::initial_capacity * 4 + 1), &ctx_);
-    ASSERT_EQ(ctx_.memory.size, Memory::initial_capacity * 4 + 32);
-    ASSERT_EQ(ctx_.memory.capacity, (Memory::initial_capacity * 4 + 32) * 2);
+        Bin<29>::unsafe_from(vm::test::TestMemory::capacity * 4 + 1), &ctx_);
+    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity * 4 + 32);
+    ASSERT_EQ(
+        ctx_.memory.capacity, (vm::test::TestMemory::capacity * 4 + 32) * 2);
     ASSERT_EQ(ctx_.memory.cost, 2053);
     ASSERT_TRUE(std::all_of(
         ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {

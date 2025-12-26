@@ -13,9 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/interpreter/execute.hpp>
+#pragma once
 
-namespace monad::vm::utils::evm_as::test
+#include <category/vm/interpreter/execute.hpp>
+#include <test/vm/utils/test_context.hpp>
+
+namespace monad::vm::test
 {
     class KernelCalldata
     {
@@ -64,7 +67,8 @@ namespace monad::vm::utils::evm_as::test
         size_t args_size, std::vector<uint8_t> const &base_calldata)
     {
         auto const max_stack_values =
-            KernelBuilder<traits>::get_max_stack_values(args_size);
+            utils::evm_as::KernelBuilder<traits>::get_max_stack_values(
+                args_size);
 
         auto const outer_step = max_stack_values * 32;
         auto const n = args_size == 0 ? 1 : args_size;
@@ -92,10 +96,10 @@ namespace monad::vm::utils::evm_as::test
 
     template <Traits traits>
     KernelCalldata to_latency_calldata(
-        EvmBuilder<traits> seq, size_t args_size,
+        utils::evm_as::EvmBuilder<traits> seq, size_t args_size,
         KernelCalldata const &throughput_calldata)
     {
-        using KB = KernelBuilder<traits>;
+        using KB = utils::evm_as::KernelBuilder<traits>;
 
         KB kb;
         kb.latency_calldata(seq, args_size);
@@ -107,23 +111,23 @@ namespace monad::vm::utils::evm_as::test
 
         runtime::EvmStackAllocator stack_allocator;
         auto stack_memory = stack_allocator.allocate();
-        auto ctx = runtime::Context::empty();
-        ctx.gas_remaining = std::numeric_limits<int64_t>::max();
-        ctx.env.input_data = throughput_calldata.data();
-        ctx.env.input_data_size =
+        TestContext ctx;
+        ctx->gas_remaining = std::numeric_limits<int64_t>::max();
+        ctx->env.input_data = throughput_calldata.data();
+        ctx->env.input_data_size =
             static_cast<uint32_t>(throughput_calldata.size());
 
-        interpreter::execute<traits>(ctx, icode, stack_memory.get());
+        interpreter::execute<traits>(*ctx, icode, stack_memory.get());
 
         size_t n = 32 * args_size *
                    KB::get_sequence_repetition_count(
                        args_size, throughput_calldata.size());
-        MONAD_VM_ASSERT(ctx.result.status == runtime::StatusCode::Success);
-        MONAD_VM_ASSERT(runtime::uint256_t::load_le(ctx.result.size) == n);
-        MONAD_VM_ASSERT(runtime::uint256_t::load_le(ctx.result.offset) == 0);
+        MONAD_VM_ASSERT(ctx->result.status == runtime::StatusCode::Success);
+        MONAD_VM_ASSERT(runtime::uint256_t::load_le(ctx->result.size) == n);
+        MONAD_VM_ASSERT(runtime::uint256_t::load_le(ctx->result.offset) == 0);
 
         KernelCalldata ret{throughput_calldata.size()};
-        std::memcpy(ret.data(), ctx.memory.data, n);
+        std::memcpy(ret.data(), ctx->memory.data, n);
         return ret;
     }
 }

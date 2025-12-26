@@ -59,6 +59,8 @@ using enum BlockchainTestVM::Implementation;
 
 using namespace monad::test;
 
+using monad::vm::test::TestMemory;
+
 struct free_message
 {
     static void operator()(evmc_message *msg) noexcept
@@ -86,8 +88,8 @@ namespace
                               "VMTests" / "vmPerformance";
 
     auto make_benchmark(
-        std::string const &name, std::span<std::uint8_t const> code,
-        std::span<std::uint8_t const> input)
+        TestMemory &test_memory, std::string const &name,
+        std::span<std::uint8_t const> code, std::span<std::uint8_t const> input)
     {
         std::vector<std::uint8_t> code_buffer(code.begin(), code.end());
 
@@ -106,9 +108,9 @@ namespace
             .value = {},
             .create2_salt = {},
             .code_address = {},
-            .memory_handle = nullptr,
-            .memory = nullptr,
-            .memory_capacity = 0,
+            .memory_handle = test_memory.data,
+            .memory = test_memory.data,
+            .memory_capacity = TestMemory::capacity,
         });
 
         return benchmark_case{name, std::move(msg), std::move(code_buffer)};
@@ -122,7 +124,7 @@ namespace
             std::istreambuf_iterator<char>{}};
     }
 
-    auto load_benchmark(fs::path const &path)
+    auto load_benchmark(TestMemory &test_memory, fs::path const &path)
     {
         MONAD_VM_DEBUG_ASSERT(fs::is_directory(path));
 
@@ -133,6 +135,7 @@ namespace
         MONAD_VM_DEBUG_ASSERT(fs::is_regular_file(calldata_path));
 
         return make_benchmark(
+            test_memory,
             path.stem().string(),
             read_file(contract_path),
             read_file(calldata_path));
@@ -248,13 +251,13 @@ namespace
         }
     }
 
-    auto benchmarks() noexcept
+    auto benchmarks(TestMemory &test_memory) noexcept
     {
         auto ret = std::vector<benchmark_case>{};
 
         for (auto const &p :
              fs::directory_iterator(execution_benchmarks_dir / "basic")) {
-            ret.emplace_back(load_benchmark(p));
+            ret.emplace_back(load_benchmark(test_memory, p));
         }
 
         return ret;
@@ -274,7 +277,8 @@ namespace
         return ret;
     }
 
-    void register_benchmark_json(std::vector<BenchmarkTest> const &tests)
+    void register_benchmark_json(
+        std::vector<BenchmarkTest> const &tests, TestMemory &test_memory)
     {
 
         for (auto const &test : tests) {
@@ -299,9 +303,9 @@ namespace
                         .value = intx::be::store<evmc::uint256be>(tx.value),
                         .create2_salt = {},
                         .code_address = recipient,
-                        .memory_handle = nullptr,
-                        .memory = nullptr,
-                        .memory_capacity = 0,
+                        .memory_handle = test_memory.data,
+                        .memory = test_memory.data,
+                        .memory_capacity = TestMemory::capacity,
                     };
 
                     std::vector<std::string> const failure_tests = {
@@ -335,7 +339,8 @@ namespace
 
 int main(int argc, char **argv)
 {
-    auto const all_bms = benchmarks();
+    TestMemory test_memory;
+    auto const all_bms = benchmarks(test_memory);
 
     for (auto const &bm : all_bms) {
         register_benchmark(bm.name, *bm.msg, bm.code);
@@ -344,7 +349,7 @@ int main(int argc, char **argv)
     auto const all_bms_json = benchmarks_json();
 
     for (auto const &path : all_bms_json) {
-        register_benchmark_json(path);
+        register_benchmark_json(path, test_memory);
     }
 
     benchmark::Initialize(&argc, argv);

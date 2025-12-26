@@ -45,7 +45,9 @@ public:
 
     Result<Receipt> operator()();
 
-    evmc_message to_message() const;
+    evmc_message to_message(
+        vm::MemoryPool::Ref &msg_memory,
+        std::uint32_t msg_memory_capacity) const;
     Result<void> execute(State &);
     Receipt execute_final(State &);
 

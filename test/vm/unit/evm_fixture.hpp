@@ -19,6 +19,7 @@
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
+#include <test/vm/utils/test_message.hpp>
 
 #include <evmc/evmc.hpp>
 #include <evmc/mocked_host.hpp>
@@ -77,7 +78,8 @@ namespace monad::vm::compiler::test
 
         monad::vm::VM vm_{};
 
-        evmc_message msg_{};
+        monad::vm::test::TestMessage test_msg_;
+        evmc_message &msg_{*test_msg_};
 
         evmc::MockedHost host_;
 
@@ -116,11 +118,7 @@ namespace monad::vm::compiler::test
             auto icode = make_shared_intercode(code);
 
             auto rt_ctx = runtime::Context::from(
-                runtime::EvmMemoryAllocator{},
-                &host_.get_interface(),
-                host_.to_context(),
-                &msg_,
-                code);
+                &host_.get_interface(), host_.to_context(), &msg_, code);
             if (impl == Compiler) {
                 auto ncode =
                     vm_.compiler().compile<typename TraitsTest<T>::Trait>(

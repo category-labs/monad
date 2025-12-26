@@ -149,7 +149,9 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 }
 
 template <Traits traits>
-evmc_message ExecuteSystemTransaction<traits>::to_message() const
+evmc_message ExecuteSystemTransaction<traits>::to_message(
+    vm::MemoryPool::Ref &msg_memory,
+    std::uint32_t const msg_memory_capacity) const
 {
     evmc_message msg{
         .kind = EVMC_CALL,
@@ -165,9 +167,9 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
         .code_address = *tx_.to,
         .code = nullptr,
         .code_size = 0,
-        .memory_handle = nullptr,
-        .memory = nullptr,
-        .memory_capacity = 0,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = msg_memory_capacity,
     };
     intx::be::store(msg.value.bytes, tx_.value);
     return msg;
@@ -183,7 +185,9 @@ Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
     state.set_nonce(sender_, nonce + 1);
 
     state.push();
-    call_tracer_.on_enter(to_message());
+    auto msg_memory = state.vm().message_memory_ref();
+    call_tracer_.on_enter(
+        to_message(msg_memory, state.vm().message_memory_capacity()));
     BOOST_OUTCOME_TRY(execute_staking_syscall(state, tx_.data, tx_.value));
     call_tracer_.on_exit(evmc::Result{EVMC_SUCCESS});
     state.pop_accept();

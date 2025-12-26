@@ -115,7 +115,6 @@ BlockchainTestVM::BlockchainTestVM(
     , debug_dir_{std::getenv("MONAD_COMPILER_ASM_DIR")}
     , base_config{.runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(), .max_code_size_offset = code_size_t::max(), .post_instruction_emit_hook = post_hook}
     , rt_ctx_{nullptr}
-    , memory_allocator_{}
 {
     MONAD_VM_ASSERT(!debug_dir_ || fs::is_directory(debug_dir_));
 }
@@ -126,8 +125,8 @@ evmc::Result BlockchainTestVM::execute(
     size_t code_size)
 {
     auto *const prev_rt_ctx = rt_ctx_;
-    auto new_rt_ctx = runtime::Context::from(
-        memory_allocator_, host, context, msg, {code, code_size});
+    auto new_rt_ctx =
+        runtime::Context::from(host, context, msg, {code, code_size});
     rt_ctx_ = &new_rt_ctx;
 
     auto res = [&] {

@@ -13,10 +13,35 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/runtime/allocator.hpp>
-#include <category/vm/runtime/cached_allocator.hpp>
+#pragma once
 
-namespace monad::vm::runtime
+#include <test/vm/utils/test_memory.hpp>
+
+#include <evmc/evmc.h>
+
+namespace monad::vm::test
 {
-    thread_local CachedAllocatorList EvmStackAllocatorMeta::cache_list;
+    struct TestMessage
+    {
+        TestMemory test_memory;
+        evmc_message msg;
+
+        TestMessage()
+            : msg{}
+        {
+            msg.memory_handle = test_memory.data;
+            msg.memory = test_memory.data;
+            msg.memory_capacity = test_memory.capacity;
+        }
+
+        evmc_message &operator*()
+        {
+            return msg;
+        }
+
+        evmc_message *operator->()
+        {
+            return &msg;
+        }
+    };
 }

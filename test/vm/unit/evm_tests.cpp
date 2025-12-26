@@ -342,7 +342,6 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
 
     TestFixture::pre_execute(10'000, {});
     auto rt_ctx1 = runtime::Context::from(
-        runtime::EvmMemoryAllocator{},
         &this->host_.get_interface(),
         this->host_.to_context(),
         &this->msg_,
@@ -364,7 +363,6 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
 
     TestFixture::pre_execute(10'000, {});
     auto rt_ctx2 = runtime::Context::from(
-        runtime::EvmMemoryAllocator{},
         &this->host_.get_interface(),
         this->host_.to_context(),
         &this->msg_,
@@ -405,7 +403,6 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
 
     TestFixture::pre_execute(10'000, {});
     auto rt_ctx1 = runtime::Context::from(
-        runtime::EvmMemoryAllocator{},
         &this->host_.get_interface(),
         this->host_.to_context(),
         &this->msg_,
@@ -426,7 +423,6 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
 
     TestFixture::pre_execute(10'000, {});
     auto rt_ctx2 = runtime::Context::from(
-        runtime::EvmMemoryAllocator{},
         &this->host_.get_interface(),
         this->host_.to_context(),
         &this->msg_,
@@ -473,7 +469,6 @@ TYPED_TEST(VMTraitsTest, ShrCeilOffByOneRegression)
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr);
 
     auto rt_ctx = runtime::Context::from(
-        runtime::EvmMemoryAllocator{},
         &this->host_.get_interface(),
         this->host_.to_context(),
         &this->msg_,

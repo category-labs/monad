@@ -19,7 +19,6 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
@@ -92,15 +91,13 @@ namespace monad::vm::runtime
 
     struct Memory
     {
-        EvmMemoryAllocator allocator_;
         std::uint32_t size;
         std::uint32_t capacity;
         std::uint8_t *data;
         std::int64_t cost;
         std::uint8_t *data_handle;
+        std::uint32_t parent_capacity;
         std::uint8_t *parent_handle;
-
-        static constexpr auto initial_capacity = 4096;
 
         static constexpr auto offset_bits = 28;
 
@@ -109,24 +106,18 @@ namespace monad::vm::runtime
         Memory() = delete;
 
         explicit Memory(
-            EvmMemoryAllocator allocator, std::uint8_t *han, std::uint8_t *dat,
-            std::uint32_t cap)
-            : allocator_{allocator}
-            , size{}
+            std::uint8_t *han, std::uint8_t *dat, std::uint32_t cap)
+            : size{}
+            , capacity{cap}
+            , data{dat}
             , cost{}
+            , data_handle{han}
+            , parent_capacity{cap}
+            , parent_handle{han}
         {
-            if (han) {
-                capacity = cap;
-                data_handle = han;
-                data = dat;
-                parent_handle = han;
-            }
-            else {
-                capacity = initial_capacity;
-                // Allocate the initial memory handle:
-                parent_handle = data_handle = data =
-                    allocator_.aligned_alloc_cached();
-            }
+            MONAD_VM_DEBUG_ASSERT(han != nullptr);
+            MONAD_VM_DEBUG_ASSERT(dat != nullptr);
+            MONAD_VM_DEBUG_ASSERT(cap > 0);
         }
 
         Memory(Memory &&m) = delete;
@@ -188,12 +179,8 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         void dealloc()
         {
-            if (parent_handle == data_handle) {
-                allocator_.free_cached(data_handle);
-            }
-            else {
-                non_temporal_bzero(parent_handle, initial_capacity);
-                allocator_.free_cached(parent_handle);
+            if (parent_handle != data_handle) {
+                non_temporal_bzero(parent_handle, parent_capacity);
                 std::free(data_handle);
             }
         }
@@ -216,11 +203,13 @@ namespace monad::vm::runtime
     struct Context
     {
         static Context from(
-            EvmMemoryAllocator mem_alloc, evmc_host_interface const *host,
+            evmc_host_interface const *host,
             evmc_host_context *context, evmc_message const *msg,
             std::span<std::uint8_t const> code) noexcept;
 
-        static Context empty() noexcept;
+        static Context empty(
+                std::uint8_t *const memory_handle,
+                std::uint32_t memory_capacity) noexcept;
 
         evmc_host_interface const *host;
         evmc_host_context *context;
@@ -339,9 +328,9 @@ namespace monad::vm::runtime
     // Update context.S accordingly if these offsets change:
     static_assert(offsetof(Context, gas_remaining) == 16);
     static_assert(offsetof(Context, memory) == 264);
-    static_assert(offsetof(Memory, size) == 8);
-    static_assert(offsetof(Memory, capacity) == 12);
-    static_assert(offsetof(Memory, cost) == 24);
+    static_assert(offsetof(Memory, size) == 0);
+    static_assert(offsetof(Memory, capacity) == 4);
+    static_assert(offsetof(Memory, cost) == 16);
 
     constexpr auto context_offset_gas_remaining =
         offsetof(Context, gas_remaining);

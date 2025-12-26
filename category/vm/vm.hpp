@@ -21,6 +21,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
+#include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/utils/debug.hpp>
 
@@ -123,7 +124,7 @@ namespace monad::vm
         Compiler compiler_;
         CompilerConfig compiler_config_;
         runtime::EvmStackAllocator stack_allocator_;
-        runtime::EvmMemoryAllocator memory_allocator_;
+        MemoryPool memory_pool_;
 
     public:
         explicit VM(bool enable_async = true);

@@ -45,5 +45,6 @@ int main(int argc, char **argv)
     // Skip slow and broken tests:
     testing::FLAGS_gtest_filter += base_gtest_filter;
 
+    // TODO NEEDS TO INIT MESSAGE MEMORY SOMEHOW?????????????
     return blockchain_test_main({root}, false, vm);
 }

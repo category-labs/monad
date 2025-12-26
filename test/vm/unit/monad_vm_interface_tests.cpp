@@ -21,6 +21,9 @@
 #include <category/vm/varcode_cache.hpp>
 #include <category/vm/vm.hpp>
 
+#include <test/vm/utils/test_context.hpp>
+#include <test/vm/utils/test_message.hpp>
+
 #include <asmjit/core/jitruntime.h>
 
 #include <ethash/keccak.hpp>
@@ -326,11 +329,11 @@ TEST(MonadVmInterface, compile)
     auto entry1 = ncode1->entrypoint();
     ASSERT_NE(entry1, nullptr);
 
-    auto ctx1 = runtime::Context::empty();
-    entry1(&ctx1, nullptr);
+    test::TestContext ctx1;
+    entry1(&*ctx1, nullptr);
 
-    ASSERT_EQ(uint256_t::load_le(ctx1.result.size), 0);
-    ASSERT_EQ(uint256_t::load_le(ctx1.result.offset), 1);
+    ASSERT_EQ(uint256_t::load_le(ctx1->result.size), 0);
+    ASSERT_EQ(uint256_t::load_le(ctx1->result.offset), 1);
 
     ASSERT_FALSE(vm.find_varcode(hash1).has_value());
 }
@@ -347,11 +350,11 @@ TEST(MonadVmInterface, cached_compile)
     auto entry1 = ncode1->entrypoint();
     ASSERT_NE(entry1, nullptr);
 
-    auto ctx1 = runtime::Context::empty();
-    entry1(&ctx1, nullptr);
+    test::TestContext ctx1;
+    entry1(&*ctx1, nullptr);
 
-    ASSERT_EQ(uint256_t::load_le(ctx1.result.size), 0);
-    ASSERT_EQ(uint256_t::load_le(ctx1.result.offset), 1);
+    ASSERT_EQ(uint256_t::load_le(ctx1->result.size), 0);
+    ASSERT_EQ(uint256_t::load_le(ctx1->result.offset), 1);
 
     auto vcode1 = vm.find_varcode(hash1);
     ASSERT_TRUE(vcode1.has_value());
@@ -379,10 +382,10 @@ TEST(MonadVmInterface, async_compile)
         auto entry1 = (*vcode1)->nativecode()->entrypoint();
         if (enabled) {
             ASSERT_NE(entry1, nullptr);
-            auto ctx1 = runtime::Context::empty();
-            entry1(&ctx1, nullptr);
-            ASSERT_EQ(uint256_t::load_le(ctx1.result.size), 0);
-            ASSERT_EQ(uint256_t::load_le(ctx1.result.offset), 1);
+            test::TestContext ctx1;
+            entry1(&*ctx1, nullptr);
+            ASSERT_EQ(uint256_t::load_le(ctx1->result.size), 0);
+            ASSERT_EQ(uint256_t::load_le(ctx1->result.offset), 1);
         }
         else {
             ASSERT_EQ(entry1, nullptr);
@@ -409,14 +412,13 @@ TEST(MonadVmInterface, execute_bytecode_raw)
 
     auto [bytecode0, hash0] = make_bytecode(0);
 
-    evmc_message msg{};
-    msg.gas = 10;
+    test::TestMessage msg{};
+    msg->gas = 10;
 
     auto rt_ctx = runtime::Context::from(
-        vm::runtime::EvmMemoryAllocator{},
         &host.get_interface(),
         host.to_context(),
-        &msg,
+        &*msg,
         {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_bytecode_raw<EvmTraits<EVMC_FRONTIER>>(
         rt_ctx, {bytecode0.data(), bytecode0.size()});
@@ -433,14 +435,13 @@ TEST(MonadVmInterface, execute_intercode_raw)
     auto [bytecode0, hash0] = make_bytecode(0);
     auto icode0 = make_shared_intercode(bytecode0);
 
-    evmc_message msg{};
-    msg.gas = 10;
+    test::TestMessage msg{};
+    msg->gas = 10;
 
     auto rt_ctx = runtime::Context::from(
-        vm::runtime::EvmMemoryAllocator{},
         &host.get_interface(),
         host.to_context(),
-        &msg,
+        &*msg,
         {bytecode0.data(), bytecode0.size()});
     auto result =
         vm.execute_intercode_raw<EvmTraits<EVMC_FRONTIER>>(rt_ctx, icode0);
@@ -460,14 +461,13 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
     auto entry0 = ncode0->entrypoint();
     ASSERT_NE(entry0, nullptr);
 
-    evmc_message msg{};
-    msg.gas = 10;
+    test::TestMessage msg{};
+    msg->gas = 10;
 
     auto rt_ctx = runtime::Context::from(
-        vm::runtime::EvmMemoryAllocator{},
         &host.get_interface(),
         host.to_context(),
-        &msg,
+        &*msg,
         {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_native_entrypoint_raw(rt_ctx, entry0);
     ASSERT_EQ(result.status_code, EVMC_SUCCESS);
@@ -480,8 +480,8 @@ TEST(MonadVmInterface, execute_raw)
     VM vm;
     evmc::MockedHost host;
 
-    evmc_message msg{};
-    msg.gas = 100'000'000;
+    test::TestMessage msg{};
+    msg->gas = 100'000'000;
 
     static uint32_t const warm_kb_threshold = 1 << 10; // 1MB
     vm.compiler().set_varcode_cache_warm_kb_threshold(warm_kb_threshold);
@@ -493,10 +493,9 @@ TEST(MonadVmInterface, execute_raw)
             traits, evmc::bytes32 const &hash, SharedVarcode const &vcode) {
             auto const &icode = vcode->intercode();
             auto rt_ctx = runtime::Context::from(
-                vm::runtime::EvmMemoryAllocator{},
                 &host.get_interface(),
                 host.to_context(),
-                &msg,
+                &*msg,
                 icode->code_span());
             auto result = vm.execute_raw<traits>(rt_ctx, hash, vcode);
             ASSERT_EQ(result.status_code, EVMC_SUCCESS);
@@ -639,8 +638,8 @@ TEST(MonadVmInterface, execute)
     // The `VM::execute` is mostly tested already via the test
     // MonadVmInterface.execute_raw
 
-    evmc_message msg{};
-    msg.gas = 100'000'000'000'000;
+    test::TestMessage msg{};
+    msg->gas = 100'000'000'000'000;
 
     {
         VM vm;
@@ -652,7 +651,7 @@ TEST(MonadVmInterface, execute)
         auto icode = make_shared_intercode(bytecode);
         auto vcode = vm.try_insert_varcode(hash, icode);
         auto result =
-            vm.execute<EvmTraits<EVMC_PRAGUE>>(host, &msg, hash, vcode);
+            vm.execute<EvmTraits<EVMC_PRAGUE>>(host, &*msg, hash, vcode);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
         ASSERT_EQ(result.output_size, 0);
     }
@@ -673,7 +672,7 @@ TEST(MonadVmInterface, execute)
                               return vm.execute<EvmTraits<EVMC_PRAGUE>>(
                                   host, &m, hash, vcode);
                           }};
-            vm.execute<EvmTraits<EVMC_PRAGUE>>(host, &msg, hash, vcode);
+            vm.execute<EvmTraits<EVMC_PRAGUE>>(host, &*msg, hash, vcode);
             ASSERT_TRUE(false);
         }
         catch (HostMock::Exception const &e) {
@@ -692,7 +691,7 @@ TEST(MonadVmInterface, execute)
                               return vm.execute<EvmTraits<EVMC_PRAGUE>>(
                                   host, &m, hash, *vcode);
                           }};
-            vm.execute<EvmTraits<EVMC_PRAGUE>>(host, &msg, hash, *vcode);
+            vm.execute<EvmTraits<EVMC_PRAGUE>>(host, &*msg, hash, *vcode);
             ASSERT_TRUE(false);
         }
         catch (HostMock::Exception const &e) {
@@ -711,15 +710,15 @@ TEST(MonadVmInterface, execute_bytecode)
 
     VM vm;
 
-    evmc_message msg{};
-    msg.gas = 100'000'000'000'000;
+    test::TestMessage msg{};
+    msg->gas = 100'000'000'000'000;
 
     {
         HostMock host{
             0, [&](Host &, evmc_message const &) { return evmc::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto result =
-            vm.execute_bytecode<EvmTraits<EVMC_PRAGUE>>(host, &msg, bytecode);
+            vm.execute_bytecode<EvmTraits<EVMC_PRAGUE>>(host, &*msg, bytecode);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
         ASSERT_EQ(result.output_size, 0);
     }
@@ -734,7 +733,7 @@ TEST(MonadVmInterface, execute_bytecode)
                     return vm.execute_bytecode<EvmTraits<EVMC_PRAGUE>>(
                         host, &m, bytecode);
                 }};
-            vm.execute_bytecode<EvmTraits<EVMC_PRAGUE>>(host, &msg, bytecode);
+            vm.execute_bytecode<EvmTraits<EVMC_PRAGUE>>(host, &*msg, bytecode);
             ASSERT_TRUE(false);
         }
         catch (HostMock::Exception const &e) {
@@ -743,5 +742,31 @@ TEST(MonadVmInterface, execute_bytecode)
         catch (...) {
             ASSERT_TRUE(false);
         }
+    }
+}
+
+TEST(MonadVmInterface, message_memory)
+{
+    VM vm;
+    auto const capacity = vm.message_memory_capacity();
+    ASSERT_EQ(capacity, 8 * 1024 * 1024);
+    {
+        auto mem1 = vm.message_memory_ref();
+        ASSERT_EQ(mem1.get()[capacity - 1], 0);
+        ASSERT_EQ(mem1.get()[0], 0);
+        mem1.get()[capacity - 1] = 1;
+        mem1.get()[0] = 2;
+        {
+            auto mem2 = vm.message_memory_ref();
+            ASSERT_EQ(mem2.get()[capacity - 1], 0);
+            ASSERT_EQ(mem2.get()[0], 0);
+        }
+        ASSERT_EQ(mem1.get()[capacity - 1], 1);
+        ASSERT_EQ(mem1.get()[0], 2);
+        // Technically it may not be necessary to clear memory here, but
+        // under the normal circumstances it is an invariant that memory
+        // is cleared before it is deallocated:
+        mem1.get()[capacity - 1] = 0;
+        mem1.get()[0] = 0;
     }
 }

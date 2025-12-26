@@ -17,6 +17,8 @@ add_library(monad-vm-test-utils OBJECT)
 
 target_sources(monad-vm-test-utils PRIVATE
     "evm-as_utils.hpp"
+    "test_context.hpp"
+    "test_memory.hpp"
 )
 
 monad_compile_options(monad-vm-test-utils)

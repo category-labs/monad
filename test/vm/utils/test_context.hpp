@@ -13,10 +13,38 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/runtime/allocator.hpp>
-#include <category/vm/runtime/cached_allocator.hpp>
+#pragma once
 
-namespace monad::vm::runtime
+#include <category/vm/runtime/types.hpp>
+
+#include <test/vm/utils/test_memory.hpp>
+
+#include <functional>
+
+namespace monad::vm::test
 {
-    thread_local CachedAllocatorList EvmStackAllocatorMeta::cache_list;
+    struct TestContext
+    {
+        TestMemory test_memory;
+        runtime::Context ctx;
+
+        using Builder = std::function<void(runtime::Context &)>;
+
+        TestContext(Builder build = [](auto &) {})
+            : ctx{runtime::Context::empty(
+                  test_memory.data, test_memory.capacity)}
+        {
+            build(ctx);
+        }
+
+        runtime::Context &operator*()
+        {
+            return ctx;
+        }
+
+        runtime::Context *operator->()
+        {
+            return &ctx;
+        }
+    };
 }

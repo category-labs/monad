@@ -35,6 +35,8 @@ target_sources(monad-vm PRIVATE
     "code.hpp"
     "compiler.cpp"
     "compiler.hpp"
+    "memory_pool.cpp"
+    "memory_pool.hpp"
     "varcode_cache.cpp"
     "varcode_cache.hpp"
     "vm.cpp"

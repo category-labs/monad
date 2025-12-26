@@ -19,6 +19,7 @@
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <monad/test/traits_test.hpp>
+#include <test/vm/utils/test_context.hpp>
 
 #include <gtest/gtest.h>
 
@@ -45,7 +46,8 @@ namespace monad::vm::compiler::test
 
         std::array<evmc_bytes32, 2> blob_hashes_;
         evmc::MockedHost host_;
-        vm::runtime::Context ctx_;
+        monad::vm::test::TestContext test_ctx_;
+        vm::runtime::Context &ctx_;
 
         evmc_result
         success_result(std::int64_t gas_left, std::int64_t gas_refund = 0);

@@ -95,6 +95,7 @@ namespace
             call_tracer, tx_context, block_hash_buffer, state};
 
         bytes32_t const calldata = enc(block_number);
+        auto msg_memory = state.vm().message_memory_ref();
         evmc_message const msg{
             .kind = EVMC_CALL,
             .gas = 100'000,
@@ -102,7 +103,10 @@ namespace
             .sender = sender,
             .input_data = calldata.bytes,
             .input_size = 32,
-            .code_address = blockhash_opcode_addr};
+            .code_address = blockhash_opcode_addr,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = state.vm().message_memory_capacity()};
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         return state.vm().execute<Prague>(host, &msg, hash, code);
@@ -237,6 +241,7 @@ TEST_F(BlockHistoryFixture, read_from_block_hash_history_contract)
         EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         bytes32_t const calldata = enc(block_number);
+        auto msg_memory = state.vm().message_memory_ref();
         evmc_message const msg{
             .kind = EVMC_CALL,
             .gas = 100'000,
@@ -244,7 +249,10 @@ TEST_F(BlockHistoryFixture, read_from_block_hash_history_contract)
             .sender = sender,
             .input_data = calldata.bytes,
             .input_size = 32,
-            .code_address = BLOCK_HISTORY_ADDRESS};
+            .code_address = BLOCK_HISTORY_ADDRESS,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = state.vm().message_memory_capacity()};
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         evmc::Result const result =
@@ -296,6 +304,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
         BlockHashBufferFinalized const buffer{};
         EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
+        auto msg_memory = state.vm().message_memory_ref();
         evmc_message const msg{
             .kind = EVMC_CALL,
             .gas = 30'000'000,
@@ -303,7 +312,10 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             .sender = sender,
             .input_data = parent_hash.bytes,
             .input_size = 32,
-            .code_address = BLOCK_HISTORY_ADDRESS};
+            .code_address = BLOCK_HISTORY_ADDRESS,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = state.vm().message_memory_capacity()};
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         evmc::Result const result =
@@ -328,6 +340,7 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
         EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         bytes32_t const calldata = enc(block_number);
+        auto msg_memory = state.vm().message_memory_ref();
         evmc_message msg{
             .kind = EVMC_CALL,
             .gas = 100'000,
@@ -335,7 +348,10 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
             .sender = sender,
             .input_data = calldata.bytes,
             .input_size = 32,
-            .code_address = BLOCK_HISTORY_ADDRESS};
+            .code_address = BLOCK_HISTORY_ADDRESS,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = state.vm().message_memory_capacity()};
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         evmc::Result const result =
@@ -409,6 +425,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
         BlockHashBufferFinalized const buffer{};
         EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
+        auto msg_memory = state.vm().message_memory_ref();
         evmc_message const msg{
             .kind = EVMC_CALL,
             .gas = 30'000'000,
@@ -416,7 +433,10 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             .sender = sender,
             .input_data = parent_hash.bytes,
             .input_size = 32,
-            .code_address = BLOCK_HISTORY_ADDRESS};
+            .code_address = BLOCK_HISTORY_ADDRESS,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = state.vm().message_memory_capacity()};
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         evmc::Result result =
@@ -446,6 +466,7 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
         EvmcHost<Prague> host{call_tracer, tx_context, buffer, state};
 
         bytes32_t const calldata = enc(block_number);
+        auto msg_memory = state.vm().message_memory_ref();
         evmc_message const msg{
             .kind = EVMC_CALL,
             .gas = 100'000,
@@ -453,7 +474,10 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
             .sender = sender,
             .input_data = calldata.bytes,
             .input_size = 32,
-            .code_address = BLOCK_HISTORY_ADDRESS};
+            .code_address = BLOCK_HISTORY_ADDRESS,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = state.vm().message_memory_capacity()};
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         evmc::Result const result =

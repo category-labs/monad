@@ -19,7 +19,6 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
@@ -92,7 +91,6 @@ namespace monad::vm::runtime
 
     struct Memory
     {
-        EvmMemoryAllocator allocator_;
         // Size of the memory region for current call frame:
         std::uint32_t size;
         // Capacity of the memory region for current call frame:
@@ -103,6 +101,9 @@ namespace monad::vm::runtime
         std::int64_t cost;
         // Pointer to the beginning of the transaction wide memory:
         std::uint8_t *data_handle;
+        // The `parent_capacity` is the original capacity (the capacity at
+        // the beginning of the current call frame).
+        std::uint32_t const parent_capacity;
         // The `parent_handle` is a pointer to the original transaction wide
         // memory (the transaction wide memory at the beginning of the
         // current call frame).
@@ -110,9 +111,7 @@ namespace monad::vm::runtime
         // memory pointed to by `parent_handle`. This memory is lazily freed,
         // because the call data for the current call frame is potentially a
         // pointer into the `parent_handle` memory.
-        std::uint8_t *parent_handle;
-
-        static constexpr auto initial_capacity = 4096;
+        std::uint8_t *const parent_handle;
 
         static constexpr auto offset_bits = 28;
 
@@ -120,25 +119,17 @@ namespace monad::vm::runtime
 
         Memory() = delete;
 
-        explicit Memory(
-            EvmMemoryAllocator allocator, std::uint8_t *han, std::uint8_t *dat,
-            std::uint32_t cap)
-            : allocator_{allocator}
-            , size{}
+        explicit Memory(std::uint8_t *han, std::uint8_t *dat, std::uint32_t cap)
+            : size{}
+            , capacity{cap}
+            , data{dat}
             , cost{}
+            , data_handle{han}
+            , parent_capacity{cap}
+            , parent_handle{han}
         {
-            if (han) {
-                capacity = cap;
-                data_handle = han;
-                data = dat;
-                parent_handle = han;
-            }
-            else {
-                capacity = initial_capacity;
-                // Allocate the initial memory handle:
-                parent_handle = data_handle = data =
-                    allocator_.aligned_alloc_cached();
-            }
+            MONAD_VM_DEBUG_ASSERT(han != nullptr);
+            MONAD_VM_DEBUG_ASSERT(dat != nullptr);
         }
 
         Memory(Memory &&m) = delete;
@@ -155,7 +146,7 @@ namespace monad::vm::runtime
             if (MONAD_VM_UNLIKELY(data_handle)) {
                 MONAD_VM_ASSERT(size <= capacity);
                 MONAD_VM_ASSERT(data == data_handle);
-                dealloc();
+                clear();
             }
         }
 
@@ -195,15 +186,13 @@ namespace monad::vm::runtime
         }
 
         [[gnu::always_inline]]
-        void dealloc()
+        void clear()
         {
-            if (parent_handle == data_handle) {
+            if (MONAD_VM_LIKELY(parent_handle == data_handle)) {
                 non_temporal_bzero(data_handle, size);
-                allocator_.free_cached(data_handle);
             }
             else {
-                non_temporal_bzero(parent_handle, initial_capacity);
-                allocator_.free_cached(parent_handle);
+                non_temporal_bzero(parent_handle, parent_capacity);
                 std::free(data_handle);
             }
         }
@@ -211,7 +200,7 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         void release()
         {
-            if (data_handle != parent_handle) {
+            if (MONAD_VM_UNLIKELY(data_handle != parent_handle)) {
                 // Only free if data_handle is not the parent_handle. The
                 // parent_handle is potentially used for call data.
                 // Note that data_handle will never be the initial memory
@@ -226,11 +215,13 @@ namespace monad::vm::runtime
     struct Context
     {
         static Context from(
-            EvmMemoryAllocator mem_alloc, evmc_host_interface const *host,
-            evmc_host_context *context, evmc_message const *msg,
+            evmc_host_interface const *host, evmc_host_context *context,
+            evmc_message const *msg,
             std::span<std::uint8_t const> code) noexcept;
 
-        static Context empty() noexcept;
+        static Context empty(
+            std::uint8_t *const memory_handle,
+            std::uint32_t memory_capacity) noexcept;
 
         evmc_host_interface const *host;
         evmc_host_context *context;
@@ -312,7 +303,8 @@ namespace monad::vm::runtime
                 non_temporal_bzero(memory.data, memory.size);
                 auto &p = parent->memory;
                 MONAD_VM_DEBUG_ASSERT(memory.parent_handle == p.data_handle);
-                if (memory.data_handle != memory.parent_handle) {
+                if (MONAD_VM_UNLIKELY(
+                        memory.data_handle != memory.parent_handle)) {
                     p.release();
                     p.data = memory.data - p.size;
                     p.capacity = memory.capacity + p.size;
@@ -320,7 +312,7 @@ namespace monad::vm::runtime
                 }
             }
             else {
-                memory.dealloc();
+                memory.clear();
             }
             // Clear the data_handle to prevent the memory destructor from
             // double freeing it:
@@ -349,9 +341,9 @@ namespace monad::vm::runtime
     // Update context.S accordingly if these offsets change:
     static_assert(offsetof(Context, gas_remaining) == 16);
     static_assert(offsetof(Context, memory) == 264);
-    static_assert(offsetof(Memory, size) == 8);
-    static_assert(offsetof(Memory, capacity) == 12);
-    static_assert(offsetof(Memory, cost) == 24);
+    static_assert(offsetof(Memory, size) == 0);
+    static_assert(offsetof(Memory, capacity) == 4);
+    static_assert(offsetof(Memory, cost) == 16);
 
     constexpr auto context_offset_gas_remaining =
         offsetof(Context, gas_remaining);

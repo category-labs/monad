@@ -1147,8 +1147,8 @@ namespace monad::vm::fuzzing
     message_ptr generate_message(
         GeneratorFocus const &focus, Engine &eng,
         std::vector<evmc::address> const &contract_addresses,
-        std::vector<evmc::address> const &known_eoas,
-        LookupFunc address_lookup) noexcept
+        std::vector<evmc::address> const &known_eoas, LookupFunc address_lookup,
+        std::uint8_t *memory_handle, std::uint32_t memory_capacity) noexcept
     {
         auto const kind = uniform_sample(
             eng, std::array{EVMC_CALL, EVMC_DELEGATECALL, EVMC_CALLCODE});
@@ -1215,9 +1215,9 @@ namespace monad::vm::fuzzing
             .value = value.template store_be<evmc::bytes32>(),
             .create2_salt = salt.template store_be<evmc::bytes32>(),
             .code_address = target,
-            .memory_handle = nullptr,
-            .memory = nullptr,
-            .memory_capacity = 0,
+            .memory_handle = memory_handle,
+            .memory = memory_handle,
+            .memory_capacity = memory_capacity,
         }};
     }
 

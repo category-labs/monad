@@ -32,6 +32,7 @@
 #include <category/vm/utils/evm-as/validator.hpp>
 
 #include <test/vm/utils/evm-as_utils.hpp>
+#include <test/vm/utils/test_context.hpp>
 
 #include <evmc/evmc.h>
 #include <gtest/gtest.h>
@@ -93,33 +94,17 @@ namespace
         return ret;
     }
 
-    runtime::Context test_context(int64_t gas_remaining = 10'000'000)
+    monad::vm::test::TestContext
+    test_context(int64_t gas_remaining = 10'000'000)
     {
-        return runtime::Context{
-            .host = nullptr,
-            .context = nullptr,
-            .gas_remaining = gas_remaining,
-            .gas_refund = 0,
-            .env =
-                {
-                    .evmc_flags = 0,
-                    .depth = 0,
-                    .recipient = max_address(),
-                    .sender = max_address(),
-                    .value = max_bytes32(),
-                    .create2_salt = max_bytes32(),
-                    .input_data = {},
-                    .code = {},
-                    .return_data = {},
-                    .input_data_size = 0,
-                    .code_size = 0,
-                    .return_data_size = 0,
-                    .tx_context = {},
-                },
-            .result = test_result(),
-            .memory = monad::vm::runtime::Memory(
-                runtime::EvmMemoryAllocator{}, nullptr, nullptr, 0),
-            .exit_stack_ptr = nullptr};
+        return monad::vm::test::TestContext{[&](auto &x) {
+            x.gas_remaining = gas_remaining;
+            x.env.recipient = max_address();
+            x.env.sender = max_address();
+            x.env.value = max_bytes32();
+            x.env.create2_salt = max_bytes32();
+            x.result = test_result();
+        }};
     }
 
     struct TestStackMemoryDeleter
@@ -156,14 +141,14 @@ namespace
             [&]() { ASSERT_TRUE(entry != nullptr); }();
 
             auto ctx = test_context();
-            auto const &ret = ctx.result;
+            auto const &ret = ctx->result;
 
             auto stack_memory = test_stack_memory();
-            entry(&ctx, stack_memory.get());
+            entry(&*ctx, stack_memory.get());
             [&]() { ASSERT_EQ(ret.status, runtime::StatusCode::Success); }();
 
             // TODO: artificial restriction on result offset and size.
-            return runtime::uint256_t::load_be_unsafe(ctx.memory.data);
+            return runtime::uint256_t::load_be_unsafe(ctx->memory.data);
         }
     };
 
@@ -1156,7 +1141,7 @@ TEST(EvmAs, KernelBuilderRepetitionCount)
 
     auto run = [&](size_t args_size,
                    KB const &kb,
-                   evm_as::test::KernelCalldata const &calldata) {
+                   test::KernelCalldata const &calldata) {
         std::vector<uint8_t> bytecode{};
         evm_as::compile(kb, bytecode);
 
@@ -1164,26 +1149,27 @@ TEST(EvmAs, KernelBuilderRepetitionCount)
 
         auto stack_memory = test_stack_memory();
         auto ctx = test_context();
-        ctx.env.input_data = calldata.data();
-        ctx.env.input_data_size = static_cast<uint32_t>(calldata.size());
+        ctx->env.input_data = calldata.data();
+        ctx->env.input_data_size = static_cast<uint32_t>(calldata.size());
 
-        interpreter::execute<traits>(ctx, icode, stack_memory.get());
+        interpreter::execute<traits>(*ctx, icode, stack_memory.get());
 
-        ASSERT_EQ(ctx.result.status, runtime::StatusCode::Success);
+        ASSERT_EQ(ctx->result.status, runtime::StatusCode::Success);
         ASSERT_EQ(
-            uint256_t::load_le(ctx.result.size), KB::resulting_memory_size);
-        ASSERT_EQ(uint256_t::load_le(ctx.result.offset), KB::free_memory_start);
+            uint256_t::load_le(ctx->result.size), KB::resulting_memory_size);
+        ASSERT_EQ(
+            uint256_t::load_le(ctx->result.offset), KB::free_memory_start);
 
         auto const n =
-            uint256_t::load_be_unsafe(&ctx.memory.data[KB::free_memory_start]);
+            uint256_t::load_be_unsafe(&ctx->memory.data[KB::free_memory_start]);
         ASSERT_EQ(
             n, KB::get_sequence_repetition_count(args_size, calldata.size()));
     };
 
     for (size_t args_size = 0; args_size <= 10; ++args_size) {
         auto const base_calldata = kernel_base_calldata(args_size);
-        auto const tp_calldata = evm_as::test::to_throughput_calldata<traits>(
-            args_size, base_calldata);
+        auto const tp_calldata =
+            test::to_throughput_calldata<traits>(args_size, base_calldata);
         for (bool has_output : {false, true}) {
             auto const &s = seq(args_size, has_output);
             run(args_size,
@@ -1193,7 +1179,7 @@ TEST(EvmAs, KernelBuilderRepetitionCount)
         if (args_size) {
             auto const &s = seq(args_size, true);
             auto const calldata =
-                evm_as::test::to_latency_calldata(s, args_size, tp_calldata);
+                test::to_latency_calldata(s, args_size, tp_calldata);
             run(args_size, KB{}.latency(s, args_size), calldata);
         }
     }
@@ -1261,7 +1247,7 @@ TEST(EvmAs, KernelBuilderCalldata)
         return s;
     };
 
-    auto run = [&](KB const &kb, evm_as::test::KernelCalldata const &calldata) {
+    auto run = [&](KB const &kb, test::KernelCalldata const &calldata) {
         std::vector<uint8_t> bytecode{};
         evm_as::compile(kb, bytecode);
 
@@ -1269,21 +1255,22 @@ TEST(EvmAs, KernelBuilderCalldata)
 
         auto stack_memory = test_stack_memory();
         auto ctx = test_context();
-        ctx.env.input_data = calldata.data();
-        ctx.env.input_data_size = static_cast<uint32_t>(calldata.size());
+        ctx->env.input_data = calldata.data();
+        ctx->env.input_data_size = static_cast<uint32_t>(calldata.size());
 
-        interpreter::execute<traits>(ctx, icode, stack_memory.get());
+        interpreter::execute<traits>(*ctx, icode, stack_memory.get());
 
-        ASSERT_EQ(ctx.result.status, runtime::StatusCode::Success);
+        ASSERT_EQ(ctx->result.status, runtime::StatusCode::Success);
         ASSERT_EQ(
-            uint256_t::load_le(ctx.result.size), KB::resulting_memory_size);
-        ASSERT_EQ(uint256_t::load_le(ctx.result.offset), KB::free_memory_start);
+            uint256_t::load_le(ctx->result.size), KB::resulting_memory_size);
+        ASSERT_EQ(
+            uint256_t::load_le(ctx->result.offset), KB::free_memory_start);
     };
 
     for (size_t args_size = 0; args_size <= 10; ++args_size) {
         auto const base_calldata = kernel_base_calldata(args_size);
-        auto const tp_calldata = evm_as::test::to_throughput_calldata<traits>(
-            args_size, base_calldata);
+        auto const tp_calldata =
+            test::to_throughput_calldata<traits>(args_size, base_calldata);
         for (bool has_output : {false, true}) {
             auto const &s = seq(args_size, has_output);
             KB kb;
@@ -1294,7 +1281,7 @@ TEST(EvmAs, KernelBuilderCalldata)
         if (args_size) {
             auto const &os = output_seq(args_size, true);
             auto const calldata =
-                evm_as::test::to_latency_calldata(os, args_size, tp_calldata);
+                test::to_latency_calldata(os, args_size, tp_calldata);
             auto const &s = seq(args_size, true);
             KB kb;
             kb.latency(s, args_size);

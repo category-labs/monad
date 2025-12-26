@@ -4,13 +4,13 @@
 #define gas_remaining_offset 16
 
 // offsetof(Context, memory) + offsetof(Memory, size):
-#define memory_size_offset (264 + 8)
+#define memory_size_offset (264 + 0)
 
 // offsetof(Context, memory) + offsetof(Memory, capacity):
-#define memory_capacity_offset (264 + 12)
+#define memory_capacity_offset (264 + 4)
 
 // offsetof(Context, memory) + offsetof(Memory, cost):
-#define memory_cost_offset (264 + 24)
+#define memory_cost_offset (264 + 16)
 
 .text
 .globl monad_vm_runtime_increase_memory_raw

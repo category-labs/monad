@@ -20,6 +20,8 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/types.hpp>
 
+#include <test/vm/utils/test_context.hpp>
+
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
@@ -106,11 +108,11 @@ TEST(async_compile_test, stress)
             auto entry = ncode->entrypoint();
             ASSERT_TRUE(entry != nullptr);
 
-            auto ctx = runtime::Context::empty();
-            ctx.gas_remaining = 100;
-            entry(&ctx, nullptr);
+            test::TestContext ctx;
+            ctx->gas_remaining = 100;
+            entry(&*ctx, nullptr);
 
-            auto const &ret = ctx.result;
+            auto const &ret = ctx->result;
             ASSERT_EQ(ret.status, runtime::StatusCode::Success);
             ASSERT_EQ(uint256_t::load_le(ret.offset), index);
             ASSERT_EQ(uint256_t::load_le(ret.size), 1);

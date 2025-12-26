@@ -71,30 +71,27 @@ namespace monad::vm::compiler::test
     RuntimeTestBase::RuntimeTestBase()
         : blob_hashes_{bytes32_from_uint256(1), bytes32_from_uint256(2)}
         , host_{init_host(blob_hashes_)}
-        , ctx_{
-              .host = &host_.get_interface(),
-              .context = host_.to_context(),
-              .gas_remaining = std::numeric_limits<std::int64_t>::max(),
-              .gas_refund = 0,
-              .env =
-                  {
-                      .evmc_flags = 0,
-                      .depth = 0,
-                      .recipient =
-                          0x0000000000000000000000000000000000000001_address,
-                      .sender =
-                          0x0000000000000000000000000000000000000002_address,
-                      .value = {},
-                      .create2_salt = {},
-                      .input_data = &call_data_[0],
-                      .code = &code_[0],
-                      .return_data = {},
-                      .input_data_size = sizeof(call_data_),
-                      .code_size = sizeof(code_),
-                      .return_data_size = 0,
-                      .tx_context = &host_.tx_context,
-                  },
-              .memory = Memory(EvmMemoryAllocator{}, nullptr, nullptr, 0)}
+        , test_ctx_{[&](auto &x) {
+            x.host = &host_.get_interface(), x.context = host_.to_context(),
+            x.gas_remaining = std::numeric_limits<std::int64_t>::max(),
+            x.gas_refund = 0,
+            x.env = {
+                .evmc_flags = 0,
+                .depth = 0,
+                .recipient = 0x0000000000000000000000000000000000000001_address,
+                .sender = 0x0000000000000000000000000000000000000002_address,
+                .value = {},
+                .create2_salt = {},
+                .input_data = &call_data_[0],
+                .code = &code_[0],
+                .return_data = {},
+                .input_data_size = sizeof(call_data_),
+                .code_size = sizeof(code_),
+                .return_data_size = 0,
+                .tx_context = &host_.tx_context,
+            };
+        }}
+        , ctx_{*test_ctx_}
     {
         std::iota(code_.rbegin(), code_.rend(), 0);
         std::iota(call_data_.begin(), call_data_.end(), 0);

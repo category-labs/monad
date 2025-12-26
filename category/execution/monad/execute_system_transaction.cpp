@@ -142,6 +142,8 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 template <Traits traits>
 evmc_message ExecuteSystemTransaction<traits>::to_message() const
 {
+    // System transactions currently do not need a pointer to vm memory,
+    // so the `memory*` fields are zero initialized:
     evmc_message msg{
         .kind = EVMC_CALL,
         .flags = 0,

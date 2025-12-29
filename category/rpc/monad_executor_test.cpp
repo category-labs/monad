@@ -3819,3 +3819,98 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
     monad_executor_destroy(executor);
     monad_state_override_destroy(state_override);
 }
+
+TEST_F(EthCallFixture, eth_simulate_v1)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto const rlp_senders =
+        evmc::from_hex(
+            "0xf8d8ea9400000000000000000000000000000000deadbeef9400000000000000"
+            "000000000000000000deadbeefd594deadbeef0000000000000000000000000000"
+            "0000f8549400000000000000000000000000000000deadbeef94deadbeef000000"
+            "0000000000000000000000000194deadbeef000000000000000000000000000000"
+            "009400000000000000000000000000000000deadbeefea94deadbeef0000000000"
+            "00000000000000000000019400000000000000000000000000000000deadbeefd5"
+            "94deadbeef00000000000000000000000000000000")
+            .value();
+
+    auto const rlp_calls =
+        evmc::from_hex(
+            "0xf901b2f866b202f08080808088ffffffffffffffff94deadbeef000000000000"
+            "00000000000000000000880de0b6b3a764000080c0808080b202f08080808088ff"
+            "ffffffffffffff94deadbeef00000000000000000000000000000001881bc16d67"
+            "4ec8000080c0808080d79602d48080808088ffffffffffffffff808080c0808080"
+            "f8acaa02e88080808088ffffffffffffffff94f2048c36a5536fea3bc71d49ed59"
+            "f2c65c546eea8080c0808080aa02e88080808088ffffffffffffffff94f2048c36"
+            "a5536fea3bc71d49ed59f2c65c546eea8080c0808080aa02e88080808088ffffff"
+            "ffffffffff94f2048c36a5536fea3bc71d49ed59f2c65c546eea8080c0808080aa"
+            "02e88080808088ffffffffffffffff94f2048c36a5536fea3bc71d49ed59f2c65c"
+            "546eea8080c0808080f856aa02e88080808088ffffffffffffffff94f2048c36a5"
+            "536fea3bc71d49ed59f2c65c546eea8080c0808080aa02e88080808088ffffffff"
+            "ffffffff94f2048c36a5536fea3bc71d49ed59f2c65c546eea8080c0808080ebaa"
+            "02e88080808088ffffffffffffffff94f2048c36a5536fea3bc71d49ed59f2c65c"
+            "546eea8080c0808080")
+            .value();
+
+    auto const rlp_header =
+        evmc::from_hex(
+            "0xf90280a05c642849913b3d2ad6a3790a02c4037d5743acbec3486c935f24000f"
+            "8070ccc6a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd"
+            "40d4934794028f23652ed342950ee505133f87936916876674a0e973c3bb59ecbc"
+            "408e0f3fc2438af912c40b7c10c84a2c28f028c6533730354ca056e81f171bcc55"
+            "a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a056e81f171bcc55"
+            "a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421b901000000000000"
+            "000000000000000000000000000000000000000000000000000000000000000000"
+            "000000000000000000000000000000000000000000000000000000000000000000"
+            "000000000000000000000000000000000000000000000000000000000000000000"
+            "000000000000000000000000000000000000000000000000000000000000000000"
+            "000000000000000000000000000000000000000000000000000000000000000000"
+            "000000000000000000000000000000000000000000000000000000000000000000"
+            "000000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000800e840bebc200808469408ae3"
+            "a00000000000000000000000000000000000000000000000000000000000000000"
+            "a0f2e89a4f65dbae7f8e6771b211a05876e78e29c062aa9fc45ad27adab9b3bec0"
+            "88000000000000000085174876e800a056e81f171bcc55a6ff8345e692c0f86e5b"
+            "48e01b996cadc001622fb5e363b4218080a0000000000000000000000000000000"
+            "0000000000000000000000000000000000a0000000000000000000000000000000"
+            "0000000000000000000000000000000000")
+            .value();
+
+    // auto const rlp_block_id =
+    //     evmc::from_hex("0xa0c23f4adce46b7197489a2d335c001aa305c05a0f2df903160b7"
+    //                    "e7fc974b3d4e3")
+    //         .value();
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    // TODO: hard-coded, need n_blocks
+    // also need to fix the binding?
+    auto const state_overrides =
+        std::vector<monad_state_override const *>{5, nullptr};
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1, // block_number
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        *state_overrides.data(),
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    monad_executor_destroy(executor);
+}

@@ -808,12 +808,12 @@ int main(int argc, char *argv[])
            "A comma-separated list of previously created database paths")
         ->required();
     cli.add_option(
-        "--sq_thread_cpu",
+        "--sq-thread-cpu,--sq_thread_cpu",
         sq_thread_cpu,
         "CPU core binding for the io_uring SQPOLL thread. Specifies the CPU "
         "set for the kernel polling thread in SQPOLL mode. Defaults to "
         "disabled SQPOLL mode.");
-    cli.add_option("--log_level", log_level, "level of logging")
+    cli.add_option("--log-level,--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     auto *const mode_group =
         cli.add_option_group("mode", "different modes of the cli");
@@ -823,16 +823,16 @@ int main(int argc, char *argv[])
         mode_group->add_option_group("cli", "options for non-interactive mode");
     cli_group->add_option("--version", version)->required();
     auto *const dump_binary_snapshot_option = cli_group->add_option(
-        "--dump_binary_snapshot",
+        "--dump-binary-snapshot,--dump_binary_snapshot",
         dump_binary_snapshot,
         "Dump a binary snapshot to directory");
     cli_group->add_option(
-        "--dump_concurrency_limit",
+        "--dump-concurrency-limit,--dump_concurrency_limit",
         dump_concurrency_limit,
         "Read concurrency limit for snapshot dump");
     cli_group
         ->add_option(
-            "--total_shards",
+            "--total-shards,--total_shards",
             total_shards,
             "Total number of shards to split snapshot creation across nodes "
             "(default: 1)")
@@ -840,7 +840,7 @@ int main(int argc, char *argv[])
         ->needs(dump_binary_snapshot_option);
     cli_group
         ->add_option(
-            "--shard_number",
+            "--shard-number,--shard_number",
             shard_number,
             "Shard number for this node (0 to total_shards-1, default: 0). "
             "Each "
@@ -848,7 +848,7 @@ int main(int argc, char *argv[])
         ->needs(dump_binary_snapshot_option);
     cli_group
         ->add_option(
-            "--load_binary_snapshot",
+            "--load-binary-snapshot,--load_binary_snapshot",
             load_binary_snapshot,
             "Load a binary snapshot to db")
         ->check(CLI::ExistingDirectory)

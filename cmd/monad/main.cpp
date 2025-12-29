@@ -147,21 +147,21 @@ try {
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
         ->required();
-    cli.add_option("--block_db", block_db_path, "block_db directory")
+    cli.add_option("--block-db,--block_db", block_db_path, "block_db directory")
         ->required();
     cli.add_option("--nblocks", nblocks, "number of blocks to execute");
-    cli.add_option("--log_level", log_level, "level of logging")
+    cli.add_option("--log-level,--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     cli.add_option("--nthreads", nthreads, "number of threads");
     cli.add_option("--nfibers", nfibers, "number of fibers");
     cli.add_flag("--no-compaction", no_compaction, "disable compaction");
     cli.add_option(
-        "--sq_thread_cpu",
+        "--sq-thread-cpu,--sq_thread_cpu",
         sq_thread_cpu,
         "sq_thread_cpu field in io_uring_params, to specify the cpu set "
         "kernel poll thread is bound to in SQPOLL mode");
     cli.add_option(
-        "--ro_sq_thread_cpu",
+        "--ro-sq-thread-cpu,--ro_sq_thread_cpu",
         ro_sq_thread_cpu,
         "sq_thread_cpu for the read only db (optional, disables SQPOLL if not "
         "specified)");
@@ -172,14 +172,17 @@ try {
         "configure the storage pool with one or more files/devices. If no "
         "value is passed, the replay will run with an in-memory triedb");
     cli.add_option(
-        "--dump_snapshot",
+        "--dump-snapshot,--dump_snapshot",
         dump_snapshot,
         "directory to dump state to at the end of run");
-    cli.add_flag("--trace_calls", trace_calls, "enable call tracing");
+    cli.add_flag(
+        "--trace-calls,--trace_calls", trace_calls, "enable call tracing");
     auto *const as_eth_blocks_flag = cli.add_flag(
-        "--as_eth_blocks", as_eth_blocks, "ingest monad blocks in evm format");
+        "--as-eth-blocks,--as_eth_blocks",
+        as_eth_blocks,
+        "ingest monad blocks in evm format");
     cli.add_option(
-           "--block_db_timeout",
+           "--block-db-timeout,--block_db_timeout",
            block_db_timeout,
            "timeout in seconds for reading blocks from blockdb (0 = no retry)")
         ->needs(as_eth_blocks_flag);
@@ -216,7 +219,8 @@ try {
             });
 #ifdef ENABLE_EVENT_TRACING
     fs::path trace_log = fs::absolute("trace");
-    cli.add_option("--trace_log", trace_log, "path to output trace file");
+    cli.add_option(
+        "--trace-log,--trace_log", trace_log, "path to output trace file");
 #endif
 
     try {

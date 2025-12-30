@@ -286,6 +286,47 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
     }
 }
 
+bytes4k_t State::get_block_storage(Address const &address, bytes32_t const &key)
+{
+    auto const it = current_.find(address);
+    if (it == current_.end()) {
+        auto const it2 = original_.find(address);
+        MONAD_ASSERT(it2 != original_.end());
+        auto &account_state = it2->second;
+        auto const &account = account_state.account_;
+        MONAD_ASSERT(account.has_value());
+        auto &block_storage = account_state.block_storage_;
+        if (auto const *const val = block_storage.find(key); val) {
+            return *val;
+        }
+        bytes4k_t const value =
+            block_state_.read_block_storage(address, account->incarnation, key);
+        block_storage = block_storage.insert({key, value});
+        return value;
+    }
+    else {
+        auto const &account_state = it->second.recent();
+        auto const &account = account_state.account_;
+        MONAD_ASSERT(account.has_value());
+        auto const it2 = original_.find(address);
+        MONAD_ASSERT(it2 != original_.end());
+        auto &original_account_state = it2->second;
+        auto const &original_account = original_account_state.account_;
+        if (!original_account.has_value() ||
+            account->incarnation != original_account->incarnation) {
+            return bytes4k_t{};
+        }
+        auto &block_storage = original_account_state.block_storage_;
+        if (auto const *const val = block_storage.find(key); val) {
+            return *val;
+        }
+        bytes4k_t const value =
+            block_state_.read_block_storage(address, account->incarnation, key);
+        block_storage = block_storage.insert({key, value});
+        return value;
+    }
+}
+
 bytes32_t
 State::get_transient_storage(Address const &address, bytes32_t const &key)
 {

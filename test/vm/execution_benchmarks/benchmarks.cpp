@@ -65,7 +65,6 @@ struct free_message
     {
         if (msg) {
             delete[] msg->input_data;
-            delete[] msg->code;
             delete msg;
         }
     }
@@ -77,6 +76,7 @@ struct benchmark_case
 {
     std::string name;
     msg_ptr msg;
+    std::vector<std::uint8_t> code;
 };
 
 namespace
@@ -89,8 +89,7 @@ namespace
         std::string const &name, std::span<std::uint8_t const> code,
         std::span<std::uint8_t const> input)
     {
-        auto *code_buffer = new std::uint8_t[code.size()];
-        std::copy(code.begin(), code.end(), code_buffer);
+        std::vector<std::uint8_t> code_buffer(code.begin(), code.end());
 
         auto *input_buffer = new std::uint8_t[input.size()];
         std::copy(input.begin(), input.end(), input_buffer);
@@ -107,14 +106,12 @@ namespace
             .value = {},
             .create2_salt = {},
             .code_address = {},
-            .code = code_buffer,
-            .code_size = code.size(),
             .memory_handle = nullptr,
             .memory = nullptr,
             .memory_capacity = 0,
         });
 
-        return benchmark_case{name, std::move(msg)};
+        return benchmark_case{name, std::move(msg), std::move(code_buffer)};
     }
 
     std::vector<std::uint8_t> read_file(fs::path const &path)
@@ -147,7 +144,7 @@ namespace
     // `run_benchmark_json`
     void run_benchmark(
         benchmark::State &state, BlockchainTestVM::Implementation const impl,
-        evmc_message const msg)
+        evmc_message const msg, std::vector<std::uint8_t> const &code)
     {
         auto vm = evmc::VM(new BlockchainTestVM(impl));
         auto const empty_test_state = evmone::test::TestState{};
@@ -164,16 +161,15 @@ namespace
             reinterpret_cast<BlockchainTestVM *>(vm.get_raw_pointer());
         auto const *interface = &host.get_interface();
         evmc_host_context *ctx = host.to_context();
-        uint8_t const *code = msg.code;
-        size_t const code_size = msg.code_size;
 
         auto code_hash = interface->get_code_hash(ctx, &msg.code_address);
 
-        vm_ptr->precompile_contract(rev, code_hash, code, code_size, impl);
+        vm_ptr->precompile_contract(
+            rev, code_hash, code.data(), code.size(), impl);
 
         for (auto _ : state) {
-            auto const result = evmc::Result{
-                vm_ptr->execute(interface, ctx, rev, &msg, code, code_size)};
+            auto const result = evmc::Result{vm_ptr->execute(
+                interface, ctx, rev, &msg, code.data(), code.size())};
 
             MONAD_VM_ASSERT(result.status_code == EVMC_SUCCESS);
         }
@@ -237,7 +233,9 @@ namespace
 #endif
     };
 
-    void register_benchmark(std::string_view const name, evmc_message const msg)
+    void register_benchmark(
+        std::string_view const name, evmc_message const msg,
+        std::vector<std::uint8_t> const &code)
     {
         for (auto const impl : all_impls) {
             benchmark::RegisterBenchmark(
@@ -245,7 +243,8 @@ namespace
                     "execute/{}/{}", name, BlockchainTestVM::impl_name(impl)),
                 run_benchmark,
                 impl,
-                msg);
+                msg,
+                code);
         }
     }
 
@@ -300,8 +299,6 @@ namespace
                         .value = intx::be::store<evmc::uint256be>(tx.value),
                         .create2_salt = {},
                         .code_address = recipient,
-                        .code = nullptr,
-                        .code_size = 0,
                         .memory_handle = nullptr,
                         .memory = nullptr,
                         .memory_capacity = 0,
@@ -341,7 +338,7 @@ int main(int argc, char **argv)
     auto const all_bms = benchmarks();
 
     for (auto const &bm : all_bms) {
-        register_benchmark(bm.name, *bm.msg);
+        register_benchmark(bm.name, *bm.msg, bm.code);
     }
 
     auto const all_bms_json = benchmarks_json();

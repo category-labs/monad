@@ -209,8 +209,6 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message() const
         .value = {},
         .create2_salt = {},
         .code_address = to_address.second,
-        .code = nullptr, // TODO
-        .code_size = 0, // TODO
         .memory_handle = nullptr,
         .memory = nullptr,
         .memory_capacity = 0,

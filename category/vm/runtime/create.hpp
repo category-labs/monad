@@ -98,8 +98,6 @@ namespace monad::vm::runtime
             .value = bytes32_from_uint256(value),
             .create2_salt = bytes32_from_uint256(salt_word),
             .code_address = evmc::address{},
-            .code = nullptr,
-            .code_size = 0,
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,

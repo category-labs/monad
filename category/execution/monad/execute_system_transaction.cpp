@@ -154,8 +154,6 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
         .value = {},
         .create2_salt = {},
         .code_address = *tx_.to,
-        .code = nullptr,
-        .code_size = 0,
         .memory_handle = nullptr,
         .memory = nullptr,
         .memory_capacity = 0,

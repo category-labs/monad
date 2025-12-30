@@ -1202,8 +1202,6 @@ namespace monad::vm::fuzzing
 
         auto const salt = random_constant(eng).value;
 
-        auto const &code = address_lookup(target);
-
         return message_ptr{new evmc_message{
             .kind = kind,
             .flags = flags,
@@ -1217,8 +1215,6 @@ namespace monad::vm::fuzzing
             .value = value.template store_be<evmc::bytes32>(),
             .create2_salt = salt.template store_be<evmc::bytes32>(),
             .code_address = target,
-            .code = code.data(),
-            .code_size = code.size(),
             .memory_handle = nullptr,
             .memory = nullptr,
             .memory_capacity = 0,

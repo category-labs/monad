@@ -68,7 +68,7 @@ namespace monad::vm::runtime
             auto const access_status =
                 ctx->host->access_account(ctx->context, &dest_address);
             if (access_status == EVMC_ACCESS_COLD) {
-                ctx->gas_remaining -= traits::cold_account_cost();
+                ctx->deduct_gas(traits::cold_account_cost());
             }
         }
 

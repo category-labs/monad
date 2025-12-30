@@ -124,6 +124,8 @@ public:
 
     bytes32_t get_storage(Address const &, bytes32_t const &key);
 
+    bytes4k_t get_block_storage(Address const &, bytes32_t const &key);
+
     bytes32_t get_transient_storage(Address const &, bytes32_t const &key);
 
     bool is_touched(Address const &);

@@ -162,6 +162,13 @@ static_assert(sizeof(AccountState) == 144);
 // original and current balances can be adjusted
 class OriginalAccountState final : public AccountState
 {
+public:
+    using BlockStorageMap = immer::map<
+        bytes32_t, bytes4k_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+
+    mutable BlockStorageMap block_storage_{};
+
+private:
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
 

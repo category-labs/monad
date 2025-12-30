@@ -49,6 +49,13 @@ struct monad_event_ring_simple_config
     uint8_t const *schema_hash;
 };
 
+/// Output structure returned by `monad_event_ring_query_flocks`
+struct monad_event_flock_info
+{
+    int lock; ///< Type of lock held (LOCK_EX or LOCK_SH)
+    pid_t pid; ///< Process holding lock
+};
+
 /// "All in one" convenience event ring file init for simple cases: given an
 /// event ring fd and the required options, calculate the required size of the
 /// event ring, call fallocate(2) to ensure the storage is available, then call
@@ -63,10 +70,17 @@ int monad_event_ring_check_content_type(
     struct monad_event_ring const *, enum monad_event_content_type,
     uint8_t const *schema_hash);
 
-/// Find the pid of every process that has opened the given event ring file
-/// descriptor for writing; this is slow, and somewhat brittle (it crawls
-/// proc(5) file descriptor tables so depends on your access(2) permissions)
-int monad_event_ring_find_writer_pids(int ring_fd, pid_t *pids, size_t *size);
+/// Query information about every process that holds an flock on the file
+/// referred to by the given file descriptor; the flock(2) system call is used
+/// to detect which processes are writing to an event ring file: exclusive
+/// writers place a LOCK_EX lock, shared writers all place LOCK_SH locks
+int monad_event_ring_query_flocks(
+    int ring_fd, struct monad_event_flock_info *, size_t *size);
+
+/// For event ring files that have an exclusive writer, determine the pid of
+/// that writer; this is a convenience wrapper around the
+/// monad_event_ring_query_flocks function
+int monad_event_ring_query_excl_writer_pid(int ring_fd, pid_t *pid);
 
 /// Given a path to a file (which does not need to exist), check if the
 /// associated file system supports that file being mmap'ed with MAP_HUGETLB

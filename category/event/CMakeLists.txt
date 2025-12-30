@@ -52,6 +52,12 @@ add_library(
   "../execution/ethereum/event/exec_event_ctypes_metadata.c"
   "../execution/ethereum/event/exec_iter_help.h")
 
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  target_sources(monad_event PRIVATE "../core/event/event_ring_util_linux.c")
+else()
+  target_sources(monad_event PRIVATE "../core/event/event_ring_util_posix.c")
+endif()
+
 target_include_directories(monad_event PUBLIC "../..")
 target_compile_definitions(monad_event PUBLIC _GNU_SOURCE)
 target_compile_features(monad_event PUBLIC c_std_23)

@@ -106,8 +106,6 @@ public:
             .value = {},
             .create2_salt = {},
             .code_address = {},
-            .code = nullptr,
-            .code_size = 0,
         };
 
         auto vm = evmc::VM(this);

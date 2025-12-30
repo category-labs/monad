@@ -248,8 +248,6 @@ evmc::Result create(
         .value = msg.value,
         .create2_salt = {},
         .code_address = contract_address,
-        .code = nullptr,
-        .code_size = 0,
     };
 
     auto result = state.vm().execute_bytecode<traits>(

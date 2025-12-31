@@ -245,7 +245,7 @@ Node::SharedPtr copy_trie_impl(
             dest_version,
             node.get() == dest_root.get()
                 ? std::make_optional(src_root->value())
-                : std::nullopt);
+                : node->opt_value());
         break;
     }
 

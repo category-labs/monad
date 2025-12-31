@@ -382,7 +382,7 @@ void UpdateAuxImpl::set_auto_expire_version_metadata(
 }
 
 int64_t
-UpdateAuxImpl::calc_auto_expire_version(uint64_t upsert_version) noexcept
+UpdateAuxImpl::calc_auto_expire_version(uint64_t const upsert_version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     if (db_history_max_version() == INVALID_BLOCK_NUM) {

@@ -164,8 +164,6 @@ namespace monad::vm::runtime
             .value = value,
             .create2_salt = ctx->env.create2_salt,
             .code_address = code_address,
-            .code = nullptr,
-            .code_size = 0,
         };
 
         auto const result = ctx->host->call(ctx->context, &message);

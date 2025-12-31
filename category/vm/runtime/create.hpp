@@ -98,8 +98,6 @@ namespace monad::vm::runtime
             .value = bytes32_from_uint256(value),
             .create2_salt = bytes32_from_uint256(salt_word),
             .code_address = evmc::address{},
-            .code = nullptr,
-            .code_size = 0,
         };
 
         auto const result = ctx->host->call(ctx->context, &message);

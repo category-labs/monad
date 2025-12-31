@@ -145,8 +145,6 @@ static double execute_iteration(
         .value = {},
         .create2_salt = {},
         .code_address = code_address,
-        .code = bytecode.data(),
-        .code_size = bytecode.size(),
     };
 
     auto const start = std::chrono::steady_clock::now();

@@ -154,8 +154,6 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
         .value = {},
         .create2_salt = {},
         .code_address = *tx_.to,
-        .code = nullptr,
-        .code_size = 0,
     };
     intx::be::store(msg.value.bytes, tx_.value);
     return msg;

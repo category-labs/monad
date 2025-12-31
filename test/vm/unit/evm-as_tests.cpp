@@ -117,7 +117,8 @@ namespace
                     .tx_context = {},
                 },
             .result = test_result(),
-            .memory = monad::vm::runtime::Memory(runtime::EvmMemoryAllocator{}),
+            .memory = monad::vm::runtime::Memory(
+                runtime::EvmMemoryAllocator{}, nullptr, nullptr, 0),
             .exit_stack_ptr = nullptr};
     }
 

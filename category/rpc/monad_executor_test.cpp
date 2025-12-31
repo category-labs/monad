@@ -2479,10 +2479,10 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
             parent_senders_and_authorities = {sender};
         ankerl::unordered_dense::segmented_set<Address> const
             senders_and_authorities = {sender};
-        MonadChainContext const chain_context{
+        ChainContext<monad::MonadTraits<MONAD_NEXT>> const chain_context{
             .grandparent_senders_and_authorities =
-                &grandparent_senders_and_authorities,
-            .parent_senders_and_authorities = &parent_senders_and_authorities,
+                grandparent_senders_and_authorities,
+            .parent_senders_and_authorities = parent_senders_and_authorities,
             .senders_and_authorities = senders_and_authorities,
             .senders = senders,
             .authorities = authorities};

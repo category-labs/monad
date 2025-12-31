@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <monad/test/traits_test.hpp>
@@ -51,6 +52,37 @@ using namespace monad::test;
 using db_t = TrieDb;
 
 #define PUSH3(x) 0x62, (((x) >> 16) & 0xFF), (((x) >> 8) & 0xFF), ((x) & 0xFF)
+
+namespace
+{
+    static ankerl::unordered_dense::segmented_set<Address> const
+        empty_grandparent_senders_and_authorities;
+    static ankerl::unordered_dense::segmented_set<Address> const
+        empty_parent_senders_and_authorities;
+    static ankerl::unordered_dense::segmented_set<Address> const
+        empty_senders_and_authorities{};
+    static std::vector<Address> const empty_senders{Address{0}};
+    static std::vector<std::vector<std::optional<Address>>> const
+        empty_authorities{{}};
+
+    template <Traits traits>
+    ChainContext<traits> empty_chain_ctx()
+    {
+        if constexpr (is_monad_trait_v<traits>) {
+            return ChainContext<traits>{
+                .grandparent_senders_and_authorities =
+                    empty_grandparent_senders_and_authorities,
+                .parent_senders_and_authorities =
+                    empty_parent_senders_and_authorities,
+                .senders_and_authorities = empty_senders_and_authorities,
+                .senders = empty_senders,
+                .authorities = empty_authorities};
+        }
+        else {
+            return ChainContext<traits>{};
+        }
+    }
+}
 
 TYPED_TEST(TraitsTest, create_with_insufficient)
 {
@@ -84,8 +116,19 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
     auto const result = create<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
@@ -130,8 +173,19 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     auto const result = create<typename TestFixture::Trait>(&h, s, m);
 
@@ -194,8 +248,19 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
     auto const result = create<typename TestFixture::Trait>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
@@ -216,8 +281,19 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     commit_sequential(
         tdb,
@@ -262,8 +338,19 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     commit_sequential(
         tdb,
@@ -314,8 +401,19 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     commit_sequential(
         tdb,
@@ -408,8 +506,19 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
 
     auto s = State{bs, Incarnation{0, 0}};
 
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     // Initcode fits inside size limit
     if constexpr (
@@ -509,8 +618,19 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
 
     auto s = State{bs, Incarnation{0, 0}};
 
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     // Initcode fits inside size limit
     if constexpr (
@@ -742,8 +862,19 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
         auto const result = h.call(m);
@@ -856,8 +987,19 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
         auto const result = h.call(m);
@@ -956,8 +1098,20 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
     if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
+        Transaction tx{};
+        auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+        uint256_t base_fee{0};
         EvmcHost<typename TestFixture::Trait> h{
-            call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+            call_tracer,
+            EMPTY_TX_CONTEXT,
+            block_hash_buffer,
+            s,
+            from,
+            tx,
+            base_fee,
+            0,
+            chain_ctx};
+
         auto const result = h.call(m);
 
         EXPECT_EQ(result.status_code, EVMC_SUCCESS);
@@ -1020,8 +1174,19 @@ TYPED_TEST(TraitsTest, cold_account_access)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        from,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
     auto const result = h.call(m);
     auto const gas_used = gas_limit - result.gas_left;
 
@@ -1139,8 +1304,19 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
             {good_code_hash, good_icode}},
         BlockHeader{});
 
+    Transaction tx{};
+    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> h{
-        call_tracer, EMPTY_TX_CONTEXT, block_hash_buffer, s};
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        Address{0},
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     auto const d1 = vm::evm::resolve_delegation(
         &h.get_interface(), h.to_context(), falsely_delegated_1);

@@ -69,4 +69,7 @@ struct monad_statesync_client_context
             struct monad_statesync_client *, struct monad_sync_request));
 
     void commit();
+
+private:
+    void prepare_current_state();
 };

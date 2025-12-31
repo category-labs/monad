@@ -58,8 +58,57 @@ monad_statesync_client_context::monad_statesync_client_context(
     MONAD_ASSERT(db.get_latest_version() == db.get_latest_finalized_version());
 }
 
+void monad_statesync_client_context::prepare_current_state()
+{
+    auto const latest_version = db.get_latest_version();
+    // commit empty finalized state to current first
+    UpdateList finalized_empty;
+    Update finalized{
+        .key = finalized_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(current)};
+    finalized_empty.push_front(finalized);
+    bool write_root = false;
+    auto dest_root = db.upsert(
+        nullptr, std::move(finalized_empty), current, false, false, write_root);
+    MONAD_ASSERT(db.find(dest_root, finalized_nibbles, current).has_value());
+
+    // move state and code from latest finalized to current
+    auto const src_root = db.load_root_for_version(latest_version);
+    auto const state_key = concat(FINALIZED_NIBBLE, STATE_NIBBLE);
+    auto const code_key = concat(FINALIZED_NIBBLE, CODE_NIBBLE);
+    dest_root = db.copy_trie(
+        src_root,
+        state_key,
+        std::move(dest_root),
+        state_key,
+        current,
+        write_root);
+    write_root = true;
+    dest_root = db.copy_trie(
+        src_root,
+        code_key,
+        std::move(dest_root),
+        code_key,
+        current,
+        write_root);
+    auto const finalized_res = db.find(dest_root, finalized_nibbles, current);
+    MONAD_ASSERT(finalized_res.has_value());
+    MONAD_ASSERT(finalized_res.value().node->number_of_children() == 2);
+    MONAD_ASSERT(db.find(dest_root, state_key, current).has_value());
+    MONAD_ASSERT(db.find(dest_root, code_key, current).has_value());
+    tdb.reset_root(dest_root, current);
+    MONAD_ASSERT(db.get_latest_version() == current);
+}
+
 void monad_statesync_client_context::commit()
 {
+    if (db.get_latest_version() != INVALID_BLOCK_NUM &&
+        db.get_latest_version() != current) {
+        prepare_current_state();
+    }
     std::deque<mpt::Update> alloc;
     std::deque<byte_string> bytes_alloc;
     std::deque<hash256> hash_alloc;

@@ -1268,6 +1268,40 @@ namespace monad::vm::compiler::native
             gas);
     }
 
+    // Assert that the stack element value fits within the inferred bound
+    void Emitter::assert_runtime_result_bound(StackElemRef elem)
+    {
+        auto const inferred_bound = elem->bit_upper_bound();
+
+        discharge_deferred_comparison();
+
+        if (elem->literal()) {
+            return; // Nothing to do
+        }
+        else if (elem->general_reg()) {
+            auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
+            std::array<asmjit::x86::Gpq, 4> const &gpq_r64 = {
+                gpq[0].r64(), gpq[1].r64(), gpq[2].r64(), gpq[3].r64()};
+            array_bit_width(gpq_r64);
+            as_.cmp(x86::eax, inferred_bound);
+            as_.jg(error_label_);
+        }
+        else if (elem->stack_offset()) {
+            array_bit_width(stack_offset_to_mem256(*elem->stack_offset()));
+            as_.cmp(x86::eax, inferred_bound);
+            as_.jg(error_label_);
+        }
+        else if (elem->avx_reg()) {
+            mov_stack_elem_to_stack_offset(elem);
+            array_bit_width(stack_offset_to_mem256(*elem->stack_offset()));
+            as_.cmp(x86::eax, inferred_bound);
+            as_.jg(error_label_);
+        }
+        else {
+            MONAD_VM_ASSERT(false);
+        }
+    }
+
     bool Emitter::accumulate_static_work(int64_t work)
     {
         MONAD_VM_DEBUG_ASSERT(work >= 0);
@@ -8032,15 +8066,15 @@ namespace monad::vm::compiler::native
         as_.bind(end_lbl);
     }
 
-    // Count the byte width (number of significant bytes) of the value.
+    // Count the bit width (number of significant bits) of the value.
     // The operands in `arr` must be ordered from least to most significant.
     //
     // Unlike `array_leading_zeros`, this implementation does not optimize the
     // case where the input value is uniformly distributed, since
-    // array_byte_width is only used on EXP exponents, which are biased towards
+    // array_bit_width is only used on EXP exponents, which are biased towards
     // smaller values.
     template <typename T, size_t N>
-    void Emitter::array_byte_width(std::array<T, N> const &arr)
+    void Emitter::array_bit_width(std::array<T, N> const &arr)
     {
         auto const scratch_reg = [this] {
             if (stack_.has_free_general_reg()) {
@@ -8071,12 +8105,18 @@ namespace monad::vm::compiler::native
 
         // eax = bit width (negative), byte width = (-eax + 7) / 8
         as_.neg(x86::eax);
-        as_.add(x86::eax, 7);
-        as_.sar(x86::eax, 3);
 
         if (scratch_reg == reg_context) {
             as_.pop(reg_context);
         }
+    }
+
+    template <typename T, size_t N>
+    void Emitter::array_byte_width(std::array<T, N> const &arr)
+    {
+        array_bit_width(arr);
+        as_.add(x86::eax, 7);
+        as_.sar(x86::eax, 3);
     }
 
     // Compute byte width of stack element, stores the result in x86::eax.

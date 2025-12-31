@@ -488,6 +488,12 @@ TEST_F(StateSyncFixture, sync_from_some)
     run();
 
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    // find transaction trie
+    mpt::RODb cdb{ReadOnlyOnDiskDbConfig{.dbname_paths = {cdbname}}};
+    EXPECT_FALSE(
+        cdb.find(concat(FINALIZED_NIBBLE, TRANSACTION_NIBBLE), hdr6.number)
+            .has_value());
 }
 
 TEST_F(StateSyncFixture, deletion_proposal)

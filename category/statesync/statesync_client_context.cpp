@@ -58,6 +58,51 @@ monad_statesync_client_context::monad_statesync_client_context(
     MONAD_ASSERT(db.get_latest_version() == db.get_latest_finalized_version());
 }
 
+void monad_statesync_client_context::remove_unrelated_tables()
+{
+    auto const latest_version = db.get_latest_version();
+    auto root = db.load_root_for_version(latest_version);
+    if (root) {
+        UpdateList updates;
+        std::deque<mpt::Update> update_alloc;
+        std::deque<mpt::Nibbles> nibbles_alloc;
+        auto const finalized_res =
+            db.find(root, finalized_nibbles, latest_version);
+        MONAD_ASSERT(finalized_res.has_value());
+        auto const finalized_cursor = finalized_res.value();
+        for (auto const &table_nibbles :
+             {transaction_nibbles,
+              receipt_nibbles,
+              call_frame_nibbles,
+              ommer_nibbles,
+              withdrawal_nibbles}) {
+            auto const table_res =
+                db.find(finalized_cursor, table_nibbles, latest_version);
+            if (table_res.has_value()) {
+                updates.push_front(update_alloc.emplace_back(make_erase(
+                    nibbles_alloc.emplace_back(table_nibbles),
+                    latest_version)));
+            }
+        }
+        UpdateList finalized_updates;
+        Update finalized{
+            .key = finalized_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(updates),
+            .version = static_cast<int64_t>(latest_version)};
+        finalized_updates.push_front(finalized);
+        tdb.reset_root(
+            db.upsert(
+                root,
+                std::move(finalized_updates),
+                latest_version,
+                false,
+                false),
+            latest_version);
+    }
+}
+
 void monad_statesync_client_context::commit()
 {
     std::deque<mpt::Update> alloc;

@@ -178,6 +178,7 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
 
     if (latest_version != tgrt.number) {
         ctx->db.move_trie_version_forward(latest_version, tgrt.number);
+        ctx->remove_unrelated_tables();
         bytes32_t expected = tgrt.parent_hash;
         for (size_t i = 0; i < std::min(tgrt.number, 256ul); ++i) {
             auto const v = tgrt.number - i - 1;

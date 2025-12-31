@@ -80,13 +80,27 @@ inline Update make_update(
         .version = static_cast<int64_t>(version)};
 }
 
-inline Update make_erase(monad::byte_string_view const key) noexcept
+inline Update make_erase(NibblesView const key, uint64_t const version) noexcept
 {
+    MONAD_ASSERT(version <= std::numeric_limits<int64_t>::max());
     return Update{
         .key = key,
         .value = std::nullopt,
         .incarnation = false,
-        .next = UpdateList{}};
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(version)};
+}
+
+inline Update make_erase(
+    monad::byte_string_view const key, uint64_t const version = 0) noexcept
+{
+    MONAD_ASSERT(version <= std::numeric_limits<int64_t>::max());
+    return Update{
+        .key = key,
+        .value = std::nullopt,
+        .incarnation = false,
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(version)};
 }
 
 MONAD_MPT_NAMESPACE_END

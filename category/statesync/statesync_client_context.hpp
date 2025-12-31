@@ -68,5 +68,6 @@ struct monad_statesync_client_context
         void (*statesync_send_request)(
             struct monad_statesync_client *, struct monad_sync_request));
 
+    void remove_unrelated_tables();
     void commit();
 };

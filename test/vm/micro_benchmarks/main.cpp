@@ -377,6 +377,7 @@ struct BenchmarkBuilderData
     size_t num_inputs;
     bool has_output;
     size_t iteration_count;
+    std::optional<EvmBuilder<traits>> baseline_seq = std::nullopt;
     std::vector<EvmBuilder<traits>> subject_seqs;
     std::optional<std::vector<EvmBuilder<traits>>> effect_free_subject_seqs =
         std::nullopt;
@@ -390,6 +391,7 @@ struct BenchmarkBuilder
         , num_inputs_{data.num_inputs}
         , has_output_{data.has_output}
         , iteration_count_{data.iteration_count}
+        , baseline_seq_{std::move(data.baseline_seq)}
         , subject_seqs_{std::move(data.subject_seqs)}
         , effect_free_subject_seqs_{std::move(data.effect_free_subject_seqs)}
     {
@@ -411,6 +413,7 @@ private:
     size_t num_inputs_;
     bool has_output_;
     size_t iteration_count_;
+    std::optional<EvmBuilder<traits>> baseline_seq_;
     std::vector<EvmBuilder<traits>> subject_seqs_;
     std::optional<std::vector<EvmBuilder<traits>>> effect_free_subject_seqs_;
     std::vector<uint8_t> calldata_;
@@ -437,7 +440,8 @@ BenchmarkBuilder &BenchmarkBuilder::run_throughput_benchmark()
             .num_inputs = num_inputs_,
             .has_output = has_output_,
             .iteration_count = iteration_count_,
-            .baseline_seq = std::move(base_builder),
+            .baseline_seq = baseline_seq_.has_value() ? *baseline_seq_
+                                                      : std::move(base_builder),
             .subject_seqs = subject_seqs_,
             .effect_free_subject_seqs = effect_free_subject_seqs_,
             .sequence_count = KB::get_sequence_repetition_count(
@@ -480,7 +484,8 @@ BenchmarkBuilder &BenchmarkBuilder::run_latency_benchmark()
             .num_inputs = num_inputs_,
             .has_output = has_output_,
             .iteration_count = iteration_count_,
-            .baseline_seq = std::move(base_builder),
+            .baseline_seq = baseline_seq_.has_value() ? *baseline_seq_
+                                                      : std::move(base_builder),
             .subject_seqs = subject_seqs_,
             .effect_free_subject_seqs = effect_free_subject_seqs_,
             .sequence_count = KB::get_sequence_repetition_count(
@@ -942,4 +947,85 @@ int main(int argc, char **argv)
             return cd;
         })
         .run_throughput_benchmark();
+
+    BenchmarkBuilder(
+        args,
+        {.title = "store forwarding stall, constant input",
+         .num_inputs = 2,
+         .has_output = true,
+         .iteration_count = 100,
+         .baseline_seq = KernelBuilder<traits>{}
+                             .dup2()
+                             .dup2()
+                             .add()
+                             .dup3()
+                             .dup3()
+                             .add()
+                             .dup4()
+                             .dup4()
+                             .add()
+                             .dup5()
+                             .dup5()
+                             .add()
+                             .dup6()
+                             .dup6()
+                             .add()
+                             .dup7()
+                             .dup7()
+                             .add()
+                             .dup8()
+                             .dup8()
+                             .add()
+                             .dup7()
+                             .dup5()
+                             .add()
+                             .add()
+                             .add()
+                             .add()
+                             .add()
+                             .add()
+                             .add()
+                             .add()
+                             .add()
+                             .add(),
+         .subject_seqs = {KernelBuilder<traits>{}
+                              .dup2()
+                              .dup2()
+                              .add()
+                              .dup3()
+                              .dup3()
+                              .add()
+                              .dup4()
+                              .dup4()
+                              .add()
+                              .dup5()
+                              .dup5()
+                              .add()
+                              .dup6()
+                              .dup6()
+                              .add()
+                              .dup7()
+                              .dup7()
+                              .add()
+                              .dup8()
+                              .dup8()
+                              .add()
+                              .dup7()
+                              .dup5()
+                              .xor_() // add() in the baseline
+                              .add()
+                              .add()
+                              .add()
+                              .add()
+                              .add()
+                              .add()
+                              .add()
+                              .add()
+                              .add()},
+         .effect_free_subject_seqs = {{KernelBuilder<traits>{}.pop()}}})
+        .make_calldata([](size_t num_inputs) {
+            return std::vector<uint8_t>(10'000 * num_inputs * 32, 1);
+        })
+        .run_throughput_benchmark()
+        .run_latency_benchmark();
 }

@@ -16,6 +16,7 @@
 #include "commit_builder.hpp"
 
 #include <category/core/assert.h>
+#include <category/core/blake3.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -72,6 +73,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_prefix_updates;
         UpdateList storage_updates;
+        UpdateList block_storage_updates;
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
         if (account.has_value()) {
@@ -92,6 +94,23 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                             .version = static_cast<int64_t>(block_number_)}));
                 }
             }
+            for (auto const &[key, delta] : delta.block_storage) {
+                if (delta.first != delta.second) {
+                    block_storage_updates.push_front(
+                        update_alloc_.emplace_back(Update{
+                            .key = hash_alloc_.emplace_back(
+                                blake3({key.bytes, sizeof(key.bytes)})),
+                            .value = delta.second == bytes4k_t{}
+                                         ? std::nullopt
+                                         : std::make_optional<byte_string_view>(
+                                               bytes_alloc_.emplace_back(
+                                                   encode_block_storage_db(
+                                                       key, delta.second))),
+                            .incarnation = false,
+                            .next = UpdateList{},
+                            .version = static_cast<int64_t>(block_number_)}));
+                }
+            }
             value = bytes_alloc_.emplace_back(
                 encode_account_db(addr, account.value()));
             if (!storage_updates.empty()) {
@@ -101,6 +120,15 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                         .value = byte_string_view{},
                         .incarnation = false,
                         .next = std::move(storage_updates),
+                        .version = static_cast<int64_t>(block_number_)}));
+            }
+            if (!block_storage_updates.empty()) {
+                storage_prefix_updates.push_front(
+                    update_alloc_.emplace_back(Update{
+                        .key = block_storage_prefix_nibbles,
+                        .value = byte_string_view{},
+                        .incarnation = false,
+                        .next = std::move(block_storage_updates),
                         .version = static_cast<int64_t>(block_number_)}));
             }
         }

@@ -79,3 +79,55 @@ TEST(TransactionProcessor, recover_sender_block_14000000)
     EXPECT_EQ(
         sender3.value(), 0x8Ce36461B8aC28B0eaF1d2466e05ED4fa4DE3B9e_address);
 }
+
+TEST(TransactionProcessor, no_recover_high_s_auth)
+{
+    using namespace intx::literals;
+
+    constexpr auto malleate = [](AuthorizationEntry const &auth) {
+        constexpr auto secp256k1_n =
+            0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141_u256;
+
+        return AuthorizationEntry{
+            .sc =
+                {
+                    .r = auth.sc.r,
+                    .s = secp256k1_n - auth.sc.s,
+                    .chain_id = auth.sc.chain_id,
+                    .y_parity = auth.sc.y_parity == 1 ? uint8_t{0} : uint8_t{1},
+                },
+            .address = auth.address,
+            .nonce = auth.nonce,
+        };
+    };
+
+    constexpr auto original_auth_tuple = AuthorizationEntry{
+        .sc =
+            {
+                .r =
+                    20024342273895419273789557730553770517558589916489577758020700015851504969560_u256,
+                .s =
+                    53058432675938613889995545562274668230314193454921684363060655866328293077815_u256,
+                .chain_id = 20143,
+                .y_parity = 0,
+            },
+        .address = 0xdeadbeef00000000000000000000000000000000_address,
+        .nonce = 0,
+    };
+
+    static_assert(!original_auth_tuple.sc.has_upper_s());
+
+    auto const original_authority = recover_authority(original_auth_tuple);
+    EXPECT_TRUE(original_authority.has_value());
+    EXPECT_EQ(
+        original_authority.value(),
+        0xC7f24cEF4eeD1F110196d7D939b388ac1CaEb21d_address);
+
+    constexpr auto malleated_auth_tuple = malleate(original_auth_tuple);
+    static_assert(malleated_auth_tuple.sc.has_upper_s());
+
+    // We could recover the authority from the low-s one, but not from its
+    // correctly malleated high-s version
+    auto const malleated_authority = recover_authority(malleated_auth_tuple);
+    EXPECT_FALSE(malleated_authority.has_value());
+}

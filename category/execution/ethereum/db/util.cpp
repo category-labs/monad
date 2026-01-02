@@ -600,7 +600,7 @@ void MachineBase::down(unsigned char const nibble)
             table = TableType::CallFrame;
         }
         else if (nibble == BLOCK_ACCESS_NIBBLE) {
-            table = TableType::AccessBlock;
+            table = TableType::BlockAccess;
         }
         else {
             MONAD_ABORT_PRINTF("Invalid nibble %u", (unsigned)nibble);
@@ -761,10 +761,8 @@ Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
 
 Result<uint64_t> decode_block_number_db(byte_string_view &enc)
 {
-
-    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(
-        auto const block_number, rlp::decode_unsigned<uint64_t>(payload));
+        auto const block_number, rlp::decode_unsigned<uint64_t>(enc));
     if (MONAD_UNLIKELY(!enc.empty())) {
         return rlp::DecodeError::InputTooLong;
     }

@@ -41,6 +41,8 @@ class BlockState final
     std::unique_ptr<StateDeltas> final_state_;
     Code code_;
 
+    static constexpr uint64_t MAX_STATE_AGE = 1000;
+
 public:
     BlockState(Db &, vm::VM &);
 
@@ -52,6 +54,11 @@ public:
     std::optional<Account> read_account(Address const &);
 
     bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
+
+    bool read_account_status(Address const &);
+
+    bool read_storage_status(
+        Address const &, Incarnation const, bytes32_t const &key);
 
     vm::SharedVarcode read_code(bytes32_t const &);
 

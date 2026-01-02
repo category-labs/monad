@@ -122,6 +122,27 @@ bytes32_t BlockState::read_storage(
     }
 }
 
+bool BlockState::read_account_status(Address const &address)
+{
+    uint64_t blocknum = db_.read_account_blocknum(address);
+    if (blocknum != mpt::INVALID_BLOCK_NUM &&
+        db_.get_block_number() - blocknum <= MAX_STATE_AGE) {
+        return true;
+    }
+    return false;
+}
+
+bool BlockState::read_storage_status(
+    Address const &address, Incarnation const incarnation, bytes32_t const &key)
+{
+    uint64_t blocknum = db_.read_storage_blocknum(address, incarnation, key);
+    if (blocknum != mpt::INVALID_BLOCK_NUM &&
+        db_.get_block_number() - blocknum <= MAX_STATE_AGE) {
+        return true;
+    }
+    return false;
+}
+
 vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
 {
     // vm

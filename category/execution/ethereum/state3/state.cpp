@@ -389,6 +389,7 @@ void State::touch(Address const &address)
 
 evmc_access_status State::access_account(Address const &address)
 {
+    [[maybe_unused]] bool status = block_state_.read_account_status(address);
     auto &account_state = current_account_state(address);
     return account_state.access();
 }
@@ -396,6 +397,32 @@ evmc_access_status State::access_account(Address const &address)
 evmc_access_status
 State::access_storage(Address const &address, bytes32_t const &key)
 {
+
+    auto const it = current_.find(address);
+    [[maybe_unused]] bool status;
+    if (it == current_.end()) {
+        auto const &account = original_account_state(address).account_;
+        if (account.has_value()) {
+            status = block_state_.read_storage_status(
+                address, account.value().incarnation, key);
+        }
+        else {
+            status = false;
+        }
+    }
+    else {
+        auto const &account = it->second.recent().account_;
+        auto const &original_account = original_account_state(address).account_;
+        if (!account.has_value() || !original_account.has_value() ||
+            account.value().incarnation !=
+                original_account.value().incarnation) {
+            status = false;
+        }
+        else {
+            status = block_state_.read_storage_status(
+                address, account.value().incarnation, key);
+        }
+    }
     auto &account_state = current_account_state(address);
     return account_state.access_storage(key);
 }

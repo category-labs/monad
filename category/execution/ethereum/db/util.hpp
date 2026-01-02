@@ -65,7 +65,7 @@ struct MachineBase : public mpt::StateMachine
         BlockHeader,
         Ommer,
         CallFrame,
-        AccessBlock
+        BlockAccess
     };
 
     uint8_t depth{0};

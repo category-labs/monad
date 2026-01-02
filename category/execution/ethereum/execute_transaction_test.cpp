@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/reserve_balance.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
@@ -607,5 +608,152 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                 initial_balance - (gas_charged * max_fee_per_gas) +
                     (storage_refund * max_fee_per_gas));
         }
+    }
+}
+
+/**
+ * This test reproduces a bug whereby EIP-7702 authorizations with malleated s
+ * components could be used to crash execution via differing checks in reserve
+ * balance and authorization processing.
+ *
+ * At a high level, the issue was:
+ *   - Malleated s-component signatures were rejected by the authorization
+ *     processing code (i.e. a tuple with a high s-component would not be
+ *     applied).
+ *   - However, because `recover_authority` permitted such signatures, the
+ *     reserve balance code would process that tuple as if the authorization had
+ *     in fact been applied.
+ *   - This led to an invariant violation when performing reserve balance checks
+ *     (undelegated account treated as delegated).
+ *
+ *  The code in this test reproduces an on-chain version of the issue by hand.
+ */
+TYPED_TEST(MonadTraitsTest, malleated_s_authorization)
+{
+    using intx::operator""_u256;
+
+    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+        GTEST_SKIP()
+            << "Test skipped: not applicable before EVM Prague revision";
+    }
+
+    static constexpr auto from{
+        0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266_address};
+    static constexpr auto auth_target{
+        0x1111111111111111111111111111111111111111_address};
+    static constexpr auto bene{
+        0x5353535353535353535353535353535353535353_address};
+
+    static constexpr uint256_t wei_per_mon = 1'000'000'000'000'000'000;
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    BlockMetrics metrics;
+
+    {
+        State state{bs, Incarnation{0, 0}};
+        state.add_to_balance(from, 10'000 * wei_per_mon);
+        bs.merge(state);
+    }
+
+    {
+        AuthorizationEntry const auth_entry{
+            .sc =
+                {
+                    .r =
+                        0x1eab7e601bdfbacb2201a7b190033ef7a70e4c41250be98d2c34e925aea4000f_u256,
+                    .s =
+                        0x93e2654638633c57e3e590838941cb0a45b2e1c5d9fd24cb886afb7219969e57_u256,
+                    .chain_id = 20143,
+                    .y_parity = 0,
+                },
+            .address = auth_target,
+            .nonce = 0,
+        };
+        EXPECT_TRUE(auth_entry.sc.has_upper_s());
+
+        Transaction const high_s_tx{
+            .sc =
+                {
+                    .r =
+                        0x1cfae88075cbd6d065ca2d8ce49bb67e882eb730ddce3760e61eaeb8d0d8bc07_u256,
+                    .s =
+                        0x2e322c15cfa818f804366fa30fcb926271de3696b56632d3620ebf8f6953c01_u256,
+                    .chain_id = 20143,
+                    .y_parity = 0,
+                },
+            .nonce = 0,
+            .max_fee_per_gas = 1'767'666'666'666,
+            .gas_limit = 6'000'000,
+            .value = 0,
+            .to = std::nullopt,
+            .type = TransactionType::eip7702,
+            .data = {},
+            .access_list = {},
+            .max_priority_fee_per_gas = 1'767'666'666'666,
+            .max_fee_per_blob_gas = {},
+            .blob_versioned_hashes = {},
+            .authorization_list = {auth_entry},
+        };
+
+        BlockHeader const header{.beneficiary = bene};
+        BlockHashBufferFinalized const block_hash_buffer;
+
+        boost::fibers::promise<void> prev{};
+        prev.set_value();
+
+        NoopCallTracer noop_call_tracer;
+        trace::StateTracer noop_state_tracer = std::monostate{};
+
+        auto const senders = std::vector<Address>{from};
+        auto const authorities =
+            std::vector<std::vector<std::optional<Address>>>{
+                {recover_authority(auth_entry)}};
+        auto const senders_and_authorities =
+            ankerl::unordered_dense::segmented_set<Address>{{from}};
+
+        // `recover_authority` should return nullopt due to high s-value
+        EXPECT_FALSE(authorities[0][0].has_value());
+
+        MonadChainContext chain_context{
+            .grandparent_senders_and_authorities = nullptr,
+            .parent_senders_and_authorities = nullptr,
+            .senders_and_authorities = senders_and_authorities,
+            .senders = senders,
+            .authorities = authorities,
+        };
+
+        auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
+            MonadDevnet{},
+            0,
+            high_s_tx,
+            from,
+            authorities[0],
+            header,
+            block_hash_buffer,
+            bs,
+            metrics,
+            prev,
+            noop_call_tracer,
+            noop_state_tracer,
+            [&header, &chain_context](
+                Address const &sender,
+                Transaction const &tx,
+                uint64_t const i,
+                State &state) {
+                return revert_monad_transaction<typename TestFixture::Trait>(
+                    sender,
+                    tx,
+                    header.base_fee_per_gas.value_or(0),
+                    i,
+                    state,
+                    chain_context);
+            })();
+
+        ASSERT_TRUE(!receipt.has_error());
+        EXPECT_EQ(receipt.value().status, 1u);
     }
 }

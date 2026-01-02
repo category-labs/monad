@@ -67,9 +67,16 @@ struct MachineBase : public mpt::StateMachine
         CallFrame,
     };
 
+    enum class StorageType : uint8_t
+    {
+        Storage,
+        BlockStorage,
+    };
+
     uint8_t depth{0};
     TrieType trie_section{TrieType::Undefined};
     TableType table{TableType::Prefix};
+    StorageType storage_type{StorageType::Storage};
 
     virtual mpt::Compute &get_compute() const override;
     virtual void down(unsigned char const nibble) override;
@@ -133,6 +140,8 @@ inline constexpr unsigned char STORAGE_PREFIX_NIBBLE = 0;
 inline constexpr unsigned char BLOCK_STORAGE_PREFIX_NIBBLE = 1;
 inline mpt::Nibbles const storage_prefix_nibbles =
     mpt::concat(STORAGE_PREFIX_NIBBLE);
+inline mpt::Nibbles const block_storage_prefix_nibbles =
+    mpt::concat(BLOCK_STORAGE_PREFIX_NIBBLE);
 
 //////////////////////////////////////////////////////////
 // Proposed and finialized subtries. Active on all tables.

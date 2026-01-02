@@ -204,6 +204,8 @@ add_library(
   # monad/core
   "monad/core/monad_block.hpp"
   "monad/core/monad_ctypes.h"
+  "monad/core/rlp/account_rlp.cpp"
+  "monad/core/rlp/account_rlp.hpp"
   "monad/core/rlp/monad_block_rlp.cpp"
   "monad/core/rlp/monad_block_rlp.hpp"
   # monad/event

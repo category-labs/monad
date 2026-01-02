@@ -202,8 +202,6 @@ class UpdateAuxImpl
     // clear root offsets of versions <= version
     void clear_root_offsets_up_to_and_including(uint64_t version);
     void release_unreferenced_chunks();
-    // clear all versions <= version, release unused disk space
-    void erase_versions_up_to_and_including(uint64_t version);
 
     /* Calculate the version up to which the database will automatically expire
     entries (referred to as "auto_expire" in code names).
@@ -215,7 +213,7 @@ class UpdateAuxImpl
     TODO: Develop a more efficient and scalable mechanism for auto-expiration
     throttling. The goal is to ensure stable database commit times despite
     varying block loads. */
-    int64_t calc_auto_expire_version() noexcept;
+    int64_t calc_auto_expire_version(uint64_t upsert_version) noexcept;
 
     void set_auto_expire_version_metadata(int64_t) noexcept;
 
@@ -715,6 +713,9 @@ public:
 
         return root_offsets_delegator{&db_metadata_[which]};
     }
+
+    // clear all versions <= version, release unused disk space
+    void erase_versions_up_to_and_including(uint64_t version);
 
     // translate between virtual and physical addresses chunk_offset_t
     virtual_chunk_offset_t physical_to_virtual(chunk_offset_t) const noexcept;

@@ -30,6 +30,18 @@ struct SignatureAndChain
 
     void from_v(uint256_t const &);
 
+    /**
+     * Returns true if the signature's s component is in the upper (malleated)
+     * range forbidden by EIP-2.
+     */
+    constexpr bool has_upper_s() const
+    {
+        using namespace intx::literals;
+        static constexpr auto secp256k1_order =
+            0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
+        return s > secp256k1_order / 2;
+    }
+
     friend bool
     operator==(SignatureAndChain const &, SignatureAndChain const &) = default;
 };

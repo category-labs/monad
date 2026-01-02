@@ -126,11 +126,11 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
             continue;
         }
 
-        static constexpr auto secp256k1_order =
-            0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
-        if (auth_entry.sc.s > secp256k1_order / 2) {
-            continue;
-        }
+        // Safety: if an authority has a value here, it must have been produced
+        // by `recover_authority`, which rejects signatures that are not EIP-2
+        // compliant. It is an invariant that non-nullopt auth entries have
+        // signatures with lower-half s components.
+        MONAD_ASSERT(!auth_entry.sc.has_upper_s());
 
         // 4. Add authority to accessed_addresses, as defined in EIP-2929.
         state.access_account(*authority);

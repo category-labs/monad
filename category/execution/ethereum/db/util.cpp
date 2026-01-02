@@ -24,7 +24,6 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/core/rlp/account_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -36,6 +35,7 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/monad/core/rlp/account_rlp.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
@@ -363,19 +363,35 @@ namespace
             auto const acct = decode_account_db_ignore_address(encoded_account);
             MONAD_ASSERT(!acct.has_error());
             MONAD_ASSERT(encoded_account.empty());
-            // TODO: update this when bstore trie is added
+            constexpr uint16_t storage_mask = 1u << STORAGE_PREFIX_NIBBLE;
+            constexpr uint16_t block_storage_mask =
+                1u << BLOCK_STORAGE_PREFIX_NIBBLE;
             MONAD_ASSERT(
-                node.mask == 0x0 || node.mask == 1u << STORAGE_PREFIX_NIBBLE);
+                (node.mask & ~(storage_mask | block_storage_mask)) == 0);
+
+            // ethereum storage root
             bytes32_t storage_root = NULL_ROOT;
-            if (node.mask == 1u << STORAGE_PREFIX_NIBBLE &&
-                node.child_data_len(STORAGE_PREFIX_NIBBLE) ==
-                    sizeof(bytes32_t)) {
-                std::copy_n(
-                    node.child_data(STORAGE_PREFIX_NIBBLE),
-                    sizeof(bytes32_t),
-                    storage_root.bytes);
+            if (node.mask & storage_mask) {
+                unsigned const child_idx =
+                    node.to_child_index(STORAGE_PREFIX_NIBBLE);
+                if (node.child_data_len(child_idx) == sizeof(bytes32_t)) {
+                    storage_root =
+                        unaligned_load<bytes32_t>(node.child_data(child_idx));
+                }
             }
-            return rlp::encode_account(acct.value(), storage_root);
+
+            // monad block storage root
+            std::optional<bytes32_t> block_storage_root;
+            if (node.mask & block_storage_mask) {
+                unsigned const child_idx =
+                    node.to_child_index(BLOCK_STORAGE_PREFIX_NIBBLE);
+                if (node.child_data_len(child_idx) == sizeof(bytes32_t)) {
+                    block_storage_root.emplace(
+                        unaligned_load<bytes32_t>(node.child_data(child_idx)));
+                }
+            }
+            return rlp::encode_monad_account(
+                acct.value(), storage_root, block_storage_root);
         }
     };
 
@@ -433,6 +449,8 @@ namespace
         MerkleComputeBase<Keccak256Hasher, AccountLeafProcessor>;
     using StorageMerkleCompute =
         MerkleComputeBase<Keccak256Hasher, StorageLeafProcessor>;
+    using BlockStorageMerkleCompute =
+        MerkleComputeBase<Blake3Hasher, StorageLeafProcessor>;
 
     struct StoragePrefixMerkleCompute final : public EmptyCompute
     {
@@ -450,6 +468,21 @@ namespace
     };
 
     struct StorageRootMerkleCompute final : public StorageMerkleCompute
+    {
+        virtual unsigned
+        compute(unsigned char *const buffer, Node const &node) override
+        {
+            if (node.mask == 0) {
+                return 0;
+            }
+            MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
+            memcpy(buffer, node.data().data(), node.data().size());
+            return sizeof(bytes32_t);
+        }
+    };
+
+    struct BlockStorageRootMerkleCompute final
+        : public BlockStorageMerkleCompute
     {
         virtual unsigned
         compute(unsigned char *const buffer, Node const &node) override
@@ -502,8 +535,10 @@ mpt::Compute &MachineBase::get_compute() const
 
     static AccountMerkleCompute account_compute;
     static AccountRootMerkleCompute account_root_compute;
-    static StorageMerkleCompute storage_compute;
     static StorageRootMerkleCompute storage_root_compute;
+    static BlockStorageRootMerkleCompute block_storage_root_compute;
+    static StorageMerkleCompute storage_compute;
+    static BlockStorageMerkleCompute block_storage_compute;
     static StoragePrefixMerkleCompute storage_prefix_compute;
 
     static VarLenMerkleCompute<Keccak256Hasher> generic_merkle_compute;
@@ -531,10 +566,16 @@ mpt::Compute &MachineBase::get_compute() const
             return storage_prefix_compute;
         }
         else if (depth == prefix_length + 2 * sizeof(bytes32_t) + 1) {
-            return storage_root_compute;
+            if (storage_type == StorageType::Storage) {
+                return storage_root_compute;
+            }
+            return block_storage_root_compute;
         }
         else {
-            return storage_compute;
+            if (storage_type == StorageType::Storage) {
+                return storage_compute;
+            }
+            return block_storage_compute;
         }
     }
     else if (table == TableType::Receipt) {
@@ -585,6 +626,16 @@ void MachineBase::down(unsigned char const nibble)
          nibble == WITHDRAWAL_NIBBLE || nibble == OMMER_NIBBLE ||
          nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE) ||
         depth != prefix_length);
+    if (table == TableType::State &&
+        depth == prefix_length + 2 * sizeof(bytes32_t) + 1) {
+        if (nibble == STORAGE_PREFIX_NIBBLE) {
+            storage_type = StorageType::Storage;
+        }
+        else {
+            MONAD_ASSERT(nibble == BLOCK_STORAGE_PREFIX_NIBBLE);
+            storage_type = StorageType::BlockStorage;
+        }
+    }
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
         if (nibble == STATE_NIBBLE) {
@@ -632,6 +683,9 @@ void MachineBase::up(size_t const n)
     }
     if (MONAD_UNLIKELY(depth < TOP_NIBBLE_PREFIX_LEN)) {
         trie_section = TrieType::Undefined;
+    }
+    if (MONAD_UNLIKELY(depth <= prefix_len() + 2 * sizeof(bytes32_t))) {
+        storage_type = StorageType::Storage;
     }
 }
 

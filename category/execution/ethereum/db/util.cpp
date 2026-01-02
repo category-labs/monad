@@ -801,6 +801,15 @@ byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)
     return rlp::encode_list2(encoded_storage);
 }
 
+byte_string encode_block_storage_db(bytes32_t const &key, bytes4k_t const &val)
+{
+    byte_string encoded_storage;
+    encoded_storage += rlp::encode_bytes32_compact(key);
+    encoded_storage +=
+        rlp::encode_string2(rlp::zeroless_view(to_byte_string_view(val.bytes)));
+    return rlp::encode_list2(encoded_storage);
+}
+
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_storage_db_raw(byte_string_view &enc)
 {

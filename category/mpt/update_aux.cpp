@@ -381,21 +381,25 @@ void UpdateAuxImpl::set_auto_expire_version_metadata(
     do_(db_metadata_[1].main);
 }
 
-int64_t UpdateAuxImpl::calc_auto_expire_version() noexcept
+int64_t
+UpdateAuxImpl::calc_auto_expire_version(uint64_t upsert_version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     if (db_history_max_version() == INVALID_BLOCK_NUM) {
         return 0;
     }
     auto const min_valid_version = db_history_min_valid_version();
-    if (min_valid_version == db_history_max_version()) {
-        return static_cast<int64_t>(min_valid_version);
+    auto const max_version_post_upsert =
+        std::max(db_history_max_version(), upsert_version);
+    uint64_t min_valid_version_post_upsert = min_valid_version;
+    if (max_version_post_upsert - min_valid_version + 1 >
+        version_history_length()) {
+        min_valid_version_post_upsert =
+            max_version_post_upsert - version_history_length() + 1;
     }
-    auto const min_expire_version =
-        static_cast<uint64_t>(get_auto_expire_version_metadata());
-    return static_cast<int64_t>(
-        min_valid_version > min_expire_version + 1 ? min_expire_version + 2
-                                                   : min_valid_version);
+    return std::min(
+        get_auto_expire_version_metadata() + 2,
+        static_cast<int64_t>(min_valid_version_post_upsert));
 }
 
 void UpdateAuxImpl::rewind_to_match_offsets()
@@ -1122,23 +1126,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         }
     }
 
-    // Erase the earliest valid version if it is going to be outdated after
-    // upserting new version
-    auto const max_version = db_history_max_version();
-    auto const max_version_post_upsert = std::max(version, max_version);
-    if (max_version != INVALID_BLOCK_NUM &&
-        max_version_post_upsert - db_history_min_valid_version() >=
-            version_history_length()) { // exceed history length
-        // erase min_valid_version, must happen before upsert() because that
-        // offset slot in ring buffer may be overwritten thus invalidated in
-        // `upsert()`.
-        erase_versions_up_to_and_including(
-            max_version_post_upsert - version_history_length());
-        MONAD_ASSERT(
-            max_version_post_upsert - db_history_min_valid_version() <
-            version_history_length());
-    }
-    curr_upsert_auto_expire_version = calc_auto_expire_version();
+    curr_upsert_auto_expire_version = calc_auto_expire_version(version);
     UpdateList root_updates;
     byte_string const compact_offsets_bytes =
         serialize((uint32_t)compact_offset_fast) +

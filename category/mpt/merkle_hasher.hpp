@@ -18,6 +18,8 @@
 #include <category/core/keccak.h>
 #include <category/mpt/config.hpp>
 
+#include <blake3.h>
+
 #include <concepts>
 #include <cstddef>
 
@@ -39,6 +41,19 @@ struct Keccak256Hasher
     static void hash(unsigned char const *in, size_t len, unsigned char *out)
     {
         keccak256(in, static_cast<unsigned long>(len), out);
+    }
+};
+
+struct Blake3Hasher
+{
+    static_assert(BLAKE3_OUT_LEN == HASH_SIZE);
+
+    static void hash(unsigned char const *in, size_t len, unsigned char *out)
+    {
+        blake3_hasher hasher;
+        blake3_hasher_init(&hasher);
+        blake3_hasher_update(&hasher, in, len);
+        blake3_hasher_finalize(&hasher, out, BLAKE3_OUT_LEN);
     }
 };
 

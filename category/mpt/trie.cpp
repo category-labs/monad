@@ -1725,6 +1725,16 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
     }
     else {
         MONAD_ASSERT(version == max_version_in_db + 1);
+        // Erase the earliest valid version if it is going to be outdated after
+        // writing a new version, must happen before appending new root offset
+        if (version - aux.db_history_min_valid_version() >=
+            aux.version_history_length()) { // if exceed history length
+            aux.erase_versions_up_to_and_including(
+                version - aux.version_history_length());
+            MONAD_ASSERT(
+                version - aux.db_history_min_valid_version() <
+                aux.version_history_length());
+        }
         aux.append_root_offset(offset_written_to);
     }
     return offset_written_to;

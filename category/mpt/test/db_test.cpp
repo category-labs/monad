@@ -1949,6 +1949,43 @@ TEST_F(OnDiskDbFixture, copy_trie_from_to_same_version)
     verify_dest_state(db, long_dest_prefix);
 }
 
+TEST_F(OnDiskDbFixture, copy_trie_to_dest_with_ancestor_prefix)
+{
+    auto const prefix = 0x0012_bytes;
+
+    uint64_t const src_version = 0;
+    std::deque<monad::byte_string> kv_alloc;
+    for (size_t i = 0; i < 10; ++i) {
+        kv_alloc.emplace_back(keccak_int_to_string(i));
+    }
+    monad::byte_string const kv = keccak_int_to_string(0);
+    root = upsert_updates_flat_list(
+        std::move(root), db, prefix, src_version, make_update(kv, kv));
+
+    Node::SharedPtr dest_root = nullptr;
+    uint64_t const dest_version = 1;
+    UpdateList dest_prefix_updates;
+    Update update{
+        .key = prefix,
+        .value = kv,
+        .incarnation = false,
+        .next = UpdateList{},
+        .version = dest_version};
+    dest_prefix_updates.push_front(update);
+    dest_root = db.upsert(
+        std::move(dest_root), std::move(dest_prefix_updates), dest_version);
+    EXPECT_TRUE(db.find(prefix, dest_version).has_value());
+
+    // copy path to dest where ancestor prefix pre-exists
+    auto const key = concat(NibblesView{prefix}, NibblesView{kv});
+    dest_root = db.copy_trie(root, key, dest_root, key, dest_version, true);
+
+    EXPECT_GT(root->value_len, 0);
+    EXPECT_EQ(root->value(), dest_root->value());
+    EXPECT_TRUE(db.find(prefix, dest_version).has_value());
+    EXPECT_TRUE(db.find(key, dest_version).has_value());
+}
+
 TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
 {
     std::deque<monad::byte_string> kv_alloc;

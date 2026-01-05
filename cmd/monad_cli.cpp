@@ -270,9 +270,10 @@ struct DbStateMachine
                     "Success! Set to proposal block_id {} of version {}",
                     block_id,
                     curr_version);
-                fmt::println("Next: 'table [name]' "
-                             "(state/code/receipt/transaction/callframe) "
-                             "or 'back' to go up");
+                fmt::println(
+                    "Next: 'table [name]' "
+                    "(state/code/receipt/transaction/callframe/blockheader) "
+                    "or 'back' to go up");
             }
             else {
                 fmt::println(
@@ -285,9 +286,10 @@ struct DbStateMachine
                 state = DbState::proposal_or_finalize;
                 fmt::println(
                     "Success! Set to finalized of version {}", curr_version);
-                fmt::println("Next: 'table [name]' "
-                             "(state/code/receipt/transaction/callframe) "
-                             "or 'back' to go up");
+                fmt::println(
+                    "Next: 'table [name]' "
+                    "(state/code/receipt/transaction/callframe/blockheader) "
+                    "or 'back' to go up");
             }
             else {
                 fmt::println(
@@ -410,8 +412,8 @@ void print_help()
         "proposal [block_id] or finalized -- Set the section to query\n"
         "list sections                -- List any proposal or finalized "
         "section in current version\n"
-        "table [state/code/receipt/transaction/callframe] -- Set the table to "
-        "query\n"
+        "table [state/code/receipt/transaction/callframe/blockheader] -- Set "
+        "the table to query\n"
         "get [key [extradata]]        -- Get the value for the given key\n"
         "node_stats                   -- Print node statistics for the given "
         "table\n"
@@ -448,31 +450,50 @@ void do_proposal(DbStateMachine &sm, std::string_view const input)
     }
 }
 
+void read_blockheader(DbStateMachine const &sm)
+{
+    auto const blockheader_query_res = sm.db.find(
+        concat(sm.curr_section_prefix, BLOCKHEADER_NIBBLE), sm.curr_version);
+    if (!blockheader_query_res) {
+        fmt::println(
+            "Could not find block header -- {}",
+            blockheader_query_res.error().message().c_str());
+        return;
+    }
+    auto blockheader_encoded = blockheader_query_res.value().node->value();
+    auto const blockheader_res = rlp::decode_block_header(blockheader_encoded);
+    if (!blockheader_res) {
+        fmt::println(
+            "Could not decode block header -- {}",
+            blockheader_res.error().message().c_str());
+        return;
+    }
+    fmt::print("Block Header: {}\n\n", blockheader_res.value());
+}
+
 void do_table(DbStateMachine &sm, std::string_view const table_name)
 {
-    unsigned char table_nibble = INVALID_NIBBLE;
-    if (table_name == "state") {
-        table_nibble = STATE_NIBBLE;
-    }
-    else if (table_name == "receipt") {
-        table_nibble = RECEIPT_NIBBLE;
-    }
-    else if (table_name == "code") {
-        table_nibble = CODE_NIBBLE;
-    }
-    else if (table_name == "transaction") {
-        table_nibble = TRANSACTION_NIBBLE;
-    }
-    else if (table_name == "callframe") {
-        table_nibble = CALL_FRAME_NIBBLE;
-    }
+    static std::unordered_map<std::string_view, unsigned char> const table_map =
+        {{"state", STATE_NIBBLE},
+         {"code", CODE_NIBBLE},
+         {"receipt", RECEIPT_NIBBLE},
+         {"transaction", TRANSACTION_NIBBLE},
+         {"callframe", CALL_FRAME_NIBBLE},
+         {"blockheader", BLOCKHEADER_NIBBLE}};
 
-    if (table_nibble == INVALID_NIBBLE) {
-        fmt::print("Invalid table provided!\n\n");
-        print_help();
+    auto it = table_map.find(table_name);
+    if (it != table_map.end()) {
+        if (it->second == BLOCKHEADER_NIBBLE) {
+            // Special case: blockheader doesn't need a key, show it immediately
+            read_blockheader(sm);
+        }
+        else {
+            sm.set_table(it->second);
+        }
     }
     else {
-        sm.set_table(table_nibble);
+        fmt::print("Invalid table provided!\n\n");
+        print_help();
     }
 }
 

@@ -34,11 +34,11 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 struct PrecompileSelector
 {
     static constexpr uint32_t GET = abi_encode_selector("get()");
-    static constexpr uint32_t SET = abi_encode_selector("set(uint256)");
+    static constexpr uint32_t UPDATE = abi_encode_selector("update(uint256)");
 };
 
 static_assert(PrecompileSelector::GET == 0x6d4ce63c);
-static_assert(PrecompileSelector::SET == 0x60fe47b1);
+static_assert(PrecompileSelector::UPDATE == 0x82ab890a);
 
 //////////////
 // Gas Costs //
@@ -83,7 +83,7 @@ constexpr uint64_t GET_OP_COST = compute_costs({
     .events = 0,
 });
 
-constexpr uint64_t SET_OP_COST = compute_costs({
+constexpr uint64_t UPDATE_OP_COST = compute_costs({
     .cold_sloads = 1,
     .warm_sstore_nonzero = 1,
     .events = 1,
@@ -92,7 +92,7 @@ constexpr uint64_t SET_OP_COST = compute_costs({
 constexpr uint64_t FALLBACK_COST = 40'000;
 
 static_assert(GET_OP_COST == 8100);
-static_assert(SET_OP_COST == 15275);
+static_assert(UPDATE_OP_COST == 15275);
 
 Result<void> function_not_payable(u256_be const &value)
 {
@@ -121,7 +121,7 @@ u256_be ReserveBalanceContract::get(Address const &sender)
     return value.value_or(DEFAULT_RESERVE_BALANCE_WEI);
 }
 
-void ReserveBalanceContract::set(Address const &sender, u256_be const &value)
+void ReserveBalanceContract::update(Address const &sender, u256_be const &value)
 {
     auto const key = abi_encode_address(sender);
     auto slot = StorageVariable<u256_be>{state_, RESERVE_BALANCE_CA, key};
@@ -166,8 +166,8 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
     switch (signature) {
     case PrecompileSelector::GET:
         return {&ReserveBalanceContract::precompile_get, GET_OP_COST};
-    case PrecompileSelector::SET:
-        return {&ReserveBalanceContract::precompile_set, SET_OP_COST};
+    case PrecompileSelector::UPDATE:
+        return {&ReserveBalanceContract::precompile_set, UPDATE_OP_COST};
     default:
         return {&ReserveBalanceContract::precompile_fallback, FALLBACK_COST};
     }
@@ -201,7 +201,7 @@ Result<byte_string> ReserveBalanceContract::precompile_set(
         return ReserveBalanceError::InvalidInput;
     }
 
-    set(sender, value);
+    update(sender, value);
     return byte_string{abi_encode_bool(true)};
 }
 

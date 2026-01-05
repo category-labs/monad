@@ -61,11 +61,11 @@ TEST_F(ReserveBalance, set_then_get)
     EXPECT_EQ(contract.get(account_a).native(), DEFAULT_RESERVE_BALANCE_WEI);
     EXPECT_EQ(contract.get(account_b).native(), DEFAULT_RESERVE_BALANCE_WEI);
 
-    contract.set(account_a, uint256_t{123});
+    contract.update(account_a, uint256_t{123});
     EXPECT_EQ(contract.get(account_a).native(), 123);
     EXPECT_EQ(contract.get(account_b).native(), DEFAULT_RESERVE_BALANCE_WEI);
 
-    contract.set(account_a, uint256_t{0});
+    contract.update(account_a, uint256_t{0});
     EXPECT_EQ(contract.get(account_a).native(), DEFAULT_RESERVE_BALANCE_WEI);
     EXPECT_EQ(contract.get(account_b).native(), DEFAULT_RESERVE_BALANCE_WEI);
 }
@@ -73,7 +73,8 @@ TEST_F(ReserveBalance, set_then_get)
 struct ReserveBalanceEvm : public ReserveBalance
 {
     static constexpr auto get_selector = abi_encode_selector("get()");
-    static constexpr auto set_selector = abi_encode_selector("set(uint256)");
+    static constexpr auto update_selector =
+        abi_encode_selector("update(uint256)");
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -111,31 +112,31 @@ TEST_F(ReserveBalanceEvm, precompile_get)
         DEFAULT_RESERVE_BALANCE_WEI);
 }
 
-TEST_F(ReserveBalanceEvm, precompile_set_then_get)
+TEST_F(ReserveBalanceEvm, precompile_update_then_get)
 {
     {
-        auto set_input = std::array<uint8_t, 36>{};
-        intx::be::unsafe::store(set_input.data(), set_selector);
+        auto update_input = std::array<uint8_t, 36>{};
+        intx::be::unsafe::store(update_input.data(), update_selector);
+        auto const update_value = u256_be{123};
+        auto const encoded_arg = abi_encode_uint(update_value);
+        std::ranges::copy(encoded_arg.bytes, update_input.data() + 4);
 
-        auto const set_value = u256_be{123};
-        auto const encoded_arg = abi_encode_uint(set_value);
-        std::ranges::copy(encoded_arg.bytes, set_input.data() + 4);
-
-        auto const set_m = evmc_message{
+        auto const update_m = evmc_message{
             .gas = 15275,
             .recipient = RESERVE_BALANCE_CA,
             .sender = account_a,
-            .input_data = set_input.data(),
-            .input_size = set_input.size(),
+            .input_data = update_input.data(),
+            .input_size = update_input.size(),
             .code_address = RESERVE_BALANCE_CA,
         };
 
-        auto const set_result = h.call(set_m);
-        EXPECT_EQ(set_result.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(set_result.gas_left, 0);
-        EXPECT_EQ(set_result.gas_refund, 0);
-        EXPECT_EQ(set_result.output_size, 32);
-        EXPECT_EQ(intx::be::unsafe::load<uint256_t>(set_result.output_data), 1);
+        auto const update_result = h.call(update_m);
+        EXPECT_EQ(update_result.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(update_result.gas_left, 0);
+        EXPECT_EQ(update_result.gas_refund, 0);
+        EXPECT_EQ(update_result.output_size, 32);
+        EXPECT_EQ(
+            intx::be::unsafe::load<uint256_t>(update_result.output_data), 1);
     }
 
     {
@@ -162,7 +163,7 @@ TEST_F(ReserveBalanceEvm, precompile_set_then_get)
 
     {
         auto reset_input = std::array<uint8_t, 36>{};
-        intx::be::unsafe::store(reset_input.data(), set_selector);
+        intx::be::unsafe::store(reset_input.data(), update_selector);
 
         auto const reset_m = evmc_message{
             .gas = 15275,

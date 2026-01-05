@@ -39,7 +39,7 @@ public:
 
     u256_be get(Address const &);
 
-    void set(Address const &, u256_be const &);
+    void update(Address const &, u256_be const &);
 
 private:
     /////////////

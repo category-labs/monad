@@ -80,7 +80,7 @@ struct ReserveBalanceEvm : public ReserveBalance
     NoopCallTracer call_tracer;
     MonadDevnet chain;
 
-    EvmcHost<MonadTraits<MONAD_FOUR>> h{
+    EvmcHost<MonadTraits<MONAD_NEXT>> h{
         call_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,

@@ -200,11 +200,6 @@ set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK)
 # tbb
 find_package(TBB REQUIRED)
 
-# thread-safe-lru
-add_library(thread_safe_lru INTERFACE)
-target_include_directories(thread_safe_lru
-                           INTERFACE "third_party/thread-safe-lru")
-
 # unordered_dense
 add_subdirectory("third_party/unordered_dense")
 

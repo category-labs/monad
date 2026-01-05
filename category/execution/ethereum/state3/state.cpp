@@ -550,8 +550,7 @@ void State::set_code(Address const &address, byte_string_view const code)
     }
 
     auto const code_hash = to_bytes(keccak256(code));
-    code_[code_hash] =
-        vm().try_insert_varcode(code_hash, vm::make_shared_intercode(code));
+    code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     account.value().code_hash = code_hash;
 }
 

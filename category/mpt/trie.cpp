@@ -30,6 +30,7 @@
 #include <category/mpt/update.hpp>
 #include <category/mpt/upward_tnode.hpp>
 #include <category/mpt/util.hpp>
+#include <category/mpt/fiber_write_utils.hpp>
 
 #include <quill/Quill.h>
 
@@ -1729,6 +1730,142 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
         // writing a new version, must happen before appending new root offset
         if (version - aux.db_history_min_valid_version() >=
             aux.version_history_length()) { // if exceed history length
+            aux.erase_versions_up_to_and_including(
+                version - aux.version_history_length());
+            MONAD_ASSERT(
+                version - aux.db_history_min_valid_version() <
+                aux.version_history_length());
+        }
+        aux.append_root_offset(offset_written_to);
+    }
+    return offset_written_to;
+}
+
+// ============================================================================
+// Fiber-based write functions
+// These provide an alternative to the sender-receiver pattern above.
+// They yield the fiber when waiting for IO instead of using callbacks.
+// ============================================================================
+
+// Write a node to disk using fiber-based IO. Yields fiber when buffer is full.
+// Returns the offset where the node was written.
+chunk_offset_t fiber_write_node(
+    UpdateAuxImpl &aux, FiberWriteBuffer &buffer, Node const &node)
+{
+    auto const size = node.get_disk_size();
+
+    // Check if node fits in current buffer
+    if (size <= buffer.remaining()) {
+        // Simple case: node fits in buffer
+        auto const offset = buffer.current_offset();
+        auto *where = buffer.reserve(size);
+        MONAD_DEBUG_ASSERT(where != nullptr);
+        serialize_node_to_buffer(
+            reinterpret_cast<unsigned char *>(where), size, node, size);
+        buffer.commit(size);
+        return offset;
+    }
+
+    // Node doesn't fit in current buffer. We need to handle:
+    // 1. Flush current buffer if it has data
+    // 2. Check if node will fit in chunk (may need new chunk)
+    // 3. Serialize node, potentially across multiple buffers
+
+    if (buffer.written_bytes() > 0) {
+        buffer.flush();
+    }
+
+    // Check if node fits in remaining chunk capacity
+    auto const chunk_remaining =
+        aux.io->chunk_capacity(buffer.current_offset().id) -
+        buffer.current_offset().offset;
+
+    if (size > chunk_remaining) {
+        // Node won't fit in current chunk. Get a new chunk.
+        auto *ci = aux.db_metadata()->free_list_end();
+        MONAD_ASSERT(ci != nullptr); // out of free chunks
+        auto const new_chunk_id = ci->index(aux.db_metadata());
+        chunk_offset_t new_offset{new_chunk_id, 0};
+        buffer.flush_and_reset(new_offset);
+    }
+
+    // Record the offset where node starts
+    auto const node_offset = buffer.current_offset();
+
+    // Serialize node, handling potential buffer overflow
+    unsigned offset_in_node = 0;
+    while (offset_in_node < size) {
+        auto const bytes_to_write =
+            std::min(buffer.remaining(), static_cast<size_t>(size - offset_in_node));
+        auto *where = buffer.reserve(bytes_to_write);
+        MONAD_DEBUG_ASSERT(where != nullptr);
+        serialize_node_to_buffer(
+            reinterpret_cast<unsigned char *>(where),
+            static_cast<unsigned>(bytes_to_write),
+            node,
+            size,
+            offset_in_node);
+        buffer.commit(bytes_to_write);
+        offset_in_node += static_cast<unsigned>(bytes_to_write);
+
+        if (offset_in_node < size && buffer.remaining() == 0) {
+            // Buffer full but node not done - flush and continue
+            buffer.flush();
+        }
+    }
+
+    return node_offset;
+}
+
+// Write a node and set the spare bits encoding disk pages.
+// This is the fiber equivalent of async_write_node_set_spare.
+chunk_offset_t fiber_write_node_set_spare(
+    UpdateAuxImpl &aux, FiberWriteBuffer &buffer, Node &node)
+{
+    auto offset = fiber_write_node(aux, buffer, node);
+    unsigned const pages = num_pages(offset.offset, node.get_disk_size());
+    offset.set_spare(static_cast<uint16_t>(node_disk_pages_spare_15{pages}));
+    return offset;
+}
+
+// Fiber version of write_new_root_node.
+// This writes the root node and flushes using fiber-based IO.
+// The caller must ensure they're running in a fiber context where yielding is safe.
+chunk_offset_t fiber_write_new_root_node(
+    UpdateAuxImpl &aux, FiberWriteBuffer &buffer, Node &root,
+    uint64_t const version)
+{
+    auto const offset_written_to = fiber_write_node_set_spare(aux, buffer, root);
+
+    // Flush remaining buffered data
+    buffer.flush();
+
+    // Advance fast ring's latest offset in db metadata
+    // We only support fast writer for now in fiber path
+    aux.advance_db_offsets_to(buffer.current_offset(), aux.node_writer_slow->sender().offset());
+
+    // Update root offset (same logic as non-fiber version)
+    auto const max_version_in_db = aux.db_history_max_version();
+    if (MONAD_UNLIKELY(max_version_in_db == INVALID_BLOCK_NUM)) {
+        aux.fast_forward_next_version(version);
+        aux.append_root_offset(offset_written_to);
+        MONAD_ASSERT(aux.db_history_range_lower_bound() == version);
+    } else if (version <= max_version_in_db) {
+        MONAD_ASSERT(
+            version >=
+            ((max_version_in_db >= aux.version_history_length())
+                 ? max_version_in_db - aux.version_history_length() + 1
+                 : 0));
+        auto const prev_lower_bound = aux.db_history_range_lower_bound();
+        aux.update_root_offset(version, offset_written_to);
+        MONAD_ASSERT(
+            aux.db_history_range_lower_bound() ==
+            std::min(version, prev_lower_bound));
+    } else {
+        MONAD_ASSERT(version == max_version_in_db + 1);
+        // Erase the earliest valid version if it is going to be outdated
+        if (version - aux.db_history_min_valid_version() >=
+            aux.version_history_length()) {
             aux.erase_versions_up_to_and_including(
                 version - aux.version_history_length());
             MONAD_ASSERT(

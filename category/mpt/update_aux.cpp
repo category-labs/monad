@@ -1095,8 +1095,6 @@ Node::SharedPtr UpdateAuxImpl::do_update(
     uint64_t const version, bool const compaction, bool const can_write_to_fast,
     bool const write_root)
 {
-    auto g(unique_lock());
-    auto g2(set_current_upsert_tid());
 
     if (is_in_memory()) {
         UpdateList root_updates;
@@ -1332,8 +1330,6 @@ void UpdateAuxImpl::move_trie_version_forward(
     MONAD_ASSERT(
         dest > src && dest != INVALID_BLOCK_NUM &&
         dest >= db_history_max_version());
-    auto g(unique_lock());
-    auto g2(set_current_upsert_tid());
     auto const offset = get_root_offset_at_version(src);
     update_root_offset(src, INVALID_OFFSET);
     // Must erase versions that will fall out of history range first

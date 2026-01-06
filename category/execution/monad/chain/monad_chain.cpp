@@ -28,7 +28,6 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
-#include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
@@ -78,8 +77,7 @@ bool dipped_into_reserve(
             [&] -> std::optional<uint256_t> {
             uint256_t const max_reserve =
                 ReserveBalanceContract{state}.get(addr).native();
-            uint256_t const orig_balance =
-                intx::be::load<uint256_t>(state.get_original_balance(addr));
+            uint256_t const orig_balance = state.get_original_balance(addr);
             uint256_t const reserve = std::min(max_reserve, orig_balance);
             if (addr == sender) {
                 if (gas_fees > reserve) { // must be dipping
@@ -89,8 +87,7 @@ bool dipped_into_reserve(
             }
             return reserve;
         }();
-        uint256_t const curr_balance =
-            intx::be::load<uint256_t>(state.get_balance(addr));
+        uint256_t const curr_balance = state.get_balance(addr);
         if (!violation_threshold.has_value() ||
             curr_balance < violation_threshold.value()) {
             if (addr == sender) {
@@ -187,6 +184,57 @@ Result<void> MonadChain::validate_transaction(
         base_fee_per_gas,
         authorities);
     MONAD_ASSERT(false);
+}
+
+template <Traits traits>
+bool revert_monad_transaction(
+    Address const &sender, Transaction const &tx,
+    uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
+    MonadChainContext const &ctx)
+{
+    if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+        return dipped_into_reserve<traits>(
+            sender, tx, base_fee_per_gas, i, ctx, state);
+    }
+    else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
+        return false;
+    }
+}
+
+EXPLICIT_MONAD_TRAITS(revert_monad_transaction);
+
+bool can_sender_dip_into_reserve(
+    Address const &sender, uint64_t const i, bool const sender_is_delegated,
+    MonadChainContext const &ctx)
+{
+    if (sender_is_delegated) { // delegated accounts cannot dip
+        return false;
+    }
+
+    // check pending blocks
+    for (ankerl::unordered_dense::segmented_set<Address> const
+             *const senders_and_authorities :
+         {ctx.grandparent_senders_and_authorities,
+          ctx.parent_senders_and_authorities}) {
+        if (senders_and_authorities &&
+            senders_and_authorities->contains(sender)) {
+            return false;
+        }
+    }
+
+    // check current block
+    if (ctx.senders_and_authorities.contains(sender)) {
+        for (size_t j = 0; j <= i; ++j) {
+            if (j < i && sender == ctx.senders.at(j)) {
+                return false;
+            }
+            if (std::ranges::contains(ctx.authorities.at(j), sender)) {
+                return false;
+            }
+        }
+    }
+
+    return true; // Allow dipping into reserve if no restrictions found
 }
 
 MONAD_NAMESPACE_END

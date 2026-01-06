@@ -43,7 +43,6 @@
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
-#include <category/execution/monad/reserve_balance.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>

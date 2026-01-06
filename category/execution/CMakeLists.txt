@@ -221,8 +221,6 @@ add_library(
   "monad/monad_precompiles_impl.cpp"
   "monad/monad_transaction_gas.cpp"
   "monad/monad_transaction_gas.hpp"
-  "monad/reserve_balance.cpp"
-  "monad/reserve_balance.hpp"
   "monad/system_sender.hpp"
   "monad/validate_monad_block.cpp"
   "monad/validate_monad_block.hpp"

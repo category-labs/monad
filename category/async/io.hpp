@@ -395,6 +395,24 @@ public:
                                       : &uring_.get_ring();
     }
 
+    // Get the read ring (for fiber scheduler to poll completions)
+    [[nodiscard]] io_uring *read_ring() noexcept
+    {
+        return &uring_.get_ring();
+    }
+
+    // Submit a read request for fiber-based IO.
+    // Unlike sender-receiver reads, this takes a raw user_data pointer that will
+    // be returned with the CQE. The caller is responsible for managing the
+    // completion (typically via CompletionToken and fiber yield).
+    //
+    // @param buffer    Buffer to read into (must remain valid until CQE arrives)
+    // @param offset    Chunk offset to read from
+    // @param user_data Pointer stored in SQE user_data, returned in CQE
+    void submit_fiber_read(
+        std::span<std::byte> buffer, chunk_offset_t offset,
+        void *user_data);
+
     /* This isn't the ideal place to put this, but only AsyncIO knows how to
     get i/o buffers into which to place connected i/o states.
     */
@@ -511,6 +529,19 @@ public:
         }
         return write_buffer_ptr(
             (std::byte *)mem, detail::write_buffer_deleter(this));
+    }
+
+    // Non-blocking read buffer allocation - returns nullptr if no buffer
+    // available. For use with fiber-based reads where the caller will yield
+    // instead of blocking.
+    read_buffer_ptr try_get_read_buffer()
+    {
+        unsigned char *mem = rd_pool_.alloc();
+        if (mem == nullptr) {
+            return read_buffer_ptr{};
+        }
+        return read_buffer_ptr(
+            (std::byte *)mem, detail::read_buffer_deleter(this));
     }
 
 private:

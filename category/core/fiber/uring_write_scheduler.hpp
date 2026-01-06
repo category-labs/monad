@@ -44,14 +44,17 @@ public:
     }
 };
 
-// Completion token stored in io_uring sqe user_data.
+// Completion token stored in io_uring sqe user_data for both reads and writes.
 // Allocated on fiber stack - remains valid while fiber is suspended.
-struct WriteCompletionToken
+struct CompletionToken
 {
     context *waiting_fiber{nullptr};
     int32_t result{0};
     bool completed{false};
 };
+
+// Backward compatibility alias
+using WriteCompletionToken = CompletionToken;
 
 // Custom Boost.Fiber scheduler for io_uring write operations.
 //

@@ -19,6 +19,8 @@
 #include <category/core/assert.h>
 #include <category/core/fiber/uring_write_scheduler.hpp>
 #include <category/mpt/config.hpp>
+#include <category/mpt/node.hpp>
+#include <category/mpt/util.hpp>
 
 #include <boost/fiber/context.hpp>
 #include <boost/fiber/operations.hpp>
@@ -29,10 +31,9 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-// Poll write ring for completions and wake any waiting fibers.
-// This should be called regularly from the hot loop to process write completions.
+// Poll a single io_uring ring for completions and wake waiting fibers.
 // Returns the number of completions processed.
-inline size_t poll_write_completions(io_uring *ring)
+inline size_t poll_ring_completions(io_uring *ring)
 {
     if (ring == nullptr) {
         return 0;
@@ -46,12 +47,14 @@ inline size_t poll_write_completions(io_uring *ring)
         void *user_data = io_uring_cqe_get_data(cqe);
         if (user_data != nullptr) {
             auto *token =
-                static_cast<monad::fiber::WriteCompletionToken *>(user_data);
+                static_cast<monad::fiber::CompletionToken *>(user_data);
             token->result = cqe->res;
             token->completed = true;
 
             // Wake up the waiting fiber using standard scheduler
-            if (token->waiting_fiber != nullptr) {
+            // Only schedule if the fiber isn't already in the ready queue
+            if (token->waiting_fiber != nullptr &&
+                !token->waiting_fiber->ready_is_linked()) {
                 auto *ctx = token->waiting_fiber;
                 ctx->get_scheduler()->schedule(ctx);
             }
@@ -61,6 +64,17 @@ inline size_t poll_write_completions(io_uring *ring)
     }
 
     return count;
+}
+
+// Backward compatibility aliases for explicit tracking
+inline size_t poll_read_completions(io_uring *ring)
+{
+    return poll_ring_completions(ring);
+}
+
+inline size_t poll_write_completions(io_uring *ring)
+{
+    return poll_ring_completions(ring);
 }
 
 // Acquire a write buffer, yielding the fiber if none available.
@@ -85,6 +99,67 @@ inline async::AsyncIO::write_buffer_ptr fiber_get_write_buffer(
         // which may free buffers as writes complete
         boost::this_fiber::yield();
     }
+}
+
+// Acquire a read buffer, yielding the fiber if none available.
+// Similar to fiber_get_write_buffer but for read operations.
+inline async::AsyncIO::read_buffer_ptr fiber_get_read_buffer(async::AsyncIO &io)
+{
+    while (true) {
+        auto buf = io.try_get_read_buffer();
+        if (buf) {
+            return buf;
+        }
+        boost::this_fiber::yield();
+    }
+}
+
+// Read a node from disk using fiber-based IO.
+// This replaces async_read + node_receiver_t pattern with a simpler
+// synchronous-looking interface that yields the fiber during IO.
+//
+// @param io The AsyncIO instance
+// @param offset The chunk offset to read from (includes page count in spare)
+// @return The deserialized node
+inline Node::SharedPtr fiber_read_node(
+    async::AsyncIO &io, chunk_offset_t offset)
+{
+    // Calculate read parameters from offset
+    auto const num_pages = node_disk_pages_spare_15{offset}.to_pages();
+    auto const bytes_to_read =
+        static_cast<unsigned>(num_pages << DISK_PAGE_BITS);
+    auto const rd_offset_value = round_down_align<DISK_PAGE_BITS>(offset.offset);
+    auto const buffer_offset =
+        static_cast<uint16_t>(offset.offset - rd_offset_value);
+
+    // Create page-aligned read offset
+    chunk_offset_t rd_offset = offset;
+    rd_offset.offset = rd_offset_value & chunk_offset_t::max_offset;
+    rd_offset.set_spare(0);
+
+    // Get read buffer (may yield if none available)
+    auto buffer = fiber_get_read_buffer(io);
+
+    // Create completion token on stack
+    monad::fiber::CompletionToken token;
+    token.waiting_fiber = boost::fibers::context::active();
+
+    // Submit read
+    io.submit_fiber_read(
+        std::span<std::byte>(buffer.get(), bytes_to_read), rd_offset, &token);
+
+    // Yield until completion
+    while (!token.completed) {
+        boost::this_fiber::yield();
+    }
+
+    MONAD_ASSERT(token.result >= 0);
+    MONAD_ASSERT(token.result == static_cast<int32_t>(bytes_to_read));
+
+    // Deserialize node from buffer
+    return deserialize_node_from_buffer(
+        reinterpret_cast<unsigned char const *>(buffer.get()) + buffer_offset,
+        bytes_to_read - buffer_offset);
 }
 
 // Fiber-based write buffer for accumulating node data and flushing to disk.
@@ -193,7 +268,7 @@ public:
         }
 
         // Create completion token on stack - valid while fiber is suspended
-        monad::fiber::WriteCompletionToken token;
+        monad::fiber::CompletionToken token;
         token.waiting_fiber = boost::fibers::context::active();
 
         // Submit write via AsyncIO which handles chunk-to-file-offset conversion

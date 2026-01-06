@@ -500,6 +500,41 @@ void AsyncIO::submit_fiber_write(
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(wr_ring));
 }
 
+void AsyncIO::submit_fiber_read(
+    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+    void *user_data)
+{
+    MONAD_ASSERT(user_data != nullptr);
+    MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+    MONAD_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
+
+#ifndef NDEBUG
+    memset(buffer.data(), 0xff, buffer.size());
+#endif
+
+    auto const &ci = seq_chunks_[chunk_and_offset.id];
+    auto *const rd_ring = &uring_.get_ring();
+    struct io_uring_sqe *sqe = io_uring_get_sqe(rd_ring);
+    MONAD_ASSERT(sqe);
+
+    io_uring_prep_read_fixed(
+        sqe,
+        ci.io_uring_read_fd,
+        buffer.data(),
+        static_cast<unsigned int>(buffer.size()),
+        ci.chunk.read_fd().second + chunk_and_offset.offset,
+        0);
+    sqe->flags |= IOSQE_FIXED_FILE;
+    // Default priority for fiber reads
+    sqe->ioprio = 0;
+
+    io_uring_sqe_set_data(sqe, user_data);
+    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(rd_ring));
+
+    ++records_.nreads;
+    records_.bytes_read += buffer.size();
+}
+
 void AsyncIO::poll_uring_while_submission_queue_full_()
 {
     auto *ring = &uring_.get_ring();

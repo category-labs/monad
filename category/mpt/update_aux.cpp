@@ -19,17 +19,23 @@
 #include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/fiber/uring_write_scheduler.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/unaligned.hpp>
 #include <category/core/util/stopwatch.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
+#include <category/mpt/fiber_write_utils.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
 #include <quill/Quill.h>
+
+#include <boost/fiber/algo/algorithm.hpp>
+#include <boost/fiber/fiber.hpp>
+#include <boost/fiber/operations.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -1074,6 +1080,9 @@ void UpdateAuxImpl::reset_node_writers()
         physical_to_virtual(node_writer_fast->sender().offset())};
     last_block_end_offset_slow_ = compact_virtual_chunk_offset_t{
         physical_to_virtual(node_writer_slow->sender().offset())};
+
+    // Note: fiber write buffers are lazily initialized in do_update() to avoid
+    // consuming write buffers until they're actually needed.
 }
 
 /* upsert() supports both on disk and in memory db updates. User should
@@ -1107,43 +1116,102 @@ Node::SharedPtr UpdateAuxImpl::do_update(
             *this, version, sm, std::move(prev_root), std::move(root_updates));
     }
     MONAD_ASSERT(is_on_disk());
+
+    // Install fiber scheduler if not already installed on this thread.
+    // This enables fiber-based IO for the upsert path.
+    if (monad::fiber::UringWriteFiberScheduler::current_scheduler == nullptr) {
+        boost::fibers::use_scheduling_algorithm<
+            monad::fiber::UringWriteFiberScheduler>(io->write_ring());
+    }
+
     set_can_write_to_fast(can_write_to_fast);
 
-    if (prev_root) {
-        // previous compaction offset
-        std::tie(compact_offset_fast, compact_offset_slow) =
-            deserialize_compaction_offsets(prev_root->value());
+    // Lazily initialize persistent fiber write buffers on first do_update().
+    // These maintain their position across do_update() calls, matching how
+    // node_writer_fast/slow work in the sender-receiver path.
+    if (!fiber_write_buffer_) {
+        auto const fast_start_offset = get_start_of_wip_fast_offset();
+        auto const slow_start_offset = get_start_of_wip_slow_offset();
+        fiber_write_buffer_ = std::make_unique<FiberWriteBuffer>(*io, fast_start_offset);
+        fiber_write_buffer_slow_ = std::make_unique<FiberWriteBuffer>(*io, slow_start_offset);
     }
-    if (compaction) {
-        if (enable_dynamic_history_length_) {
-            // WARNING: this step may remove historical versions and free disk
-            // chunks
-            adjust_history_length_based_on_disk_usage();
-        }
-        if (!version_is_valid_ondisk(version)) {
-            // only advance compaction progress for non existent version
-            advance_compact_offsets();
-        }
-    }
+    fiber_write_buffer = fiber_write_buffer_.get();
+    fiber_write_buffer_slow = fiber_write_buffer_slow_.get();
 
-    curr_upsert_auto_expire_version = calc_auto_expire_version(version);
-    UpdateList root_updates;
-    byte_string const compact_offsets_bytes =
-        serialize((uint32_t)compact_offset_fast) +
-        serialize((uint32_t)compact_offset_slow);
-    auto root_update = make_update(
-        {}, compact_offsets_bytes, false, std::move(updates), version);
-    root_updates.push_front(root_update);
-
+    // Run the upsert work in a fiber to enable fiber-based IO.
+    Node::SharedPtr root;
     Stopwatch<std::chrono::microseconds> upsert_timer;
-    auto root = upsert(
-        *this,
-        version,
-        sm,
-        std::move(prev_root),
-        std::move(root_updates),
-        write_root);
-    set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
+    bool upsert_done = false;
+    boost::fibers::fiber upsert_fiber([&]() {
+        if (prev_root) {
+            // previous compaction offset
+            std::tie(compact_offset_fast, compact_offset_slow) =
+                deserialize_compaction_offsets(prev_root->value());
+        }
+        if (compaction) {
+            if (enable_dynamic_history_length_) {
+                // WARNING: this step may remove historical versions and free
+                // disk chunks
+                adjust_history_length_based_on_disk_usage();
+            }
+            if (!version_is_valid_ondisk(version)) {
+                // only advance compaction progress for non existent version
+                advance_compact_offsets();
+            }
+        }
+
+        curr_upsert_auto_expire_version = calc_auto_expire_version(version);
+        UpdateList root_updates;
+        byte_string const compact_offsets_bytes =
+            serialize((uint32_t)compact_offset_fast) +
+            serialize((uint32_t)compact_offset_slow);
+        auto root_update = make_update(
+            {}, compact_offsets_bytes, false, std::move(updates), version);
+        root_updates.push_front(root_update);
+
+        root = upsert(
+            *this,
+            version,
+            sm,
+            std::move(prev_root),
+            std::move(root_updates),
+            write_root);
+        set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
+        upsert_done = true;
+    });
+
+    // Poll completions and run fiber scheduler until upsert completes.
+    // We cannot use join() directly because it suspends main context without
+    // polling io_uring, which would deadlock when fibers yield waiting for IO.
+    while (!upsert_done) {
+        // Poll write completions to wake any waiting fibers.
+        // NOTE: Read ring polling is not yet enabled - reads still use
+        // sender-receiver path which has different completion handling.
+        poll_write_completions(io->write_ring());
+        // Yield to let the upsert fiber and scheduler run
+        boost::this_fiber::yield();
+    }
+    // Join the fiber to ensure clean shutdown
+    upsert_fiber.join();
+
+    // Always advance db offsets to match fiber write buffer positions.
+    // This ensures the next do_update() starts from the correct offset,
+    // even when write_root=false (which skips fiber_write_new_root_node).
+    advance_db_offsets_to(
+        fiber_write_buffer_->current_offset(),
+        fiber_write_buffer_slow_->current_offset());
+
+    // Release fiber write buffer pointers and unique_ptrs to return write
+    // buffers to the pool. New buffers will be created on next do_update().
+    fiber_write_buffer = nullptr;
+    fiber_write_buffer_slow = nullptr;
+    fiber_write_buffer_.reset();
+    fiber_write_buffer_slow_.reset();
+
+    // Reset sender-receiver node writers to sync their positions with the
+    // chunk positions updated by fiber writes. This ensures the worker thread
+    // (copy_trie_to_dest) can write at the correct offsets.
+    reset_node_writers();
 
     auto const upsert_duration = upsert_timer.elapsed();
     if (compaction) {

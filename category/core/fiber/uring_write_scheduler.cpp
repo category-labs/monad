@@ -101,16 +101,16 @@ void UringWriteFiberScheduler::suspend_until(
     std::chrono::steady_clock::time_point const & /*abs_time*/) noexcept
 {
     // Called by dispatcher when no fibers are ready.
-    // We do NOT block on io_uring here - the hot loop handles polling.
-    // This keeps the scheduler lifecycle simple.
-
+    // We cannot poll io_uring here because the completion queue may contain
+    // sender-receiver completions with incompatible user_data. Polling must
+    // be done by code that knows what completions to expect.
     flags_.suspenduntil_called = 1;
 
     if (done_) {
         return;
     }
 
-    // Schedule main context to run so hot loop can poll completions
+    // Schedule main context to run so caller can poll completions
     if (main_cntx_ != nullptr && !main_cntx_->ready_is_linked()) {
         main_cntx_->ready_link(ready_queue_);
         ++ready_cnt_;

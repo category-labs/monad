@@ -31,6 +31,7 @@
 
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
+#include <category/mpt/fiber_write_utils.hpp>
 
 #include <category/core/tl_tid.h>
 
@@ -405,6 +406,15 @@ public:
     MONAD_ASYNC_NAMESPACE::AsyncIO *io{nullptr};
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
+
+    // Fiber write buffers for fiber-based upsert. When non-null, write
+    // operations use fiber_write_* functions instead of sender-receiver.
+    // Initialized in reset_node_writers() and persist across do_update() calls.
+    std::unique_ptr<class FiberWriteBuffer> fiber_write_buffer_;      // fast
+    std::unique_ptr<class FiberWriteBuffer> fiber_write_buffer_slow_; // slow
+    // Raw pointer aliases for use within do_update context
+    class FiberWriteBuffer *fiber_write_buffer{nullptr};
+    class FiberWriteBuffer *fiber_write_buffer_slow{nullptr};
 
     detail::TrieUpdateCollectedStats stats;
 
@@ -870,7 +880,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 160 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 192 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>

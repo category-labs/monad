@@ -626,6 +626,9 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
                     ::usleep(50);
                     MONAD_ASSERT(io_uring_sqring_wait(ring) >= 0);
                 }
+                state->num_eagain++;
+                MONAD_ASSERT(
+                    state->num_eagain < 500, "too many retries due to EAGAIN");
                 state->reinitiate();
                 return true;
             }

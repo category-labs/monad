@@ -162,6 +162,11 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     PRIVATE # core
             "cpuset.c"
             "cpuset.h"
+            # fiber (io_uring-based)
+            "fiber/fiber_write.cpp"
+            "fiber/fiber_write.hpp"
+            "fiber/uring_write_scheduler.cpp"
+            "fiber/uring_write_scheduler.hpp"
             # io
             "io/buffers.cpp"
             "io/buffers.hpp"

@@ -1,0 +1,23 @@
+[package]
+name = "monad-event-ring"
+description = "Rust API for monad event rings"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = { workspace = true }
+zstd = { workspace = true }
+
+[dev-dependencies]
+clap = { workspace = true, features = ["derive"] }
+criterion = { workspace = true }
+itertools = { workspace = true }
+
+[build-dependencies]
+bindgen = { workspace = true }
+cc = { workspace = true }
+cmake = { workspace = true }
+
+[[bench]]
+name = "snapshot_raw"
+harness = false

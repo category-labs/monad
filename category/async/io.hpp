@@ -376,6 +376,25 @@ public:
         }
     }
 
+    // Submit a write request for fiber-based IO.
+    // Unlike submit_write_request, this takes a raw user_data pointer that will
+    // be returned with the CQE. The caller is responsible for managing the
+    // completion (typically via WriteCompletionToken and fiber yield).
+    //
+    // @param buffer    Data to write (must remain valid until CQE arrives)
+    // @param offset    Chunk offset to write to
+    // @param user_data Pointer stored in SQE user_data, returned in CQE
+    void submit_fiber_write(
+        std::span<std::byte const> buffer, chunk_offset_t offset,
+        void *user_data);
+
+    // Get the write ring (for fiber scheduler to poll completions)
+    [[nodiscard]] io_uring *write_ring() noexcept
+    {
+        return (wr_uring_ != nullptr) ? &wr_uring_->get_ring()
+                                      : &uring_.get_ring();
+    }
+
     /* This isn't the ideal place to put this, but only AsyncIO knows how to
     get i/o buffers into which to place connected i/o states.
     */
@@ -476,6 +495,19 @@ public:
         unsigned char *mem = wr_pool_.alloc();
         if (mem == nullptr) {
             mem = poll_uring_while_no_io_buffers_(true);
+        }
+        return write_buffer_ptr(
+            (std::byte *)mem, detail::write_buffer_deleter(this));
+    }
+
+    // Non-blocking buffer allocation - returns nullptr if no buffer available.
+    // For use with fiber-based writes where the caller will yield instead of
+    // blocking.
+    write_buffer_ptr try_get_write_buffer()
+    {
+        unsigned char *mem = wr_pool_.alloc();
+        if (mem == nullptr) {
+            return write_buffer_ptr{};
         }
         return write_buffer_ptr(
             (std::byte *)mem, detail::write_buffer_deleter(this));

@@ -457,6 +457,49 @@ void AsyncIO::submit_request_(
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(wr_ring));
 }
 
+void AsyncIO::submit_fiber_write(
+    std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
+    void *user_data)
+{
+    MONAD_ASSERT(user_data != nullptr);
+    MONAD_ASSERT(!rwbuf_.is_read_only());
+    MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+    MONAD_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
+
+    auto const &ci = seq_chunks_[chunk_and_offset.id];
+    auto const offset = ci.chunk.write_fd(buffer.size()).second;
+    // Sanity check to ensure we're appending where expected
+    MONAD_ASSERT_PRINTF(
+        (chunk_and_offset.offset & 0xffff) == (offset & 0xffff),
+        "where we are appending %u is not where we are supposed to be "
+        "appending %llu. Chunk id is %u",
+        (chunk_and_offset.offset & 0xffff),
+        (offset & 0xffff),
+        chunk_and_offset.id);
+
+    auto *const wr_ring =
+        (wr_uring_ != nullptr) ? &wr_uring_->get_ring() : &uring_.get_ring();
+    struct io_uring_sqe *sqe = io_uring_get_sqe(wr_ring);
+    MONAD_ASSERT(sqe);
+
+    io_uring_prep_write_fixed(
+        sqe,
+        ci.io_uring_write_fd,
+        buffer.data(),
+        static_cast<unsigned int>(buffer.size()),
+        offset,
+        wr_ring == &uring_.get_ring());
+    sqe->flags |= IOSQE_FIXED_FILE;
+    if (wr_ring != &uring_.get_ring()) {
+        sqe->flags |= IOSQE_IO_DRAIN;
+    }
+    // Default priority for fiber writes
+    sqe->ioprio = 0;
+
+    io_uring_sqe_set_data(sqe, user_data);
+    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(wr_ring));
+}
+
 void AsyncIO::poll_uring_while_submission_queue_full_()
 {
     auto *ring = &uring_.get_ring();

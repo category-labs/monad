@@ -15,9 +15,11 @@
 
 #pragma once
 
+#include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <memory>
@@ -95,6 +97,7 @@ namespace monad::vm::runtime
             sizeof(typename T::base_type) * T::size;
         static constexpr size_t DEFAULT_MAX_CACHE_BYTE_SIZE = 4096 * alloc_size;
 
+        static_assert(T::alignment >= 32);
         static_assert(alloc_size % T::alignment == 0);
         static_assert(sizeof(CachedAllocatorElement) <= alloc_size);
 
@@ -110,8 +113,9 @@ namespace monad::vm::runtime
         uint8_t *aligned_alloc_cached() const
         {
             if (T::cache_list.empty()) {
-                return reinterpret_cast<uint8_t *>(
+                auto *const p = reinterpret_cast<uint8_t *>(
                     std::aligned_alloc(T::alignment, alloc_size));
+                return p;
             }
             else {
                 return reinterpret_cast<uint8_t *>(T::cache_list.pop());
@@ -122,7 +126,7 @@ namespace monad::vm::runtime
         void debug_clear_cache() const
         {
             while (!T::cache_list.empty()) {
-                std::free(T::cache_list.pop());
+                std::free(T::cache_list.template pop<false>());
             }
         }
 

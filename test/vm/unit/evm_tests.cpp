@@ -341,12 +341,13 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
             icode1, config);
 
     TestFixture::pre_execute(10'000, {});
-    this->result_ = this->vm_.execute_native_entrypoint_raw(
+    auto rt_ctx1 = runtime::Context::from(
         &this->host_.get_interface(),
         this->host_.to_context(),
         &this->msg_,
-        icode1,
-        ncode1->entrypoint());
+        bytecode1);
+    this->result_ =
+        this->vm_.execute_native_entrypoint_raw(rt_ctx1, ncode1->entrypoint());
 
     ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
     ASSERT_EQ(this->result_.gas_left, 10'000 - (3 * 1024 + 1));
@@ -361,12 +362,13 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
             icode2, config);
 
     TestFixture::pre_execute(10'000, {});
-    this->result_ = this->vm_.execute_native_entrypoint_raw(
+    auto rt_ctx2 = runtime::Context::from(
         &this->host_.get_interface(),
         this->host_.to_context(),
         &this->msg_,
-        icode2,
-        ncode2->entrypoint());
+        bytecode2);
+    this->result_ =
+        this->vm_.execute_native_entrypoint_raw(rt_ctx2, ncode2->entrypoint());
 
     ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 
@@ -400,12 +402,13 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
             icode1, config);
 
     TestFixture::pre_execute(10'000, {});
-    this->result_ = this->vm_.execute_native_entrypoint_raw(
+    auto rt_ctx1 = runtime::Context::from(
         &this->host_.get_interface(),
         this->host_.to_context(),
         &this->msg_,
-        icode1,
-        ncode1->entrypoint());
+        bytecode1);
+    this->result_ =
+        this->vm_.execute_native_entrypoint_raw(rt_ctx1, ncode1->entrypoint());
 
     ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
     ASSERT_EQ(this->result_.gas_left, 10'000 - (2 * 1024 + 1 + 2 * 1024 + 1));
@@ -419,12 +422,13 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
             icode2, config);
 
     TestFixture::pre_execute(10'000, {});
-    this->result_ = this->vm_.execute_native_entrypoint_raw(
+    auto rt_ctx2 = runtime::Context::from(
         &this->host_.get_interface(),
         this->host_.to_context(),
         &this->msg_,
-        icode2,
-        ncode2->entrypoint());
+        bytecode2);
+    this->result_ =
+        this->vm_.execute_native_entrypoint_raw(rt_ctx2, ncode2->entrypoint());
 
     ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 
@@ -456,8 +460,6 @@ TYPED_TEST(VMTraitsTest, LoopOutOfGas)
 TYPED_TEST(VMTraitsTest, ShrCeilOffByOneRegression)
 {
     VM vm{};
-    evmc_message msg{};
-    msg.gas = 100;
 
     std::vector<uint8_t> const code(
         {0x63, 0x0f, 0xff, 0xff, 0xff, 0x63, 0x0f, 0xff, 0xff, 0xff, 0xfd});
@@ -466,12 +468,12 @@ TYPED_TEST(VMTraitsTest, ShrCeilOffByOneRegression)
         vm.compiler().template compile<typename TestFixture::Trait>(icode);
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr);
 
-    vm.execute_native_entrypoint_raw(
+    auto rt_ctx = runtime::Context::from(
         &this->host_.get_interface(),
         this->host_.to_context(),
-        &msg,
-        icode,
-        ncode->entrypoint());
+        &this->msg_,
+        code);
+    vm.execute_native_entrypoint_raw(rt_ctx, ncode->entrypoint());
 }
 
 // Compiled directly from the Solidity code in:

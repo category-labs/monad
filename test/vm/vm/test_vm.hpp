@@ -24,6 +24,8 @@
 #include <category/vm/utils/debug.hpp>
 #include <category/vm/vm.hpp>
 
+#include <test/vm/utils/test_memory.hpp>
+
 #include <evmc/evmc.hpp>
 
 #include <evmone/baseline.hpp>
@@ -105,6 +107,7 @@ private:
     monad::vm::CompilerConfig base_config;
     CodeMap<evmone::baseline::CodeAnalysis> code_analyses_;
     CodeMap<monad::vm::SharedIntercode> intercodes_;
+    monad::vm::runtime::Context *rt_ctx_;
 #ifdef MONAD_COMPILER_LLVM
     monad::vm::llvm::VM llvm_vm_;
 #endif

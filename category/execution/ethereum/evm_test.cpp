@@ -74,10 +74,14 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
         Code{},
         BlockHeader{});
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message m{
         .kind = EVMC_CREATE,
         .gas = 20'000,
         .sender = from,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000'000'000'000}; // too much
     intx::be::store(m.value.bytes, v);
@@ -119,11 +123,15 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
         Code{},
         BlockHeader{});
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message m{
         .kind = EVMC_CREATE,
         .depth = 0, // top-level transaction
         .gas = 20'000,
         .sender = from,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000'000'000'000}; // too much balance required
     intx::be::store(m.value.bytes, v);
@@ -184,10 +192,14 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
         Code{},
         BlockHeader{});
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message m{
         .kind = EVMC_CREATE,
         .gas = 20'000,
         .sender = from,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
@@ -232,10 +244,14 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
         Code{},
         BlockHeader{});
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message m{
         .kind = EVMC_CREATE,
         .gas = 20'000,
         .sender = from,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000};
     intx::be::store(m.value.bytes, v);
@@ -279,6 +295,7 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message const m{
         .kind = EVMC_CALL,
         .gas = 400,
@@ -287,7 +304,10 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
         .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size,
         .value = {0},
-        .code_address = code_address};
+        .code_address = code_address,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity()};
 
     auto const result = call<typename TestFixture::Trait>(&h, s, m);
 
@@ -331,6 +351,7 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
     static constexpr char data[] = "hello world";
     static constexpr auto data_size = sizeof(data);
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message const m{
         .kind = EVMC_CALL,
         .gas = 100,
@@ -339,7 +360,10 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
         .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size,
         .value = {0},
-        .code_address = code_address};
+        .code_address = code_address,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity()};
 
     evmc::Result const result = call<typename TestFixture::Trait>(&h, s, m);
 
@@ -416,12 +440,16 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
         TestFixture::Trait::max_initcode_size() <
         std::numeric_limits<size_t>::max()) {
         static_assert(TestFixture::Trait::max_initcode_size() < 0xFFFFFF);
+        auto msg_memory = vm.message_memory_ref();
         evmc_message m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
             .recipient = good_code_address,
             .sender = from,
-            .code_address = good_code_address};
+            .code_address = good_code_address,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = vm.message_memory_capacity()};
 
         auto const result = call<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
@@ -431,12 +459,16 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
     if constexpr (
         TestFixture::Trait::max_initcode_size() <
         std::numeric_limits<size_t>::max()) {
+        auto msg_memory = vm.message_memory_ref();
         evmc_message m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
             .recipient = bad_code_address,
             .sender = from,
-            .code_address = bad_code_address};
+            .code_address = bad_code_address,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = vm.message_memory_capacity()};
 
         auto const result = call<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
@@ -517,12 +549,16 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
         TestFixture::Trait::max_initcode_size() <
         std::numeric_limits<size_t>::max()) {
         static_assert(TestFixture::Trait::max_initcode_size() < 0xFFFFFF);
+        auto msg_memory = vm.message_memory_ref();
         evmc_message m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
             .recipient = good_code_address,
             .sender = from,
-            .code_address = good_code_address};
+            .code_address = good_code_address,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = vm.message_memory_capacity()};
 
         auto const result = call<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
@@ -532,12 +568,16 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
     if constexpr (
         TestFixture::Trait::max_initcode_size() <
         std::numeric_limits<size_t>::max()) {
+        auto msg_memory = vm.message_memory_ref();
         evmc_message m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
             .recipient = bad_code_address,
             .sender = from,
-            .code_address = bad_code_address};
+            .code_address = bad_code_address,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = vm.message_memory_capacity()};
 
         auto const result = call<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
@@ -731,6 +771,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         },
         BlockHeader{});
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message const m{
         .kind = EVMC_CALL,
         .flags = EVMC_DELEGATED,
@@ -738,6 +779,9 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         .recipient = eoa,
         .sender = from,
         .code_address = delegated,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
     };
 
     BlockHashBufferFinalized const block_hash_buffer;
@@ -845,6 +889,7 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         },
         BlockHeader{});
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message const m{
         .kind = EVMC_CALL,
         .flags = EVMC_DELEGATED,
@@ -852,6 +897,9 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         .recipient = eoa,
         .sender = from,
         .code_address = delegated,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
     };
 
     BlockHashBufferFinalized const block_hash_buffer;
@@ -944,12 +992,16 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
         },
         BlockHeader{});
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message const m{
         .kind = EVMC_CALL,
         .gas = 1'000'000,
         .recipient = contract,
         .sender = from,
         .code_address = contract,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
     };
 
     // requires EIP-7702
@@ -1010,12 +1062,16 @@ TYPED_TEST(TraitsTest, cold_account_access)
 
     constexpr auto gas_limit = 1'000'000;
 
+    auto msg_memory = vm.message_memory_ref();
     evmc_message const m{
         .kind = EVMC_CALL,
         .gas = gas_limit,
         .recipient = contract,
         .sender = from,
         .code_address = contract,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
     };
 
     BlockHashBufferFinalized const block_hash_buffer;

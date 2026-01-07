@@ -13,10 +13,32 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/runtime/allocator.hpp>
-#include <category/vm/runtime/cached_allocator.hpp>
+#pragma once
 
-namespace monad::vm::runtime
+#include <category/core/runtime/non_temporal_memory.hpp>
+
+#include <cstdlib>
+
+namespace monad::vm::test
 {
-    thread_local CachedAllocatorList EvmStackAllocatorMeta::cache_list;
+    struct TestMemory
+    {
+        std::uint8_t *data;
+
+        static constexpr std::uint32_t capacity = 4096;
+
+        TestMemory()
+            : data{reinterpret_cast<std::uint8_t *>(
+                  std::aligned_alloc(32, capacity))}
+        {
+            MONAD_VM_ASSERT(data != nullptr);
+            static_assert((capacity & 31) == 0);
+            runtime::non_temporal_bzero(data, capacity);
+        }
+
+        ~TestMemory()
+        {
+            std::free(data);
+        }
+    };
 }

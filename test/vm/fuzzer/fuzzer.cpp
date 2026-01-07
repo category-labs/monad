@@ -30,6 +30,7 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/generator.hpp>
+#include <category/vm/memory_pool.hpp>
 #include <category/vm/utils/debug.hpp>
 
 #include <evmone/constants.hpp>
@@ -498,7 +499,9 @@ static bool toss(Engine &engine, double p)
     return dist(engine);
 }
 
-static void do_run(std::size_t const run_index, arguments const &args)
+static void do_run(
+    monad::vm::MemoryPool &memory_pool, std::size_t const run_index,
+    arguments const &args)
 {
     auto const rev = args.revision;
 
@@ -572,6 +575,7 @@ static void do_run(std::size_t const run_index, arguments const &args)
         }
 
         for (auto j = 0u; j < args.messages; ++j) {
+            auto msg_memory = memory_pool.alloc_ref();
             auto msg = monad::vm::fuzzing::generate_message(
                 focus,
                 engine,
@@ -584,7 +588,9 @@ static void do_run(std::size_t const run_index, arguments const &args)
                     }
 
                     return evmc::bytes{};
-                });
+                },
+                msg_memory.get(),
+                memory_pool.alloc_capacity());
             ++total_messages;
 
             auto const ec = fuzz_iteration(
@@ -604,6 +610,7 @@ static void do_run(std::size_t const run_index, arguments const &args)
 
 static void run_loop(int argc, char **argv)
 {
+    monad::vm::MemoryPool memory_pool{512};
     auto args = parse_args(argc, argv);
     if (args.focus_path) {
         args.focus = parse_generator_focus(*args.focus_path);
@@ -612,7 +619,7 @@ static void run_loop(int argc, char **argv)
     for (auto i = 0u; i < args.runs; ++i) {
         std::cerr << std::format(
             "Fuzzing with seed @ {}: {}\n", msg_rev, args.seed);
-        do_run(i, args);
+        do_run(memory_pool, i, args);
         args.seed = random_engine_t(args.seed)();
     }
 }

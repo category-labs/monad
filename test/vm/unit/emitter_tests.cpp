@@ -26,6 +26,8 @@
 #include <category/vm/runtime/math.hpp>
 #include <category/vm/runtime/types.hpp>
 
+#include <test/vm/utils/test_context.hpp>
+
 #include "test_params.hpp"
 
 #include <asmjit/core/globals.h>
@@ -132,34 +134,19 @@ namespace
         return ret;
     }
 
-    runtime::Context test_context(
+    monad::vm::test::TestContext test_context(
         evmc_tx_context const *tx_context,
         int64_t gas_remaining = (uint64_t{1} << 63) - 1)
     {
-        return runtime::Context{
-            .host = nullptr,
-            .context = nullptr,
-            .gas_remaining = gas_remaining,
-            .gas_refund = 0,
-            .env =
-                {
-                    .evmc_flags = 0,
-                    .depth = 0,
-                    .recipient = max_address(),
-                    .sender = max_address(),
-                    .value = max_bytes32(),
-                    .create2_salt = max_bytes32(),
-                    .input_data = {},
-                    .code = {},
-                    .return_data = {},
-                    .input_data_size = 0,
-                    .code_size = 0,
-                    .return_data_size = 0,
-                    .tx_context = tx_context,
-                },
-            .result = test_result(),
-            .memory = monad::vm::runtime::Memory(runtime::EvmMemoryAllocator{}),
-            .exit_stack_ptr = nullptr};
+        return monad::vm::test::TestContext{[&](auto &x) {
+            x.gas_remaining = gas_remaining;
+            x.env.recipient = max_address();
+            x.env.sender = max_address();
+            x.env.value = max_bytes32();
+            x.env.create2_salt = max_bytes32();
+            x.env.tx_context = tx_context;
+            x.result = test_result();
+        }};
     }
 
     struct TestStackMemoryDeleter
@@ -303,10 +290,10 @@ namespace
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
 
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
         if (dup) {
@@ -383,10 +370,10 @@ namespace
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
 
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
         if (dup) {
@@ -482,10 +469,10 @@ namespace
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
 
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
         ASSERT_EQ(uint256_t::load_le(ret.offset), expected_gas)
@@ -615,10 +602,10 @@ namespace
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
 
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(uint256_t::load_le(ret.offset), 2);
         ASSERT_EQ(uint256_t::load_le(ret.size), 1);
@@ -759,10 +746,10 @@ namespace
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
 
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         if (take_jump) {
             ASSERT_EQ(ret.status, runtime::StatusCode::Revert);
@@ -850,10 +837,10 @@ namespace
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
 
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
         ASSERT_EQ(uint256_t::load_le(ret.offset), 869);
@@ -891,9 +878,9 @@ TEST(Emitter, empty)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(
         static_cast<uint64_t>(ret.status),
@@ -909,9 +896,9 @@ TEST(Emitter, stop)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
 }
@@ -933,9 +920,9 @@ TEST(Emitter, invalid_instruction)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Error);
 }
@@ -951,11 +938,11 @@ TEST(Emitter, gas_decrement_static_work_no_check_1)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context, 5);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
-    ASSERT_EQ(ctx.gas_remaining, 1);
+    ASSERT_EQ(ctx->gas_remaining, 1);
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
 }
 
@@ -972,11 +959,11 @@ TEST(Emitter, gas_decrement_static_work_no_check_2)
     evmc_tx_context tx_context{};
     auto ctx =
         test_context(&tx_context, Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD - 1);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
-    ASSERT_EQ(ctx.gas_remaining, -1);
+    ASSERT_EQ(ctx->gas_remaining, -1);
     ASSERT_EQ(ret.status, runtime::StatusCode::Error);
 }
 
@@ -992,11 +979,11 @@ TEST(Emitter, gas_decrement_static_work_check_non_negative_1)
     evmc_tx_context tx_context{};
     auto ctx =
         test_context(&tx_context, Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
-    ASSERT_EQ(ctx.gas_remaining, -1);
+    ASSERT_EQ(ctx->gas_remaining, -1);
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
 }
 
@@ -1012,11 +999,11 @@ TEST(Emitter, gas_decrement_static_work_check_non_negative_2)
     evmc_tx_context tx_context{};
     auto ctx =
         test_context(&tx_context, Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD + 1);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
-    ASSERT_EQ(ctx.gas_remaining, 0);
+    ASSERT_EQ(ctx->gas_remaining, 0);
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
 }
 
@@ -1038,11 +1025,11 @@ TEST(Emitter, gas_decrement_static_work_check_non_negative_3)
     evmc_tx_context tx_context{};
     auto ctx =
         test_context(&tx_context, 4 * Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
-    ASSERT_EQ(ctx.gas_remaining, -10);
+    ASSERT_EQ(ctx->gas_remaining, -10);
     ASSERT_EQ(ret.status, runtime::StatusCode::Error);
 }
 
@@ -1058,11 +1045,11 @@ TEST(Emitter, gas_decrement_unbounded_work)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context, 5);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
-    ASSERT_EQ(ctx.gas_remaining, -1);
+    ASSERT_EQ(ctx->gas_remaining, -1);
     ASSERT_EQ(ret.status, runtime::StatusCode::Error);
 }
 
@@ -1083,9 +1070,9 @@ TEST(Emitter, return_)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
     ASSERT_EQ(uint256_t::load_le(ret.offset), offset_value);
@@ -1108,9 +1095,9 @@ TEST(Emitter, revert)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Revert);
     ASSERT_EQ(uint256_t::load_le(ret.offset), offset_value);
@@ -1168,10 +1155,10 @@ TEST(Emitter, mov_stack_index_to_avx_reg)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
     ASSERT_EQ(uint256_t::load_le(ret.offset), 2);
@@ -1221,10 +1208,10 @@ TEST(Emitter, mov_literal_to_ymm)
             entrypoint_t entry = emit.finish_contract(rt);
             evmc_tx_context tx_context{};
             auto ctx = test_context(&tx_context);
-            auto const &ret = ctx.result;
+            auto const &ret = ctx->result;
 
             auto stack_memory = test_stack_memory();
-            entry(&ctx, stack_memory.get());
+            entry(&*ctx, stack_memory.get());
 
             ASSERT_EQ(ret.status, runtime::StatusCode::Success);
             ASSERT_EQ(uint256_t::load_le(ret.offset), lit1);
@@ -1284,10 +1271,10 @@ TEST(Emitter, mov_stack_index_to_general_reg)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
     ASSERT_EQ(uint256_t::load_le(ret.offset), 2);
@@ -1357,10 +1344,10 @@ TEST(Emitter, mov_stack_index_to_stack_offset)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
     ASSERT_EQ(uint256_t::load_le(ret.offset), 2);
@@ -1409,10 +1396,10 @@ TEST(Emitter, discharge_deferred_comparison)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0);
@@ -1500,10 +1487,10 @@ TEST(Emitter, discharge_negated_deferred_comparison)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0);
@@ -2439,10 +2426,10 @@ TEST(Emitter, exp)
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
 
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(
             emit.exponential_constant_fold_counter(),
@@ -3178,10 +3165,10 @@ TEST(Emitter, call_runtime_12_arg_fun)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context, 10);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 5);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0);
@@ -3216,10 +3203,10 @@ TEST(Emitter, call_runtime_11_arg_fun)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context, 10);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 5);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0);
@@ -3243,10 +3230,10 @@ TEST(Emitter, runtime_exit)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context, 99);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::OutOfGas);
 }
@@ -3265,10 +3252,10 @@ TEST(Emitter, address)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     for (uint8_t i = 0; i < 20; ++i) {
-        ctx.env.recipient.bytes[19 - i] = i + 1;
+        ctx->env.recipient.bytes[19 - i] = i + 1;
     }
     uint256_t result;
     uint8_t *result_bytes = result.as_bytes();
@@ -3276,7 +3263,7 @@ TEST(Emitter, address)
         result_bytes[i] = i + 1;
     }
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), result);
     ASSERT_EQ(uint256_t::load_le(ret.size), result);
@@ -3296,11 +3283,11 @@ TEST(Emitter, origin)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.tx_origin.bytes[18] = 2;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0x200);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0x200);
@@ -3320,11 +3307,11 @@ TEST(Emitter, gasprice)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.tx_gas_price.bytes[30] = 3;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0x300);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0x300);
@@ -3344,11 +3331,11 @@ TEST(Emitter, gaslimit)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.block_gas_limit = 4;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 4);
     ASSERT_EQ(uint256_t::load_le(ret.size), 4);
@@ -3368,11 +3355,11 @@ TEST(Emitter, coinbase)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.block_coinbase.bytes[18] = 5;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0x500);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0x500);
@@ -3392,11 +3379,11 @@ TEST(Emitter, timestamp)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.block_timestamp = 6;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 6);
     ASSERT_EQ(uint256_t::load_le(ret.size), 6);
@@ -3416,11 +3403,11 @@ TEST(Emitter, number)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.block_number = 7;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 7);
     ASSERT_EQ(uint256_t::load_le(ret.size), 7);
@@ -3441,11 +3428,11 @@ TEST(Emitter, prevrandao)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.block_prev_randao.bytes[30] = 8;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0x800);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0x800);
@@ -3465,11 +3452,11 @@ TEST(Emitter, chainid)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.chain_id.bytes[30] = 9;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0x900);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0x900);
@@ -3489,11 +3476,11 @@ TEST(Emitter, basefee)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.block_base_fee.bytes[30] = 0xa;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0xa00);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0xa00);
@@ -3514,11 +3501,11 @@ TEST(Emitter, blobbasefee)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     tx_context.blob_base_fee.bytes[30] = 0xb;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0xb00);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0xb00);
@@ -3538,10 +3525,10 @@ TEST(Emitter, caller)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     for (uint8_t i = 0; i < 20; ++i) {
-        ctx.env.sender.bytes[19 - i] = i + 1;
+        ctx->env.sender.bytes[19 - i] = i + 1;
     }
     uint256_t result;
     uint8_t *result_bytes = result.as_bytes();
@@ -3549,7 +3536,7 @@ TEST(Emitter, caller)
         result_bytes[i] = i + 1;
     }
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), result);
     ASSERT_EQ(uint256_t::load_le(ret.size), result);
@@ -3570,10 +3557,10 @@ TEST(Emitter, calldatasize)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
-    ctx.env.input_data_size = 5;
+    auto const &ret = ctx->result;
+    ctx->env.input_data_size = 5;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 5);
     ASSERT_EQ(uint256_t::load_le(ret.size), 5);
@@ -3594,10 +3581,10 @@ TEST(Emitter, returndatasize)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
-    ctx.env.return_data_size = 6;
+    auto const &ret = ctx->result;
+    ctx->env.return_data_size = 6;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 6);
     ASSERT_EQ(uint256_t::load_le(ret.size), 6);
@@ -3617,13 +3604,16 @@ TEST(Emitter, msize)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
-    ctx.memory.size = 0xffffffff;
+    auto const &ret = ctx->result;
+    ctx->memory.size = 0xffffffff;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 0xffffffff);
     ASSERT_EQ(uint256_t::load_le(ret.size), 0xffffffff);
+
+    // Override back to 0 to prevent memory invariant violation
+    ctx->memory.size = 0;
 }
 
 TEST(Emitter, MemoryInstructions)
@@ -3694,10 +3684,10 @@ TEST(Emitter, MemoryInstructions)
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
 
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         if (m8) {
             ASSERT_EQ(
@@ -3788,9 +3778,9 @@ TEST(Emitter, mstore_not_bounded_by_bits)
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
     }
@@ -3810,9 +3800,9 @@ TEST(Emitter, mstore_not_bounded_by_bits)
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Error);
     }
@@ -3838,9 +3828,9 @@ TEST(Emitter, mload_not_bounded_by_bits)
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
     }
@@ -3859,9 +3849,9 @@ TEST(Emitter, mload_not_bounded_by_bits)
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        auto const &ret = ctx.result;
+        auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Error);
     }
@@ -3875,8 +3865,8 @@ TEST(Emitter, calldataload)
     for (uint8_t i = 0; i < sizeof(calldata); ++i) {
         calldata[i] = i + 1;
     }
-    ctx.env.input_data = calldata;
-    ctx.env.input_data_size = sizeof(calldata);
+    ctx->env.input_data = calldata;
+    ctx->env.input_data_size = sizeof(calldata);
 
     for (auto loc : all_locations) {
         for (uint8_t used_regs = 0; used_regs <= 3; ++used_regs) {
@@ -3921,10 +3911,10 @@ TEST(Emitter, calldataload)
                 emit.return_();
 
                 entrypoint_t entry = emit.finish_contract(rt);
-                auto const &ret = ctx.result;
+                auto const &ret = ctx->result;
 
                 auto stack_memory = test_stack_memory();
-                entry(&ctx, stack_memory.get());
+                entry(&*ctx, stack_memory.get());
 
                 uint256_t expected;
                 std::memcpy(
@@ -3964,11 +3954,11 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        ctx.env.input_data = input_data.get();
-        ctx.env.input_data_size = input_data_size;
-        auto const &ret = ctx.result;
+        ctx->env.input_data = input_data.get();
+        ctx->env.input_data_size = input_data_size;
+        auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
         ASSERT_EQ(uint256_t::load_le(ret.offset), uint256_t{0xff} << 248);
@@ -3990,11 +3980,11 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        ctx.env.input_data = input_data.get();
-        ctx.env.input_data_size = input_data_size;
-        auto const &ret = ctx.result;
+        ctx->env.input_data = input_data.get();
+        ctx->env.input_data_size = input_data_size;
+        auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
         ASSERT_EQ(uint256_t::load_le(ret.offset), 0);
@@ -4016,11 +4006,11 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
         entrypoint_t entry = emit.finish_contract(rt);
         evmc_tx_context tx_context{};
         auto ctx = test_context(&tx_context);
-        ctx.env.input_data = input_data.get();
-        ctx.env.input_data_size = input_data_size;
-        auto const &ret = ctx.result;
+        ctx->env.input_data = input_data.get();
+        ctx->env.input_data_size = input_data_size;
+        auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
-        entry(&ctx, stack_memory.get());
+        entry(&*ctx, stack_memory.get());
 
         ASSERT_EQ(ret.status, runtime::StatusCode::Success);
         ASSERT_EQ(uint256_t::load_le(ret.offset), 0);
@@ -4042,9 +4032,9 @@ TEST(Emitter, gas)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context, 10);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), 12);
     ASSERT_EQ(uint256_t::load_le(ret.size), 12);
@@ -4064,10 +4054,10 @@ TEST(Emitter, callvalue)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
 
     for (uint8_t i = 0; i < 32; ++i) {
-        ctx.env.value.bytes[31 - i] = i + 1;
+        ctx->env.value.bytes[31 - i] = i + 1;
     }
     uint256_t result;
     uint8_t *result_bytes = result.as_bytes();
@@ -4075,7 +4065,7 @@ TEST(Emitter, callvalue)
         result_bytes[i] = i + 1;
     }
 
-    entry(&ctx, nullptr);
+    entry(&*ctx, nullptr);
 
     ASSERT_EQ(uint256_t::load_le(ret.offset), result);
     ASSERT_EQ(uint256_t::load_le(ret.size), result);
@@ -4128,9 +4118,9 @@ TEST(Emitter, jump_bad_jumpdest)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Error);
 }
@@ -4175,9 +4165,9 @@ TEST(Emitter, jumpi_bad_jumpdest)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Error);
 }
@@ -4336,9 +4326,9 @@ TEST(Emitter, SpillInMovGeneralRegToAvxRegRegression)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
     ASSERT_EQ(uint256_t::load_le(ret.offset), 16);
@@ -4372,9 +4362,9 @@ TEST(Emitter, ReleaseSrcAndDestRegression)
     entrypoint_t entry = emit.finish_contract(rt);
     evmc_tx_context tx_context{};
     auto ctx = test_context(&tx_context);
-    auto const &ret = ctx.result;
+    auto const &ret = ctx->result;
     auto stack_memory = test_stack_memory();
-    entry(&ctx, stack_memory.get());
+    entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
 }

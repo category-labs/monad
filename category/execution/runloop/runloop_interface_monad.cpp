@@ -255,7 +255,6 @@ struct MonadRunloopImpl
     BlockHashBufferFinalized block_hash_buffer;
     fiber::PriorityPool priority_pool;
     uint64_t finalized_block_num;
-    std::unordered_map<Address, AccountOverride> account_override;
 
     MonadRunloopImpl(
         uint64_t chain_id,
@@ -403,7 +402,7 @@ extern "C" void monad_runloop_set_balance(
     MonadRunloopImpl *const runloop = to_impl(pre_runloop);
     auto const addr = to_address(raw_addr);
     auto const bal = to_uint256(raw_bal);
-    runloop->account_override[addr].balance = bal;
+    runloop->db.account_override[addr].balance = bal;
 }
 
 extern "C" void monad_runloop_get_balance(
@@ -413,18 +412,12 @@ extern "C" void monad_runloop_get_balance(
 {
     MonadRunloopImpl *const runloop = to_impl(pre_runloop);
     auto const addr = to_address(raw_addr);
-    auto const over = runloop->account_override.find(addr);
-    if (over != runloop->account_override.end() && over->second.balance) {
-        intx::be::store(result_balance->bytes, over->second.balance);
+    auto const acct = runloop->db.read_account(addr);
+    uint256_t bal;
+    if (acct) {
+        bal = acct->balance;
     }
-    else {
-        auto const acct = runloop->db.read_account(addr);
-        uint256_t bal;
-        if (acct) {
-            bal = acct->balance;
-        }
-        intx::be::store(result_balance->bytes, bal);
-    }
+    intx::be::store(result_balance->bytes, bal);
 }
 
 extern "C" void monad_runloop_get_state_root(

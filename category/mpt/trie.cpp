@@ -523,12 +523,12 @@ void create_node_compute_data_possibly_async(
                 tnode->orig_mask,
                 static_cast<unsigned>(std::countr_zero(tnode->mask)))];
             child_ref.ptr = std::move(read_node);
-            auto const path_size = tnode->path.nibble_size();
+            // No sm.up() needed here - the recursive call handles its own depth
+            // tracking. On main, the async callback used a cloned state machine,
+            // so the sm.up() operated on the clone. In the fiber path, we use
+            // the same state machine instance.
             create_node_compute_data_possibly_async(
                 aux, sm, *parent_ptr, entry_ref, std::move(tnode), false);
-            sm.up(path_size + !parent_ptr->is_sentinel());
-            // In fiber path, upward propagation happens through call stack.
-            // Parent is still owned by caller, so we can't call upward_update.
             return;
         }
     }
@@ -737,6 +737,8 @@ void upsert_(
         // Fiber read - direct synchronous-style IO
         auto read_node = fiber_read_node(*aux.io, old_offset);
         // continue recurse down the trie starting from `old`
+        // No sm.down() before this call, so no sm.up() after - the recursive
+        // call handles its own depth tracking internally.
         upsert_(
             aux,
             sm,
@@ -746,9 +748,6 @@ void upsert_(
             INVALID_OFFSET,
             std::move(updates),
             prefix_index);
-        sm.up(1);
-        // In fiber path, upward propagation happens through call stack.
-        // Parent is still owned by caller, so we can't call upward_update.
         return;
     }
     MONAD_ASSERT(old_prefix_index != INVALID_PATH_INDEX);

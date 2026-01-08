@@ -576,6 +576,12 @@ void UpdateAuxImpl::setup_fiber_write_buffers()
     }
 }
 
+void UpdateAuxImpl::release_fiber_write_buffers()
+{
+    fiber_write_buffer_.reset();
+    fiber_write_buffer_slow_.reset();
+}
+
 #if defined(__GNUC__) && !defined(__clang__)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
@@ -1241,13 +1247,12 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         fiber_write_buffer_slow_->current_offset());
 
     // Release fiber write buffers to return write buffers to the pool.
-    // New buffers will be created on next do_update().
-    fiber_write_buffer_.reset();
-    fiber_write_buffer_slow_.reset();
+    // New buffers will be created on next do_update() or copy_trie operation.
+    release_fiber_write_buffers();
 
     // Reset sender-receiver node writers to sync their positions with the
-    // chunk positions updated by fiber writes. This ensures the worker thread
-    // (copy_trie_to_dest) can write at the correct offsets.
+    // chunk positions updated by fiber writes. This call can be removed once
+    // all code paths use fiber-based writes.
     reset_node_writers();
 
     auto const upsert_duration = upsert_timer.elapsed();

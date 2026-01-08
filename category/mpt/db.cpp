@@ -41,6 +41,7 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/traverse.hpp>
+#include <category/mpt/fiber_write_utils.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
@@ -653,11 +654,11 @@ struct OnDiskWithWorkerThreadImpl
                     did_nothing = false;
                 }
                 async_io.io.poll_nonblocking(1);
-                // Note: We do NOT poll the write ring here for fiber completions.
-                // Fiber-based IO is only used within do_update's upsert fiber,
-                // which has its own hot loop that polls completions. Polling here
-                // would consume sender-receiver completions that copy_trie_to_dest
-                // and other sender-receiver operations depend on.
+                // Poll fiber write completions for copy_trie operations which use
+                // fiber-based IO. The poll_ring_completions function only processes
+                // completions with the fiber magic number, leaving any other
+                // completions for their respective handlers.
+                poll_ring_completions(async_io.io.write_ring());
                 boost::this_fiber::yield();
                 if (boost::fibers::has_ready_fibers()) {
                     did_nothing = false;

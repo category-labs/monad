@@ -1559,29 +1559,6 @@ async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
     return fiber_write_node_set_spare(aux, buffer, node, write_to_fast);
 }
 
-// Sender-receiver version of async_write_node_set_spare for use in copy_trie
-// and other paths that don't have fiber write buffers.
-chunk_offset_t
-async_write_node_sender_receiver(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
-{
-    write_to_fast &= aux.can_write_to_fast();
-    if (aux.alternate_slow_fast_writer()) {
-        aux.set_can_write_to_fast(!aux.can_write_to_fast());
-    }
-
-    auto off = async_write_node(
-                   aux,
-                   write_to_fast ? aux.node_writer_fast : aux.node_writer_slow,
-                   node)
-                   .offset_written_to;
-    MONAD_ASSERT(
-        (write_to_fast && aux.db_metadata()->at(off.id)->in_fast_list) ||
-        (!write_to_fast && aux.db_metadata()->at(off.id)->in_slow_list));
-    unsigned const pages = num_pages(off.offset, node.get_disk_size());
-    off.set_spare(static_cast<uint16_t>(node_disk_pages_spare_15{pages}));
-    return off;
-}
-
 void flush_buffered_writes(UpdateAuxImpl &aux)
 {
     aux.fiber_write_buffer_fast_ref().flush();
@@ -1598,91 +1575,9 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
     return fiber_write_new_root_node(aux, root, version);
 }
 
-// Sender-receiver version of flush_buffered_writes for use in copy_trie.
-static void flush_buffered_writes_sender_receiver(UpdateAuxImpl &aux)
-{
-    // Round up with all bits zero
-    auto replace = [&](node_writer_unique_ptr_type &node_writer) {
-        auto *sender = &node_writer->sender();
-        auto written = sender->written_buffer_bytes();
-        auto paddedup = round_up_align<DISK_PAGE_BITS>(written);
-        auto const tozerobytes = paddedup - written;
-        auto *tozero = sender->advance_buffer_append(tozerobytes);
-        MONAD_DEBUG_ASSERT(tozero != nullptr);
-        memset(tozero, 0, tozerobytes);
-        // replace fast node writer
-        auto new_node_writer = replace_node_writer(aux, node_writer);
-        while (!new_node_writer) {
-            new_node_writer = replace_node_writer(aux, node_writer);
-        }
-        auto to_initiate = std::move(node_writer);
-        node_writer = std::move(new_node_writer);
-        to_initiate->receiver().reset(
-            to_initiate->sender().written_buffer_bytes());
-        to_initiate->initiate();
-        // shall be recycled by the i/o receiver
-        to_initiate.release();
-    };
-    replace(aux.node_writer_fast);
-    if (aux.node_writer_slow->sender().written_buffer_bytes()) {
-        // replace slow node writer
-        replace(aux.node_writer_slow);
-    }
-    aux.io->flush();
-}
-
-// Sender-receiver version of write_new_root_node for use in copy_trie.
-chunk_offset_t
-write_new_root_node_sender_receiver(
-    UpdateAuxImpl &aux, Node &root, uint64_t const version)
-{
-    auto const offset_written_to =
-        async_write_node_sender_receiver(aux, root, true);
-    flush_buffered_writes_sender_receiver(aux);
-    // advance fast and slow ring's latest offset in db metadata
-    aux.advance_db_offsets_to(
-        aux.node_writer_fast->sender().offset(),
-        aux.node_writer_slow->sender().offset());
-    // update root offset
-    auto const max_version_in_db = aux.db_history_max_version();
-    if (MONAD_UNLIKELY(max_version_in_db == INVALID_BLOCK_NUM)) {
-        aux.fast_forward_next_version(version);
-        aux.append_root_offset(offset_written_to);
-        MONAD_ASSERT(aux.db_history_range_lower_bound() == version);
-    }
-    else if (version <= max_version_in_db) {
-        MONAD_ASSERT(
-            version >=
-            ((max_version_in_db >= aux.version_history_length())
-                 ? max_version_in_db - aux.version_history_length() + 1
-                 : 0));
-        auto const prev_lower_bound = aux.db_history_range_lower_bound();
-        aux.update_root_offset(version, offset_written_to);
-        MONAD_ASSERT(
-            aux.db_history_range_lower_bound() ==
-            std::min(version, prev_lower_bound));
-    }
-    else {
-        MONAD_ASSERT(version == max_version_in_db + 1);
-        // Erase the earliest valid version if it is going to be outdated after
-        // writing a new version, must happen before appending new root offset
-        if (version - aux.db_history_min_valid_version() >=
-            aux.version_history_length()) { // if exceed history length
-            aux.erase_versions_up_to_and_including(
-                version - aux.version_history_length());
-            MONAD_ASSERT(
-                version - aux.db_history_min_valid_version() <
-                aux.version_history_length());
-        }
-        aux.append_root_offset(offset_written_to);
-    }
-    return offset_written_to;
-}
-
 // ============================================================================
 // Fiber-based write functions
-// These provide an alternative to the sender-receiver pattern above.
-// They yield the fiber when waiting for IO instead of using callbacks.
+// These yield the fiber when waiting for IO instead of using callbacks.
 // ============================================================================
 
 // Write a node to disk using fiber-based IO. Yields fiber when buffer is full.

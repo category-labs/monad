@@ -49,7 +49,7 @@ Node::SharedPtr create_node_add_new_branch(
             child.subtrie_min_version = calc_min_version(*child.ptr);
             if (aux.is_on_disk()) {
                 child.offset =
-                    async_write_node_sender_receiver(aux, *child.ptr, true);
+                    async_write_node_set_spare(aux, *child.ptr, true);
                 std::tie(child.min_offset_fast, child.min_offset_slow) =
                     calc_min_offsets(
                         *child.ptr, aux.physical_to_virtual(child.offset));
@@ -97,7 +97,7 @@ Node::SharedPtr create_node_with_two_children(
         child.subtrie_min_version = calc_min_version(*child.ptr);
         child.branch = branch0;
         if (aux.is_on_disk()) {
-            child.offset = async_write_node_sender_receiver(aux, *child.ptr, true);
+            child.offset = async_write_node_set_spare(aux, *child.ptr, true);
             std::tie(child.min_offset_fast, child.min_offset_slow) =
                 calc_min_offsets(*child.ptr);
         }
@@ -108,7 +108,7 @@ Node::SharedPtr create_node_with_two_children(
         child.subtrie_min_version = calc_min_version(*child.ptr);
         child.branch = branch1;
         if (aux.is_on_disk()) {
-            child.offset = async_write_node_sender_receiver(aux, *child.ptr, true);
+            child.offset = async_write_node_set_spare(aux, *child.ptr, true);
             std::tie(child.min_offset_fast, child.min_offset_slow) =
                 calc_min_offsets(*child.ptr);
         }
@@ -141,7 +141,7 @@ Node::SharedPtr copy_trie_impl(
             .ptr = std::move(new_node), .branch = dest_prefix.get(0)};
         child.subtrie_min_version = calc_min_version(*child.ptr);
         if (aux.is_on_disk()) {
-            child.offset = async_write_node_sender_receiver(aux, *child.ptr, true);
+            child.offset = async_write_node_set_spare(aux, *child.ptr, true);
             std::tie(child.min_offset_fast, child.min_offset_slow) =
                 calc_min_offsets(
                     *child.ptr, aux.physical_to_virtual(child.offset));
@@ -272,7 +272,7 @@ Node::SharedPtr copy_trie_impl(
         while (!parents_and_indexes.empty()) {
             auto const &[p, i] = parents_and_indexes.top();
             auto &node = *p->next(i);
-            p->set_fnext(i, async_write_node_sender_receiver(aux, node, true));
+            p->set_fnext(i, async_write_node_set_spare(aux, node, true));
             auto const [min_offset_fast, min_offset_slow] =
                 calc_min_offsets(node);
             p->set_min_offset_fast(i, min_offset_fast);
@@ -291,6 +291,11 @@ Node::SharedPtr copy_trie_to_dest(
     uint64_t const dest_version, bool const write_root)
 {
     auto impl = [&]() -> Node::SharedPtr {
+        // Set up fiber write buffers for fiber-based IO
+        if (aux.is_on_disk()) {
+            aux.setup_fiber_write_buffers();
+        }
+
         dest_root = copy_trie_impl(
             aux,
             std::move(src_root),
@@ -298,13 +303,26 @@ Node::SharedPtr copy_trie_to_dest(
             std::move(dest_root),
             dest_prefix,
             dest_version);
+
         if (aux.is_on_disk() && write_root) {
-            write_new_root_node_sender_receiver(aux, *dest_root, dest_version);
+            // write_new_root_node handles flushing and advancing offsets
+            write_new_root_node(aux, *dest_root, dest_version);
             MONAD_ASSERT(aux.db_history_max_version() >= dest_version);
         }
+        else if (aux.is_on_disk()) {
+            // Flush buffered writes and advance offsets manually
+            flush_buffered_writes(aux);
+            aux.advance_db_offsets_to(
+                aux.fiber_write_buffer_fast_ref().current_offset(),
+                aux.fiber_write_buffer_slow_ref().current_offset());
+        }
+
+        // Release fiber write buffers
         if (aux.is_on_disk()) {
+            aux.release_fiber_write_buffers();
             MONAD_ASSERT(dest_root->value_len == sizeof(uint32_t) * 2);
         }
+
         return dest_root;
     };
     if (aux.is_current_thread_upserting()) {

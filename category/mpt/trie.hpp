@@ -174,18 +174,10 @@ public:
 chunk_offset_t
 async_write_node_set_spare(UpdateAuxImpl &, Node &, bool is_fast);
 
-// Sender-receiver version of async_write_node_set_spare for use in copy_trie
-// and other paths that don't have fiber write buffers.
-chunk_offset_t
-async_write_node_sender_receiver(UpdateAuxImpl &, Node &, bool is_fast);
-
 chunk_offset_t
 write_new_root_node(UpdateAuxImpl &, Node &root, uint64_t version);
 
-// Sender-receiver version of write_new_root_node for use in copy_trie
-// and other paths that don't have fiber write buffers.
-chunk_offset_t
-write_new_root_node_sender_receiver(UpdateAuxImpl &, Node &root, uint64_t version);
+void flush_buffered_writes(UpdateAuxImpl &);
 
 node_writer_unique_ptr_type
 replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
@@ -435,6 +427,7 @@ public:
     }
 
     void setup_fiber_write_buffers();
+    void release_fiber_write_buffers();
 
     detail::TrieUpdateCollectedStats stats;
 

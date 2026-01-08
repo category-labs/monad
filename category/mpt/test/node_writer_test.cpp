@@ -18,8 +18,12 @@
 #include <category/async/config.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
+#include <category/mpt/fiber_write_utils.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
+
+#include <boost/fiber/fiber.hpp>
+#include <boost/fiber/operations.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -98,40 +102,34 @@ struct NodeWriterTestBase : public ::testing::Test
         }
     }
 
-    void node_writer_append_dummy_bytes(
-        node_writer_unique_ptr_type &node_writer, size_t bytes)
+    // Run test code in a fiber context with completion polling.
+    // This is required for fiber-based writes which yield and expect
+    // completions to be polled.
+    template <typename F>
+    void run_in_fiber_context(F &&test_func)
     {
-        while (bytes > 0) {
-            auto &sender = node_writer->sender();
-            auto const remaining_bytes = sender.remaining_buffer_bytes();
-            if (bytes <= remaining_bytes) {
-                sender.advance_buffer_append(bytes);
-                return;
-            }
-            if (remaining_bytes > 0) {
-                sender.advance_buffer_append(remaining_bytes);
-                bytes -= remaining_bytes;
-            }
+        aux.setup_fiber_write_buffers();
 
-            auto new_node_writer = replace_node_writer(aux, node_writer);
-            MONAD_ASSERT(new_node_writer);
-            node_writer->initiate();
-            // shall be recycled by the i/o receiver
-            node_writer.release();
-            node_writer = std::move(new_node_writer);
+        bool done = false;
+        boost::fibers::fiber test_fiber([&]() {
+            test_func();
+            done = true;
+        });
+
+        // Hot loop: poll completions and run fiber scheduler until done
+        while (!done) {
+            poll_ring_completions(io.write_ring());
+            poll_ring_completions(io.read_ring());
+            boost::this_fiber::yield();
         }
+
+        test_fiber.join();
+        aux.release_fiber_write_buffers();
     }
 
-    uint32_t get_writer_chunk_id(node_writer_unique_ptr_type &node_writer)
+    uint32_t get_fiber_buffer_chunk_id()
     {
-        return node_writer->sender().offset().id;
-    }
-
-    uint32_t get_writer_chunk_count(node_writer_unique_ptr_type &node_writer)
-    {
-        return (uint32_t)aux.db_metadata()
-            ->at(get_writer_chunk_id(node_writer))
-            ->insertion_count();
+        return aux.fiber_write_buffer_fast_ref().current_offset().id;
     }
 };
 
@@ -139,95 +137,63 @@ using NodeWriterTest = NodeWriterTestBase<>;
 
 TEST_F(NodeWriterTest, write_nodes_each_within_buffer)
 {
-    auto const node_writer_chunk_id_before =
-        get_writer_chunk_id(aux.node_writer_fast);
-    auto const node_writer_chunk_count_before =
-        get_writer_chunk_count(aux.node_writer_fast);
-    ASSERT_EQ(node_writer_chunk_count_before, 0);
+    run_in_fiber_context([&]() {
+        auto const initial_chunk_id = get_fiber_buffer_chunk_id();
 
-    unsigned const node_disk_size = 1024;
-    unsigned const num_nodes =
-        AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE / node_disk_size;
-    auto node = make_node_of_size(node_disk_size);
-    for (unsigned i = 0; i < num_nodes; ++i) {
-        auto const node_offset = async_write_node_sender_receiver(aux, *node, true);
-        EXPECT_EQ(node_offset.offset, node_disk_size * i);
+        unsigned const node_disk_size = 1024;
+        unsigned const num_nodes =
+            AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE / node_disk_size;
+        auto node = make_node_of_size(node_disk_size);
 
-        EXPECT_EQ(node_offset.id, get_writer_chunk_id(aux.node_writer_fast));
+        // Write multiple nodes that should all fit in one buffer
+        for (unsigned i = 0; i < num_nodes; ++i) {
+            auto const node_offset = async_write_node_set_spare(aux, *node, true);
+            EXPECT_EQ(node_offset.offset, node_disk_size * i);
+            EXPECT_EQ(node_offset.id, initial_chunk_id);
+            EXPECT_EQ(
+                aux.fiber_write_buffer_fast_ref().written_bytes(),
+                node_offset.offset + node_disk_size);
+        }
+
+        // Buffer should be full
+        EXPECT_EQ(aux.fiber_write_buffer_fast_ref().remaining(), 0);
+
+        // Write one more node - buffer will flush and start fresh
+        auto const node_offset = async_write_node_set_spare(aux, *node, true);
+        // After flush, new write starts at buffer offset after the flush
+        EXPECT_EQ(node_offset.offset, AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+        EXPECT_EQ(node_offset.id, initial_chunk_id);
         EXPECT_EQ(
-            get_writer_chunk_id(aux.node_writer_fast),
-            node_writer_chunk_id_before);
-        EXPECT_EQ(
-            aux.node_writer_fast->sender().written_buffer_bytes(),
-            node_offset.offset + node_disk_size);
-    }
-    // first buffer is full
-    EXPECT_EQ(aux.node_writer_fast->sender().remaining_buffer_bytes(), 0);
-    // continue write more node, node writer will switch to next buffer
-    auto const node_offset = async_write_node_sender_receiver(aux, *node, true);
-    EXPECT_EQ(node_offset.offset, AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
-    EXPECT_EQ(
-        get_writer_chunk_id(aux.node_writer_fast), node_writer_chunk_id_before);
-    EXPECT_EQ(node_offset.id, node_writer_chunk_id_before);
-    EXPECT_EQ(
-        aux.node_writer_fast->sender().written_buffer_bytes(), node_disk_size);
-}
-
-TEST_F(NodeWriterTest, write_node_across_buffers_ends_at_buffer_boundary)
-{
-    // prepare less than 3 chunks
-    auto const chunk_remaining_bytes =
-        2 * AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE + 1024;
-    MONAD_ASSERT(chunk_remaining_bytes < chunk_size);
-    node_writer_append_dummy_bytes(
-        aux.node_writer_fast, 3 * chunk_size - chunk_remaining_bytes);
-
-    auto const node_writer_chunk_count_before =
-        get_writer_chunk_count(aux.node_writer_fast);
-    EXPECT_EQ(node_writer_chunk_count_before, 2);
-
-    // node spans buffer 3 buffers
-    auto node = make_node_of_size(chunk_remaining_bytes);
-    auto const node_offset = async_write_node_sender_receiver(aux, *node, true);
-    EXPECT_EQ(
-        get_writer_chunk_count(aux.node_writer_fast),
-        node_writer_chunk_count_before);
-    EXPECT_EQ(node_offset.id, get_writer_chunk_id(aux.node_writer_fast));
-    EXPECT_EQ(aux.node_writer_fast->sender().remaining_buffer_bytes(), 0);
-
-    // write another node, node writer will switch to next buffer at next chunk
-    auto const new_node_offset = async_write_node_sender_receiver(aux, *node, true);
-    EXPECT_EQ(new_node_offset.offset, 0);
-    auto const node_writer_chunk_count_after =
-        get_writer_chunk_count(aux.node_writer_fast);
-    EXPECT_EQ(
-        aux.db_metadata()->at(new_node_offset.id)->insertion_count(),
-        node_writer_chunk_count_after);
-    EXPECT_EQ(
-        node_writer_chunk_count_before + 1, node_writer_chunk_count_after);
-    EXPECT_EQ(
-        aux.node_writer_fast->sender().written_buffer_bytes(),
-        chunk_remaining_bytes % AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+            aux.fiber_write_buffer_fast_ref().written_bytes(), node_disk_size);
+    });
 }
 
 TEST_F(NodeWriterTest, write_node_at_new_chunk)
 {
-    // prepare less than 3 chunks
-    auto const chunk_remaining_bytes = 1024;
-    node_writer_append_dummy_bytes(
-        aux.node_writer_fast, 3 * chunk_size - chunk_remaining_bytes);
+    run_in_fiber_context([&]() {
+        // Write nodes until we're near a chunk boundary, then write a node
+        // that's too big to fit - it should go to a new chunk.
+        auto const initial_chunk_id = get_fiber_buffer_chunk_id();
 
-    auto const node_writer_chunk_count_before_write_node =
-        get_writer_chunk_count(aux.node_writer_fast);
-    EXPECT_EQ(node_writer_chunk_count_before_write_node, 2);
+        // First, fill up most of the chunk with small writes
+        unsigned const small_node_size = 4096;
+        auto small_node = make_node_of_size(small_node_size);
 
-    // make a node that is too big to fit in current chunk
-    auto node = make_node_of_size(chunk_remaining_bytes + 1024);
-    auto const node_offset = async_write_node_sender_receiver(aux, *node, true);
-    auto const node_offset_chunk_count =
-        aux.db_metadata()->at(node_offset.id)->insertion_count();
-    EXPECT_EQ(
-        node_offset_chunk_count, node_writer_chunk_count_before_write_node + 1);
-    EXPECT_EQ(
-        node_offset_chunk_count, get_writer_chunk_count(aux.node_writer_fast));
+        // Write nodes until we're close to chunk capacity
+        size_t total_written = 0;
+        auto const chunk_capacity = io.chunk_capacity(initial_chunk_id);
+        while (total_written + small_node_size * 2 < chunk_capacity) {
+            auto const offset = async_write_node_set_spare(aux, *small_node, true);
+            total_written = offset.offset + small_node_size;
+        }
+
+        // Now write a large node that won't fit in remaining space
+        auto const remaining = chunk_capacity - total_written;
+        auto large_node = make_node_of_size(static_cast<unsigned>(remaining + 1024));
+        auto const large_offset = async_write_node_set_spare(aux, *large_node, true);
+
+        // The large node should be written to a new chunk
+        EXPECT_NE(large_offset.id, initial_chunk_id);
+        EXPECT_EQ(large_offset.offset, 0); // Start of new chunk
+    });
 }

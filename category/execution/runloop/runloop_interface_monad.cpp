@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
@@ -192,6 +193,7 @@ struct MonadRunloopDbCache: public Db
                 state_deltas->emplace(a, sd);
             }
         }
+        MONAD_ASSERT(account_override.empty());
         db_cache.commit(
             std::move(state_deltas),
             code,
@@ -362,7 +364,7 @@ extern "C" void monad_runloop_delete(MonadRunloop *runloop)
 }
 
 extern "C" void monad_runloop_run(MonadRunloop *pre_runloop, uint64_t nblocks)
-{
+try {
     MonadRunloopImpl *const runloop = to_impl(pre_runloop);
 
     auto const block_num_before = runloop->finalized_block_num;
@@ -391,6 +393,10 @@ extern "C" void monad_runloop_run(MonadRunloop *pre_runloop, uint64_t nblocks)
         MONAD_ABORT();
     }
     MONAD_ASSERT(block_num_after - block_num_before == nblocks);
+}
+catch (MonadException const &e) {
+    e.print();
+    std::terminate();
 }
 
 extern "C" void monad_runloop_set_balance(

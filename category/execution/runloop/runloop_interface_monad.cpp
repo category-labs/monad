@@ -38,6 +38,9 @@
 #include <quill/Quill.h>
 #include <quill/handlers/FileHandler.h>
 
+#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
+
 using namespace monad;
 namespace fs = std::filesystem;
 
@@ -243,7 +246,6 @@ struct MonadRunloopDbCache : public Db
 
 struct MonadRunloopImpl
 {
-    quill::Config quill_cfg;
     std::unique_ptr<MonadChain> chain;
     fs::path ledger_dir;
     OnDiskMachine db_machine;
@@ -263,8 +265,7 @@ struct MonadRunloopImpl
 
 MonadRunloopImpl::MonadRunloopImpl(
     uint64_t chain_id, char const *ledger_path, char const *db_path)
-    : quill_cfg{}
-    , chain{monad_chain_from_chain_id(chain_id)}
+    : chain{monad_chain_from_chain_id(chain_id)}
     , ledger_dir{ledger_path}
     , db_machine{}
     , raw_db{db_machine, mpt::OnDiskDbConfig{.append = true, .compaction = true, .rewind_to_latest_finalized = true, .rd_buffers = 8192, .wr_buffers = 32, .uring_entries = 128, .sq_thread_cpu = sq_thread_cpu, .dbname_paths = {fs::path{db_path}}}}
@@ -277,17 +278,6 @@ MonadRunloopImpl::MonadRunloopImpl(
     , block_num{1}
     , is_first_run{true}
 {
-    auto stdout_handler = quill::stdout_handler();
-    stdout_handler->set_pattern(
-        "%(time) [%(thread_id)] %(file_name):%(line_number) LOG_%(log_level)\t"
-        "%(message)",
-        "%Y-%m-%d %H:%M:%S.%Qns",
-        quill::Timezone::GmtTime);
-    quill_cfg.default_handlers.emplace_back(stdout_handler);
-    quill::configure(quill_cfg);
-    quill::start(true);
-    quill::get_root_logger()->set_log_level(log_level);
-
     if (triedb.get_root() == nullptr) {
         LOG_INFO("loading from genesis");
         GenesisState const genesis_state = chain->get_genesis_state();
@@ -340,6 +330,18 @@ MONAD_ANONYMOUS_NAMESPACE_END
 extern "C" MonadRunloop *monad_runloop_new(
     uint64_t chain_id, char const *ledger_path, char const *db_path)
 {
+    auto stdout_handler = quill::stdout_handler();
+    stdout_handler->set_pattern(
+        "%(time) [%(thread_id)] %(file_name):%(line_number) LOG_%(log_level)\t"
+        "%(message)",
+        "%Y-%m-%d %H:%M:%S.%Qns",
+        quill::Timezone::GmtTime);
+    quill::Config quill_cfg;
+    quill_cfg.default_handlers.emplace_back(stdout_handler);
+    quill::configure(quill_cfg);
+    quill::start(true);
+
+    quill::get_root_logger()->set_log_level(log_level);
     return from_impl(new MonadRunloopImpl{chain_id, ledger_path, db_path});
 }
 
@@ -417,4 +419,10 @@ extern "C" void monad_runloop_get_state_root(
     MonadRunloopImpl *const runloop = to_impl(pre_runloop);
     *result_state_root =
         std::bit_cast<MonadRunloopWord>(runloop->db.state_root());
+}
+
+extern "C" void monad_runloop_dump(MonadRunloop *pre_runloop)
+{
+    MonadRunloopImpl *const runloop = to_impl(pre_runloop);
+    std::cout << runloop->triedb.to_json().dump(4) << std::endl;
 }

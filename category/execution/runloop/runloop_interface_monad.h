@@ -59,6 +59,9 @@ void monad_runloop_get_balance(
 void monad_runloop_get_state_root(
     MonadRunloop *, MonadRunloopWord *result_state_root);
 
+// Dump the current state of the database to stdout
+void monad_runloop_dump(MonadRunloop *);
+
 #ifdef __cplusplus
 }
 #endif

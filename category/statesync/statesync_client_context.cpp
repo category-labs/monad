@@ -132,11 +132,20 @@ void monad_statesync_client_context::commit()
                     .version = static_cast<int64_t>(current)}));
             }
         }
+        UpdateList storage_prefix;
+        if (!storage.empty()) {
+            storage_prefix.push_front(alloc.emplace_back(Update{
+                .key = storage_prefix_nibbles,
+                .value = byte_string_view{},
+                .incarnation = false,
+                .next = std::move(storage),
+                .version = static_cast<int64_t>(current)}));
+        }
         accounts.push_front(alloc.emplace_back(Update{
             .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
             .value = value,
             .incarnation = false,
-            .next = std::move(storage),
+            .next = std::move(storage_prefix),
             .version = static_cast<int64_t>(current)}));
     }
     UpdateList code_updates;

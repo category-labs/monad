@@ -282,12 +282,14 @@ bool statesync_server_handle_request(
                     if (depth == HASH_SIZE) {
                         send_upsert(SYNC_TYPE_UPSERT_ACCOUNT);
                     }
-                    else {
-                        MONAD_ASSERT(depth == (HASH_SIZE * 2));
+                    else if (depth == (HASH_SIZE * 2) + 1) {
                         send_upsert(
                             SYNC_TYPE_UPSERT_STORAGE,
                             reinterpret_cast<unsigned char *>(&addr),
                             sizeof(addr));
+                    }
+                    else {
+                        MONAD_ASSERT(depth == HASH_SIZE + 1);
                     }
                 }
             }

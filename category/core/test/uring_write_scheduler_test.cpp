@@ -30,7 +30,7 @@
 
 using namespace monad::fiber;
 
-class UringWriteSchedulerTest : public ::testing::Test
+class UringFiberSchedulerTest : public ::testing::Test
 {
 protected:
     io_uring ring_{};
@@ -44,7 +44,7 @@ protected:
         ASSERT_EQ(ret, 0) << "Failed to init io_uring: " << strerror(-ret);
 
         // Create temp file for write tests
-        temp_file_ = std::filesystem::temp_directory_path() / "uring_write_test.tmp";
+        temp_file_ = std::filesystem::temp_directory_path() / "uring_fiber_test.tmp";
         fd_ = open(temp_file_.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
         ASSERT_GE(fd_, 0) << "Failed to create temp file: " << strerror(errno);
     }
@@ -89,7 +89,7 @@ protected:
 };
 
 // Test basic io_uring write (no fibers, validates test setup)
-TEST_F(UringWriteSchedulerTest, sync_write)
+TEST_F(UringFiberSchedulerTest, sync_write)
 {
     std::array<std::byte, 4096> buffer{};
     std::fill(buffer.begin(), buffer.end(), std::byte{0x42});
@@ -108,10 +108,11 @@ TEST_F(UringWriteSchedulerTest, sync_write)
     }
 }
 
-// Test WriteCompletionToken structure
-TEST_F(UringWriteSchedulerTest, completion_token)
+// Test CompletionToken structure
+TEST_F(UringFiberSchedulerTest, completion_token)
 {
-    WriteCompletionToken token;
+    CompletionToken token;
+    EXPECT_EQ(token.magic, CompletionToken::FIBER_COMPLETION_MAGIC);
     EXPECT_EQ(token.waiting_fiber, nullptr);
     EXPECT_EQ(token.result, 0);
     EXPECT_FALSE(token.completed);
@@ -124,7 +125,7 @@ TEST_F(UringWriteSchedulerTest, completion_token)
 }
 
 // Test WriteResult structure
-TEST_F(UringWriteSchedulerTest, write_result)
+TEST_F(UringFiberSchedulerTest, write_result)
 {
     WriteResult success_result{4096, true};
     EXPECT_TRUE(success_result);
@@ -138,7 +139,7 @@ TEST_F(UringWriteSchedulerTest, write_result)
 }
 
 // Test multiple sequential sync writes
-TEST_F(UringWriteSchedulerTest, sequential_sync_writes)
+TEST_F(UringFiberSchedulerTest, sequential_sync_writes)
 {
     constexpr size_t num_writes = 10;
     constexpr size_t write_size = 1024;
@@ -167,14 +168,4 @@ TEST_F(UringWriteSchedulerTest, sequential_sync_writes)
             EXPECT_EQ(b, static_cast<std::byte>(i));
         }
     }
-}
-
-// Test scheduler state flags
-TEST_F(UringWriteSchedulerTest, scheduler_flags)
-{
-    UringWriteFiberScheduler::Flags flags{};
-    EXPECT_FALSE(flags.ioloop_suspended);
-    EXPECT_FALSE(flags.ioloop_yielded);
-    EXPECT_FALSE(flags.ioloop_woke);
-    EXPECT_FALSE(flags.suspenduntil_called);
 }

@@ -21,69 +21,35 @@
 
 MONAD_FIBER_NAMESPACE_BEGIN
 
-UringWriteFiberScheduler::UringWriteFiberScheduler(io_uring *wr_ring)
-    : wr_ring_(wr_ring)
-    , main_cntx_(context::active())
+UringFiberScheduler::UringFiberScheduler(io_uring *rd_ring, io_uring *wr_ring)
+    : rd_ring_(rd_ring)
+    , wr_ring_(wr_ring)
 {
+    MONAD_ASSERT(rd_ring_ != nullptr);
     MONAD_ASSERT(wr_ring_ != nullptr);
-    MONAD_ASSERT(main_cntx_ != nullptr);
-    MONAD_ASSERT(main_cntx_->is_context(boost::fibers::type::main_context));
-    current_scheduler = this;
 }
 
-void UringWriteFiberScheduler::awakened(
-    context *ctx, WriteProperties & /*props*/) noexcept
+void UringFiberScheduler::awakened(
+    context *ctx, FiberProperties & /*props*/) noexcept
 {
     MONAD_DEBUG_ASSERT(ctx != nullptr);
     MONAD_DEBUG_ASSERT(!ctx->ready_is_linked());
 
-    if (ctx->is_context(boost::fibers::type::dispatcher_context)) {
-        // Dispatcher context - just add to queue
-        ctx->ready_link(ready_queue_);
-        return;
-    }
-
-    ++ready_cnt_;
-
-    if (ctx == main_cntx_) {
-        // The io loop fiber is being awakened
-        flags_.ioloop_woke = 1;
+    if (!ctx->is_context(boost::fibers::type::dispatcher_context)) {
+        ++ready_cnt_;
     }
 
     ctx->ready_link(ready_queue_);
 }
 
-context *UringWriteFiberScheduler::pick_next() noexcept
+context *UringFiberScheduler::pick_next() noexcept
 {
-    // During shutdown, just return nullptr to let Boost.Fiber clean up
-    if (done_) {
-        return nullptr;
-    }
-
-    // NOTE: We intentionally do NOT poll io_uring here.
-    // The hot loop in rwdb_run() is responsible for calling poll_completions().
-    // This keeps the scheduler simple and avoids io_uring access during TLS cleanup.
-
     if (ready_queue_.empty()) {
         return nullptr;
     }
 
-    context *ctx = nullptr;
-
-    // Prioritize io loop fiber when it was explicitly woken
-    if (flags_.ioloop_woke && main_cntx_ != nullptr &&
-        main_cntx_->ready_is_linked()) {
-        ctx = main_cntx_;
-        ctx->ready_unlink();
-        flags_.ioloop_woke = 0;
-    } else {
-        ctx = &ready_queue_.front();
-        ready_queue_.pop_front();
-
-        if (flags_.ioloop_suspended) {
-            flags_.ioloop_yielded = 1;
-        }
-    }
+    context *ctx = &ready_queue_.front();
+    ready_queue_.pop_front();
 
     if (!ctx->is_context(boost::fibers::type::dispatcher_context)) {
         --ready_cnt_;
@@ -92,89 +58,101 @@ context *UringWriteFiberScheduler::pick_next() noexcept
     return ctx;
 }
 
-bool UringWriteFiberScheduler::has_ready_fibers() const noexcept
+bool UringFiberScheduler::has_ready_fibers() const noexcept
 {
     return ready_cnt_ > 0;
 }
 
-void UringWriteFiberScheduler::suspend_until(
+void UringFiberScheduler::suspend_until(
     std::chrono::steady_clock::time_point const & /*abs_time*/) noexcept
 {
-    // Called by dispatcher when no fibers are ready.
-    // We cannot poll io_uring here because the completion queue may contain
-    // sender-receiver completions with incompatible user_data. Polling must
-    // be done by code that knows what completions to expect.
-    flags_.suspenduntil_called = 1;
-
-    if (done_) {
-        return;
+    // Poll both rings for completions
+    size_t completions = poll_single_ring(rd_ring_);
+    if (wr_ring_ != rd_ring_) {
+        completions += poll_single_ring(wr_ring_);
     }
 
-    // Schedule main context to run so caller can poll completions
-    if (main_cntx_ != nullptr && !main_cntx_->ready_is_linked()) {
-        main_cntx_->ready_link(ready_queue_);
-        ++ready_cnt_;
+    if (completions == 0) {
+        // No completions ready - wait briefly on each ring
+        wait_on_ring(rd_ring_);
+        if (wr_ring_ != rd_ring_) {
+            wait_on_ring(wr_ring_);
+        }
     }
 }
 
-void UringWriteFiberScheduler::notify() noexcept
+void UringFiberScheduler::notify() noexcept
 {
     // Called from other threads to wake the scheduler.
-    // In our single-threaded write model, this is mostly a no-op.
-    // If we need cross-thread notification in the future, we could
-    // use eventfd registered with io_uring.
+    // In the current single-threaded upsert model, this is a no-op.
 }
 
-size_t UringWriteFiberScheduler::poll_completions(bool blocking)
+size_t UringFiberScheduler::poll_single_ring(io_uring *ring)
 {
-    if (wr_ring_ == nullptr || done_) {
+    if (ring == nullptr) {
         return 0;
     }
 
     size_t count = 0;
     io_uring_cqe *cqe = nullptr;
 
-    if (blocking) {
-        // Wait for at least one completion
-        int ret = io_uring_wait_cqe(wr_ring_, &cqe);
-        if (ret == 0 && cqe != nullptr) {
-            process_cqe(cqe);
-            io_uring_cqe_seen(wr_ring_, cqe);
-            ++count;
-        }
-    }
-
     // Drain all available completions
-    while (io_uring_peek_cqe(wr_ring_, &cqe) == 0 && cqe != nullptr) {
-        process_cqe(cqe);
-        io_uring_cqe_seen(wr_ring_, cqe);
+    while (io_uring_peek_cqe(ring, &cqe) == 0 && cqe != nullptr) {
+        void *user_data = io_uring_cqe_get_data(cqe);
+        if (user_data != nullptr) {
+            // Check magic number to ensure this is a fiber completion.
+            // Other completions (e.g., sender-receiver) have different user_data.
+            auto *token = static_cast<CompletionToken *>(user_data);
+            if (token->magic == CompletionToken::FIBER_COMPLETION_MAGIC) {
+                token->result = cqe->res;
+                token->completed = true;
+
+                // Wake up the waiting fiber
+                if (token->waiting_fiber != nullptr &&
+                    !token->waiting_fiber->ready_is_linked()) {
+                    auto *ctx = token->waiting_fiber;
+                    ctx->get_scheduler()->schedule(ctx);
+                }
+            }
+            // Non-fiber completions are left for other code to process
+        }
+        io_uring_cqe_seen(ring, cqe);
         ++count;
     }
 
     return count;
 }
 
-void UringWriteFiberScheduler::process_cqe(io_uring_cqe *cqe)
+bool UringFiberScheduler::wait_on_ring(io_uring *ring)
 {
-    MONAD_DEBUG_ASSERT(cqe != nullptr);
-
-    void *user_data = io_uring_cqe_get_data(cqe);
-    if (user_data == nullptr) {
-        // No associated token - could be a cancelled operation
-        return;
+    if (ring == nullptr) {
+        return false;
     }
 
-    auto *token = static_cast<WriteCompletionToken *>(user_data);
-    token->result = cqe->res;
-    token->completed = true;
+    io_uring_cqe *cqe = nullptr;
+    struct __kernel_timespec ts = {.tv_sec = 0, .tv_nsec = 100000}; // 100us
 
-    // Wake up the waiting fiber
-    if (token->waiting_fiber != nullptr) {
-        context *ctx = token->waiting_fiber;
-        // Schedule the fiber to run. This adds it to the scheduler's ready
-        // queue via awakened().
-        ctx->get_scheduler()->schedule(ctx);
+    int ret = io_uring_wait_cqe_timeout(ring, &cqe, &ts);
+    if (ret == 0 && cqe != nullptr) {
+        void *user_data = io_uring_cqe_get_data(cqe);
+        if (user_data != nullptr) {
+            auto *token = static_cast<CompletionToken *>(user_data);
+            if (token->magic == CompletionToken::FIBER_COMPLETION_MAGIC) {
+                token->result = cqe->res;
+                token->completed = true;
+
+                if (token->waiting_fiber != nullptr &&
+                    !token->waiting_fiber->ready_is_linked()) {
+                    token->waiting_fiber->get_scheduler()->schedule(
+                        token->waiting_fiber);
+                }
+            }
+        }
+        io_uring_cqe_seen(ring, cqe);
+        return true;
     }
+
+    return false;
 }
 
 MONAD_FIBER_NAMESPACE_END

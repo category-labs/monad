@@ -1551,21 +1551,22 @@ retry:
 chunk_offset_t
 async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
 {
-    // Use fiber-based writes when fiber write buffer is active
-    if (aux.fiber_write_buffer != nullptr) {
-        // Apply the same logic for write_to_fast as sender-receiver path
-        write_to_fast &= aux.can_write_to_fast();
-        if (aux.alternate_slow_fast_writer()) {
-            aux.set_can_write_to_fast(!aux.can_write_to_fast());
-        }
-        auto &buffer = write_to_fast ? *aux.fiber_write_buffer
-                                     : *aux.fiber_write_buffer_slow;
-        return fiber_write_node_set_spare(aux, buffer, node, write_to_fast);
-    }
-
     write_to_fast &= aux.can_write_to_fast();
     if (aux.alternate_slow_fast_writer()) {
-        // alternate between slow and fast writer
+        aux.set_can_write_to_fast(!aux.can_write_to_fast());
+    }
+    auto &buffer = write_to_fast ? aux.fiber_write_buffer_fast_ref()
+                                 : aux.fiber_write_buffer_slow_ref();
+    return fiber_write_node_set_spare(aux, buffer, node, write_to_fast);
+}
+
+// Sender-receiver version of async_write_node_set_spare for use in copy_trie
+// and other paths that don't have fiber write buffers.
+chunk_offset_t
+async_write_node_sender_receiver(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
+{
+    write_to_fast &= aux.can_write_to_fast();
+    if (aux.alternate_slow_fast_writer()) {
         aux.set_can_write_to_fast(!aux.can_write_to_fast());
     }
 
@@ -1584,16 +1585,23 @@ async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
 
 void flush_buffered_writes(UpdateAuxImpl &aux)
 {
-    // In fiber mode, flush both fast and slow buffers
-    if (aux.fiber_write_buffer != nullptr) {
-        aux.fiber_write_buffer->flush();
-        if (aux.fiber_write_buffer_slow != nullptr &&
-            aux.fiber_write_buffer_slow->written_bytes() > 0) {
-            aux.fiber_write_buffer_slow->flush();
-        }
-        return;
+    aux.fiber_write_buffer_fast_ref().flush();
+    auto &slow_buffer = aux.fiber_write_buffer_slow_ref();
+    if (slow_buffer.written_bytes() > 0) {
+        slow_buffer.flush();
     }
+}
 
+// return root physical offset
+chunk_offset_t
+write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
+{
+    return fiber_write_new_root_node(aux, root, version);
+}
+
+// Sender-receiver version of flush_buffered_writes for use in copy_trie.
+static void flush_buffered_writes_sender_receiver(UpdateAuxImpl &aux)
+{
     // Round up with all bits zero
     auto replace = [&](node_writer_unique_ptr_type &node_writer) {
         auto *sender = &node_writer->sender();
@@ -1624,17 +1632,14 @@ void flush_buffered_writes(UpdateAuxImpl &aux)
     aux.io->flush();
 }
 
-// return root physical offset
+// Sender-receiver version of write_new_root_node for use in copy_trie.
 chunk_offset_t
-write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
+write_new_root_node_sender_receiver(
+    UpdateAuxImpl &aux, Node &root, uint64_t const version)
 {
-    // Use fiber-based write path when fiber write buffer is active
-    if (aux.fiber_write_buffer != nullptr) {
-        return fiber_write_new_root_node(aux, root, version);
-    }
-
-    auto const offset_written_to = async_write_node_set_spare(aux, root, true);
-    flush_buffered_writes(aux);
+    auto const offset_written_to =
+        async_write_node_sender_receiver(aux, root, true);
+    flush_buffered_writes_sender_receiver(aux);
     // advance fast and slow ring's latest offset in db metadata
     aux.advance_db_offsets_to(
         aux.node_writer_fast->sender().offset(),
@@ -1837,16 +1842,16 @@ chunk_offset_t fiber_write_new_root_node(
     UpdateAuxImpl &aux, Node &root, uint64_t const version)
 {
     // Root always goes to fast buffer (in_fast_list = true)
-    auto const offset_written_to =
-        fiber_write_node_set_spare(aux, *aux.fiber_write_buffer, root, true);
+    auto const offset_written_to = fiber_write_node_set_spare(
+        aux, aux.fiber_write_buffer_fast_ref(), root, true);
 
     // Flush both fast and slow buffers
     flush_buffered_writes(aux);
 
     // Advance both fast and slow ring offsets in db metadata
     aux.advance_db_offsets_to(
-        aux.fiber_write_buffer->current_offset(),
-        aux.fiber_write_buffer_slow->current_offset());
+        aux.fiber_write_buffer_fast_ref().current_offset(),
+        aux.fiber_write_buffer_slow_ref().current_offset());
 
     // Update root offset (same logic as non-fiber version)
     auto const max_version_in_db = aux.db_history_max_version();

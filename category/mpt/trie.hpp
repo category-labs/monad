@@ -174,8 +174,18 @@ public:
 chunk_offset_t
 async_write_node_set_spare(UpdateAuxImpl &, Node &, bool is_fast);
 
+// Sender-receiver version of async_write_node_set_spare for use in copy_trie
+// and other paths that don't have fiber write buffers.
+chunk_offset_t
+async_write_node_sender_receiver(UpdateAuxImpl &, Node &, bool is_fast);
+
 chunk_offset_t
 write_new_root_node(UpdateAuxImpl &, Node &root, uint64_t version);
+
+// Sender-receiver version of write_new_root_node for use in copy_trie
+// and other paths that don't have fiber write buffers.
+chunk_offset_t
+write_new_root_node_sender_receiver(UpdateAuxImpl &, Node &root, uint64_t version);
 
 node_writer_unique_ptr_type
 replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
@@ -407,14 +417,24 @@ public:
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
 
-    // Fiber write buffers for fiber-based upsert. When non-null, write
-    // operations use fiber_write_* functions instead of sender-receiver.
-    // Initialized in reset_node_writers() and persist across do_update() calls.
+    // Fiber write buffers for fiber-based upsert. Initialized in
+    // setup_fiber_write_buffers() or do_update() and persist across calls.
     std::unique_ptr<class FiberWriteBuffer> fiber_write_buffer_;      // fast
     std::unique_ptr<class FiberWriteBuffer> fiber_write_buffer_slow_; // slow
-    // Raw pointer aliases for use within do_update context
-    class FiberWriteBuffer *fiber_write_buffer{nullptr};
-    class FiberWriteBuffer *fiber_write_buffer_slow{nullptr};
+
+    FiberWriteBuffer &fiber_write_buffer_fast_ref()
+    {
+        MONAD_ASSERT(fiber_write_buffer_ != nullptr);
+        return *fiber_write_buffer_;
+    }
+
+    FiberWriteBuffer &fiber_write_buffer_slow_ref()
+    {
+        MONAD_ASSERT(fiber_write_buffer_slow_ != nullptr);
+        return *fiber_write_buffer_slow_;
+    }
+
+    void setup_fiber_write_buffers();
 
     detail::TrieUpdateCollectedStats stats;
 
@@ -880,7 +900,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 192 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 176 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>

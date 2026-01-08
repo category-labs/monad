@@ -16,10 +16,15 @@
 #pragma once
 
 #include <category/mpt/compute.hpp>
+#include <category/mpt/fiber_write_utils.hpp>
 #include <category/mpt/trie.hpp>
 
 #include <category/core/assert.h>
 #include <category/core/small_prng.hpp>
+
+#include <boost/fiber/fiber.hpp>
+
+#include <liburing.h>
 
 #include <array>
 #include <vector>
@@ -236,6 +241,78 @@ namespace monad::test
     using StateMachinePlainVarLen = StateMachineAlways<
         EmptyCompute, StateMachineConfig{.variable_length_start_depth = 0}>;
 
+    // Wait for io_uring completion and process it, modeled after do_update().
+    inline bool wait_and_poll_ring(io_uring *ring)
+    {
+        struct io_uring_cqe *cqe = nullptr;
+        struct __kernel_timespec ts = {.tv_sec = 0, .tv_nsec = 100000}; // 100us
+        int ret = io_uring_wait_cqe_timeout(ring, &cqe, &ts);
+        if (ret == 0 && cqe != nullptr) {
+            void *user_data = io_uring_cqe_get_data(cqe);
+            if (user_data != nullptr) {
+                auto *token =
+                    static_cast<monad::fiber::CompletionToken *>(user_data);
+                if (token->magic ==
+                    monad::fiber::CompletionToken::FIBER_COMPLETION_MAGIC) {
+                    token->result = cqe->res;
+                    token->completed = true;
+                    if (token->waiting_fiber != nullptr &&
+                        !token->waiting_fiber->ready_is_linked()) {
+                        token->waiting_fiber->get_scheduler()->schedule(
+                            token->waiting_fiber);
+                    }
+                }
+            }
+            io_uring_cqe_seen(ring, cqe);
+            return true;
+        }
+        return false;
+    }
+
+    // Run upsert in a fiber context for on-disk aux, polling for completions.
+    inline Node::SharedPtr upsert_in_fiber_context(
+        UpdateAuxImpl &aux, uint64_t version, StateMachine &sm,
+        Node::SharedPtr old, UpdateList &&updates)
+    {
+        if (!aux.is_on_disk()) {
+            return upsert(aux, version, sm, std::move(old), std::move(updates));
+        }
+
+        // Take lock and set tid like do_update() does
+        auto g(aux.unique_lock());
+        auto g2(aux.set_current_upsert_tid());
+
+        // Set write flags like do_update() does
+        aux.set_can_write_to_fast(true);
+
+        Node::SharedPtr result;
+        bool done = false;
+
+        boost::fibers::fiber work_fiber([&]() {
+            result = upsert(
+                aux, version, sm, std::move(old), std::move(updates));
+            done = true;
+        });
+
+        // Poll both read and write rings like do_update() does.
+        // Nested updates may do reads to load existing nodes.
+        while (!done) {
+            size_t completions = 0;
+            completions += poll_ring_completions(aux.io->read_ring());
+            completions += poll_ring_completions(aux.io->write_ring());
+
+            if (completions == 0) {
+                wait_and_poll_ring(aux.io->read_ring());
+                wait_and_poll_ring(aux.io->write_ring());
+            }
+
+            boost::this_fiber::yield();
+        }
+
+        work_fiber.join();
+        return result;
+    }
+
     Node::SharedPtr upsert_vector(
         UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
         std::vector<Update> &&update_vec, uint64_t const version = 0)
@@ -244,21 +321,23 @@ namespace monad::test
         for (auto &it : update_vec) {
             update_ls.push_front(it);
         }
-        return upsert(aux, version, sm, std::move(old), std::move(update_ls));
+        return upsert_in_fiber_context(
+            aux, version, sm, std::move(old), std::move(update_ls));
     }
 
     template <class... Updates>
-    [[nodiscard]] constexpr Node::SharedPtr upsert_updates_with_version(
+    [[nodiscard]] Node::SharedPtr upsert_updates_with_version(
         UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
         uint64_t const version, Updates... updates)
     {
         UpdateList update_ls;
         (update_ls.push_front(updates), ...);
-        return upsert(aux, version, sm, std::move(old), std::move(update_ls));
+        return upsert_in_fiber_context(
+            aux, version, sm, std::move(old), std::move(update_ls));
     }
 
     template <class... Updates>
-    [[nodiscard]] constexpr Node::SharedPtr upsert_updates(
+    [[nodiscard]] Node::SharedPtr upsert_updates(
         UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
         Updates... updates)
     {
@@ -366,6 +445,7 @@ namespace monad::test
             , root()
             , aux(io, MPT_TEST_HISTORY_LENGTH)
         {
+            aux.setup_fiber_write_buffers();
         }
 
         void reset()

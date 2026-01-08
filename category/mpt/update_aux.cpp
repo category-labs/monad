@@ -563,6 +563,19 @@ UpdateAuxImpl::~UpdateAuxImpl()
     }
 }
 
+void UpdateAuxImpl::setup_fiber_write_buffers()
+{
+    MONAD_ASSERT(io != nullptr);
+    if (!fiber_write_buffer_) {
+        auto const fast_start_offset = get_start_of_wip_fast_offset();
+        auto const slow_start_offset = get_start_of_wip_slow_offset();
+        fiber_write_buffer_ =
+            std::make_unique<FiberWriteBuffer>(*io, fast_start_offset);
+        fiber_write_buffer_slow_ =
+            std::make_unique<FiberWriteBuffer>(*io, slow_start_offset);
+    }
+}
+
 #if defined(__GNUC__) && !defined(__clang__)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
@@ -1124,18 +1137,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
     // by find operations (threadsafe_boost_fibers_promise).
 
     set_can_write_to_fast(can_write_to_fast);
-
-    // Lazily initialize persistent fiber write buffers on first do_update().
-    // These maintain their position across do_update() calls, matching how
-    // node_writer_fast/slow work in the sender-receiver path.
-    if (!fiber_write_buffer_) {
-        auto const fast_start_offset = get_start_of_wip_fast_offset();
-        auto const slow_start_offset = get_start_of_wip_slow_offset();
-        fiber_write_buffer_ = std::make_unique<FiberWriteBuffer>(*io, fast_start_offset);
-        fiber_write_buffer_slow_ = std::make_unique<FiberWriteBuffer>(*io, slow_start_offset);
-    }
-    fiber_write_buffer = fiber_write_buffer_.get();
-    fiber_write_buffer_slow = fiber_write_buffer_slow_.get();
+    setup_fiber_write_buffers();
 
     // Run the upsert work in a fiber to enable fiber-based IO.
     Node::SharedPtr root;
@@ -1238,10 +1240,8 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         fiber_write_buffer_->current_offset(),
         fiber_write_buffer_slow_->current_offset());
 
-    // Release fiber write buffer pointers and unique_ptrs to return write
-    // buffers to the pool. New buffers will be created on next do_update().
-    fiber_write_buffer = nullptr;
-    fiber_write_buffer_slow = nullptr;
+    // Release fiber write buffers to return write buffers to the pool.
+    // New buffers will be created on next do_update().
     fiber_write_buffer_.reset();
     fiber_write_buffer_slow_.reset();
 

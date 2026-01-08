@@ -723,7 +723,8 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
     u_prefix.next = std::move(updates);
     UpdateList ul_prefix;
     ul_prefix.push_front(u_prefix);
-    this->root = upsert(this->aux, 0, *this->sm, {}, std::move(ul_prefix));
+    this->root = upsert_in_fiber_context(
+        this->aux, 0, *this->sm, {}, std::move(ul_prefix));
 
     EXPECT_EQ(
         this->root->data(),
@@ -761,7 +762,8 @@ TYPED_TEST(TrieTest, single_value_variable_length_trie_with_prefix)
     u_prefix.next = std::move(updates);
     UpdateList ul_prefix;
     ul_prefix.push_front(u_prefix);
-    this->root = upsert(this->aux, 0, *this->sm, {}, std::move(ul_prefix));
+    this->root = upsert_in_fiber_context(
+        this->aux, 0, *this->sm, {}, std::move(ul_prefix));
 
     EXPECT_EQ(
         this->root->data(),

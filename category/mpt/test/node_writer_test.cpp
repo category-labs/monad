@@ -150,7 +150,7 @@ TEST_F(NodeWriterTest, write_nodes_each_within_buffer)
         AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE / node_disk_size;
     auto node = make_node_of_size(node_disk_size);
     for (unsigned i = 0; i < num_nodes; ++i) {
-        auto const node_offset = async_write_node_set_spare(aux, *node, true);
+        auto const node_offset = async_write_node_sender_receiver(aux, *node, true);
         EXPECT_EQ(node_offset.offset, node_disk_size * i);
 
         EXPECT_EQ(node_offset.id, get_writer_chunk_id(aux.node_writer_fast));
@@ -164,7 +164,7 @@ TEST_F(NodeWriterTest, write_nodes_each_within_buffer)
     // first buffer is full
     EXPECT_EQ(aux.node_writer_fast->sender().remaining_buffer_bytes(), 0);
     // continue write more node, node writer will switch to next buffer
-    auto const node_offset = async_write_node_set_spare(aux, *node, true);
+    auto const node_offset = async_write_node_sender_receiver(aux, *node, true);
     EXPECT_EQ(node_offset.offset, AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
     EXPECT_EQ(
         get_writer_chunk_id(aux.node_writer_fast), node_writer_chunk_id_before);
@@ -188,7 +188,7 @@ TEST_F(NodeWriterTest, write_node_across_buffers_ends_at_buffer_boundary)
 
     // node spans buffer 3 buffers
     auto node = make_node_of_size(chunk_remaining_bytes);
-    auto const node_offset = async_write_node_set_spare(aux, *node, true);
+    auto const node_offset = async_write_node_sender_receiver(aux, *node, true);
     EXPECT_EQ(
         get_writer_chunk_count(aux.node_writer_fast),
         node_writer_chunk_count_before);
@@ -196,7 +196,7 @@ TEST_F(NodeWriterTest, write_node_across_buffers_ends_at_buffer_boundary)
     EXPECT_EQ(aux.node_writer_fast->sender().remaining_buffer_bytes(), 0);
 
     // write another node, node writer will switch to next buffer at next chunk
-    auto const new_node_offset = async_write_node_set_spare(aux, *node, true);
+    auto const new_node_offset = async_write_node_sender_receiver(aux, *node, true);
     EXPECT_EQ(new_node_offset.offset, 0);
     auto const node_writer_chunk_count_after =
         get_writer_chunk_count(aux.node_writer_fast);
@@ -223,7 +223,7 @@ TEST_F(NodeWriterTest, write_node_at_new_chunk)
 
     // make a node that is too big to fit in current chunk
     auto node = make_node_of_size(chunk_remaining_bytes + 1024);
-    auto const node_offset = async_write_node_set_spare(aux, *node, true);
+    auto const node_offset = async_write_node_sender_receiver(aux, *node, true);
     auto const node_offset_chunk_count =
         aux.db_metadata()->at(node_offset.id)->insertion_count();
     EXPECT_EQ(

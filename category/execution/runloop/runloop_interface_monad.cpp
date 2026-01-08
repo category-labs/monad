@@ -243,7 +243,6 @@ struct MonadRunloopDbCache: public Db
 
 struct MonadRunloopImpl
 {
-    quill::Config quill_cfg;
     std::unique_ptr<MonadChain> chain;
     fs::path ledger_dir;
     OnDiskMachine db_machine;
@@ -266,8 +265,7 @@ MonadRunloopImpl::MonadRunloopImpl(
     uint64_t chain_id,
     char const *ledger_path,
     char const *db_path)
-    : quill_cfg{}
-    , chain{monad_chain_from_chain_id(chain_id)}
+    : chain{monad_chain_from_chain_id(chain_id)}
     , ledger_dir{ledger_path}
     , db_machine{}
     , raw_db{
@@ -289,17 +287,6 @@ MonadRunloopImpl::MonadRunloopImpl(
     , priority_pool{nthreads, nfibers}
     , finalized_block_num{}
 {
-    auto stdout_handler = quill::stdout_handler();
-    stdout_handler->set_pattern(
-        "%(time) [%(thread_id)] %(file_name):%(line_number) LOG_%(log_level)\t"
-        "%(message)",
-        "%Y-%m-%d %H:%M:%S.%Qns",
-        quill::Timezone::GmtTime);
-    quill_cfg.default_handlers.emplace_back(stdout_handler);
-    quill::configure(quill_cfg);
-    quill::start(true);
-    quill::get_root_logger()->set_log_level(log_level);
-
     if (triedb.get_root() == nullptr) {
         LOG_INFO("loading from genesis");
         GenesisState const genesis_state = chain->get_genesis_state();
@@ -354,6 +341,18 @@ MONAD_ANONYMOUS_NAMESPACE_END
 extern "C" MonadRunloop *monad_runloop_new(
     uint64_t chain_id, char const *ledger_path, char const *db_path)
 {
+    auto stdout_handler = quill::stdout_handler();
+    stdout_handler->set_pattern(
+        "%(time) [%(thread_id)] %(file_name):%(line_number) LOG_%(log_level)\t"
+        "%(message)",
+        "%Y-%m-%d %H:%M:%S.%Qns",
+        quill::Timezone::GmtTime);
+    quill::Config quill_cfg;
+    quill_cfg.default_handlers.emplace_back(stdout_handler);
+    quill::configure(quill_cfg);
+    quill::start(true);
+
+    quill::get_root_logger()->set_log_level(log_level);
     return from_impl(new MonadRunloopImpl{chain_id, ledger_path, db_path});
 }
 

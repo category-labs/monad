@@ -33,6 +33,8 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 // Poll a single io_uring ring for completions and wake waiting fibers.
 // Returns the number of completions processed.
+// Only processes completions that have the fiber completion magic number,
+// safely skipping sender-receiver completions that may be in the same ring.
 inline size_t poll_ring_completions(io_uring *ring)
 {
     if (ring == nullptr) {
@@ -46,18 +48,24 @@ inline size_t poll_ring_completions(io_uring *ring)
     while (io_uring_peek_cqe(ring, &cqe) == 0 && cqe != nullptr) {
         void *user_data = io_uring_cqe_get_data(cqe);
         if (user_data != nullptr) {
+            // Check magic number to ensure this is a fiber completion.
+            // Sender-receiver completions have different user_data format
+            // and must not be processed here.
             auto *token =
                 static_cast<monad::fiber::CompletionToken *>(user_data);
-            token->result = cqe->res;
-            token->completed = true;
+            if (token->magic == monad::fiber::CompletionToken::FIBER_COMPLETION_MAGIC) {
+                token->result = cqe->res;
+                token->completed = true;
 
-            // Wake up the waiting fiber using standard scheduler
-            // Only schedule if the fiber isn't already in the ready queue
-            if (token->waiting_fiber != nullptr &&
-                !token->waiting_fiber->ready_is_linked()) {
-                auto *ctx = token->waiting_fiber;
-                ctx->get_scheduler()->schedule(ctx);
+                // Wake up the waiting fiber using standard scheduler
+                // Only schedule if the fiber isn't already in the ready queue
+                if (token->waiting_fiber != nullptr &&
+                    !token->waiting_fiber->ready_is_linked()) {
+                    auto *ctx = token->waiting_fiber;
+                    ctx->get_scheduler()->schedule(ctx);
+                }
             }
+            // Non-fiber completions are left for the sender-receiver code to process
         }
         io_uring_cqe_seen(ring, cqe);
         ++count;
@@ -137,29 +145,60 @@ inline Node::SharedPtr fiber_read_node(
     rd_offset.offset = rd_offset_value & chunk_offset_t::max_offset;
     rd_offset.set_spare(0);
 
-    // Get read buffer (may yield if none available)
-    auto buffer = fiber_get_read_buffer(io);
-
     // Create completion token on stack
     monad::fiber::CompletionToken token;
     token.waiting_fiber = boost::fibers::context::active();
 
-    // Submit read
-    io.submit_fiber_read(
-        std::span<std::byte>(buffer.get(), bytes_to_read), rd_offset, &token);
+    // Handle short vs long reads
+    if (bytes_to_read <= async::AsyncIO::READ_BUFFER_SIZE) {
+        // Short read - use pool buffer
+        auto buffer = fiber_get_read_buffer(io);
 
-    // Yield until completion
-    while (!token.completed) {
-        boost::this_fiber::yield();
+        // Submit read
+        io.submit_fiber_read(
+            std::span<std::byte>(buffer.get(), bytes_to_read), rd_offset, &token);
+
+        // Yield until completion
+        while (!token.completed) {
+            boost::this_fiber::yield();
+        }
+
+        MONAD_ASSERT(token.result >= 0);
+        MONAD_ASSERT(token.result == static_cast<int32_t>(bytes_to_read));
+
+        // Deserialize node from buffer
+        return deserialize_node_from_buffer(
+            reinterpret_cast<unsigned char const *>(buffer.get()) + buffer_offset,
+            bytes_to_read - buffer_offset);
     }
+    else {
+        // Long read - allocate separate buffer
+        std::byte *buffer = static_cast<std::byte *>(
+            aligned_alloc(DISK_PAGE_SIZE, bytes_to_read));
+        MONAD_ASSERT(buffer != nullptr);
 
-    MONAD_ASSERT(token.result >= 0);
-    MONAD_ASSERT(token.result == static_cast<int32_t>(bytes_to_read));
+        // Submit read
+        io.submit_fiber_read(
+            std::span<std::byte>(buffer, bytes_to_read), rd_offset, &token);
 
-    // Deserialize node from buffer
-    return deserialize_node_from_buffer(
-        reinterpret_cast<unsigned char const *>(buffer.get()) + buffer_offset,
-        bytes_to_read - buffer_offset);
+        // Yield until completion
+        while (!token.completed) {
+            boost::this_fiber::yield();
+        }
+
+        MONAD_ASSERT(token.result >= 0);
+        MONAD_ASSERT(token.result == static_cast<int32_t>(bytes_to_read));
+
+        // Deserialize node from buffer
+        auto node = deserialize_node_from_buffer(
+            reinterpret_cast<unsigned char const *>(buffer) + buffer_offset,
+            bytes_to_read - buffer_offset);
+
+        // Free the allocated buffer
+        free(buffer);
+
+        return node;
+    }
 }
 
 // Fiber-based write buffer for accumulating node data and flushing to disk.
@@ -260,9 +299,8 @@ public:
             return start_offset_;
         }
 
-        // Pad to disk page alignment
-        constexpr size_t PAGE_SIZE = 4096;
-        size_t padded_size = (written_ + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+        // Pad to disk page alignment (DISK_PAGE_SIZE = 512 bytes)
+        size_t padded_size = round_up_align<DISK_PAGE_BITS>(written_);
         if (padded_size > written_) {
             std::memset(buffer_.get() + written_, 0, padded_size - written_);
         }
@@ -295,11 +333,41 @@ public:
 
     // Flush and get a new buffer for continued writing at a new offset.
     // Use this when crossing chunk boundaries.
+    // This handles the case where normal flush would exceed max_offset.
     void flush_and_reset(chunk_offset_t new_offset)
     {
-        flush();
+        if (written_ == 0) {
+            start_offset_ = new_offset;
+            return;
+        }
+
+        // Pad to disk page alignment (DISK_PAGE_SIZE = 512 bytes)
+        size_t padded_size = round_up_align<DISK_PAGE_BITS>(written_);
+        if (padded_size > written_) {
+            std::memset(buffer_.get() + written_, 0, padded_size - written_);
+        }
+
+        // Create completion token on stack
+        monad::fiber::CompletionToken token;
+        token.waiting_fiber = boost::fibers::context::active();
+
+        // Submit write to current chunk
+        io_->submit_fiber_write(
+            std::span<std::byte const>(buffer_.get(), padded_size),
+            start_offset_, &token);
+
+        // Yield until completion
+        while (!token.completed) {
+            boost::this_fiber::yield();
+        }
+
+        MONAD_ASSERT(token.result >= 0);
+        MONAD_ASSERT(token.result == static_cast<int32_t>(padded_size));
+
+        // Reset to new chunk - don't update old start_offset_ since we're
+        // switching chunks anyway
         start_offset_ = new_offset;
-        // Buffer is reused (still valid after flush)
+        written_ = 0;
     }
 };
 

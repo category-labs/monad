@@ -653,25 +653,11 @@ struct OnDiskWithWorkerThreadImpl
                     did_nothing = false;
                 }
                 async_io.io.poll_nonblocking(1);
-                // Poll write ring for completions - wakes fibers waiting on writes
-                {
-                    auto *wr_ring = async_io.io.write_ring();
-                    io_uring_cqe *cqe = nullptr;
-                    while (io_uring_peek_cqe(wr_ring, &cqe) == 0 && cqe != nullptr) {
-                        void *user_data = io_uring_cqe_get_data(cqe);
-                        if (user_data != nullptr) {
-                            auto *token = static_cast<
-                                monad::fiber::WriteCompletionToken *>(user_data);
-                            token->result = cqe->res;
-                            token->completed = true;
-                            if (token->waiting_fiber != nullptr) {
-                                token->waiting_fiber->get_scheduler()->schedule(
-                                    token->waiting_fiber);
-                            }
-                        }
-                        io_uring_cqe_seen(wr_ring, cqe);
-                    }
-                }
+                // Note: We do NOT poll the write ring here for fiber completions.
+                // Fiber-based IO is only used within do_update's upsert fiber,
+                // which has its own hot loop that polls completions. Polling here
+                // would consume sender-receiver completions that copy_trie_to_dest
+                // and other sender-receiver operations depend on.
                 boost::this_fiber::yield();
                 if (boost::fibers::has_ready_fibers()) {
                     did_nothing = false;

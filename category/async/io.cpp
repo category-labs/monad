@@ -506,7 +506,6 @@ void AsyncIO::submit_fiber_read(
 {
     MONAD_ASSERT(user_data != nullptr);
     MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
-    MONAD_ASSERT(buffer.size() <= READ_BUFFER_SIZE);
 
 #ifndef NDEBUG
     memset(buffer.data(), 0xff, buffer.size());
@@ -517,13 +516,25 @@ void AsyncIO::submit_fiber_read(
     struct io_uring_sqe *sqe = io_uring_get_sqe(rd_ring);
     MONAD_ASSERT(sqe);
 
-    io_uring_prep_read_fixed(
-        sqe,
-        ci.io_uring_read_fd,
-        buffer.data(),
-        static_cast<unsigned int>(buffer.size()),
-        ci.chunk.read_fd().second + chunk_and_offset.offset,
-        0);
+    if (buffer.size() <= READ_BUFFER_SIZE) {
+        // Short read - use registered buffer pool
+        io_uring_prep_read_fixed(
+            sqe,
+            ci.io_uring_read_fd,
+            buffer.data(),
+            static_cast<unsigned int>(buffer.size()),
+            ci.chunk.read_fd().second + chunk_and_offset.offset,
+            0);
+    }
+    else {
+        // Long read - use user-allocated buffer
+        io_uring_prep_read(
+            sqe,
+            ci.io_uring_read_fd,
+            buffer.data(),
+            static_cast<unsigned int>(buffer.size()),
+            ci.chunk.read_fd().second + chunk_and_offset.offset);
+    }
     sqe->flags |= IOSQE_FIXED_FILE;
     // Default priority for fiber reads
     sqe->ioprio = 0;

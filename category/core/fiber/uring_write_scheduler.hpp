@@ -46,8 +46,13 @@ public:
 
 // Completion token stored in io_uring sqe user_data for both reads and writes.
 // Allocated on fiber stack - remains valid while fiber is suspended.
+// The magic number is used to distinguish fiber completions from sender-receiver
+// completions when polling io_uring rings.
 struct CompletionToken
 {
+    // Magic number to identify fiber completions in mixed io_uring environments
+    static constexpr uint64_t FIBER_COMPLETION_MAGIC = 0x4649424552434F4DULL; // "FIBERCOM"
+    uint64_t magic{FIBER_COMPLETION_MAGIC};
     context *waiting_fiber{nullptr};
     int32_t result{0};
     bool completed{false};

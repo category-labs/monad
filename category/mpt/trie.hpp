@@ -1043,6 +1043,7 @@ template <receiver Receiver>
         Receiver::lifetime_managed_internally)
 void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
 {
+    // Sender-receiver path (used for traverse and other non-upsert reads)
     [[likely]] if (
         receiver.bytes_to_read <=
         MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {

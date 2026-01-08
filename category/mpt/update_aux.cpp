@@ -1117,12 +1117,11 @@ Node::SharedPtr UpdateAuxImpl::do_update(
     }
     MONAD_ASSERT(is_on_disk());
 
-    // Install fiber scheduler if not already installed on this thread.
-    // This enables fiber-based IO for the upsert path.
-    if (monad::fiber::UringWriteFiberScheduler::current_scheduler == nullptr) {
-        boost::fibers::use_scheduling_algorithm<
-            monad::fiber::UringWriteFiberScheduler>(io->write_ring());
-    }
+    // NOTE: We intentionally do NOT install a custom fiber scheduler here.
+    // The default round_robin scheduler works fine because we manually poll
+    // io_uring completions in the hot loop below. Installing a custom scheduler
+    // mid-execution can interfere with cross-thread fiber synchronization used
+    // by find operations (threadsafe_boost_fibers_promise).
 
     set_can_write_to_fast(can_write_to_fast);
 
@@ -1183,11 +1182,49 @@ Node::SharedPtr UpdateAuxImpl::do_update(
     // Poll completions and run fiber scheduler until upsert completes.
     // We cannot use join() directly because it suspends main context without
     // polling io_uring, which would deadlock when fibers yield waiting for IO.
+    auto wait_and_poll_ring = [](io_uring *ring) {
+        struct io_uring_cqe *cqe = nullptr;
+        struct __kernel_timespec ts = {.tv_sec = 0, .tv_nsec = 100000}; // 100us
+        int ret = io_uring_wait_cqe_timeout(ring, &cqe, &ts);
+        if (ret == 0 && cqe != nullptr) {
+            void *user_data = io_uring_cqe_get_data(cqe);
+            if (user_data != nullptr) {
+                // Check magic number to ensure this is a fiber completion.
+                // Sender-receiver completions have different user_data format.
+                auto *token =
+                    static_cast<monad::fiber::CompletionToken *>(user_data);
+                if (token->magic ==
+                    monad::fiber::CompletionToken::FIBER_COMPLETION_MAGIC) {
+                    token->result = cqe->res;
+                    token->completed = true;
+                    if (token->waiting_fiber != nullptr &&
+                        !token->waiting_fiber->ready_is_linked()) {
+                        token->waiting_fiber->get_scheduler()->schedule(
+                            token->waiting_fiber);
+                    }
+                }
+            }
+            io_uring_cqe_seen(ring, cqe);
+            return true;
+        }
+        return false;
+    };
+
     while (!upsert_done) {
-        // Poll write completions to wake any waiting fibers.
-        // NOTE: Read ring polling is not yet enabled - reads still use
-        // sender-receiver path which has different completion handling.
-        poll_write_completions(io->write_ring());
+        // Poll both read and write rings to wake any waiting fibers.
+        // All IO in the upsert fiber uses fiber-based completions (CompletionToken),
+        // not sender-receiver, so we poll both rings uniformly.
+        size_t completions = 0;
+        completions += poll_ring_completions(io->read_ring());
+        completions += poll_ring_completions(io->write_ring());
+
+        if (completions == 0) {
+            // No completions ready - wait briefly on each ring.
+            // We alternate between rings to catch completions from either.
+            wait_and_poll_ring(io->read_ring());
+            wait_and_poll_ring(io->write_ring());
+        }
+
         // Yield to let the upsert fiber and scheduler run
         boost::this_fiber::yield();
     }

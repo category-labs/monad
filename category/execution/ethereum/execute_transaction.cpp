@@ -79,15 +79,12 @@ template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     std::span<std::optional<Address> const> const authorities,
-    BlockHeader const &header, uint64_t const i,
-    ChainContext<traits> const &chain_ctx)
+    BlockHeader const &header)
     : chain_{chain}
     , tx_{tx}
     , sender_{sender}
     , authorities_{authorities}
     , header_{header}
-    , i_{i}
-    , chain_ctx_{chain_ctx}
 {
 }
 
@@ -282,8 +279,10 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
-    : ExecuteTransactionNoValidation<
-          traits>{chain, tx, sender, authorities, header, i, chain_ctx}
+    : ExecuteTransactionNoValidation<traits>{
+          chain, tx, sender, authorities, header}
+    , i_{i}
+    , chain_ctx_{chain_ctx}
     , block_hash_buffer_{block_hash_buffer}
     , block_state_{block_state}
     , block_metrics_{block_metrics}
@@ -323,7 +322,6 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         tx_context,
         block_hash_buffer_,
         state,
-        sender_,
         tx_,
         header_.base_fee_per_gas,
         i_,

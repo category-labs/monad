@@ -358,7 +358,6 @@ namespace
             tx_context,
             buffer,
             state,
-            sender,
             enriched_txn,
             header.base_fee_per_gas,
             0,
@@ -369,8 +368,6 @@ namespace
             sender,
             authorities,
             header,
-            0,
-            chain_context,
         }(state, host);
 
         // compute gas_refund and gas_used

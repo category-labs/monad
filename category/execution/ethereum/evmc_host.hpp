@@ -104,7 +104,6 @@ static_assert(alignof(EvmcHostBase) == 8);
 template <Traits traits>
 struct EvmcHost final : public EvmcHostBase
 {
-    Address sender_;
     Transaction const &tx_;
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
@@ -112,11 +111,10 @@ struct EvmcHost final : public EvmcHostBase
 
     EvmcHost(
         CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
-        BlockHashBuffer const &block_hash_buffer, State &state, Address sender,
+        BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> base_fee_per_gas,
         uint64_t i, ChainContext<traits> const &chain_ctx) noexcept
         : EvmcHostBase{call_tracer, tx_context, block_hash_buffer, state}
-        , sender_{sender}
         , tx_{tx}
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
@@ -196,34 +194,12 @@ struct EvmcHost final : public EvmcHostBase
     {
         return call_tracer_;
     }
-
-    bool revert_transaction()
-    {
-        try {
-            if constexpr (is_monad_trait_v<traits>) {
-                return ::monad::revert_monad_transaction<traits>(
-                    sender_,
-                    tx_,
-                    base_fee_per_gas_.value_or(0),
-                    i_,
-                    state_,
-                    chain_ctx_);
-            }
-            else {
-                return false;
-            }
-        }
-        catch (...) {
-            capture_current_exception();
-        }
-        stack_unwind();
-    }
 };
 
-static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 144);
+static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 120);
 static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
 
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 144);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 120);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

@@ -186,7 +186,7 @@ TYPED_TEST(TraitsTest, execute_success)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -194,9 +194,7 @@ TYPED_TEST(TraitsTest, execute_success)
             tx,
             sender,
             authorities_empty,
-            BlockHeader{.beneficiary = beneficiary},
-            0,
-            chain_ctx)(s, host);
+            BlockHeader{.beneficiary = beneficiary})(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -263,7 +261,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -271,9 +269,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
             tx,
             sender,
             authorities_empty,
-            BlockHeader{.beneficiary = beneficiary},
-            0,
-            chain_ctx)(s, host);
+            BlockHeader{.beneficiary = beneficiary})(s, host);
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
     ASSERT_TRUE(call_frames.size() == 1);
 
@@ -345,7 +341,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -353,9 +349,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
             tx,
             sender,
             authorities_empty,
-            BlockHeader{.beneficiary = beneficiary},
-            0,
-            chain_ctx)(s, host);
+            BlockHeader{.beneficiary = beneficiary})(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 2);
 
@@ -461,7 +455,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -469,9 +463,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
             tx,
             sender,
             authorities_empty,
-            BlockHeader{.beneficiary = beneficiary},
-            0,
-            chain_ctx)(s, host);
+            BlockHeader{.beneficiary = beneficiary})(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 
     EXPECT_EQ(call_frames.size(), 4);
@@ -552,7 +544,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, sender, tx, base_fee, 0, chain_ctx};
+        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -560,9 +552,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
             tx,
             sender,
             authorities_empty,
-            BlockHeader{.beneficiary = beneficiary},
-            0,
-            chain_ctx)(s, host);
+            BlockHeader{.beneficiary = beneficiary})(s, host);
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
 
     EXPECT_EQ(call_frames.size(), 4);

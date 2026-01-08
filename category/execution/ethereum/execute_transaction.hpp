@@ -55,14 +55,11 @@ protected:
     Address const &sender_;
     std::span<std::optional<Address> const> const authorities_;
     BlockHeader const &header_;
-    uint64_t i_;
-    ChainContext<traits> const &chain_ctx_;
 
 public:
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
-        std::span<std::optional<Address> const>, BlockHeader const &,
-        uint64_t i, ChainContext<traits> const &chain_ctx);
+        std::span<std::optional<Address> const>, BlockHeader const &);
 
     evmc::Result operator()(State &, EvmcHost<traits> &);
 };
@@ -75,9 +72,9 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     using ExecuteTransactionNoValidation<traits>::sender_;
     using ExecuteTransactionNoValidation<traits>::authorities_;
     using ExecuteTransactionNoValidation<traits>::header_;
-    using ExecuteTransactionNoValidation<traits>::i_;
-    using ExecuteTransactionNoValidation<traits>::chain_ctx_;
 
+    uint64_t i_;
+    ChainContext<traits> const &chain_ctx_;
     BlockHashBuffer const &block_hash_buffer_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;

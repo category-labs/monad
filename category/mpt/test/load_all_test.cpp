@@ -15,10 +15,10 @@
 
 #include "test_fixtures_gtest.hpp"
 
-#include <category/mpt/node.hpp>
-#include <category/mpt/trie.hpp>
-
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/mpt/node.hpp>
+#include <category/mpt/test/test_fixtures_base.hpp>
+#include <category/mpt/trie.hpp>
 
 #include <iostream>
 #include <ostream>
@@ -33,7 +33,7 @@ TEST_F(LoadAllTest, works)
 {
     monad::test::UpdateAux<void> aux{state()->io};
     monad::test::StateMachineAlwaysMerkle sm;
-    monad::mpt::Node::SharedPtr root{monad::mpt::read_node_blocking(
+    monad::mpt::Node::SharedPtr const root{monad::mpt::read_node_blocking(
         state()->aux,
         aux.get_latest_root_offset(),
         aux.db_history_max_version())};

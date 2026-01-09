@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
@@ -43,7 +44,6 @@
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
-#include <category/execution/monad/reserve_balance.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -2479,10 +2479,10 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
             parent_senders_and_authorities = {sender};
         ankerl::unordered_dense::segmented_set<Address> const
             senders_and_authorities = {sender};
-        MonadChainContext const chain_context{
+        ChainContext<monad::MonadTraits<MONAD_NEXT>> const chain_context{
             .grandparent_senders_and_authorities =
-                &grandparent_senders_and_authorities,
-            .parent_senders_and_authorities = &parent_senders_and_authorities,
+                grandparent_senders_and_authorities,
+            .parent_senders_and_authorities = parent_senders_and_authorities,
             .senders_and_authorities = senders_and_authorities,
             .senders = senders,
             .authorities = authorities};
@@ -2494,7 +2494,7 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
         state.subtract_from_balance(sender, value);
         EXPECT_TRUE(block_state.can_merge(state));
         bool const should_revert =
-            revert_monad_transaction<monad::MonadTraits<MONAD_NEXT>>(
+            revert_transaction<monad::MonadTraits<MONAD_NEXT>>(
                 sender,
                 tx,
                 BASE_FEE_PER_GAS,

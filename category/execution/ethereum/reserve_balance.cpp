@@ -13,21 +13,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#pragma once
-
-#include <category/execution/ethereum/dispatch_transaction.hpp>
-#include <category/execution/monad/system_sender.hpp>
+#include <category/execution/ethereum/reserve_balance.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-Result<Receipt> dispatch_transaction(
-    Chain const &chain, uint64_t const i, Transaction const &transaction,
-    Address const &sender,
-    std::vector<std::optional<Address>> const &authorities,
-    BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &, ChainContext<traits> const &chain_ctx);
+bool revert_transaction(
+    Address const &, Transaction const &, uint256_t const &, uint64_t const,
+    State &, ChainContext<traits> const &)
+{
+    return false;
+}
+
+EXPLICIT_EVM_TRAITS(revert_transaction);
 
 MONAD_NAMESPACE_END

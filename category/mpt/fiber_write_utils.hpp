@@ -74,17 +74,6 @@ inline size_t poll_ring_completions(io_uring *ring)
     return count;
 }
 
-// Backward compatibility aliases for explicit tracking
-inline size_t poll_read_completions(io_uring *ring)
-{
-    return poll_ring_completions(ring);
-}
-
-inline size_t poll_write_completions(io_uring *ring)
-{
-    return poll_ring_completions(ring);
-}
-
 // Acquire a write buffer, yielding the fiber if none available.
 // This is a fiber-friendly alternative to AsyncIO::get_write_buffer()
 // which blocks the thread when buffers are exhausted.
@@ -158,9 +147,10 @@ inline Node::SharedPtr fiber_read_node(
         io.submit_fiber_read(
             std::span<std::byte>(buffer.get(), bytes_to_read), rd_offset, &token);
 
-        // Yield until completion
+        // Suspend until completion - scheduler polls io_uring and wakes us
+        auto *ctx = boost::fibers::context::active();
         while (!token.completed) {
-            boost::this_fiber::yield();
+            ctx->suspend();
         }
 
         MONAD_ASSERT(token.result >= 0);
@@ -181,9 +171,10 @@ inline Node::SharedPtr fiber_read_node(
         io.submit_fiber_read(
             std::span<std::byte>(buffer, bytes_to_read), rd_offset, &token);
 
-        // Yield until completion
+        // Suspend until completion - scheduler polls io_uring and wakes us
+        auto *ctx = boost::fibers::context::active();
         while (!token.completed) {
-            boost::this_fiber::yield();
+            ctx->suspend();
         }
 
         MONAD_ASSERT(token.result >= 0);
@@ -202,8 +193,7 @@ inline Node::SharedPtr fiber_read_node(
 }
 
 // Fiber-based write buffer for accumulating node data and flushing to disk.
-// This is a simpler alternative to node_writer_unique_ptr_type that uses
-// fiber_write() instead of the sender-receiver pattern.
+// Uses fiber-friendly IO that yields during write operations.
 //
 // Usage:
 //   FiberWriteBuffer buf(io, start_offset);
@@ -314,9 +304,12 @@ public:
             std::span<std::byte const>(buffer_.get(), padded_size),
             start_offset_, &token);
 
-        // Yield until completion - hot loop polls io_uring and wakes us
+        // Suspend the fiber until the completion handler wakes us.
+        // Unlike yield(), suspend() does NOT re-add us to the ready queue.
+        // The scheduler's poll_single_ring() will schedule() us when IO completes.
+        auto *ctx = boost::fibers::context::active();
         while (!token.completed) {
-            boost::this_fiber::yield();
+            ctx->suspend();
         }
 
         MONAD_ASSERT(token.result >= 0);
@@ -356,9 +349,10 @@ public:
             std::span<std::byte const>(buffer_.get(), padded_size),
             start_offset_, &token);
 
-        // Yield until completion
+        // Suspend until completion - scheduler polls io_uring and wakes us
+        auto *ctx = boost::fibers::context::active();
         while (!token.completed) {
-            boost::this_fiber::yield();
+            ctx->suspend();
         }
 
         MONAD_ASSERT(token.result >= 0);

@@ -143,7 +143,8 @@ TEST_F(
               << "]. " << std::endl;
 
     // advance fast writer head to the next chunk
-    auto const fast_writer_offset = aux.node_writer_fast->sender().offset();
+    auto const fast_writer_offset =
+        aux.db_metadata()->db_offsets.start_of_wip_offset_fast;
     auto const *ci = aux.db_metadata()->free_list_end();
     ASSERT_TRUE(ci != nullptr);
     auto const idx = ci->index(aux.db_metadata());
@@ -151,7 +152,8 @@ TEST_F(
     aux.append(monad::mpt::UpdateAuxImpl::chunk_list::fast, idx);
     monad::async::chunk_offset_t const new_fast_writer_offset{idx, 0};
     aux.advance_db_offsets_to(
-        new_fast_writer_offset, aux.node_writer_slow->sender().offset());
+        new_fast_writer_offset,
+        aux.db_metadata()->db_offsets.start_of_wip_offset_slow);
     std::cout << "Advanced start of fast list offset on disk from ["
               << fast_writer_offset.id << ", " << fast_writer_offset.offset
               << "] to the beginning of a new chunk, id: " << idx << std::endl;

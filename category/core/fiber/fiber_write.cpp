@@ -62,7 +62,7 @@ WriteResult fiber_write(
     MONAD_ASSERT(!buffer.empty());
 
     // Prepare completion token on fiber stack
-    WriteCompletionToken token;
+    CompletionToken token;
     token.waiting_fiber = boost::fibers::context::active();
 
     // Get SQE
@@ -109,7 +109,7 @@ WriteResult fiber_write_registered(
     MONAD_ASSERT(!buffer.empty());
 
     // Prepare completion token on fiber stack
-    WriteCompletionToken token;
+    CompletionToken token;
     token.waiting_fiber = boost::fibers::context::active();
 
     // Get SQE

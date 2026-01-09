@@ -282,8 +282,9 @@ namespace monad::test
         auto g(aux.unique_lock());
         auto g2(aux.set_current_upsert_tid());
 
-        // Set write flags like do_update() does
+        // Set write flags and initialize fiber write buffers like do_update() does
         aux.set_can_write_to_fast(true);
+        aux.setup_fiber_write_buffers();
 
         Node::SharedPtr result;
         bool done = false;
@@ -294,7 +295,7 @@ namespace monad::test
             done = true;
         });
 
-        // Poll both read and write rings like do_update() does.
+        // Poll both read and write rings for completions.
         // Nested updates may do reads to load existing nodes.
         while (!done) {
             size_t completions = 0;
@@ -445,7 +446,6 @@ namespace monad::test
             , root()
             , aux(io, MPT_TEST_HISTORY_LENGTH)
         {
-            aux.setup_fiber_write_buffers();
         }
 
         void reset()

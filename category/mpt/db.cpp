@@ -387,22 +387,30 @@ struct OnDiskWithWorkerThreadImpl
         uint64_t version;
     };
 
-    using Comms = std::variant<
-        std::monostate, fiber_find_request_t, FiberUpsertRequest,
-        FiberLoadAllFromBlockRequest, FiberTraverseRequest, MoveSubtrieRequest,
-        FiberLoadRootVersionRequest, FiberCopyTrieRequest,
+    // Read operations - handled by read thread with sender-receiver IO
+    using ReadComms = std::variant<
+        std::monostate, fiber_find_request_t,
+        FiberLoadAllFromBlockRequest, FiberTraverseRequest,
+        FiberLoadRootVersionRequest,
         RODbFiberFindOwningNodeRequest>;
 
-    ::moodycamel::ConcurrentQueue<Comms> comms_;
+    // Write operations - handled by write thread with fiber-based IO
+    using WriteComms = std::variant<
+        std::monostate, FiberUpsertRequest, MoveSubtrieRequest,
+        FiberCopyTrieRequest>;
+
+    ::moodycamel::ConcurrentQueue<ReadComms> read_comms_;
+    ::moodycamel::ConcurrentQueue<WriteComms> write_comms_;
     std::mutex lock_;
-    std::condition_variable cond_;
+    std::condition_variable read_cond_;
+    std::condition_variable write_cond_;
 
     struct DbAsyncWorker
     {
         OnDiskWithWorkerThreadImpl *parent;
         AsyncIOContext async_io;
         UpdateAux<> aux;
-        std::atomic<bool> sleeping{false}, done{false};
+        std::atomic<bool> read_sleeping{false}, write_sleeping{false}, done{false};
 
         DbAsyncWorker(
             OnDiskWithWorkerThreadImpl *const parent,
@@ -442,12 +450,14 @@ struct OnDiskWithWorkerThreadImpl
             ::boost::container::deque<threadsafe_boost_fibers_promise<bool>>
                 traverse_promises;
 
-            Comms request;
+            // ReadComms indices: 0=monostate, 1=fiber_find, 2=prefetch, 3=traverse,
+            // 4=load_root, 5=RODbFiberFindOwningNodeRequest
+            ReadComms request;
             unsigned did_nothing_count = 0;
             while (!done.load(std::memory_order_acquire)) {
                 bool did_nothing = true;
-                if (parent->comms_.try_dequeue(request)) {
-                    if (auto *req = std::get_if<8>(&request); req != nullptr) {
+                if (parent->read_comms_.try_dequeue(request)) {
+                    if (auto *req = std::get_if<5>(&request); req != nullptr) {
                         find_owning_cursor_promises.emplace_back(
                             std::move(*req->promise));
                         req->promise = &find_owning_cursor_promises.back();
@@ -471,7 +481,7 @@ struct OnDiskWithWorkerThreadImpl
                                 req->version);
                         }
                     }
-                    else if (auto *req = std::get_if<4>(&request);
+                    else if (auto *req = std::get_if<3>(&request);
                              req != nullptr) {
                         // Ditto to above
                         traverse_promises.emplace_back(
@@ -521,23 +531,23 @@ struct OnDiskWithWorkerThreadImpl
                 }
                 if (did_nothing_count > 1000000) {
                     std::unique_lock g(parent->lock_);
-                    sleeping.store(true, std::memory_order_release);
+                    read_sleeping.store(true, std::memory_order_release);
                     /* Very irritatingly, Boost.Fiber may have fibers scheduled
                      which weren't ready before, and if we sleep forever here
                      then they never run and cause anything waiting on them to
                      hang. So pulse Boost.Fiber every second at most for those
                      extremely rare occasions.
                      */
-                    parent->cond_.wait_for(g, std::chrono::seconds(1), [this] {
+                    parent->read_cond_.wait_for(g, std::chrono::seconds(1), [this] {
                         return done.load(std::memory_order_acquire) ||
-                               parent->comms_.size_approx() > 0;
+                               parent->read_comms_.size_approx() > 0;
                     });
-                    sleeping.store(false, std::memory_order_release);
+                    read_sleeping.store(false, std::memory_order_release);
                 }
             }
         }
 
-        // Runs in the triedb worker thread
+        // Runs in the triedb read worker thread - handles find/traverse/prefetch
         void rwdb_run()
         {
             inflight_map_t inflights;
@@ -546,19 +556,17 @@ struct OnDiskWithWorkerThreadImpl
                 find_promises;
             ::boost::container::deque<
                 threadsafe_boost_fibers_promise<Node::SharedPtr>>
-                upsert_promises;
+                load_root_promises;
             ::boost::container::deque<threadsafe_boost_fibers_promise<size_t>>
                 prefetch_promises;
             ::boost::container::deque<threadsafe_boost_fibers_promise<bool>>
                 traverse_promises;
-            ::boost::container::deque<threadsafe_boost_fibers_promise<void>>
-                move_trie_version_promises;
 
-            Comms request;
+            ReadComms request;
             unsigned did_nothing_count = 0;
             while (!done.load(std::memory_order_acquire)) {
                 bool did_nothing = true;
-                if (parent->comms_.try_dequeue(request)) {
+                if (parent->read_comms_.try_dequeue(request)) {
                     if (auto *req = std::get_if<1>(&request); req != nullptr) {
                         // The promise needs to hang around until its future is
                         // destructed, otherwise there is a race within
@@ -576,34 +584,17 @@ struct OnDiskWithWorkerThreadImpl
                     }
                     else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {
-                        // Ditto to above
-                        upsert_promises.emplace_back(std::move(*req->promise));
-                        req->promise = &upsert_promises.back();
-                        req->promise->set_value(aux.do_update(
-                            std::move(req->prev_root),
-                            req->sm,
-                            std::move(req->updates),
-                            req->version,
-                            req->enable_compaction,
-                            req->can_write_to_fast,
-                            req->write_root));
-                    }
-                    else if (auto *req = std::get_if<3>(&request);
-                             req != nullptr) {
-                        // Ditto to above
                         prefetch_promises.emplace_back(
                             std::move(*req->promise));
                         req->promise = &prefetch_promises.back();
                         req->promise->set_value(
                             mpt::load_all(aux, req->sm, req->root));
                     }
-                    else if (auto *req = std::get_if<4>(&request);
+                    else if (auto *req = std::get_if<3>(&request);
                              req != nullptr) {
-                        // Ditto to above
                         traverse_promises.emplace_back(
                             std::move(*req->promise));
                         req->promise = &traverse_promises.back();
-                        // verify version is valid
                         if (aux.version_is_valid_ondisk(req->version)) {
                             req->promise->set_value(preorder_traverse_ondisk(
                                 aux,
@@ -616,29 +607,108 @@ struct OnDiskWithWorkerThreadImpl
                             req->promise->set_value(false);
                         }
                     }
-                    else if (auto *req = std::get_if<5>(&request);
+                    else if (auto *req = std::get_if<4>(&request);
                              req != nullptr) {
-                        // Ditto to above
-                        move_trie_version_promises.emplace_back(
-                            std::move(*req->promise));
-                        req->promise = &move_trie_version_promises.back();
-                        aux.move_trie_version_forward(req->src, req->dest);
-                        req->promise->set_value();
-                    }
-                    else if (auto *req = std::get_if<6>(&request);
-                             req != nullptr) {
-                        // share the same promise type as upsert
-                        upsert_promises.emplace_back(std::move(*req->promise));
-                        req->promise = &upsert_promises.back();
+                        load_root_promises.emplace_back(std::move(*req->promise));
+                        req->promise = &load_root_promises.back();
                         auto const root_offset =
                             aux.get_root_offset_at_version(req->version);
                         MONAD_ASSERT(root_offset != INVALID_OFFSET);
                         req->promise->set_value(
                             read_node_blocking(aux, root_offset, req->version));
                     }
-                    else if (auto *req = std::get_if<7>(&request);
+                    did_nothing = false;
+                }
+                async_io.io.poll_nonblocking(1);
+                boost::this_fiber::yield();
+                if (boost::fibers::has_ready_fibers()) {
+                    did_nothing = false;
+                }
+                if (did_nothing && async_io.io.io_in_flight() > 0) {
+                    did_nothing = false;
+                }
+                while (!find_promises.empty() &&
+                       find_promises.front().future_has_been_destroyed()) {
+                    find_promises.pop_front();
+                }
+                while (!load_root_promises.empty() &&
+                       load_root_promises.front().future_has_been_destroyed()) {
+                    load_root_promises.pop_front();
+                }
+                while (!prefetch_promises.empty() &&
+                       prefetch_promises.front().future_has_been_destroyed()) {
+                    prefetch_promises.pop_front();
+                }
+                while (!traverse_promises.empty() &&
+                       traverse_promises.front().future_has_been_destroyed()) {
+                    traverse_promises.pop_front();
+                }
+                if (!find_promises.empty() || !load_root_promises.empty() ||
+                    !prefetch_promises.empty() || !traverse_promises.empty()) {
+                    did_nothing = false;
+                }
+                if (did_nothing) {
+                    did_nothing_count++;
+                }
+                else {
+                    did_nothing_count = 0;
+                }
+                if (did_nothing_count > 1000000) {
+                    std::unique_lock g(parent->lock_);
+                    read_sleeping.store(true, std::memory_order_release);
+                    parent->read_cond_.wait_for(g, std::chrono::seconds(1), [this] {
+                        return done.load(std::memory_order_acquire) ||
+                               parent->read_comms_.size_approx() > 0;
+                    });
+                    read_sleeping.store(false, std::memory_order_release);
+                }
+            }
+        }
+
+        // Runs in the triedb write worker thread - handles upsert/copy_trie
+        // Uses fiber-based IO with UringFiberScheduler for efficient writes.
+        void write_run()
+        {
+            // Install custom fiber scheduler that polls io_uring for completions.
+            // This enables fiber-based IO for upsert and copy_trie operations.
+            boost::fibers::use_scheduling_algorithm<
+                monad::fiber::UringFiberScheduler>(
+                async_io.io.read_ring(), async_io.io.write_ring());
+
+            ::boost::container::deque<
+                threadsafe_boost_fibers_promise<Node::SharedPtr>>
+                upsert_promises;
+            ::boost::container::deque<threadsafe_boost_fibers_promise<void>>
+                move_trie_version_promises;
+
+            WriteComms request;
+            unsigned did_nothing_count = 0;
+            while (!done.load(std::memory_order_acquire)) {
+                bool did_nothing = true;
+                if (parent->write_comms_.try_dequeue(request)) {
+                    if (auto *req = std::get_if<1>(&request); req != nullptr) {
+                        upsert_promises.emplace_back(std::move(*req->promise));
+                        req->promise = &upsert_promises.back();
+                        req->promise->set_value(aux.do_update(
+                            std::move(req->prev_root),
+                            req->sm,
+                            std::move(req->updates),
+                            req->version,
+                            req->enable_compaction,
+                            req->can_write_to_fast,
+                            req->write_root,
+                            true /* scheduler_polls_io */));
+                    }
+                    else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {
-                        // share the same promise type as upsert
+                        move_trie_version_promises.emplace_back(
+                            std::move(*req->promise));
+                        req->promise = &move_trie_version_promises.back();
+                        aux.move_trie_version_forward(req->src, req->dest);
+                        req->promise->set_value();
+                    }
+                    else if (auto *req = std::get_if<3>(&request);
+                             req != nullptr) {
                         upsert_promises.emplace_back(std::move(*req->promise));
                         req->promise = &upsert_promises.back();
                         auto root = copy_trie_to_dest(
@@ -653,42 +723,20 @@ struct OnDiskWithWorkerThreadImpl
                     }
                     did_nothing = false;
                 }
-                async_io.io.poll_nonblocking(1);
-                // Poll fiber write completions for copy_trie operations which use
-                // fiber-based IO. The poll_ring_completions function only processes
-                // completions with the fiber magic number, leaving any other
-                // completions for their respective handlers.
-                poll_ring_completions(async_io.io.write_ring());
                 boost::this_fiber::yield();
                 if (boost::fibers::has_ready_fibers()) {
                     did_nothing = false;
                 }
-                if (did_nothing && async_io.io.io_in_flight() > 0) {
-                    did_nothing = false;
-                }
-                while (!find_promises.empty() &&
-                       find_promises.front().future_has_been_destroyed()) {
-                    find_promises.pop_front();
-                }
                 while (!upsert_promises.empty() &&
                        upsert_promises.front().future_has_been_destroyed()) {
                     upsert_promises.pop_front();
-                }
-                while (!prefetch_promises.empty() &&
-                       prefetch_promises.front().future_has_been_destroyed()) {
-                    prefetch_promises.pop_front();
-                }
-                while (!traverse_promises.empty() &&
-                       traverse_promises.front().future_has_been_destroyed()) {
-                    traverse_promises.pop_front();
                 }
                 while (!move_trie_version_promises.empty() &&
                        move_trie_version_promises.front()
                            .future_has_been_destroyed()) {
                     move_trie_version_promises.pop_front();
                 }
-                if (!find_promises.empty() || !upsert_promises.empty() ||
-                    !prefetch_promises.empty() || !traverse_promises.empty() ||
+                if (!upsert_promises.empty() ||
                     !move_trie_version_promises.empty()) {
                     did_nothing = false;
                 }
@@ -700,60 +748,66 @@ struct OnDiskWithWorkerThreadImpl
                 }
                 if (did_nothing_count > 1000000) {
                     std::unique_lock g(parent->lock_);
-                    sleeping.store(true, std::memory_order_release);
-                    /* Very irritatingly, Boost.Fiber may have fibers scheduled
-                     which weren't ready before, and if we sleep forever here
-                     then they never run and cause anything waiting on them to
-                     hang. So pulse Boost.Fiber every second at most for those
-                     extremely rare occasions.
-                     */
-                    parent->cond_.wait_for(g, std::chrono::seconds(1), [this] {
+                    write_sleeping.store(true, std::memory_order_release);
+                    parent->write_cond_.wait_for(g, std::chrono::seconds(1), [this] {
                         return done.load(std::memory_order_acquire) ||
-                               parent->comms_.size_approx() > 0;
+                               parent->write_comms_.size_approx() > 0;
                     });
-                    sleeping.store(false, std::memory_order_release);
+                    write_sleeping.store(false, std::memory_order_release);
                 }
             }
         }
     };
 
     std::unique_ptr<DbAsyncWorker> worker_;
-    std::thread worker_thread_;
+    std::thread read_thread_;
+    std::thread write_thread_;
     UpdateAux<> *aux_;
+    std::condition_variable init_cond_;
 
     explicit OnDiskWithWorkerThreadImpl(OnDiskDbConfig const &options)
-        : worker_thread_([&, options = options] {
+        : read_thread_([&, options = options] {
             {
                 std::unique_lock const g(lock_);
                 worker_ = std::make_unique<DbAsyncWorker>(this, options);
-                cond_.notify_one();
+                init_cond_.notify_all();
             }
             worker_->rwdb_run();
+            // Worker must be destroyed on this thread (AsyncIO requirement)
             std::unique_lock const g(lock_);
             worker_.reset();
         })
+        , write_thread_([&] {
+            {
+                std::unique_lock g(lock_);
+                init_cond_.wait(g, [this] { return worker_ != nullptr; });
+            }
+            worker_->write_run();
+        })
         , aux_([&] {
             std::unique_lock g(lock_);
-            cond_.wait(g, [this] { return worker_ != nullptr; });
+            init_cond_.wait(g, [this] { return worker_ != nullptr; });
             return &(worker_->aux);
         }())
     {
     }
 
     explicit OnDiskWithWorkerThreadImpl(ReadOnlyOnDiskDbConfig const &options)
-        : worker_thread_([&, options = options] {
+        : read_thread_([&, options = options] {
             {
                 std::unique_lock const g(lock_);
                 worker_ = std::make_unique<DbAsyncWorker>(this, options);
-                cond_.notify_one();
+                init_cond_.notify_all();
             }
             worker_->rodb_run(options.node_lru_max_mem);
+            // Worker must be destroyed on this thread (AsyncIO requirement)
             std::unique_lock const g(lock_);
             worker_.reset();
         })
+        // No write thread for read-only db
         , aux_([&] {
             std::unique_lock g(lock_);
-            cond_.wait(g, [this] { return worker_ != nullptr; });
+            init_cond_.wait(g, [this] { return worker_ != nullptr; });
             return &(worker_->aux);
         }())
     {
@@ -764,9 +818,13 @@ struct OnDiskWithWorkerThreadImpl
         {
             std::unique_lock const g(lock_);
             worker_->done.store(true, std::memory_order_release);
-            cond_.notify_one();
+            read_cond_.notify_one();
+            write_cond_.notify_one();
         }
-        worker_thread_.join();
+        read_thread_.join();
+        if (write_thread_.joinable()) {
+            write_thread_.join();
+        }
         aux_ = nullptr;
     }
 }; // end OnDiskWorkerThreadImpl
@@ -817,11 +875,11 @@ public:
         fiber_find_request_t req{
             .promise = &promise, .start = start, .key = key};
         auto fut = promise.get_future();
-        comms_.enqueue(req);
+        read_comms_.enqueue(req);
         // promise is racily emptied after this point
-        if (worker_->sleeping.load(std::memory_order_acquire)) {
+        if (worker_->read_sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
-            cond_.notify_one();
+            read_cond_.notify_one();
         }
         return fut.get();
     }
@@ -844,7 +902,7 @@ public:
         unflushed_version_ = write_root ? INVALID_BLOCK_NUM : version;
         threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberUpsertRequest{
+        write_comms_.enqueue(FiberUpsertRequest{
             .promise = &promise,
             .prev_root = std::move(root),
             .sm = machine_,
@@ -854,9 +912,9 @@ public:
             .can_write_to_fast = can_write_to_fast,
             .write_root = write_root});
         // promise is racily emptied after this point
-        if (worker_->sleeping.load(std::memory_order_acquire)) {
+        if (worker_->write_sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
-            cond_.notify_one();
+            write_cond_.notify_one();
         }
         return fut.get();
     }
@@ -866,12 +924,12 @@ public:
     {
         threadsafe_boost_fibers_promise<void> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(
+        write_comms_.enqueue(
             MoveSubtrieRequest{.promise = &promise, .src = src, .dest = dest});
         // promise is racily emptied after this point
-        if (worker_->sleeping.load(std::memory_order_acquire)) {
+        if (worker_->write_sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
-            cond_.notify_one();
+            write_cond_.notify_one();
         }
         fut.get();
     }
@@ -881,12 +939,12 @@ public:
     {
         threadsafe_boost_fibers_promise<size_t> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberLoadAllFromBlockRequest{
+        read_comms_.enqueue(FiberLoadAllFromBlockRequest{
             .promise = &promise, .root = NodeCursor{root}, .sm = machine_});
         // promise is racily emptied after this point
-        if (worker_->sleeping.load(std::memory_order_acquire)) {
+        if (worker_->read_sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
-            cond_.notify_one();
+            read_cond_.notify_one();
         }
         size_t const nodes_loaded = fut.get();
         return nodes_loaded;
@@ -904,16 +962,16 @@ public:
     {
         threadsafe_boost_fibers_promise<bool> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberTraverseRequest{
+        read_comms_.enqueue(FiberTraverseRequest{
             .promise = &promise,
             .root = std::move(node),
             .machine = machine,
             .version = version,
             .concurrency_limit = concurrency_limit});
         // promise is racily emptied after this point
-        if (worker_->sleeping.load(std::memory_order_acquire)) {
+        if (worker_->read_sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
-            cond_.notify_one();
+            read_cond_.notify_one();
         }
         return fut.get();
     }
@@ -926,12 +984,12 @@ public:
         }
         threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberLoadRootVersionRequest{
+        read_comms_.enqueue(FiberLoadRootVersionRequest{
             .promise = &promise, .version = version});
         // promise is racily emptied after this point
-        if (worker_->sleeping.load(std::memory_order_acquire)) {
+        if (worker_->read_sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
-            cond_.notify_one();
+            read_cond_.notify_one();
         }
         return fut.get();
     }
@@ -954,7 +1012,7 @@ public:
 
         threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberCopyTrieRequest{
+        write_comms_.enqueue(FiberCopyTrieRequest{
             .promise = &promise,
             .src_root = std::move(src_root),
             .src = src_prefix,
@@ -963,9 +1021,9 @@ public:
             .dest_version = dest_version,
             .write_root = write_root});
         // promise is racily emptied after this point
-        if (worker_->sleeping.load(std::memory_order_acquire)) {
+        if (worker_->write_sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
-            cond_.notify_one();
+            write_cond_.notify_one();
         }
         return fut.get();
     }
@@ -994,11 +1052,11 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
             .key = key,
             .version = version};
         auto fut = promise.get_future();
-        comms_.enqueue(req);
+        read_comms_.enqueue(req);
         // promise is racily emptied after this point
-        if (worker_->sleeping.load(std::memory_order_acquire)) {
+        if (worker_->read_sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
-            cond_.notify_one();
+            read_cond_.notify_one();
         }
         return fut.get();
     }
@@ -1023,16 +1081,16 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
     {
         threadsafe_boost_fibers_promise<bool> promise;
         auto fut = promise.get_future();
-        comms_.enqueue(FiberTraverseRequest{
+        read_comms_.enqueue(FiberTraverseRequest{
             .promise = &promise,
             .root = std::move(node),
             .machine = machine,
             .version = version,
             .concurrency_limit = concurrency_limit});
         // promise is racily emptied after this point
-        if (worker_->sleeping.load(std::memory_order_acquire)) {
+        if (worker_->read_sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
-            cond_.notify_one();
+            read_cond_.notify_one();
         }
         return fut.get();
     }

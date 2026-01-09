@@ -66,45 +66,6 @@ concept lockable_or_void = std::is_void_v<T> || requires(T x) {
 
 class Node;
 
-struct write_operation_io_receiver
-{
-    size_t should_be_written;
-
-    // Node *parent{nullptr};
-
-    explicit constexpr write_operation_io_receiver(
-        size_t const should_be_written_)
-        : should_be_written(should_be_written_)
-    {
-    }
-
-    void set_value(
-        MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
-        MONAD_ASYNC_NAMESPACE::write_single_buffer_sender::result_type res)
-    {
-        MONAD_ASSERT(res);
-        MONAD_ASSERT(res.assume_value().get().size() == should_be_written);
-        res.assume_value()
-            .get()
-            .reset(); // release i/o buffer before initiating other work
-        // TODO: when adding upsert_sender
-        // if (parent->current_process_updates_sender_ != nullptr) {
-        //     parent->current_process_updates_sender_
-        //         ->notify_write_operation_completed_(rawstate);
-        // }
-    }
-
-    void reset(size_t const should_be_written_)
-    {
-        should_be_written = should_be_written_;
-    }
-};
-
-using node_writer_unique_ptr_type =
-    MONAD_ASYNC_NAMESPACE::AsyncIO::connected_operation_unique_ptr_type<
-        MONAD_ASYNC_NAMESPACE::write_single_buffer_sender,
-        write_operation_io_receiver>;
-
 using MONAD_ASYNC_NAMESPACE::receiver;
 
 struct read_short_update_sender
@@ -179,9 +140,6 @@ write_new_root_node(UpdateAuxImpl &, Node &root, uint64_t version);
 
 void flush_buffered_writes(UpdateAuxImpl &);
 
-node_writer_unique_ptr_type
-replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
-
 // \class Auxiliaries for triedb update
 class UpdateAuxImpl
 {
@@ -195,7 +153,7 @@ class UpdateAuxImpl
     } db_metadata_[2]; // two copies, to prevent sudden process
                        // exits making the DB irretrievable
 
-    void reset_node_writers();
+    void init_disk_growth_tracking();
 
     void advance_compact_offsets();
 
@@ -406,8 +364,6 @@ public:
 
     // On disk stuff
     MONAD_ASYNC_NAMESPACE::AsyncIO *io{nullptr};
-    node_writer_unique_ptr_type node_writer_fast{};
-    node_writer_unique_ptr_type node_writer_slow{};
 
     // Fiber write buffers for fiber-based upsert. Initialized in
     // setup_fiber_write_buffers() or do_update() and persist across calls.
@@ -586,7 +542,8 @@ public:
     Node::SharedPtr do_update(
         Node::SharedPtr prev_root, StateMachine &, UpdateList &&,
         uint64_t version, bool compaction = false,
-        bool can_write_to_fast = true, bool write_root = true);
+        bool can_write_to_fast = true, bool write_root = true,
+        bool scheduler_polls_io = false);
 
     void adjust_history_length_based_on_disk_usage();
     void move_trie_version_forward(uint64_t src, uint64_t dest);
@@ -893,7 +850,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 176 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 160 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>

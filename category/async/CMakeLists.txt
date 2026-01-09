@@ -46,6 +46,8 @@ add_library(
   "sender_errc.hpp"
   "storage_pool.cpp"
   "storage_pool.hpp"
+  "uring_fiber_scheduler.cpp"
+  "uring_fiber_scheduler.hpp"
   "util.cpp"
   "util.hpp")
 

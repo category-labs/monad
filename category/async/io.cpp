@@ -16,6 +16,7 @@
 #include <category/async/io.hpp>
 
 #include <category/async/concepts.hpp>
+#include <category/async/uring_fiber_scheduler.hpp>
 #include <category/async/config.hpp>
 #include <category/async/detail/connected_operation_storage.hpp>
 #include <category/async/detail/scope_polyfill.hpp>
@@ -594,6 +595,25 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
 
         void *data = io_uring_cqe_get_data(cqe);
         MONAD_ASSERT(data);
+
+        // Check if this is a fiber completion (magic number in first 8 bytes)
+        auto *token =
+            reinterpret_cast<monad::fiber::CompletionToken *>(data);
+        if (token->magic ==
+            monad::fiber::CompletionToken::FIBER_COMPLETION_MAGIC) {
+            token->result = cqe->res;
+            token->completed = true;
+            if (token->waiting_fiber != nullptr &&
+                !token->waiting_fiber->ready_is_linked()) {
+                token->waiting_fiber->get_scheduler()->schedule(
+                    token->waiting_fiber);
+            }
+            io_uring_cqe_seen(ring, cqe);
+            cqe = nullptr;
+            state = nullptr;
+            return true;
+        }
+
         state = reinterpret_cast<erased_connected_operation *>(data);
         res = (cqe->res < 0) ? result<size_t>(posix_code(-cqe->res))
                              : result<size_t>(cqe->res);
@@ -696,9 +716,12 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         ring = nullptr;
         state = nullptr;
         res = 0;
-        get_cqe();
-        if (state == nullptr) {
+        if (!get_cqe()) {
             break;
+        }
+        // state == nullptr means fiber completion was handled, keep going
+        if (state == nullptr) {
+            continue;
         }
         completions.emplace_back(ring, state, std::move(res));
         blocking = false;

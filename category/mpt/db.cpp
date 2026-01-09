@@ -26,6 +26,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/async/uring_fiber_scheduler.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/result.hpp>
@@ -535,6 +536,9 @@ struct OnDiskWithWorkerThreadImpl
         // Runs in the triedb worker thread
         void rwdb_run()
         {
+            boost::fibers::use_scheduling_algorithm<
+                monad::fiber::UringFiberScheduler>(&async_io.io);
+
             inflight_map_t inflights;
             ::boost::container::deque<
                 threadsafe_boost_fibers_promise<find_cursor_result_type>>

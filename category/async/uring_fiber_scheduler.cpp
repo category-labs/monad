@@ -20,10 +20,12 @@
 
 MONAD_FIBER_NAMESPACE_BEGIN
 
+thread_local monad::async::AsyncIO *UringFiberScheduler::tls_io_{nullptr};
+
 UringFiberScheduler::UringFiberScheduler(monad::async::AsyncIO *io)
-    : io_(io)
 {
-    MONAD_ASSERT(io_ != nullptr);
+    MONAD_ASSERT(io != nullptr);
+    tls_io_ = io;
 }
 
 void UringFiberScheduler::awakened(
@@ -63,7 +65,7 @@ bool UringFiberScheduler::has_ready_fibers() const noexcept
 void UringFiberScheduler::suspend_until(
     std::chrono::steady_clock::time_point const & /*abs_time*/) noexcept
 {
-    io_->poll_nonblocking();
+    tls_io_->poll_nonblocking();
 }
 
 void UringFiberScheduler::notify() noexcept

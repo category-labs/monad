@@ -30,6 +30,7 @@
 #include <category/mpt/update.hpp>
 #include <category/mpt/upward_tnode.hpp>
 #include <category/mpt/util.hpp>
+#include <category/mpt/fiber_write_utils.hpp>
 
 #include <quill/Quill.h>
 
@@ -103,16 +104,15 @@ void fillin_parent_after_expiration(
     UpdateAuxImpl &, Node::SharedPtr, ExpireTNode *const, uint8_t const index,
     uint8_t const branch, bool const cache_node);
 
-struct async_write_node_result
-{
-    chunk_offset_t offset_written_to;
-    unsigned bytes_appended;
-    erased_connected_operation *io_state;
-};
-
 // invoke at the end of each block upsert
 void flush_buffered_writes(UpdateAuxImpl &);
 chunk_offset_t write_new_root_node(UpdateAuxImpl &, Node &, uint64_t);
+
+// Fiber-based write functions (defined later in file)
+chunk_offset_t fiber_write_node_set_spare(
+    UpdateAuxImpl &, FiberWriteBuffer &, Node &, bool in_fast_list);
+chunk_offset_t fiber_write_new_root_node(
+    UpdateAuxImpl &, Node &, uint64_t);
 
 Node::SharedPtr upsert(
     UpdateAuxImpl &aux, uint64_t const version, StateMachine &sm,
@@ -305,40 +305,6 @@ void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode *tnode)
     }
 }
 
-template <typename Cont>
-struct node_receiver_t
-{
-public:
-    static constexpr bool lifetime_managed_internally = true;
-
-    Cont cont;
-
-    // part of the receiver trait
-    chunk_offset_t rd_offset;
-    uint16_t buffer_offset{};
-    unsigned bytes_to_read{};
-
-    node_receiver_t(Cont cont_, chunk_offset_t const offset_)
-        : cont(std::move(cont_))
-        , rd_offset{round_down_align<DISK_PAGE_BITS>(offset_)}
-        , buffer_offset{
-              static_cast<uint16_t>(offset_.offset - rd_offset.offset)}
-    {
-        auto const pages = node_disk_pages_spare_15{rd_offset}.to_pages();
-        bytes_to_read = static_cast<unsigned>(pages << DISK_PAGE_BITS);
-        rd_offset.set_spare(0);
-    }
-
-    template <typename Result>
-    void set_value(erased_connected_operation *io_state_, Result buffer_)
-    {
-        MONAD_ASSERT(buffer_);
-        auto as_node = detail::deserialize_node_from_receiver_result(
-            std::move(buffer_), buffer_offset, io_state_);
-        cont(std::move(as_node));
-    }
-};
-
 /////////////////////////////////////////////////////
 // Create Node
 /////////////////////////////////////////////////////
@@ -346,6 +312,7 @@ public:
 std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
     UpdateAuxImpl &aux, StateMachine &sm, ExpireTNode::unique_ptr_type tnode)
 {
+    (void)sm; // Used in async path for upward_update, not needed in fiber path
     MONAD_ASSERT(tnode->node);
     // no recomputation of data
     // all children should still be in memory, this function is responsible for
@@ -362,43 +329,25 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
         auto const child_index = orig->to_child_index(child_branch);
         auto single_child = orig->move_next(child_index);
         if (!single_child) {
-            node_receiver_t recv{
-                [aux = &aux,
-                 sm = sm.clone(),
-                 tnode = std::move(tnode),
-                 child_branch](Node::SharedPtr read_node) mutable {
-                    auto new_node = make_node(
-                        *read_node,
-                        concat(
-                            tnode->node->path_nibble_view(),
-                            child_branch,
-                            read_node->path_nibble_view()),
-                        read_node->opt_value(),
-                        read_node->version);
-                    fillin_parent_after_expiration(
-                        *aux,
-                        std::move(new_node),
-                        tnode->parent,
-                        tnode->index,
-                        tnode->branch,
-                        tnode->cache_node);
-                    // upward update
-                    auto *parent = tnode->parent;
-                    while (!parent->npending) {
-                        if (parent->type == tnode_type::update) {
-                            upward_update(*aux, *sm, (UpdateTNode *)parent);
-                            return;
-                        }
-                        auto *next_parent = parent->parent;
-                        MONAD_ASSERT(next_parent);
-                        try_fillin_parent_after_expiration(
-                            *aux, *sm, ExpireTNode::unique_ptr_type{parent});
-                        // go one level up
-                        parent = next_parent;
-                    }
-                },
-                orig->fnext(child_index)};
-            async_read(aux, std::move(recv));
+            // Fiber read - direct synchronous-style IO
+            auto read_node = fiber_read_node(*aux.io, orig->fnext(child_index));
+            auto new_node = make_node(
+                *read_node,
+                concat(
+                    tnode->node->path_nibble_view(),
+                    child_branch,
+                    read_node->path_nibble_view()),
+                read_node->opt_value(),
+                read_node->version);
+            fillin_parent_after_expiration(
+                aux,
+                std::move(new_node),
+                tnode->parent,
+                tnode->index,
+                tnode->branch,
+                tnode->cache_node);
+            // In fiber path, upward propagation happens through call stack.
+            // Parent is still owned by caller, so we can't take ownership here.
             return {false, nullptr};
         }
         return {
@@ -548,35 +497,29 @@ void create_node_compute_data_possibly_async(
                     aux.physical_to_virtual(child.offset);
                 MONAD_DEBUG_ASSERT(
                     virtual_child_offset != INVALID_VIRTUAL_OFFSET);
-                // child offset is older than current node writer's start offset
+                // child offset is older than current writer's position
+                auto const wip_offset = virtual_child_offset.in_fast_list()
+                    ? aux.fiber_write_buffer_->current_offset()
+                    : aux.fiber_write_buffer_slow_->current_offset();
                 MONAD_DEBUG_ASSERT(
-                    virtual_child_offset <
-                    aux.physical_to_virtual((virtual_child_offset.in_fast_list()
-                                                 ? aux.node_writer_fast
-                                                 : aux.node_writer_slow)
-                                                ->sender()
-                                                .offset()));
+                    virtual_child_offset < aux.physical_to_virtual(wip_offset));
             }
-            node_receiver_t recv{
-                [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
-                    Node::SharedPtr read_node) mutable {
-                    auto *parent = tnode->parent;
-                    MONAD_DEBUG_ASSERT(parent);
-                    auto &entry = parent->children[tnode->child_index()];
-                    MONAD_DEBUG_ASSERT(entry.branch < 16);
-                    auto &child = tnode->children[bitmask_index(
-                        tnode->orig_mask,
-                        static_cast<unsigned>(std::countr_zero(tnode->mask)))];
-                    child.ptr = std::move(read_node);
-                    auto const path_size = tnode->path.nibble_size();
-                    create_node_compute_data_possibly_async(
-                        *aux, *sm, *parent, entry, std::move(tnode), false);
-                    sm->up(path_size + !parent->is_sentinel());
-                    upward_update(*aux, *sm, parent);
-                },
-                child.offset};
-            async_read(aux, std::move(recv));
-            MONAD_DEBUG_ASSERT(parent.npending);
+            // Fiber read - direct synchronous-style IO
+            auto read_node = fiber_read_node(*aux.io, child.offset);
+            auto *parent_ptr = tnode->parent;
+            MONAD_DEBUG_ASSERT(parent_ptr);
+            auto &entry_ref = parent_ptr->children[tnode->child_index()];
+            MONAD_DEBUG_ASSERT(entry_ref.branch < 16);
+            auto &child_ref = tnode->children[bitmask_index(
+                tnode->orig_mask,
+                static_cast<unsigned>(std::countr_zero(tnode->mask)))];
+            child_ref.ptr = std::move(read_node);
+            // No sm.up() needed here - the recursive call handles its own depth
+            // tracking. On main, the async callback used a cloned state machine,
+            // so the sm.up() operated on the clone. In the fiber path, we use
+            // the same state machine instance.
+            create_node_compute_data_possibly_async(
+                aux, sm, *parent_ptr, entry_ref, std::move(tnode), false);
             return;
         }
     }
@@ -782,28 +725,20 @@ void upsert_(
         "Invalid update detected: current implementation does not "
         "support updating variable-length tables");
     if (!old) {
-        node_receiver_t recv{
-            [aux = &aux,
-             entry = &entry,
-             prefix_index = prefix_index,
-             sm = sm.clone(),
-             parent = &parent,
-             updates = std::move(updates)](Node::SharedPtr read_node) mutable {
-                // continue recurse down the trie starting from `old`
-                upsert_(
-                    *aux,
-                    *sm,
-                    *parent,
-                    *entry,
-                    std::move(read_node),
-                    INVALID_OFFSET,
-                    std::move(updates),
-                    prefix_index);
-                sm->up(1);
-                upward_update(*aux, *sm, parent);
-            },
-            old_offset};
-        async_read(aux, std::move(recv));
+        // Fiber read - direct synchronous-style IO
+        auto read_node = fiber_read_node(*aux.io, old_offset);
+        // continue recurse down the trie starting from `old`
+        // No sm.down() before this call, so no sm.up() after - the recursive
+        // call handles its own depth tracking internally.
+        upsert_(
+            aux,
+            sm,
+            parent,
+            entry,
+            std::move(read_node),
+            INVALID_OFFSET,
+            std::move(updates),
+            prefix_index);
         return;
     }
     MONAD_ASSERT(old_prefix_index != INVALID_PATH_INDEX);
@@ -1095,30 +1030,14 @@ void expire_(
         // is needs to call expire_() over the read node rather than upsert_(),
         // can pass in a flag to differentiate, or maybe a different receiver?
         MONAD_ASSERT(node_offset != INVALID_OFFSET);
-        node_receiver_t recv{
-            [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
-                Node::SharedPtr read_node) mutable {
-                tnode->update_after_async_read(std::move(read_node));
-                auto *parent = tnode->parent;
-                MONAD_ASSERT(parent);
-                expire_(*aux, *sm, std::move(tnode), INVALID_OFFSET);
-                while (!parent->npending) {
-                    if (parent->type == tnode_type::update) {
-                        upward_update(*aux, *sm, (UpdateTNode *)parent);
-                        return;
-                    }
-                    MONAD_DEBUG_ASSERT(parent->type == tnode_type::expire);
-                    auto *next_parent = parent->parent;
-                    MONAD_ASSERT(next_parent);
-                    try_fillin_parent_after_expiration(
-                        *aux, *sm, ExpireTNode::unique_ptr_type{parent});
-                    // go one level up
-                    parent = next_parent;
-                }
-            },
-            node_offset};
         aux.collect_expire_stats(true);
-        async_read(aux, std::move(recv));
+        // Fiber read - direct synchronous-style IO
+        auto read_node = fiber_read_node(*aux.io, node_offset);
+        tnode->update_after_async_read(std::move(read_node));
+        // Continue processing with populated node. Recursive call will
+        // process tnode and decrement parent->npending. Upward propagation
+        // happens through call stack - parent is still owned by caller.
+        expire_(aux, sm, std::move(tnode), INVALID_OFFSET);
         return;
     }
     auto *const parent = tnode->parent;
@@ -1242,45 +1161,24 @@ void compact_(
 {
     MONAD_ASSERT(tnode->type == tnode_type::compact);
     if (!tnode->node) {
-        node_receiver_t recv{
-            [copy_node_for_fast_or_slow,
-             node_offset,
-             aux = &aux,
-             sm = sm.clone(),
-             tnode = std::move(tnode)](Node::SharedPtr read_node) mutable {
-                tnode->update_after_async_read(std::move(read_node));
-                auto *parent = tnode->parent;
-                compact_(
-                    *aux,
-                    *sm,
-                    std::move(tnode),
-                    node_offset,
-                    copy_node_for_fast_or_slow);
-                while (!parent->npending) {
-                    if (parent->type == tnode_type::update) {
-                        upward_update(*aux, *sm, (UpdateTNode *)parent);
-                        return;
-                    }
-                    auto *next_parent = parent->parent;
-                    MONAD_ASSERT(next_parent);
-                    if (parent->type == tnode_type::compact) {
-                        try_fillin_parent_with_rewritten_node(
-                            *aux, CompactTNode::unique_ptr_type{parent});
-                    }
-                    else {
-                        try_fillin_parent_after_expiration(
-                            *aux,
-                            *sm,
-                            ExpireTNode::unique_ptr_type{
-                                (ExpireTNode *)parent});
-                    }
-                    // go one level up
-                    parent = next_parent;
-                }
-            },
-            node_offset};
-        aux.collect_compaction_read_stats(node_offset, recv.bytes_to_read);
-        async_read(aux, std::move(recv));
+        // Calculate bytes_to_read for stats (same calculation as node_receiver_t)
+        auto const rd_offset = round_down_align<DISK_PAGE_BITS>(node_offset);
+        auto const pages = node_disk_pages_spare_15{rd_offset}.to_pages();
+        auto const bytes_to_read = static_cast<unsigned>(pages << DISK_PAGE_BITS);
+        aux.collect_compaction_read_stats(node_offset, bytes_to_read);
+
+        // Fiber read - direct synchronous-style IO
+        auto read_node = fiber_read_node(*aux.io, node_offset);
+        tnode->update_after_async_read(std::move(read_node));
+        // Continue processing with populated node. Recursive call will
+        // process tnode and decrement parent->npending. Upward propagation
+        // happens through call stack - parent is still owned by caller.
+        compact_(
+            aux,
+            sm,
+            std::move(tnode),
+            node_offset,
+            copy_node_for_fast_or_slow);
         return;
     }
     // Only compact nodes < compaction range (either fast or slow) to slow,
@@ -1393,251 +1291,6 @@ void try_fillin_parent_with_rewritten_node(
     --parent->npending;
 }
 
-/////////////////////////////////////////////////////
-// Async write
-/////////////////////////////////////////////////////
-
-node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
-    UpdateAuxImpl &aux, node_writer_unique_ptr_type &node_writer)
-{
-    auto *sender = &node_writer->sender();
-    bool const in_fast_list =
-        aux.db_metadata()->at(sender->offset().id)->in_fast_list;
-    auto const *ci_ = aux.db_metadata()->free_list_end();
-    MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
-    auto idx = ci_->index(aux.db_metadata());
-    chunk_offset_t const offset_of_new_writer{idx, 0};
-    // Pad buffer of existing node write that is about to get initiated so it's
-    // O_DIRECT i/o aligned
-    auto const remaining_buffer_bytes = sender->remaining_buffer_bytes();
-    auto *tozero = sender->advance_buffer_append(remaining_buffer_bytes);
-    MONAD_DEBUG_ASSERT(tozero != nullptr);
-    memset(tozero, 0, remaining_buffer_bytes);
-
-    /* If there aren't enough write buffers, this may poll uring until a free
-    write buffer appears. However, that polling may write a node, causing
-    this function to be reentered, and another free chunk allocated and now
-    writes are being directed there instead. Obviously then replacing that new
-    partially filled chunk with this new chunk is something which trips the
-    asserts.
-
-    Replacing the runloop exposed this bug much more clearly than before, but we
-    had been seeing occasional issues somewhere around here for some time now,
-    it just wasn't obvious the cause. Anyway detect when reentrancy occurs, and
-    if so undo this operation and tell the caller to retry.
-    */
-    static thread_local struct reentrancy_detection_t
-    {
-        int count{0}, max_count{0};
-    } reentrancy_detection;
-
-    int const my_reentrancy_count = reentrancy_detection.count++;
-    MONAD_ASSERT(my_reentrancy_count >= 0);
-    if (my_reentrancy_count == 0) {
-        // We are at the base
-        reentrancy_detection.max_count = 0;
-    }
-    else if (my_reentrancy_count > reentrancy_detection.max_count) {
-        // We are reentering
-        LOG_INFO_CFORMAT(
-            "replace_node_writer_to_start_at_new_chunk reenter "
-            "my_reentrancy_count = "
-            "%d max_count = %d",
-            my_reentrancy_count,
-            reentrancy_detection.max_count);
-        reentrancy_detection.max_count = my_reentrancy_count;
-    }
-    auto ret = aux.io->make_connected(
-        write_single_buffer_sender{
-            offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE},
-        write_operation_io_receiver{AsyncIO::WRITE_BUFFER_SIZE});
-    reentrancy_detection.count--;
-    MONAD_ASSERT(reentrancy_detection.count >= 0);
-    // The deepest-most reentrancy must succeed, and all less deep reentrancies
-    // must retry
-    if (my_reentrancy_count != reentrancy_detection.max_count) {
-        // We reentered, please retry
-        LOG_INFO_CFORMAT(
-            "replace_node_writer_to_start_at_new_chunk retry "
-            "my_reentrancy_count = "
-            "%d max_count = %d",
-            my_reentrancy_count,
-            reentrancy_detection.max_count);
-        return {};
-    }
-    aux.remove(idx);
-    aux.append(
-        in_fast_list ? UpdateAuxImpl::chunk_list::fast
-                     : UpdateAuxImpl::chunk_list::slow,
-        idx);
-    return ret;
-}
-
-node_writer_unique_ptr_type replace_node_writer(
-    UpdateAuxImpl &aux, node_writer_unique_ptr_type const &node_writer)
-{
-    // Can't use add_to_offset(), because it asserts if we go past the
-    // capacity
-    auto offset_of_next_writer = node_writer->sender().offset();
-    bool const in_fast_list =
-        aux.db_metadata()->at(offset_of_next_writer.id)->in_fast_list;
-    file_offset_t offset = offset_of_next_writer.offset;
-    offset += node_writer->sender().written_buffer_bytes();
-    offset_of_next_writer.offset = offset & chunk_offset_t::max_offset;
-    auto const chunk_capacity =
-        aux.io->chunk_capacity(offset_of_next_writer.id);
-    MONAD_ASSERT(offset <= chunk_capacity);
-    detail::db_metadata::chunk_info_t const *ci_ = nullptr;
-    uint32_t idx;
-    if (offset == chunk_capacity) {
-        // If after the current write buffer we're hitting chunk capacity, we
-        // replace writer to the start of next chunk.
-        ci_ = aux.db_metadata()->free_list_end();
-        MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
-        idx = ci_->index(aux.db_metadata());
-        offset_of_next_writer.id = idx & 0xfffffU;
-        offset_of_next_writer.offset = 0;
-    }
-    // See above about handling potential reentrancy correctly
-    auto *const node_writer_ptr = node_writer.get();
-    size_t const bytes_to_write = std::min(
-        AsyncIO::WRITE_BUFFER_SIZE,
-        (size_t)(chunk_capacity - offset_of_next_writer.offset));
-    auto ret = aux.io->make_connected(
-        write_single_buffer_sender{offset_of_next_writer, bytes_to_write},
-        write_operation_io_receiver{bytes_to_write});
-    if (node_writer.get() != node_writer_ptr) {
-        // We reentered, please retry
-        return {};
-    }
-    if (ci_ != nullptr) {
-        MONAD_DEBUG_ASSERT(ci_ == aux.db_metadata()->free_list_end());
-        aux.remove(idx);
-        aux.append(
-            in_fast_list ? UpdateAuxImpl::chunk_list::fast
-                         : UpdateAuxImpl::chunk_list::slow,
-            idx);
-    }
-    return ret;
-}
-
-// return physical offset the node is written at
-async_write_node_result async_write_node(
-    UpdateAuxImpl &aux, node_writer_unique_ptr_type &node_writer,
-    Node const &node)
-{
-retry:
-    aux.io->poll_nonblocking_if_not_within_completions(1);
-    auto *sender = &node_writer->sender();
-    auto const size = node.get_disk_size();
-    auto const remaining_bytes = sender->remaining_buffer_bytes();
-    async_write_node_result ret{
-        .offset_written_to = INVALID_OFFSET,
-        .bytes_appended = size,
-        .io_state = node_writer.get()};
-    [[likely]] if (size <= remaining_bytes) { // Node can fit into current
-                                              // buffer
-        ret.offset_written_to =
-            sender->offset().add_to_offset(sender->written_buffer_bytes());
-        auto *where_to_serialize = sender->advance_buffer_append(size);
-        MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
-        serialize_node_to_buffer(
-            (unsigned char *)where_to_serialize, size, node, size);
-    }
-    else {
-        auto const chunk_remaining_bytes =
-            aux.io->chunk_capacity(sender->offset().id) -
-            sender->offset().offset - sender->written_buffer_bytes();
-        node_writer_unique_ptr_type new_node_writer{};
-        unsigned offset_in_on_disk_node = 0;
-        if (size > chunk_remaining_bytes) {
-            // Node won't fit in the rest of current chunk, start at a new chunk
-            new_node_writer =
-                replace_node_writer_to_start_at_new_chunk(aux, node_writer);
-            if (!new_node_writer) {
-                goto retry;
-            }
-            ret.offset_written_to = new_node_writer->sender().offset();
-        }
-        else {
-            // serialize node to current writer's remaining bytes because node
-            // serialization will not cross chunk boundary
-            ret.offset_written_to =
-                sender->offset().add_to_offset(sender->written_buffer_bytes());
-            auto bytes_to_append = std::min(
-                (unsigned)remaining_bytes, size - offset_in_on_disk_node);
-            auto *where_to_serialize =
-                (unsigned char *)node_writer->sender().advance_buffer_append(
-                    bytes_to_append);
-            MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
-            serialize_node_to_buffer(
-                where_to_serialize,
-                bytes_to_append,
-                node,
-                size,
-                offset_in_on_disk_node);
-            offset_in_on_disk_node += bytes_to_append;
-            new_node_writer = replace_node_writer(aux, node_writer);
-            if (!new_node_writer) {
-                goto retry;
-            }
-            MONAD_DEBUG_ASSERT(
-                new_node_writer->sender().offset().id ==
-                node_writer->sender().offset().id);
-        }
-        // initiate current node writer
-        if (node_writer->sender().written_buffer_bytes() !=
-            node_writer->sender().buffer().size()) {
-            LOG_INFO_CFORMAT(
-                "async_write_node %zu != %zu",
-                node_writer->sender().written_buffer_bytes(),
-                node_writer->sender().buffer().size());
-        }
-        MONAD_ASSERT(
-            node_writer->sender().written_buffer_bytes() ==
-            node_writer->sender().buffer().size());
-        node_writer->initiate();
-        // shall be recycled by the i/o receiver
-        node_writer.release();
-        node_writer = std::move(new_node_writer);
-        // serialize the rest of the node to buffer
-        while (offset_in_on_disk_node < size) {
-            auto *where_to_serialize =
-                (unsigned char *)node_writer->sender().buffer().data();
-            auto bytes_to_append = std::min(
-                (unsigned)node_writer->sender().remaining_buffer_bytes(),
-                size - offset_in_on_disk_node);
-            serialize_node_to_buffer(
-                where_to_serialize,
-                bytes_to_append,
-                node,
-                size,
-                offset_in_on_disk_node);
-            offset_in_on_disk_node += bytes_to_append;
-            MONAD_ASSERT(offset_in_on_disk_node <= size);
-            MONAD_ASSERT(
-                node_writer->sender().advance_buffer_append(bytes_to_append) !=
-                nullptr);
-            if (offset_in_on_disk_node < size &&
-                node_writer->sender().remaining_buffer_bytes() == 0) {
-                // replace node writer
-                new_node_writer = replace_node_writer(aux, node_writer);
-                if (new_node_writer) {
-                    // initiate current node writer
-                    MONAD_DEBUG_ASSERT(
-                        node_writer->sender().written_buffer_bytes() ==
-                        node_writer->sender().buffer().size());
-                    node_writer->initiate();
-                    // shall be recycled by the i/o receiver
-                    node_writer.release();
-                    node_writer = std::move(new_node_writer);
-                }
-            }
-        }
-    }
-    return ret;
-}
-
 // Return node's physical offset the node is written at, triedb should not
 // depend on any metadata to walk the data structure.
 chunk_offset_t
@@ -1645,73 +1298,208 @@ async_write_node_set_spare(UpdateAuxImpl &aux, Node &node, bool write_to_fast)
 {
     write_to_fast &= aux.can_write_to_fast();
     if (aux.alternate_slow_fast_writer()) {
-        // alternate between slow and fast writer
         aux.set_can_write_to_fast(!aux.can_write_to_fast());
     }
-
-    auto off = async_write_node(
-                   aux,
-                   write_to_fast ? aux.node_writer_fast : aux.node_writer_slow,
-                   node)
-                   .offset_written_to;
-    MONAD_ASSERT(
-        (write_to_fast && aux.db_metadata()->at(off.id)->in_fast_list) ||
-        (!write_to_fast && aux.db_metadata()->at(off.id)->in_slow_list));
-    unsigned const pages = num_pages(off.offset, node.get_disk_size());
-    off.set_spare(static_cast<uint16_t>(node_disk_pages_spare_15{pages}));
-    return off;
+    auto &buffer = write_to_fast ? aux.fiber_write_buffer_fast_ref()
+                                 : aux.fiber_write_buffer_slow_ref();
+    return fiber_write_node_set_spare(aux, buffer, node, write_to_fast);
 }
 
 void flush_buffered_writes(UpdateAuxImpl &aux)
 {
-    // Round up with all bits zero
-    auto replace = [&](node_writer_unique_ptr_type &node_writer) {
-        auto *sender = &node_writer->sender();
-        auto written = sender->written_buffer_bytes();
-        auto paddedup = round_up_align<DISK_PAGE_BITS>(written);
-        auto const tozerobytes = paddedup - written;
-        auto *tozero = sender->advance_buffer_append(tozerobytes);
-        MONAD_DEBUG_ASSERT(tozero != nullptr);
-        memset(tozero, 0, tozerobytes);
-        // replace fast node writer
-        auto new_node_writer = replace_node_writer(aux, node_writer);
-        while (!new_node_writer) {
-            new_node_writer = replace_node_writer(aux, node_writer);
-        }
-        auto to_initiate = std::move(node_writer);
-        node_writer = std::move(new_node_writer);
-        to_initiate->receiver().reset(
-            to_initiate->sender().written_buffer_bytes());
-        to_initiate->initiate();
-        // shall be recycled by the i/o receiver
-        to_initiate.release();
-    };
-    replace(aux.node_writer_fast);
-    if (aux.node_writer_slow->sender().written_buffer_bytes()) {
-        // replace slow node writer
-        replace(aux.node_writer_slow);
+    aux.fiber_write_buffer_fast_ref().flush();
+    auto &slow_buffer = aux.fiber_write_buffer_slow_ref();
+    if (slow_buffer.written_bytes() > 0) {
+        slow_buffer.flush();
     }
-    aux.io->flush();
 }
 
 // return root physical offset
 chunk_offset_t
 write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
 {
-    auto const offset_written_to = async_write_node_set_spare(aux, root, true);
+    return fiber_write_new_root_node(aux, root, version);
+}
+
+// ============================================================================
+// Fiber-based write functions
+// These yield the fiber when waiting for IO instead of using callbacks.
+// ============================================================================
+
+// Write a node to disk using fiber-based IO. Yields fiber when buffer is full.
+// Returns the offset where the node was written.
+// in_fast_list indicates whether this buffer is for fast or slow chunk list.
+chunk_offset_t fiber_write_node(
+    UpdateAuxImpl &aux, FiberWriteBuffer &buffer, Node const &node,
+    bool in_fast_list)
+{
+    auto const size = node.get_disk_size();
+    auto const chunk_capacity =
+        aux.io->chunk_capacity(buffer.start_offset().id);
+
+    // Check if current buffer position would exceed chunk capacity.
+    // This can happen after accumulating many small writes without flushing.
+    auto const current_raw_offset =
+        buffer.start_offset().offset + buffer.written_bytes();
+    if (current_raw_offset + size > chunk_capacity) {
+        // Either current offset or new write would exceed chunk - need to flush
+        // and possibly get new chunk.
+        auto const written_padded =
+            round_up_align<DISK_PAGE_BITS>(buffer.written_bytes());
+        auto const offset_after_flush =
+            buffer.start_offset().offset + written_padded;
+
+        if (offset_after_flush + size > chunk_capacity) {
+            // Node won't fit even after flushing - need new chunk
+            auto *ci = aux.db_metadata()->free_list_end();
+            MONAD_ASSERT(ci != nullptr);
+            auto const new_chunk_id = ci->index(aux.db_metadata());
+            aux.remove(new_chunk_id);
+            aux.append(
+                in_fast_list ? UpdateAuxImpl::chunk_list::fast
+                             : UpdateAuxImpl::chunk_list::slow,
+                new_chunk_id);
+            chunk_offset_t new_offset{new_chunk_id, 0};
+            buffer.flush_and_reset(new_offset);
+        }
+        else if (buffer.written_bytes() > 0) {
+            // After flush, node will fit - just flush
+            buffer.flush();
+        }
+    }
+
+    // Now safe to check if node fits in buffer
+    if (size <= buffer.remaining()) {
+        // Simple case: node fits in buffer
+        auto const offset = buffer.current_offset();
+        auto *where = buffer.reserve(size);
+        MONAD_DEBUG_ASSERT(where != nullptr);
+        serialize_node_to_buffer(
+            reinterpret_cast<unsigned char *>(where), size, node, size);
+        buffer.commit(size);
+        return offset;
+    }
+
+    // Node doesn't fit in current buffer. Calculate chunk_remaining including
+    // the unflushed buffer bytes (like async code does at lines 1456-1458).
+    // This accounts for where we'll be AFTER flushing the current buffer.
+    auto const written_padded =
+        round_up_align<DISK_PAGE_BITS>(buffer.written_bytes());
+    auto const offset_after_flush =
+        buffer.start_offset().offset + written_padded;
+    auto const chunk_remaining_after_flush =
+        (offset_after_flush <= chunk_capacity)
+            ? chunk_capacity - offset_after_flush
+            : 0;
+
+    if (size > chunk_remaining_after_flush) {
+        // Node won't fit in current chunk after flushing. Get a new chunk.
+        auto *ci = aux.db_metadata()->free_list_end();
+        MONAD_ASSERT(ci != nullptr); // out of free chunks
+        auto const new_chunk_id = ci->index(aux.db_metadata());
+        // Remove from free list and add to appropriate used list
+        aux.remove(new_chunk_id);
+        aux.append(
+            in_fast_list ? UpdateAuxImpl::chunk_list::fast
+                         : UpdateAuxImpl::chunk_list::slow,
+            new_chunk_id);
+        chunk_offset_t new_offset{new_chunk_id, 0};
+        buffer.flush_and_reset(new_offset);
+    }
+    else if (buffer.written_bytes() > 0) {
+        // Node fits in chunk after flushing - just flush
+        buffer.flush();
+    }
+
+    // Record the offset where node starts
+    auto const node_offset = buffer.current_offset();
+
+    // Serialize node, handling potential buffer overflow
+    unsigned offset_in_node = 0;
+    while (offset_in_node < size) {
+        auto const bytes_to_write =
+            std::min(buffer.remaining(), static_cast<size_t>(size - offset_in_node));
+        auto *where = buffer.reserve(bytes_to_write);
+        MONAD_DEBUG_ASSERT(where != nullptr);
+        serialize_node_to_buffer(
+            reinterpret_cast<unsigned char *>(where),
+            static_cast<unsigned>(bytes_to_write),
+            node,
+            size,
+            offset_in_node);
+        buffer.commit(bytes_to_write);
+        offset_in_node += static_cast<unsigned>(bytes_to_write);
+
+        if (offset_in_node < size && buffer.remaining() == 0) {
+            // Buffer full but node not done - check if flush would exceed
+            // chunk boundary. If so, we have a problem since node was supposed
+            // to fit in this chunk. This shouldn't happen if the initial check
+            // was correct, but guard against it anyway.
+            auto const loop_written_padded =
+                round_up_align<DISK_PAGE_BITS>(buffer.written_bytes());
+            auto const loop_offset_after_flush =
+                buffer.start_offset().offset + loop_written_padded;
+            auto const loop_chunk_capacity =
+                aux.io->chunk_capacity(buffer.start_offset().id);
+
+            if (loop_offset_after_flush >= loop_chunk_capacity) {
+                // Would exceed chunk boundary - get new chunk
+                auto *ci = aux.db_metadata()->free_list_end();
+                MONAD_ASSERT(ci != nullptr);
+                auto const new_chunk_id = ci->index(aux.db_metadata());
+                aux.remove(new_chunk_id);
+                aux.append(
+                    in_fast_list ? UpdateAuxImpl::chunk_list::fast
+                                 : UpdateAuxImpl::chunk_list::slow,
+                    new_chunk_id);
+                chunk_offset_t new_offset{new_chunk_id, 0};
+                buffer.flush_and_reset(new_offset);
+            }
+            else {
+                buffer.flush();
+            }
+        }
+    }
+
+    return node_offset;
+}
+
+// Write a node and set the spare bits encoding disk pages.
+// This is the fiber equivalent of async_write_node_set_spare.
+chunk_offset_t fiber_write_node_set_spare(
+    UpdateAuxImpl &aux, FiberWriteBuffer &buffer, Node &node, bool in_fast_list)
+{
+    auto offset = fiber_write_node(aux, buffer, node, in_fast_list);
+    unsigned const pages = num_pages(offset.offset, node.get_disk_size());
+    offset.set_spare(static_cast<uint16_t>(node_disk_pages_spare_15{pages}));
+    return offset;
+}
+
+// Fiber version of write_new_root_node.
+// This writes the root node and flushes using fiber-based IO.
+// The caller must ensure they're running in a fiber context where yielding is safe.
+chunk_offset_t fiber_write_new_root_node(
+    UpdateAuxImpl &aux, Node &root, uint64_t const version)
+{
+    // Root always goes to fast buffer (in_fast_list = true)
+    auto const offset_written_to = fiber_write_node_set_spare(
+        aux, aux.fiber_write_buffer_fast_ref(), root, true);
+
+    // Flush both fast and slow buffers
     flush_buffered_writes(aux);
-    // advance fast and slow ring's latest offset in db metadata
+
+    // Advance both fast and slow ring offsets in db metadata
     aux.advance_db_offsets_to(
-        aux.node_writer_fast->sender().offset(),
-        aux.node_writer_slow->sender().offset());
-    // update root offset
+        aux.fiber_write_buffer_fast_ref().current_offset(),
+        aux.fiber_write_buffer_slow_ref().current_offset());
+
+    // Update root offset (same logic as non-fiber version)
     auto const max_version_in_db = aux.db_history_max_version();
     if (MONAD_UNLIKELY(max_version_in_db == INVALID_BLOCK_NUM)) {
         aux.fast_forward_next_version(version);
         aux.append_root_offset(offset_written_to);
         MONAD_ASSERT(aux.db_history_range_lower_bound() == version);
-    }
-    else if (version <= max_version_in_db) {
+    } else if (version <= max_version_in_db) {
         MONAD_ASSERT(
             version >=
             ((max_version_in_db >= aux.version_history_length())
@@ -1722,13 +1510,11 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
         MONAD_ASSERT(
             aux.db_history_range_lower_bound() ==
             std::min(version, prev_lower_bound));
-    }
-    else {
+    } else {
         MONAD_ASSERT(version == max_version_in_db + 1);
-        // Erase the earliest valid version if it is going to be outdated after
-        // writing a new version, must happen before appending new root offset
+        // Erase the earliest valid version if it is going to be outdated
         if (version - aux.db_history_min_valid_version() >=
-            aux.version_history_length()) { // if exceed history length
+            aux.version_history_length()) {
             aux.erase_versions_up_to_and_including(
                 version - aux.version_history_length());
             MONAD_ASSERT(

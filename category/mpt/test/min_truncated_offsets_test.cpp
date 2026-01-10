@@ -31,6 +31,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <stack>
 #include <utility>
@@ -46,7 +47,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
     this->aux.alternate_slow_fast_node_writer_unit_testing_only(true);
     constexpr size_t const eightMB = 8 * 1024 * 1024;
 
-    uint64_t const block_id = 0;
+    uint64_t version = 0;
     // ensure total bytes written on both fast and slow lists
     auto ensure_total_bytes_written = [&](size_t fast_chunks,
                                           size_t chunk_inner_offset_fast,
@@ -64,8 +65,8 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                 {
                     monad::byte_string key(
                         0x1234567812345678123456781234567812345678123456781234567812345678_bytes);
-                    for (size_t n = 0; n < key.size(); n += 4) {
-                        *(uint32_t *)(key.data() + n) = rand();
+                    for (size_t i = 0; i < key.size(); i += 4) {
+                        *(uint32_t *)(key.data() + i) = rand();
                     }
                     keys.emplace_back(
                         std::move(key), aux.get_latest_root_offset().id);
@@ -74,8 +75,11 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                     make_update(keys.back().first, keys.back().first));
                 update_ls.push_front(updates.back());
             }
-            root = upsert(
-                aux, block_id, *sm, std::move(root), std::move(update_ls));
+            fprintf(stderr, "ensure_total_bytes_written: about to call do_update\n"); fflush(stderr);
+            // Use do_update which handles fiber setup internally
+            root = aux.do_update(
+                std::move(root), *sm, std::move(update_ls), version++);
+
             size_t count_fast = 0;
             for (auto const *ci = aux.db_metadata()->fast_list_begin();
                  ci != nullptr;
@@ -86,11 +90,12 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                  ci != nullptr;
                  count_slow++, ci = ci->next(aux.db_metadata())) {
             }
+            // Check db_offsets which are updated after each do_update
             if (count_fast >= fast_chunks &&
-                aux.node_writer_fast->sender().offset().offset >=
+                aux.db_metadata()->db_offsets.start_of_wip_offset_fast.offset >=
                     chunk_inner_offset_fast &&
                 count_slow >= slow_chunks &&
-                aux.node_writer_slow->sender().offset().offset >=
+                aux.db_metadata()->db_offsets.start_of_wip_offset_slow.offset >=
                     chunk_inner_offset_slow) {
                 break;
             }
@@ -210,6 +215,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
     } traverse{aux};
 
     // WARNING: test will fail and there are memory leak using parallel traverse
+    uint64_t const block_id = version - 1;  // use last version for traverse
     ASSERT_TRUE(preorder_traverse_blocking(aux, *root, traverse, block_id));
     EXPECT_EQ(traverse.level, 0);
     EXPECT_EQ(traverse.root_to_node_records.empty(), true);

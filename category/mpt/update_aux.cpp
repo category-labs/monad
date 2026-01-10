@@ -19,17 +19,24 @@
 #include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/async/uring_fiber_scheduler.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/unaligned.hpp>
 #include <category/core/util/stopwatch.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
+#include <category/mpt/fiber_write_utils.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
 #include <quill/Quill.h>
+
+#include <boost/fiber/algo/algorithm.hpp>
+#include <boost/fiber/algo/round_robin.hpp>
+#include <boost/fiber/fiber.hpp>
+#include <boost/fiber/operations.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -38,6 +45,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <format>
@@ -479,8 +487,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
         io->storage_pool().chunk(storage_pool::seq, slow_offset.id);
     MONAD_ASSERT(slow_offset_chunk.try_trim_contents(slow_offset.offset));
 
-    // Reset node_writers offset to the same offsets in db_metadata
-    reset_node_writers();
+    init_disk_growth_tracking();
 }
 
 void UpdateAuxImpl::clear_ondisk_db()
@@ -555,6 +562,25 @@ UpdateAuxImpl::~UpdateAuxImpl()
     if (io != nullptr) {
         unset_io();
     }
+}
+
+void UpdateAuxImpl::setup_fiber_write_buffers()
+{
+    MONAD_ASSERT(io != nullptr);
+    if (!fiber_write_buffer_) {
+        auto const fast_start_offset = get_start_of_wip_fast_offset();
+        auto const slow_start_offset = get_start_of_wip_slow_offset();
+        fiber_write_buffer_ =
+            std::make_unique<FiberWriteBuffer>(*io, fast_start_offset);
+        fiber_write_buffer_slow_ =
+            std::make_unique<FiberWriteBuffer>(*io, slow_start_offset);
+    }
+}
+
+void UpdateAuxImpl::release_fiber_write_buffers()
+{
+    fiber_write_buffer_.reset();
+    fiber_write_buffer_slow_.reset();
 }
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -987,11 +1013,7 @@ void UpdateAuxImpl::set_io(
         }
 
         if (!io->is_read_only()) {
-            // Default behavior: initialize node writers to start at the
-            // start of available slow and fast list respectively. Make sure
-            // the initial fast/slow offset points into a block in use as a
-            // sanity check
-            reset_node_writers();
+            init_disk_growth_tracking();
         }
     }
     else { // resume from an existing db and underlying storage devices
@@ -1024,8 +1046,6 @@ void UpdateAuxImpl::set_io(
 
 void UpdateAuxImpl::unset_io()
 {
-    node_writer_fast.reset();
-    node_writer_slow.reset();
     if (db_metadata_[0].root_offsets.data() != nullptr) {
         (void)::munmap(
             db_metadata_[0].root_offsets.data(),
@@ -1049,31 +1069,12 @@ void UpdateAuxImpl::unset_io()
     io = nullptr;
 }
 
-void UpdateAuxImpl::reset_node_writers()
+void UpdateAuxImpl::init_disk_growth_tracking()
 {
-    auto init_node_writer = [&](chunk_offset_t const node_writer_offset)
-        -> node_writer_unique_ptr_type {
-        auto &chunk =
-            io->storage_pool().chunk(storage_pool::seq, node_writer_offset.id);
-        MONAD_ASSERT(chunk.size() >= node_writer_offset.offset);
-        size_t const bytes_to_write = std::min(
-            AsyncIO::WRITE_BUFFER_SIZE,
-            size_t(chunk.capacity() - node_writer_offset.offset));
-        return io ? io->make_connected(
-                        write_single_buffer_sender{
-                            node_writer_offset, bytes_to_write},
-                        write_operation_io_receiver{bytes_to_write})
-                  : node_writer_unique_ptr_type{};
-    };
-    node_writer_fast =
-        init_node_writer(db_metadata()->db_offsets.start_of_wip_offset_fast);
-    node_writer_slow =
-        init_node_writer(db_metadata()->db_offsets.start_of_wip_offset_slow);
-
     last_block_end_offset_fast_ = compact_virtual_chunk_offset_t{
-        physical_to_virtual(node_writer_fast->sender().offset())};
+        physical_to_virtual(db_metadata()->db_offsets.start_of_wip_offset_fast)};
     last_block_end_offset_slow_ = compact_virtual_chunk_offset_t{
-        physical_to_virtual(node_writer_slow->sender().offset())};
+        physical_to_virtual(db_metadata()->db_offsets.start_of_wip_offset_slow)};
 }
 
 /* upsert() supports both on disk and in memory db updates. User should
@@ -1107,7 +1108,12 @@ Node::SharedPtr UpdateAuxImpl::do_update(
             *this, version, sm, std::move(prev_root), std::move(root_updates));
     }
     MONAD_ASSERT(is_on_disk());
+
     set_can_write_to_fast(can_write_to_fast);
+    setup_fiber_write_buffers();
+
+    Node::SharedPtr root;
+    Stopwatch<std::chrono::microseconds> upsert_timer;
 
     if (prev_root) {
         // previous compaction offset
@@ -1116,8 +1122,8 @@ Node::SharedPtr UpdateAuxImpl::do_update(
     }
     if (compaction) {
         if (enable_dynamic_history_length_) {
-            // WARNING: this step may remove historical versions and free disk
-            // chunks
+            // WARNING: this step may remove historical versions and free
+            // disk chunks
             adjust_history_length_based_on_disk_usage();
         }
         if (!version_is_valid_ondisk(version)) {
@@ -1135,8 +1141,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         {}, compact_offsets_bytes, false, std::move(updates), version);
     root_updates.push_front(root_update);
 
-    Stopwatch<std::chrono::microseconds> upsert_timer;
-    auto root = upsert(
+    root = upsert(
         *this,
         version,
         sm,
@@ -1145,6 +1150,17 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         write_root);
     set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
 
+    // Always advance db offsets to match fiber write buffer positions.
+    // This ensures the next do_update() starts from the correct offset,
+    // even when write_root=false (which skips fiber_write_new_root_node).
+    advance_db_offsets_to(
+        fiber_write_buffer_->current_offset(),
+        fiber_write_buffer_slow_->current_offset());
+
+    // Release fiber write buffers to return write buffers to the pool.
+    // New buffers will be created on next do_update() or copy_trie operation.
+    release_fiber_write_buffers();
+
     auto const upsert_duration = upsert_timer.elapsed();
     if (compaction) {
         update_disk_growth_data();
@@ -1152,9 +1168,9 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         print_update_stats(version);
     }
     [[maybe_unused]] auto const curr_fast_writer_offset =
-        physical_to_virtual(node_writer_fast->sender().offset());
+        physical_to_virtual(db_metadata()->db_offsets.start_of_wip_offset_fast);
     [[maybe_unused]] auto const curr_slow_writer_offset =
-        physical_to_virtual(node_writer_slow->sender().offset());
+        physical_to_virtual(db_metadata()->db_offsets.start_of_wip_offset_slow);
     LOG_INFO_CFORMAT(
         "Finish upserting version %lu. Min valid version %lu. Time elapsed: "
         "%ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
@@ -1349,9 +1365,9 @@ void UpdateAuxImpl::move_trie_version_forward(
 void UpdateAuxImpl::update_disk_growth_data()
 {
     compact_virtual_chunk_offset_t const curr_fast_writer_offset{
-        physical_to_virtual(node_writer_fast->sender().offset())};
+        physical_to_virtual(db_metadata()->db_offsets.start_of_wip_offset_fast)};
     compact_virtual_chunk_offset_t const curr_slow_writer_offset{
-        physical_to_virtual(node_writer_slow->sender().offset())};
+        physical_to_virtual(db_metadata()->db_offsets.start_of_wip_offset_slow)};
     last_block_disk_growth_fast_ = // unused for speed control for now
         curr_fast_writer_offset - last_block_end_offset_fast_;
     last_block_disk_growth_slow_ =

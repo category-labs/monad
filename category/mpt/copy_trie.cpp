@@ -291,6 +291,11 @@ Node::SharedPtr copy_trie_to_dest(
     uint64_t const dest_version, bool const write_root)
 {
     auto impl = [&]() -> Node::SharedPtr {
+        // Set up fiber write buffers for fiber-based IO
+        if (aux.is_on_disk()) {
+            aux.setup_fiber_write_buffers();
+        }
+
         dest_root = copy_trie_impl(
             aux,
             std::move(src_root),
@@ -298,13 +303,26 @@ Node::SharedPtr copy_trie_to_dest(
             std::move(dest_root),
             dest_prefix,
             dest_version);
+
         if (aux.is_on_disk() && write_root) {
+            // write_new_root_node handles flushing and advancing offsets
             write_new_root_node(aux, *dest_root, dest_version);
             MONAD_ASSERT(aux.db_history_max_version() >= dest_version);
         }
+        else if (aux.is_on_disk()) {
+            // Flush buffered writes and advance offsets manually
+            flush_buffered_writes(aux);
+            aux.advance_db_offsets_to(
+                aux.fiber_write_buffer_fast_ref().current_offset(),
+                aux.fiber_write_buffer_slow_ref().current_offset());
+        }
+
+        // Release fiber write buffers
         if (aux.is_on_disk()) {
+            aux.release_fiber_write_buffers();
             MONAD_ASSERT(dest_root->value_len == sizeof(uint32_t) * 2);
         }
+
         return dest_root;
     };
     if (aux.is_current_thread_upserting()) {

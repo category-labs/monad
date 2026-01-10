@@ -481,6 +481,40 @@ public:
             (std::byte *)mem, detail::write_buffer_deleter(this));
     }
 
+    // Non-blocking write buffer allocation - returns nullptr if no buffer
+    write_buffer_ptr try_get_write_buffer()
+    {
+        unsigned char *mem = wr_pool_.alloc();
+        if (mem == nullptr) {
+            return write_buffer_ptr{};
+        }
+        return write_buffer_ptr(
+            (std::byte *)mem, detail::write_buffer_deleter(this));
+    }
+
+    // Non-blocking read buffer allocation - returns nullptr if no buffer
+    read_buffer_ptr try_get_read_buffer()
+    {
+        unsigned char *mem = rd_pool_.alloc();
+        if (mem == nullptr) {
+            return read_buffer_ptr{};
+        }
+        return read_buffer_ptr(
+            (std::byte *)mem, detail::read_buffer_deleter(this));
+    }
+
+    // Submit a read request for fiber-based IO.
+    // Unlike sender-receiver reads, this takes a raw user_data pointer that
+    // will be returned with the CQE. The caller is responsible for managing
+    // the completion (typically via CompletionToken and fiber yield).
+    void submit_fiber_read(
+        std::span<std::byte> buffer, chunk_offset_t offset, void *user_data);
+
+    // Submit a write request for fiber-based IO.
+    void submit_fiber_write(
+        std::span<std::byte const> buffer, chunk_offset_t offset,
+        void *user_data);
+
 private:
     unsigned char *poll_uring_while_no_io_buffers_(bool is_write);
 

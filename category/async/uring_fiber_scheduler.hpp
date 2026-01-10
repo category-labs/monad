@@ -54,14 +54,18 @@ struct CompletionToken
     context *waiting_fiber{nullptr};
     int32_t result{0};
     bool completed{false};
+    bool is_write{false};
 };
 
 class UringFiberScheduler final
     : public boost::fibers::algo::algorithm_with_properties<FiberProperties>
 {
-    monad::async::AsyncIO *io_;
     boost::fibers::scheduler::ready_queue_type ready_queue_{};
     uint32_t ready_cnt_{0};
+
+    // Thread-local AsyncIO pointer - allows updating the IO target without
+    // reinstalling the scheduler (which corrupts fiber context state).
+    static thread_local monad::async::AsyncIO *tls_io_;
 
 public:
     explicit UringFiberScheduler(monad::async::AsyncIO *io);
@@ -79,6 +83,19 @@ public:
     void suspend_until(
         std::chrono::steady_clock::time_point const &) noexcept override;
     void notify() noexcept override;
+
+    // Update the AsyncIO pointer for this thread. Use instead of reinstalling
+    // the scheduler when switching to a new AsyncIO instance.
+    static void set_io(monad::async::AsyncIO *io)
+    {
+        tls_io_ = io;
+    }
+
+    // Check if a scheduler has been installed on this thread.
+    static bool is_installed()
+    {
+        return tls_io_ != nullptr;
+    }
 };
 
 MONAD_FIBER_NAMESPACE_END

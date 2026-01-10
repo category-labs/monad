@@ -600,6 +600,13 @@ size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
         auto *token = reinterpret_cast<monad::fiber::CompletionToken *>(data);
         if (token->magic ==
             monad::fiber::CompletionToken::FIBER_COMPLETION_MAGIC) {
+            // Decrement appropriate inflight counter
+            if (token->is_write) {
+                --records_.inflight_wr;
+            }
+            else {
+                --records_.inflight_rd;
+            }
             token->result = cqe->res;
             token->completed = true;
             if (token->waiting_fiber != nullptr &&
@@ -805,6 +812,96 @@ unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)
             return mem;
         }
     }
+}
+
+void AsyncIO::submit_fiber_write(
+    std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
+    void *user_data)
+{
+    MONAD_ASSERT(user_data != nullptr);
+    MONAD_ASSERT(!rwbuf_.is_read_only());
+    MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+    MONAD_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
+
+    // Track inflight write for poll_uring_ to poll the write ring
+    ++records_.inflight_wr;
+    // Mark token as write operation for proper decrement on completion
+    static_cast<monad::fiber::CompletionToken *>(user_data)->is_write = true;
+
+    auto const &ci = seq_chunks_[chunk_and_offset.id];
+    auto const offset = ci.chunk.write_fd(buffer.size()).second;
+    // Sanity check to ensure we're appending where expected
+    MONAD_ASSERT_PRINTF(
+        (chunk_and_offset.offset & 0xffff) == (offset & 0xffff),
+        "where we are appending %u is not where we are supposed to be "
+        "appending %llu. Chunk id is %u",
+        (chunk_and_offset.offset & 0xffff),
+        (offset & 0xffff),
+        chunk_and_offset.id);
+
+    auto *const wr_ring =
+        (wr_uring_ != nullptr) ? &wr_uring_->get_ring() : &uring_.get_ring();
+    struct io_uring_sqe *sqe = io_uring_get_sqe(wr_ring);
+    MONAD_ASSERT(sqe);
+
+    io_uring_prep_write_fixed(
+        sqe,
+        ci.io_uring_write_fd,
+        buffer.data(),
+        static_cast<unsigned int>(buffer.size()),
+        offset,
+        wr_ring == &uring_.get_ring());
+    sqe->flags |= IOSQE_FIXED_FILE;
+    if (wr_ring != &uring_.get_ring()) {
+        sqe->flags |= IOSQE_IO_DRAIN;
+    }
+    sqe->ioprio = 0;
+
+    io_uring_sqe_set_data(sqe, user_data);
+    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(wr_ring));
+}
+
+void AsyncIO::submit_fiber_read(
+    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+    void *user_data)
+{
+    MONAD_ASSERT(user_data != nullptr);
+    MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+
+    // Track inflight read for poll_uring_
+    ++records_.inflight_rd;
+
+#ifndef NDEBUG
+    memset(buffer.data(), 0xff, buffer.size());
+#endif
+
+    auto const &ci = seq_chunks_[chunk_and_offset.id];
+    auto *const rd_ring = &uring_.get_ring();
+    struct io_uring_sqe *sqe = io_uring_get_sqe(rd_ring);
+    MONAD_ASSERT(sqe);
+
+    if (buffer.size() <= READ_BUFFER_SIZE) {
+        io_uring_prep_read_fixed(
+            sqe,
+            ci.io_uring_read_fd,
+            buffer.data(),
+            static_cast<unsigned int>(buffer.size()),
+            ci.chunk.read_fd().second + chunk_and_offset.offset,
+            0);
+    }
+    else {
+        io_uring_prep_read(
+            sqe,
+            ci.io_uring_read_fd,
+            buffer.data(),
+            static_cast<unsigned int>(buffer.size()),
+            ci.chunk.read_fd().second + chunk_and_offset.offset);
+    }
+    sqe->flags |= IOSQE_FIXED_FILE;
+    sqe->ioprio = 0;
+
+    io_uring_sqe_set_data(sqe, user_data);
+    MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(rd_ring));
 }
 
 MONAD_ASYNC_NAMESPACE_END

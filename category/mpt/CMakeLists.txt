@@ -52,6 +52,7 @@ add_library(
   "find.cpp"
   "find_notify_fiber.cpp"
   "find_request_sender.hpp"
+  "fiber_write_utils.hpp"
   "nibbles_view.hpp"
   "nibbles_view_fmt.hpp"
   "node.cpp"

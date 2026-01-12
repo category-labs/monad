@@ -669,3 +669,81 @@ TYPED_TEST(TraitsTest, p256_verify)
             "p256_verify", "p256Verify.json", 0x0100_address);
     }
 }
+
+TYPED_TEST(TraitsTest, modexp_truncated_input)
+{
+    if constexpr (TestFixture::Trait::evm_rev() < EVMC_BYZANTIUM) {
+        GTEST_SKIP()
+            << "Modular Exponentiation precompile not available before "
+               "EVM Byzantium.";
+    }
+    else {
+        // Before Osaka, inputs to modexp could be arbitrarily large, and
+        // would just fail for gas reasons. After Osaka, the large padded
+        // modulus size in this example fails to validate.
+        static constexpr auto expected_failure =
+            TestFixture::Trait::eip_7823_active()
+                ? evmc_status_code::EVMC_FAILURE
+                : evmc_status_code::EVMC_OUT_OF_GAS;
+
+        static constexpr auto min_gas = [] {
+            if constexpr (TestFixture::Trait::evm_rev() >= EVMC_OSAKA) {
+                return 500;
+            }
+            else if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BERLIN) {
+                return 200;
+            }
+            else {
+                return 10;
+            }
+        }();
+
+        auto const test_cases = std::array{
+            test_case{
+                .name = "truncated_modulus_len",
+                .input = evmc::from_hex(
+                             "0x00000000000000000000000000000000000000000000000"
+                             "0000000000000000100000000000000000000000000000000"
+                             "0000000000000000000000000000000100000000000000000"
+                             "000000000000000000000000000000005")
+                             .value(),
+                .expected_failure = expected_failure,
+                .gas = 30'000'000,
+            },
+            test_case{
+                .name = "truncated_exponent_len",
+                .input =
+                    evmc::from_hex("0x00000000000000000000000000000000000000000"
+                                   "0000000000000000000000100000000000000000000"
+                                   "00000000000000000000000000000005")
+                        .value(),
+                .expected_failure = expected_failure,
+                .gas = 30'000'000,
+            },
+            test_case{
+                .name = "truncated_base_len",
+                .input = evmc::from_hex("0x000000000000000000000000000000000000"
+                                        "00000000000000000500")
+                             .value(),
+                .expected_failure = expected_failure,
+                .gas = 30'000'000,
+            },
+            test_case{
+                .name = "truncated_exponent",
+                .input = evmc::from_hex("0x00000000000000000000000000000000000"
+                                        "000000000000000000000"
+                                        "0000000100000000000000000000000000000"
+                                        "000000000000000000000"
+                                        "0000000000000200000000000000000000000"
+                                        "000000000000000000000"
+                                        "000000000000000000050201")
+                             .value(),
+                .expected = evmc::from_hex("0x0000000000").value(),
+                .gas = min_gas,
+            },
+        };
+
+        do_geth_tests<typename TestFixture::Trait>(
+            "modexp_truncated_input", test_cases, 0x05_address);
+    }
+}

@@ -177,7 +177,7 @@ struct MonadRunloopDbCache: public Db
             }
         }
         for (auto const &[a, over] : account_override) {
-            auto const orig_acct = read_account(a);
+            auto const orig_acct = db_cache.read_account(a);
             if (orig_acct) {
                 auto over_acct = orig_acct;
                 over_acct->balance = over.balance;
@@ -193,7 +193,7 @@ struct MonadRunloopDbCache: public Db
                 state_deltas->emplace(a, sd);
             }
         }
-        MONAD_ASSERT(account_override.empty());
+        account_override.clear();
         db_cache.commit(
             std::move(state_deltas),
             code,

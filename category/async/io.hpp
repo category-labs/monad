@@ -481,24 +481,17 @@ public:
             (std::byte *)mem, detail::write_buffer_deleter(this));
     }
 
-    // Non-blocking write buffer allocation - returns nullptr if no buffer
-    write_buffer_ptr try_get_write_buffer()
+    write_buffer_ptr fiber_get_write_buffer()
     {
-        unsigned char *mem = wr_pool_.alloc();
-        if (mem == nullptr) {
-            return write_buffer_ptr{};
-        }
+        unsigned char *mem = wr_pool_.alloc_fiber();
         return write_buffer_ptr(
             (std::byte *)mem, detail::write_buffer_deleter(this));
     }
 
     // Non-blocking read buffer allocation - returns nullptr if no buffer
-    read_buffer_ptr try_get_read_buffer()
+    read_buffer_ptr fiber_get_read_buffer()
     {
-        unsigned char *mem = rd_pool_.alloc();
-        if (mem == nullptr) {
-            return read_buffer_ptr{};
-        }
+        unsigned char *mem = rd_pool_.alloc_fiber();
         return read_buffer_ptr(
             (std::byte *)mem, detail::read_buffer_deleter(this));
     }
@@ -680,7 +673,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 272);
+static_assert(sizeof(AsyncIO) == 432);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

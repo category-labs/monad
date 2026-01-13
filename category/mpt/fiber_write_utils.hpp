@@ -29,43 +29,6 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-// Acquire a write buffer, yielding the fiber if none available.
-// This is a fiber-friendly alternative to AsyncIO::get_write_buffer()
-// which blocks the thread when buffers are exhausted.
-//
-// The hot loop polls io_uring completions, which frees buffers as writes
-// complete. By yielding, we allow other fibers to run and completions to
-// be processed.
-//
-// @param io The AsyncIO instance to allocate from
-// @return A write buffer, guaranteed non-null on return
-inline async::AsyncIO::write_buffer_ptr
-fiber_get_write_buffer(async::AsyncIO &io)
-{
-    while (true) {
-        auto buf = io.try_get_write_buffer();
-        if (buf) {
-            return buf;
-        }
-        // No buffer available - yield to let scheduler poll completions
-        // which may free buffers as writes complete
-        boost::this_fiber::yield();
-    }
-}
-
-// Acquire a read buffer, yielding the fiber if none available.
-// Similar to fiber_get_write_buffer but for read operations.
-inline async::AsyncIO::read_buffer_ptr fiber_get_read_buffer(async::AsyncIO &io)
-{
-    while (true) {
-        auto buf = io.try_get_read_buffer();
-        if (buf) {
-            return buf;
-        }
-        boost::this_fiber::yield();
-    }
-}
-
 // Read a node from disk using fiber-based IO.
 // This replaces async_read + node_receiver_t pattern with a simpler
 // synchronous-looking interface that yields the fiber during IO.
@@ -97,7 +60,7 @@ fiber_read_node(async::AsyncIO &io, chunk_offset_t offset)
     // Handle short vs long reads
     if (bytes_to_read <= async::AsyncIO::READ_BUFFER_SIZE) {
         // Short read - use pool buffer
-        auto buffer = fiber_get_read_buffer(io);
+        auto buffer = io.fiber_get_read_buffer();
 
         // Submit read
         io.submit_fiber_read(
@@ -174,7 +137,7 @@ class FiberWriteBuffer
 public:
     FiberWriteBuffer(async::AsyncIO &io, chunk_offset_t start_offset)
         : io_(&io)
-        , buffer_(fiber_get_write_buffer(io))
+        , buffer_(io.fiber_get_write_buffer())
         , start_offset_(start_offset)
         , capacity_(async::AsyncIO::WRITE_BUFFER_SIZE)
     {

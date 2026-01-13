@@ -69,6 +69,8 @@ namespace trace
         friend nlohmann::json state_to_json(
             Map<Address, OriginalAccountState> const &, State &,
             std::optional<Address> const &);
+        static nlohmann::json
+        reserve_balance_state_to_json(OriginalAccountState const &, State &);
         nlohmann::json &storage_;
         Address const &beneficiary_;
     };
@@ -84,8 +86,6 @@ namespace trace
         void encode(StateDeltas const &, State &);
 
     private:
-        StorageDeltas generate_storage_deltas(
-            AccountState::StorageMap const &, AccountState::StorageMap const &);
         nlohmann::json &storage_;
     };
 

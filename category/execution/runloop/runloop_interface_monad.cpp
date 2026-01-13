@@ -38,6 +38,9 @@
 #include <quill/Quill.h>
 #include <quill/handlers/FileHandler.h>
 
+#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
+
 using namespace monad;
 namespace fs = std::filesystem;
 
@@ -432,4 +435,10 @@ extern "C" void monad_runloop_get_state_root(
     MonadRunloopImpl *const runloop = to_impl(pre_runloop);
     *result_state_root =
         std::bit_cast<MonadRunloopWord>(runloop->db.state_root());
+}
+
+extern "C" void monad_runloop_dump(MonadRunloop *pre_runloop)
+{
+    MonadRunloopImpl *const runloop = to_impl(pre_runloop);
+    std::cout << runloop->triedb.to_json().dump(4) << std::endl;
 }

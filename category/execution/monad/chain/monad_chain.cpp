@@ -15,6 +15,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
+#include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -27,10 +28,95 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
-#include <category/execution/monad/reserve_balance.h>
-#include <category/execution/monad/reserve_balance.hpp>
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
+
+#include <algorithm>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+template <Traits traits>
+bool dipped_into_reserve(
+    Address const &sender, Transaction const &tx,
+    uint256_t const &base_fee_per_gas, uint64_t const i,
+    MonadChainContext const &ctx, State &state)
+{
+    MONAD_ASSERT(i < ctx.senders.size());
+    MONAD_ASSERT(i < ctx.authorities.size());
+    MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
+
+    uint256_t const gas_fees =
+        uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
+    auto const &orig = state.original();
+    for (auto const &[addr, cur_account] : state.current()) {
+        MONAD_ASSERT(orig.contains(addr));
+        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
+        bytes32_t const effective_code_hash =
+            (traits::monad_rev() >= MONAD_EIGHT)
+                ? cur_account.recent().get_code_hash()
+                : orig_code_hash;
+        bool effective_is_delegated = false;
+
+        // Skip if not EOA
+        if (effective_code_hash != NULL_HASH) {
+            vm::SharedIntercode const intercode =
+                state.read_code(effective_code_hash)->intercode();
+            effective_is_delegated = monad::vm::evm::is_delegated(
+                {intercode->code(), intercode->size()});
+            if (!effective_is_delegated) {
+                continue;
+            }
+        }
+
+        // Check if dipped into reserve
+        std::optional<uint256_t> const violation_threshold =
+            [&] -> std::optional<uint256_t> {
+            uint256_t const max_reserve =
+                ReserveBalanceContract{state}.get(addr).native();
+            uint256_t const orig_balance = state.get_original_balance(addr);
+            uint256_t const reserve = std::min(max_reserve, orig_balance);
+            if (addr == sender) {
+                if (gas_fees > reserve) { // must be dipping
+                    return std::nullopt;
+                }
+                return reserve - gas_fees;
+            }
+            return reserve;
+        }();
+        uint256_t const curr_balance = state.get_balance(addr);
+        if (!violation_threshold.has_value() ||
+            curr_balance < violation_threshold.value()) {
+            if (addr == sender) {
+                if (!can_sender_dip_into_reserve(
+                        sender, i, effective_is_delegated, ctx)) {
+                    // Safety: this assertion is recoverable because it can be
+                    // triggered via RPC parameter setting.
+                    MONAD_ASSERT_THROW(
+                        violation_threshold.has_value(),
+                        "gas fee greater than reserve for non-dipping "
+                        "transaction");
+                    return true;
+                }
+                // Skip if allowed to dip into reserve
+            }
+            else {
+                // Safety: this assertion should not be a recoverable one, as it
+                // indicates a logic error in the surrounding code: the
+                // violation threshold can only be nullopt when addr == sender,
+                // which is not the case in this branch.
+                MONAD_ASSERT(violation_threshold.has_value());
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
@@ -48,17 +134,124 @@ evmc_revision MonadChain::get_revision(
     return EVMC_CANCUN;
 }
 
+template <Traits traits>
+Result<void> monad_validate_transaction(
+    Transaction const &tx, Address const &sender, State &state,
+    uint256_t const &base_fee_per_gas,
+    std::span<std::optional<Address> const> const authorities)
+{
+
+    auto res = ::monad::validate_transaction<traits>(tx, sender, state);
+    if constexpr (MONAD_LIKELY(traits::monad_rev() >= MONAD_FOUR)) {
+        if (res.has_error() &&
+            res.error() != TransactionError::InsufficientBalance) {
+            return res;
+        }
+        uint256_t const balance = state.get_balance(sender);
+        uint256_t const gas_fee =
+            uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
+        if (MONAD_UNLIKELY(balance < gas_fee)) {
+            return MonadTransactionError::InsufficientBalanceForFee;
+        }
+
+        if (MONAD_UNLIKELY(std::ranges::contains(authorities, SYSTEM_SENDER))) {
+            return MonadTransactionError::SystemTransactionSenderIsAuthority;
+        }
+    }
+    else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
+        return res;
+    }
+    else {
+        MONAD_ABORT("invalid revision");
+    }
+    return success();
+}
+
+EXPLICIT_MONAD_TRAITS(monad_validate_transaction);
+
 Result<void> MonadChain::validate_transaction(
-    uint64_t const block_number, uint64_t const timestamp,
+    [[maybe_unused]] uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities) const
 {
+    monad_revision const rev = get_monad_revision(timestamp);
+    SWITCH_MONAD_TRAITS(
+        monad_validate_transaction,
+        tx,
+        sender,
+        state,
+        base_fee_per_gas,
+        authorities);
+    MONAD_ASSERT(false);
+}
 
-    monad_revision const monad_rev = get_monad_revision(timestamp);
-    evmc_revision const rev = get_revision(block_number, timestamp);
-    return validate_monad_transaction(
-        monad_rev, rev, tx, sender, state, base_fee_per_gas, authorities);
+bool is_reconfiguring_tx(Transaction const &tx)
+{
+    if (tx.to == RESERVE_BALANCE_CA && tx.data.size() >= 4) {
+        // TODO(dhil): Either export the selector or move this function to the
+        // reserve balance contract file.
+        std::string_view const selector{
+            reinterpret_cast<char const *>(tx.data.data()), 4};
+        return selector == "\082\0ab\089\00a";
+    }
+    return false;
+}
+
+template <Traits traits>
+bool revert_monad_transaction(
+    Address const &sender, Transaction const &tx,
+    uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
+    MonadChainContext const &ctx)
+{
+    if constexpr (traits::monad_rev() >= MONAD_NEXT /* TODO(dhil): Fixme */) {
+        return !is_reconfiguring_tx(tx) &&
+               dipped_into_reserve<traits>(
+                   sender, tx, base_fee_per_gas, i, ctx, state);
+    }
+    else if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+        return dipped_into_reserve<traits>(
+            sender, tx, base_fee_per_gas, i, ctx, state);
+    }
+    else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
+        return false;
+    }
+}
+
+EXPLICIT_MONAD_TRAITS(revert_monad_transaction);
+
+bool can_sender_dip_into_reserve(
+    Address const &sender, uint64_t const i, bool const sender_is_delegated,
+    MonadChainContext const &ctx)
+{
+    if (sender_is_delegated) { // delegated accounts cannot dip
+        return false;
+    }
+
+    // check pending blocks
+    for (ankerl::unordered_dense::segmented_set<Address> const
+             *const senders_and_authorities :
+         {ctx.grandparent_senders_and_authorities,
+          ctx.parent_senders_and_authorities}) {
+        if (senders_and_authorities &&
+            senders_and_authorities->contains(sender)) {
+            return false;
+        }
+    }
+
+    // check current block
+    if (ctx.senders_and_authorities.contains(sender)) {
+        for (size_t j = 0; j <= i; ++j) {
+            if (j < i && sender == ctx.senders.at(j)) {
+                return false;
+            }
+            if (std::ranges::contains(ctx.authorities.at(j), sender)) {
+                return false;
+            }
+        }
+    }
+
+    return true; // Allow dipping into reserve if no restrictions found
 }
 
 MONAD_NAMESPACE_END

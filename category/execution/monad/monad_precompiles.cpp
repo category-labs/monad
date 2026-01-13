@@ -17,21 +17,18 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-template <Traits traits>
+template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
     State &state, CallTracerBase &call_tracer, evmc_message const &msg)
 {
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
-        return std::nullopt;
-    }
-
-    if (msg.code_address != staking::STAKING_CA) {
+    if (msg.code_address != contract_address) {
         return std::nullopt;
     }
 
@@ -41,12 +38,21 @@ std::optional<evmc::Result> check_call_monad_precompile(
 
     byte_string_view input{msg.input_data, msg.input_size};
     auto const [method, cost] =
-        staking::StakingContract::precompile_dispatch<traits>(input);
+        Contract::template precompile_dispatch<traits>(input);
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
-    staking::StakingContract contract(state, call_tracer);
+    Contract contract =
+        [](State &state,
+           [[maybe_unused]] CallTracerBase &call_tracer) -> Contract {
+        if constexpr (std::is_same_v<Contract, staking::StakingContract>) {
+            return Contract{state, call_tracer};
+        }
+        else {
+            return Contract{state};
+        }
+    }(state, call_tracer);
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
@@ -90,7 +96,31 @@ std::optional<evmc::Result> check_call_precompile(
         return maybe_result;
     }
 
-    return check_call_monad_precompile<traits>(state, call_tracer, msg);
+#define CASE(cond, contract, addr)                                             \
+    do {                                                                       \
+        if constexpr ((cond)) {                                                \
+            if (auto maybe_result =                                            \
+                    check_call_monad_precompile<traits, contract, addr>(       \
+                        state, call_tracer, msg)) {                            \
+                return maybe_result;                                           \
+            }                                                                  \
+        }                                                                      \
+    }                                                                          \
+    while (false);
+
+    CASE(
+        traits::monad_rev() >= MONAD_FOUR,
+        staking::StakingContract,
+        staking::STAKING_CA);
+
+    CASE(
+        traits::monad_rev() >= MONAD_FOUR,
+        ReserveBalanceContract,
+        RESERVE_BALANCE_CA);
+
+    return std::nullopt;
+
+#undef CASE
 }
 
 EXPLICIT_MONAD_TRAITS(check_call_precompile);

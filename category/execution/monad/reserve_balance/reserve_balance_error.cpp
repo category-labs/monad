@@ -26,7 +26,6 @@
 #endif
 
 #include <initializer_list>
-
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
 
 std::initializer_list<
@@ -37,7 +36,11 @@ quick_status_code_from_enum<monad::ReserveBalanceError>::value_mappings()
 
     static std::initializer_list<mapping> const v = {
         {ReserveBalanceError::Success, "success", {errc::success}},
+        {ReserveBalanceError::InternalError, "internal error", {}},
         {ReserveBalanceError::MethodNotSupported, "method not supported", {}},
+        {ReserveBalanceError::InvalidInput, "invalid input", {}},
+        {ReserveBalanceError::ValueNonZero, "value non-zero", {}},
+        {ReserveBalanceError::PendingUpdate, "pending update", {}},
     };
 
     return v;

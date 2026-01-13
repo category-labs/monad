@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -68,6 +69,8 @@ namespace trace
         friend nlohmann::json state_to_json(
             Map<Address, OriginalAccountState> const &, State &,
             std::optional<Address> const &);
+        static nlohmann::json
+        reserve_balance_state_to_json(OriginalAccountState const &, State &);
         nlohmann::json &storage_;
         Address const &beneficiary_;
     };
@@ -83,8 +86,6 @@ namespace trace
         void encode(StateDeltas const &, State &);
 
     private:
-        StorageDeltas generate_storage_deltas(
-            AccountState::StorageMap const &, AccountState::StorageMap const &);
         nlohmann::json &storage_;
     };
 
@@ -100,7 +101,7 @@ namespace trace
 
     private:
         nlohmann::json &storage_;
-        Set<Address> excluded_addresses_{};
+        Set<Address> excluded_addresses_ = {RESERVE_BALANCE_CA};
 
         template <Traits traits>
         bool should_exclude_address(Address const &) const;

@@ -20,10 +20,12 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>
@@ -68,5 +70,17 @@ struct MonadChain : Chain
         Address const &sender, State &, uint256_t const &base_fee_per_gas,
         std::span<std::optional<Address> const> authorities) const override;
 };
+
+template <Traits traits>
+bool revert_transaction(
+    Address const &sender, Transaction const &,
+    uint256_t const &base_fee_per_gas, uint64_t i, State &,
+    ChainContext<traits> const &);
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+bool can_sender_dip_into_reserve(
+    Address const &sender, uint64_t i, bool sender_is_delegated,
+    ChainContext<traits> const &);
 
 MONAD_NAMESPACE_END

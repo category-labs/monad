@@ -64,7 +64,6 @@
 #include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/chain/chain_factory.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
-#include <category/execution/monad/reserve_balance.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/rpc/chain_context_buffer.hpp>

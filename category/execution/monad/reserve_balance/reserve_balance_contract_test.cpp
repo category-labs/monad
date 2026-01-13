@@ -33,7 +33,6 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
-#include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/vm/code.hpp>
@@ -50,6 +49,7 @@
 #include <test/vm/utils/test_message.hpp>
 
 #include <ankerl/unordered_dense.h>
+#include <boost/outcome/result.hpp>
 #include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
 
@@ -83,10 +83,101 @@ struct ReserveBalanceTest : public ::testing::Test
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer;
     ReserveBalanceContract contract{state, call_tracer};
+    ReserveBalanceView reserve_view{state};
 };
+
+TEST_F(ReserveBalanceTest, get_get)
+{
+    EXPECT_EQ(
+        reserve_view.get_delayed_urb(account_a), DEFAULT_RESERVE_BALANCE_WEI);
+    EXPECT_EQ(
+        reserve_view.get_delayed_urb(account_a), DEFAULT_RESERVE_BALANCE_WEI);
+
+    EXPECT_EQ(
+        reserve_view.get_delayed_urb(account_b), DEFAULT_RESERVE_BALANCE_WEI);
+    EXPECT_EQ(
+        reserve_view.get_delayed_urb(account_b), DEFAULT_RESERVE_BALANCE_WEI);
+}
+
+TEST_F(ReserveBalanceTest, update_get)
+{
+    EXPECT_EQ(
+        reserve_view.get_delayed_urb(account_a), DEFAULT_RESERVE_BALANCE_WEI);
+    EXPECT_EQ(
+        reserve_view.get_delayed_urb(account_b), DEFAULT_RESERVE_BALANCE_WEI);
+
+    Result<uint256_t> old_value =
+        contract.update(state, account_a, uint256_t{123});
+    ASSERT_TRUE(old_value);
+    EXPECT_EQ(old_value.value(), DEFAULT_RESERVE_BALANCE_WEI);
+    EXPECT_EQ(
+        reserve_view.get_delayed_urb(account_a), DEFAULT_RESERVE_BALANCE_WEI);
+    EXPECT_EQ(
+        reserve_view.get_delayed_urb(account_b), DEFAULT_RESERVE_BALANCE_WEI);
+
+    Result<uint256_t> old_value_2 = contract.update(state, account_a, 0);
+    ASSERT_FALSE(old_value_2);
+
+    // Advance time by DELAY_BLOCKS and check that the update is now visible
+    ASSERT_TRUE(bs.can_merge(state));
+    bs.merge(state);
+    for (size_t i = 0; i < DELAY_BLOCKS; i++) {
+        State new_state{bs, Incarnation{i, 0}};
+        ASSERT_TRUE(bs.can_merge(new_state));
+        bs.merge(new_state);
+    }
+    {
+        State new_state{bs, Incarnation{DELAY_BLOCKS, 0}};
+        ReserveBalanceContract contract_at_new_state(new_state, call_tracer);
+        Result<uint256_t> old_value_3 =
+            contract_at_new_state.update(new_state, account_a, 0);
+        ASSERT_TRUE(old_value_3);
+        // TODO(dhil): The previous update would have settled now; but we get
+        // the previously settled value (our previous update) instead of the
+        // newly settled value (the update before that). This is because of the
+        // lazy promotion logic in `update`. We should consider returning the
+        // newly promoted settled value instead, or no value at all.
+        EXPECT_EQ(old_value_3.value(), DEFAULT_RESERVE_BALANCE_WEI);
+
+        ReserveBalanceView reserve_view_at_new_state(new_state);
+        EXPECT_EQ(
+            reserve_view_at_new_state.get_delayed_urb(account_a),
+            uint256_t{123});
+        EXPECT_EQ(
+            reserve_view_at_new_state.get_delayed_urb(account_b),
+            DEFAULT_RESERVE_BALANCE_WEI);
+        // Advance state again and check that the second update is now
+        // visible
+        ASSERT_TRUE(bs.can_merge(new_state));
+        bs.merge(new_state);
+        for (size_t i = 0; i < DELAY_BLOCKS; i++) {
+            State new_state{bs, Incarnation{DELAY_BLOCKS + i, 0}};
+            ASSERT_TRUE(bs.can_merge(new_state));
+            bs.merge(new_state);
+        }
+        State new_state_2{bs, Incarnation{DELAY_BLOCKS * 2, 0}};
+        ReserveBalanceContract contract_at_new_state_2(
+            new_state_2, call_tracer);
+        Result<uint256_t> old_value_4 =
+            contract_at_new_state_2.update(new_state_2, account_a, 0);
+        ASSERT_TRUE(old_value_4);
+        EXPECT_EQ(old_value_4.value(), uint256_t{123});
+
+        ReserveBalanceView reserve_view_at_new_state_2(new_state_2);
+        EXPECT_EQ(
+            reserve_view_at_new_state_2.get_delayed_urb(account_a),
+            uint256_t{0});
+        EXPECT_EQ(
+            reserve_view_at_new_state_2.get_delayed_urb(account_b),
+            DEFAULT_RESERVE_BALANCE_WEI);
+    }
+}
 
 struct ReserveBalanceEvm : public ReserveBalanceTest
 {
+    static constexpr auto update_selector =
+        abi_encode_selector("update(uint256)");
+
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const empty_tx{};
 
@@ -96,8 +187,8 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
         parent_senders_and_authorities{};
     ankerl::unordered_dense::segmented_set<Address> const
         senders_and_authorities{};
-    // The {}s are needed here to pass the 0 < senders.size() assertion checks
-    // in `dipped_into_reserve`.
+    // The {}s are needed here to pass the 0 < senders.size() assertion
+    // checks in `dipped_into_reserve`.
     std::vector<Address> const senders{{}};
     std::vector<std::vector<std::optional<Address>>> const authorities{{}};
     ChainContext<MonadTraits<MONAD_NEXT>> const chain_ctx{
@@ -250,7 +341,9 @@ void run_dipped_into_reserve_test(
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized block_hash_buffer{};
 
-    ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()), 10);
+    // TODO(dhil): User-definable now.
+    // ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()),
+    // 10);
 
     std::vector<uint8_t> scw_code;
     add_spend_code(value_mon, scw_code);
@@ -837,5 +930,168 @@ TYPED_TEST(
 
         run_check_call_precompile_test<typename TestFixture::Trait>(
             this->state, msg, EVMC_SUCCESS, expected_message_view);
+    }
+}
+
+TEST_F(ReserveBalanceEvm, precompile_update_get)
+{
+    {
+        auto update_input = std::array<uint8_t, 36>{};
+        intx::be::unsafe::store(update_input.data(), update_selector);
+        auto const update_value = u256_be{123};
+        auto const encoded_arg = abi_encode_uint(update_value);
+        std::ranges::copy(encoded_arg.bytes, update_input.data() + 4);
+
+        auto const update_m = evmc_message{
+            .gas = 15275,
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_a,
+            .input_data = update_input.data(),
+            .input_size = update_input.size(),
+            .code_address = RESERVE_BALANCE_CA,
+        };
+
+        auto const update_result = h.call(update_m);
+        EXPECT_EQ(update_result.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(update_result.gas_left, 0);
+        EXPECT_EQ(update_result.gas_refund, 0);
+        EXPECT_EQ(update_result.output_size, 32);
+        EXPECT_EQ(
+            intx::be::unsafe::load<uint256_t>(update_result.output_data), 1);
+
+        EXPECT_EQ(
+            reserve_view.get_delayed_urb(account_a),
+            DEFAULT_RESERVE_BALANCE_WEI);
+    }
+
+    {
+        auto reset_input = std::array<uint8_t, 36>{};
+        intx::be::unsafe::store(reset_input.data(), update_selector);
+
+        auto const reset_m = evmc_message{
+            .gas = 15275,
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_a,
+            .input_data = reset_input.data(),
+            .input_size = reset_input.size(),
+            .code_address = RESERVE_BALANCE_CA,
+        };
+
+        auto const reset_result = h.call(reset_m);
+        EXPECT_EQ(reset_result.status_code, EVMC_REVERT);
+        EXPECT_EQ(reset_result.gas_left, 0);
+        EXPECT_EQ(reset_result.gas_refund, 0);
+        EXPECT_EQ(reset_result.output_size, 14);
+        auto const message = std::string_view{
+            reinterpret_cast<char const *>(reset_result.output_data), 14};
+        EXPECT_EQ(message, "pending update");
+    }
+}
+
+TEST_F(ReserveBalanceEvm, precompile_non_payable_function)
+{
+    {
+        state.add_to_balance(account_c, std::numeric_limits<uint256_t>::max());
+        auto input = std::array<uint8_t, 36>{};
+        intx::be::unsafe::store(input.data(), update_selector);
+        auto const update_value = u256_be{123};
+        auto const encoded_arg = abi_encode_uint(update_value);
+        std::ranges::copy(encoded_arg.bytes, input.data() + 4);
+
+        bytes32_t value;
+        {
+            static_assert(sizeof(evmc_uint256be) == sizeof(uint256_t));
+            uint256_t temp{12345};
+            std::memcpy(value.bytes, &temp, sizeof(uint256_t));
+        }
+
+        auto const m = evmc_message{
+            .gas = 15275,
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_c,
+            .input_data = input.data(),
+            .input_size = input.size(),
+            .value = evmc_uint256be{.bytes = {1}},
+            .code_address = RESERVE_BALANCE_CA,
+        };
+
+        auto const result = h.call(m);
+        EXPECT_EQ(result.status_code, EVMC_REVERT);
+        EXPECT_EQ(result.gas_left, 0);
+        EXPECT_EQ(result.gas_refund, 0);
+        EXPECT_EQ(result.output_size, 16);
+
+        auto const message = std::string_view{
+            reinterpret_cast<char const *>(result.output_data), 16};
+        EXPECT_EQ(message, "value is nonzero");
+    }
+
+    {
+        auto input = std::array<uint8_t, 36>{};
+        intx::be::unsafe::store(input.data(), update_selector);
+        auto const update_value = u256_be{123};
+        auto const encoded_arg = abi_encode_uint(update_value);
+        std::ranges::copy(encoded_arg.bytes, input.data() + 4);
+
+        auto const m = evmc_message{
+            .gas = 15275,
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_a,
+            .input_data = input.data(),
+            .input_size = input.size(),
+            .value = evmc_uint256be{.bytes = {1}},
+            .code_address = RESERVE_BALANCE_CA,
+        };
+
+        auto const result = h.call(m);
+        EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
+        EXPECT_EQ(result.gas_left, 15275);
+        EXPECT_EQ(result.gas_refund, 0);
+        EXPECT_EQ(result.output_size, 0);
+    }
+}
+
+TEST_F(ReserveBalanceTest, is_reconfigurable_transaction)
+{
+    auto const calldata = [](uint32_t const selector,
+                             uint256_t value) -> byte_string {
+        std::array<uint8_t, 36> input{};
+        intx::be::unsafe::store(input.data(), selector);
+        auto const encoded_arg = abi_encode_uint(u256_be{value});
+        std::ranges::copy(encoded_arg.bytes, input.data() + 4);
+        return byte_string{input.data(), input.data() + input.size()};
+    };
+
+    {
+        Transaction const tx{
+            .to = RESERVE_BALANCE_CA,
+            .data = calldata(abi_encode_selector("update(uint256)"), 123)};
+
+        EXPECT_TRUE(is_reconfiguring_transaction(tx));
+    }
+
+    {
+        Transaction const tx{
+            .to = RESERVE_BALANCE_CA,
+            .data = calldata(abi_encode_selector("update(uint256)"), 0)};
+
+        EXPECT_TRUE(is_reconfiguring_transaction(tx));
+    }
+
+    {
+        Transaction const tx{
+            .to = RESERVE_BALANCE_CA,
+            .data = calldata(abi_encode_selector("updatee(uint256)"), 0)};
+
+        EXPECT_FALSE(is_reconfiguring_transaction(tx));
+    }
+
+    {
+        Transaction const tx{
+            .value = 1,
+            .to = RESERVE_BALANCE_CA,
+            .data = calldata(abi_encode_selector("update(uint256)"), 123)};
+
+        EXPECT_FALSE(is_reconfiguring_transaction(tx));
     }
 }

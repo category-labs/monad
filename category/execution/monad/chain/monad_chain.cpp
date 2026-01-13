@@ -29,16 +29,15 @@
 #include <span>
 #include <vector>
 
-namespace
-{
-    using namespace monad;
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-    static ankerl::unordered_dense::segmented_set<Address> const
-        empty_senders_and_authorities{};
-    static std::vector<Address> const empty_senders{Address{0}};
-    static std::vector<std::vector<std::optional<Address>>> const
-        empty_authorities{{}};
-}
+static ankerl::unordered_dense::segmented_set<monad::Address> const
+    empty_senders_and_authorities{};
+static std::vector<monad::Address> const empty_senders{monad::Address{0}};
+static std::vector<std::vector<std::optional<monad::Address>>> const
+    empty_authorities{{}};
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 

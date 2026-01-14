@@ -151,6 +151,7 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_ASSERT(!literal_.has_value());
         literal_ = x;
+        bit_upper_bound_ = static_cast<std::uint32_t>(bit_width(x.value));
     }
 
     void StackElem::insert_stack_offset(StackOffset x)

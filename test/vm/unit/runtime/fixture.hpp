@@ -29,6 +29,14 @@
 
 extern "C" void tests_trampoline(void *, void (*)(void *), void *);
 
+// Forward declaration for test storage clearing
+#ifdef MONAD_COMPILER_TESTING
+namespace monad::vm::runtime
+{
+    void clear_test_block_storage();
+}
+#endif
+
 namespace monad::vm::compiler::test
 {
     using namespace runtime;
@@ -185,6 +193,14 @@ namespace monad::vm::compiler::test
         , public TraitsTest<T>
     {
     public:
+        void SetUp() override
+        {
+            TraitsTest<T>::SetUp();
+#ifdef MONAD_COMPILER_TESTING
+            monad::vm::runtime::clear_test_block_storage();
+#endif
+        }
+
         void assert_delegated(evmc::address const &delegate_addr)
         {
             ASSERT_EQ(ctx_.result.status, StatusCode::Success);

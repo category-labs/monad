@@ -416,6 +416,14 @@ evmc_storage_status State::set_storage(
     }
 }
 
+void State::set_block_storage(
+    Address const &address, bytes32_t const &key, bytes4k_t const &value)
+{
+    auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.account_);
+    account_state.set_block_storage(key, value);
+}
+
 void State::set_transient_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {

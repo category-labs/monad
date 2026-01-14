@@ -501,6 +501,16 @@ namespace monad::vm::utils::evm_as
             return ins(compiler::EvmOpCode::SSTORE);
         }
 
+        EvmBuilder &pload() noexcept
+        {
+            return ins(compiler::EvmOpCode::PLOAD);
+        }
+
+        EvmBuilder &pstore() noexcept
+        {
+            return ins(compiler::EvmOpCode::PSTORE);
+        }
+
         EvmBuilder &jump() noexcept
         {
             return ins(compiler::EvmOpCode::JUMP);

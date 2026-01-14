@@ -156,7 +156,8 @@ static void dump_result(arguments const &args, evmc::Result const &result)
             object["result"] = json("");
         }
         else {
-            auto const x = uint256_t::load_be_unsafe(&result.output_data[0]);
+            auto const x =
+                runtime::uint256_t::load_be_unsafe(&result.output_data[0]);
             object["result"] = json(x.to_string(16));
         }
     }

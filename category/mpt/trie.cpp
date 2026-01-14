@@ -25,6 +25,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/node_cache.hpp>
 #include <category/mpt/request.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/update.hpp>
@@ -305,6 +306,24 @@ void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode *tnode)
     }
 }
 
+// Helper function to check cache before async_read
+// Returns cached node if found, nullptr otherwise
+std::shared_ptr<Node> try_get_from_cache(
+    UpdateAuxImpl &aux, chunk_offset_t offset, bool find_no_update = false)
+{
+    if (!aux.node_cache) {
+        return nullptr;
+    }
+    auto const virtual_offset = aux.physical_to_virtual(offset);
+    MONAD_ASSERT(virtual_offset != INVALID_VIRTUAL_OFFSET);
+    NodeCache::ConstAccessor acc;
+    if (find_no_update ? aux.node_cache->find_no_update(acc, virtual_offset)
+                       : aux.node_cache->find(acc, virtual_offset)) {
+        return acc->second->val.first;
+    }
+    return nullptr;
+}
+
 template <typename Cont>
 struct node_receiver_t
 {
@@ -312,17 +331,25 @@ public:
     static constexpr bool lifetime_managed_internally = true;
 
     Cont cont;
+    UpdateAuxImpl &aux;
 
     // part of the receiver trait
+    chunk_offset_t node_offset;
     chunk_offset_t rd_offset;
     uint16_t buffer_offset{};
     unsigned bytes_to_read{};
+    bool update_cache{true};
 
-    node_receiver_t(Cont cont_, chunk_offset_t const offset_)
+    node_receiver_t(
+        Cont cont_, chunk_offset_t const offset_, UpdateAuxImpl &aux_,
+        bool const update_cache_)
         : cont(std::move(cont_))
+        , aux(aux_)
+        , node_offset(offset_)
         , rd_offset{round_down_align<DISK_PAGE_BITS>(offset_)}
-        , buffer_offset{
-              static_cast<uint16_t>(offset_.offset - rd_offset.offset)}
+        , buffer_offset{static_cast<uint16_t>(
+              offset_.offset - rd_offset.offset)}
+        , update_cache(update_cache_)
     {
         auto const pages = node_disk_pages_spare_15{rd_offset}.to_pages();
         bytes_to_read = static_cast<unsigned>(pages << DISK_PAGE_BITS);
@@ -335,6 +362,12 @@ public:
         MONAD_ASSERT(buffer_);
         auto as_node = detail::deserialize_node_from_receiver_result(
             std::move(buffer_), buffer_offset, io_state_);
+        // Insert into cache if available
+        if (update_cache && aux.node_cache) {
+            auto const virtual_offset = aux.physical_to_virtual(node_offset);
+            MONAD_ASSERT(virtual_offset != INVALID_VIRTUAL_OFFSET);
+            aux.node_cache->insert(virtual_offset, as_node);
+        }
         cont(std::move(as_node));
     }
 };
@@ -361,56 +394,62 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
         auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
         auto const child_index = orig->to_child_index(child_branch);
         auto single_child = orig->move_next(child_index);
+        auto const child_offset = orig->fnext(child_index);
         if (!single_child) {
-            node_receiver_t recv{
-                [aux = &aux,
-                 sm = sm.clone(),
-                 tnode = std::move(tnode),
-                 child_branch](Node::SharedPtr read_node) mutable {
-                    auto new_node = make_node(
-                        *read_node,
-                        concat(
-                            tnode->node->path_nibble_view(),
-                            child_branch,
-                            read_node->path_nibble_view()),
-                        read_node->opt_value(),
-                        read_node->version);
-                    fillin_parent_after_expiration(
-                        *aux,
-                        std::move(new_node),
-                        tnode->parent,
-                        tnode->index,
-                        tnode->branch,
-                        tnode->cache_node);
-                    // upward update
-                    auto *parent = tnode->parent;
-                    while (!parent->npending) {
-                        if (parent->type == tnode_type::update) {
-                            upward_update(*aux, *sm, (UpdateTNode *)parent);
-                            return;
-                        }
-                        auto *next_parent = parent->parent;
-                        MONAD_ASSERT(next_parent);
-                        try_fillin_parent_after_expiration(
-                            *aux, *sm, ExpireTNode::unique_ptr_type{parent});
-                        // go one level up
-                        parent = next_parent;
-                    }
-                },
-                orig->fnext(child_index)};
-            async_read(aux, std::move(recv));
-            return {false, nullptr};
+            single_child = try_get_from_cache(aux, child_offset, true);
         }
-        return {
-            true,
-            make_node(
-                *single_child,
-                concat(
-                    orig->path_nibble_view(),
-                    child_branch,
-                    single_child->path_nibble_view()),
-                single_child->opt_value(),
-                single_child->version)};
+        if (single_child) {
+            return {
+                true,
+                make_node(
+                    *single_child,
+                    concat(
+                        orig->path_nibble_view(),
+                        child_branch,
+                        single_child->path_nibble_view()),
+                    single_child->opt_value(),
+                    single_child->version)};
+        }
+        node_receiver_t recv{
+            [aux = &aux,
+             sm = sm.clone(),
+             tnode = std::move(tnode),
+             child_branch](Node::SharedPtr read_node) mutable {
+                auto new_node = make_node(
+                    *read_node,
+                    concat(
+                        tnode->node->path_nibble_view(),
+                        child_branch,
+                        read_node->path_nibble_view()),
+                    read_node->opt_value(),
+                    read_node->version);
+                fillin_parent_after_expiration(
+                    *aux,
+                    std::move(new_node),
+                    tnode->parent,
+                    tnode->index,
+                    tnode->branch,
+                    tnode->cache_node);
+                // upward update
+                auto *parent = tnode->parent;
+                while (!parent->npending) {
+                    if (parent->type == tnode_type::update) {
+                        upward_update(*aux, *sm, (UpdateTNode *)parent);
+                        return;
+                    }
+                    auto *next_parent = parent->parent;
+                    MONAD_ASSERT(next_parent);
+                    try_fillin_parent_after_expiration(
+                        *aux, *sm, ExpireTNode::unique_ptr_type{parent});
+                    // go one level up
+                    parent = next_parent;
+                }
+            },
+            child_offset,
+            aux,
+            false /* do not update cache on read */};
+        async_read(aux, std::move(recv));
+        return {false, nullptr};
     }
     uint16_t total_child_data_size = 0;
     // no need to update version (max of children or itself)
@@ -512,6 +551,10 @@ Node::SharedPtr create_node_from_children_if_any(
                     aux.physical_to_virtual(child.offset);
                 MONAD_DEBUG_ASSERT(
                     child_virtual_offset != INVALID_VIRTUAL_OFFSET);
+                // Add to NodeCache
+                if (aux.node_cache) {
+                    aux.node_cache->insert(child_virtual_offset, child.ptr);
+                }
                 std::tie(child.min_offset_fast, child.min_offset_slow) =
                     calc_min_offsets(*child.ptr, child_virtual_offset);
                 if (sm.compact()) {
@@ -557,6 +600,10 @@ void create_node_compute_data_possibly_async(
                                                 ->sender()
                                                 .offset()));
             }
+            // Check cache before creating receiver
+            child.ptr = try_get_from_cache(aux, child.offset);
+        }
+        if (!child.ptr) {
             node_receiver_t recv{
                 [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
                     Node::SharedPtr read_node) mutable {
@@ -574,7 +621,9 @@ void create_node_compute_data_possibly_async(
                     sm->up(path_size + !parent->is_sentinel());
                     upward_update(*aux, *sm, parent);
                 },
-                child.offset};
+                child.offset,
+                aux,
+                true /* update cache on read */};
             async_read(aux, std::move(recv));
             MONAD_DEBUG_ASSERT(parent.npending);
             return;
@@ -782,6 +831,9 @@ void upsert_(
         "Invalid update detected: current implementation does not "
         "support updating variable-length tables");
     if (!old) {
+        old = try_get_from_cache(aux, old_offset);
+    }
+    if (!old) {
         node_receiver_t recv{
             [aux = &aux,
              entry = &entry,
@@ -802,7 +854,9 @@ void upsert_(
                 sm->up(1);
                 upward_update(*aux, *sm, parent);
             },
-            old_offset};
+            old_offset,
+            aux,
+            true /* update cache on read */};
         async_read(aux, std::move(recv));
         return;
     }
@@ -1095,6 +1149,11 @@ void expire_(
         // is needs to call expire_() over the read node rather than upsert_(),
         // can pass in a flag to differentiate, or maybe a different receiver?
         MONAD_ASSERT(node_offset != INVALID_OFFSET);
+        if (auto cached_node = try_get_from_cache(aux, node_offset, true)) {
+            tnode->update_after_async_read(std::move(cached_node));
+        }
+    }
+    if (!tnode->node) {
         node_receiver_t recv{
             [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
                 Node::SharedPtr read_node) mutable {
@@ -1116,7 +1175,9 @@ void expire_(
                     parent = next_parent;
                 }
             },
-            node_offset};
+            node_offset,
+            aux,
+            false /* do not update cache on read */};
         aux.collect_expire_stats(true);
         async_read(aux, std::move(recv));
         return;
@@ -1242,6 +1303,11 @@ void compact_(
 {
     MONAD_ASSERT(tnode->type == tnode_type::compact);
     if (!tnode->node) {
+        if (auto cached_node = try_get_from_cache(aux, node_offset, true)) {
+            tnode->update_after_async_read(std::move(cached_node));
+        }
+    }
+    if (!tnode->node) {
         node_receiver_t recv{
             [copy_node_for_fast_or_slow,
              node_offset,
@@ -1278,7 +1344,9 @@ void compact_(
                     parent = next_parent;
                 }
             },
-            node_offset};
+            node_offset,
+            aux,
+            false /* do not update cache on read */};
         aux.collect_compaction_read_stats(node_offset, recv.bytes_to_read);
         async_read(aux, std::move(recv));
         return;

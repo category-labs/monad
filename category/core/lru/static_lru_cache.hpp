@@ -117,6 +117,12 @@ public:
         return true;
     }
 
+    bool find_no_update(ConstAccessor &acc, Key const &key) const noexcept
+    {
+        acc = map_.find(key);
+        return acc != map_.end();
+    }
+
     size_t size() const noexcept
     {
         return map_.size();

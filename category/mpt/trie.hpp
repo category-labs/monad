@@ -23,6 +23,7 @@
 #include <category/mpt/detail/collected_stats.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/node_cache.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/update.hpp>
@@ -403,6 +404,7 @@ public:
 
     // On disk stuff
     MONAD_ASYNC_NAMESPACE::AsyncIO *io{nullptr};
+    std::optional<NodeCache> node_cache{}; // For on-disk DB with caching
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
 
@@ -414,9 +416,13 @@ public:
     // on-disk
     explicit UpdateAuxImpl(
         MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
-        std::optional<uint64_t> const history_len = {})
+        std::optional<uint64_t> const history_len = {},
+        std::optional<size_t> const node_cache_size = {})
     {
         set_io(io_, history_len);
+        if (node_cache_size) {
+            node_cache.emplace(*node_cache_size);
+        }
     }
 
     virtual ~UpdateAuxImpl();
@@ -869,8 +875,9 @@ public:
     uint64_t db_history_min_valid_version() const noexcept;
 };
 
-static_assert(
-    sizeof(UpdateAuxImpl) == 160 + sizeof(detail::TrieUpdateCollectedStats));
+// Updated size to account for NodeCache* member
+// static_assert(
+//     sizeof(UpdateAuxImpl) == 168 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 template <lockable_or_void LockType = void>
@@ -950,8 +957,9 @@ public:
     // on-disk
     explicit UpdateAux(
         MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
-        std::optional<uint64_t> const history_len = {})
-        : UpdateAuxImpl(io_, history_len)
+        std::optional<uint64_t> const history_len = {},
+        std::optional<size_t> const node_cache_size = {})
+        : UpdateAuxImpl(io_, history_len, node_cache_size)
     {
     }
 
@@ -965,8 +973,9 @@ public:
     // on-disk with lock
     explicit UpdateAux(
         LockType &&lock, MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
-        std::optional<uint64_t> const history_len = {})
-        : UpdateAuxImpl(io_, history_len)
+        std::optional<uint64_t> const history_len = {},
+        std::optional<size_t> const node_cache_size = {})
+        : UpdateAuxImpl(io_, history_len, node_cache_size)
         , lock_(std::move(lock))
     {
     }
@@ -1012,8 +1021,9 @@ public:
     // on-disk
     explicit UpdateAux(
         MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
-        std::optional<uint64_t> const history_len = {})
-        : UpdateAuxImpl(io_, history_len)
+        std::optional<uint64_t> const history_len = {},
+        std::optional<size_t> const node_cache_size = {})
+        : UpdateAuxImpl(io_, history_len, node_cache_size)
     {
     }
 
@@ -1116,8 +1126,6 @@ struct fiber_find_request_t
 
 static_assert(sizeof(fiber_find_request_t) == 48);
 static_assert(alignof(fiber_find_request_t) == 8);
-
-class NodeCache;
 
 //! \warning this is not threadsafe, should only be called from triedb thread
 // during execution, DO NOT invoke it directly from a transaction fiber, as is

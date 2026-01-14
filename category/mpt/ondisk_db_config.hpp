@@ -47,6 +47,8 @@ struct OnDiskDbConfig
     // Each chunk can hold 1 << 24 = 16777216 historical entries.
     // This field must be power of 2.
     uint32_t root_offsets_chunk_count{2};
+    // Maximum memory for NodeCache LRU cache
+    uint64_t node_lru_max_mem{1ul << 30}; // 1GB
 };
 
 struct ReadOnlyOnDiskDbConfig

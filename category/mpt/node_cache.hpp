@@ -62,6 +62,7 @@ public:
 
     using Base::clear;
     using Base::find;
+    using Base::find_no_update;
     using Base::size;
 
     explicit NodeCache(size_t const max_bytes)

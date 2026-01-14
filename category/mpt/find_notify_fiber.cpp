@@ -245,19 +245,39 @@ void find_notify_fiber_future(
         auto const next_key =
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
+        auto const offset = node->fnext(child_index);
+        // Check in-memory pointer first
         if (auto const &next = node->next(child_index); next != nullptr) {
             find_notify_fiber_future(aux, inflights, promise, next, next_key);
             return;
         }
+        // Check NodeCache second (if cache exists)
+        auto const virtual_offset = aux.physical_to_virtual(offset);
+        MONAD_ASSERT(virtual_offset != INVALID_VIRTUAL_OFFSET);
+        if (aux.node_cache) {
+            NodeCache::ConstAccessor acc;
+            if (aux.node_cache->find(acc, virtual_offset)) {
+                auto cached_node = acc->second->val.first;
+                find_notify_fiber_future(
+                    aux, inflights, promise, cached_node, next_key);
+                return;
+            }
+        }
+
         if (aux.io->owning_thread_id() != get_tl_tid()) {
             promise.set_value(
                 {NodeCursor{node, node_prefix_index},
                  find_result::need_to_continue_in_io_thread});
             return;
         }
-        chunk_offset_t const offset = node->fnext(child_index);
-        auto cont = [&aux, &inflights, &promise, next_key](
+        // Read from disk, the continuation will insert into cache after
+        // async_read
+        auto cont = [&aux, &inflights, &promise, next_key, virtual_offset](
                         NodeCursor const &node_cursor) -> result<void> {
+            // Insert into cache after load (if cache exists)
+            if (aux.node_cache) {
+                aux.node_cache->insert(virtual_offset, node_cursor.node);
+            }
             find_notify_fiber_future(
                 aux, inflights, promise, std::move(node_cursor), next_key);
             return success();

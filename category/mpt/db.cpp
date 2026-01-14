@@ -413,7 +413,9 @@ struct OnDiskWithWorkerThreadImpl
             OnDiskDbConfig const &options)
             : parent(parent)
             , async_io(options)
-            , aux{async_io.io, options.fixed_history_length}
+            , aux{async_io.io,
+                  options.fixed_history_length,
+                  options.node_lru_max_mem}
         {
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id = aux.get_latest_finalized_version();

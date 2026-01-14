@@ -137,6 +137,7 @@ try {
     fs::path dump_snapshot;
     std::string statesync;
     auto log_level = quill::LogLevel::Info;
+    uint64_t node_lru_max_mem = 4ul << 30; // 4GB default
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
         {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
@@ -155,6 +156,10 @@ try {
     cli.add_option("--nthreads", nthreads, "number of threads");
     cli.add_option("--nfibers", nfibers, "number of fibers");
     cli.add_flag("--no-compaction", no_compaction, "disable compaction");
+    cli.add_option(
+        "--node-lru-max-mem,--node_lru_max_mem",
+        node_lru_max_mem,
+        "maximum memory in bytes for the node LRU cache (default: 1GB)");
     cli.add_option(
         "--sq-thread-cpu,--sq_thread_cpu",
         sq_thread_cpu,
@@ -295,7 +300,8 @@ try {
                     .wr_buffers = 32,
                     .uring_entries = 128,
                     .sq_thread_cpu = sq_thread_cpu,
-                    .dbname_paths = dbname_paths}};
+                    .dbname_paths = dbname_paths,
+                    .node_lru_max_mem = node_lru_max_mem}};
         }
         machine = std::make_unique<InMemoryMachine>();
         return mpt::Db{*machine};

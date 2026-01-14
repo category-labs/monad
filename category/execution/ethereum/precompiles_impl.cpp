@@ -284,8 +284,14 @@ std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
                   &input.data()[64], std::min(32ul, input.length() - 64))
             : uint256_t{0};
 
-    if (base_len256 == 0 && mod_len256 == 0) {
-        return min_gas;
+    // Before EIP-7883, we could shortcut when the base and modulus lengths are
+    // both zero. The EIP changes this to assume that both are at least 32 bytes
+    // (and thus, an input of zero for their lengths does not in fact imply the
+    // minimum gas cost).
+    if constexpr (!traits::eip_7883_active()) {
+        if (base_len256 == 0 && mod_len256 == 0) {
+            return min_gas;
+        }
     }
 
     if constexpr (traits::eip_7823_active()) {

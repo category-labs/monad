@@ -67,4 +67,7 @@ set(london_excluded_tests
     "BlockchainTests.ValidBlocks/bcTotalDifficultyTest/uncleBlockAtBlock3afterBlock4.json" # Difficulty (Pre-merge)
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding01.json"
     "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding127.json"
+
+    # Stricter validation of base fee
+    "BlockchainTests.london/validation/test_invalid_header.json"
 )

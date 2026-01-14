@@ -17,22 +17,8 @@ include(ExternalProject)
 
 ExternalProject_Add(
   ExecutionSpecTestFixtures
-  URL "https://github.com/ethereum/execution-spec-tests/releases/download/v4.5.0/fixtures_develop.tar.gz"
-  URL_MD5 "e84165f51cf51a90bc44c542b459e627"
-  PREFIX ${CMAKE_BINARY_DIR}
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND ""
-  LOG_DOWNLOAD ON)
-
-# These fixtures are disjoint to the main v4.5.0 release above; they test Fusaka
-# features that haven't yet made it into a mainstream release of the execution
-# specs. Eventually, when we update the fixtures above, this extra download can
-# be removed.
-ExternalProject_Add(
-  ExecutionSpecTestFixturesFusakaDevnet
-  URL "https://github.com/ethereum/execution-spec-tests/releases/download/fusaka-devnet-3%40v1.0.0/fixtures_fusaka-devnet-3.tar.gz"
-  URL_HASH "SHA256=576261e1280e5300c458aa9b05eccb2fec5ff80a0005940dc52fa03fdd907249"
+  URL "https://github.com/ethereum/execution-spec-tests/releases/download/v5.4.0/fixtures_develop.tar.gz"
+  URL_HASH "SHA256=3e2b02d49fe903eda4fd8caca5cbf0d139c470e97e1de9a85299b1b034f97099"
   PREFIX ${CMAKE_BINARY_DIR}
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ""

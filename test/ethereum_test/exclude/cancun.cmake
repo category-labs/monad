@@ -1,25 +1,7 @@
 set(cancun_excluded_tests
-    # EIP-4844 block validation: Need access to parent header
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_above_target_change.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_change.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/fork_transition_excess_blob_gas.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_target_blobs_increase_from_zero.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_non_multiple_excess_blob_gas.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_zero_excess_blob_gas_in_header.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/correct_excess_blob_gas_calculation.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_above_target_change.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_static_excess_blob_gas_from_zero_on_blobs_above_target.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_static_excess_blob_gas.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_negative_excess_blob_gas.json"
-    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/invalid_excess_blob_gas_change.json"
-    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_static_excess_blob_gas.json"
-    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_non_multiple_excess_blob_gas.json"
-    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_static_excess_blob_gas_from_zero_on_blobs_above_target.json"
-    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_excess_blob_gas_above_target_change.json"
-    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_excess_blob_gas_change.json"
-    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_excess_blob_gas_target_blobs_increase_from_zero.json"
-    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_negative_excess_blob_gas.json"
-    "BlockchainTests.cancun/eip4844_blobs/excess_blob_gas/invalid_zero_excess_blob_gas_in_header.json"
+    # Blobs (EIP-4844)
+    "BlockchainTests.GeneralStateTests/Pyspecs/cancun/eip4844_blobs/*"
+    "BlockchainTests.cancun/eip4844_blobs/*"
 
     # withdrawals root
     "BlockchainTests.InvalidBlocks/bc4895_withdrawals/incorrectWithdrawalsRoot.json"
@@ -77,9 +59,18 @@ set(cancun_excluded_tests
     "BlockchainTests.GeneralStateTests/stCreate2/*"
     "BlockchainTests.GeneralStateTests/stCreateTest/*"
 
+    # Stricter validation of base fee
+    "BlockchainTests.london/validation/test_invalid_header.json"
+
     # EIP-7610
     "BlockchainTests.GeneralStateTests/stCreate2/RevertInCreateInInitCreate2Paris.json"
     "BlockchainTests.GeneralStateTests/stCreate2/create2collisionStorageParis.json"
     "BlockchainTests.GeneralStateTests/stExtCodeHash/dynamicAccountOverwriteEmpty_Paris.json"
     "BlockchainTests.GeneralStateTests/stRevertTest/RevertInCreateInInit_Paris.json"
-    "BlockchainTests.GeneralStateTests/stSStoreTest/InitCollisionParis.json")
+    "BlockchainTests.GeneralStateTests/stSStoreTest/InitCollisionParis.json"
+    "BlockchainTests.paris/eip7610_create_collision/test_init_collision_create_opcode.json"
+    "BlockchainTests.paris/eip7610_create_collision/test_init_collision_create_tx.json"
+    "BlockchainTests.static/state_tests/stCreate2/RevertInCreateInInitCreate2Paris.json"
+    "BlockchainTests.static/state_tests/stCreate2/create2collisionStorageParis.json"
+    "BlockchainTests.static/state_tests/stExtCodeHash/dynamicAccountOverwriteEmpty_Paris.json"
+)

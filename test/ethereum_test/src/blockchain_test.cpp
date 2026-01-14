@@ -728,11 +728,6 @@ void register_blockchain_tests(
             "src/ExecutionSpecTestFixtures/blockchain_tests",
         revision,
         enable_tracing);
-    register_tests(
-        test_resource::build_dir /
-            "src/ExecutionSpecTestFixturesFusakaDevnet/blockchain_tests",
-        revision,
-        enable_tracing);
 }
 
 MONAD_TEST_NAMESPACE_END

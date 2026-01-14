@@ -72,7 +72,6 @@ TEST_F(ReserveBalance, set_then_get)
 
 struct ReserveBalanceEvm : public ReserveBalance
 {
-    static constexpr auto get_selector = abi_encode_selector("get()");
     static constexpr auto update_selector =
         abi_encode_selector("update(uint256)");
 
@@ -87,30 +86,6 @@ struct ReserveBalanceEvm : public ReserveBalance
         state,
     };
 };
-
-TEST_F(ReserveBalanceEvm, precompile_get)
-{
-    auto input = std::array<uint8_t, 4>{};
-    intx::be::unsafe::store(input.data(), get_selector);
-
-    auto const m = evmc_message{
-        .gas = 8100,
-        .recipient = RESERVE_BALANCE_CA,
-        .sender = account_a,
-        .input_data = input.data(),
-        .input_size = input.size(),
-        .code_address = RESERVE_BALANCE_CA,
-    };
-
-    auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.gas_refund, 0);
-    EXPECT_EQ(result.output_size, 32);
-    EXPECT_EQ(
-        intx::be::unsafe::load<uint256_t>(result.output_data),
-        DEFAULT_RESERVE_BALANCE_WEI);
-}
 
 TEST_F(ReserveBalanceEvm, precompile_update_then_get)
 {
@@ -137,28 +112,8 @@ TEST_F(ReserveBalanceEvm, precompile_update_then_get)
         EXPECT_EQ(update_result.output_size, 32);
         EXPECT_EQ(
             intx::be::unsafe::load<uint256_t>(update_result.output_data), 1);
-    }
 
-    {
-        auto get_input = std::array<uint8_t, 4>{};
-        intx::be::unsafe::store(get_input.data(), get_selector);
-
-        auto const get_m = evmc_message{
-            .gas = 8100,
-            .recipient = RESERVE_BALANCE_CA,
-            .sender = account_a,
-            .input_data = get_input.data(),
-            .input_size = get_input.size(),
-            .code_address = RESERVE_BALANCE_CA,
-        };
-
-        auto const get_result = h.call(get_m);
-        EXPECT_EQ(get_result.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(get_result.gas_left, 0);
-        EXPECT_EQ(get_result.gas_refund, 0);
-        EXPECT_EQ(get_result.output_size, 32);
-        EXPECT_EQ(
-            intx::be::unsafe::load<uint256_t>(get_result.output_data), 123);
+        EXPECT_EQ(contract.get(account_a).native(), 123);
     }
 
     {
@@ -181,30 +136,35 @@ TEST_F(ReserveBalanceEvm, precompile_update_then_get)
         EXPECT_EQ(reset_result.output_size, 32);
         EXPECT_EQ(
             intx::be::unsafe::load<uint256_t>(reset_result.output_data), 1);
-    }
 
-    {
-        auto get_input = std::array<uint8_t, 4>{};
-        intx::be::unsafe::store(get_input.data(), get_selector);
-
-        auto const get_m = evmc_message{
-            .gas = 8100,
-            .recipient = RESERVE_BALANCE_CA,
-            .sender = account_a,
-            .input_data = get_input.data(),
-            .input_size = get_input.size(),
-            .code_address = RESERVE_BALANCE_CA,
-        };
-
-        auto const get_result = h.call(get_m);
-        EXPECT_EQ(get_result.status_code, EVMC_SUCCESS);
-        EXPECT_EQ(get_result.gas_left, 0);
-        EXPECT_EQ(get_result.gas_refund, 0);
-        EXPECT_EQ(get_result.output_size, 32);
         EXPECT_EQ(
-            intx::be::unsafe::load<uint256_t>(get_result.output_data),
-            DEFAULT_RESERVE_BALANCE_WEI);
+            contract.get(account_a).native(), DEFAULT_RESERVE_BALANCE_WEI);
     }
+}
+
+TEST_F(ReserveBalanceEvm, precompile_get)
+{
+    auto input = std::array<uint8_t, 4>{};
+    intx::be::unsafe::store(input.data(), abi_encode_selector("get()"));
+
+    auto const m = evmc_message{
+        .gas = 40'000,
+        .recipient = RESERVE_BALANCE_CA,
+        .sender = account_a,
+        .input_data = input.data(),
+        .input_size = input.size(),
+        .code_address = RESERVE_BALANCE_CA,
+    };
+
+    auto const result = h.call(m);
+    EXPECT_EQ(result.status_code, EVMC_REVERT);
+    EXPECT_EQ(result.gas_left, 0);
+    EXPECT_EQ(result.gas_refund, 0);
+    EXPECT_EQ(result.output_size, 20);
+
+    auto const message = std::string_view{
+        reinterpret_cast<char const *>(result.output_data), 20};
+    EXPECT_EQ(message, "method not supported");
 }
 
 TEST_F(ReserveBalanceEvm, precompile_fallback)

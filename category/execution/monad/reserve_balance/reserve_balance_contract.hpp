@@ -26,7 +26,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-static constexpr auto RESERVE_BALANCE_CA = Address{0x1001};
+static constexpr Address RESERVE_BALANCE_CA = Address{0x1001};
 static constexpr uint256_t DEFAULT_RESERVE_BALANCE_WEI =
     10 * uint256_t{1'000'000'000'000'000'000};
 
@@ -63,9 +63,6 @@ public:
     template <Traits traits>
     static std::pair<PrecompileFunc, uint64_t>
     precompile_dispatch(byte_string_view &);
-
-    Result<byte_string> precompile_get(
-        byte_string_view, evmc_address const &, evmc_bytes32 const &);
 
     Result<byte_string> precompile_set(
         byte_string_view, evmc_address const &, evmc_bytes32 const &);

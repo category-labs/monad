@@ -33,11 +33,9 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 struct PrecompileSelector
 {
-    static constexpr uint32_t GET = abi_encode_selector("get()");
     static constexpr uint32_t UPDATE = abi_encode_selector("update(uint256)");
 };
 
-static_assert(PrecompileSelector::GET == 0x6d4ce63c);
 static_assert(PrecompileSelector::UPDATE == 0x82ab890a);
 
 //////////////
@@ -77,12 +75,6 @@ constexpr uint64_t compute_costs(OpCount const &ops) noexcept
            EVENT_COSTS * ops.events;
 }
 
-constexpr uint64_t GET_OP_COST = compute_costs({
-    .cold_sloads = 1,
-    .warm_sstore_nonzero = 0,
-    .events = 0,
-});
-
 constexpr uint64_t UPDATE_OP_COST = compute_costs({
     .cold_sloads = 1,
     .warm_sstore_nonzero = 1,
@@ -91,7 +83,6 @@ constexpr uint64_t UPDATE_OP_COST = compute_costs({
 
 constexpr uint64_t FALLBACK_COST = 40'000;
 
-static_assert(GET_OP_COST == 8100);
 static_assert(UPDATE_OP_COST == 15275);
 
 Result<void> function_not_payable(u256_be const &value)
@@ -164,8 +155,6 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
     input.remove_prefix(4);
 
     switch (signature) {
-    case PrecompileSelector::GET:
-        return {&ReserveBalanceContract::precompile_get, GET_OP_COST};
     case PrecompileSelector::UPDATE:
         return {&ReserveBalanceContract::precompile_set, UPDATE_OP_COST};
     default:
@@ -174,20 +163,6 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
 }
 
 EXPLICIT_TRAITS(ReserveBalanceContract::precompile_dispatch);
-
-Result<byte_string> ReserveBalanceContract::precompile_get(
-    byte_string_view input, evmc_address const &sender,
-    evmc_bytes32 const &msg_value)
-{
-    BOOST_OUTCOME_TRY(function_not_payable(u256_be::from_bytes(msg_value)));
-
-    if (MONAD_UNLIKELY(!input.empty())) {
-        return ReserveBalanceError::InvalidInput;
-    }
-
-    auto const value = get(sender);
-    return byte_string(abi_encode_uint(value));
-}
 
 Result<byte_string> ReserveBalanceContract::precompile_set(
     byte_string_view input, evmc_address const &sender,

@@ -129,7 +129,8 @@ namespace
                 return state.SkipWithError("Failed to compile contract");
             }
 
-            state.counters["MachineCodeSize"] = static_cast<double>(*ncode->code_size_estimate());
+            state.counters["MachineCodeSize"] =
+                static_cast<double>(*ncode->code_size_estimate());
         }
 
         state.counters["EVMCodeSize"] = static_cast<double>(program.size());

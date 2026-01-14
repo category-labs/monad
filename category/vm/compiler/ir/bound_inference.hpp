@@ -336,7 +336,8 @@ namespace monad::vm::compiler::bound_inference
             return 1; // success flag
         }
         else {
-            static_assert(false,
+            static_assert(
+                false,
                 "compute_result_bound not implemented for this instruction");
         }
     }

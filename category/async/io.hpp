@@ -493,8 +493,6 @@ private:
             std::allocator_traits<connected_operation_storage_allocator_type_>;
         unsigned char *mem = (unsigned char *)traits::allocate(
             connected_operation_storage_pool_, 1);
-        MONAD_ASSERT_PRINTF(
-            mem != nullptr, "failed due to %s", strerror(errno));
         auto ret = std::unique_ptr<
             connected_type,
             io_connected_operation_unique_ptr_deleter>(

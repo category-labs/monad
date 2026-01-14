@@ -36,7 +36,7 @@
 namespace monad::vm::runtime
 {
 
-    inline void context_expand_memory(Context *ctx, Bin<30> min_size)
+    inline void context_expand_memory(Context *ctx, Bin<29> min_size)
     {
         ctx->expand_memory(min_size);
     }
@@ -1514,7 +1514,7 @@ namespace monad::vm::llvm
             llvm.insert_at(entry);
 
             uint256_t const max_offset =
-                (uint64_t{1} << 31) - static_cast<uint32_t>(width);
+                (uint64_t{1} << 29) - static_cast<uint32_t>(width);
             auto *isgt = llvm.ugt(offset, llvm.lit_word(max_offset));
             llvm.condbr(isgt, offset_err_lbl, offset_ok_lbl, false);
 
@@ -1522,9 +1522,9 @@ namespace monad::vm::llvm
             exit_(ctx_ref, StatusCode::Error);
 
             llvm.insert_at(offset_ok_lbl);
-            Value *offset1 = llvm.cast_32(offset);
+            Value *offset_32 = llvm.cast_32(offset);
 
-            Value *min_size = llvm.add(offset1, llvm.i32(width));
+            Value *min_size = llvm.add(offset_32, llvm.i32(width));
 
             auto *mem_size = llvm.load(llvm.int_ty(32), mem_size_ptr);
 
@@ -1543,7 +1543,7 @@ namespace monad::vm::llvm
             mem_data = llvm.load(llvm.ptr_ty(llvm.int_ty(8)), mem_data_ptr_ptr);
 
             return llvm.gep(
-                llvm.int_ty(8), mem_data, offset1, "mem_data_offset");
+                llvm.int_ty(8), mem_data, offset_32, "mem_data_offset");
         }
 
         Function *llvm_mload(Instruction const &instr)

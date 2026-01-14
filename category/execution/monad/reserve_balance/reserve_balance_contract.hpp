@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -33,9 +34,11 @@ static constexpr uint256_t DEFAULT_RESERVE_BALANCE_WEI =
 class ReserveBalanceContract
 {
     State &state_;
+    CallTracerBase &call_tracer_;
 
 public:
     explicit ReserveBalanceContract(State &state);
+    ReserveBalanceContract(State &state, CallTracerBase &tracer);
 
     u256_be get(Address const &);
 
@@ -64,7 +67,7 @@ public:
     static std::pair<PrecompileFunc, uint64_t>
     precompile_dispatch(byte_string_view &);
 
-    Result<byte_string> precompile_set(
+    Result<byte_string> precompile_update(
         byte_string_view, evmc_address const &, evmc_bytes32 const &);
 
     Result<byte_string> precompile_fallback(

@@ -161,9 +161,10 @@ void run_revert_transaction_test(
     BlockState bs{tdb, vm};
 
     {
+        NoopCallTracer noop_tracer{};
         State state{bs, Incarnation{0, 0}};
         auto const max_reserve =
-            ReserveBalanceContract{state}.get(SENDER).native();
+            ReserveBalanceContract{state, noop_tracer}.get(SENDER).native();
 
         constexpr uint256_t WEI_PER_MON{1'000'000'000'000'000'000};
         ASSERT_EQ(max_reserve, 10 * WEI_PER_MON);

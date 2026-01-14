@@ -27,20 +27,34 @@
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-////////////////////////
-// Function Selectors //
-////////////////////////
+//
+// ABI
+//
 
-struct PrecompileSelector
-{
-    static constexpr uint32_t UPDATE = abi_encode_selector("update(uint256)");
-};
+// clang-format off
+// Morally, this precompile is equivalent to the following Solidity contract:
+//
+// contract ReserveBalance {
+//   uint256 private constant DEFAULT_RESERVE_BALANCE_WEI = 10'000'000'000'000'000'000; 
+//   mapping (address => uint256) private reserveBalances_;
+//
+//   function update(uint256 newValue) external {
+//     uint256 oldValue = reserveBalances_[msg.sender];
+//
+//     reserveBalances_[msg.sender] = newValue == 0 ?
+//        DEFAULT_RESERVE_BALANCE_WEI : newValue;
+//
+//     emit ReserveBalanceChanged(msg.sender, oldValue, reserveBalances_[msg.sender]);
+//   }
+// }
+// clang-format on
+static constexpr uint32_t UPDATE_SELECTOR =
+    abi_encode_selector("update(uint256)");
+static_assert(UPDATE_SELECTOR == 0x82ab890a);
 
-static_assert(PrecompileSelector::UPDATE == 0x82ab890a);
-
-//////////////
-// Gas Costs //
-///////////////
+//
+// Gas Costs
+//
 
 // The gas for the reserve balance precompile are determined by sloads, sstores
 // and events. The operations are given as the following:
@@ -57,30 +71,11 @@ static_assert(PrecompileSelector::UPDATE == 0x82ab890a);
 //       EVENT_COST * operations[2]
 //
 
-constexpr uint64_t COLD_SLOAD = 8100;
-constexpr uint64_t WARM_SSTORE_NONZERO = 2900;
+constexpr uint64_t COLD_SLOAD_COST = 8100;
+constexpr uint64_t WARM_SSTORE_NONZERO_COST = 2900;
 constexpr uint64_t EVENT_COSTS = 4275;
-
-struct OpCount
-{
-    uint64_t cold_sloads;
-    uint64_t warm_sstore_nonzero;
-    uint64_t events;
-};
-
-constexpr uint64_t compute_costs(OpCount const &ops) noexcept
-{
-    return COLD_SLOAD * ops.cold_sloads +
-           WARM_SSTORE_NONZERO * ops.warm_sstore_nonzero +
-           EVENT_COSTS * ops.events;
-}
-
-constexpr uint64_t UPDATE_OP_COST = compute_costs({
-    .cold_sloads = 1,
-    .warm_sstore_nonzero = 1,
-    .events = 1,
-});
-
+constexpr uint64_t UPDATE_OP_COST =
+    COLD_SLOAD_COST + WARM_SSTORE_NONZERO_COST + EVENT_COSTS;
 constexpr uint64_t FALLBACK_COST = 40'000;
 
 static_assert(UPDATE_OP_COST == 15275);
@@ -98,8 +93,10 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-ReserveBalanceContract::ReserveBalanceContract(State &state)
+ReserveBalanceContract::ReserveBalanceContract(
+    State &state, CallTracerBase &tracer)
     : state_{state}
+    , call_tracer_{tracer}
 {
     state_.add_to_balance(RESERVE_BALANCE_CA, 0);
 }
@@ -140,6 +137,7 @@ void ReserveBalanceContract::emit_reserve_balance_changed_event(
                            .add_data(abi_encode_uint(new_value))
                            .build();
     state_.store_log(event);
+    call_tracer_.on_log(event);
 }
 
 template <Traits traits>
@@ -155,8 +153,8 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
     input.remove_prefix(4);
 
     switch (signature) {
-    case PrecompileSelector::UPDATE:
-        return {&ReserveBalanceContract::precompile_set, UPDATE_OP_COST};
+    case UPDATE_SELECTOR:
+        return {&ReserveBalanceContract::precompile_update, UPDATE_OP_COST};
     default:
         return {&ReserveBalanceContract::precompile_fallback, FALLBACK_COST};
     }
@@ -164,7 +162,7 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
 
 EXPLICIT_TRAITS(ReserveBalanceContract::precompile_dispatch);
 
-Result<byte_string> ReserveBalanceContract::precompile_set(
+Result<byte_string> ReserveBalanceContract::precompile_update(
     byte_string_view input, evmc_address const &sender,
     evmc_bytes32 const &msg_value)
 {

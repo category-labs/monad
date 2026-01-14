@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -75,8 +76,9 @@ bool dipped_into_reserve(
         // Check if dipped into reserve
         std::optional<uint256_t> const violation_threshold =
             [&] -> std::optional<uint256_t> {
+            NoopCallTracer noop_tracer{};
             uint256_t const max_reserve =
-                ReserveBalanceContract{state}.get(addr).native();
+                ReserveBalanceContract{state, noop_tracer}.get(addr).native();
             uint256_t const orig_balance = state.get_original_balance(addr);
             uint256_t const reserve = std::min(max_reserve, orig_balance);
             if (addr == sender) {

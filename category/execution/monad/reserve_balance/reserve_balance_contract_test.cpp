@@ -48,15 +48,20 @@ struct ReserveBalance : public ::testing::Test
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-    ReserveBalanceContract contract{state};
+    NoopCallTracer call_tracer;
+    ReserveBalanceContract contract{state, call_tracer};
 };
 
-TEST_F(ReserveBalance, get_default)
+TEST_F(ReserveBalance, get_get)
 {
     EXPECT_EQ(contract.get(account_a), DEFAULT_RESERVE_BALANCE_WEI);
+    EXPECT_EQ(contract.get(account_a), DEFAULT_RESERVE_BALANCE_WEI);
+
+    EXPECT_EQ(contract.get(account_b), DEFAULT_RESERVE_BALANCE_WEI);
+    EXPECT_EQ(contract.get(account_b), DEFAULT_RESERVE_BALANCE_WEI);
 }
 
-TEST_F(ReserveBalance, set_then_get)
+TEST_F(ReserveBalance, update_get)
 {
     EXPECT_EQ(contract.get(account_a).native(), DEFAULT_RESERVE_BALANCE_WEI);
     EXPECT_EQ(contract.get(account_b).native(), DEFAULT_RESERVE_BALANCE_WEI);
@@ -142,51 +147,55 @@ TEST_F(ReserveBalanceEvm, precompile_update_then_get)
     }
 }
 
-TEST_F(ReserveBalanceEvm, precompile_get)
-{
-    auto input = std::array<uint8_t, 4>{};
-    intx::be::unsafe::store(input.data(), abi_encode_selector("get()"));
-
-    auto const m = evmc_message{
-        .gas = 40'000,
-        .recipient = RESERVE_BALANCE_CA,
-        .sender = account_a,
-        .input_data = input.data(),
-        .input_size = input.size(),
-        .code_address = RESERVE_BALANCE_CA,
-    };
-
-    auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_REVERT);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.gas_refund, 0);
-    EXPECT_EQ(result.output_size, 20);
-
-    auto const message = std::string_view{
-        reinterpret_cast<char const *>(result.output_data), 20};
-    EXPECT_EQ(message, "method not supported");
-}
-
 TEST_F(ReserveBalanceEvm, precompile_fallback)
 {
-    auto input = std::array<uint8_t, 4>{};
+    {
+        // Check that `get` method is not supported. May be added in the future.
+        //
+        // function get() external view returns (uint256);
+        auto input = std::array<uint8_t, 4>{};
+        intx::be::unsafe::store(input.data(), abi_encode_selector("get()"));
 
-    auto const m = evmc_message{
-        .gas = 40'000,
-        .recipient = RESERVE_BALANCE_CA,
-        .sender = account_a,
-        .input_data = input.data(),
-        .input_size = input.size(),
-        .code_address = RESERVE_BALANCE_CA,
-    };
+        auto const m = evmc_message{
+            .gas = 40'000,
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_a,
+            .input_data = input.data(),
+            .input_size = input.size(),
+            .code_address = RESERVE_BALANCE_CA,
+        };
 
-    auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_REVERT);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.gas_refund, 0);
-    EXPECT_EQ(result.output_size, 20);
+        auto const result = h.call(m);
+        EXPECT_EQ(result.status_code, EVMC_REVERT);
+        EXPECT_EQ(result.gas_left, 0);
+        EXPECT_EQ(result.gas_refund, 0);
+        EXPECT_EQ(result.output_size, 20);
 
-    auto const message = std::string_view{
-        reinterpret_cast<char const *>(result.output_data), 20};
-    EXPECT_EQ(message, "method not supported");
+        auto const message = std::string_view{
+            reinterpret_cast<char const *>(result.output_data), 20};
+        EXPECT_EQ(message, "method not supported");
+    }
+
+    {
+        auto input = std::array<uint8_t, 4>{};
+
+        auto const m = evmc_message{
+            .gas = 40'000,
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_a,
+            .input_data = input.data(),
+            .input_size = input.size(),
+            .code_address = RESERVE_BALANCE_CA,
+        };
+
+        auto const result = h.call(m);
+        EXPECT_EQ(result.status_code, EVMC_REVERT);
+        EXPECT_EQ(result.gas_left, 0);
+        EXPECT_EQ(result.gas_refund, 0);
+        EXPECT_EQ(result.output_size, 20);
+
+        auto const message = std::string_view{
+            reinterpret_cast<char const *>(result.output_data), 20};
+        EXPECT_EQ(message, "method not supported");
+    }
 }

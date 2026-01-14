@@ -43,16 +43,7 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
-    Contract contract =
-        [](State &state,
-           [[maybe_unused]] CallTracerBase &call_tracer) -> Contract {
-        if constexpr (std::is_same_v<Contract, staking::StakingContract>) {
-            return Contract{state, call_tracer};
-        }
-        else {
-            return Contract{state};
-        }
-    }(state, call_tracer);
+    Contract contract = Contract{state, call_tracer};
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);

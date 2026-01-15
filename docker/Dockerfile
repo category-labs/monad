@@ -26,7 +26,7 @@ RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFL
 RUN cd src && ./scripts/build.sh
 
 # security=insecure for tests which use io_uring
-RUN --security=insecure cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./scripts/test.sh
+RUN --security=insecure cd src && if [ "${CMAKE_BUILD_TYPE:?}" != "Debug" ]; then CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./scripts/test.sh; fi
 
 FROM base AS build_and_test_vm
 

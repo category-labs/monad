@@ -123,7 +123,7 @@ namespace trace
             storage_);
     }
 
-    StorageDeltas StateDiffTracer::generate_storage_deltas(
+    StorageDeltas generate_storage_deltas(
         AccountState::StorageMap const &original,
         AccountState::StorageMap const &current)
     {
@@ -187,9 +187,6 @@ namespace trace
     {
         excluded_addresses_.insert(sender);
         excluded_addresses_.insert(beneficiary);
-        // TODO(dhil): Revisit later whether to include/exclude the reserve
-        // balance contract
-        excluded_addresses_.insert(Address{0x1001});
 
         if (to.has_value()) {
             excluded_addresses_.insert(*to);
@@ -320,6 +317,44 @@ namespace trace
         return res;
     }
 
+    json PrestateTracer::reserve_balance_state_to_json(
+        OriginalAccountState const &original_reserve_balance_state,
+        State &state)
+    {
+        json result; // initially `null`.
+        // Exclude the reserve balance contract from the prestate trace if there
+        // were no storage changes.
+        auto const curr_it = state.current().find(RESERVE_BALANCE_CA);
+        if (curr_it == state.current().end()) {
+            return result;
+        }
+
+        AccountState const &current_state = curr_it->second.recent();
+        StorageDeltas const storage_deltas = generate_storage_deltas(
+            original_reserve_balance_state.storage_, current_state.storage_);
+
+        // If there are no storage deltas, then return `null`.
+        if (storage_deltas.empty()) {
+            return result;
+        }
+
+        // Otherwise construct the reserve balance contract entry.
+        result = account_to_json(
+            get_account_for_trace(original_reserve_balance_state), state);
+
+        for (auto const &[key, values] : storage_deltas) {
+            auto const &[original_value, _] = values;
+            if (original_value == bytes32_t{}) {
+                // Zero values should not appear in the output.
+                continue;
+            }
+            auto const key_json = bytes_to_hex(key.bytes);
+            auto const value_json = bytes_to_hex(original_value.bytes);
+            result["storage"][key_json] = value_json;
+        }
+        return result;
+    }
+
     void PrestateTracer::state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
         std::optional<Address> const &beneficiary, json &result)
@@ -330,9 +365,13 @@ namespace trace
                 continue;
             }
 
-            // TODO(dhil): Revisit later whether to include/exclude the reserve
-            // balance contract
-            if (address == Address{0x1001}) {
+            // We handle the reserve balance contract specially
+            if (address == RESERVE_BALANCE_CA) {
+                if (auto entry =
+                        reserve_balance_state_to_json(account_state, state);
+                    !entry.is_null()) {
+                    result[bytes_to_hex(RESERVE_BALANCE_CA.bytes)] = entry;
+                }
                 continue;
             }
 
@@ -375,11 +414,6 @@ namespace trace
         json pre = json::object();
         json post = json::object();
         for (auto const &[address, state_delta] : state_deltas) {
-            if (address == Address{0x1001}) {
-                // TODO(dhil): Revisit later whether to include/exclude the
-                // reserve balance contract
-                continue;
-            }
             auto const address_key = bytes_to_hex(address.bytes);
             // Account
             {
@@ -418,12 +452,20 @@ namespace trace
                 if (!original_account.has_value() &&
                     current_account.has_value()) {
                     // Case: Account created.
+                    if (MONAD_UNLIKELY(address == RESERVE_BALANCE_CA)) {
+                        // Skip reserve balance contract creation.
+                        continue;
+                    }
                     post[address_key] = account_to_json(current_account, state);
                 }
                 else if (
                     original_account.has_value() &&
                     !current_account.has_value()) {
                     // Case: Account deleted.
+                    if (MONAD_UNLIKELY(address == RESERVE_BALANCE_CA)) {
+                        // Skip reserve balance contract deletion.
+                        continue;
+                    }
                     pre[address_key] = account_to_json(original_account, state);
                 }
                 else {

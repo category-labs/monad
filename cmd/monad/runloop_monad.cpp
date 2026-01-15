@@ -361,20 +361,20 @@ Result<BlockExecOutput> propose_block(
             block_start.time_since_epoch())
             .count(),
         block.transactions.size(),
-        block_metrics.num_retries(),
-        100.0 * (double)block_metrics.num_retries() /
+        block_metrics.num_retries,
+        100.0 * (double)block_metrics.num_retries /
             std::max(1.0, (double)block.transactions.size()),
         sender_recovery_time,
-        block_metrics.tx_exec_time(),
+        block_metrics.tx_exec_time,
         commit_time,
         block_time,
         block.transactions.size() * 1'000'000 /
-            (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
+            (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_time.count()),
         exec_output.eth_header.gas_used,
         exec_output.eth_header.gas_used /
-            (uint64_t)std::max(1L, block_metrics.tx_exec_time().count()),
+            (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
         exec_output.eth_header.gas_used /
             (uint64_t)std::max(1L, block_time.count()),
         db.print_stats(),

@@ -285,9 +285,9 @@ Result<std::vector<Receipt>> execute_block_transactions(
 
     auto const last = static_cast<std::ptrdiff_t>(transactions.size());
     promises[last].get_future().get();
-    block_metrics.set_tx_exec_time(
+    block_metrics.tx_exec_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - tx_exec_begin));
+            std::chrono::steady_clock::now() - tx_exec_begin);
 
     // All transactions have released their merge-order synchronization
     // primitive (promises[i + 1]) but some stragglers could still be running

@@ -428,7 +428,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             return receipt;
         }
     }
-    block_metrics_.inc_retries();
+    ++block_metrics_.num_retries;
     {
         TRACE_TXN_EVENT(StartRetry);
 

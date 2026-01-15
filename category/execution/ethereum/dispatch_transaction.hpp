@@ -33,10 +33,10 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
-class BlockMetrics;
 class BlockState;
 class State;
 struct BlockHeader;
+struct BlockMetrics;
 struct CallTracerBase;
 struct Chain;
 struct Transaction;

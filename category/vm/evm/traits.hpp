@@ -155,6 +155,9 @@ namespace monad
     {
         static consteval evmc_revision evm_rev() noexcept
         {
+            if constexpr (Rev >= MONAD_NEXT) {
+                return EVMC_OSAKA;
+            }
             if constexpr (Rev >= MONAD_FOUR) {
                 return EVMC_PRAGUE;
             }

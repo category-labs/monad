@@ -44,13 +44,20 @@ namespace
 {
     using monad::Traits;
 
-    [[gnu::always_inline]]
-    void set_bit_bound(Emitter &emit, std::uint32_t result_bound)
-    {
-        emit.get_stack()
-            .get(emit.get_stack().top_index())
-            ->set_bit_upper_bound(result_bound);
-    }
+#ifdef COMPARE_BOUND_ANALYSIS
+    #define PRE_EMIT_HOOK(instr) \
+        auto const result_bound = \
+                bound_inference::compute_result_bound<instr, traits>(emit);
+
+    #define POST_EMIT_HOOK() \
+        auto tos = emit.get_stack().top(); \
+        if (!tos->literal()) { \
+            MONAD_VM_ASSERT(tos->bit_upper_bound() <= result_bound) \
+        }
+#else
+    #define PRE_EMIT_HOOK(instr)
+    #define POST_EMIT_HOOK()
+#endif
 
     template <Traits traits>
     void emit_instr(
@@ -59,384 +66,326 @@ namespace
         using enum OpCode;
         switch (instr.opcode()) {
         case Add: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Add, traits>(emit);
+            PRE_EMIT_HOOK(Add);
             emit.add();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Mul: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Mul, traits>(emit);
+            PRE_EMIT_HOOK(Mul);
             emit.mul(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
 
         case Sub: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Sub, traits>(emit);
+            PRE_EMIT_HOOK(Sub);
             emit.sub();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
 
         case Div: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Div, traits>(emit);
+            PRE_EMIT_HOOK(Div);
             emit.udiv(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case SDiv: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<SDiv, traits>(emit);
+            PRE_EMIT_HOOK(SDiv);
             emit.sdiv(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Mod: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Mod, traits>(emit);
+            PRE_EMIT_HOOK(Mod);
             emit.umod(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case SMod: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<SMod, traits>(emit);
+            PRE_EMIT_HOOK(SMod);
             emit.smod(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case AddMod: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<AddMod, traits>(emit);
+            PRE_EMIT_HOOK(AddMod);
             emit.addmod(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case MulMod: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<MulMod, traits>(emit);
+            PRE_EMIT_HOOK(MulMod);
             emit.mulmod(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Exp: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Exp, traits>(emit);
+            PRE_EMIT_HOOK(Exp);
             emit.exp<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case SignExtend: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<SignExtend, traits>(emit);
+            PRE_EMIT_HOOK(SignExtend);
             emit.signextend();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Lt: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Lt, traits>(emit);
+            PRE_EMIT_HOOK(Lt);
             emit.lt();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Gt: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Gt, traits>(emit);
+            PRE_EMIT_HOOK(Gt);
             emit.gt();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case SLt: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<SLt, traits>(emit);
+            PRE_EMIT_HOOK(SLt);
             emit.slt();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case SGt: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<SGt, traits>(emit);
+            PRE_EMIT_HOOK(SGt);
             emit.sgt();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Eq: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Eq, traits>(emit);
+            PRE_EMIT_HOOK(Eq);
             emit.eq();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case IsZero: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<IsZero, traits>(emit);
+            PRE_EMIT_HOOK(IsZero);
             emit.iszero();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case And: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<And, traits>(emit);
+            PRE_EMIT_HOOK(And);
             emit.and_();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Or: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Or, traits>(emit);
+            PRE_EMIT_HOOK(Or);
             emit.or_();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case XOr: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<XOr, traits>(emit);
+            PRE_EMIT_HOOK(XOr);
             emit.xor_();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Not: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Not, traits>(emit);
+            PRE_EMIT_HOOK(Not);
             emit.not_();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Byte: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Byte, traits>(emit);
+            PRE_EMIT_HOOK(Byte);
             emit.byte();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Shl: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Shl, traits>(emit);
+            PRE_EMIT_HOOK(Shl);
             emit.shl();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Shr: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Shr, traits>(emit);
+            PRE_EMIT_HOOK(Shr);
             emit.shr();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Sar: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Sar, traits>(emit);
+            PRE_EMIT_HOOK(Sar);
             emit.sar();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Clz: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Clz, traits>(emit);
+            PRE_EMIT_HOOK(Clz);
             emit.clz();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Sha3: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Sha3, traits>(emit);
+            PRE_EMIT_HOOK(Sha3);
             emit.sha3<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Address: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Address, traits>(emit);
+            PRE_EMIT_HOOK(Address);
             emit.address();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Balance: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Balance, traits>(emit);
+            PRE_EMIT_HOOK(Balance);
             emit.balance<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Origin: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Origin, traits>(emit);
+            PRE_EMIT_HOOK(Origin);
             emit.origin();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Caller: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Caller, traits>(emit);
+            PRE_EMIT_HOOK(Caller);
             emit.caller();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case CallValue: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<CallValue, traits>(emit);
+            PRE_EMIT_HOOK(CallValue);
             emit.callvalue();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case CallDataLoad: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<CallDataLoad, traits>(
-                    emit);
+            PRE_EMIT_HOOK(CallDataLoad);
             emit.calldataload();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case CallDataSize: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<CallDataSize, traits>(
-                    emit);
+            PRE_EMIT_HOOK(CallDataSize);
             emit.calldatasize();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case CallDataCopy:
             emit.calldatacopy<traits>(remaining_base_gas);
             break;
         case CodeSize: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<CodeSize, traits>(emit);
+            PRE_EMIT_HOOK(CodeSize);
             emit.codesize();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case CodeCopy:
             emit.codecopy<traits>(remaining_base_gas);
             break;
         case GasPrice: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<GasPrice, traits>(emit);
+            PRE_EMIT_HOOK(GasPrice);
             emit.gasprice();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case ExtCodeSize: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<ExtCodeSize, traits>(
-                    emit);
+            PRE_EMIT_HOOK(ExtCodeSize);
             emit.extcodesize<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case ExtCodeCopy:
             emit.extcodecopy<traits>(remaining_base_gas);
             break;
         case ReturnDataSize: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<ReturnDataSize, traits>(
-                    emit);
+            PRE_EMIT_HOOK(ReturnDataSize);
             emit.returndatasize();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case ReturnDataCopy:
             emit.returndatacopy<traits>(remaining_base_gas);
             break;
         case ExtCodeHash: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<ExtCodeHash, traits>(
-                    emit);
+            PRE_EMIT_HOOK(ExtCodeHash);
             emit.extcodehash<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case BlockHash: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<BlockHash, traits>(emit);
+            PRE_EMIT_HOOK(BlockHash);
             emit.blockhash<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Coinbase: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Coinbase, traits>(emit);
+            PRE_EMIT_HOOK(Coinbase);
             emit.coinbase();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Timestamp: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Timestamp, traits>(emit);
+            PRE_EMIT_HOOK(Timestamp);
             emit.timestamp();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Number: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Number, traits>(emit);
+            PRE_EMIT_HOOK(Number);
             emit.number();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Difficulty: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Difficulty, traits>(emit);
+            PRE_EMIT_HOOK(Difficulty);
             emit.prevrandao();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case GasLimit: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<GasLimit, traits>(emit);
+            PRE_EMIT_HOOK(GasLimit);
             emit.gaslimit();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case ChainId: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<ChainId, traits>(emit);
+            PRE_EMIT_HOOK(ChainId);
             emit.chainid();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case SelfBalance: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<SelfBalance, traits>(
-                    emit);
+            PRE_EMIT_HOOK(SelfBalance);
             emit.selfbalance<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case BaseFee: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<BaseFee, traits>(emit);
+            PRE_EMIT_HOOK(BaseFee);
             emit.basefee();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case BlobHash: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<BlobHash, traits>(emit);
+            PRE_EMIT_HOOK(BlobHash);
             emit.blobhash<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case BlobBaseFee: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<BlobBaseFee, traits>(
-                    emit);
+            PRE_EMIT_HOOK(BlobBaseFee);
             emit.blobbasefee();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Pop:
             emit.pop();
             break;
         case MLoad: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<MLoad, traits>(emit);
+            PRE_EMIT_HOOK(MLoad);
             emit.mload();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case MStore:
@@ -446,41 +395,36 @@ namespace
             emit.mstore8();
             break;
         case SLoad: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<SLoad, traits>(emit);
+            PRE_EMIT_HOOK(SLoad);
             emit.sload<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case SStore:
             emit.sstore<traits>(remaining_base_gas);
             break;
         case Pc: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Pc, traits>(emit);
+            PRE_EMIT_HOOK(Pc);
             emit.push(instr.pc());
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case MSize: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<MSize, traits>(emit);
+            PRE_EMIT_HOOK(MSize);
             emit.msize();
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Gas: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Gas, traits>(emit);
+            PRE_EMIT_HOOK(Gas);
             emit.gas(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case TLoad: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<TLoad, traits>(emit);
+            PRE_EMIT_HOOK(TLoad);
             emit.tload<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case TStore:
@@ -490,10 +434,9 @@ namespace
             emit.mcopy<traits>(remaining_base_gas);
             break;
         case Push: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Push, traits>(emit);
+            PRE_EMIT_HOOK(Push);
             emit.push(instr.immediate_value());
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Dup: {
@@ -525,46 +468,39 @@ namespace
             }
             break;
         case Create: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Create, traits>(emit);
+            PRE_EMIT_HOOK(Create);
             emit.create<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Call: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Call, traits>(emit);
+            PRE_EMIT_HOOK(Call);
             emit.call<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case CallCode: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<CallCode, traits>(emit);
+            PRE_EMIT_HOOK(CallCode);
             emit.callcode<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case DelegateCall: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<DelegateCall, traits>(
-                    emit);
+            PRE_EMIT_HOOK(DelegateCall);
             emit.delegatecall<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case Create2: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<Create2, traits>(emit);
+            PRE_EMIT_HOOK(Create2);
             emit.create2<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         case StaticCall: {
-            auto const result_bound =
-                bound_inference::compute_result_bound<StaticCall, traits>(emit);
+            PRE_EMIT_HOOK(StaticCall);
             emit.staticcall<traits>(remaining_base_gas);
-            set_bit_bound(emit, result_bound);
+            POST_EMIT_HOOK();
             break;
         }
         }

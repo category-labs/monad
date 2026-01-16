@@ -250,11 +250,7 @@ validate_transaction(Transaction const &tx, Address const &sender, State &state)
     }
 
     // YP (71)
-    // RELAXED MERGE
-    // note this passes because `v0` includes gas which is later deducted in
-    // `irrevocable_change` before relaxed merge logic in `sender_has_balance`
-    // this is fragile as it depends on values in two locations matching
-    if (MONAD_UNLIKELY(state.get_balance(sender) < v0)) {
+    if (MONAD_UNLIKELY(!state.check_min_balance(sender, v0))) {
         return TransactionError::InsufficientBalance;
     }
 

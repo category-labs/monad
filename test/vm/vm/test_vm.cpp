@@ -115,10 +115,7 @@ BlockchainTestVM::BlockchainTestVM(
     , impl_{impl_from_env(impl)}
     , debug_dir_{std::getenv("MONAD_COMPILER_ASM_DIR")}
     , execute_hook_{execute_hook}
-    , base_config{
-          .runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(),
-          .max_code_size_offset = code_size_t::max(),
-          .post_instruction_emit_hook = post_hook}
+    , base_config{.runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(), .max_code_size_offset = code_size_t::max(), .post_instruction_emit_hook = post_hook}
     , rt_ctx_{nullptr}
     , memory_allocator_{}
 {
@@ -140,10 +137,14 @@ evmc::Result BlockchainTestVM::execute(
     }
 
     auto res = [&] {
-        if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2 ||
-            msg->sender == SYSTEM_ADDRESS) {
+        if (msg->sender == SYSTEM_ADDRESS) {
             return evmc::Result{evmone_vm_.execute(
                 &evmone_vm_, host, context, rev, msg, code, code_size)};
+        }
+        else if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2) {
+            SWITCH_EVM_TRAITS(
+                monad_vm_.execute_bytecode_raw, *rt_ctx_, {code, code_size});
+            MONAD_VM_ASSERT(false);
         }
         else if (impl_ == Implementation::Evmone) {
             return execute_evmone(host, context, rev, msg, code, code_size);

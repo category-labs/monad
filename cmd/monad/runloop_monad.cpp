@@ -469,10 +469,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing)
+    bool const enable_tracing, bool const is_first_run)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
-    uint64_t const start_block_num = block_num;
+    bool is_first_block = is_first_run;
     uint256_t const chain_id = chain.get_chain_id();
     BlockHashChain block_hash_chain(block_hash_buffer);
 
@@ -551,8 +551,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     std::deque<ToExecute> to_execute;
     std::deque<ToFinalize> to_finalize;
 
-    MONAD_ASSERT(start_block_num > 0);
-    uint64_t finalized_block_num = start_block_num - 1;
+    MONAD_ASSERT(block_num > 0);
+    uint64_t finalized_block_num = block_num - 1;
 
     while (finalized_block_num < end_block_num && stop == 0) {
         to_finalize.clear();
@@ -624,7 +624,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &priority_pool,
              &last_finalized_block_number,
              chain_id,
-             start_block_num,
+             &is_first_block,
              enable_tracing,
              &block_cache](
                 bytes32_t const &block_id,
@@ -679,7 +679,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     db,
                     vm,
                     priority_pool,
-                    block_number == start_block_num,
+                    is_first_block,
                     enable_tracing,
                     block_cache);
                 MONAD_ABORT_PRINTF("handled rev value %d", rev);
@@ -687,6 +687,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             BOOST_OUTCOME_TRY(
                 BlockExecOutput const exec_output,
                 record_block_result(propose_dispatch()));
+
+            is_first_block = false;
 
             db.update_proposed_metadata(header.seqno, block_id);
 

@@ -108,6 +108,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(
             !stack_offset_ && !avx_reg_ && !general_reg_ && !literal_);
         stack_.deferred_comparison_.set(this, c);
+        bit_upper_bound_ = 1u; // Result of comparison is either 0 or 1.
     }
 
     void StackElem::deferred_comparison()
@@ -119,6 +120,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(
             !stack_offset_ && !avx_reg_ && !general_reg_ && !literal_);
         stack_.deferred_comparison_.stack_elem = this;
+        bit_upper_bound_ = 1u; // Result of comparison is either 0 or 1.
     }
 
     void StackElem::negated_deferred_comparison()
@@ -129,6 +131,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(
             !stack_offset_ && !avx_reg_ && !general_reg_ && !literal_);
         stack_.deferred_comparison_.negated_stack_elem = this;
+        bit_upper_bound_ = 1u; // Result of comparison is either 0 or 1.
     }
 
     void StackElem::discharge_deferred_comparison()

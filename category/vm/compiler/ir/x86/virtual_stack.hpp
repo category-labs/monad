@@ -226,6 +226,7 @@ namespace monad::vm::compiler::native
 
         void set_bit_upper_bound(std::uint32_t bits)
         {
+            MONAD_VM_ASSERT(bits <= 256u);
             // If the stack element is a literal, don't change the bit upper
             // bound, since it is already correctly set when the literal was
             // inserted.

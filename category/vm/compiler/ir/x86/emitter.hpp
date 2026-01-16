@@ -412,6 +412,7 @@ namespace monad::vm::compiler::native
         {
             call_runtime(
                 remaining_base_gas, true, runtime::extcodesize<traits>);
+            stack_.top()->set_bit_upper_bound(32);
         }
 
         template <Traits traits>
@@ -516,18 +517,21 @@ namespace monad::vm::compiler::native
         void create(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::create<traits>);
+            stack_.top()->set_bit_upper_bound(160);
         }
 
         template <Traits traits>
         void call(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::call<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
         void callcode(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::callcode<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
@@ -535,18 +539,21 @@ namespace monad::vm::compiler::native
         {
             call_runtime(
                 remaining_base_gas, true, runtime::delegatecall<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
         void create2(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::create2<traits>);
+            stack_.top()->set_bit_upper_bound(160);
         }
 
         template <Traits traits>
         void staticcall(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::staticcall<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>

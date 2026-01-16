@@ -76,14 +76,19 @@ namespace monad::vm::fuzzing
         return *result;
     }
 
+    // Coin toss, biased whenever p != 0.5
+    template <typename Engine>
+    static bool toss(Engine &engine, double p)
+    {
+        std::bernoulli_distribution dist(p);
+        return dist(engine);
+    }
+
     template <typename Engine, typename Action>
     void
     with_probability(Engine &eng, double const probability, Action &&action)
     {
-        auto dist = std::uniform_real_distribution<double>(0.0, 1.0);
-        auto const cutoff = dist(eng);
-
-        if (probability >= cutoff) {
+        if (toss(eng, probability)) {
             std::forward<Action>(action)(eng);
         }
     }

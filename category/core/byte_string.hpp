@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cstddef>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -42,6 +43,12 @@ template <class T, size_t N>
 constexpr byte_string_view to_byte_string_view(std::array<T, N> const &a)
 {
     return {a.data(), N};
+}
+
+template <class T>
+constexpr byte_string_view to_byte_string_view(std::vector<T> const &a)
+{
+    return {a.data(), a.size()};
 }
 
 inline byte_string_view to_byte_string_view(std::string const &s)

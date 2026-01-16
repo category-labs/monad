@@ -15,19 +15,25 @@
 
 #pragma once
 
-#include <category/execution/ethereum/dispatch_transaction.hpp>
-#include <category/execution/monad/system_sender.hpp>
+#include <category/core/config.hpp>
+#include <category/core/int.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/address.hpp>
+#include <category/vm/evm/traits.hpp>
+
+#include <evmc/evmc.h>
+
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
+class State;
+struct Transaction;
+
 template <Traits traits>
-Result<Receipt> dispatch_transaction(
-    Chain const &chain, uint64_t const i, Transaction const &transaction,
-    Address const &sender,
-    std::vector<std::optional<Address>> const &authorities,
-    BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &, ChainContext<traits> const &chain_ctx);
+bool revert_transaction(
+    Address const &sender, Transaction const &,
+    uint256_t const &base_fee_per_gas, uint64_t i, State &,
+    ChainContext<traits> const &);
 
 MONAD_NAMESPACE_END

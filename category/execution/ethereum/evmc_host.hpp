@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
+#include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -52,14 +53,11 @@ protected:
     evmc_tx_context const &tx_context_;
     State &state_;
     CallTracerBase &call_tracer_;
-    std::function<bool()> revert_transaction_;
 
 public:
     EvmcHostBase(
         CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &, std::function<bool()> const &revert_transaction = [] {
-            return false;
-        }) noexcept;
+        State &) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -100,13 +98,29 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 88);
+static_assert(sizeof(EvmcHostBase) == 56);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
 struct EvmcHost final : public EvmcHostBase
 {
-    using EvmcHostBase::EvmcHostBase;
+    Transaction const &tx_;
+    std::optional<uint256_t> base_fee_per_gas_;
+    uint64_t i_;
+    ChainContext<traits> const &chain_ctx_;
+
+    EvmcHost(
+        CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
+        BlockHashBuffer const &block_hash_buffer, State &state,
+        Transaction const &tx, std::optional<uint256_t> base_fee_per_gas,
+        uint64_t i, ChainContext<traits> const &chain_ctx) noexcept
+        : EvmcHostBase{call_tracer, tx_context, block_hash_buffer, state}
+        , tx_{tx}
+        , base_fee_per_gas_{base_fee_per_gas}
+        , i_{i}
+        , chain_ctx_{chain_ctx}
+    {
+    }
 
     virtual bool account_exists(Address const &address) const noexcept override
     {
@@ -152,7 +166,7 @@ struct EvmcHost final : public EvmcHostBase
                 return result;
             }
             else {
-                return ::monad::call(this, state_, msg, revert_transaction_);
+                return ::monad::call<traits>(this, state_, msg);
             }
         }
         catch (...) {
@@ -182,7 +196,10 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 88);
+static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 120);
 static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
+
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 120);
+static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

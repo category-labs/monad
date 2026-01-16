@@ -182,7 +182,8 @@ Result<BlockExecOutput> propose_block(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
-    bool const enable_tracing, BlockCache &block_cache, Db *secondary_db)
+    bool const enable_tracing, BlockCache &block_cache, Db *secondary_db,
+    RunloopMonadOverride const runloop_override)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -325,6 +326,9 @@ Result<BlockExecOutput> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code, _] = std::move(block_state).release();
     MONAD_ASSERT(state);
+
+    // Allow overriding the state deltas for testing purposes:
+    runloop_override.preprocess_state_deltas(&state);
 
     BlockCommitAncillaries const anc{
         .code = code,
@@ -501,10 +505,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing, Db *secondary_db)
+    bool const enable_tracing, Db *secondary_db,
+    RunloopMonadOverride const runloop_override)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
-    uint64_t const start_block_num = block_num;
+    bool is_first_block = runloop_override.is_first_run();
     uint256_t const chain_id = chain.get_chain_id();
     BlockHashChain block_hash_chain(block_hash_buffer);
 
@@ -577,8 +582,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     std::deque<ToExecute> to_execute;
     std::deque<ToFinalize> to_finalize;
 
-    MONAD_ASSERT(start_block_num > 0);
-    uint64_t finalized_block_num = start_block_num - 1;
+    MONAD_ASSERT(block_num > 0);
+    uint64_t finalized_block_num = block_num - 1;
 
     while (finalized_block_num < end_block_num && stop == 0) {
         to_finalize.clear();
@@ -650,10 +655,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &priority_pool,
              &last_finalized_block_number,
              chain_id,
-             start_block_num,
+             &is_first_block,
              enable_tracing,
              &block_cache,
-             secondary_db](
+             secondary_db,
+             runloop_override](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
             auto const block_time_start = std::chrono::steady_clock::now();
@@ -710,15 +716,18 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     db,
                     vm,
                     priority_pool,
-                    block_number == start_block_num,
+                    is_first_block,
                     enable_tracing,
                     block_cache,
-                    secondary_db);
+                    secondary_db,
+                    runloop_override);
                 MONAD_ABORT_PRINTF("handled rev value %d", rev);
             };
             BOOST_OUTCOME_TRY(
                 BlockExecOutput const exec_output,
                 record_block_result(propose_dispatch()));
+
+            is_first_block = false;
 
             db.update_proposed_metadata(header.seqno, block_id);
             if (secondary_db != nullptr) {

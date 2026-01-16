@@ -482,7 +482,7 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
 {
     auto const index = old->to_child_index(i);
     if (old->next(index)) { // in memory, infers cached
-        ptr = old->move_next(index);
+        ptr = old->next(index);
     }
     auto const old_data = old->child_data_view(index);
     memcpy(&data, old_data.data(), old_data.size());
@@ -536,7 +536,7 @@ Node::SharedPtr make_node(
     }
     auto const from_ptrs = from.child_next_data();
     for (unsigned i = 0; i < from_ptrs.size(); ++i) {
-        node_ptrs[i] = std::move(from_ptrs[i]);
+        node_ptrs[i] = from_ptrs[i];
     }
 
     return node;

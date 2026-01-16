@@ -55,7 +55,7 @@ Node::SharedPtr create_node_add_new_branch(
         else if (mask & bit) {
             auto &child = children[j];
             child.branch = (unsigned char)i;
-            child.ptr = node->move_next(old_j);
+            child.ptr = node->next(old_j);
             child.subtrie_min_version = node->subtrie_min_version(old_j);
             child.min_offsets = node->min_offsets(old_j);
             child.offset = node->fnext(old_j);

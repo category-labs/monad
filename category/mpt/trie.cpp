@@ -409,7 +409,7 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
     if (number_of_children == 1 && !orig->has_value()) {
         auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
         auto const child_index = orig->to_child_index(child_branch);
-        auto const single_child = orig->move_next(child_index);
+        auto const single_child = orig->next(child_index);
         if (!single_child) {
             node_receiver_t recv{
                 [aux = &aux,
@@ -509,7 +509,7 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
         MONAD_ASSERT(ver >= aux.curr_upsert_auto_expire_version);
         node_ver[j] = ver;
         if (tnode->cache_mask & (1u << orig_j)) {
-            node_ptrs[j] = std::exchange(orig_ptrs[orig_j], Node::SharedPtr{});
+            node_ptrs[j] = orig_ptrs[orig_j];
         }
         node->set_child_data(j, orig->child_data_view(orig_j));
     }
@@ -964,7 +964,7 @@ void dispatch_updates_impl_(
                     sm,
                     *tnode,
                     children[index],
-                    old->move_next(old->to_child_index(branch)),
+                    old->next(old->to_child_index(branch)),
                     old->fnext(old->to_child_index(branch)),
                     std::move(requests[branch]),
                     prefix_index + 1);
@@ -1274,7 +1274,7 @@ void compact_(
     auto const slow = compact_node.child_min_offset_slow_data();
     auto const ptrs = compact_node.child_next_data();
     for (unsigned j = 0; j < n; ++j) {
-        auto child_ptr = std::exchange(ptrs[j], Node::SharedPtr{});
+        auto const child_ptr = ptrs[j];
         compact_offset_pair const child_min_offsets{fast[j], slow[j]};
         if (sm.compact() && child_min_offsets.any_below(aux.compact_offsets)) {
             compact_(
@@ -1282,7 +1282,7 @@ void compact_(
                 sm,
                 *tnode,
                 j,
-                std::move(child_ptr),
+                child_ptr,
                 fnext[j],
                 child_min_offsets.fast_below(aux.compact_offsets));
         }

@@ -440,7 +440,9 @@ namespace monad::vm::llvm
                 case JumpI:
                 case FallThrough:
                     store_stack_top_p(stacktop_offset(stack_top, blk.delta));
+                    break;
                 default:
+                    break;
                 }
 
                 BasicBlock *fallthrough_lbl =
@@ -1701,9 +1703,9 @@ namespace monad::vm::llvm
             switch (op) {
             case SStore:
                 return ffi_runtime(instr, sstore<traits>);
+
             case PStore:
                 return ffi_runtime(instr, pstore<traits>);
-
 
             case Create:
                 return ffi_runtime(instr, create<traits>);
@@ -1737,9 +1739,9 @@ namespace monad::vm::llvm
 
             case SLoad:
                 return ffi_runtime(instr, sload<traits>);
+
             case PLoad:
                 return ffi_runtime(instr, pload<traits>);
-
 
             case BlobHash:
                 return ffi_runtime(instr, blobhash);
@@ -1803,6 +1805,7 @@ namespace monad::vm::llvm
                 default:
                     MONAD_VM_ASSERT(instr.index() == 4);
                     return ffi_runtime(instr, log4);
+                }
 
             case Address:
                 return load_context_addr(instr, context_offset_env_recipient);
@@ -1945,6 +1948,7 @@ namespace monad::vm::llvm
             default:
                 MONAD_VM_ASSERT(op == Add);
                 return llvm_binop(instr, &LLVMState::add);
-        };
+            }
+        }
     };
-};
+}

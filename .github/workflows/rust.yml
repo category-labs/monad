@@ -1,0 +1,104 @@
+name: Rust
+
+on:
+  merge_group:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: "*"
+    types: [ opened, synchronize, reopened, edited ]
+
+concurrency:
+  group: >
+    ${{
+      github.event_name == 'merge_group'
+      && format('merge-group-{0}-rust', github.run_id)
+      ||
+        github.event_name == 'pull_request'
+        && format('pr-{0}-rust', github.event.pull_request.number)
+        || format('push-{0}-rust', github.ref)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+  ASMFLAGS: -march=haswell
+  CC: gcc-15
+  CFLAGS: -march=haswell
+  CXX: g++-15
+  CXXFLAGS: -march=haswell
+  TRIEDB_TARGET: triedb_driver
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    container:
+      image: peach10.devcore4.com/category-labs/builder
+      options: --privileged -u 1000:1000
+
+    steps:
+      - name: Generate a token
+        id: generate_token
+        uses: tibdex/github-app-token@v1
+        with:
+          app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
+          private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
+          permissions: >-
+            {"contents": "read"}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ steps.generate_token.outputs.token }}
+      - run: rustup toolchain install nightly-2025-12-09 --profile minimal --component rustfmt
+      - run: rustup toolchain install 1.91.1-x86_64-unknown-linux-gnu --profile minimal --component clippy
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.15.7
+      - name: Install cargo-shear
+        run: cargo binstall --no-confirm cargo-shear
+      - name: Verify lockfile
+        run: cargo update --workspace --locked
+      - name: Lint unused dependencies
+        run: cargo shear
+      - name: Format
+        run: cargo +nightly-2025-12-09 fmt --all --check
+      - name: Lint
+        run: cargo clippy --all-targets --all-features --
+          -D clippy::suspicious
+          -D clippy::style
+          -D clippy::clone_on_copy
+          -D clippy::redundant_clone
+          -D clippy::iter_kv_map
+          -D clippy::iter_nth
+          -D clippy::unnecessary_cast
+          -D clippy::filter_next
+          -D clippy::needless_lifetimes
+          -D clippy::useless_conversion
+          -D clippy::useless_vec
+          -D clippy::needless_question_mark
+          -D clippy::bool_comparison
+          -D unused_imports
+          -D unused_parens
+          -D deprecated
+          -A clippy::type_complexity
+          -A clippy::int_plus_one
+          -A clippy::uninlined-format-args
+          -A clippy::enum-variant-names
+          -A clippy::mutable_key_type
+          -A clippy::large_enum_variant
+          -A clippy::doc-overindented-list-items
+      - name: Check
+        run: cargo check --all-targets --all-features
+      - name: Run tests
+        run: cargo test --release --all-targets --all-features
+      - name: Build docs
+        run: cargo doc
+      - name: Run doc tests
+        run: cargo test --release --doc --all-features
+

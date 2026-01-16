@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/compiler/ir/bound_inference.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
@@ -43,216 +44,405 @@ namespace
 {
     using monad::Traits;
 
+#ifdef COMPARE_BOUND_ANALYSIS
+    #define PRE_EMIT_HOOK(instr) \
+        auto const result_bound = \
+                bound_inference::compute_result_bound<instr, traits>(emit);
+
+    #define POST_EMIT_HOOK() \
+        auto tos = emit.get_stack().top(); \
+        if (!tos->literal()) { \
+            MONAD_VM_ASSERT(tos->bit_upper_bound() <= result_bound) \
+        }
+#else
+    #define PRE_EMIT_HOOK(instr)
+    #define POST_EMIT_HOOK()
+#endif
+
     template <Traits traits>
     void emit_instr(
         Emitter &emit, Instruction const &instr, int64_t remaining_base_gas)
     {
         using enum OpCode;
         switch (instr.opcode()) {
-        case Add:
+        case Add: {
+            PRE_EMIT_HOOK(Add);
             emit.add();
+            POST_EMIT_HOOK();
             break;
-        case Mul:
+        }
+        case Mul: {
+            PRE_EMIT_HOOK(Mul);
             emit.mul(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case Sub:
+        }
+
+        case Sub: {
+            PRE_EMIT_HOOK(Sub);
             emit.sub();
+            POST_EMIT_HOOK();
             break;
-        case Div:
+        }
+
+        case Div: {
+            PRE_EMIT_HOOK(Div);
             emit.udiv(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case SDiv:
+        }
+        case SDiv: {
+            PRE_EMIT_HOOK(SDiv);
             emit.sdiv(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case Mod:
+        }
+        case Mod: {
+            PRE_EMIT_HOOK(Mod);
             emit.umod(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case SMod:
+        }
+        case SMod: {
+            PRE_EMIT_HOOK(SMod);
             emit.smod(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case AddMod:
+        }
+        case AddMod: {
+            PRE_EMIT_HOOK(AddMod);
             emit.addmod(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case MulMod:
+        }
+        case MulMod: {
+            PRE_EMIT_HOOK(MulMod);
             emit.mulmod(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case Exp:
+        }
+        case Exp: {
+            PRE_EMIT_HOOK(Exp);
             emit.exp<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case SignExtend:
+        }
+        case SignExtend: {
+            PRE_EMIT_HOOK(SignExtend);
             emit.signextend();
+            POST_EMIT_HOOK();
             break;
-        case Lt:
+        }
+        case Lt: {
+            PRE_EMIT_HOOK(Lt);
             emit.lt();
+            POST_EMIT_HOOK();
             break;
-        case Gt:
+        }
+        case Gt: {
+            PRE_EMIT_HOOK(Gt);
             emit.gt();
+            POST_EMIT_HOOK();
             break;
-        case SLt:
+        }
+        case SLt: {
+            PRE_EMIT_HOOK(SLt);
             emit.slt();
+            POST_EMIT_HOOK();
             break;
-        case SGt:
+        }
+        case SGt: {
+            PRE_EMIT_HOOK(SGt);
             emit.sgt();
+            POST_EMIT_HOOK();
             break;
-        case Eq:
+        }
+        case Eq: {
+            PRE_EMIT_HOOK(Eq);
             emit.eq();
+            POST_EMIT_HOOK();
             break;
-        case IsZero:
+        }
+        case IsZero: {
+            PRE_EMIT_HOOK(IsZero);
             emit.iszero();
+            POST_EMIT_HOOK();
             break;
-        case And:
+        }
+        case And: {
+            PRE_EMIT_HOOK(And);
             emit.and_();
+            POST_EMIT_HOOK();
             break;
-        case Or:
+        }
+        case Or: {
+            PRE_EMIT_HOOK(Or);
             emit.or_();
+            POST_EMIT_HOOK();
             break;
-        case XOr:
+        }
+        case XOr: {
+            PRE_EMIT_HOOK(XOr);
             emit.xor_();
+            POST_EMIT_HOOK();
             break;
-        case Not:
+        }
+        case Not: {
+            PRE_EMIT_HOOK(Not);
             emit.not_();
+            POST_EMIT_HOOK();
             break;
-        case Byte:
+        }
+        case Byte: {
+            PRE_EMIT_HOOK(Byte);
             emit.byte();
+            POST_EMIT_HOOK();
             break;
-        case Shl:
+        }
+        case Shl: {
+            PRE_EMIT_HOOK(Shl);
             emit.shl();
+            POST_EMIT_HOOK();
             break;
-        case Shr:
+        }
+        case Shr: {
+            PRE_EMIT_HOOK(Shr);
             emit.shr();
+            POST_EMIT_HOOK();
             break;
-        case Sar:
+        }
+        case Sar: {
+            PRE_EMIT_HOOK(Sar);
             emit.sar();
+            POST_EMIT_HOOK();
             break;
-        case Clz:
+        }
+        case Clz: {
+            PRE_EMIT_HOOK(Clz);
             emit.clz();
+            POST_EMIT_HOOK();
             break;
-        case Sha3:
+        }
+        case Sha3: {
+            PRE_EMIT_HOOK(Sha3);
             emit.sha3<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case Address:
+        }
+        case Address: {
+            PRE_EMIT_HOOK(Address);
             emit.address();
+            POST_EMIT_HOOK();
             break;
-        case Balance:
+        }
+        case Balance: {
+            PRE_EMIT_HOOK(Balance);
             emit.balance<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case Origin:
+        }
+        case Origin: {
+            PRE_EMIT_HOOK(Origin);
             emit.origin();
+            POST_EMIT_HOOK();
             break;
-        case Caller:
+        }
+        case Caller: {
+            PRE_EMIT_HOOK(Caller);
             emit.caller();
+            POST_EMIT_HOOK();
             break;
-        case CallValue:
+        }
+        case CallValue: {
+            PRE_EMIT_HOOK(CallValue);
             emit.callvalue();
+            POST_EMIT_HOOK();
             break;
-        case CallDataLoad:
+        }
+        case CallDataLoad: {
+            PRE_EMIT_HOOK(CallDataLoad);
             emit.calldataload();
+            POST_EMIT_HOOK();
             break;
-        case CallDataSize:
+        }
+        case CallDataSize: {
+            PRE_EMIT_HOOK(CallDataSize);
             emit.calldatasize();
+            POST_EMIT_HOOK();
             break;
+        }
         case CallDataCopy:
             emit.calldatacopy<traits>(remaining_base_gas);
             break;
-        case CodeSize:
+        case CodeSize: {
+            PRE_EMIT_HOOK(CodeSize);
             emit.codesize();
+            POST_EMIT_HOOK();
             break;
+        }
         case CodeCopy:
             emit.codecopy<traits>(remaining_base_gas);
             break;
-        case GasPrice:
+        case GasPrice: {
+            PRE_EMIT_HOOK(GasPrice);
             emit.gasprice();
+            POST_EMIT_HOOK();
             break;
-        case ExtCodeSize:
+        }
+        case ExtCodeSize: {
+            PRE_EMIT_HOOK(ExtCodeSize);
             emit.extcodesize<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
+        }
         case ExtCodeCopy:
             emit.extcodecopy<traits>(remaining_base_gas);
             break;
-        case ReturnDataSize:
+        case ReturnDataSize: {
+            PRE_EMIT_HOOK(ReturnDataSize);
             emit.returndatasize();
+            POST_EMIT_HOOK();
             break;
+        }
         case ReturnDataCopy:
             emit.returndatacopy<traits>(remaining_base_gas);
             break;
-        case ExtCodeHash:
+        case ExtCodeHash: {
+            PRE_EMIT_HOOK(ExtCodeHash);
             emit.extcodehash<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case BlockHash:
+        }
+        case BlockHash: {
+            PRE_EMIT_HOOK(BlockHash);
             emit.blockhash<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case Coinbase:
+        }
+        case Coinbase: {
+            PRE_EMIT_HOOK(Coinbase);
             emit.coinbase();
+            POST_EMIT_HOOK();
             break;
-        case Timestamp:
+        }
+        case Timestamp: {
+            PRE_EMIT_HOOK(Timestamp);
             emit.timestamp();
+            POST_EMIT_HOOK();
             break;
-        case Number:
+        }
+        case Number: {
+            PRE_EMIT_HOOK(Number);
             emit.number();
+            POST_EMIT_HOOK();
             break;
-        case Difficulty:
+        }
+        case Difficulty: {
+            PRE_EMIT_HOOK(Difficulty);
             emit.prevrandao();
+            POST_EMIT_HOOK();
             break;
-        case GasLimit:
+        }
+        case GasLimit: {
+            PRE_EMIT_HOOK(GasLimit);
             emit.gaslimit();
+            POST_EMIT_HOOK();
             break;
-        case ChainId:
+        }
+        case ChainId: {
+            PRE_EMIT_HOOK(ChainId);
             emit.chainid();
+            POST_EMIT_HOOK();
             break;
-        case SelfBalance:
+        }
+        case SelfBalance: {
+            PRE_EMIT_HOOK(SelfBalance);
             emit.selfbalance<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case BaseFee:
+        }
+        case BaseFee: {
+            PRE_EMIT_HOOK(BaseFee);
             emit.basefee();
+            POST_EMIT_HOOK();
             break;
-        case BlobHash:
+        }
+        case BlobHash: {
+            PRE_EMIT_HOOK(BlobHash);
             emit.blobhash<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case BlobBaseFee:
+        }
+        case BlobBaseFee: {
+            PRE_EMIT_HOOK(BlobBaseFee);
             emit.blobbasefee();
+            POST_EMIT_HOOK();
             break;
+        }
         case Pop:
             emit.pop();
             break;
-        case MLoad:
+        case MLoad: {
+            PRE_EMIT_HOOK(MLoad);
             emit.mload();
+            POST_EMIT_HOOK();
             break;
+        }
         case MStore:
             emit.mstore();
             break;
         case MStore8:
             emit.mstore8();
             break;
-        case SLoad:
+        case SLoad: {
+            PRE_EMIT_HOOK(SLoad);
             emit.sload<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
+        }
         case SStore:
             emit.sstore<traits>(remaining_base_gas);
             break;
-        case Pc:
+        case Pc: {
+            PRE_EMIT_HOOK(Pc);
             emit.push(instr.pc());
+            POST_EMIT_HOOK();
             break;
-        case MSize:
+        }
+        case MSize: {
+            PRE_EMIT_HOOK(MSize);
             emit.msize();
+            POST_EMIT_HOOK();
             break;
-        case Gas:
+        }
+        case Gas: {
+            PRE_EMIT_HOOK(Gas);
             emit.gas(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case TLoad:
+        }
+        case TLoad: {
+            PRE_EMIT_HOOK(TLoad);
             emit.tload<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
+        }
         case TStore:
             emit.tstore<traits>(remaining_base_gas);
             break;
         case MCopy:
             emit.mcopy<traits>(remaining_base_gas);
             break;
-        case Push:
+        case Push: {
+            PRE_EMIT_HOOK(Push);
             emit.push(instr.immediate_value());
+            POST_EMIT_HOOK();
             break;
-        case Dup:
+        }
+        case Dup: {
             emit.dup(instr.index());
             break;
+        }
         case Swap:
             emit.swap(instr.index());
             break;
@@ -277,24 +467,42 @@ namespace
                 MONAD_VM_ASSERT(false);
             }
             break;
-        case Create:
+        case Create: {
+            PRE_EMIT_HOOK(Create);
             emit.create<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case Call:
+        }
+        case Call: {
+            PRE_EMIT_HOOK(Call);
             emit.call<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case CallCode:
+        }
+        case CallCode: {
+            PRE_EMIT_HOOK(CallCode);
             emit.callcode<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case DelegateCall:
+        }
+        case DelegateCall: {
+            PRE_EMIT_HOOK(DelegateCall);
             emit.delegatecall<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case Create2:
+        }
+        case Create2: {
+            PRE_EMIT_HOOK(Create2);
             emit.create2<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
-        case StaticCall:
+        }
+        case StaticCall: {
+            PRE_EMIT_HOOK(StaticCall);
             emit.staticcall<traits>(remaining_base_gas);
+            POST_EMIT_HOOK();
             break;
+        }
         }
     }
 
@@ -309,14 +517,15 @@ namespace
     }
 
     [[gnu::always_inline]]
-    inline void
-    post_instruction_emit(Emitter &emit, CompilerConfig const &config)
+    inline void post_instruction_emit(
+        Emitter &emit, Instruction const &instr, CompilerConfig const &config)
     {
         (void)emit;
+        (void)instr;
         (void)config;
 #ifdef MONAD_COMPILER_TESTING
         if (config.post_instruction_emit_hook) {
-            config.post_instruction_emit_hook(emit);
+            config.post_instruction_emit_hook(emit, instr);
         }
 #endif
     }
@@ -333,7 +542,7 @@ namespace
             remaining_base_gas -= instr.static_gas_cost();
             emit_instr<traits>(emit, instr, remaining_base_gas);
             require_code_size_in_bound(emit, max_native_size);
-            post_instruction_emit(emit, config);
+            post_instruction_emit(emit, instr, config);
         }
     }
 

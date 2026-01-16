@@ -233,6 +233,7 @@ namespace monad::vm::compiler::native
         void checked_debug_comment(std::string const &msg);
         void swap_general_regs(StackElem &, StackElem &);
         void swap_general_reg_indices(GeneralReg, uint8_t, uint8_t);
+        void assert_runtime_result_bound(StackElemRef);
 
         uint32_t exponential_constant_fold_counter() const
         {
@@ -354,6 +355,8 @@ namespace monad::vm::compiler::native
         template <typename T, size_t N>
         void array_leading_zeros(std::array<T, N> const &);
         template <typename T, size_t N>
+        void array_bit_width(std::array<T, N> const &);
+        template <typename T, size_t N>
         void array_byte_width(std::array<T, N> const &);
 
         bool exp_optimized(int64_t, uint32_t);
@@ -409,6 +412,7 @@ namespace monad::vm::compiler::native
         {
             call_runtime(
                 remaining_base_gas, true, runtime::extcodesize<traits>);
+            stack_.top()->set_bit_upper_bound(32);
         }
 
         template <Traits traits>
@@ -513,18 +517,21 @@ namespace monad::vm::compiler::native
         void create(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::create<traits>);
+            stack_.top()->set_bit_upper_bound(160);
         }
 
         template <Traits traits>
         void call(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::call<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
         void callcode(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::callcode<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
@@ -532,18 +539,21 @@ namespace monad::vm::compiler::native
         {
             call_runtime(
                 remaining_base_gas, true, runtime::delegatecall<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
         void create2(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::create2<traits>);
+            stack_.top()->set_bit_upper_bound(160);
         }
 
         template <Traits traits>
         void staticcall(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::staticcall<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>

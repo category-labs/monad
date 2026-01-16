@@ -450,7 +450,7 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
 {
     auto const index = old->to_child_index(i);
     if (old->next(index)) { // in memory, infers cached
-        ptr = old->move_next(index);
+        ptr = old->next(index);
     }
     auto const old_data = old->child_data_view(index);
     memcpy(&data, old_data.data(), old_data.size());
@@ -503,7 +503,7 @@ Node::SharedPtr make_node(
         new (node->child_ptr(i)) Node::SharedPtr();
     }
     for (unsigned i = 0; i < from.number_of_children(); ++i) {
-        node->set_next(i, from.move_next(i));
+        node->set_next(i, from.next(i));
     }
 
     return node;

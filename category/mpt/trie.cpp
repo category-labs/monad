@@ -360,7 +360,7 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
     if (number_of_children == 1 && !orig->has_value()) {
         auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
         auto const child_index = orig->to_child_index(child_branch);
-        auto single_child = orig->move_next(child_index);
+        auto single_child = orig->next(child_index);
         if (!single_child) {
             node_receiver_t recv{
                 [aux = &aux,
@@ -457,7 +457,7 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
             aux.curr_upsert_auto_expire_version);
         node->set_subtrie_min_version(j, orig->subtrie_min_version(orig_j));
         if (tnode->cache_mask & (1u << orig_j)) {
-            node->set_next(j, orig->move_next(orig_j));
+            node->set_next(j, orig->next(orig_j));
         }
         node->set_child_data(j, orig->child_data_view(orig_j));
     }
@@ -919,7 +919,7 @@ void dispatch_updates_impl_(
                     sm,
                     *tnode,
                     children[index],
-                    old->move_next(old->to_child_index(branch)),
+                    old->next(old->to_child_index(branch)),
                     old->fnext(old->to_child_index(branch)),
                     std::move(requests)[branch],
                     prefix_index + 1);
@@ -1143,15 +1143,15 @@ void expire_(
     for (auto const [index, branch] : NodeChildrenRange(node.mask)) {
         if (node.subtrie_min_version(index) <
             aux.curr_upsert_auto_expire_version) {
-            auto child_tnode = ExpireTNode::make(
-                tnode.get(), branch, index, node.move_next(index));
+            auto child_tnode =
+                ExpireTNode::make(tnode.get(), branch, index, node.next(index));
             expire_(aux, sm, std::move(child_tnode), node.fnext(index));
         }
         else if (
             node.min_offset_fast(index) < aux.compact_offset_fast ||
             node.min_offset_slow(index) < aux.compact_offset_slow) {
             auto child_tnode =
-                CompactTNode::make(tnode.get(), index, node.move_next(index));
+                CompactTNode::make(tnode.get(), index, node.next(index));
             compact_(
                 aux,
                 sm,
@@ -1311,8 +1311,7 @@ void compact_(
     for (unsigned j = 0; j < node.number_of_children(); ++j) {
         if (node.min_offset_fast(j) < aux.compact_offset_fast ||
             node.min_offset_slow(j) < aux.compact_offset_slow) {
-            auto child_tnode =
-                CompactTNode::make(tnode.get(), j, node.move_next(j));
+            auto child_tnode = CompactTNode::make(tnode.get(), j, node.next(j));
             compact_(
                 aux,
                 sm,

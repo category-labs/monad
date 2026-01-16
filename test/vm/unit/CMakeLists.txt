@@ -23,6 +23,7 @@ target_sources(vm-unit-tests PRIVATE
     compiler_tests.cpp
     evm-as_tests.cpp
     monad_vm_interface_tests.cpp
+    monad_vm_memory_pool_tests.cpp
     utils_tests.cpp
     uint256_tests.cpp
     non_temporal_memory_tests.cpp

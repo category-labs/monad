@@ -20,6 +20,7 @@
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
 
 #ifdef MONAD_COMPILER_LLVM
@@ -68,11 +69,12 @@ template <bool instrument>
 class InstrumentableVM : public evmc_vm
 {
     monad::vm::runtime::EvmStackAllocator stack_allocator;
-    monad::vm::runtime::EvmMemoryAllocator memory_allocator;
+    monad::vm::MemoryPool memory_pool_;
 
 public:
     InstrumentableVM(asmjit::JitRuntime &rt)
         : evmc_vm{EVMC_ABI_VERSION, "monad-compiler-x86-microbenchmark-engine", "0.0.0", abi_compat::destroy, abi_compat::execute, abi_compat::get_capabilities, nullptr}
+        , memory_pool_{8 * 1024 * 1024}
         , rt_(rt)
     {
     }
@@ -94,6 +96,7 @@ public:
     {
         using namespace evmone::state;
 
+        auto msg_memory = memory_pool_.alloc_ref();
         auto msg = new evmc_message{
             .kind = EVMC_CALL,
             .flags = 0,
@@ -106,9 +109,9 @@ public:
             .value = {},
             .create2_salt = {},
             .code_address = {},
-            .memory_handle = nullptr,
-            .memory = nullptr,
-            .memory_capacity = 0,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = memory_pool_.alloc_capacity(),
         };
 
         auto vm = evmc::VM(this);
@@ -127,8 +130,8 @@ public:
         std::vector<uint8_t> empty_code{};
         auto code_span = std::span<uint8_t const>{empty_code.data(), 0};
 
-        auto ctx = vm::runtime::Context::from(
-            memory_allocator, interface, context, msg, code_span);
+        auto ctx =
+            vm::runtime::Context::from(interface, context, msg, code_span);
 
         auto stack_ptr = stack_allocator.allocate();
 

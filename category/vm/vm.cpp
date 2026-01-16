@@ -38,7 +38,7 @@ namespace monad::vm
     VM::VM(bool enable_async)
         : compiler_{enable_async}
         , stack_allocator_{}
-        , memory_allocator_{}
+        , memory_pool_{8 * 1024 * 1024}
     {
     }
 
@@ -50,8 +50,8 @@ namespace monad::vm
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
         auto const &icode = vcode->intercode();
-        auto rt_ctx = runtime::Context::from(
-            memory_allocator_, host_itf, host_ctx, msg, icode->code_span());
+        auto rt_ctx =
+            runtime::Context::from(host_itf, host_ctx, msg, icode->code_span());
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
@@ -76,8 +76,7 @@ namespace monad::vm
     {
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
-        auto rt_ctx = runtime::Context::from(
-            memory_allocator_, host_itf, host_ctx, msg, code);
+        auto rt_ctx = runtime::Context::from(host_itf, host_ctx, msg, code);
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);

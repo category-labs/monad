@@ -17,7 +17,6 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
-#include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -59,6 +58,7 @@ extern "C" void monad_vm_runtime_increase_capacity(
 
     auto *const new_handle =
         static_cast<uint8_t *>(std::aligned_alloc(32, *new_total_capacity));
+    MONAD_VM_ASSERT(new_handle);
 
     non_temporal_memcpy(new_handle, ctx->memory.data_handle, *old_total_size);
     non_temporal_bzero(
@@ -82,9 +82,8 @@ namespace monad::vm::runtime
     }
 
     Context Context::from(
-        EvmMemoryAllocator alloc, evmc_host_interface const *host,
-        evmc_host_context *context, evmc_message const *msg,
-        std::span<std::uint8_t const> code) noexcept
+        evmc_host_interface const *host, evmc_host_context *context,
+        evmc_message const *msg, std::span<std::uint8_t const> code) noexcept
     {
         return Context{
             .host = host,
@@ -109,12 +108,14 @@ namespace monad::vm::runtime
                     .tx_context = host->get_tx_context(context),
                 },
             .result = {},
-            .memory = Memory(
-                alloc, msg->memory_handle, msg->memory, msg->memory_capacity),
+            .memory =
+                Memory(msg->memory_handle, msg->memory, msg->memory_capacity),
         };
     }
 
-    Context Context::empty() noexcept
+    Context Context::empty(
+        std::uint8_t *const memory_handle,
+        std::uint32_t memory_capacity) noexcept
     {
         return Context{
             .host = nullptr,
@@ -138,7 +139,7 @@ namespace monad::vm::runtime
                     .tx_context = {},
                 },
             .result = {},
-            .memory = Memory(EvmMemoryAllocator{}, nullptr, nullptr, 0),
+            .memory = Memory(memory_handle, memory_handle, memory_capacity),
         };
     }
 

@@ -48,7 +48,9 @@ using RevertTransactionFn = std::function<bool(
 template <Traits traits>
 class ExecuteTransactionNoValidation
 {
-    evmc_message to_message() const;
+    evmc_message to_message(
+        vm::MemoryPool::Ref &msg_memory,
+        std::uint32_t msg_memory_capacity) const;
 
     uint64_t process_authorizations(State &, EvmcHost<traits> &);
 

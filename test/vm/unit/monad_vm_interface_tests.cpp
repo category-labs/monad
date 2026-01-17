@@ -58,7 +58,7 @@ namespace
     make_bytecode_with_compilation_failure()
     {
         std::vector<uint8_t> bytecode{PUSH4, 0, 0, 0, 0, JUMP, JUMPDEST};
-        for (size_t i = 0; i < 150; ++i) {
+        for (size_t i = 0; i < 600; ++i) {
             bytecode.push_back(JUMPI);
         }
         bytecode.push_back(JUMPDEST);

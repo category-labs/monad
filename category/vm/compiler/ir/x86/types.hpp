@@ -137,7 +137,7 @@ namespace monad::vm::compiler::native
         char const *asm_log_path{};
         bool runtime_debug_trace{};
         interpreter::code_size_t max_code_size_offset =
-            monad::vm::runtime::bin<10 * 1024>;
+            monad::vm::runtime::bin<32 * 1024>;
         EmitterHook post_instruction_emit_hook{};
     };
 }

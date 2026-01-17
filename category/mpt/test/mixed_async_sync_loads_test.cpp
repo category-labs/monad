@@ -14,16 +14,20 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test_fixtures_gtest.hpp"
-#include <category/async/erased_connected_operation.hpp>
-#include <category/mpt/find_request_sender.hpp>
 
+#include <category/async/connected_operation.hpp>
+#include <category/async/erased_connected_operation.hpp>
+#include <category/core/assert.h>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/mpt/config.hpp>
+#include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/test/test_fixtures_base.hpp>
 #include <category/mpt/trie.hpp>
 
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
-
-#include <iostream>
-#include <ostream>
+#include <memory>
+#include <optional>
+#include <utility>
 
 using namespace MONAD_MPT_NAMESPACE;
 
@@ -57,10 +61,10 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
 {
     // Make a new empty DB
     monad::test::UpdateAux<void> aux{state()->io};
-    monad::test::StateMachineAlwaysMerkle sm;
+    monad::test::StateMachineAlwaysMerkle const sm;
     // Load its root
     auto const latest_version = aux.db_history_max_version();
-    monad::mpt::Node::SharedPtr root{monad::mpt::read_node_blocking(
+    monad::mpt::Node::SharedPtr const root{monad::mpt::read_node_blocking(
         aux, aux.get_root_offset_at_version(latest_version), latest_version)};
     auto const &key = state()->keys.front().first;
     auto const &value = state()->keys.front().first;
@@ -69,7 +73,8 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     monad::mpt::AsyncInflightNodes inflights;
     monad::mpt::NodeCache node_cache{
         1000 * monad::mpt::NodeCache::AVERAGE_NODE_SIZE};
-    std::shared_ptr<Node> cache_root = root;
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+    std::shared_ptr<Node> const cache_root = root;
     auto state = monad::async::connect(
         monad::mpt::find_request_sender<>(
             aux,

@@ -20,6 +20,7 @@
 #include <cstdint>
 
 #include <cstring>
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #ifdef MONAD_COMPILER_TESTING

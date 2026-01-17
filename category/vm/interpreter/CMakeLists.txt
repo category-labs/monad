@@ -73,6 +73,8 @@ endif()
 
 target_include_directories(monad-vm-interpreter
     PUBLIC src/
+    PUBLIC ${CATEGORY_MAIN_DIR}
+    PUBLIC ${CATEGORY_MAIN_DIR}/third_party/unordered_dense/include
 )
 
 target_link_libraries(monad-vm-interpreter

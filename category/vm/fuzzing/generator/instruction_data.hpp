@@ -77,7 +77,8 @@ namespace monad::vm::fuzzing
         CODECOPY, EXTCODECOPY, EXTCODEHASH, EXTCODESIZE,  LOG0,
         LOG1,     LOG2,        LOG3,        LOG4,         MCOPY,
         MLOAD,    MSTORE,      MSTORE8,     SELFBALANCE,  SHA3,
-        SLOAD,    SSTORE,      TLOAD,       TSTORE,
+        SLOAD,    SSTORE,      PLOAD,       PSTORE,       TLOAD,
+        TSTORE,
     };
 
     // Note DIFFICULTY == PREVRANDAO

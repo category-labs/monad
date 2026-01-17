@@ -462,6 +462,18 @@ namespace monad::vm::compiler::native
         }
 
         template <Traits traits>
+        void pload(int64_t remaining_base_gas)
+        {
+            call_runtime(remaining_base_gas, true, runtime::pload<traits>);
+        }
+
+        template <Traits traits>
+        void pstore(int64_t remaining_base_gas)
+        {
+            call_runtime(remaining_base_gas, true, runtime::pstore<traits>);
+        }
+
+        template <Traits traits>
         void tload(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::tload);

@@ -98,6 +98,11 @@ public:
     virtual void set_transient_storage(
         Address const &, bytes32_t const &key,
         bytes32_t const &value) noexcept override;
+    bytes4k_t
+    get_block_storage(Address const &, bytes32_t const &key) const noexcept;
+
+    void set_block_storage(
+        Address const &, bytes32_t const &key, bytes4k_t const &value) noexcept;
 };
 
 static_assert(sizeof(EvmcHostBase) == 88);

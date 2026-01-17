@@ -58,7 +58,7 @@ namespace
     make_bytecode_with_compilation_failure()
     {
         std::vector<uint8_t> bytecode{PUSH4, 0, 0, 0, 0, JUMP, JUMPDEST};
-        for (size_t i = 0; i < 150; ++i) {
+        for (size_t i = 0; i < 600; ++i) {
             bytecode.push_back(JUMPI);
         }
         bytecode.push_back(JUMPDEST);
@@ -276,8 +276,8 @@ TEST(MonadVmInterface, compile)
     auto ctx1 = runtime::Context::empty();
     entry1(&ctx1, nullptr);
 
-    ASSERT_EQ(uint256_t::load_le(ctx1.result.size), 0);
-    ASSERT_EQ(uint256_t::load_le(ctx1.result.offset), 1);
+    ASSERT_EQ(compiler::uint256_t::load_le(ctx1.result.size), 0);
+    ASSERT_EQ(compiler::uint256_t::load_le(ctx1.result.offset), 1);
 
     ASSERT_FALSE(vm.find_varcode(hash1).has_value());
 }
@@ -297,8 +297,8 @@ TEST(MonadVmInterface, cached_compile)
     auto ctx1 = runtime::Context::empty();
     entry1(&ctx1, nullptr);
 
-    ASSERT_EQ(uint256_t::load_le(ctx1.result.size), 0);
-    ASSERT_EQ(uint256_t::load_le(ctx1.result.offset), 1);
+    ASSERT_EQ(compiler::uint256_t::load_le(ctx1.result.size), 0);
+    ASSERT_EQ(compiler::uint256_t::load_le(ctx1.result.offset), 1);
 
     auto vcode1 = vm.find_varcode(hash1);
     ASSERT_TRUE(vcode1.has_value());
@@ -328,8 +328,8 @@ TEST(MonadVmInterface, async_compile)
             ASSERT_NE(entry1, nullptr);
             auto ctx1 = runtime::Context::empty();
             entry1(&ctx1, nullptr);
-            ASSERT_EQ(uint256_t::load_le(ctx1.result.size), 0);
-            ASSERT_EQ(uint256_t::load_le(ctx1.result.offset), 1);
+            ASSERT_EQ(compiler::uint256_t::load_le(ctx1.result.size), 0);
+            ASSERT_EQ(compiler::uint256_t::load_le(ctx1.result.offset), 1);
         }
         else {
             ASSERT_EQ(entry1, nullptr);

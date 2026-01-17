@@ -21,9 +21,38 @@
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
+#include <category/core/bytes.hpp>
 #include <evmc/evmc.hpp>
 
 #include <array>
+#include <cstring>
+
+// Forward declarations for block storage types
+namespace evmc
+{
+    struct address;
+    struct bytes32;
+}
+
+namespace monad
+{
+    using Address = ::evmc::address;
+    struct bytes4k_t;
+}
+
+namespace monad::vm::runtime
+{
+    void set_block_storage_from_context(
+        evmc_host_context *context, monad::Address const &recipient,
+        monad::bytes32_t const &key, monad::bytes4k_t const &value);
+
+#ifdef MONAD_COMPILER_TESTING
+    void clear_test_block_storage();
+#endif
+    monad::bytes4k_t get_block_storage_from_context(
+        evmc_host_context *context, monad::Address const &recipient,
+        monad::bytes32_t const &key);
+}
 
 namespace monad::vm::runtime
 {
@@ -93,6 +122,75 @@ namespace monad::vm::runtime
 
         ctx->gas_refund += gas_refund;
         ctx->deduct_gas(gas_used);
+    }
+
+    template <Traits traits>
+    void
+    pload(Context *ctx, uint256_t const *key_ptr, uint256_t const *offset_ptr)
+    {
+        auto key = bytes32_from_uint256(*key_ptr);
+        auto const offset = ctx->get_memory_offset(*offset_ptr);
+
+        // Expand memory to accommodate 4KB
+        ctx->expand_memory(offset + bin<4096>);
+
+        if constexpr (traits::eip_2929_active()) {
+            auto const access_status = ctx->host->access_storage(
+                ctx->context, &ctx->env.recipient, &key);
+            if (access_status == EVMC_ACCESS_COLD) {
+                ctx->deduct_gas(traits::cold_storage_cost());
+            }
+        }
+        auto const value = get_block_storage_from_context(
+            ctx->context, ctx->env.recipient, key);
+
+        // Copy 4KB to memory
+        std::memcpy(
+            ctx->memory.data + *offset, value.bytes, sizeof(value.bytes));
+    }
+
+    template <Traits traits>
+    void pstore(
+        Context *ctx, uint256_t const *key_ptr, uint256_t const *offset_ptr,
+        std::int64_t remaining_block_base_gas)
+    {
+        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
+            ctx->exit(StatusCode::Error);
+        }
+
+        constexpr auto min_gas = minimum_store_gas<traits>();
+
+        // EIP-2200
+        if constexpr (traits::evm_rev() >= EVMC_ISTANBUL) {
+            if (ctx->gas_remaining + remaining_block_base_gas + min_gas <=
+                2300) {
+                ctx->exit(StatusCode::OutOfGas);
+            }
+        }
+
+        auto key = bytes32_from_uint256(*key_ptr);
+        auto const offset = ctx->get_memory_offset(*offset_ptr);
+
+        // Expand memory to read 4KB
+        ctx->expand_memory(offset + bin<4096>);
+
+        if constexpr (traits::eip_2929_active()) {
+            auto const access_status = ctx->host->access_storage(
+                ctx->context, &ctx->env.recipient, &key);
+            if (access_status == EVMC_ACCESS_COLD) {
+                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+            }
+        }
+
+        // Read 4KB from memory
+        bytes4k_t value;
+        std::memcpy(
+            value.bytes, ctx->memory.data + *offset, sizeof(value.bytes));
+
+        set_block_storage_from_context(
+            ctx->context, ctx->env.recipient, key, value);
+
+        ctx->deduct_gas(min_gas);
     }
 
     inline void

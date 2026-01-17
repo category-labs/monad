@@ -303,8 +303,8 @@ TYPED_TEST(VMTraitsTest, DupStackOverflow)
 TYPED_TEST(VMTraitsTest, NativeCodeSizeOutOfBound)
 {
     std::vector<uint8_t> bytecode;
-    CompilerConfig const config{.max_code_size_offset = runtime::bin<1024>};
-    uint32_t n_jumpi = 20;
+    CompilerConfig const config{.max_code_size_offset = runtime::bin<8 * 1024>};
+    uint32_t n_jumpi = 150;
     for (size_t i = 0; i < n_jumpi; ++i) {
         bytecode.push_back(JUMPI);
     }

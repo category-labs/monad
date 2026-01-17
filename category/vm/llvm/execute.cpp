@@ -96,6 +96,7 @@ namespace monad::vm::llvm
             "ffi_llvm_runtime_debug_i32", (void *)llvm_runtime_debug_i32);
 
         llvm.insert_symbol("ffi_SSTORE", (void *)sstore<traits>);
+        llvm.insert_symbol("ffi_PSTORE", (void *)pstore<traits>);
         llvm.insert_symbol("ffi_CREATE", (void *)create<traits>);
         llvm.insert_symbol("ffi_CREATE2", (void *)create2<traits>);
         llvm.insert_symbol("ffi_DELEGATECALL", (void *)delegatecall<traits>);
@@ -107,6 +108,7 @@ namespace monad::vm::llvm
         llvm.insert_symbol("ffi_EXTCODEHASH", (void *)extcodehash<traits>);
         llvm.insert_symbol("ffi_EXTCODESIZE", (void *)extcodesize<traits>);
         llvm.insert_symbol("ffi_SLOAD", (void *)sload<traits>);
+        llvm.insert_symbol("ffi_PLOAD", (void *)pload<traits>);
         llvm.insert_symbol("ffi_BLOBHASH", (void *)blobhash);
         llvm.insert_symbol("ffi_BLOCKHASH", (void *)blockhash);
         llvm.insert_symbol("ffi_TLOAD", (void *)tload);

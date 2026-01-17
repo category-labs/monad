@@ -241,6 +241,8 @@ namespace monad::vm::compiler
         LOG2 = 0xA2,
         LOG3 = 0xA3,
         LOG4 = 0xA4,
+        PLOAD = 0xDE,
+        PSTORE = 0xDF,
         CREATE = 0xF0,
         CALL = 0xF1,
         CALLCODE = 0xF2,
@@ -529,9 +531,9 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
-            unknown_opcode_info,
-            unknown_opcode_info,
 
+            OpCodeInfo{"PLOAD", 0, 2, 0, true, 50, 0}, // 0xDE,
+            OpCodeInfo{"PSTORE", 0, 2, 0, true, 5000, 0}, // 0xDF,
             unknown_opcode_info, // 0xE0
             unknown_opcode_info,
             unknown_opcode_info,

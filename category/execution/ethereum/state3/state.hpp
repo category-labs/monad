@@ -143,6 +143,8 @@ public:
     evmc_storage_status
     set_storage(Address const &, bytes32_t const &key, bytes32_t const &value);
 
+    void set_block_storage(
+        Address const &, bytes32_t const &key, bytes4k_t const &value);
     void set_transient_storage(
         Address const &, bytes32_t const &key, bytes32_t const &value);
 

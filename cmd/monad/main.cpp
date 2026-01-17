@@ -14,9 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "event.hpp"
-#include "runloop_ethereum.hpp"
-#include "runloop_monad.hpp"
-#include "runloop_monad_ethblocks.hpp"
 
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
@@ -43,6 +40,9 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/runloop/runloop_ethereum.hpp>
+#include <category/execution/runloop/runloop_monad.hpp>
+#include <category/execution/runloop/runloop_monad_ethblocks.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>

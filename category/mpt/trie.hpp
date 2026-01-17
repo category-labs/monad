@@ -31,6 +31,7 @@
 
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
+#include <category/mpt/fiber_write_utils.hpp>
 
 #include <category/core/tl_tid.h>
 
@@ -64,45 +65,6 @@ concept lockable_or_void = std::is_void_v<T> || requires(T x) {
 };
 
 class Node;
-
-struct write_operation_io_receiver
-{
-    size_t should_be_written;
-
-    // Node *parent{nullptr};
-
-    explicit constexpr write_operation_io_receiver(
-        size_t const should_be_written_)
-        : should_be_written(should_be_written_)
-    {
-    }
-
-    void set_value(
-        MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
-        MONAD_ASYNC_NAMESPACE::write_single_buffer_sender::result_type res)
-    {
-        MONAD_ASSERT(res);
-        MONAD_ASSERT(res.assume_value().get().size() == should_be_written);
-        res.assume_value()
-            .get()
-            .reset(); // release i/o buffer before initiating other work
-        // TODO: when adding upsert_sender
-        // if (parent->current_process_updates_sender_ != nullptr) {
-        //     parent->current_process_updates_sender_
-        //         ->notify_write_operation_completed_(rawstate);
-        // }
-    }
-
-    void reset(size_t const should_be_written_)
-    {
-        should_be_written = should_be_written_;
-    }
-};
-
-using node_writer_unique_ptr_type =
-    MONAD_ASYNC_NAMESPACE::AsyncIO::connected_operation_unique_ptr_type<
-        MONAD_ASYNC_NAMESPACE::write_single_buffer_sender,
-        write_operation_io_receiver>;
 
 using MONAD_ASYNC_NAMESPACE::receiver;
 
@@ -176,8 +138,7 @@ async_write_node_set_spare(UpdateAuxImpl &, Node &, bool is_fast);
 chunk_offset_t
 write_new_root_node(UpdateAuxImpl &, Node &root, uint64_t version);
 
-node_writer_unique_ptr_type
-replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
+void flush_buffered_writes(UpdateAuxImpl &);
 
 // \class Auxiliaries for triedb update
 class UpdateAuxImpl
@@ -192,7 +153,7 @@ class UpdateAuxImpl
     } db_metadata_[2]; // two copies, to prevent sudden process
                        // exits making the DB irretrievable
 
-    void reset_node_writers();
+    void init_disk_growth_tracking();
 
     void advance_compact_offsets();
 
@@ -403,8 +364,26 @@ public:
 
     // On disk stuff
     MONAD_ASYNC_NAMESPACE::AsyncIO *io{nullptr};
-    node_writer_unique_ptr_type node_writer_fast{};
-    node_writer_unique_ptr_type node_writer_slow{};
+
+    // Fiber write buffers for fiber-based upsert. Initialized in
+    // setup_fiber_write_buffers() or do_update() and persist across calls.
+    std::unique_ptr<class FiberWriteBuffer> fiber_write_buffer_; // fast
+    std::unique_ptr<class FiberWriteBuffer> fiber_write_buffer_slow_; // slow
+
+    FiberWriteBuffer &fiber_write_buffer_fast_ref()
+    {
+        MONAD_ASSERT(fiber_write_buffer_ != nullptr);
+        return *fiber_write_buffer_;
+    }
+
+    FiberWriteBuffer &fiber_write_buffer_slow_ref()
+    {
+        MONAD_ASSERT(fiber_write_buffer_slow_ != nullptr);
+        return *fiber_write_buffer_slow_;
+    }
+
+    void setup_fiber_write_buffers();
+    void release_fiber_write_buffers();
 
     detail::TrieUpdateCollectedStats stats;
 
@@ -1033,6 +1012,7 @@ template <receiver Receiver>
         Receiver::lifetime_managed_internally)
 void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
 {
+    // Sender-receiver path (used for traverse and other non-upsert reads)
     [[likely]] if (
         receiver.bytes_to_read <=
         MONAD_ASYNC_NAMESPACE::AsyncIO::READ_BUFFER_SIZE) {

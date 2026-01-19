@@ -72,6 +72,9 @@ namespace monad::vm::runtime
         if constexpr (traits::eip_2929_active()) {
             access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
+            if (access_status == EVMC_ACCESS_COLD) {
+                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+            }
         }
 
         auto const storage_status = ctx->host->set_storage(
@@ -84,12 +87,6 @@ namespace monad::vm::runtime
         // readable it encodes the total gas usage of each combination, rather
         // than the amount relative to the minimum gas.
         gas_used -= min_gas;
-
-        if constexpr (traits::eip_2929_active()) {
-            if (access_status == EVMC_ACCESS_COLD) {
-                gas_used += traits::cold_storage_cost() + min_gas;
-            }
-        }
 
         ctx->gas_refund += gas_refund;
         ctx->deduct_gas(gas_used);

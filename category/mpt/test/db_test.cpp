@@ -2131,7 +2131,7 @@ TEST(DbTest, move_trie_version_forward_history_ring_wrap_around)
         monad::io::Buffers robuf = monad::io::make_buffers_for_read_only(
             ring, 2, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         monad::async::AsyncIO testio(pool_ro, robuf);
-        monad::mpt::UpdateAux<> aux_reader{testio};
+        monad::mpt::UpdateAux aux_reader{testio};
         return aux_reader.root_offsets().capacity();
     }();
 
@@ -2206,7 +2206,7 @@ TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
         monad::io::Buffers robuf = monad::io::make_buffers_for_read_only(
             ring, 2, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         monad::async::AsyncIO testio(pool_ro, robuf);
-        monad::mpt::UpdateAux<> aux_reader{testio};
+        monad::mpt::UpdateAux aux_reader{testio};
         return aux_reader.root_offsets().capacity();
     }();
     std::cout << root_offsets_ring_capacity << std::endl;

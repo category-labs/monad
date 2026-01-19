@@ -15,11 +15,14 @@
 
 #pragma once
 
+#include <category/async/uring_fiber_scheduler.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/trie.hpp>
 
 #include <category/core/assert.h>
 #include <category/core/small_prng.hpp>
+
+#include <boost/fiber/fiber.hpp>
 
 #include <array>
 #include <vector>
@@ -244,16 +247,36 @@ namespace monad::test
         for (auto &it : update_vec) {
             update_ls.push_front(it);
         }
+        // On-disk upsert needs to run in a fiber context for fiber IO
+        if (aux.is_on_disk()) {
+            Node::SharedPtr result;
+            boost::fibers::fiber f([&]() {
+                result = upsert(
+                    aux, version, sm, std::move(old), std::move(update_ls));
+            });
+            f.join();
+            return result;
+        }
         return upsert(aux, version, sm, std::move(old), std::move(update_ls));
     }
 
     template <class... Updates>
-    [[nodiscard]] constexpr Node::SharedPtr upsert_updates_with_version(
+    [[nodiscard]] Node::SharedPtr upsert_updates_with_version(
         UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
         uint64_t const version, Updates... updates)
     {
         UpdateList update_ls;
         (update_ls.push_front(updates), ...);
+        // On-disk upsert needs to run in a fiber context for fiber IO
+        if (aux.is_on_disk()) {
+            Node::SharedPtr result;
+            boost::fibers::fiber f([&]() {
+                result = upsert(
+                    aux, version, sm, std::move(old), std::move(update_ls));
+            });
+            f.join();
+            return result;
+        }
         return upsert(aux, version, sm, std::move(old), std::move(update_ls));
     }
 
@@ -366,6 +389,21 @@ namespace monad::test
             , root()
             , aux(io, MPT_TEST_HISTORY_LENGTH)
         {
+            // Install fiber scheduler or update IO pointer if already installed
+            if (monad::fiber::UringFiberScheduler::is_installed()) {
+                monad::fiber::UringFiberScheduler::set_io(&io);
+            }
+            else {
+                boost::fibers::use_scheduling_algorithm<
+                    monad::fiber::UringFiberScheduler>(&io);
+            }
+            // Set up fiber write buffers for upsert
+            aux.setup_fiber_write_buffers();
+        }
+
+        ~OnDiskTrieBase()
+        {
+            aux.release_fiber_write_buffers();
         }
 
         void reset()
@@ -502,6 +540,16 @@ namespace monad::test
 
             state_t()
             {
+                // Install fiber scheduler or update IO pointer if already
+                // installed
+                if (monad::fiber::UringFiberScheduler::is_installed()) {
+                    monad::fiber::UringFiberScheduler::set_io(&io);
+                }
+                else {
+                    boost::fibers::use_scheduling_algorithm<
+                        monad::fiber::UringFiberScheduler>(&io);
+                }
+                aux.setup_fiber_write_buffers();
                 aux.alternate_slow_fast_node_writer_unit_testing_only(
                     Config.alternate_slow_fast_writer);
                 ensure_total_chunks(Config.chunks_to_fill);
@@ -511,6 +559,7 @@ namespace monad::test
 
             ~state_t()
             {
+                aux.release_fiber_write_buffers();
                 for (auto &device : pool.devices()) {
                     auto const path = device.current_path();
                     if (std::filesystem::exists(path)) {

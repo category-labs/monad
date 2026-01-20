@@ -120,6 +120,16 @@ void monad_executor_run_transactions(
     void (*complete)(monad_executor_result *, void *user), void *user,
     enum monad_tracer_config);
 
+void monad_executor_eth_simulate_submit(
+    struct monad_executor *, enum monad_chain_config,
+    uint8_t const *rlp_senders, size_t rlp_senders_len,
+    uint8_t const *rlp_calls, size_t rlp_calls_len, uint64_t block_number,
+    uint8_t const *rlp_header, size_t rlp_header_len,
+    uint8_t const *rlp_block_id, size_t rlp_block_id_len,
+    struct monad_state_override const *const *state_overrides,
+    size_t n_state_overrides,
+    void (*complete)(monad_executor_result *, void *user), void *user);
+
 #ifdef __cplusplus
 }
 #endif

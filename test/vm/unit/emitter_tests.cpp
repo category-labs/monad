@@ -3616,7 +3616,8 @@ TEST(Emitter, msize)
     ctx->memory.size = 0;
 }
 
-TEST(Emitter, MemoryInstructions)
+template <runtime::Memory::Version memory_version>
+static void memory_instructions_test_impl()
 {
     auto run_mstore_mstore8_mload = [](basic_blocks::BasicBlocksIR const &ir,
                                        unsigned used_reg_count,
@@ -3655,10 +3656,10 @@ TEST(Emitter, MemoryInstructions)
 
         top_ix -= 2;
         if (m8) {
-            emit.mstore8();
+            emit.mstore8<memory_version>();
         }
         else {
-            emit.mstore();
+            emit.mstore<memory_version>();
         }
 
         for (unsigned i = 0; i < used_reg_count; ++i) {
@@ -3676,7 +3677,7 @@ TEST(Emitter, MemoryInstructions)
             emit.dup(1);
         }
 
-        emit.mload();
+        emit.mload<memory_version>();
 
         emit.dup(1);
         emit.return_();
@@ -3757,10 +3758,26 @@ TEST(Emitter, MemoryInstructions)
     }
 }
 
-TEST(Emitter, mstore_not_bounded_by_bits)
+TEST(Emitter, MemoryInstructions)
+{
+    memory_instructions_test_impl<runtime::Memory::Version::V1>();
+    memory_instructions_test_impl<runtime::Memory::Version::MIP3>();
+}
+
+template <runtime::Memory::Version memory_version>
+static void mstore_upper_bound_test_impl()
 {
     std::vector<uint8_t> bytecode{PUSH0, PUSH0, MSTORE};
 
+    auto const upper_bound = [] {
+        switch (memory_version) {
+        case runtime::Memory::Version::V1:
+            return (uint256_t{1} << runtime::Memory::offset_bits) - 1;
+        case runtime::Memory::Version::MIP3:
+            return uint256_t{8 * 1024 * 1024 - 32};
+        }
+    }();
+
     auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     for (auto loc : all_locations) {
@@ -3769,10 +3786,10 @@ TEST(Emitter, mstore_not_bounded_by_bits)
         (void)emit.begin_new_block(ir.blocks().at(0));
 
         emit.push(0);
-        emit.push((uint256_t{1} << runtime::Memory::offset_bits) - 1);
+        emit.push(upper_bound);
         mov_literal_to_location_type(emit, 1, loc);
 
-        emit.mstore();
+        emit.mstore<memory_version>();
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
@@ -3791,10 +3808,10 @@ TEST(Emitter, mstore_not_bounded_by_bits)
         (void)emit.begin_new_block(ir.blocks().at(0));
 
         emit.push(0);
-        emit.push(uint256_t{1} << runtime::Memory::offset_bits);
+        emit.push(upper_bound + 1);
         mov_literal_to_location_type(emit, 1, loc);
 
-        emit.mstore();
+        emit.mstore<memory_version>();
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
@@ -3804,13 +3821,31 @@ TEST(Emitter, mstore_not_bounded_by_bits)
         auto stack_memory = test_stack_memory();
         entry(&*ctx, stack_memory.get());
 
-        ASSERT_EQ(ret.status, runtime::StatusCode::Error);
+        ASSERT_TRUE(
+            ret.status == runtime::StatusCode::Error ||
+            ret.status == runtime::StatusCode::OutOfGas);
     }
 }
 
-TEST(Emitter, mload_not_bounded_by_bits)
+TEST(Emitter, mstore_upper_bound)
+{
+    mstore_upper_bound_test_impl<runtime::Memory::Version::V1>();
+    mstore_upper_bound_test_impl<runtime::Memory::Version::MIP3>();
+}
+
+template <runtime::Memory::Version memory_version>
+static void mload_upper_bound_test_impl()
 {
     std::vector<uint8_t> bytecode{PUSH0, MLOAD};
+
+    auto const upper_bound = [] {
+        switch (memory_version) {
+        case runtime::Memory::Version::V1:
+            return (uint256_t{1} << runtime::Memory::offset_bits) - 1;
+        case runtime::Memory::Version::MIP3:
+            return uint256_t{8 * 1024 * 1024 - 32};
+        }
+    }();
 
     auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
@@ -3819,10 +3854,10 @@ TEST(Emitter, mload_not_bounded_by_bits)
         TestEmitter emit{rt, ir.codesize};
         (void)emit.begin_new_block(ir.blocks().at(0));
 
-        emit.push((uint256_t{1} << runtime::Memory::offset_bits) - 1);
+        emit.push(upper_bound);
         mov_literal_to_location_type(emit, 0, loc);
 
-        emit.mload();
+        emit.mload<memory_version>();
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
@@ -3840,10 +3875,10 @@ TEST(Emitter, mload_not_bounded_by_bits)
         TestEmitter emit{rt, ir.codesize};
         (void)emit.begin_new_block(ir.blocks().at(0));
 
-        emit.push(uint256_t{1} << runtime::Memory::offset_bits);
+        emit.push(upper_bound + 1);
         mov_literal_to_location_type(emit, 0, loc);
 
-        emit.mload();
+        emit.mload<memory_version>();
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
@@ -3853,8 +3888,16 @@ TEST(Emitter, mload_not_bounded_by_bits)
         auto stack_memory = test_stack_memory();
         entry(&*ctx, stack_memory.get());
 
-        ASSERT_EQ(ret.status, runtime::StatusCode::Error);
+        ASSERT_TRUE(
+            ret.status == runtime::StatusCode::Error ||
+            ret.status == runtime::StatusCode::OutOfGas);
     }
+}
+
+TEST(Emitter, mload_upper_bound)
+{
+    mload_upper_bound_test_impl<runtime::Memory::Version::V1>();
+    mload_upper_bound_test_impl<runtime::Memory::Version::MIP3>();
 }
 
 TEST(Emitter, calldataload)

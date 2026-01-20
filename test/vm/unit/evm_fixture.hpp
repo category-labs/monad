@@ -125,7 +125,8 @@ namespace monad::vm::compiler::test
                         icode);
 
                 ASSERT_TRUE(ncode->entrypoint() != nullptr);
-                result_ = evmc::Result{vm_.execute_native_entrypoint_raw(
+                result_ = evmc::Result{vm_.execute_native_entrypoint_raw<
+                    typename TraitsTest<T>::Trait>(
                     rt_ctx, ncode->entrypoint())};
             }
             else if (impl == Interpreter) {

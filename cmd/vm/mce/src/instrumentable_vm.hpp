@@ -153,7 +153,7 @@ public:
 
         delete msg;
 
-        return ctx.copy_to_evmc_result();
+        return ctx.copy_to_evmc_result<traits>();
     }
 
     void dispatch_execute(

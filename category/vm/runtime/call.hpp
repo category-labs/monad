@@ -60,7 +60,8 @@ namespace monad::vm::runtime
         auto const ret_offset =
             (*ret_size > 0) ? ctx->get_memory_offset(ret_offset_word) : bin<0>;
 
-        ctx->expand_memory(max(args_offset + args_size, ret_offset + ret_size));
+        ctx->expand_memory<traits>(
+            max(args_offset + args_size, ret_offset + ret_size));
 
         auto const dest_address = address_from_uint256(address);
 

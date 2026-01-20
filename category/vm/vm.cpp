@@ -121,7 +121,7 @@ namespace monad::vm
             }
             // Bytecode has been successfully compiled for the right
             // revision.
-            return execute_native_entrypoint_raw(rt_ctx, entry);
+            return execute_native_entrypoint_raw<traits>(rt_ctx, entry);
         }
         if (!compiler_.is_varcode_cache_warm()) {
             // If cache is not warm then start async compilation
@@ -158,7 +158,7 @@ namespace monad::vm
         auto const stack_ptr = stack_allocator_.allocate();
         interpreter::execute<traits>(rt_ctx, Intercode{code}, stack_ptr.get());
 
-        return rt_ctx.copy_to_evmc_result();
+        return rt_ctx.copy_to_evmc_result<traits>();
     }
 
     EXPLICIT_TRAITS_MEMBER(VM::execute_bytecode_raw);
@@ -172,11 +172,12 @@ namespace monad::vm
         auto const stack_ptr = stack_allocator_.allocate();
         interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
 
-        return rt_ctx.copy_to_evmc_result();
+        return rt_ctx.copy_to_evmc_result<traits>();
     }
 
     EXPLICIT_TRAITS_MEMBER(VM::execute_intercode_raw);
 
+    template <Traits traits>
     evmc::Result VM::execute_native_entrypoint_raw(
         runtime::Context &rt_ctx, compiler::native::entrypoint_t entry)
     {
@@ -185,6 +186,8 @@ namespace monad::vm
         auto const stack_ptr = stack_allocator_.allocate();
         entry(&rt_ctx, stack_ptr.get());
 
-        return rt_ctx.copy_to_evmc_result();
+        return rt_ctx.copy_to_evmc_result<traits>();
     }
+
+    EXPLICIT_TRAITS_MEMBER(VM::execute_native_entrypoint_raw);
 }

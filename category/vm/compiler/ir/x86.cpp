@@ -24,6 +24,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/types.hpp>
 
 #include <asmjit/core/jitruntime.h>
 
@@ -34,6 +35,7 @@
 #include <memory>
 #include <variant>
 
+using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::basic_blocks;
 using namespace monad::vm::compiler::native;
@@ -215,13 +217,28 @@ namespace
             emit.pop();
             break;
         case MLoad:
-            emit.mload();
+            if constexpr (traits::mip_3_active()) {
+                emit.mload<runtime::Memory::Version::MIP3>();
+            }
+            else {
+                emit.mload<runtime::Memory::Version::V1>();
+            }
             break;
         case MStore:
-            emit.mstore();
+            if constexpr (traits::mip_3_active()) {
+                emit.mstore<runtime::Memory::Version::MIP3>();
+            }
+            else {
+                emit.mstore<runtime::Memory::Version::V1>();
+            }
             break;
         case MStore8:
-            emit.mstore8();
+            if constexpr (traits::mip_3_active()) {
+                emit.mstore8<runtime::Memory::Version::MIP3>();
+            }
+            else {
+                emit.mstore8<runtime::Memory::Version::V1>();
+            }
             break;
         case SLoad:
             emit.sload<traits>(remaining_base_gas);

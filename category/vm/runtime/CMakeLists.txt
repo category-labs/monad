@@ -59,6 +59,9 @@ target_link_libraries(monad-vm-runtime
     PUBLIC intx::intx
     PUBLIC monad-vm::monad-vm-core
     PUBLIC monad-vm::monad-vm-evm
+    PUBLIC quill::quill
+    PUBLIC unordered_dense
+    PUBLIC ankerl_hash
 )
 
 add_library(monad-vm::monad-vm-runtime ALIAS monad-vm-runtime)

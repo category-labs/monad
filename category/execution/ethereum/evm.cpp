@@ -41,6 +41,9 @@
 #include <optional>
 #include <utility>
 
+#include <quill/Quill.h>
+#include <source_location>
+
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 bool sender_has_balance(State &state, evmc_message const &msg) noexcept
@@ -320,7 +323,14 @@ call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
         result = std::move(maybe_result.value());
     }
     else {
+        // LOG_ERROR("msg.code address: 0x{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        //           msg.code_address.bytes[0], msg.code_address.bytes[1], msg.code_address.bytes[2], msg.code_address.bytes[3], msg.code_address.bytes[4], msg.code_address.bytes[5], msg.code_address.bytes[6], msg.code_address.bytes[7], msg.code_address.bytes[8], msg.code_address.bytes[9], msg.code_address.bytes[10], msg.code_address.bytes[11], msg.code_address.bytes[12], msg.code_address.bytes[13], msg.code_address.bytes[14], msg.code_address.bytes[15], msg.code_address.bytes[16], msg.code_address.bytes[17], msg.code_address.bytes[18], msg.code_address.bytes[19]);
         auto const hash = state.get_code_hash(msg.code_address);
+        // LOG_ERROR("hash: 0x{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        // hash.bytes[31], hash.bytes[30], hash.bytes[29], hash.bytes[28], hash.bytes[27], hash.bytes[26], hash.bytes[25], hash.bytes[24],
+        // hash.bytes[23], hash.bytes[22], hash.bytes[21], hash.bytes[20], hash.bytes[19], hash.bytes[18], hash.bytes[17], hash.bytes[16],
+        // hash.bytes[15], hash.bytes[14], hash.bytes[13], hash.bytes[12], hash.bytes[11], hash.bytes[10], hash.bytes[9], hash.bytes[8],
+        // hash.bytes[7], hash.bytes[6], hash.bytes[5], hash.bytes[4], hash.bytes[3], hash.bytes[2], hash.bytes[1], hash.bytes[0]);
         auto const code = state.read_code(hash);
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }

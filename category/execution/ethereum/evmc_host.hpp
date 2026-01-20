@@ -40,6 +40,10 @@
 #include <functional>
 #include <utility>
 
+#include <quill/Quill.h>
+#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
+#include <source_location>
+
 MONAD_NAMESPACE_BEGIN
 
 static_assert(sizeof(vm::Host) == 24);
@@ -201,17 +205,23 @@ struct EvmcHost final : public EvmcHostBase
 
     bool revert_transaction() noexcept override
     {
+        // auto const *s_ = intx::as_words<256>(intx::be::load<uint256_t, 20>(sender_.bytes));
+        // LOG_ERROR("sender      : 0x{:08x}{:08x}{:08x}{:08x}", s_[3], s_[2], s_[1], s_[0]);
+        // LOG_ERROR("checked balance   : {}", intx::be::load<uint256_t, 32>(get_balance(sender_).bytes));
         try {
             if constexpr (is_monad_trait_v<traits>) {
-                return ::monad::revert_transaction<traits>(
+                auto result = ::monad::revert_transaction<traits>(
                     sender_,
                     tx_,
                     base_fee_per_gas_.value_or(0),
                     i_,
                     state_,
                     chain_ctx_);
+                // LOG_ERROR("checked result: {}", result);
+                return result;
             }
             else {
+                // LOG_ERROR("unchecked result: false");
                 return false;
             }
         }

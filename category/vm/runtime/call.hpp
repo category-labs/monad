@@ -21,6 +21,10 @@
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
+#include <quill/Quill.h>
+#include <source_location>
+#include <intx/intx.hpp>
+
 namespace monad::vm::runtime
 {
     inline std::uint32_t message_flags(
@@ -49,6 +53,7 @@ namespace monad::vm::runtime
         evmc_call_kind call_kind, bool static_call,
         std::int64_t remaining_block_base_gas)
     {
+        // LOG_ERROR("calling     : 0x{:08x}{:08x}{:08x}{:08x}", address[3], address[2], address[1], address[0]);
         ctx->env.clear_return_data();
 
         auto const args_size = ctx->get_memory_offset(args_size_word);
@@ -90,6 +95,8 @@ namespace monad::vm::runtime
             }
             return dest_address;
         }();
+        // LOG_ERROR("code_address: 0x{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        //           code_address.bytes[0], code_address.bytes[1], code_address.bytes[2], code_address.bytes[3], code_address.bytes[4], code_address.bytes[5], code_address.bytes[6], code_address.bytes[7], code_address.bytes[8], code_address.bytes[9], code_address.bytes[10], code_address.bytes[11], code_address.bytes[12], code_address.bytes[13], code_address.bytes[14], code_address.bytes[15], code_address.bytes[16], code_address.bytes[17], code_address.bytes[18], code_address.bytes[19]);
 
         auto const recipient = (call_kind == EVMC_CALL || static_call)
                                    ? dest_address
@@ -170,6 +177,8 @@ namespace monad::vm::runtime
         };
 
         auto const result = ctx->host->call(ctx->context, &message);
+
+        // LOG_ERROR("call result: {}", evmc::to_string(result.status_code));
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 

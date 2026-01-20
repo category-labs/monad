@@ -50,6 +50,10 @@
 #include <utility>
 #include <vector>
 
+#include <quill/Quill.h>
+#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
+#include <source_location>
+
 MONAD_NAMESPACE_BEGIN
 
 OriginalAccountState &State::original_account_state(Address const &address)
@@ -550,6 +554,11 @@ void State::set_code(Address const &address, byte_string_view const code)
     }
 
     auto const code_hash = to_bytes(keccak256(code));
+    // LOG_ERROR("code_hash: 0x{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+    // code_hash.bytes[31], code_hash.bytes[30], code_hash.bytes[29], code_hash.bytes[28], code_hash.bytes[27], code_hash.bytes[26], code_hash.bytes[25], code_hash.bytes[24],
+    // code_hash.bytes[23], code_hash.bytes[22], code_hash.bytes[21], code_hash.bytes[20], code_hash.bytes[19], code_hash.bytes[18], code_hash.bytes[17], code_hash.bytes[16],
+    // code_hash.bytes[15], code_hash.bytes[14], code_hash.bytes[13], code_hash.bytes[12], code_hash.bytes[11], code_hash.bytes[10], code_hash.bytes[9], code_hash.bytes[8],
+    // code_hash.bytes[7], code_hash.bytes[6], code_hash.bytes[5], code_hash.bytes[4], code_hash.bytes[3], code_hash.bytes[2], code_hash.bytes[1], code_hash.bytes[0]);
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     account.value().code_hash = code_hash;
 }

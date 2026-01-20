@@ -437,22 +437,9 @@ namespace
 
                 auto const top_revert = [](auto &&...) { return false; };
 
-                auto tx = calls[block_idx][tx_idx];
-                tx.max_fee_per_gas = 100'000'000'000;
-
-                {
-                    State state{block_state, Incarnation{block_number, tx_idx}};
-                    if (state.get_balance(senders[block_idx][tx_idx]) == 0) {
-                        state.add_to_balance(
-                            senders[block_idx][tx_idx],
-                            std::numeric_limits<uint256_t>::max());
-                        block_state.merge(state);
-                    }
-                }
-
                 auto exec = ExecuteTransactionNoValidation<traits>{
                     chain,
-                    tx,
+                    calls[block_idx][tx_idx],
                     senders[block_idx][tx_idx],
                     authorities[block_idx][tx_idx],
                     current_header,
@@ -460,7 +447,7 @@ namespace
                     top_revert};
 
                 auto const tx_context = get_tx_context<traits>(
-                    tx,
+                    calls[block_idx][tx_idx],
                     senders[block_idx][tx_idx],
                     current_header,
                     chain.get_chain_id());
@@ -476,7 +463,7 @@ namespace
                     [&state,
                      &top_revert,
                      &sender = senders[block_idx][tx_idx],
-                     &tx = tx,
+                     &tx = calls[block_idx][tx_idx],
                      &i = tx_idx]() {
                         return top_revert(sender, tx, i, state);
                     }};

@@ -70,6 +70,7 @@
 #include <boost/outcome/try.hpp>
 #include <boost/scope_exit.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -77,6 +78,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <span>
@@ -151,28 +153,6 @@ namespace
         }
     };
 
-    char const *const UNEXPECTED_EXCEPTION_ERR_MSG = "unexpected error";
-    char const *const EXCEED_QUEUE_SIZE_ERR_MSG =
-        "failure to submit eth_call to thread pool: queue size exceeded";
-    char const *const TIMEOUT_ERR_MSG =
-        "failure to execute eth_call: queuing time exceeded timeout threshold";
-    char const *const PRESTATE_TRACER_SUPPORT_ERR_MSG =
-        "only the prestate tracer and the statediff "
-        "tracer are supported";
-    char const *const CANNOT_TRACE_GENESIS_ERR_MSG =
-        "cannot trace genesis block";
-    char const *const RECOVER_SENDER_ERR_MSG = "failed to recover sender";
-    char const *const TRANSACTIONS_CONTEXT_ERR_MSG =
-        "failed to recover the transactions context";
-    char const *const PARENT_TRANSACTIONS_CONTEXT_ERR_MSG =
-        "failed to recover the parent transactions context";
-    char const *const GRANDPARENT_TRANSACTIONS_CONTEXT_ERR_MSG =
-        "failed to recover the grandparent transactions context";
-    char const *const TRANSACTION_OUT_OF_BOUNDS_ERR_MSG =
-        "transaction out of bounds";
-    static ankerl::unordered_dense::segmented_set<Address>
-        empty_senders_and_authorities{};
-
     ankerl::unordered_dense::segmented_set<Address>
     combine_senders_and_authorities(
         std::vector<Address> const &senders,
@@ -194,6 +174,101 @@ namespace
 
         return senders_and_authorities;
     }
+
+    template <Traits traits>
+    class ChainContextBuffer;
+
+    /**
+     * Dummy buffer for EVM trait specializations that do not need chain context
+     * for reserve balance checks.
+     */
+    template <Traits traits>
+        requires(is_evm_trait_v<traits>)
+    class ChainContextBuffer<traits>
+    {
+    public:
+        ChainContext<traits> advance(
+            std::vector<Address> const &,
+            std::vector<std::vector<std::optional<Address>>> const &)
+        {
+            return {};
+        }
+    };
+
+    /**
+     * Circular buffer of combined senders and EIP-7702 authorities for the last
+     * K blocks. Use advance(senders, authorities) to obtain the context needed
+     * for each block's reserve balance checks in eth_simulatev1.
+     */
+    template <Traits traits>
+        requires(is_monad_trait_v<traits>)
+    class ChainContextBuffer<traits>
+    {
+        static constexpr size_t K = 3;
+
+    public:
+        /// Advances the buffer with a new block's senders and authorities,
+        /// discarding the oldest currently stored context, then returns a
+        /// ChainContext for the given traits type. The arguments must outlive
+        /// this buffer.
+        [[nodiscard]] ChainContext<traits> advance(
+            std::vector<Address> const &senders,
+            std::vector<std::vector<std::optional<Address>>> const &authorities)
+        {
+            current_index_ = current_index_ == 0 ? K - 1 : current_index_ - 1;
+            current_senders_ = &senders;
+            current_authorities_ = &authorities;
+            senders_and_authorities_buffer_[current_index_] =
+                combine_senders_and_authorities(senders, authorities);
+
+            return ChainContext<traits>{
+                .grandparent_senders_and_authorities = get<2>(),
+                .parent_senders_and_authorities = get<1>(),
+                .senders_and_authorities = get<0>(),
+                .senders = *current_senders_,
+                .authorities = *current_authorities_,
+            };
+        }
+
+    private:
+        template <size_t age>
+            requires(age < K)
+        ankerl::unordered_dense::segmented_set<Address> const &get() const
+        {
+            return senders_and_authorities_buffer_[(current_index_ + age) % K];
+        }
+
+        size_t current_index_{0};
+        std::array<ankerl::unordered_dense::segmented_set<Address>, K>
+            senders_and_authorities_buffer_{};
+        std::vector<Address> const *current_senders_{};
+        std::vector<std::vector<std::optional<Address>>> const
+            *current_authorities_{};
+    };
+
+    char const *const UNEXPECTED_EXCEPTION_ERR_MSG = "unexpected error";
+    char const *const EXCEED_QUEUE_SIZE_ERR_MSG =
+        "failure to submit eth_call to thread pool: queue size exceeded";
+    char const *const TIMEOUT_ERR_MSG =
+        "failure to execute eth_call: queuing time exceeded timeout threshold";
+    char const *const PRESTATE_TRACER_SUPPORT_ERR_MSG =
+        "only the prestate tracer and the statediff "
+        "tracer are supported";
+    char const *const CANNOT_TRACE_GENESIS_ERR_MSG =
+        "cannot trace genesis block";
+    char const *const RECOVER_SENDER_ERR_MSG = "failed to recover sender";
+    char const *const TRANSACTIONS_CONTEXT_ERR_MSG =
+        "failed to recover the transactions context";
+    char const *const PARENT_TRANSACTIONS_CONTEXT_ERR_MSG =
+        "failed to recover the parent transactions context";
+    char const *const GRANDPARENT_TRANSACTIONS_CONTEXT_ERR_MSG =
+        "failed to recover the grandparent transactions context";
+    char const *const TRANSACTION_OUT_OF_BOUNDS_ERR_MSG =
+        "transaction out of bounds";
+    static ankerl::unordered_dense::segmented_set<Address>
+        empty_senders_and_authorities{};
+    static std::vector<Address> empty_senders{};
+    static std::vector<std::vector<std::optional<Address>>> empty_authorities{};
 
     void apply_state_overrides(
         BlockState &block_state, Incarnation const incarnation,
@@ -370,6 +445,185 @@ namespace
         trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
+    }
+
+    void store_output_header(
+        BlockHeader const &header, nlohmann::json &output,
+        size_t const n_transactions)
+    {
+        auto const format_hex = [](auto const &b) {
+            return std::format("0x{}", evmc::hex(b));
+        };
+
+        output["hash"] = format_hex(bytes32_t{});
+        output["parentHash"] = format_hex(header.parent_hash);
+        output["sha3Uncles"] = format_hex(header.ommers_hash);
+        output["miner"] = format_hex(header.beneficiary);
+        output["stateRoot"] = format_hex(header.state_root);
+        output["transactionsRoot"] = format_hex(header.transactions_root);
+        output["receiptsRoot"] = format_hex(header.receipts_root);
+        output["logsBloom"] = "0x";
+        output["difficulty"] =
+            std::format("0x{}", intx::to_string(header.difficulty));
+        output["number"] = std::format("0x{:x}", header.number);
+        output["gasLimit"] = std::format("0x{:x}", header.gas_limit);
+        output["gasUsed"] = std::format("0x{:x}", header.gas_limit);
+        output["timestamp"] = std::format("0x{:x}", header.timestamp);
+        output["extraData"] = format_hex(header.extra_data);
+        output["mixHash"] = format_hex(bytes32_t{});
+        output["nonce"] = std::format("0x0000000000000000");
+        output["baseFeePerGas"] = std::format(
+            "0x{}", intx::to_string(header.base_fee_per_gas.value_or(0)));
+        output["uncles"] = nlohmann::json::array();
+        output["transactions"] =
+            nlohmann::json(n_transactions, format_hex(bytes32_t{}));
+    }
+
+    template <Traits traits>
+    Result<nlohmann::json> eth_simulate_impl(
+        Chain const &chain, std::vector<std::vector<Transaction>> calls,
+        BlockHeader const &header, uint64_t const block_number,
+        bytes32_t const &block_id, std::vector<std::vector<Address>> senders,
+        std::vector<std::vector<std::vector<std::optional<Address>>>>
+            authorities,
+        TrieRODb &tdb, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+        fiber::FiberGroup &tx_exec_pool,
+        std::span<monad_state_override const *const> state_overrides)
+    {
+        // TODO(BSC): block overrides
+
+        MONAD_ASSERT(calls.size() == senders.size());
+        MONAD_ASSERT(calls.size() == authorities.size());
+        MONAD_ASSERT(calls.size() == state_overrides.size());
+
+        tdb.set_block_and_prefix(block_number, block_id);
+
+        auto current_header = header;
+        auto result = nlohmann::json::array();
+
+        // Zero out fields on the header that we aren't able to compute for
+        // subsequent blocks.
+        current_header.parent_hash = bytes32_t{};
+        current_header.ommers_hash = bytes32_t{};
+        current_header.beneficiary = Address{};
+        current_header.state_root = bytes32_t{};
+        current_header.transactions_root = bytes32_t{};
+        current_header.receipts_root = bytes32_t{};
+        current_header.logs_bloom = Receipt::Bloom{};
+        current_header.prev_randao = bytes32_t{};
+        current_header.extra_data = byte_string{};
+        current_header.nonce = byte_string_fixed<8>{};
+
+        auto block_state = BlockState{tdb, vm};
+
+        auto context_buffer = ChainContextBuffer<traits>{};
+
+        for (auto block_idx = 0u; block_idx < calls.size(); ++block_idx) {
+            // State overrides are applied with an incarnation in the *previous*
+            // block, rather than with the current header's block number.
+            auto const override_incarnation = Incarnation{
+                block_number + block_idx, Incarnation::LAST_TX - 1u};
+            apply_state_overrides(
+                block_state, override_incarnation,
+                *state_overrides[block_idx]);
+
+            // Set values for the current block based on the default increments
+            // from the previous one.
+            current_header.number += 1;
+            // TODO(BSC): better simulation of 0.4s block times
+            current_header.timestamp += 1;
+
+            for (auto tx_idx = 0u; tx_idx < calls[block_idx].size(); ++tx_idx) {
+                auto &tx = calls[block_idx][tx_idx];
+
+                tx.sc.chain_id = chain.get_chain_id();
+                tx.sc.r = 1;
+                tx.sc.s = 1;
+
+                // Update tx.nonce to match the expected nonce in the current
+                // block state.
+                State state{block_state, override_incarnation};
+                tx.nonce = state.get_nonce(senders[block_idx][tx_idx]);
+            }
+
+            auto block_metrics = BlockMetrics{};
+
+            auto call_frames = std::vector<std::vector<CallFrame>>{};
+            call_frames.reserve(calls[block_idx].size());
+
+            auto call_tracers = std::vector<std::unique_ptr<CallTracerBase>>{};
+            call_tracers.reserve(calls[block_idx].size());
+
+            auto state_tracers =
+                std::vector<std::unique_ptr<trace::StateTracer>>{};
+            state_tracers.reserve(calls[block_idx].size());
+
+            for (auto tx_idx = 0u; tx_idx < calls[block_idx].size(); ++tx_idx) {
+                call_frames.emplace_back();
+                call_tracers.emplace_back(std::make_unique<CallTracer>(
+                    calls[block_idx][tx_idx], call_frames.back()));
+                state_tracers.emplace_back(
+                    std::make_unique<trace::StateTracer>());
+            }
+
+            auto const chain_context = context_buffer.advance(
+                senders[block_idx], authorities[block_idx]);
+
+            auto const block = Block{
+                .header = current_header,
+                .transactions = std::move(calls[block_idx]),
+            };
+
+            BOOST_OUTCOME_TRY(
+                auto const receipts,
+                execute_block<traits>(
+                    chain,
+                    block,
+                    senders[block_idx],
+                    authorities[block_idx],
+                    block_state,
+                    block_hash_buffer,
+                    tx_exec_pool,
+                    block_metrics,
+                    call_tracers,
+                    state_tracers,
+                    chain_context));
+
+            auto entry = nlohmann::json::object();
+
+            entry["calls"] = nlohmann::json::array();
+            auto &txns = entry["calls"];
+
+            for (auto tx_idx = 0u; tx_idx < block.transactions.size();
+                 ++tx_idx) {
+                auto call_result = nlohmann::json::object();
+
+                call_result["status"] = std::format(
+                    "0x{:x}",
+                    call_frames[tx_idx][0].status == EVMC_SUCCESS ? 1 : 0);
+                call_result["returnData"] = std::format(
+                    "0x{}", evmc::hex(call_frames[tx_idx][0].output));
+                call_result["gasUsed"] =
+                    std::format("0x{:x}", call_frames[tx_idx][0].gas_used);
+
+                if (call_frames[tx_idx][0].status == EVMC_SUCCESS) {
+                    call_result["logs"] = nlohmann::json::array();
+                }
+                else {
+                    call_result["error"] = {{"message", "execution reverted"}};
+                }
+
+                txns.emplace_back(std::move(call_result));
+            }
+
+            store_output_header(
+                current_header, entry, block.transactions.size());
+            result.emplace_back(std::move(entry));
+        }
+
+        LOG_INFO("res: {}", result.dump(4));
+
+        return result;
     }
 
     std::pair<
@@ -1346,6 +1600,154 @@ struct monad_executor
                 }
             });
     }
+
+    void submit_eth_simulate_to_pool(
+        monad_chain_config const chain_config,
+        std::vector<std::vector<Transaction>> calls,
+        std::vector<std::vector<Address>> senders,
+        std::span<monad_state_override const *const> state_overrides,
+        BlockHeader const &block_header, uint64_t const block_number,
+        bytes32_t const &block_id,
+        void (*complete)(monad_executor_result *, void *user), void *const user)
+    {
+        monad_executor_result *const result = new monad_executor_result();
+        (void)block_id;
+
+        auto const priority =
+            call_seq_no_.fetch_add(1, std::memory_order_relaxed);
+        trace_block_group_.group->submit(
+            priority,
+            [calls = std::move(calls),
+             senders = std::move(senders),
+             state_overrides = state_overrides,
+             block_header = block_header,
+             block_number = block_number,
+             block_id = block_id,
+             chain_config = chain_config,
+             &db = db_,
+             fiber_group = &trace_block_group_,
+             tx_exec_group = &trace_tx_exec_group_,
+             &vm = vm_,
+             complete = complete,
+             result = result,
+             user = user]() {
+                // TODO(BSC): fiber group
+                (void)fiber_group;
+
+                auto const res = [&]() -> Result<nlohmann::json> {
+                    auto authorities = std::vector<
+                        std::vector<std::vector<std::optional<Address>>>>(
+                        calls.size());
+                    for (auto block_idx = 0u; block_idx < calls.size();
+                         ++block_idx) {
+                        authorities[block_idx] =
+                            std::vector<std::vector<std::optional<Address>>>(
+                                calls[block_idx].size());
+                        for (auto tx_idx = 0u; tx_idx < calls[block_idx].size();
+                             ++tx_idx) {
+                            authorities[block_idx][tx_idx] =
+                                std::vector<std::optional<Address>>(
+                                    calls[block_idx][tx_idx]
+                                        .authorization_list.size());
+                            for (auto auth_idx = 0u;
+                                 auth_idx < calls[block_idx][tx_idx]
+                                                .authorization_list.size();
+                                 ++auth_idx) {
+                                authorities[block_idx][tx_idx][auth_idx] =
+                                    recover_authority(
+                                        calls[block_idx][tx_idx]
+                                            .authorization_list[auth_idx]);
+                            }
+                        }
+                    }
+
+                    auto const chain =
+                        [chain_config] -> std::unique_ptr<Chain> {
+                        switch (chain_config) {
+                        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                            return std::make_unique<EthereumMainnet>();
+                        case CHAIN_CONFIG_MONAD_DEVNET:
+                            return std::make_unique<MonadDevnet>();
+                        case CHAIN_CONFIG_MONAD_TESTNET:
+                            return std::make_unique<MonadTestnet>();
+                        case CHAIN_CONFIG_MONAD_MAINNET:
+                            return std::make_unique<MonadMainnet>();
+                        }
+                        MONAD_ASSERT(false);
+                    }();
+
+                    LazyBlockHash block_hash_buffer{db, block_number};
+                    TrieRODb tdb{db};
+
+                    if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+                        evmc_revision const rev = chain->get_revision(
+                            block_header.number, block_header.timestamp);
+                        SWITCH_EVM_TRAITS(
+                            eth_simulate_impl,
+                            *chain,
+                            calls,
+                            block_header,
+                            block_number,
+                            block_id,
+                            senders,
+                            authorities,
+                            tdb,
+                            vm,
+                            block_hash_buffer,
+                            *tx_exec_group->group,
+                            state_overrides);
+                        MONAD_ASSERT(false);
+                    }
+                    else {
+                        auto const rev =
+                            dynamic_cast<MonadChain *>(chain.get())
+                                ->get_monad_revision(block_header.timestamp);
+                        SWITCH_MONAD_TRAITS(
+                            eth_simulate_impl,
+                            *chain,
+                            calls,
+                            block_header,
+                            block_number,
+                            block_id,
+                            senders,
+                            authorities,
+                            tdb,
+                            vm,
+                            block_hash_buffer,
+                            *tx_exec_group->group,
+                            state_overrides);
+                        MONAD_ASSERT(false);
+                    }
+                }();
+
+                if (MONAD_UNLIKELY(res.has_error())) {
+                    result->status_code = EVMC_REJECTED;
+                    result->message = strdup(res.error().message().c_str());
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                    return;
+                }
+
+                nlohmann::json const &trace = res.assume_value();
+                if (trace.empty()) {
+                    result->encoded_trace = nullptr;
+                    result->encoded_trace_len = 0;
+                }
+                else {
+                    std::vector<uint8_t> cbor_state_trace =
+                        nlohmann::json::to_cbor(trace);
+                    result->encoded_trace =
+                        new uint8_t[cbor_state_trace.size()];
+                    result->encoded_trace_len = cbor_state_trace.size();
+                    memcpy(
+                        (uint8_t *)result->encoded_trace,
+                        cbor_state_trace.data(),
+                        cbor_state_trace.size());
+                }
+
+                complete(result, user);
+            });
+    }
 };
 
 monad_executor *monad_executor_create(
@@ -1497,4 +1899,94 @@ void monad_executor_run_transactions(
         complete,
         user,
         tracer_config);
+}
+
+namespace
+{
+    template <auto Decoder>
+    using decoder_value_t = typename decltype(Decoder(
+        std::declval<byte_string_view &>()))::value_type;
+
+    template <auto Decoder, bool explicit_parse_string>
+    auto decode_nested_items(byte_string_view &input)
+        -> Result<std::vector<std::vector<decoder_value_t<Decoder>>>>
+    {
+        using Item = decoder_value_t<Decoder>;
+        auto ret = std::vector<std::vector<Item>>{};
+
+        BOOST_OUTCOME_TRY(auto outer_payload, rlp::parse_list_metadata(input));
+        while (!outer_payload.empty()) {
+            ret.emplace_back();
+
+            BOOST_OUTCOME_TRY(
+                auto inner_payload, rlp::parse_list_metadata(outer_payload));
+
+            if constexpr (explicit_parse_string) {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(
+                        auto item_payload,
+                        rlp::parse_string_metadata(inner_payload));
+                    BOOST_OUTCOME_TRY(Item item, Decoder(item_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+            else {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(Item item, Decoder(inner_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+        }
+
+        return ret;
+    }
+}
+
+void monad_executor_eth_simulate_submit(
+    struct monad_executor *executor, enum monad_chain_config chain_config,
+    uint8_t const *rlp_senders, size_t rlp_senders_len,
+    uint8_t const *rlp_calls, size_t rlp_calls_len, uint64_t block_number,
+    uint8_t const *rlp_header, size_t rlp_header_len,
+    uint8_t const *rlp_block_id, size_t rlp_block_id_len,
+    struct monad_state_override const *const *state_overrides,
+    size_t n_state_overrides,
+    void (*complete)(monad_executor_result *, void *user), void *user)
+{
+    byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
+    auto const maybe_senders =
+        decode_nested_items<rlp::decode_address, false>(rlp_senders_view);
+    MONAD_ASSERT(maybe_senders.has_value());
+    auto const senders = maybe_senders.assume_value();
+
+    byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
+    auto const maybe_txns =
+        decode_nested_items<rlp::decode_transaction, true>(rlp_calls_view);
+    MONAD_ASSERT(maybe_txns.has_value());
+    auto const txns = maybe_txns.assume_value();
+
+    MONAD_ASSERT(senders.size() == txns.size());
+    MONAD_ASSERT(n_state_overrides == txns.size());
+
+    byte_string_view rlp_header_view({rlp_header, rlp_header_len});
+    auto const block_header_result = rlp::decode_block_header(rlp_header_view);
+    MONAD_ASSERT(!block_header_result.has_error());
+    MONAD_ASSERT(rlp_header_view.empty());
+    auto const &block_header = block_header_result.value();
+
+    byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
+    auto const block_id_result = rlp::decode_bytes32(block_id_view);
+    MONAD_ASSERT(!block_id_result.has_error());
+    MONAD_ASSERT(block_id_view.empty());
+    auto const block_id = block_id_result.value();
+
+    executor->submit_eth_simulate_to_pool(
+        chain_config,
+        std::move(txns),
+        std::move(senders),
+        std::span{state_overrides, n_state_overrides},
+        block_header,
+        block_number,
+        block_id,
+        complete,
+        user);
 }

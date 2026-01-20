@@ -4259,3 +4259,80 @@ TEST(BlockOverride, prev_randao_32_bytes)
 
     monad_block_override_destroy(bo);
 }
+
+TEST_F(EthCallFixture, eth_simulate_v1)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto const rlp_senders =
+        evmc::from_hex(
+            "0xecd594f39fd6e51aad88f6f4ce6ab8827279cfffb92266d594f39fd6e51aad88"
+            "f6f4ce6ab8827279cfffb92266")
+            .value();
+    auto const rlp_calls =
+        evmc::from_hex(
+            "0xf860efae02ec80808080840bebc20094deadbeef000000000000000000000000"
+            "00000000880de0b6b3a764000080c0808080efae02ec80808080840bebc20094"
+            "deadbeef00000000000000000000000000000000880de0b6b3a764000080c080"
+            "8080")
+            .value();
+    auto const rlp_header =
+        evmc::from_hex(
+            "0xf9027ba05fd394e577312a24f795e7ebf9f062e6d8d5e28cde39aee0da823786"
+            "259f300fa01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142"
+            "fd40d4934794021975c418abfeb75e9d0639d8cc936aa92eee4ba04df6681acc"
+            "08b2da72815e2f1f897d0bbcf41b1d6c9103782a7268ff57ee483ea056e81f17"
+            "1bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a056e81f"
+            "171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421b90100"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "8009840bebc20080846970d851a0000000000000000000000000000000000000"
+            "0000000000000000000000000000a005fe3e81096be507381829318a3ca21ac3"
+            "5283886e56233b075340bf4661d05f88000000000000000080a056e81f171bcc"
+            "55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b4218080a0000000"
+            "0000000000000000000000000000000000000000000000000000000000a00000"
+            "000000000000000000000000000000000000000000000000000000000000")
+            .value();
+
+    // auto const rlp_block_id =
+    //     evmc::from_hex("0xa0c23f4adce46b7197489a2d335c001aa305c05a0f2df903160b7"
+    //                    "e7fc974b3d4e3")
+    //         .value();
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto const state_overrides =
+        std::vector<monad_state_override const *>{5, nullptr};
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1, // block_number
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_overrides.data(),
+        state_overrides.size(),
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    monad_executor_destroy(executor);
+}

@@ -75,6 +75,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <span>
@@ -390,6 +391,196 @@ namespace
         trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
+    }
+
+    template <Traits traits>
+    Result<nlohmann::json> eth_simulate_impl(
+        Chain const &chain, std::vector<std::vector<Transaction>> calls,
+        BlockHeader const &header, uint64_t const block_number,
+        bytes32_t const &block_id, std::vector<std::vector<Address>> senders,
+        std::vector<std::vector<std::vector<std::optional<Address>>>>
+            authorities,
+        TrieRODb &tdb, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+        std::span<monad_state_override const> state_overrides)
+    {
+        // TODO(BSC): initialise txn revert logic properly (treat chain context
+        // as a ring buffer and rotate entries?)
+
+        MONAD_ASSERT(calls.size() == senders.size());
+        MONAD_ASSERT(calls.size() == authorities.size());
+        MONAD_ASSERT(calls.size() == state_overrides.size());
+
+        tdb.set_block_and_prefix(block_number, block_id);
+
+        auto current_header = header;
+        auto result = nlohmann::json::array();
+
+        for (auto block_idx = 0u; block_idx < calls.size(); ++block_idx) {
+            auto entry = nlohmann::json::object();
+
+            auto block_metrics = BlockMetrics{};
+            auto block_state = BlockState{tdb, vm};
+            (void)block_metrics;
+            (void)block_state;
+            (void)block_hash_buffer;
+            (void)chain;
+
+            for (auto tx_idx = 0u; tx_idx < calls[block_idx].size(); ++tx_idx) {
+                entry["calls"] = nlohmann::json::array();
+                auto &txns = entry["calls"];
+                (void)txns;
+
+                auto prev = boost::fibers::promise<void>{};
+                prev.set_value();
+                auto call_tracer = NoopCallTracer{};
+                auto state_tracer = trace::StateTracer{};
+
+                auto const top_revert = [](auto &&...) { return false; };
+
+                auto tx = calls[block_idx][tx_idx];
+                tx.max_fee_per_gas = 100'000'000'000;
+
+                {
+                    State state{block_state, Incarnation{block_number, tx_idx}};
+                    if (state.get_balance(senders[block_idx][tx_idx]) == 0) {
+                        state.add_to_balance(
+                            senders[block_idx][tx_idx],
+                            std::numeric_limits<uint256_t>::max());
+                        block_state.merge(state);
+                    }
+                }
+
+                auto exec = ExecuteTransactionNoValidation<traits>{
+                    chain,
+                    tx,
+                    senders[block_idx][tx_idx],
+                    authorities[block_idx][tx_idx],
+                    current_header,
+                    tx_idx,
+                    top_revert};
+
+                auto const tx_context = get_tx_context<traits>(
+                    tx,
+                    senders[block_idx][tx_idx],
+                    current_header,
+                    chain.get_chain_id());
+
+                auto state =
+                    State{block_state, Incarnation{block_number, tx_idx}};
+
+                auto host = EvmcHost<traits>{
+                    call_tracer,
+                    tx_context,
+                    block_hash_buffer,
+                    state,
+                    [&state,
+                     &top_revert,
+                     &sender = senders[block_idx][tx_idx],
+                     &tx = tx,
+                     &i = tx_idx]() {
+                        return top_revert(sender, tx, i, state);
+                    }};
+
+                auto const execution_result = exec(state, host);
+            }
+
+            result.push_back(std::move(entry));
+        }
+
+        LOG_INFO("res: {}", result.dump(4));
+
+#if 0
+        for (auto i = 0u; i < calls.size(); ++i) {
+            auto entry = nlohmann::json::object();
+
+            // TODO(BSC): apply state overrides
+            // TODO(BSC): apply block overrides
+
+            auto const block = Block{
+                .header = current_header,
+                .transactions = std::move(calls[i]),
+            };
+
+            // TODO(BSC): rehydrate transactions properly and set default values
+            // per the simulate_v1 spec
+
+            auto block_metrics = BlockMetrics{};
+            (void)block_metrics;
+            auto block_state = BlockState{tdb, vm};
+            (void)block_state;
+
+            std::vector<std::vector<CallFrame>> call_frames{};
+            std::vector<std::unique_ptr<CallTracerBase>> call_tracers{};
+            std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
+
+            call_frames.reserve(block.transactions.size());
+            call_tracers.reserve(block.transactions.size());
+            state_tracers.reserve(block.transactions.size());
+
+            for (size_t j = 0; j < block.transactions.size(); ++j) {
+                call_frames.emplace_back();
+                call_tracers.emplace_back(std::make_unique<CallTracer>(
+                    block.transactions[j], call_frames[j]));
+                state_tracers.emplace_back(
+                    std::make_unique<trace::StateTracer>(std::monostate{}));
+            }
+
+            auto const receipts =
+                std::vector<Receipt>(block.transactions.size());
+            MONAD_ASSERT(receipts.size() == call_frames.size());
+
+            // BOOST_OUTCOME_TRY(
+            //     auto const receipts,
+            //     execute_block_sync<traits>(
+            //         chain,
+            //         block,
+            //         senders[i],
+            //         authorities[i],
+            //         block_state,
+            //         block_hash_buffer,
+            //         block_metrics,
+            //         call_tracers,
+            //         state_tracers,
+            //         revert_transaction));
+
+            (void)tdb; // TODO(BSC): commit via read through database overlay
+            auto const output_header = block.header;
+
+            entry["calls"] = nlohmann::json::array();
+            auto &txns = entry["calls"];
+
+            for (auto const &[receipt, frames] :
+                 std::ranges::zip_view(receipts, call_frames)) {
+                auto call_entry = nlohmann::json::object();
+
+                call_entry["returnData"] =
+                    std::format("0x{}", evmc::hex(frames.front().output));
+                call_entry["logs"] = nlohmann::json::array();
+
+                txns.push_back(std::move(call_entry));
+            }
+
+            entry["baseFeePerGas"] = std::format(
+                "0x{}",
+                intx::to_string(output_header.base_fee_per_gas.value_or(0)));
+            entry["blobGasUsed"] =
+                std::format("0x{:x}", output_header.blob_gas_used.value_or(0));
+            entry["difficulty"] =
+                std::format("0x{}", intx::to_string(output_header.difficulty));
+            entry["excessBlobGas"] = std::format(
+                "0x{:x}", output_header.excess_blob_gas.value_or(0));
+            entry["extraData"] =
+                std::format("0x{}", evmc::hex(output_header.extra_data));
+
+            result.push_back(std::move(entry));
+        }
+#endif
+
+        (void)state_overrides;
+        (void)senders;
+        (void)authorities;
+
+        return result;
     }
 
     std::pair<
@@ -1476,6 +1667,147 @@ struct monad_executor
                 }
             });
     }
+
+    void submit_eth_simulate_to_pool(
+        monad_chain_config const chain_config,
+        std::vector<std::vector<Transaction>> calls,
+        std::vector<std::vector<Address>> senders,
+        std::span<struct monad_state_override const> state_overrides,
+        BlockHeader const &block_header, uint64_t const block_number,
+        bytes32_t const &block_id,
+        void (*complete)(monad_executor_result *, void *user), void *const user)
+    {
+        monad_executor_result *const result = new monad_executor_result();
+        (void)block_id;
+
+        auto const priority =
+            call_seq_no_.fetch_add(1, std::memory_order_relaxed);
+        trace_block_group_.group->submit(
+            priority,
+            [calls = std::move(calls),
+             senders = std::move(senders),
+             state_overrides = state_overrides,
+             block_header = block_header,
+             block_number = block_number,
+             block_id = block_id,
+             chain_config = chain_config,
+             &db = db_,
+             &vm = vm_,
+             complete = complete,
+             result = result,
+             user = user]() {
+                auto const res = [&]() -> Result<nlohmann::json> {
+                    auto authorities = std::vector<
+                        std::vector<std::vector<std::optional<Address>>>>(
+                        calls.size());
+                    for (auto block_idx = 0u; block_idx < calls.size();
+                         ++block_idx) {
+                        authorities[block_idx] =
+                            std::vector<std::vector<std::optional<Address>>>(
+                                calls[block_idx].size());
+                        for (auto tx_idx = 0u; tx_idx < calls[block_idx].size();
+                             ++tx_idx) {
+                            authorities[block_idx][tx_idx] =
+                                std::vector<std::optional<Address>>(
+                                    calls[block_idx][tx_idx]
+                                        .authorization_list.size());
+                            for (auto auth_idx = 0u;
+                                 auth_idx < calls[block_idx][tx_idx]
+                                                .authorization_list.size();
+                                 ++auth_idx) {
+                                authorities[block_idx][tx_idx][auth_idx] =
+                                    recover_authority(
+                                        calls[block_idx][tx_idx]
+                                            .authorization_list[auth_idx]);
+                            }
+                        }
+                    }
+
+                    auto const chain =
+                        [chain_config] -> std::unique_ptr<Chain> {
+                        switch (chain_config) {
+                        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                            return std::make_unique<EthereumMainnet>();
+                        case CHAIN_CONFIG_MONAD_DEVNET:
+                            return std::make_unique<MonadDevnet>();
+                        case CHAIN_CONFIG_MONAD_TESTNET:
+                            return std::make_unique<MonadTestnet>();
+                        case CHAIN_CONFIG_MONAD_MAINNET:
+                            return std::make_unique<MonadMainnet>();
+                        }
+                        MONAD_ASSERT(false);
+                    }();
+
+                    LazyBlockHash block_hash_buffer{db, block_number};
+                    TrieRODb tdb{db};
+
+                    if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+                        evmc_revision const rev = chain->get_revision(
+                            block_header.number, block_header.timestamp);
+                        SWITCH_EVM_TRAITS(
+                            eth_simulate_impl,
+                            *chain,
+                            calls,
+                            block_header,
+                            block_number,
+                            block_id,
+                            senders,
+                            authorities,
+                            tdb,
+                            vm,
+                            block_hash_buffer,
+                            state_overrides);
+                        MONAD_ASSERT(false);
+                    }
+                    else {
+                        auto const rev =
+                            dynamic_cast<MonadChain *>(chain.get())
+                                ->get_monad_revision(block_header.timestamp);
+                        SWITCH_MONAD_TRAITS(
+                            eth_simulate_impl,
+                            *chain,
+                            calls,
+                            block_header,
+                            block_number,
+                            block_id,
+                            senders,
+                            authorities,
+                            tdb,
+                            vm,
+                            block_hash_buffer,
+                            state_overrides);
+                        MONAD_ASSERT(false);
+                    }
+                }();
+
+                if (MONAD_UNLIKELY(res.has_error())) {
+                    result->status_code = EVMC_REJECTED;
+                    result->message = strdup(res.error().message().c_str());
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                    return;
+                }
+
+                nlohmann::json const &trace = res.assume_value();
+                if (trace.empty()) {
+                    result->encoded_trace = nullptr;
+                    result->encoded_trace_len = 0;
+                }
+                else {
+                    std::vector<uint8_t> cbor_state_trace =
+                        nlohmann::json::to_cbor(trace);
+                    result->encoded_trace =
+                        new uint8_t[cbor_state_trace.size()];
+                    result->encoded_trace_len = cbor_state_trace.size();
+                    memcpy(
+                        (uint8_t *)result->encoded_trace,
+                        cbor_state_trace.data(),
+                        cbor_state_trace.size());
+                }
+
+                complete(result, user);
+            });
+    }
 };
 
 monad_executor *monad_executor_create(
@@ -1627,4 +1959,93 @@ void monad_executor_run_transactions(
         complete,
         user,
         tracer_config);
+}
+
+namespace
+{
+    template <auto Decoder>
+    using decoder_value_t = typename decltype(Decoder(
+        std::declval<byte_string_view &>()))::value_type;
+
+    template <auto Decoder, bool explicit_parse_string>
+    auto decode_nested_items(byte_string_view &input)
+        -> Result<std::vector<std::vector<decoder_value_t<Decoder>>>>
+    {
+        using Item = decoder_value_t<Decoder>;
+        auto ret = std::vector<std::vector<Item>>{};
+
+        BOOST_OUTCOME_TRY(auto outer_payload, rlp::parse_list_metadata(input));
+        while (!outer_payload.empty()) {
+            ret.emplace_back();
+
+            BOOST_OUTCOME_TRY(
+                auto inner_payload, rlp::parse_list_metadata(outer_payload));
+
+            if constexpr (explicit_parse_string) {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(
+                        auto item_payload,
+                        rlp::parse_string_metadata(inner_payload));
+                    BOOST_OUTCOME_TRY(Item item, Decoder(item_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+            else {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(Item item, Decoder(inner_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+        }
+
+        return ret;
+    }
+}
+
+void monad_executor_eth_simulate_submit(
+    struct monad_executor *executor, enum monad_chain_config chain_config,
+    uint8_t const *rlp_senders, size_t rlp_senders_len,
+    uint8_t const *rlp_calls, size_t rlp_calls_len, uint64_t block_number,
+    uint8_t const *rlp_header, size_t rlp_header_len,
+    uint8_t const *rlp_block_id, size_t rlp_block_id_len,
+    struct monad_state_override const *state_overrides,
+    void (*complete)(monad_executor_result *, void *user), void *user)
+{
+    byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
+    auto const maybe_senders =
+        decode_nested_items<rlp::decode_address, false>(rlp_senders_view);
+    MONAD_ASSERT(maybe_senders.has_value());
+    auto const senders = maybe_senders.assume_value();
+
+    byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
+    auto const maybe_txns =
+        decode_nested_items<rlp::decode_transaction, true>(rlp_calls_view);
+    MONAD_ASSERT(maybe_txns.has_value());
+    auto const txns = maybe_txns.assume_value();
+
+    MONAD_ASSERT(senders.size() == txns.size());
+    auto const n_blocks = txns.size();
+
+    byte_string_view rlp_header_view({rlp_header, rlp_header_len});
+    auto const block_header_result = rlp::decode_block_header(rlp_header_view);
+    MONAD_ASSERT(!block_header_result.has_error());
+    MONAD_ASSERT(rlp_header_view.empty());
+    auto const &block_header = block_header_result.value();
+
+    byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
+    auto const block_id_result = rlp::decode_bytes32(block_id_view);
+    MONAD_ASSERT(!block_id_result.has_error());
+    MONAD_ASSERT(block_id_view.empty());
+    auto const block_id = block_id_result.value();
+
+    executor->submit_eth_simulate_to_pool(
+        chain_config,
+        std::move(txns),
+        std::move(senders),
+        std::span{state_overrides, n_blocks},
+        block_header,
+        block_number,
+        block_id,
+        complete,
+        user);
 }

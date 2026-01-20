@@ -3246,10 +3246,11 @@ namespace monad::vm::compiler::native
     }
 
     // Discharge through `touch_memory`.
+    template <runtime::Memory::Version memory_version>
     void Emitter::mload()
     {
         auto offset = stack_.pop();
-        auto mem = touch_memory(std::move(offset), 32, {});
+        auto mem = touch_memory<memory_version>(std::move(offset), 32, {});
         if (mem) {
             stack_.push(read_mem_be(*mem));
         }
@@ -3258,22 +3259,30 @@ namespace monad::vm::compiler::native
         }
     }
 
+    template void Emitter::mload<runtime::Memory::Version::V1>();
+    template void Emitter::mload<runtime::Memory::Version::MIP3>();
+
     // Discharge through `touch_memory`.
+    template <runtime::Memory::Version memory_version>
     void Emitter::mstore()
     {
         auto offset = stack_.pop();
-        auto mem = touch_memory(std::move(offset), 32, {});
+        auto mem = touch_memory<memory_version>(std::move(offset), 32, {});
         auto value = stack_.pop();
         if (mem) {
             mov_stack_elem_to_mem_be(std::move(value), *mem);
         }
     }
 
+    template void Emitter::mstore<runtime::Memory::Version::V1>();
+    template void Emitter::mstore<runtime::Memory::Version::MIP3>();
+
     // Discharge through `touch_memory`.
+    template <runtime::Memory::Version memory_version>
     void Emitter::mstore8()
     {
         auto offset = stack_.pop();
-        auto mem = touch_memory(std::move(offset), 1, {});
+        auto mem = touch_memory<memory_version>(std::move(offset), 1, {});
         auto const value = stack_.pop();
         if (!mem) {
             return;
@@ -3299,6 +3308,9 @@ namespace monad::vm::compiler::native
             as_.mov(*mem, x86::cl);
         }
     }
+
+    template void Emitter::mstore8<runtime::Memory::Version::V1>();
+    template void Emitter::mstore8<runtime::Memory::Version::MIP3>();
 
     void Emitter::mul(int64_t remaining_base_gas)
     {
@@ -6075,7 +6087,7 @@ namespace monad::vm::compiler::native
         return x86::rax;
     }
 
-    template <typename... LiveSet>
+    template <runtime::Memory::Version memory_version, typename... LiveSet>
     std::optional<asmjit::x86::Mem> Emitter::touch_memory(
         StackElemRef offset, int32_t read_size,
         std::tuple<LiveSet...> const &live)
@@ -6091,8 +6103,8 @@ namespace monad::vm::compiler::native
         // not overflow a runtime::Bin<30> after incrementing by `read_size`.
         static_assert(runtime::Memory::offset_bits <= 29);
 
-        // Make sure reg_context is rbx, because the function
-        // monad_vm_runtime_increase_memory_raw expects context to be passed
+        // Make sure reg_context is rbx, because the functions
+        // monad_vm_runtime_increase_memory_raw_* expect context to be passed
         // in rbx.
         static_assert(reg_context == x86::rbx);
 
@@ -6142,7 +6154,12 @@ namespace monad::vm::compiler::native
         }
 
         auto const increase_memory_fn =
-            rodata_.add_external_function(monad_vm_runtime_increase_memory_raw);
+            memory_version == runtime::Memory::Version::V1
+                ? rodata_.add_external_function(
+                      monad_vm_runtime_increase_memory_raw_v1)
+                : rodata_.add_external_function(
+                      monad_vm_runtime_increase_memory_raw_mip3);
+
         as_.call(increase_memory_fn);
 
         as_.bind(after_increase_label);

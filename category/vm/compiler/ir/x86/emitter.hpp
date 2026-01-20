@@ -337,8 +337,12 @@ namespace monad::vm::compiler::native
         void blobbasefee();
 
         void calldataload();
+
+        template <runtime::Memory::Version memory_version>
         void mload();
+        template <runtime::Memory::Version memory_version>
         void mstore();
+        template <runtime::Memory::Version memory_version>
         void mstore8();
 
         void mul(int64_t remaining_base_gas);
@@ -383,7 +387,7 @@ namespace monad::vm::compiler::native
         template <Traits traits>
         void sha3(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::sha3);
+            call_runtime(remaining_base_gas, true, runtime::sha3<traits>);
         }
 
         template <Traits traits>
@@ -395,13 +399,14 @@ namespace monad::vm::compiler::native
         template <Traits traits>
         void calldatacopy(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::calldatacopy);
+            call_runtime(
+                remaining_base_gas, true, runtime::calldatacopy<traits>);
         }
 
         template <Traits traits>
         void codecopy(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::codecopy);
+            call_runtime(remaining_base_gas, true, runtime::codecopy<traits>);
         }
 
         template <Traits traits>
@@ -421,7 +426,8 @@ namespace monad::vm::compiler::native
         template <Traits traits>
         void returndatacopy(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::returndatacopy);
+            call_runtime(
+                remaining_base_gas, true, runtime::returndatacopy<traits>);
         }
 
         template <Traits traits>
@@ -476,37 +482,37 @@ namespace monad::vm::compiler::native
         template <Traits traits>
         void mcopy(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::mcopy);
+            call_runtime(remaining_base_gas, true, runtime::mcopy<traits>);
         }
 
         template <Traits traits>
         void log0(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log0);
+            call_runtime(remaining_base_gas, true, runtime::log0<traits>);
         }
 
         template <Traits traits>
         void log1(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log1);
+            call_runtime(remaining_base_gas, true, runtime::log1<traits>);
         }
 
         template <Traits traits>
         void log2(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log2);
+            call_runtime(remaining_base_gas, true, runtime::log2<traits>);
         }
 
         template <Traits traits>
         void log3(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log3);
+            call_runtime(remaining_base_gas, true, runtime::log3<traits>);
         }
 
         template <Traits traits>
         void log4(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log4);
+            call_runtime(remaining_base_gas, true, runtime::log4<traits>);
         }
 
         template <Traits traits>
@@ -743,7 +749,7 @@ namespace monad::vm::compiler::native
             StackElemRef, asmjit::Label const &skip_label,
             std::tuple<LiveSet...> const &);
 
-        template <typename... LiveSet>
+        template <runtime::Memory::Version memory_version, typename... LiveSet>
         std::optional<asmjit::x86::Mem> touch_memory(
             StackElemRef offset, int32_t read_size,
             std::tuple<LiveSet...> const &);

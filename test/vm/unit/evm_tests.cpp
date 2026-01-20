@@ -82,6 +82,180 @@ TYPED_TEST(VMTraitsTest, OutOfGas)
     ASSERT_EQ(this->result_.gas_left, 0);
 }
 
+TYPED_TEST(VMTraitsTest, MLoadAtBoundMIP3)
+{
+    constexpr auto memory_version = TestFixture::get_memory_version();
+
+    auto const impls = {
+        TestFixture::Implementation::Compiler,
+        TestFixture::Implementation::Interpreter};
+    for (auto const impl : impls) {
+        constexpr auto gas = 200'000'000;
+        TestFixture::execute(gas, {PUSH3, 0x7f, 0xff, 0xe0, MLOAD}, {}, impl);
+        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+
+        switch (memory_version) {
+        case runtime::Memory::Version::V1:
+            ASSERT_EQ(this->result_.gas_left, 64'995'840 - 2 * 3);
+            break;
+        case runtime::Memory::Version::MIP3:
+            ASSERT_EQ(this->result_.gas_left, 199'868'928 - 2 * 3);
+            break;
+        }
+    }
+}
+
+TYPED_TEST(VMTraitsTest, MStore8AtBoundMIP3)
+{
+    auto memory_version = [] {
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return runtime::Memory::Version::MIP3;
+            }
+        }
+        return runtime::Memory::Version::V1;
+    }();
+
+    auto const impls = {
+        TestFixture::Implementation::Compiler,
+        TestFixture::Implementation::Interpreter};
+    for (auto const impl : impls) {
+        constexpr auto gas = 200'000'000;
+        TestFixture::execute(
+            gas, {PUSH1, 0, PUSH3, 0x7f, 0xff, 0xff, MSTORE8}, {}, impl);
+        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+
+        switch (memory_version) {
+        case runtime::Memory::Version::V1:
+            ASSERT_EQ(this->result_.gas_left, 64'995'840 - 3 * 3);
+            break;
+        case runtime::Memory::Version::MIP3:
+            ASSERT_EQ(this->result_.gas_left, 199'868'928 - 3 * 3);
+            break;
+        }
+    }
+}
+
+TYPED_TEST(VMTraitsTest, ResultDataAtBound)
+{
+    constexpr auto memory_version = TestFixture::get_memory_version();
+    auto const return_size = [&] {
+        switch (memory_version) {
+        case runtime::Memory::Version::V1:
+            return (uint256_t{1} << runtime::Memory::offset_bits - 1).to_be();
+        case runtime::Memory::Version::MIP3:
+            return uint256_t{8 * 1024 * 1024}.to_be();
+        }
+        MONAD_VM_ASSERT(false);
+    }();
+
+    auto const impls = {
+        TestFixture::Implementation::Compiler,
+        TestFixture::Implementation::Interpreter};
+    for (auto const impl : impls) {
+        constexpr auto gas = 35'000'000'000;
+        std::vector<uint8_t> bytecode;
+        bytecode.push_back(PUSH32);
+        uint8_t const *const return_size_bytes = return_size.as_bytes();
+        for (size_t i = 0; i < 32; ++i) {
+            bytecode.push_back(return_size_bytes[i]);
+        }
+        bytecode.push_back(PUSH1);
+        bytecode.push_back(0);
+        bytecode.push_back(RETURN);
+        TestFixture::execute(gas, bytecode, {}, impl);
+        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+
+        switch (memory_version) {
+        case runtime::Memory::Version::V1:
+            ASSERT_EQ(this->result_.gas_left, 627'678'720 - 2 * 3);
+            break;
+        case runtime::Memory::Version::MIP3:
+            ASSERT_EQ(this->result_.gas_left, 34'999'868'928 - 2 * 3);
+            break;
+        }
+    }
+}
+
+TYPED_TEST(VMTraitsTest, ResultDataOutOfBound)
+{
+    constexpr auto memory_version = TestFixture::get_memory_version();
+    auto const return_size = [&] {
+        switch (memory_version) {
+        case runtime::Memory::Version::V1:
+            return (uint256_t{1} << runtime::Memory::offset_bits).to_be();
+        case runtime::Memory::Version::MIP3:
+            return uint256_t{8 * 1024 * 1024 + 1}.to_be();
+        }
+        MONAD_VM_ASSERT(false);
+    }();
+
+    auto const impls = {
+        TestFixture::Implementation::Compiler,
+        TestFixture::Implementation::Interpreter};
+    for (auto const impl : impls) {
+        constexpr auto gas = 35'000'000'000;
+        std::vector<uint8_t> bytecode;
+        bytecode.push_back(PUSH32);
+        uint8_t const *const return_size_bytes = return_size.as_bytes();
+        for (size_t i = 0; i < 32; ++i) {
+            bytecode.push_back(return_size_bytes[i]);
+        }
+        bytecode.push_back(PUSH1);
+        bytecode.push_back(0);
+        bytecode.push_back(RETURN);
+        TestFixture::execute(gas, bytecode, {}, impl);
+        ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+    }
+}
+
+TYPED_TEST(VMTraitsTest, MLoadOutOfBoundMIP3)
+{
+    constexpr auto memory_version = TestFixture::get_memory_version();
+
+    auto const impls = {
+        TestFixture::Implementation::Compiler,
+        TestFixture::Implementation::Interpreter};
+    for (auto const impl : impls) {
+        constexpr auto gas = 200'000'000;
+        TestFixture::execute(gas, {PUSH3, 0x7f, 0xff, 0xe1, MLOAD}, {}, impl);
+
+        switch (memory_version) {
+        case runtime::Memory::Version::V1:
+            ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+            ASSERT_EQ(this->result_.gas_left, 64'994'813 - 2 * 3);
+            break;
+        case runtime::Memory::Version::MIP3:
+            ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+            break;
+        }
+    }
+}
+
+TYPED_TEST(VMTraitsTest, MStore8OutOfBoundMIP3)
+{
+    constexpr auto memory_version = TestFixture::get_memory_version();
+
+    auto const impls = {
+        TestFixture::Implementation::Compiler,
+        TestFixture::Implementation::Interpreter};
+    for (auto const impl : impls) {
+        constexpr auto gas = 200'000'000;
+        TestFixture::execute(
+            gas, {PUSH1, 0, PUSH3, 0x80, 0x00, 0x00, MSTORE8}, {}, impl);
+
+        switch (memory_version) {
+        case runtime::Memory::Version::V1:
+            ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+            ASSERT_EQ(this->result_.gas_left, 64'994'813 - 3 * 3);
+            break;
+        case runtime::Memory::Version::MIP3:
+            ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+            break;
+        }
+    }
+}
+
 // https://github.com/category-labs/monad-compiler/issues/138
 TYPED_TEST(VMTraitsTest, BeaconRootRegression_138)
 {
@@ -228,7 +402,11 @@ TYPED_TEST(VMTraitsTest, MissingDischargeInJumpiKeepFallthroughStack)
         0x85, 0x90, 0x1c, 0x90, 0x50, 0x80, 0x60, 0x1f, 0x1a, 0x90, 0x50, 0x5f,
         0x60, 0x08, 0x86, 0x90, 0x1c, 0x90, 0x50, 0x80, 0x60, 0x04, 0x1a, 0x90,
         0x50, 0x5f, 0x60, 0x10};
-    TestFixture::execute_and_compare(1'000'000, bytecode, {});
+
+    // Generally evmone only works for evm revisions, so skip monad versions:
+    if constexpr (!TestFixture::is_monad_trait()) {
+        TestFixture::execute_and_compare(1'000'000, bytecode, {});
+    }
 }
 
 TYPED_TEST(VMTraitsTest, WrongGasCheckConditionalJump)
@@ -346,8 +524,8 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
         this->host_.to_context(),
         &this->msg_,
         bytecode1);
-    this->result_ =
-        this->vm_.execute_native_entrypoint_raw(rt_ctx1, ncode1->entrypoint());
+    this->result_ = this->vm_.template execute_native_entrypoint_raw<
+        typename TestFixture::Trait>(rt_ctx1, ncode1->entrypoint());
 
     ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
     ASSERT_EQ(this->result_.gas_left, 10'000 - (3 * 1024 + 1));
@@ -367,8 +545,8 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
         this->host_.to_context(),
         &this->msg_,
         bytecode2);
-    this->result_ =
-        this->vm_.execute_native_entrypoint_raw(rt_ctx2, ncode2->entrypoint());
+    this->result_ = this->vm_.template execute_native_entrypoint_raw<
+        typename TestFixture::Trait>(rt_ctx2, ncode2->entrypoint());
 
     ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 
@@ -407,8 +585,8 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
         this->host_.to_context(),
         &this->msg_,
         bytecode1);
-    this->result_ =
-        this->vm_.execute_native_entrypoint_raw(rt_ctx1, ncode1->entrypoint());
+    this->result_ = this->vm_.template execute_native_entrypoint_raw<
+        typename TestFixture::Trait>(rt_ctx1, ncode1->entrypoint());
 
     ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
     ASSERT_EQ(this->result_.gas_left, 10'000 - (2 * 1024 + 1 + 2 * 1024 + 1));
@@ -427,8 +605,8 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
         this->host_.to_context(),
         &this->msg_,
         bytecode2);
-    this->result_ =
-        this->vm_.execute_native_entrypoint_raw(rt_ctx2, ncode2->entrypoint());
+    this->result_ = this->vm_.template execute_native_entrypoint_raw<
+        typename TestFixture::Trait>(rt_ctx2, ncode2->entrypoint());
 
     ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
 
@@ -473,7 +651,8 @@ TYPED_TEST(VMTraitsTest, ShrCeilOffByOneRegression)
         this->host_.to_context(),
         &this->msg_,
         code);
-    vm.execute_native_entrypoint_raw(rt_ctx, ncode->entrypoint());
+    vm.template execute_native_entrypoint_raw<typename TestFixture::Trait>(
+        rt_ctx, ncode->entrypoint());
 }
 
 // Compiled directly from the Solidity code in:

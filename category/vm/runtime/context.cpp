@@ -17,6 +17,8 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -162,6 +164,7 @@ namespace monad::vm::runtime
         }};
     }
 
+    template <Traits traits>
     std::variant<std::span<std::uint8_t const>, evmc_status_code>
     Context::copy_result_data()
     {
@@ -207,8 +210,16 @@ namespace monad::vm::runtime
             std::memcpy(output_buf, memory.data + *offset, *size);
         }
         else {
+            if (MONAD_VM_UNLIKELY(
+                    !is_memory_size_in_bound<traits>(memory_end))) {
+                // Return out-of-gas error code, similar to when an
+                // `is_bounded_by_bits` check fails.
+                return EVMC_OUT_OF_GAS;
+            }
+
             auto const memory_cost =
-                Context::memory_cost_from_word_count(shr_ceil<5>(memory_end));
+                Context::memory_cost_from_word_count<traits>(
+                    Context::memory_size_to_word_count(memory_end));
             gas_remaining -= memory_cost - memory.cost;
 
             if (gas_remaining < 0) {
@@ -230,6 +241,9 @@ namespace monad::vm::runtime
         return std::span{output_buf, *size};
     }
 
+    EXPLICIT_TRAITS_MEMBER(Context::copy_result_data);
+
+    template <Traits traits>
     evmc::Result Context::copy_to_evmc_result()
     {
         using enum StatusCode;
@@ -260,6 +274,8 @@ namespace monad::vm::runtime
                         .padding = {},
                     }};
                 }},
-            copy_result_data());
+            copy_result_data<traits>());
     }
+
+    EXPLICIT_TRAITS_MEMBER(Context::copy_to_evmc_result);
 }

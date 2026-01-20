@@ -455,9 +455,11 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
     VM vm;
     evmc::MockedHost host;
 
+    using traits = EvmTraits<EVMC_FRONTIER>;
+
     auto [bytecode0, hash0] = make_bytecode(0);
     auto icode0 = make_shared_intercode(bytecode0);
-    auto ncode0 = vm.compiler().compile<EvmTraits<EVMC_FRONTIER>>(icode0);
+    auto ncode0 = vm.compiler().compile<traits>(icode0);
     auto entry0 = ncode0->entrypoint();
     ASSERT_NE(entry0, nullptr);
 
@@ -469,7 +471,7 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
         host.to_context(),
         &*msg,
         {bytecode0.data(), bytecode0.size()});
-    auto result = vm.execute_native_entrypoint_raw(rt_ctx, entry0);
+    auto result = vm.execute_native_entrypoint_raw<traits>(rt_ctx, entry0);
     ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     ASSERT_EQ(result.output_size, 0);
     ASSERT_EQ(result.gas_left, 4);

@@ -17,6 +17,7 @@
 
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.hpp>
@@ -25,6 +26,7 @@
 
 namespace monad::vm::runtime
 {
+    template <Traits traits>
     inline void sha3(
         Context *ctx, uint256_t *result_ptr, uint256_t const *offset_ptr,
         uint256_t const *size_ptr)
@@ -35,7 +37,7 @@ namespace monad::vm::runtime
         if (*size > 0) {
             offset = ctx->get_memory_offset(*offset_ptr);
 
-            ctx->expand_memory(offset + size);
+            ctx->expand_memory<traits>(offset + size);
 
             auto const word_size = shr_ceil<5>(size);
             ctx->deduct_gas(word_size * bin<6>);

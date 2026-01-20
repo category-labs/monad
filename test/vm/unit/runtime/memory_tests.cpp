@@ -84,10 +84,12 @@ namespace
         std::vector<std::pair<uint8_t, bool>> post_calls;
     };
 
+    template <Traits traits>
     void increase_capacity(Context &ctx)
     {
         auto const capacity_before = ctx.memory.capacity;
-        ctx.expand_memory(Bin<29>::unsafe_from(ctx.memory.capacity + 1));
+        ctx.expand_memory<traits>(
+            Bin<29>::unsafe_from(ctx.memory.capacity + 1));
         auto const capacity_after = ctx.memory.capacity;
         auto const parent_total_size = *ctx.memory.parent_total_size();
         ASSERT_EQ(
@@ -151,7 +153,7 @@ namespace
         MONAD_VM_ASSERT(n_post <= 2);
 
         for (uint8_t i = 0; i < n_pre; ++i) {
-            increase_capacity(ctx);
+            increase_capacity<traits>(ctx);
         }
         set_memory(ctx, depth, full_pre);
 
@@ -164,7 +166,7 @@ namespace
         invariant_check(ctx, depth);
 
         for (uint8_t i = 0; i < n_post; ++i) {
-            increase_capacity(ctx);
+            increase_capacity<traits>(ctx);
         }
         set_memory(ctx, depth, full_post);
 
@@ -230,204 +232,381 @@ TEST_F(RuntimeTest, EmptyMemory)
     ASSERT_EQ(ctx_.memory.cost, 0);
 }
 
-TEST_F(RuntimeTest, MStore)
+TYPED_TEST(RuntimeTraitsTest, MStore)
 {
-    ctx_.gas_remaining = 6;
-    call(mstore, 0, 0xFF);
-    ASSERT_EQ(ctx_.memory.size, 32);
-    ASSERT_EQ(ctx_.memory.data[31], 0xFF);
-    ASSERT_EQ(ctx_.memory.cost, 3);
-    ASSERT_EQ(ctx_.gas_remaining, 3);
+    using traits = TestFixture::Trait;
+    constexpr auto memory_version = TestFixture::get_memory_version();
 
-    call(mstore, 1, 0xFF);
-    ASSERT_EQ(ctx_.memory.size, 64);
-    ASSERT_EQ(ctx_.memory.data[31], 0x00);
-    ASSERT_EQ(ctx_.memory.data[32], 0xFF);
-    ASSERT_EQ(ctx_.memory.cost, 6);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-}
+    switch (memory_version) {
+    case Memory::Version::V1:
+        this->ctx_.gas_remaining = 6;
+        break;
+    case Memory::Version::MIP3:
+        this->ctx_.gas_remaining = 1;
+        break;
+    }
 
-TEST_F(RuntimeTest, MStoreWord)
-{
-    ctx_.gas_remaining = 3;
-    call(
-        mstore,
-        0,
-        0x000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F_u256);
+    TestFixture::call(mstore<traits>, 0, 0xFF);
+    ASSERT_EQ(this->ctx_.memory.size, 32);
+    ASSERT_EQ(this->ctx_.memory.data[31], 0xFF);
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.gas_remaining, 3);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.gas_remaining, 1);
+        break;
+    }
 
-    ASSERT_EQ(ctx_.memory.size, 32);
-    ASSERT_EQ(ctx_.memory.cost, 3);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
+    TestFixture::call(mstore<traits>, 1, 0xFF);
+    ASSERT_EQ(this->ctx_.memory.size, 64);
+    ASSERT_EQ(this->ctx_.memory.data[31], 0x00);
+    ASSERT_EQ(this->ctx_.memory.data[32], 0xFF);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
 
-    for (auto i = 0u; i < 31; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], i);
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.memory.cost, 6);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.memory.cost, 1);
+        break;
     }
 }
 
-TEST_F(RuntimeTest, MCopy)
+TYPED_TEST(RuntimeTraitsTest, MStoreWord)
 {
-    ctx_.gas_remaining = 20;
+    using traits = TestFixture::Trait;
+    constexpr auto memory_version = TestFixture::get_memory_version();
 
-    call(mstore8, 1, 1);
-    call(mstore8, 2, 2);
-    call(mcopy, 3, 1, 33);
+    switch (memory_version) {
+    case Memory::Version::V1:
+        this->ctx_.gas_remaining = 3;
+        break;
+    case Memory::Version::MIP3:
+        this->ctx_.gas_remaining = 0;
+        break;
+    }
 
-    ASSERT_EQ(ctx_.memory.cost, 6);
-    ASSERT_EQ(ctx_.gas_remaining, 8);
-    ASSERT_EQ(ctx_.memory.size, 64);
-    ASSERT_EQ(ctx_.memory.data[0], 0);
-    ASSERT_EQ(ctx_.memory.data[1], 1);
-    ASSERT_EQ(ctx_.memory.data[2], 2);
-    ASSERT_EQ(ctx_.memory.data[3], 1);
-    ASSERT_EQ(ctx_.memory.data[4], 2);
-    ASSERT_EQ(ctx_.memory.data[5], 0);
+    TestFixture::call(
+        mstore<traits>,
+        0,
+        0x000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F_u256);
+
+    ASSERT_EQ(this->ctx_.memory.size, 32);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.memory.cost, 3);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.memory.cost, 0);
+        break;
+    }
+
+    for (auto i = 0u; i < 31; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], i);
+    }
 }
 
-TEST_F(RuntimeTest, MStore8)
+TYPED_TEST(RuntimeTraitsTest, MCopy)
 {
-    ctx_.gas_remaining = 3;
-    call(mstore8, 0, 0xFFFF);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.cost, 3);
-    ASSERT_EQ(ctx_.memory.data[0], 0xFF);
-    ASSERT_EQ(ctx_.memory.data[1], 0x00);
+    using traits = TestFixture::Trait;
+    constexpr auto memory_version = TestFixture::get_memory_version();
 
-    call(mstore8, 1, 0xFF);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.cost, 3);
-    ASSERT_EQ(ctx_.memory.data[0], 0xFF);
-    ASSERT_EQ(ctx_.memory.data[1], 0xFF);
+    switch (memory_version) {
+    case Memory::Version::V1:
+        this->ctx_.gas_remaining = 20;
+        break;
+    case Memory::Version::MIP3:
+        this->ctx_.gas_remaining = 15;
+        break;
+    }
+
+    TestFixture::call(mstore8<traits>, 1, 1);
+    TestFixture::call(mstore8<traits>, 2, 2);
+    TestFixture::call(mcopy<traits>, 3, 1, 33);
+
+    ASSERT_EQ(this->ctx_.gas_remaining, 8);
+    ASSERT_EQ(this->ctx_.memory.size, 64);
+    ASSERT_EQ(this->ctx_.memory.data[0], 0);
+    ASSERT_EQ(this->ctx_.memory.data[1], 1);
+    ASSERT_EQ(this->ctx_.memory.data[2], 2);
+    ASSERT_EQ(this->ctx_.memory.data[3], 1);
+    ASSERT_EQ(this->ctx_.memory.data[4], 2);
+    ASSERT_EQ(this->ctx_.memory.data[5], 0);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.memory.cost, 6);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.memory.cost, 1);
+        break;
+    }
+}
+
+TYPED_TEST(RuntimeTraitsTest, MStore8)
+{
+    using traits = TestFixture::Trait;
+    constexpr auto memory_version = TestFixture::get_memory_version();
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        this->ctx_.gas_remaining = 3;
+        break;
+    case Memory::Version::MIP3:
+        this->ctx_.gas_remaining = 0;
+        break;
+    }
+
+    TestFixture::call(mstore8<traits>, 0, 0xFFFF);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.data[0], 0xFF);
+    ASSERT_EQ(this->ctx_.memory.data[1], 0x00);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.memory.cost, 3);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.memory.cost, 0);
+        break;
+    }
+
+    TestFixture::call(mstore8<traits>, 1, 0xFF);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.data[0], 0xFF);
+    ASSERT_EQ(this->ctx_.memory.data[1], 0xFF);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.memory.cost, 3);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.memory.cost, 0);
+        break;
+    }
 
     ASSERT_EQ(
-        call(mload, 0),
+        TestFixture::call(mload<traits>, 0),
         0xFFFF000000000000000000000000000000000000000000000000000000000000_u256);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.cost, 3);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.memory.cost, 3);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.memory.cost, 0);
+        break;
+    }
 }
 
-TEST_F(RuntimeTest, MLoad)
+TYPED_TEST(RuntimeTraitsTest, MLoad)
 {
-    ctx_.gas_remaining = 6;
-    call(mstore, 0, 0xFF);
-    ASSERT_EQ(call(mload, 0), 0xFF);
-    ASSERT_EQ(ctx_.gas_remaining, 3);
-    ASSERT_EQ(ctx_.memory.cost, 3);
+    using traits = TestFixture::Trait;
+    constexpr auto memory_version = TestFixture::get_memory_version();
 
-    ASSERT_EQ(call(mload, 1), 0xFF00);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.cost, 6);
+    switch (memory_version) {
+    case Memory::Version::V1:
+        this->ctx_.gas_remaining = 6;
+        break;
+    case Memory::Version::MIP3:
+        this->ctx_.gas_remaining = 1;
+        break;
+    }
+
+    TestFixture::call(mstore<traits>, 0, 0xFF);
+    ASSERT_EQ(TestFixture::call(mload<traits>, 0), 0xFF);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.gas_remaining, 3);
+        ASSERT_EQ(this->ctx_.memory.cost, 3);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.gas_remaining, 1);
+        ASSERT_EQ(this->ctx_.memory.cost, 0);
+        break;
+    }
+
+    ASSERT_EQ(TestFixture::call(mload<traits>, 1), 0xFF00);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.memory.cost, 6);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.memory.cost, 1);
+        break;
+    }
 }
 
-TEST_F(RuntimeTest, QuadraticCosts)
+TYPED_TEST(RuntimeTraitsTest, QuadraticCosts)
 {
-    ctx_.gas_remaining = 101;
-    ASSERT_EQ(call(mload, 1024), 0);
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.cost, 101);
-    ASSERT_EQ(ctx_.memory.size, 1056);
+    using traits = TestFixture::Trait;
+    constexpr auto memory_version = TestFixture::get_memory_version();
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        this->ctx_.gas_remaining = 101;
+        break;
+    case Memory::Version::MIP3:
+        this->ctx_.gas_remaining = 16;
+        break;
+    }
+
+    ASSERT_EQ(TestFixture::call(mload<traits>, 1024), 0);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.size, 1056);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(this->ctx_.memory.cost, 101);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(this->ctx_.memory.cost, 16);
+        break;
+    }
 }
 
-TEST_F(RuntimeTest, ExpandMemory)
+template <Memory::Version memory_version>
+void test_expand_memory_impl(Context &ctx, std::function<void(Bin<29>)> expand)
 {
-    ctx_.gas_remaining = 1'000'000;
+    ctx.gas_remaining = 1'000'000;
 
-    ASSERT_EQ(ctx_.memory.capacity, vm::test::TestMemory::capacity);
+    ASSERT_EQ(ctx.memory.capacity, vm::test::TestMemory::capacity);
 
     uint32_t const new_capacity = (vm::test::TestMemory::capacity + 32) * 2;
 
-    ctx_.expand_memory(
-        Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 1));
-    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity + 32);
-    ASSERT_EQ(ctx_.memory.capacity, new_capacity);
-    ASSERT_EQ(ctx_.memory.cost, 419);
+    expand(Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 1));
+    ASSERT_EQ(ctx.memory.size, vm::test::TestMemory::capacity + 32);
+    ASSERT_EQ(ctx.memory.capacity, new_capacity);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(ctx.memory.cost, 419);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(ctx.memory.cost, 64);
+        break;
+    }
+
     ASSERT_TRUE(std::all_of(
-        ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {
+        ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
             return b == 0;
         }));
 
-    ctx_.expand_memory(
-        Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 90));
-    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity + 96);
-    ASSERT_EQ(ctx_.memory.capacity, new_capacity);
-    ASSERT_EQ(ctx_.memory.cost, 426);
+    expand(Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 90));
+    ASSERT_EQ(ctx.memory.size, vm::test::TestMemory::capacity + 96);
+    ASSERT_EQ(ctx.memory.capacity, new_capacity);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(ctx.memory.cost, 426);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(ctx.memory.cost, 65);
+        break;
+    }
+
     ASSERT_TRUE(std::all_of(
-        ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {
+        ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
             return b == 0;
         }));
 
-    ctx_.expand_memory(Bin<29>::unsafe_from(new_capacity));
-    ASSERT_EQ(ctx_.memory.size, new_capacity);
-    ASSERT_EQ(ctx_.memory.capacity, new_capacity);
-    ASSERT_EQ(ctx_.memory.cost, 904);
+    expand(Bin<29>::unsafe_from(new_capacity));
+    ASSERT_EQ(ctx.memory.size, new_capacity);
+    ASSERT_EQ(ctx.memory.capacity, new_capacity);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(ctx.memory.cost, 904);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(ctx.memory.cost, 129);
+        break;
+    }
+
     ASSERT_TRUE(std::all_of(
-        ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {
+        ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
             return b == 0;
         }));
 
-    ctx_.expand_memory(
-        Bin<29>::unsafe_from(vm::test::TestMemory::capacity * 4 + 1));
-    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity * 4 + 32);
+    expand(Bin<29>::unsafe_from(vm::test::TestMemory::capacity * 4 + 1));
+    ASSERT_EQ(ctx.memory.size, vm::test::TestMemory::capacity * 4 + 32);
     ASSERT_EQ(
-        ctx_.memory.capacity, (vm::test::TestMemory::capacity * 4 + 32) * 2);
-    ASSERT_EQ(ctx_.memory.cost, 2053);
+        ctx.memory.capacity, (vm::test::TestMemory::capacity * 4 + 32) * 2);
+
+    switch (memory_version) {
+    case Memory::Version::V1:
+        ASSERT_EQ(ctx.memory.cost, 2053);
+        break;
+    case Memory::Version::MIP3:
+        ASSERT_EQ(ctx.memory.cost, 256);
+        break;
+    }
+
     ASSERT_TRUE(std::all_of(
-        ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {
+        ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
             return b == 0;
         }));
+
+    if (memory_version == Memory::Version::MIP3) {
+        constexpr uint32_t max_size = 8 * 1024 * 1024;
+        monad_vm_runtime_increase_memory_mip3(
+            Bin<29>::unsafe_from(max_size - 1), &ctx);
+        ASSERT_EQ(ctx.memory.capacity, max_size * 2);
+        ASSERT_EQ(ctx.memory.cost, max_size / 64);
+        ASSERT_TRUE(std::all_of(
+            ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
+                return b == 0;
+            }));
+    }
 }
 
-TEST_F(RuntimeTest, RuntimeIncreaseMemory)
+TYPED_TEST(RuntimeTraitsTest, ExpandMemory)
 {
-    ctx_.gas_remaining = 1'000'000;
-
-    ASSERT_EQ(ctx_.memory.capacity, vm::test::TestMemory::capacity);
-
-    uint32_t const new_capacity = (vm::test::TestMemory::capacity + 32) * 2;
-
-    monad_vm_runtime_increase_memory(
-        Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 1), &ctx_);
-    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity + 32);
-    ASSERT_EQ(ctx_.memory.capacity, new_capacity);
-    ASSERT_EQ(ctx_.memory.cost, 419);
-    ASSERT_TRUE(std::all_of(
-        ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {
-            return b == 0;
-        }));
-
-    monad_vm_runtime_increase_memory(
-        Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 90), &ctx_);
-    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity + 96);
-    ASSERT_EQ(ctx_.memory.capacity, new_capacity);
-    ASSERT_EQ(ctx_.memory.cost, 426);
-    ASSERT_TRUE(std::all_of(
-        ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {
-            return b == 0;
-        }));
-
-    monad_vm_runtime_increase_memory(Bin<29>::unsafe_from(new_capacity), &ctx_);
-    ASSERT_EQ(ctx_.memory.size, new_capacity);
-    ASSERT_EQ(ctx_.memory.capacity, new_capacity);
-    ASSERT_EQ(ctx_.memory.cost, 904);
-    ASSERT_TRUE(std::all_of(
-        ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {
-            return b == 0;
-        }));
-
-    monad_vm_runtime_increase_memory(
-        Bin<29>::unsafe_from(vm::test::TestMemory::capacity * 4 + 1), &ctx_);
-    ASSERT_EQ(ctx_.memory.size, vm::test::TestMemory::capacity * 4 + 32);
-    ASSERT_EQ(
-        ctx_.memory.capacity, (vm::test::TestMemory::capacity * 4 + 32) * 2);
-    ASSERT_EQ(ctx_.memory.cost, 2053);
-    ASSERT_TRUE(std::all_of(
-        ctx_.memory.data, ctx_.memory.data + ctx_.memory.size, [](auto b) {
-            return b == 0;
-        }));
+    using traits = TestFixture::Trait;
+    constexpr auto memory_version = TestFixture::get_memory_version();
+    test_expand_memory_impl<memory_version>(
+        this->ctx_, [this](Bin<29> const s) {
+            this->ctx_.template expand_memory<traits>(s);
+        });
 }
 
-TEST_F(RuntimeTest, MemoryTestMachine)
+TEST_F(RuntimeTest, RuntimeIncreaseMemoryV1)
 {
-    using traits = EvmTraits<EVMC_OSAKA>;
+    constexpr auto memory_version = Memory::Version::V1;
+    test_expand_memory_impl<memory_version>(
+        this->ctx_, [this](Bin<29> const s) {
+            monad_vm_runtime_increase_memory_v1(s, &ctx_);
+        });
+}
+
+TEST_F(RuntimeTest, RuntimeIncreaseMemoryMIP3)
+{
+    constexpr auto memory_version = Memory::Version::MIP3;
+    test_expand_memory_impl<memory_version>(
+        this->ctx_, [this](Bin<29> const s) {
+            monad_vm_runtime_increase_memory_mip3(s, &ctx_);
+        });
+}
+
+TEST_F(RuntimeTest, MemoryTestMachineV1)
+{
+    using traits = MonadTraits<MONAD_EIGHT>;
+    for (auto const &config : memory_test_machine_configs()) {
+        run_memory_test_machine<traits>(RuntimeTestBase::host_, config);
+    }
+}
+
+TEST_F(RuntimeTest, MemoryTestMachineMIP3)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
     for (auto const &config : memory_test_machine_configs()) {
         run_memory_test_machine<traits>(RuntimeTestBase::host_, config);
     }

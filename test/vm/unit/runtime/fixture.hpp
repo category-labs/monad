@@ -187,6 +187,13 @@ namespace monad::vm::compiler::test
         , public TraitsTest<T>
     {
     public:
+        static constexpr runtime::Memory::Version get_memory_version()
+        {
+            return TraitsTest<T>::Trait::mip_3_active()
+                       ? runtime::Memory::Version::MIP3
+                       : runtime::Memory::Version::V1;
+        }
+
         void assert_delegated(evmc::address const &delegate_addr)
         {
             ASSERT_EQ(ctx_.result.status, StatusCode::Success);

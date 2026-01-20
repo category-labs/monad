@@ -115,6 +115,12 @@ namespace monad::vm::runtime
 
         static constexpr auto offset_bits = 28;
 
+        enum class Version
+        {
+            V1,
+            MIP3
+        };
+
         using Offset = Bin<offset_bits>;
 
         Memory() = delete;
@@ -171,12 +177,14 @@ namespace monad::vm::runtime
             // of memory.
             // Therefore if the total memory size of the parent call frame is
             // larger than Bin<30>::upper, the transaction has accessed a
-            // memory index larger than Bin<30>::upper. Hence a lower bound on
-            // current gas consumption is
-            //   max_call_depth * memory_cost_from_word_count(2^20 - 1)
+            // memory index larger than Bin<30>::upper. Hence if MIP-3 is not
+            // active, a lower bound on current gas consumption is
+            //   max_call_depth * memory_cost_from_word_count<...>(2^20 - 1)
             //   = 1024 * ((c * c) / 512 + (3 * c))
             //   > 2 billion
             //   for c = floor((2^20 - 1) / 32).
+            // If MIP-3 is active, then parent memory size is automatically
+            // upper bounded by the 8 MB transaction peak memory limit.
             // This means that more than 2 billion gas must have been consumed
             // already by the current transaction for the following assertion
             // to fail:
@@ -253,33 +261,81 @@ namespace monad::vm::runtime
             return deduct_gas(*gas);
         }
 
+        template <Traits traits>
         [[gnu::always_inline]]
         static constexpr int64_t
         memory_cost_from_word_count(Bin<32> const word_count) noexcept
         {
-            // The implementation of `parent_total_size` depends on this
-            // large expansion cost to avoid overflow.
-            auto const c = static_cast<uint64_t>(*word_count);
-            return static_cast<int64_t>((c * c) / 512 + (3 * c));
+            // The implementation of `parent_total_size` depends on a large
+            // expansion cost for V1 memory version and depends on a small
+            // fixed memory limit for MIP-3 memory version.
+            if constexpr (traits::mip_3_active()) {
+                // MIP-3 memory version
+                return static_cast<int64_t>(*word_count >> 1);
+            }
+            else {
+                // V1 memory version
+                auto const c = static_cast<uint64_t>(*word_count);
+                return static_cast<int64_t>((c * c) / 512 + (3 * c));
+            }
+        }
+
+        [[gnu::always_inline]]
+        static constexpr Bin<25>
+        memory_size_to_word_count(Bin<29> const mem_size) noexcept
+        {
+            return shr_ceil<5>(mem_size);
+        }
+
+        [[gnu::always_inline]]
+        static constexpr Bin<30>
+        word_count_to_memory_size(Bin<25> word_count) noexcept
+        {
+            return shl<5>(word_count);
+        }
+
+        template <Traits traits>
+        [[gnu::always_inline]]
+        bool is_memory_size_in_bound(Bin<30> mem_size)
+        {
+            if constexpr (traits::mip_3_active()) {
+                Bin<31> const total_size =
+                    mem_size + memory.parent_total_size();
+                constexpr uint32_t max_total_size = 0x800000; // 8MB
+                return *total_size <= max_total_size;
+            }
+            return true;
         }
 
         void increase_capacity(uint32_t old_size, Bin<30> new_size);
 
+        template <Traits traits>
         void expand_memory(Bin<29> min_size)
         {
             if (memory.size < *min_size) {
-                auto const wsize = shr_ceil<5>(min_size);
-                std::int64_t const new_cost =
-                    memory_cost_from_word_count(wsize);
-                Bin<30> const new_size = shl<5>(wsize);
+                auto const word_count = memory_size_to_word_count(min_size);
+                auto const new_cost =
+                    memory_cost_from_word_count<traits>(word_count);
+                Bin<30> const new_size = word_count_to_memory_size(word_count);
+
+                // Bound check before increasing size or capacity:
+                if (MONAD_VM_UNLIKELY(
+                        !is_memory_size_in_bound<traits>(new_size))) {
+                    // Return out-of-gas error code, similar to when the
+                    // `get_memory_offset` functions fails.
+                    exit(StatusCode::OutOfGas);
+                }
+
                 MONAD_VM_DEBUG_ASSERT(new_cost >= memory.cost);
                 std::int64_t const expansion_cost = new_cost - memory.cost;
-                // Gas check before increasing capacity:
+
+                // Gas check before increasing size or capacity:
                 deduct_gas(expansion_cost);
                 uint32_t const old_size = memory.size;
                 memory.size = *new_size;
                 memory.cost = new_cost;
-                if (memory.capacity < *new_size) {
+
+                if (MONAD_VM_UNLIKELY(memory.capacity < *new_size)) {
                     increase_capacity(old_size, new_size);
                 }
             }
@@ -331,9 +387,11 @@ namespace monad::vm::runtime
 
         void exit [[noreturn]] (StatusCode code) noexcept;
 
+        template <Traits traits>
         evmc::Result copy_to_evmc_result();
 
     private:
+        template <Traits traits>
         std::variant<std::span<std::uint8_t const>, evmc_status_code>
         copy_result_data();
     };
@@ -343,7 +401,9 @@ namespace monad::vm::runtime
     static_assert(offsetof(Context, memory) == 264);
     static_assert(offsetof(Memory, size) == 0);
     static_assert(offsetof(Memory, capacity) == 4);
+    static_assert(offsetof(Memory, data) == 8);
     static_assert(offsetof(Memory, cost) == 16);
+    static_assert(offsetof(Memory, data_handle) == 24);
 
     constexpr auto context_offset_gas_remaining =
         offsetof(Context, gas_remaining);
@@ -382,12 +442,15 @@ extern "C" void monad_vm_runtime_increase_capacity(
     monad::vm::runtime::Context *, uint32_t old_size,
     monad::vm::runtime::Bin<30> new_size);
 
-extern "C" void monad_vm_runtime_increase_memory(
-    monad::vm::runtime::Bin<30> min_size, monad::vm::runtime::Context *);
+extern "C" void monad_vm_runtime_increase_memory_v1(
+    monad::vm::runtime::Bin<29> min_size, monad::vm::runtime::Context *);
+extern "C" void monad_vm_runtime_increase_memory_mip3(
+    monad::vm::runtime::Bin<29> min_size, monad::vm::runtime::Context *);
 
-// Note: monad_vm_runtime_increase_memory_raw uses non-standard
+// Note: monad_vm_runtime_increase_memory_raw_* uses non-standard
 // calling convention. Context is passed in rbx and new min
 // memory size if passed in rdi. See context.S. Use the
-// monad_vm_runtime_increase_memory function for a version
+// monad_vm_runtime_increase_memory_* function for a version
 // using standard calling convention
-extern "C" void monad_vm_runtime_increase_memory_raw();
+extern "C" void monad_vm_runtime_increase_memory_raw_v1();
+extern "C" void monad_vm_runtime_increase_memory_raw_mip3();

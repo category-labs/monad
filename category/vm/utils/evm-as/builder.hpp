@@ -21,9 +21,10 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
+#include <category/vm/utils/evm-as/sugar.hpp>
 #include <category/vm/utils/evm-as/utils.hpp>
 
-#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 #include <concepts>
 #include <cstdint>
@@ -145,6 +146,12 @@ namespace monad::vm::utils::evm_as
             return insert(std::move(pushop));
         }
 
+        EvmBuilder &push(evmc::address const &address) noexcept
+        {
+            auto const pushop = PushAddressI{address};
+            return insert(std::move(pushop));
+        }
+
         EvmBuilder &push(std::string const &label) noexcept
         {
             auto const pushop = PushLabelI{label};
@@ -193,6 +200,219 @@ namespace monad::vm::utils::evm_as
         {
             auto commentop = CommentI{comment};
             return insert(std::move(commentop));
+        }
+
+        // Macro expansions
+
+        EvmBuilder &call(sugar::CallArgs const &args) noexcept
+        {
+            return call(
+                args.gas,
+                args.address,
+                args.value,
+                args.args_offset,
+                args.args_size,
+                args.ret_offset,
+                args.ret_size);
+        }
+
+        EvmBuilder &callcode(sugar::CallCodeArgs const &args) noexcept
+        {
+            return callcode(
+                args.gas,
+                args.address,
+                args.value,
+                args.args_offset,
+                args.args_size,
+                args.ret_offset,
+                args.ret_size);
+        }
+
+        EvmBuilder &delegatecall(sugar::DelegateCallArgs const &args) noexcept
+        {
+            return delegatecall(
+                args.gas,
+                args.address,
+                args.args_offset,
+                args.args_size,
+                args.ret_offset,
+                args.ret_size);
+        }
+
+        EvmBuilder &staticcall(sugar::StaticCallArgs const &args) noexcept
+        {
+            return staticcall(
+                args.gas,
+                args.address,
+                args.args_offset,
+                args.args_size,
+                args.ret_offset,
+                args.ret_size);
+        }
+
+        EvmBuilder &call(
+            uint64_t gas, evmc::address const &address,
+            runtime::uint256_t const &value,
+            runtime::uint256_t const &args_offset,
+            runtime::uint256_t const &args_size,
+            runtime::uint256_t const &ret_offset,
+            runtime::uint256_t const &ret_size) noexcept
+        {
+            push(ret_size);
+            push(ret_offset);
+            push(args_size);
+            push(args_offset);
+            push(value);
+            push(address);
+            push(gas);
+            return call();
+        }
+
+        EvmBuilder &callcode(
+            uint64_t gas, evmc::address const &address,
+            runtime::uint256_t const &value,
+            runtime::uint256_t const &args_offset,
+            runtime::uint256_t const &args_size,
+            runtime::uint256_t const &ret_offset,
+            runtime::uint256_t const &ret_size) noexcept
+        {
+            push(ret_size);
+            push(ret_offset);
+            push(args_size);
+            push(args_offset);
+            push(value);
+            push(address);
+            push(gas);
+            return callcode();
+        }
+
+        EvmBuilder &delegatecall(
+            uint64_t gas, evmc::address const &address,
+            runtime::uint256_t const &args_offset,
+            runtime::uint256_t const &args_size,
+            runtime::uint256_t const &ret_offset,
+            runtime::uint256_t const &ret_size) noexcept
+        {
+            push(ret_size);
+            push(ret_offset);
+            push(args_size);
+            push(args_offset);
+            push(address);
+            push(gas);
+            return delegatecall();
+        }
+
+        EvmBuilder &staticcall(
+            uint64_t gas, evmc::address const &address,
+            runtime::uint256_t const &args_offset,
+            runtime::uint256_t const &args_size,
+            runtime::uint256_t const &ret_offset,
+            runtime::uint256_t const &ret_size) noexcept
+        {
+            push(ret_size);
+            push(ret_offset);
+            push(args_size);
+            push(args_offset);
+            push(address);
+            push(gas);
+            return staticcall();
+        }
+
+        EvmBuilder &return_(uint64_t offset, uint64_t size) noexcept
+        {
+            push(size);
+            push(offset);
+            return return_();
+        }
+
+        EvmBuilder &revert(uint64_t offset, uint64_t size) noexcept
+        {
+            push(size);
+            push(offset);
+            return revert();
+        }
+
+        EvmBuilder &log0(uint64_t offset, uint64_t size) noexcept
+        {
+            push(size);
+            push(offset);
+            return log0();
+        }
+
+        EvmBuilder &log1(
+            uint64_t offset, uint64_t size,
+            runtime::uint256_t const &topic1) noexcept
+        {
+            push(topic1);
+            push(size);
+            push(offset);
+            return log1();
+        }
+
+        EvmBuilder &log2(
+            uint64_t offset, uint64_t size, runtime::uint256_t const &topic1,
+            runtime::uint256_t const &topic2) noexcept
+        {
+            push(topic2);
+            push(topic1);
+            push(size);
+            push(offset);
+            return log2();
+        }
+
+        EvmBuilder &log3(
+            uint64_t offset, uint64_t size, runtime::uint256_t const &topic1,
+            runtime::uint256_t const &topic2,
+            runtime::uint256_t const &topic3) noexcept
+        {
+            push(topic3);
+            push(topic2);
+            push(topic1);
+            push(size);
+            push(offset);
+            return log3();
+        }
+
+        EvmBuilder &log4(
+            uint64_t offset, uint64_t size, runtime::uint256_t const &topic1,
+            runtime::uint256_t const &topic2, runtime::uint256_t const &topic3,
+            runtime::uint256_t const &topic4) noexcept
+        {
+            push(topic4);
+            push(topic3);
+            push(topic2);
+            push(topic1);
+            push(size);
+            push(offset);
+            return log4();
+        }
+
+        EvmBuilder &mload(uint64_t offset) noexcept
+        {
+            push(offset);
+            return mload();
+        }
+
+        EvmBuilder &
+        mstore(uint64_t offset, runtime::uint256_t const &value) noexcept
+        {
+            push(value);
+            push(offset);
+            return mstore();
+        }
+
+        EvmBuilder &sload(uint64_t key) noexcept
+        {
+            push(key);
+            return sload();
+        }
+
+        EvmBuilder &
+        sstore(uint64_t key, runtime::uint256_t const &value) noexcept
+        {
+            push(value);
+            push(key);
+            return sstore();
         }
 
         // Boilerplate API
@@ -704,6 +924,11 @@ namespace monad::vm::utils::evm_as
         EvmBuilder &swap16() noexcept
         {
             return ins(compiler::EvmOpCode::SWAP16);
+        }
+
+        EvmBuilder &log0() noexcept
+        {
+            return ins(compiler::EvmOpCode::LOG0);
         }
 
         EvmBuilder &log1() noexcept

@@ -1290,3 +1290,567 @@ TEST(EvmAs, KernelBuilderCalldata)
         }
     }
 }
+
+TEST(EvmAs, PushAddress)
+{
+    // 1 byte address
+    {
+        auto eb = evm_as::latest();
+        eb.push(evmc::address{0xBC});
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> expected{compiler::EvmOpCode::PUSH1, 0xBC};
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        EXPECT_EQ(bytecode, expected);
+
+        std::string const expected_mnemonic = "PUSH1 0xBC\n";
+        EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+    }
+
+    // 2 byte address
+    {
+        auto eb = evm_as::latest();
+        eb.push(evmc::address{0xABBA});
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> expected{compiler::EvmOpCode::PUSH2, 0xAB, 0xBA};
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        EXPECT_EQ(bytecode, expected);
+
+        std::string const expected_mnemonic = "PUSH2 0xABBA\n";
+        EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+    }
+
+    // 13 byte address
+    {
+        using namespace evmc::literals;
+        auto eb = evm_as::latest();
+        eb.push(0x0123456789ABCDEF0123456789_address);
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> expected{
+            compiler::EvmOpCode::PUSH13,
+            0x01,
+            0x23,
+            0x45,
+            0x67,
+            0x89,
+            0xAB,
+            0xCD,
+            0xEF,
+            0x01,
+            0x23,
+            0x45,
+            0x67,
+            0x89};
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        EXPECT_EQ(bytecode, expected);
+
+        std::string const expected_mnemonic =
+            "PUSH13 0x0123456789ABCDEF0123456789\n";
+        EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+    }
+
+    // 20 byte address
+    {
+        using namespace evmc::literals;
+        auto eb = evm_as::latest();
+        eb.push(0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address);
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> expected{
+            compiler::EvmOpCode::PUSH20,
+            0xAA,
+            0xAF,
+            0x53,
+            0x74,
+            0xFC,
+            0xE5,
+            0xED,
+            0xBC,
+            0x8E,
+            0x2A,
+            0x86,
+            0x97,
+            0xC1,
+            0x53,
+            0x31,
+            0x67,
+            0x7E,
+            0x6E,
+            0xBF,
+            0x0B};
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        EXPECT_EQ(bytecode, expected);
+
+        std::string const expected_mnemonic =
+            "PUSH20 0xAAAF5374FCE5EDBC8E2A8697C15331677E6EBF0B\n";
+        EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+    }
+
+    // System address
+    {
+        auto eb = evm_as::latest();
+        eb.push(evmc::address{});
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> expected{compiler::EvmOpCode::PUSH0};
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        EXPECT_EQ(bytecode, expected);
+
+        std::string const expected_mnemonic = "PUSH0\n";
+        EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+    }
+
+    // System address, special case rev < SHANGHAI
+    {
+        auto eb = evm_as::paris();
+        eb.push(evmc::address{});
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> expected{compiler::EvmOpCode::PUSH1, 0x0};
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        EXPECT_EQ(bytecode, expected);
+
+        std::string const expected_mnemonic = "PUSH1 0x0\n";
+        EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+    }
+}
+
+TEST(EvmAs, PushAddressLabelResolution)
+{
+    {
+        auto eb = evm_as::latest();
+        eb.push(evmc::address{0}).jump("LABEL").jumpdest("LABEL");
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> expected{
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH1,
+            0x4, // offset of the jump destination
+            compiler::EvmOpCode::JUMP,
+            compiler::EvmOpCode::JUMPDEST};
+
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        EXPECT_EQ(bytecode, expected);
+    }
+
+    {
+        auto eb = evm_as::latest();
+        eb.push(evmc::address{0xDEADC0DE}).jump("LABEL").jumpdest("LABEL");
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> expected{
+            compiler::EvmOpCode::PUSH4,
+            0xDE,
+            0xAD,
+            0xC0,
+            0xDE,
+            compiler::EvmOpCode::PUSH1,
+            0x8, // offset of the jump destination
+            compiler::EvmOpCode::JUMP,
+            compiler::EvmOpCode::JUMPDEST};
+
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        EXPECT_EQ(bytecode, expected);
+    }
+
+    {
+        static evmc::address const addr{
+            {0xaa, 0xaf, 0x53, 0x74, 0xfc, 0xe5, 0xed, 0xbc, 0x8e, 0x2a,
+             0x86, 0x97, 0xc1, 0x53, 0x31, 0x67, 0x7e, 0x6e, 0xbf, 0x0b}};
+        auto eb = evm_as::latest();
+        for (size_t i = 0; i < 999; i++) {
+            eb.push(addr); // 1 + 20 bytes
+        }
+        ASSERT_EQ(eb.size(), 999);
+        eb.jump("LABEL").jumpdest("LABEL");
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        ASSERT_EQ(
+            bytecode.size(),
+            21 * 999 + (1 + 2) + 1 +
+                1); // 999 pushes + push2 label + jump + jumpdest
+
+        // The jump destination is at the end of the bytecode, so the offset
+        // must be
+        // clang-format off
+        //    bytecode.size() - 1
+        // ==
+        //    (21 * 999 (1 + 2) + 1 + 1) - 1 
+        // ==
+        //    20983 
+        // == 
+        //    0x51F7
+        // clang-format on
+        EXPECT_EQ(bytecode[bytecode.size() - 5], 0x61); // PUSH2
+        EXPECT_EQ(
+            bytecode[bytecode.size() - 4],
+            0x51); // 0x51F7 is the offset of the jump destination
+        EXPECT_EQ(bytecode[bytecode.size() - 3], 0xF7);
+        EXPECT_EQ(bytecode[bytecode.size() - 2], 0x56); // JUMP
+        EXPECT_EQ(bytecode[bytecode.size() - 1], 0x5B); // JUMPDEST
+    }
+}
+
+TEST(EvmAs, CallMacroExpansions)
+{
+    // Call
+    {
+        auto eb1 = evm_as::latest();
+        eb1.call(
+            0x1000,
+            evmc::address{0xABBA},
+            0x3000,
+            0x4000,
+            0x5000,
+            0x6000,
+            0x7000);
+        EXPECT_TRUE(evm_as::validate(eb1));
+
+        auto eb2 = evm_as::latest();
+        eb2.push(0x7000) // returndata size
+            .push(0x6000) // returndata offset
+            .push(0x5000) // args size
+            .push(0x4000) // args offset
+            .push(0x3000) // value
+            .push(evmc::address{0xabba}) // to address
+            .push(0x1000) // gas
+            .call();
+        EXPECT_TRUE(evm_as::validate(eb2));
+
+        auto eb3 = evm_as::latest();
+        eb3.call(evm_as::sugar::CallArgs{
+            .gas = 0x1000,
+            .address = evmc::address{0xABBA},
+            .value = 0x3000,
+            .args_offset = 0x4000,
+            .args_size = 0x5000,
+            .ret_offset = 0x6000,
+            .ret_size = 0x7000});
+
+        std::vector<uint8_t> bytecode1{};
+        evm_as::compile(eb1, bytecode1);
+        std::vector<uint8_t> bytecode2{};
+        evm_as::compile(eb2, bytecode2);
+        EXPECT_EQ(bytecode1, bytecode2);
+        std::vector<uint8_t> bytecode3{};
+        evm_as::compile(eb3, bytecode3);
+        EXPECT_EQ(bytecode1, bytecode3);
+
+        auto const expected = "PUSH2 0x7000\n"
+                              "PUSH2 0x6000\n"
+                              "PUSH2 0x5000\n"
+                              "PUSH2 0x4000\n"
+                              "PUSH2 0x3000\n"
+                              "PUSH2 0xABBA\n"
+                              "PUSH2 0x1000\n"
+                              "CALL\n";
+
+        EXPECT_EQ(evm_as::mcompile(eb1), expected);
+        EXPECT_EQ(evm_as::mcompile(eb2), expected);
+        EXPECT_EQ(evm_as::mcompile(eb3), expected);
+    }
+
+    // Call named arguments
+    {
+        using namespace monad::vm::utils::evm_as::sugar;
+        auto eb1 = evm_as::latest();
+        eb1.call({.gas = 10'000'000, .address = evmc::address{0xDEADC0DE}});
+        EXPECT_TRUE(evm_as::validate(eb1));
+
+        std::vector<uint8_t> const expected_bytecode{
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH4,
+            0xDE,
+            0xAD,
+            0xC0,
+            0xDE,
+            compiler::EvmOpCode::PUSH3,
+            0x98,
+            0x96,
+            0x80,
+            compiler::EvmOpCode::CALL};
+
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb1, bytecode);
+        EXPECT_EQ(bytecode, expected_bytecode);
+
+        auto const expected = "PUSH0\n"
+                              "PUSH0\n"
+                              "PUSH0\n"
+                              "PUSH0\n"
+                              "PUSH0\n"
+                              "PUSH4 0xDEADC0DE\n"
+                              "PUSH3 0x989680\n"
+                              "CALL\n";
+
+        EXPECT_EQ(evm_as::mcompile(eb1), expected);
+
+        // All defaults
+        auto const eb2 = evm_as::latest().call({});
+        EXPECT_TRUE(evm_as::validate(eb2));
+
+        std::vector<uint8_t> expected_bytecode2{
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::CALL};
+        std::vector<uint8_t> bytecode2{};
+        evm_as::compile(eb2, bytecode2);
+        EXPECT_EQ(bytecode2, expected_bytecode2);
+
+        auto const expected2 = "PUSH0\n"
+                               "PUSH0\n"
+                               "PUSH0\n"
+                               "PUSH0\n"
+                               "PUSH0\n"
+                               "PUSH0\n"
+                               "PUSH0\n"
+                               "CALL\n";
+        EXPECT_EQ(evm_as::mcompile(eb2), expected2);
+    }
+
+    // Call code
+    {
+        auto eb1 = evm_as::latest();
+        eb1.callcode(
+            0x1111,
+            evmc::address{0xFEEDC0DE},
+            0x3333,
+            0x4444,
+            0x5555,
+            0x6666,
+            0x7777);
+        EXPECT_TRUE(evm_as::validate(eb1));
+
+        auto eb2 = evm_as::latest();
+        eb2.push(0x7777) // returndata size
+            .push(0x6666) // returndata offset
+            .push(0x5555) // args size
+            .push(0x4444) // args offset
+            .push(0x3333) // value
+            .push(evmc::address{0xfeedc0de}) // to address
+            .push(0x1111) // gas
+            .callcode();
+        EXPECT_TRUE(evm_as::validate(eb2));
+
+        std::vector<uint8_t> bytecode1{};
+        evm_as::compile(eb1, bytecode1);
+        std::vector<uint8_t> bytecode2{};
+        evm_as::compile(eb2, bytecode2);
+        EXPECT_EQ(bytecode1, bytecode2);
+
+        auto const expected = "PUSH2 0x7777\n"
+                              "PUSH2 0x6666\n"
+                              "PUSH2 0x5555\n"
+                              "PUSH2 0x4444\n"
+                              "PUSH2 0x3333\n"
+                              "PUSH4 0xFEEDC0DE\n"
+                              "PUSH2 0x1111\n"
+                              "CALLCODE\n";
+
+        EXPECT_EQ(evm_as::mcompile(eb1), expected);
+        EXPECT_EQ(evm_as::mcompile(eb2), expected);
+    }
+
+    // Call code named arguments
+    {
+        using namespace monad::vm::utils::evm_as::sugar;
+        auto eb1 = evm_as::latest();
+        eb1.callcode({.value = 42});
+        EXPECT_TRUE(evm_as::validate(eb1));
+
+        std::vector<uint8_t> const expected_bytecode{
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH1,
+            0x2A,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::CALLCODE};
+
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb1, bytecode);
+        EXPECT_EQ(bytecode, expected_bytecode);
+
+        auto const expected = "PUSH0\n"
+                              "PUSH0\n"
+                              "PUSH0\n"
+                              "PUSH0\n"
+                              "PUSH1 0x2A\n"
+                              "PUSH0\n"
+                              "PUSH0\n"
+                              "CALLCODE\n";
+
+        EXPECT_EQ(evm_as::mcompile(eb1), expected);
+    }
+
+    // Delegate call
+    {
+        auto eb1 = evm_as::latest();
+        eb1.delegatecall(
+            0x123, evmc::address{0xC0FFEEC0DE}, 0x456, 0x789, 0xABC, 0xDEF);
+        EXPECT_TRUE(evm_as::validate(eb1));
+
+        auto eb2 = evm_as::latest();
+        eb2.push(0xDEF) // returndata size
+            .push(0xABC) // returndata offset
+            .push(0x789) // args size
+            .push(0x456) // args offset
+            .push(evmc::address{0xc0ffeec0de}) // to address
+            .push(0x123) // gas
+            .delegatecall();
+        EXPECT_TRUE(evm_as::validate(eb2));
+
+        std::vector<uint8_t> bytecode1{};
+        evm_as::compile(eb1, bytecode1);
+        std::vector<uint8_t> bytecode2{};
+        evm_as::compile(eb2, bytecode2);
+        EXPECT_EQ(bytecode1, bytecode2);
+
+        auto const expected = "PUSH2 0xDEF\n"
+                              "PUSH2 0xABC\n"
+                              "PUSH2 0x789\n"
+                              "PUSH2 0x456\n"
+                              "PUSH5 0xC0FFEEC0DE\n"
+                              "PUSH2 0x123\n"
+                              "DELEGATECALL\n";
+
+        EXPECT_EQ(evm_as::mcompile(eb1), expected);
+        EXPECT_EQ(evm_as::mcompile(eb2), expected);
+    }
+
+    // Delegate call named arguments
+    {
+        using namespace monad::vm::utils::evm_as::sugar;
+        auto eb1 = evm_as::latest();
+        eb1.delegatecall(
+            {.args_offset = 128,
+             .args_size = 64,
+             .ret_offset = 512,
+             .ret_size = 256});
+        EXPECT_TRUE(evm_as::validate(eb1));
+
+        std::vector<uint8_t> const expected_bytecode{
+            compiler::EvmOpCode::PUSH2,
+            0x01,
+            0x00,
+            compiler::EvmOpCode::PUSH2,
+            0x02,
+            0x00,
+            compiler::EvmOpCode::PUSH1,
+            0x40,
+            compiler::EvmOpCode::PUSH1,
+            0x80,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::DELEGATECALL};
+
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb1, bytecode);
+        EXPECT_EQ(bytecode, expected_bytecode);
+
+        auto const expected = "PUSH2 0x100\n"
+                              "PUSH2 0x200\n"
+                              "PUSH1 0x40\n"
+                              "PUSH1 0x80\n"
+                              "PUSH0\n"
+                              "PUSH0\n"
+                              "DELEGATECALL\n";
+
+        EXPECT_EQ(evm_as::mcompile(eb1), expected);
+    }
+
+    // Static call
+    {
+        auto eb1 = evm_as::latest();
+        eb1.staticcall(0x1, evmc::address{0xABEEFEEC0DE}, 0x2, 0x3, 0x4, 0x5);
+        EXPECT_TRUE(evm_as::validate(eb1));
+
+        auto eb2 = evm_as::latest();
+        eb2.push(0x5) // returndata size
+            .push(0x4) // returndata offset
+            .push(0x3) // args size
+            .push(0x2) // args offset
+            .push(evmc::address{0xabeefeec0de}) // to address
+            .push(0x1) // gas
+            .staticcall();
+        EXPECT_TRUE(evm_as::validate(eb2));
+
+        std::vector<uint8_t> bytecode1{};
+        evm_as::compile(eb1, bytecode1);
+        std::vector<uint8_t> bytecode2{};
+        evm_as::compile(eb2, bytecode2);
+        EXPECT_EQ(bytecode1, bytecode2);
+
+        auto const expected = "PUSH1 0x5\n"
+                              "PUSH1 0x4\n"
+                              "PUSH1 0x3\n"
+                              "PUSH1 0x2\n"
+                              "PUSH6 0x0ABEEFEEC0DE\n"
+                              "PUSH1 0x1\n"
+                              "STATICCALL\n";
+
+        EXPECT_EQ(evm_as::mcompile(eb1), expected);
+        EXPECT_EQ(evm_as::mcompile(eb2), expected);
+    }
+
+    // Static call named arguments
+    {
+        using namespace monad::vm::utils::evm_as::sugar;
+        auto eb1 = evm_as::latest();
+        eb1.staticcall({.gas = 5000, .ret_offset = 2048, .ret_size = 65536});
+        EXPECT_TRUE(evm_as::validate(eb1));
+
+        std::vector<uint8_t> const expected_bytecode{
+            compiler::EvmOpCode::PUSH3,
+            0x1,
+            0x00,
+            0x00,
+            compiler::EvmOpCode::PUSH2,
+            0x8,
+            0x0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH0,
+            compiler::EvmOpCode::PUSH2,
+            0x13,
+            0x88,
+            compiler::EvmOpCode::STATICCALL};
+
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb1, bytecode);
+        EXPECT_EQ(bytecode, expected_bytecode);
+
+        auto const expected = "PUSH3 0x10000\n"
+                              "PUSH2 0x800\n"
+                              "PUSH0\n"
+                              "PUSH0\n"
+                              "PUSH0\n"
+                              "PUSH2 0x1388\n"
+                              "STATICCALL\n";
+
+        EXPECT_EQ(evm_as::mcompile(eb1), expected);
+    }
+}

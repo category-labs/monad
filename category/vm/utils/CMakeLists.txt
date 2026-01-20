@@ -38,6 +38,7 @@ target_sources(monad-vm-utils PRIVATE
     "evm-as/instruction.hpp"
     "evm-as/kernel-builder.hpp"
     "evm-as/resolver.hpp"
+    "evm-as/sugar.hpp"
     "evm-as/validator.hpp"
     "evm-as/utils.hpp"
 )

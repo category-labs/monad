@@ -25,7 +25,7 @@
 #include <category/vm/utils/evm-as/resolver.hpp>
 #include <category/vm/utils/evm-as/utils.hpp>
 
-#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -153,6 +153,11 @@ namespace monad::vm::utils::evm_as::internal
                     ctx.vstack.push_back(push.label);
                     return true;
                 },
+                [&](PushAddressI const &push) -> bool {
+                    ctx.vstack.push_back(
+                        std::format("0x{}", evmc::hex(push.address)));
+                    return true;
+                },
                 [](auto const &) -> bool { return false; }},
             inst);
     }
@@ -210,11 +215,35 @@ namespace monad::vm::utils::evm_as
                             emit_byte((offset >> ((n - i - 1) * 8)) & 0xFF);
                         }
                     },
+                    [&](PushAddressI const &push) -> void {
+                        static constexpr size_t addr_size =
+                            sizeof(evmc::address);
+                        // Emit the smallest possible PUSH opcode
+                        size_t const least_n = addr_size - countl(push.address);
+                        if (least_n == 0 && traits::evm_rev() < EVMC_SHANGHAI) {
+                            // Special case for zero address before Shanghai, as
+                            // PUSH0 is not available.
+                            emit_byte(mc::EvmOpCode::PUSH1);
+                            emit_byte(0x00);
+                            return;
+                        }
+                        emit_byte(
+                            mc::EvmOpCode::PUSH0 +
+                            static_cast<uint8_t>(least_n));
+                        // We assume the address is already on the correct byte
+                        // ordering.
+                        for (size_t i = addr_size - least_n; i < addr_size;
+                             i++) {
+                            emit_byte(push.address.bytes[i]);
+                        }
+                    },
                     [&](JumpdestI const &) -> void {
                         emit_byte(mc::EvmOpCode::JUMPDEST);
                     },
                     [&](InvalidI const &) -> void { emit_byte(0xFE); },
-                    [&](auto const &) -> void { MONAD_VM_ASSERT(false); }},
+                    [&](auto const &) -> void { MONAD_VM_ASSERT(false); }}
+
+                ,
                 ins);
         }
     }
@@ -319,10 +348,14 @@ namespace monad::vm::utils::evm_as
                                 return 7;
                             }
                             size_t offset = it->second;
-                            size_t n =
-                                offset == 0 ? offset : byte_width(offset);
-                            std::string const str =
-                                std::format("PUSH{} 0x{:X}", n, offset);
+                            if (offset == 0) {
+                                std::string const str = std::format("PUSH0");
+                                os << str;
+                                return str.size();
+                            }
+
+                            std::string const str = std::format(
+                                "PUSH{} 0x{:02X}", byte_width(offset), offset);
                             os << str;
                             return str.size();
                         }
@@ -330,6 +363,30 @@ namespace monad::vm::utils::evm_as
                             os << "PUSH " << push.label;
                             return 5 + push.label.size();
                         }
+                    },
+                    [&](PushAddressI const &push) -> size_t {
+                        static constexpr size_t addr_size =
+                            sizeof(evmc::address);
+                        size_t const least_n = addr_size - countl(push.address);
+                        if (least_n == 0) {
+                            if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
+                                os << std::format("PUSH1 0x0");
+                                return 9;
+                            }
+                            else {
+                                os << std::format("PUSH0");
+                                return 5;
+                            }
+                        }
+                        os << std::format("PUSH{}", least_n);
+                        if (least_n > 0) {
+                            os << " 0x";
+                        }
+                        for (size_t i = addr_size - least_n; i < addr_size;
+                             i++) {
+                            os << std::format("{:02X}", push.address.bytes[i]);
+                        }
+                        return 7 + 2 + least_n * 2;
                     },
                     [&](JumpdestI const &jumpdest) -> size_t {
                         os << "JUMPDEST";

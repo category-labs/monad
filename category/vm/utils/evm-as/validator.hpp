@@ -143,6 +143,12 @@ namespace monad::vm::utils::evm_as::internal
             return check_stackoverflow();
         }
 
+        bool operator()(PushAddressI const &)
+        {
+            vstack_size += 1;
+            return check_stackoverflow();
+        }
+
         bool operator()(InvalidI const &invalid)
         {
             if (invalid.has_name()) {

@@ -17,6 +17,8 @@
 
 #include <category/core/runtime/uint256.hpp>
 
+#include <evmc/evmc.h>
+
 #include <bit>
 
 namespace monad::vm::utils::evm_as
@@ -29,5 +31,16 @@ namespace monad::vm::utils::evm_as
     inline size_t byte_width(T imm)
     {
         return (static_cast<size_t>(runtime::bit_width(imm)) + 7) / 8;
+    }
+
+    inline size_t countl(evmc::address const &address)
+    {
+        size_t count = 0;
+        for (; count < 20; count++) {
+            if (address.bytes[count] != 0) {
+                break;
+            }
+        }
+        return count;
     }
 }

@@ -57,7 +57,7 @@ namespace monad::vm::utils::evm_as
         runtime::uint256_t imm;
     };
 
-    // NOTE: Below PushLabelI, JumpdestI, CommentI, InvalidI have
+    // NOTE: Below PushLabelI, PushAddressI, JumpdestI, CommentI, InvalidI have
     // explicit rule of five implementations rather than the default
     // compiler generated ones. The reason being that there is a
     // false-positive `maybe-uninitialized` memory error in libstdc++
@@ -97,7 +97,40 @@ namespace monad::vm::utils::evm_as
         std::string label;
     };
 
+    struct PushAddressI
+    {
+        constexpr explicit PushAddressI(evmc::address const &address)
+            : address(address)
+        {
+        }
+
+        ~PushAddressI() = default;
+
+        PushAddressI(PushAddressI const &other)
+
+            = default;
+
+        PushAddressI(PushAddressI &&other) noexcept
+        {
+            address = std::move(other.address);
+        }
+
+        PushAddressI &operator=(PushAddressI const &other)
+        {
+            return *this = PushAddressI(other);
+        }
+
+        PushAddressI &operator=(PushAddressI &&other) noexcept
+        {
+            std::swap(address, other.address);
+            return *this;
+        }
+
+        evmc::address address;
+    };
+
     struct JumpdestI
+
     {
         constexpr explicit JumpdestI(std::string const &label)
             : label(label)
@@ -206,13 +239,15 @@ namespace monad::vm::utils::evm_as
     template <typename T>
     concept instruction_type =
         std::is_same_v<T, PlainI> || std::is_same_v<T, PushI> ||
-        std::is_same_v<T, PushLabelI> || std::is_same_v<T, JumpdestI> ||
-        std::is_same_v<T, CommentI> || std::is_same_v<T, InvalidI>;
+        std::is_same_v<T, PushLabelI> || std::is_same_v<T, PushAddressI> ||
+        std::is_same_v<T, JumpdestI> || std::is_same_v<T, CommentI> ||
+        std::is_same_v<T, InvalidI>;
 
     struct Instruction
     {
         using T = std::variant<
-            PlainI, PushI, JumpdestI, PushLabelI, CommentI, InvalidI>;
+            PlainI, PushI, JumpdestI, PushLabelI, PushAddressI, CommentI,
+            InvalidI>;
 
         static bool is_jumpdest(T ins)
         {
@@ -239,6 +274,11 @@ namespace monad::vm::utils::evm_as
             return std::holds_alternative<PushLabelI>(ins);
         }
 
+        static bool is_push_address(T ins)
+        {
+            return std::holds_alternative<PushAddressI>(ins);
+        }
+
         static bool is_invalid(T ins)
         {
             return std::holds_alternative<InvalidI>(ins);
@@ -257,6 +297,11 @@ namespace monad::vm::utils::evm_as
         static PushLabelI as_push_label(T ins)
         {
             return std::get<PushLabelI>(ins);
+        }
+
+        static PushAddressI as_push_address(T ins)
+        {
+            return std::get<PushAddressI>(ins);
         }
 
         static InvalidI as_invalid(T ins)

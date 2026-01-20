@@ -21,7 +21,7 @@
 #include <category/vm/utils/evm-as/instruction.hpp>
 #include <category/vm/utils/evm-as/utils.hpp>
 
-#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 #include <map>
 
@@ -57,6 +57,10 @@ namespace monad::vm::utils::evm_as
                         },
                         [](PushI const &push) -> size_t {
                             return 1 + push.n(); // 1 + N byte encoding.
+                        },
+                        [](PushAddressI const &) -> size_t {
+                            return 21; // 1 byte for opcode + 20 bytes for the
+                                       // address
                         },
                         [](PlainI const &) -> size_t {
                             return 1; // 1 byte encoding
@@ -115,6 +119,20 @@ namespace monad::vm::utils::evm_as
                             },
                             [](PushI const &push) -> size_t {
                                 return 1 + push.n(); // 1 + N byte encoding.
+                            },
+                            [](PushAddressI const &push) -> size_t {
+                                // The compiler always emits the smallest
+                                // possible PUSH opcode.
+                                static constexpr size_t addr_size =
+                                    sizeof(evmc::address);
+                                size_t const least_n =
+                                    addr_size - countl(push.address);
+                                if (traits::evm_rev() < EVMC_SHANGHAI &&
+                                    least_n == 0) {
+                                    return 2; // PUSH1 0x00
+                                }
+                                return 1 + least_n; // 1 byte for opcode + XX
+                                                    // bytes for the address
                             },
                             [](PlainI const &) -> size_t {
                                 return 1; // 1 byte encoding

@@ -1290,3 +1290,40 @@ TEST(EvmAs, KernelBuilderCalldata)
         }
     }
 }
+
+TEST(EvmAs, CallMacroExpansion)
+{
+    auto eb1 = evm_as::latest();
+    eb1.call(
+        0x1000, evmc::address{0x2000}, 0x3000, 0x4000, 0x5000, 0x6000, 0x7000);
+    EXPECT_TRUE(evm_as::validate(eb1));
+
+    auto eb2 = evm_as::latest();
+    eb2.push(0x7000) // returndata size
+        .push(0x6000) // returndata offset
+        .push(0x5000) // value
+        .push(0x4000) // args size
+        .push(0x3000) // args offset
+        .push(evmc::address{0x2000}) // to address
+        .push(0x1000) // gas
+        .call();
+    EXPECT_TRUE(evm_as::validate(eb2));
+
+    std::vector<uint8_t> bytecode1{};
+    evm_as::compile(eb1, bytecode1);
+    std::vector<uint8_t> bytecode2{};
+    evm_as::compile(eb2, bytecode2);
+    EXPECT_EQ(bytecode1, bytecode2);
+
+    auto const expected = "PUSH2 0x7000\n"
+                          "PUSH2 0x6000\n"
+                          "PUSH2 0x5000\n"
+                          "PUSH2 0x4000\n"
+                          "PUSH2 0x3000\n"
+                          "PUSH20 0x2000\n"
+                          "PUSH2 0x1000\n"
+                          "CALL\n";
+
+    EXPECT_EQ(evm_as::mcompile(eb1), expected);
+    EXPECT_EQ(evm_as::mcompile(eb2), expected);
+}

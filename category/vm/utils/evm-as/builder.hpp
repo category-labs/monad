@@ -145,6 +145,15 @@ namespace monad::vm::utils::evm_as
             return insert(std::move(pushop));
         }
 
+        EvmBuilder &push(evmc::address const &address) noexcept
+        {
+            runtime::uint256_t addr_as_uint = 0;
+            for (size_t i = 0; i < 20; ++i) {
+                addr_as_uint = (addr_as_uint << 8) | address.bytes[i];
+            }
+            return push(20, addr_as_uint);
+        }
+
         EvmBuilder &push(std::string const &label) noexcept
         {
             auto const pushop = PushLabelI{label};
@@ -193,6 +202,21 @@ namespace monad::vm::utils::evm_as
         {
             auto commentop = CommentI{comment};
             return insert(std::move(commentop));
+        }
+
+        EvmBuilder &call(
+            uint64_t gas, evmc::address const &address,
+            runtime::uint256_t const &value, uint64_t args_offset,
+            uint64_t args_size, uint64_t ret_offset, uint64_t ret_size) noexcept
+        {
+            push(ret_size);
+            push(ret_offset);
+            push(args_size);
+            push(args_offset);
+            push(value);
+            push(address);
+            push(gas);
+            return ins(compiler::EvmOpCode::CALL);
         }
 
         // Boilerplate API

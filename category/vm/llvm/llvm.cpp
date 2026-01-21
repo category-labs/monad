@@ -75,9 +75,8 @@ namespace monad::vm::llvm
         }
     }
 
-    VM::VM(std::size_t max_stack_cache, std::size_t max_memory_cache)
+    VM::VM(std::size_t max_stack_cache)
         : stack_allocator_{max_stack_cache}
-        , memory_allocator_{max_memory_cache}
         , cached_llvm_code_(
               EVMC_MAX_REVISION + 1,
               std::unordered_map<evmc::bytes32, std::shared_ptr<LLVMState>>())
@@ -111,8 +110,8 @@ namespace monad::vm::llvm
         evmc_host_interface const *host, evmc_host_context *context,
         evmc_message const *msg, uint8_t const *code, size_t code_size)
     {
-        auto ctx = runtime::Context::from(
-            memory_allocator_, host, context, msg, {code, code_size});
+        auto ctx =
+            runtime::Context::from(host, context, msg, {code, code_size});
 
         auto const stack_ptr = stack_allocator_.allocate();
         uint256_t *evm_stack = reinterpret_cast<uint256_t *>(stack_ptr.get());

@@ -31,7 +31,6 @@ namespace monad::vm::llvm
     class VM
     {
         runtime::EvmStackAllocator stack_allocator_;
-        runtime::EvmMemoryAllocator memory_allocator_;
         std::vector<
             std::unordered_map<evmc::bytes32, std::shared_ptr<LLVMState>>>
             cached_llvm_code_;
@@ -39,9 +38,7 @@ namespace monad::vm::llvm
     public:
         explicit VM(
             std::size_t max_stack_cache_byte_size =
-                runtime::EvmStackAllocator::DEFAULT_MAX_CACHE_BYTE_SIZE,
-            std::size_t max_memory_cache_byte_size =
-                runtime::EvmMemoryAllocator::DEFAULT_MAX_CACHE_BYTE_SIZE);
+                runtime::EvmStackAllocator::DEFAULT_MAX_CACHE_BYTE_SIZE);
 
         evmc::Result execute_llvm(
             evmc_revision rev, evmc::bytes32 const &code_hash,

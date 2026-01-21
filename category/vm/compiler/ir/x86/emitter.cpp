@@ -1270,6 +1270,45 @@ namespace monad::vm::compiler::native
             gas);
     }
 
+    // Assert that the stack element value fits within the inferred bound
+    void Emitter::assert_runtime_result_bound()
+    {
+        auto const elem = stack_.top();
+        auto const inferred_bound = elem->bit_upper_bound();
+
+        if (elem->literal()) {
+            return;
+        }
+        else if (elem->general_reg()) {
+            discharge_deferred_comparison();
+            auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
+            array_bit_width(gpq);
+            as_.cmp(x86::eax, inferred_bound);
+            as_.jg(error_label_);
+        }
+        else if (elem->stack_offset()) {
+            discharge_deferred_comparison();
+            array_bit_width(stack_offset_to_mem256(*elem->stack_offset()));
+            as_.cmp(x86::eax, inferred_bound);
+            as_.jg(error_label_);
+        }
+        else if (elem->avx_reg()) {
+            discharge_deferred_comparison();
+            mov_stack_elem_to_stack_offset(elem);
+            array_bit_width(stack_offset_to_mem256(*elem->stack_offset()));
+            as_.cmp(x86::eax, inferred_bound);
+            as_.jg(error_label_);
+        }
+        else if (stack_.has_deferred_comparison_at(stack_.top_index())) {
+            // Deferred comparison is either 0 or 1, so inferred_bound must be
+            // at least 1.
+            MONAD_VM_ASSERT(inferred_bound != 0)
+        }
+        else {
+            MONAD_VM_ASSERT(false);
+        }
+    }
+
     bool Emitter::accumulate_static_work(int64_t work)
     {
         MONAD_VM_DEBUG_ASSERT(work >= 0);

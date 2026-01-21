@@ -393,6 +393,37 @@ namespace
         return execution_result;
     }
 
+    void store_output_header(
+        BlockHeader const &header, nlohmann::json &output,
+        size_t const n_transactions)
+    {
+        auto const format_hex = [](auto const &b) {
+            return std::format("0x{}", evmc::hex(b));
+        };
+
+        output["hash"] = format_hex(bytes32_t{});
+        output["parentHash"] = format_hex(header.parent_hash);
+        output["sha3Uncles"] = format_hex(header.ommers_hash);
+        output["miner"] = format_hex(header.beneficiary);
+        output["stateRoot"] = format_hex(header.state_root);
+        output["transactionsRoot"] = format_hex(header.transactions_root);
+        output["receiptsRoot"] = format_hex(header.receipts_root);
+        output["logsBloom"] = "0x";
+        output["difficulty"] =
+            std::format("0x{}", intx::to_string(header.difficulty));
+        output["number"] = std::format("0x{:x}", header.number);
+        output["gasLimit"] = std::format("0x{:x}", header.gas_limit);
+        output["gasUsed"] = std::format("0x{:x}", header.gas_limit);
+        output["timestamp"] = std::format("0x{:x}", header.timestamp);
+        output["extraData"] = format_hex(header.extra_data);
+        output["mixHash"] = format_hex(bytes32_t{});
+        output["nonce"] = std::format("0x0000000000000000");
+        output["baseFeePerGas"] = std::format(
+            "0x{}", intx::to_string(header.base_fee_per_gas.value_or(0)));
+        output["uncles"] = nlohmann::json::array();
+        output["transactions"] = nlohmann::json(n_transactions, format_hex(bytes32_t{}));
+    }
+
     template <Traits traits>
     Result<nlohmann::json> eth_simulate_impl(
         Chain const &chain, std::vector<std::vector<Transaction>> calls,
@@ -406,6 +437,9 @@ namespace
         // TODO(BSC): initialise txn revert logic properly (treat chain context
         // as a ring buffer and rotate entries?)
 
+        // TODO(BSC): state overrides
+        // TODO(BSC): block overrides
+
         MONAD_ASSERT(calls.size() == senders.size());
         MONAD_ASSERT(calls.size() == authorities.size());
         MONAD_ASSERT(calls.size() == state_overrides.size());
@@ -415,8 +449,27 @@ namespace
         auto current_header = header;
         auto result = nlohmann::json::array();
 
+        // Zero out fields on the header that we aren't able to compute for
+        // subsequent blocks.
+        current_header.parent_hash = bytes32_t{};
+        current_header.ommers_hash = bytes32_t{};
+        current_header.beneficiary = Address{};
+        current_header.state_root = bytes32_t{};
+        current_header.transactions_root = bytes32_t{};
+        current_header.receipts_root = bytes32_t{};
+        current_header.logs_bloom = Receipt::Bloom{};
+        current_header.prev_randao = bytes32_t{};
+        current_header.extra_data = byte_string{};
+        current_header.nonce = byte_string_fixed<8>{};
+
         for (auto block_idx = 0u; block_idx < calls.size(); ++block_idx) {
             auto entry = nlohmann::json::object();
+
+            // Set values for the current block based on the default increments
+            // from the previous one.
+            current_header.number += 1;
+            // TODO(BSC): better simulation of 0.4s block times
+            current_header.timestamp += 1;
 
             auto block_metrics = BlockMetrics{};
             auto block_state = BlockState{tdb, vm};
@@ -471,6 +524,7 @@ namespace
                 auto const execution_result = exec(state, host);
             }
 
+            store_output_header(current_header, entry, calls[block_idx].size());
             result.push_back(std::move(entry));
         }
 

@@ -25,6 +25,7 @@
 #include "test_state.hpp"
 #include "transaction.hpp"
 
+#include <category/vm/compiler/ir/bound_inference.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
@@ -56,6 +57,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <random>
 #include <span>
 #include <string_view>
@@ -477,26 +479,66 @@ log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
     }
 }
 
-template <typename Engine>
-static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
-{
-    using enum BlockchainTestVM::Implementation;
-
-    monad::vm::compiler::native::EmitterHook hook = nullptr;
-
-    if (args.implementation == Compiler) {
-        hook = compiler_emit_hook(engine);
-    }
-
-    return evmc::VM(new BlockchainTestVM(args.implementation, hook));
-}
-
 // Coin toss, biased whenever p != 0.5
 template <typename Engine>
 static bool toss(Engine &engine, double p)
 {
     std::bernoulli_distribution dist(p);
     return dist(engine);
+}
+
+template <typename Engine>
+static evmc::VM create_monad_vm(arguments const &args, Engine &engine)
+{
+    using enum BlockchainTestVM::Implementation;
+
+    // Store the expected bound computed by the pre-hook for use in post-hook
+    auto expected_bound = std::make_shared<std::optional<uint32_t>>();
+
+    monad::vm::compiler::native::PreEmitterHook pre_hook =
+        [expected_bound](auto &emit, auto const &instr) {
+            if (instr.increases_stack()) {
+                auto const result_bound =
+                    monad::vm::compiler::bound_inference::compute_result_bound(
+                        instr, emit);
+                *expected_bound = result_bound;
+            }
+            else {
+                *expected_bound = std::nullopt;
+            }
+        };
+
+    monad::vm::compiler::native::PostEmitterHook post_hook = nullptr;
+
+    if (args.implementation == Compiler) {
+        post_hook = compiler_emit_hook(engine);
+    }
+
+    post_hook = [prev_post_hook = std::move(post_hook),
+                 expected_bound,
+                 &engine](auto &emit, auto const &instr) {
+        if (prev_post_hook) {
+            prev_post_hook(emit, instr);
+        }
+
+        // Check that the emitter's computed bound match the model's bounds
+        if (expected_bound->has_value()) {
+            auto const top = emit.get_stack().top();
+            if (!top->literal()) {
+                MONAD_VM_ASSERT(top->bit_upper_bound() <= *expected_bound)
+            }
+        }
+
+        // Assert that inferred bounds of stack elements are correct
+        // Don't do this every time since this discharge deferred comparisons
+        // and write AVX stack elements to memory.
+        if (instr.increases_stack() && toss(engine, 0.05)) {
+            emit.assert_runtime_result_bound();
+        }
+    };
+
+    return evmc::VM(
+        new BlockchainTestVM(args.implementation, pre_hook, post_hook));
 }
 
 static void do_run(

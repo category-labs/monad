@@ -233,6 +233,7 @@ namespace monad::vm::compiler::native
         void checked_debug_comment(std::string const &msg);
         void swap_general_regs(StackElem &, StackElem &);
         void swap_general_reg_indices(GeneralReg, uint8_t, uint8_t);
+        void assert_runtime_result_bound();
 
         uint32_t exponential_constant_fold_counter() const
         {

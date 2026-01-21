@@ -421,7 +421,8 @@ namespace
         output["baseFeePerGas"] = std::format(
             "0x{}", intx::to_string(header.base_fee_per_gas.value_or(0)));
         output["uncles"] = nlohmann::json::array();
-        output["transactions"] = nlohmann::json(n_transactions, format_hex(bytes32_t{}));
+        output["transactions"] =
+            nlohmann::json(n_transactions, format_hex(bytes32_t{}));
     }
 
     template <Traits traits>
@@ -478,13 +479,13 @@ namespace
             (void)block_hash_buffer;
             (void)chain;
 
-            for (auto tx_idx = 0u; tx_idx < calls[block_idx].size(); ++tx_idx) {
-                entry["calls"] = nlohmann::json::array();
-                auto &txns = entry["calls"];
-                (void)txns;
+            entry["calls"] = nlohmann::json::array();
+            auto &txns = entry["calls"];
 
+            for (auto tx_idx = 0u; tx_idx < calls[block_idx].size(); ++tx_idx) {
                 auto prev = boost::fibers::promise<void>{};
                 prev.set_value();
+
                 auto call_tracer = NoopCallTracer{};
                 auto state_tracer = trace::StateTracer{};
 
@@ -521,11 +522,34 @@ namespace
                         return top_revert(sender, tx, i, state);
                     }};
 
-                auto const execution_result = exec(state, host);
+                evmc::Result const execution_result = exec(state, host);
+                auto call_result = nlohmann::json::object();
+
+                call_result["status"] = std::format(
+                    "0x{:x}",
+                    execution_result.status_code == EVMC_SUCCESS ? 1 : 0);
+                call_result["returnData"] = std::format(
+                    "0x{}",
+                    evmc::hex(byte_string_view{
+                        execution_result.output_data,
+                        execution_result.output_size}));
+                call_result["gasUsed"] = std::format(
+                    "0x{:x}",
+                    calls[block_idx][tx_idx].gas_limit -
+                        static_cast<uint64_t>(execution_result.gas_left));
+
+                if (execution_result.status_code == EVMC_SUCCESS) {
+                    call_result["logs"] = nlohmann::json::array();
+                }
+                else {
+                    call_result["error"] = {{"message", "execution reverted"}};
+                }
+
+                txns.emplace_back(std::move(call_result));
             }
 
             store_output_header(current_header, entry, calls[block_idx].size());
-            result.push_back(std::move(entry));
+            result.emplace_back(std::move(entry));
         }
 
         LOG_INFO("res: {}", result.dump(4));

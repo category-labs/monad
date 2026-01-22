@@ -128,7 +128,7 @@ struct BenchmarkResult
     std::string impl;
     std::string title;
     std::string base_seq;
-    std::vector<SeqResult> results;
+    std::vector<SeqResult> results{};
 
     void add(SeqResult res)
     {

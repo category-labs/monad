@@ -81,6 +81,12 @@ bool dipped_into_reserve(
                 continue;
             }
         }
+        else if (
+            cur_account.recent().is_destructed() &&
+            state.is_current_incarnation(addr)) {
+            // Contracts that selfdestruct during init never get a code hash.
+            continue;
+        }
 
         // Check if dipped into reserve
         std::optional<uint256_t> const violation_threshold =

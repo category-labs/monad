@@ -1270,6 +1270,45 @@ namespace monad::vm::compiler::native
             gas);
     }
 
+    // Assert that the stack element value fits within the inferred bound
+    void Emitter::assert_runtime_result_bound()
+    {
+        auto const elem = stack_.top();
+        auto const inferred_bound = elem->bit_upper_bound();
+
+        if (elem->literal()) {
+            return;
+        }
+        else if (elem->general_reg()) {
+            discharge_deferred_comparison();
+            auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
+            array_bit_width(gpq);
+            as_.cmp(x86::eax, inferred_bound);
+            as_.jg(error_label_);
+        }
+        else if (elem->stack_offset()) {
+            discharge_deferred_comparison();
+            array_bit_width(stack_offset_to_mem256(*elem->stack_offset()));
+            as_.cmp(x86::eax, inferred_bound);
+            as_.jg(error_label_);
+        }
+        else if (elem->avx_reg()) {
+            discharge_deferred_comparison();
+            mov_stack_elem_to_stack_offset(elem);
+            array_bit_width(stack_offset_to_mem256(*elem->stack_offset()));
+            as_.cmp(x86::eax, inferred_bound);
+            as_.jg(error_label_);
+        }
+        else if (stack_.has_deferred_comparison_at(stack_.top_index())) {
+            // Deferred comparison is either 0 or 1, so inferred_bound must be
+            // at least 1.
+            MONAD_VM_ASSERT(inferred_bound != 0)
+        }
+        else {
+            MONAD_VM_ASSERT(false);
+        }
+    }
+
     bool Emitter::accumulate_static_work(int64_t work)
     {
         MONAD_VM_DEBUG_ASSERT(work >= 0);
@@ -2385,6 +2424,16 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
+        // Computing result bound before `pre_dst` and `pre_src` are moved
+        auto result_bound = 256u;
+
+        // No bound can be inferred because of negative numbers unless
+        // the lhs is a literal and rhs is bounded by lhs.
+        if (pre_dst->literal() &&
+            pre_dst->bit_upper_bound() > pre_src->bit_upper_bound()) {
+            // Result will not go negative, worst case is subtracting 0
+            result_bound = pre_dst->bit_upper_bound();
+        }
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, dst_loc, src, src_loc] = get_general_dest_and_source(
             false, std::move(pre_dst), std::move(pre_src), live);
@@ -2394,6 +2443,7 @@ namespace monad::vm::compiler::native
             return i == 0 && x == 0;
         });
 
+        dst->set_bit_upper_bound(result_bound);
         return dst;
     }
 
@@ -2431,6 +2481,11 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
+        // Computing result bound before `pre_dst` and `pre_src` are moved
+        auto const result_bound = std::min(
+            256u,
+            std::max(pre_dst->bit_upper_bound(), pre_src->bit_upper_bound()) +
+                1);
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, dst_loc, src, src_loc] = get_general_dest_and_source(
             true, std::move(pre_dst), std::move(pre_src), live);
@@ -2440,6 +2495,7 @@ namespace monad::vm::compiler::native
             return i == 0 && x == 0;
         });
 
+        dst->set_bit_upper_bound(result_bound);
         return dst;
     }
 
@@ -2637,7 +2693,8 @@ namespace monad::vm::compiler::native
         as_.xor_(gpq[1].r32(), gpq[1].r32());
         as_.xor_(gpq[2].r32(), gpq[2].r32());
         as_.xor_(gpq[3].r32(), gpq[3].r32());
-        stack_.push(dst);
+        dst->set_bit_upper_bound(9); // max 256 leading zeros, needs 9 bits
+        stack_.push(std::move(dst));
     }
 
     // Discharge through `and_` overload
@@ -2688,6 +2745,9 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
+        // Computing result bound before `pre_dst` and `pre_src` are moved
+        auto const result_bound =
+            std::min(pre_dst->bit_upper_bound(), pre_src->bit_upper_bound());
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, left, left_loc, right, right_loc] =
             get_avx_or_general_arguments_commutative(
@@ -2698,6 +2758,7 @@ namespace monad::vm::compiler::native
             return x == std::numeric_limits<uint64_t>::max();
         });
 
+        dst->set_bit_upper_bound(result_bound);
         return dst;
     }
 
@@ -2751,6 +2812,9 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
+        // Computing result bound before `pre_dst` and `pre_src` are moved
+        auto const result_bound =
+            std::max(pre_dst->bit_upper_bound(), pre_src->bit_upper_bound());
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, left, left_loc, right, right_loc] =
             get_avx_or_general_arguments_commutative(
@@ -2761,6 +2825,7 @@ namespace monad::vm::compiler::native
             return x == 0;
         });
 
+        dst->set_bit_upper_bound(result_bound);
         return dst;
     }
 
@@ -2801,6 +2866,9 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
+        // Computing result bound before `pre_dst` and `pre_src` are moved
+        auto const result_bound =
+            std::max(pre_dst->bit_upper_bound(), pre_src->bit_upper_bound());
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, left, left_loc, right, right_loc] =
             get_avx_or_general_arguments_commutative(
@@ -2811,6 +2879,7 @@ namespace monad::vm::compiler::native
             return x == 0;
         });
 
+        dst->set_bit_upper_bound(result_bound);
         return dst;
     }
 
@@ -3023,6 +3092,7 @@ namespace monad::vm::compiler::native
         as_.xor_(gpq[1].r32(), gpq[1].r32());
         as_.xor_(gpq[2].r32(), gpq[2].r32());
         as_.xor_(gpq[3].r32(), gpq[3].r32());
+        dst->set_bit_upper_bound(sizeof(runtime::Context::gas_remaining) * 8);
         stack_.push(std::move(dst));
     }
 
@@ -3305,7 +3375,13 @@ namespace monad::vm::compiler::native
         if (mul_optimized()) {
             return;
         }
+        auto const lhs_bound =
+            stack_.get(stack_.top_index())->bit_upper_bound();
+        auto const rhs_bound =
+            stack_.get(stack_.top_index() - 1)->bit_upper_bound();
         call_runtime(remaining_base_gas, false, runtime::mul);
+        stack_.top()->set_bit_upper_bound(
+            std::min(256u, lhs_bound + rhs_bound));
     }
 
     void Emitter::udiv(int64_t remaining_base_gas)
@@ -3313,7 +3389,10 @@ namespace monad::vm::compiler::native
         if (div_optimized<false>()) {
             return;
         }
+        auto const lhs_bound =
+            stack_.get(stack_.top_index())->bit_upper_bound();
         call_runtime(remaining_base_gas, true, runtime::udiv);
+        stack_.top()->set_bit_upper_bound(lhs_bound);
     }
 
     void Emitter::sdiv(int64_t remaining_base_gas)
@@ -3321,7 +3400,14 @@ namespace monad::vm::compiler::native
         if (div_optimized<true>()) {
             return;
         }
+        auto const lhs_bound =
+            stack_.get(stack_.top_index())->bit_upper_bound();
+        auto const rhs_bound =
+            stack_.get(stack_.top_index() - 1)->bit_upper_bound();
+        auto const result_bound =
+            (lhs_bound == 256 || rhs_bound == 256) ? 256u : lhs_bound;
         call_runtime(remaining_base_gas, true, runtime::sdiv);
+        stack_.top()->set_bit_upper_bound(result_bound);
     }
 
     void Emitter::umod(int64_t remaining_base_gas)
@@ -3329,7 +3415,10 @@ namespace monad::vm::compiler::native
         if (mod_optimized<false>()) {
             return;
         }
+        auto const rhs_bound =
+            stack_.get(stack_.top_index() - 1)->bit_upper_bound();
         call_runtime(remaining_base_gas, true, runtime::umod);
+        stack_.top()->set_bit_upper_bound(rhs_bound);
     }
 
     void Emitter::smod(int64_t remaining_base_gas)
@@ -3337,7 +3426,14 @@ namespace monad::vm::compiler::native
         if (mod_optimized<true>()) {
             return;
         }
+        auto const lhs_bound =
+            stack_.get(stack_.top_index())->bit_upper_bound();
+        auto const rhs_bound =
+            stack_.get(stack_.top_index() - 1)->bit_upper_bound();
+        auto const result_bound =
+            (lhs_bound == 256 || rhs_bound == 256) ? 256u : rhs_bound;
         call_runtime(remaining_base_gas, true, runtime::smod);
+        stack_.top()->set_bit_upper_bound(result_bound);
     }
 
     void Emitter::addmod(int64_t remaining_base_gas)
@@ -3345,7 +3441,10 @@ namespace monad::vm::compiler::native
         if (addmod_opt()) {
             return;
         }
+        auto const mod_bound =
+            stack_.get(stack_.top_index() - 2)->bit_upper_bound();
         call_runtime(remaining_base_gas, true, runtime::addmod);
+        stack_.top()->set_bit_upper_bound(mod_bound);
     }
 
     void Emitter::mulmod(int64_t remaining_base_gas)
@@ -3353,7 +3452,10 @@ namespace monad::vm::compiler::native
         if (mulmod_opt()) {
             return;
         }
+        auto const mod_bound =
+            stack_.get(stack_.top_index() - 2)->bit_upper_bound();
         call_runtime(remaining_base_gas, true, runtime::mulmod);
+        stack_.top()->set_bit_upper_bound(mod_bound);
     }
 
     // Discharge
@@ -3803,6 +3905,7 @@ namespace monad::vm::compiler::native
         else {
             as_.xor_(gpq[3].r32(), gpq[3].r32());
         }
+        dst->set_bit_upper_bound(160); // address is 160 bits
         stack_.push(std::move(dst));
     }
 
@@ -3828,6 +3931,7 @@ namespace monad::vm::compiler::native
         else {
             as_.xor_(gpq[3].r32(), gpq[3].r32());
         }
+        dst->set_bit_upper_bound(160); // address is 160 bits
         stack_.push(std::move(dst));
     }
 
@@ -3860,6 +3964,7 @@ namespace monad::vm::compiler::native
             as_.xor_(gpq[2].r32(), gpq[2].r32());
             as_.xor_(gpq[3].r32(), gpq[3].r32());
         }
+        dst->set_bit_upper_bound(32); // uint32 is 32 bits
         stack_.push(std::move(dst));
     }
 
@@ -3882,6 +3987,7 @@ namespace monad::vm::compiler::native
             as_.xor_(gpq[2].r32(), gpq[2].r32());
             as_.xor_(gpq[3].r32(), gpq[3].r32());
         }
+        dst->set_bit_upper_bound(64); // uint64 is 64 bits
         stack_.push(std::move(dst));
     }
 
@@ -4102,6 +4208,7 @@ namespace monad::vm::compiler::native
         src_mem.addOffset(31 - static_cast<int64_t>(i[0]));
         as_.movzx(dst_gpq[0].r32(), src_mem);
 
+        dst->set_bit_upper_bound(8);
         stack_.push(std::move(dst));
     }
 
@@ -4164,6 +4271,7 @@ namespace monad::vm::compiler::native
             std::move(ix), std::tuple_cat(std::make_tuple(dst), live));
         as_.cmovnz(dst_gpq[0], zero_reg);
 
+        dst->set_bit_upper_bound(8);
         stack_.push(std::move(dst));
     }
 
@@ -4208,6 +4316,7 @@ namespace monad::vm::compiler::native
         as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
         as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
 
+        dst->set_bit_upper_bound(8);
         stack_.push(std::move(dst));
     }
 
@@ -4271,6 +4380,7 @@ namespace monad::vm::compiler::native
         as_.movzx(dst_gpq[0].r32(), dst_gpq[0].r8Lo());
         as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
 
+        dst->set_bit_upper_bound(8);
         stack_.push(std::move(dst));
     }
 
@@ -4307,6 +4417,7 @@ namespace monad::vm::compiler::native
             as_.vpand(dst_ymm.xmm(), shuf_ymm.xmm(), rodata_.add16(0xff, 0));
         }
 
+        dst->set_bit_upper_bound(8);
         stack_.push(std::move(dst));
     }
 
@@ -4365,6 +4476,7 @@ namespace monad::vm::compiler::native
         as_.vpinsrb(scratch_ymm.xmm(), scratch_ymm.xmm(), x86::eax, 0x0);
         as_.vpshufb(dst_ymm.xmm(), dst_ymm.xmm(), scratch_ymm.xmm());
 
+        dst->set_bit_upper_bound(8);
         stack_.push(std::move(dst));
     }
 
@@ -5051,18 +5163,30 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_DEBUG_ASSERT(!value->literal().has_value());
 
-        auto shift = static_cast<unsigned>(shift_literal);
-        if (shift_literal >= 256) {
-            if constexpr (
-                shift_type == ShiftType::SHL || shift_type == ShiftType::SHR) {
+        auto const val_bound = value->bit_upper_bound();
+        if (shift_literal == 0) {
+            return value;
+        }
+        else if constexpr (shift_type == ShiftType::SHL) {
+            if (shift_literal >= 256) {
                 return stack_.alloc_literal({0});
             }
-            else {
-                shift = 256;
+        }
+        else if constexpr (shift_type == ShiftType::SAR) {
+            // SAR is just like SHL if we can determine the sign bit
+            if (val_bound != 256 && shift_literal >= 256) {
+                return stack_.alloc_literal({0});
             }
         }
-        else if (shift_literal == 0) {
-            return value;
+        else if constexpr (shift_type == ShiftType::SHR) {
+            if (shift_literal >= 256) {
+                return stack_.alloc_literal({0});
+            }
+        }
+
+        auto shift = static_cast<unsigned>(shift_literal);
+        if (shift_literal >= 256) {
+            shift = 256;
         }
 
         {
@@ -5070,12 +5194,47 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
+        StackElemRef result;
         if (value->avx_reg()) {
-            return shift_avx_reg_by_literal<shift_type>(
+            result = shift_avx_reg_by_literal<shift_type>(
                 static_cast<unsigned>(shift), std::move(value));
         }
-        return shift_general_reg_or_stack_offset_by_literal<shift_type>(
-            static_cast<unsigned>(shift), std::move(value), live);
+        else {
+            result = shift_general_reg_or_stack_offset_by_literal<shift_type>(
+                static_cast<unsigned>(shift), std::move(value), live);
+        }
+
+        // Set bound based on shift type
+        if constexpr (shift_type == ShiftType::SHL) {
+            result->set_bit_upper_bound(std::min(256u, val_bound + shift));
+        }
+        else if constexpr (shift_type == ShiftType::SHR) {
+            if (shift >= val_bound) {
+                result->set_bit_upper_bound(0);
+            }
+            else {
+                result->set_bit_upper_bound(std::max(0u, val_bound - shift));
+            }
+        }
+        else if constexpr (shift_type == ShiftType::SAR) {
+            // If value is not negative, SAR === SHR
+            if (val_bound != 256) {
+                if (shift >= val_bound) {
+                    // All bits shifted out of range
+                    // TODO: This should be part of the constant folding block
+                    // at the top, but some functions (sdiv_by_sar) assume that
+                    // shift_by_literal never returns a literal when
+                    // `0 < shift < 256`.
+                    result->set_bit_upper_bound(0);
+                }
+                else {
+                    // Difference with SHL: subtract the shift amount
+                    result->set_bit_upper_bound(val_bound - shift);
+                }
+            }
+        }
+
+        return result;
     }
 
     // Discharge
@@ -5101,31 +5260,53 @@ namespace monad::vm::compiler::native
             }
         }
 
+        auto const shift_bound = shift->bit_upper_bound();
+        auto const val_bound = value->bit_upper_bound();
+
         {
             RegReserv const shift_reserv{shift};
             RegReserv const value_reserv{value};
             discharge_deferred_comparison();
         }
 
+        StackElemRef result;
         if (value->avx_reg()) {
-            return shift_avx_reg_by_non_literal<shift_type>(
+            result = shift_avx_reg_by_non_literal<shift_type>(
                 std::move(shift), std::move(value), live);
         }
         else if (value->literal()) {
             mov_literal_to_avx_reg(value);
-            return shift_avx_reg_by_non_literal<shift_type>(
+            result = shift_avx_reg_by_non_literal<shift_type>(
                 std::move(shift), std::move(value), live);
         }
         else if (value->general_reg()) {
-            return shift_general_reg_by_non_literal<shift_type>(
+            result = shift_general_reg_by_non_literal<shift_type>(
                 std::move(shift), std::move(value), live);
         }
         else {
             MONAD_VM_DEBUG_ASSERT(value->stack_offset().has_value());
             mov_stack_offset_to_general_reg(value);
-            return shift_general_reg_by_non_literal<shift_type>(
+            result = shift_general_reg_by_non_literal<shift_type>(
                 std::move(shift), std::move(value), live);
         }
+
+        // Set bound for non-literal shift
+        if constexpr (shift_type == ShiftType::SHL) {
+            // Assume maximum shift bounded by 2^16 - 1 to prevent overflows
+            auto const max_shift = (1u << std::min(16u, shift_bound)) - 1;
+            result->set_bit_upper_bound(std::min(256u, val_bound + max_shift));
+        }
+        else if constexpr (shift_type == ShiftType::SHR) {
+            // For SHR with non-literal shift, cannot infer tighter bound
+            result->set_bit_upper_bound(val_bound);
+        }
+        else if constexpr (shift_type == ShiftType::SAR) {
+            // For SAR with non-literal shift or potentially negative value,
+            // cannot infer tighter bound
+            result->set_bit_upper_bound(val_bound);
+        }
+
+        return result;
     }
 
     template <Emitter::ShiftType shift_type, typename... LiveSet>
@@ -6947,6 +7128,8 @@ namespace monad::vm::compiler::native
     {
         auto a_elem = stack_.get(stack_.top_index());
         auto b_elem = stack_.get(stack_.top_index() - 1);
+        auto const result_bound = std::min(
+            256u, a_elem->bit_upper_bound() + b_elem->bit_upper_bound());
 
         if (b_elem->literal()) {
             if (a_elem->literal()) {
@@ -6986,9 +7169,12 @@ namespace monad::vm::compiler::native
                 runtime::countr_zero(a_shift), std::move(b_elem), {});
             if (a_shift[3] != a[3]) {
                 // The shift was negated. Negate result for correct sign:
-                stack_.push(negate(std::move(x), {}));
+                StackElemRef x_neg_reserv = negate(std::move(x), {});
+                x_neg_reserv->set_bit_upper_bound(result_bound);
+                stack_.push(std::move(x_neg_reserv));
             }
             else {
+                x->set_bit_upper_bound(result_bound);
                 stack_.push(std::move(x));
             }
             return true;
@@ -6999,7 +7185,9 @@ namespace monad::vm::compiler::native
             // multiplication instruction.
             stack_.pop();
             stack_.pop();
-            stack_.push(mul_with_bit_size(256, std::move(b_elem), a, {}));
+            StackElemRef res = mul_with_bit_size(256, std::move(b_elem), a, {});
+            res->set_bit_upper_bound(result_bound);
+            stack_.push(std::move(res));
             return true;
         }
 
@@ -7157,6 +7345,10 @@ namespace monad::vm::compiler::native
     {
         auto a_elem = stack_.get(stack_.top_index());
         auto b_elem = stack_.get(stack_.top_index() - 1);
+        auto const a_bound = a_elem->bit_upper_bound();
+        auto const b_bound = b_elem->bit_upper_bound();
+        auto const result_bound =
+            (is_sdiv && (a_bound == 256 || b_bound == 256)) ? 256u : a_bound;
 
         if (a_elem->literal()) {
             auto const &a = a_elem->literal()->value;
@@ -7218,9 +7410,12 @@ namespace monad::vm::compiler::native
                 }
             }();
             if (needs_negation) {
-                stack_.push(negate(std::move(dst), {}));
+                StackElemRef dst_neg_reserv = negate(std::move(dst), {});
+                dst_neg_reserv->set_bit_upper_bound(result_bound);
+                stack_.push(std::move(dst_neg_reserv));
             }
             else {
+                dst->set_bit_upper_bound(result_bound);
                 stack_.push(std::move(dst));
             }
             return true;
@@ -7324,6 +7519,11 @@ namespace monad::vm::compiler::native
             return false;
         }
 
+        auto const a_bound = a_elem->bit_upper_bound();
+        auto const b_bound = b_elem->bit_upper_bound();
+        auto const result_bound =
+            (is_smod && (a_bound == 256 || b_bound == 256)) ? 256u : b_bound;
+
         auto b = b_elem->literal()->value;
         b_elem.reset(); // Clear locations
         if constexpr (is_smod) {
@@ -7341,12 +7541,13 @@ namespace monad::vm::compiler::native
             stack_.pop();
             stack_.pop();
             if constexpr (is_smod) {
-                stack_.push(smod_by_mask(std::move(a_elem), b - 1, {}));
+                StackElemRef dst = smod_by_mask(std::move(a_elem), b - 1, {});
+                dst->set_bit_upper_bound(result_bound);
+                stack_.push(std::move(dst));
             }
             else {
                 stack_.push(
                     and_(std::move(a_elem), stack_.alloc_literal({b - 1}), {}));
-                return true;
             }
             return true;
         }
@@ -7641,6 +7842,9 @@ namespace monad::vm::compiler::native
             size_t const exp = runtime::bit_width(m) - 1;
             // The heavy lifting is done by the following function.
             (this->*ModOpByMask)(std::move(a_elem), std::move(b_elem), exp);
+            // Set the bit upper bound of the result, which is always < m
+            stack_.top()->set_bit_upper_bound(
+                static_cast<std::uint32_t>(runtime::bit_width(m - 1)));
         }
 
         return true;
@@ -7984,7 +8188,10 @@ namespace monad::vm::compiler::native
             }
             if (last_ix <= inline_threshold || has_zero) {
                 b_elem.reset(); // Clear registers.
-                stack_.push(mul_with_bit_size(exp, std::move(a_elem), b, {}));
+                StackElemRef res =
+                    mul_with_bit_size(exp, std::move(a_elem), b, {});
+                res->set_bit_upper_bound(static_cast<std::uint32_t>(exp));
+                stack_.push(std::move(res));
                 return;
             }
         }
@@ -7992,16 +8199,20 @@ namespace monad::vm::compiler::native
             if (b_elem->general_reg()) {
                 auto const &b = general_reg_to_gpq256(*b_elem->general_reg());
                 GeneralRegReserv const b_reserv{b_elem};
-                stack_.push(mul_with_bit_size(
-                    exp, std::move(a_elem), b, std::make_tuple(b_elem)));
+                StackElemRef res = mul_with_bit_size(
+                    exp, std::move(a_elem), b, std::make_tuple(b_elem));
+                res->set_bit_upper_bound(static_cast<std::uint32_t>(exp));
+                stack_.push(std::move(res));
             }
             else {
                 if (!b_elem->stack_offset()) {
                     mov_avx_reg_to_stack_offset(b_elem);
                 }
                 auto const &b = stack_offset_to_mem(*b_elem->stack_offset());
-                stack_.push(mul_with_bit_size(
-                    exp, std::move(a_elem), b, std::make_tuple(b_elem)));
+                StackElemRef res = mul_with_bit_size(
+                    exp, std::move(a_elem), b, std::make_tuple(b_elem));
+                res->set_bit_upper_bound(static_cast<std::uint32_t>(exp));
+                stack_.push(std::move(res));
             }
             return;
         }
@@ -8024,6 +8235,8 @@ namespace monad::vm::compiler::native
                 Runtime<uint256_t *, uint256_t const *, uint256_t const *>(
                     this, false, runtime::mul));
         }
+        // Set the bit upper bound of the result.
+        stack_.top()->set_bit_upper_bound(static_cast<std::uint32_t>(exp));
 
         MONAD_VM_DEBUG_ASSERT(stack_.top()->stack_offset().has_value());
         auto res_mem = stack_offset_to_mem(*stack_.top()->stack_offset());
@@ -8071,15 +8284,15 @@ namespace monad::vm::compiler::native
         as_.bind(end_lbl);
     }
 
-    // Count the byte width (number of significant bytes) of the value.
+    // Count the bit width (number of significant bits) of the value.
     // The operands in `arr` must be ordered from least to most significant.
     //
     // Unlike `array_leading_zeros`, this implementation does not optimize the
     // case where the input value is uniformly distributed, since
-    // array_byte_width is only used on EXP exponents, which are biased towards
+    // array_bit_width is only used on EXP exponents, which are biased towards
     // smaller values.
     template <typename T, size_t N>
-    void Emitter::array_byte_width(std::array<T, N> const &arr)
+    void Emitter::array_bit_width(std::array<T, N> const &arr)
     {
         auto const scratch_reg = [this] {
             if (stack_.has_free_general_reg()) {
@@ -8110,12 +8323,18 @@ namespace monad::vm::compiler::native
 
         // eax = bit width (negative), byte width = (-eax + 7) / 8
         as_.neg(x86::eax);
-        as_.add(x86::eax, 7);
-        as_.sar(x86::eax, 3);
 
         if (scratch_reg == reg_context) {
             as_.pop(reg_context);
         }
+    }
+
+    template <typename T, size_t N>
+    void Emitter::array_byte_width(std::array<T, N> const &arr)
+    {
+        array_bit_width(arr);
+        as_.add(x86::eax, 7);
+        as_.sar(x86::eax, 3);
     }
 
     // Compute byte width of stack element, stores the result in x86::eax.

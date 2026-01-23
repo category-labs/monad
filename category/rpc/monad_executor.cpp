@@ -463,6 +463,8 @@ namespace
         current_header.extra_data = byte_string{};
         current_header.nonce = byte_string_fixed<8>{};
 
+        auto block_state = BlockState{tdb, vm};
+
         for (auto block_idx = 0u; block_idx < calls.size(); ++block_idx) {
             auto entry = nlohmann::json::object();
 
@@ -473,7 +475,6 @@ namespace
             current_header.timestamp += 1;
 
             auto block_metrics = BlockMetrics{};
-            auto block_state = BlockState{tdb, vm};
             (void)block_metrics;
             (void)block_state;
             (void)block_hash_buffer;

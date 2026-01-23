@@ -525,6 +525,9 @@ namespace
                 evmc::Result const execution_result = exec(state, host);
                 auto call_result = nlohmann::json::object();
 
+                MONAD_ASSERT(block_state.can_merge(state));
+                block_state.merge(state);
+
                 call_result["status"] = std::format(
                     "0x{:x}",
                     execution_result.status_code == EVMC_SUCCESS ? 1 : 0);

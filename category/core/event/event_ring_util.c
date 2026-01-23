@@ -29,6 +29,8 @@
 
 #include <zstd.h>
 
+#include <category/core/cleanup.h> //NOLINT(misc-include-cleaner)
+
 #if __has_include(<linux/limits.h>)
     #include <linux/limits.h> // NOLINT(misc-include-cleaner)
 #else
@@ -58,28 +60,32 @@ extern thread_local char _g_monad_event_ring_error_buf[1024];
 // Create MONAD_EVENT_DEFAULT_RING_DIR or override subpaths with rwxrwxr-x
 constexpr mode_t DIR_CREATE_MODE = S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH;
 
+static void cleanup_dstream(ZSTD_DStream *const *const ptr)
+{
+    ZSTD_freeDStream(*ptr); // *ptr == nullptr is allowed
+}
+
 static int decompress_snapshot(
     void const *input_base, size_t input_size, int decompfd, size_t max_size,
     char const *error_name, bool *is_snapshot)
 {
-    int rc;
-    ZSTD_DStream *zds = nullptr;
+    // NOLINTBEGIN(clang-analyzer-unix.Malloc)
+    ZSTD_DStream *zds [[gnu::cleanup(cleanup_dstream)]] = nullptr;
     size_t zstd_rc = 0;
     uint64_t n_blocks = 0;
     size_t decomp_size = 0;
 
     *is_snapshot = false;
     size_t const out_buf_size = ZSTD_DStreamOutSize();
-    void *const out_buf = malloc(out_buf_size);
+    char *const out_buf [[gnu::cleanup(cleanup_free)]] = malloc(out_buf_size);
     if (out_buf == nullptr) {
-        rc = FORMAT_ERRC(errno, "malloc of %zu for zstd failed", out_buf_size);
-        goto Done;
+        return FORMAT_ERRC(
+            errno, "malloc of %zu for zstd failed", out_buf_size);
     }
 
     zds = ZSTD_createDStream();
     if (zds == nullptr) {
-        rc = FORMAT_ERRC(EIO, "ZSTD_createDStream failed");
-        goto Done;
+        return FORMAT_ERRC(EIO, "ZSTD_createDStream failed");
     }
 
     ZSTD_inBuffer zbuf_in = {.src = input_base, .size = input_size, .pos = 0};
@@ -89,12 +95,11 @@ static int decompress_snapshot(
             .dst = out_buf, .size = out_buf_size, .pos = 0};
         zstd_rc = ZSTD_decompressStream(zds, &zbuf_out, &zbuf_in);
         if (ZSTD_isError(zstd_rc)) {
-            rc = FORMAT_ERRC(
+            return FORMAT_ERRC(
                 EIO,
                 "zstd error decompressing `%s`: %s",
                 error_name,
                 ZSTD_getErrorName(zstd_rc));
-            goto Done;
         }
         if (n_blocks++ == 0) {
             // This is the first decompressed block, check if we have the event
@@ -104,23 +109,21 @@ static int decompress_snapshot(
                     out_buf,
                     MONAD_EVENT_RING_HEADER_VERSION,
                     sizeof MONAD_EVENT_RING_HEADER_VERSION) != 0) {
-                rc = FORMAT_ERRC(
+                return FORMAT_ERRC(
                     EPROTO,
                     "zstd-compressed file `%s` does not contain current magic "
                     "number",
                     error_name);
-                goto Done;
             }
             *is_snapshot = true;
         }
         decomp_size += zbuf_out.pos;
         if (max_size != MONAD_EVENT_NO_MAX_SIZE && decomp_size > max_size) {
-            rc = FORMAT_ERRC(
+            return FORMAT_ERRC(
                 ENOBUFS,
                 "decompressed size of `%s` larger than max allowed %zu",
                 error_name,
                 max_size);
-            goto Done;
         }
 
         uint8_t const *write_buf = zbuf_out.dst;
@@ -128,12 +131,11 @@ static int decompress_snapshot(
         while (residual > 0) {
             ssize_t const n_write = write(decompfd, write_buf, residual);
             if (n_write == -1) {
-                rc = FORMAT_ERRC(
+                return FORMAT_ERRC(
                     errno,
                     "write of %zd bytes of decompressed `%s` failed",
                     residual,
                     error_name);
-                goto Done;
             }
             write_buf += (size_t)n_write;
             residual -= (size_t)n_write;
@@ -142,18 +144,14 @@ static int decompress_snapshot(
     if (zstd_rc != 0) {
         // We define a "zstd file" to be a file containing a single compressed
         // frame
-        rc = FORMAT_ERRC(
+        return FORMAT_ERRC(
             EPROTO,
             "`%s` appears to contain more than one zstd frame",
             error_name);
-        goto Done;
     }
-    rc = 0;
 
-Done:
-    ZSTD_freeDStream(zds);
-    free(out_buf);
-    return rc;
+    return 0;
+    // NOLINTEND(clang-analyzer-unix.Malloc)
 }
 
 // Output of the decompress_snap_{buf,fd}_to_temp_file functions; this returns

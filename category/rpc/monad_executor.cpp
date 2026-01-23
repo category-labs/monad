@@ -235,6 +235,68 @@ namespace
         }
     }
 
+    void apply_state_overrides(
+        BlockState &block_state, Incarnation const incarnation,
+        monad_state_override const &state_overrides)
+    {
+        State state{block_state, incarnation};
+
+        for (auto const &[address, state_delta] :
+             state_overrides.override_sets) {
+            // This would avoid seg-fault on storage override for
+            // non-existing accounts
+            if (MONAD_UNLIKELY(!state.account_exists(address))) {
+                state.create_contract(address);
+            }
+
+            if (state_delta.balance.has_value()) {
+                uint256_t const new_balance = state_delta.balance.value();
+                uint256_t const current_balance = state.get_balance(address);
+                if (new_balance > current_balance) {
+                    state.add_to_balance(
+                        address, new_balance - current_balance);
+                }
+                else {
+                    state.subtract_from_balance(
+                        address, current_balance - new_balance);
+                }
+            }
+
+            if (state_delta.nonce.has_value()) {
+                state.set_nonce(address, state_delta.nonce.value());
+            }
+
+            if (state_delta.code.has_value()) {
+                state.set_code(address, state_delta.code.value());
+            }
+
+            auto const update_state =
+                [&address = address, &state = state](
+                    ankerl::unordered_dense::
+                        segmented_map<bytes32_t, bytes32_t> const &diff) {
+                    for (auto const &[key, value] : diff) {
+                        state.set_storage(address, key, value);
+                    }
+                };
+
+            // Remove single storage
+            if (!state_delta.state_diff.empty()) {
+                // we need to access the account first before accessing its
+                // storage
+                (void)state.get_nonce(address);
+                update_state(state_delta.state_diff);
+            }
+
+            // Remove all override
+            if (!state_delta.state.empty()) {
+                state.set_to_state_incarnation(address);
+                update_state(state_delta.state);
+            }
+        }
+        MONAD_ASSERT(block_state.can_merge(state));
+        block_state.merge(state);
+    }
+
     template <Traits traits>
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
@@ -265,65 +327,8 @@ namespace
         BlockState block_state{tdb, vm};
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
-        {
-            State state{block_state, incarnation};
+        apply_state_overrides(block_state, incarnation, state_overrides);
 
-            for (auto const &[address, state_delta] :
-                 state_overrides.override_sets) {
-                // This would avoid seg-fault on storage override for
-                // non-existing accounts
-                if (MONAD_UNLIKELY(!state.account_exists(address))) {
-                    state.create_contract(address);
-                }
-
-                if (state_delta.balance.has_value()) {
-                    uint256_t const balance = state_delta.balance.value();
-                    uint256_t const pessimistic_balance =
-                        state.get_balance(address);
-                    if (balance > pessimistic_balance) {
-                        state.add_to_balance(
-                            address, balance - pessimistic_balance);
-                    }
-                    else {
-                        state.subtract_from_balance(
-                            address, pessimistic_balance - balance);
-                    }
-                }
-
-                if (state_delta.nonce.has_value()) {
-                    state.set_nonce(address, state_delta.nonce.value());
-                }
-
-                if (state_delta.code.has_value()) {
-                    state.set_code(address, state_delta.code.value());
-                }
-
-                auto const update_state =
-                    [&address = address, &state = state](
-                        ankerl::unordered_dense::
-                            segmented_map<bytes32_t, bytes32_t> const &diff) {
-                        for (auto const &[key, value] : diff) {
-                            state.set_storage(address, key, value);
-                        }
-                    };
-
-                // Remove single storage
-                if (!state_delta.state_diff.empty()) {
-                    // we need to access the account first before accessing its
-                    // storage
-                    (void)state.get_nonce(address);
-                    update_state(state_delta.state_diff);
-                }
-
-                // Remove all override
-                if (!state_delta.state.empty()) {
-                    state.set_to_state_incarnation(address);
-                    update_state(state_delta.state);
-                }
-            }
-            MONAD_ASSERT(block_state.can_merge(state));
-            block_state.merge(state);
-        }
         State state{block_state, incarnation};
 
         // validate_transaction expects nonce to match.

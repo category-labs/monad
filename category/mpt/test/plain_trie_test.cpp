@@ -16,17 +16,20 @@
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp" // NOLINT
 
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/mpt/compute.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
-
 #include <boost/fiber/future/future_status.hpp>
 
 #include <chrono>
+#include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -178,8 +181,8 @@ TYPED_TEST(PlainTrieTest, var_length_trie)
     EXPECT_FALSE(this->root->has_value());
     EXPECT_EQ(this->root->bitpacked.data_len, 0);
     EXPECT_EQ(this->root->path_nibbles_len(), 0);
-    auto node0 = this->root->next(0);
-    auto node1 = this->root->next(1); // 1111... 111a... 111b...
+    auto const node0 = this->root->next(0);
+    auto const node1 = this->root->next(1); // 1111... 111a... 111b...
     EXPECT_EQ(node0->mask, 0);
     EXPECT_EQ(node1->mask, 1u << 1 | 1u << 0xa | 1u << 0xb);
     EXPECT_EQ(
@@ -188,12 +191,12 @@ TYPED_TEST(PlainTrieTest, var_length_trie)
     EXPECT_EQ(
         node1->path_nibble_view(), (NibblesView{1, 3, kv[1].first.data()}));
 
-    auto node1111 = node1->next(0);
-    auto node111a = node1->next(1);
-    auto node111b = node1->next(2);
+    auto const node1111 = node1->next(0);
+    auto const node111a = node1->next(1);
+    auto const node111b = node1->next(2);
     EXPECT_EQ(node1111->value(), kv[1].second);
     EXPECT_EQ(node1111->mask, 1u << 0xa);
-    auto node1111_aa = node1111->next(0);
+    auto const node1111_aa = node1111->next(0);
     EXPECT_EQ(node1111_aa->mask, 1u << 0xa | 1u << 0xc);
     EXPECT_EQ(node1111_aa->next(0)->value(), kv[2].second);
     EXPECT_EQ(node1111_aa->next(1)->value(), kv[3].second);
@@ -257,7 +260,7 @@ TYPED_TEST(PlainTrieTest, mismatch)
         this->root->path_nibble_view(),
         (NibblesView{0, 2, kv[0].first.data()}));
     EXPECT_EQ(this->root->next(1)->value(), kv[2].second);
-    auto left_leaf = this->root->next(0)->next(0);
+    auto const left_leaf = this->root->next(0)->next(0);
     EXPECT_EQ(left_leaf->value(), kv[0].second);
     /* insert 12347678, 123aabcd
                   12
@@ -295,11 +298,11 @@ TYPED_TEST(PlainTrieTest, mismatch)
     EXPECT_EQ(
         this->root->path_nibble_view(),
         (NibblesView{0, 2, kv[0].first.data()}));
-    auto node3 = this->root->next(0);
+    auto const node3 = this->root->next(0);
     EXPECT_EQ(node3->mask, 1u << 4 | 1u << 0xa);
     EXPECT_EQ(node3->bitpacked.data_len, 0);
     EXPECT_EQ(node3->path_bytes(), 0);
-    auto node34 = node3->next(0);
+    auto const node34 = node3->next(0);
     EXPECT_EQ(node34->mask, 0b11100000);
     EXPECT_EQ(node34->bitpacked.data_len, 0);
     EXPECT_EQ(node34->path_bytes(), 0);
@@ -451,7 +454,7 @@ TYPED_TEST(PlainTrieTest, large_values)
     {
         auto [leaf_it, res] =
             find_blocking(this->aux, this->root, key1, version);
-        auto &leaf = leaf_it.node;
+        auto const &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);
         EXPECT_TRUE(leaf->has_value());
@@ -462,7 +465,7 @@ TYPED_TEST(PlainTrieTest, large_values)
     {
         auto [leaf_it, res] =
             find_blocking(this->aux, this->root, key2, version);
-        auto &leaf = leaf_it.node;
+        auto const &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);
         EXPECT_TRUE(leaf->has_value());
@@ -480,7 +483,7 @@ TYPED_TEST(PlainTrieTest, large_values)
             this->aux.io->wait_until_done();
         }
         auto [leaf_it, res] = fut.get();
-        auto &leaf = leaf_it.node;
+        auto const &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);
         EXPECT_TRUE(leaf->has_value());
@@ -498,7 +501,7 @@ TYPED_TEST(PlainTrieTest, large_values)
             this->aux.io->wait_until_done();
         }
         auto [leaf_it, res] = fut.get();
-        auto &leaf = leaf_it.node;
+        auto const &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);
         EXPECT_TRUE(leaf->has_value());
@@ -545,6 +548,8 @@ TYPED_TEST(PlainTrieTest, multi_level_find_blocking)
         EXPECT_EQ(begin.node->value(), top_value);
 
         EXPECT_EQ(
+            // appears to be a bug in the checker
+            // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
             find_blocking(this->aux, begin, kv[0].first, version)
                 .first.node->value(),
             kv[0].second);

@@ -297,8 +297,8 @@ inline UnsignedInteger deserialize_from_big_endian(NibblesView const in)
             "equal to sizeof output type\n");
     }
     UnsignedInteger out = 0;
-    UnsignedInteger bit =
-        static_cast<UnsignedInteger>(1UL << ((in.nibble_size() - 1) * 4));
+    UnsignedInteger bit = static_cast<UnsignedInteger>(
+        1UL << (std::max((in.nibble_size() - 1), 0) * 4));
     for (auto i = 0; i < in.nibble_size(); ++i, bit >>= 4) {
         out += static_cast<UnsignedInteger>(
             in.get(static_cast<unsigned char>(i)) * bit);

@@ -66,6 +66,7 @@ namespace
     TEST_F(OnDiskMerkleTrieGTest, single_thread_one_find_fiber)
     {
         std::vector<Update> updates;
+        updates.reserve(one_hundred_updates.size());
         for (auto const &i : one_hundred_updates) {
             updates.emplace_back(make_update(i.first, i.second));
         }
@@ -93,6 +94,7 @@ namespace
     TEST_F(OnDiskMerkleTrieGTest, single_thread_one_hundred_find_fibers)
     {
         std::vector<Update> updates;
+        updates.reserve(one_hundred_updates.size());
         for (auto const &i : one_hundred_updates) {
             updates.emplace_back(make_update(i.first, i.second));
         }
@@ -104,6 +106,7 @@ namespace
 
         inflight_map_t inflights;
         std::vector<boost::fibers::fiber> fibers;
+        fibers.reserve(one_hundred_updates.size());
         for (auto const &[key, val] : one_hundred_updates) {
             fibers.emplace_back(find, &this->aux, &inflights, root, key, val);
         }

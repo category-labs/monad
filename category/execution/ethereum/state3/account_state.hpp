@@ -71,6 +71,9 @@ public:
     StorageMap storage_{};
     StorageMap transient_storage_{};
 
+    using BlockStorageMap = immer::map<
+        bytes32_t, bytes4k_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+    BlockStorageMap block_storage_{};
     evmc_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
         bytes32_t const &current_value);
@@ -153,9 +156,14 @@ public:
     {
         transient_storage_ = transient_storage_.insert({key, value});
     }
+
+    void set_block_storage(bytes32_t const &key, bytes4k_t const &value)
+    {
+        block_storage_ = block_storage_.insert({key, value});
+    }
 };
 
-static_assert(sizeof(AccountState) == 144);
+static_assert(sizeof(AccountState) == 160);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

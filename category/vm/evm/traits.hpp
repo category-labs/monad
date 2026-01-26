@@ -50,6 +50,7 @@ namespace monad
         { T::eip_7823_active() } -> std::same_as<bool>;
         { T::eip_7883_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
+        { T::pstore_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
 
         // Constants
@@ -101,6 +102,11 @@ namespace monad
         static consteval bool eip_7951_active() noexcept
         {
             return Rev >= EVMC_OSAKA;
+        }
+
+        static consteval bool pstore_active() noexcept
+        {
+            return false;
         }
 
         static consteval bool can_create_inside_delegated() noexcept
@@ -198,6 +204,11 @@ namespace monad
         static consteval bool eip_7951_active() noexcept
         {
             return Rev >= MONAD_FOUR;
+        }
+
+        static consteval bool pstore_active() noexcept
+        {
+            return Rev >= MONAD_NEXT;
         }
 
         static consteval bool can_create_inside_delegated() noexcept

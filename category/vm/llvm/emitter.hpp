@@ -1704,6 +1704,9 @@ namespace monad::vm::llvm
             case SStore:
                 return ffi_runtime(instr, sstore<traits>);
 
+            case PStore:
+                return ffi_runtime(instr, pstore<traits>);
+
             case Create:
                 return ffi_runtime(instr, create<traits>);
 
@@ -1736,6 +1739,9 @@ namespace monad::vm::llvm
 
             case SLoad:
                 return ffi_runtime(instr, sload<traits>);
+
+            case PLoad:
+                return ffi_runtime(instr, pload<traits>);
 
             case BlobHash:
                 return ffi_runtime(instr, blobhash);
@@ -1943,6 +1949,6 @@ namespace monad::vm::llvm
                 MONAD_VM_ASSERT(op == Add);
                 return llvm_binop(instr, &LLVMState::add);
             }
-        };
+        }
     };
-};
+}

@@ -102,6 +102,8 @@ namespace monad::vm::compiler
         Dup = 0x80,
         Swap = 0x90,
         Log = 0xA0,
+        PLoad = 0xDE,
+        PStore = 0xDF,
         Create = 0xF0,
         Call = 0xF1,
         CallCode = 0xF2,
@@ -395,6 +397,10 @@ namespace monad::vm::compiler
             return "LOG";
         case Create:
             return "CREATE";
+        case PLoad:
+            return "PLOAD";
+        case PStore:
+            return "PSTORE";
         case Call:
             return "CALL";
         case CallCode:

@@ -229,6 +229,12 @@ namespace
         case SStore:
             emit.sstore<traits>(remaining_base_gas);
             break;
+        case PLoad:
+            emit.pload<traits>(remaining_base_gas);
+            break;
+        case PStore:
+            emit.pstore<traits>(remaining_base_gas);
+            break;
         case Pc:
             emit.push(instr.pc());
             break;

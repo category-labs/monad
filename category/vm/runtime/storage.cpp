@@ -19,8 +19,16 @@
 
 #include <cstdint>
 
+#include <cstring>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
 #ifdef MONAD_COMPILER_TESTING
+    #include <category/core/bytes.hpp>
+    #include <category/execution/ethereum/core/address.hpp>
     #include <category/vm/runtime/transmute.hpp>
+    #include <map>
+    #include <tuple>
 #else
     #include <exception>
 #endif
@@ -65,3 +73,83 @@ namespace monad::vm::runtime
     }
 #endif
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
+#ifdef MONAD_COMPILER_TESTING
+// In test mode, we use a simple in-memory map for block storage
+
+namespace monad::vm::runtime
+{
+    // Static map for test block storage
+    static std::map<
+        std::tuple<::monad::Address, ::monad::bytes32_t>, ::monad::bytes4k_t> &
+    get_test_block_storage()
+    {
+        static std::map<
+            std::tuple<::monad::Address, ::monad::bytes32_t>,
+            ::monad::bytes4k_t>
+            storage;
+        return storage;
+    }
+
+    ::monad::bytes4k_t get_block_storage_from_context(
+        evmc_host_context *context, ::monad::Address const &recipient,
+        ::monad::bytes32_t const &key)
+    {
+        (void)context; // Unused in test mode
+        auto &storage = get_test_block_storage();
+        auto const it = storage.find(std::make_tuple(recipient, key));
+        if (it != storage.end()) {
+            return it->second;
+        }
+        // Return zeroed block if not found
+        ::monad::bytes4k_t result{};
+        std::memset(result.bytes, 0, sizeof(result.bytes));
+        return result;
+    }
+
+    void set_block_storage_from_context(
+        evmc_host_context *context, ::monad::Address const &recipient,
+        ::monad::bytes32_t const &key, ::monad::bytes4k_t const &value)
+    {
+        (void)context; // Unused in test mode
+        auto &storage = get_test_block_storage();
+        storage[std::make_tuple(recipient, key)] = value;
+    }
+
+    void clear_test_block_storage()
+    {
+        auto &storage = get_test_block_storage();
+        storage.clear();
+    }
+}
+#else
+    // In production mode, use EvmcHostBase
+    #include <category/execution/ethereum/core/address.hpp>
+    #include <category/execution/ethereum/evmc_host.hpp>
+
+namespace monad::vm::runtime
+{
+    ::monad::bytes4k_t get_block_storage_from_context(
+        evmc_host_context *context, ::monad::Address const &recipient,
+        ::monad::bytes32_t const &key)
+    {
+        auto *host = reinterpret_cast<monad::EvmcHostBase *>(context);
+        return host->get_block_storage(recipient, key);
+    }
+
+    void set_block_storage_from_context(
+        evmc_host_context *context, ::monad::Address const &recipient,
+        ::monad::bytes32_t const &key, ::monad::bytes4k_t const &value)
+    {
+        auto *host = reinterpret_cast<monad::EvmcHostBase *>(context);
+        host->set_block_storage(recipient, key, value);
+    }
+}
+#endif
+
+#pragma GCC diagnostic pop

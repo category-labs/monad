@@ -28,9 +28,9 @@ using namespace monad::vm::compiler::test;
 
 namespace
 {
-    inline constexpr uint256_t key = 6732;
-    inline constexpr uint256_t val = 2389;
-    inline constexpr uint256_t val_2 = 90897;
+    inline constexpr runtime::uint256_t key = 6732;
+    inline constexpr runtime::uint256_t val = 2389;
+    inline constexpr runtime::uint256_t val_2 = 90897;
 }
 
 TEST_F(RuntimeTest, TransientStorage)

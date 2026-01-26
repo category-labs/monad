@@ -204,4 +204,29 @@ void EvmcHostBase::set_transient_storage(
     stack_unwind();
 }
 
+bytes4k_t EvmcHostBase::get_block_storage(
+    Address const &address, bytes32_t const &key) const noexcept
+{
+    try {
+        return state_.get_block_storage(address, key);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+
+void EvmcHostBase::set_block_storage(
+    Address const &address, bytes32_t const &key,
+    bytes4k_t const &value) noexcept
+{
+    try {
+        return state_.set_block_storage(address, key, value);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+
 MONAD_NAMESPACE_END

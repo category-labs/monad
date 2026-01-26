@@ -47,6 +47,7 @@ target_sources(vm-unit-tests PRIVATE
     runtime/keccak_tests.cpp
     runtime/environment_tests.cpp
     runtime/storage_tests.cpp
+    runtime/pstorage_tests.cpp
     runtime/call_tests.cpp
     runtime/data_tests.cpp
     runtime/create_tests.cpp

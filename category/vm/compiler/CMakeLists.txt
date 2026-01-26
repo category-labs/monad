@@ -58,6 +58,7 @@ monad_compile_options(monad-vm-compiler)
 
 target_include_directories(monad-vm-compiler
     PUBLIC ${CATEGORY_MAIN_DIR}
+    PUBLIC ${CATEGORY_MAIN_DIR}/third_party/unordered_dense/include
 )
 
 target_link_libraries(monad-vm-compiler

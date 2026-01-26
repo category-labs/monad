@@ -241,6 +241,8 @@ namespace monad::vm::compiler
         LOG2 = 0xA2,
         LOG3 = 0xA3,
         LOG4 = 0xA4,
+        PLOAD = 0xDE,
+        PSTORE = 0xDF,
         CREATE = 0xF0,
         CALL = 0xF1,
         CALLCODE = 0xF2,
@@ -836,7 +838,13 @@ namespace monad::vm::compiler
     consteval std::array<OpCodeInfo, 256>
     make_opcode_table<MonadTraits<MONAD_NEXT>>()
     {
-        return make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();
+        auto table = make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();
+
+        // MONAD-specific opcodes
+        add_opcode(0xDE, table, {"PLOAD", 0, 1, 1, true, 50, 0});
+        add_opcode(0xDF, table, {"PSTORE", 0, 2, 0, true, 5000, 0});
+
+        return table;
     }
 
     /**

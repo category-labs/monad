@@ -50,6 +50,10 @@ monad_compile_options(monad-vm-runtime)
 
 target_include_directories(monad-vm-runtime
     PUBLIC ${CATEGORY_MAIN_DIR}
+    PUBLIC ${CATEGORY_MAIN_DIR}/third_party/unordered_dense/include
+    PUBLIC ${CATEGORY_MAIN_DIR}/third_party/immer
+    PUBLIC ${CATEGORY_MAIN_DIR}/third_party/asmjit/src
+    PUBLIC ${CATEGORY_MAIN_DIR}/third_party/nlohmann_json/include
 )
 
 target_link_libraries(monad-vm-runtime

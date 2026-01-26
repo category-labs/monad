@@ -329,6 +329,15 @@ namespace monad::vm::interpreter
         runtime::uint256_t *, std::int64_t, std::uint8_t const *);
 
     template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void pload(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void pstore(
+        runtime::Context &, Intercode const &, runtime::uint256_t const *,
+        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+    template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void tstore(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
         runtime::uint256_t *, std::int64_t, std::uint8_t const *);

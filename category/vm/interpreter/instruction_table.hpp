@@ -333,8 +333,8 @@ namespace monad::vm::interpreter
             invalid, //
             invalid, //
             invalid, //
-            invalid, //
-            invalid, //
+            (traits::pstore_active() ? pload<traits> : invalid), // 0xDE,
+            (traits::pstore_active() ? pstore<traits> : invalid), // 0xDF,
 
             invalid, //
             invalid, //
@@ -1358,6 +1358,42 @@ namespace monad::vm::interpreter
             instr_ptr);
 
         MONAD_VM_NEXT(SLOAD);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void pload(
+        runtime::Context &ctx, Intercode const &analysis,
+        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
+        std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
+    {
+        checked_runtime_call<PLOAD, traits>(
+            runtime::pload<traits>,
+            ctx,
+            analysis,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr);
+
+        MONAD_VM_NEXT(PLOAD);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void pstore(
+        runtime::Context &ctx, Intercode const &analysis,
+        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
+        std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
+    {
+        checked_runtime_call<PSTORE, traits>(
+            runtime::pstore<traits>,
+            ctx,
+            analysis,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr);
+
+        MONAD_VM_NEXT(PSTORE);
     }
 
     template <Traits traits>

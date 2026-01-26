@@ -75,6 +75,7 @@ namespace monad::vm::runtime
 }
 
 #pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"

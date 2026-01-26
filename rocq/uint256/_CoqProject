@@ -1,0 +1,9 @@
+-R theories Uint256
+-arg -w -arg -notation-overridden
+-arg -w -arg -redundant-canonical-projection
+
+theories/Spec.v
+theories/Primitives.v
+theories/Core256.v
+theories/Cyclic256.v
+theories/CyclicBridge.v

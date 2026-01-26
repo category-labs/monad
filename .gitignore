@@ -165,3 +165,17 @@ third_party/evmone/
 
 # Claude Code
 .claude/
+
+# Emacs temporary files
+*~
+
+# Rocq generated files
+.lia.cache
+*.aux
+*.coq.conf
+*.coq.d
+*.glob
+*.vo
+*.vok
+*.vos
+

@@ -165,14 +165,49 @@ Qed.
 
 (** addc64 carry is correct *)
 Lemma addc64_carry_correct : forall lhs rhs cin,
+  0 <= lhs < modulus64 ->
+  0 <= rhs < modulus64 ->
   let result := addc64 lhs rhs cin in
   let cin_z := if cin then 1 else 0 in
   carry64 result = true <-> to_Z64 lhs + to_Z64 rhs + cin_z >= modulus64.
 Proof.
-  (* TODO: This proof requires bounds on lhs and rhs (0 <= x < 2^64)
-     which are not currently enforced by the uint64 type definition.
-     The proof strategy is outlined in mod_overflow_iff above. *)
-Admitted.
+  intros lhs rhs cin Hlhs Hrhs.
+  simpl. unfold normalize64, to_Z64, modulus64 in *.
+  set (M := 2^64) in *.
+  set (sum := (lhs + rhs) mod M).
+  set (cin_z := if cin then 1 else 0).
+  set (sum_carry := (sum + cin_z) mod M).
+  (* Key facts *)
+  (* assert (HM_pos: M > 0) by lia. *)
+  assert (Hcin_bound: 0 <= cin_z <= 1) by (unfold cin_z; destruct cin; lia).
+  assert (Hsum_bound: 0 <= sum < M) by (unfold sum; apply Z.mod_pos_bound; lia).
+  assert (Hsum_le: sum <= lhs + rhs) by (unfold sum; apply Z.mod_le; lia).
+  assert (Hsc_bound: 0 <= sum_carry < M) by (unfold sum_carry; apply Z.mod_pos_bound; lia).
+  (* Step 2: Rewrite carry condition to disjunction *)
+  rewrite Bool.orb_true_iff.
+  rewrite 2!Z.ltb_lt.
+  split.
+  - (* Forward direction: overflow detected -> mathematical overflow *)
+    intros [Hov1 | Hov2].
+    + enough (H: lhs + rhs >= M) by lia.
+      apply mod_overflow_iff; lia.
+    + assert (H: sum + cin_z >= M) by (apply mod_overflow_iff; lia).
+      lia.
+  - (* Backward direction: mathematical overflow -> overflow detected *)
+    intro Hoverflow.
+    destruct (Z_lt_ge_dec (lhs + rhs) M) as [Hno_ov1 | Hov1].
+    + (* Case: lhs + rhs < M, so second addition must overflow *)
+      right.
+      assert (Heq: sum = lhs + rhs) by (apply Z.mod_small; lia).
+      rewrite <- Heq in Hoverflow.
+      assert (Hs: sum + cin_z < 2 * M) by lia.
+      assert (Hp: 1 = (sum + cin_z) / M) by
+        (apply Z.div_unique with (r := sum + cin_z - M); lia).
+      unfold sum_carry.
+      rewrite Z.mod_eq; lia.
+    + (* Case: lhs + rhs >= M, so first addition overflowed *)
+      apply <- mod_overflow_iff in Hov1; lia.
+Qed.
 (** ** Subtraction with Borrow *)
 
 (** Specification for subb (matches subb_constexpr from uint256.hpp)

@@ -162,3 +162,17 @@ tmux-fuzzer-log/
 
 # optional third-party dependencies
 third_party/evmone/
+
+# Emacs temporary files
+*~
+
+# Rocq generated files
+.lia.cache
+*.aux
+*.coq.conf
+*.coq.d
+*.glob
+*.vo
+*.vok
+*.vos
+

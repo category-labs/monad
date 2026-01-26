@@ -60,6 +60,8 @@ inline constexpr auto ADDR_A =
     0x0000000000000000000000000000000000000100_address;
 inline constexpr auto ADDR_B =
     0x0000000000000000000000000000000000000101_address;
+inline constexpr auto ADDR_C =
+    0x0000000000000000000000000000000000000102_address;
 inline auto const A_CODE =
     evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                    "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"

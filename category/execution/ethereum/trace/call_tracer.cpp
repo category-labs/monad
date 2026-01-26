@@ -71,7 +71,10 @@ void NoopCallTracer::on_exit(evmc::Result const &) {}
 
 void NoopCallTracer::on_log(Receipt::Log) {}
 
-void NoopCallTracer::on_self_destruct(Address const &, Address const &) {}
+void NoopCallTracer::on_self_destruct(
+    Address const &, Address const &, uint256_t const &)
+{
+}
 
 void NoopCallTracer::on_finish(uint64_t const) {}
 
@@ -190,7 +193,9 @@ void CallTracer::on_log(Receipt::Log log)
     frame.logs->emplace_back(std::move(log), positions_.top());
 }
 
-void CallTracer::on_self_destruct(Address const &from, Address const &to)
+void CallTracer::on_self_destruct(
+    Address const &from, Address const &to,
+    uint256_t const &transferred_balance)
 {
     MONAD_ASSERT(!last_.empty());
     MONAD_ASSERT(!positions_.empty());
@@ -203,7 +208,7 @@ void CallTracer::on_self_destruct(Address const &from, Address const &to)
         .flags = 0,
         .from = from,
         .to = to,
-        .value = 0,
+        .value = transferred_balance,
         .gas = 0,
         .gas_used = 0,
         .input = {},

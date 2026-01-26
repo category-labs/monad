@@ -140,8 +140,11 @@ struct EvmcHost final : public EvmcHostBase
         Address const &address, Address const &beneficiary) noexcept override
     {
         try {
-            call_tracer_.on_self_destruct(address, beneficiary);
-            return state_.selfdestruct<traits>(address, beneficiary);
+            auto const [result, transferred_balance] =
+                state_.selfdestruct<traits>(address, beneficiary);
+            call_tracer_.on_self_destruct(
+                address, beneficiary, transferred_balance);
+            return result;
         }
         catch (...) {
             capture_current_exception();

@@ -301,15 +301,23 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
     s.create_contract(b);
     s.add_to_balance(b, 28'000);
 
-    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, c));
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, c),
+        std::make_pair(true, 18'000));
     EXPECT_EQ(s.get_balance(a), 0);
     EXPECT_EQ(s.get_balance(c), 56'000);
-    EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(a, c));
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, c),
+        std::make_pair(false, 0));
 
-    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(b, c));
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(b, c),
+        std::make_pair(true, 28'000));
     EXPECT_EQ(s.get_balance(b), 0);
     EXPECT_EQ(s.get_balance(c), 84'000);
-    EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(b, c));
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(b, c),
+        std::make_pair(false, 0));
 
     s.destruct_suicides<typename TestFixture::Trait>();
     if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
@@ -346,10 +354,14 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
 
     State s{bs, Incarnation{1, 2}};
 
-    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, c));
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, c),
+        std::make_pair(true, 18'000));
     EXPECT_EQ(s.get_balance(a), 0);
     EXPECT_EQ(s.get_balance(c), 56'000);
-    EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(a, c));
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, c),
+        std::make_pair(false, 0));
 
     s.destruct_suicides<typename TestFixture::Trait>();
     if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
@@ -385,10 +397,14 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_same_tx)
 
     State s{bs, Incarnation{1, 1}};
 
-    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, c));
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, c),
+        std::make_pair(true, 18'000));
     EXPECT_EQ(s.get_balance(a), 0);
     EXPECT_EQ(s.get_balance(c), 56'000);
-    EXPECT_FALSE(s.selfdestruct<typename TestFixture::Trait>(a, c));
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, c),
+        std::make_pair(false, 0));
 
     s.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_FALSE(s.account_exists(a));
@@ -408,7 +424,12 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_separate_tx)
 
     State s{bs, Incarnation{1, 1}};
 
-    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, a));
+    // Balance is burned when self-destructing with the beneficiary being self.
+    // But the trace contains the initial balance, not the balance actually
+    // transferred.
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, a),
+        std::make_pair(true, 18'000));
     uint256_t const balance_after_selfdestruct = s.get_balance(a);
     s.destruct_suicides<typename TestFixture::Trait>();
 
@@ -443,7 +464,9 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx)
     State s{bs, Incarnation{1, 1}};
 
     // Behavior doesn't change in cancun if in same txn
-    EXPECT_TRUE(s.selfdestruct<typename TestFixture::Trait>(a, a));
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, a),
+        std::make_pair(true, 18'000));
     EXPECT_EQ(s.get_balance(a), 0);
 
     s.destruct_suicides<typename TestFixture::Trait>();
@@ -1217,7 +1240,9 @@ TYPED_TEST(InMemoryStateTraitsTest, merge_txn0_and_txn1)
     EXPECT_TRUE(cs.account_exists(c));
     EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
     EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
-    EXPECT_TRUE(cs.selfdestruct<typename TestFixture::Trait>(c, a));
+    EXPECT_EQ(
+        cs.selfdestruct<typename TestFixture::Trait>(c, a),
+        std::make_pair(true, 50'000));
     cs.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_TRUE(bs.can_merge(cs));
     bs.merge(cs);
@@ -1323,7 +1348,9 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         EXPECT_TRUE(cs.account_exists(c));
         EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
         EXPECT_EQ(cs.set_storage(c, key2, value1), EVMC_STORAGE_MODIFIED);
-        EXPECT_TRUE(cs.selfdestruct<typename TestFixture::Trait>(c, a));
+        EXPECT_EQ(
+            cs.selfdestruct<typename TestFixture::Trait>(c, a),
+            std::make_pair(true, 50'000));
         cs.destruct_suicides<typename TestFixture::Trait>();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);

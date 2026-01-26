@@ -153,7 +153,8 @@ public:
     ////////////////////////////////////////
 
     template <Traits traits>
-    bool selfdestruct(Address const &, Address const &beneficiary);
+    std::pair<bool, uint256_t>
+    selfdestruct(Address const &, Address const &beneficiary);
 
     // YP (87)
     template <Traits traits>

@@ -469,40 +469,6 @@ namespace detail
     static_assert(sizeof(db_metadata) == 528512);
     static_assert(alignof(db_metadata) == 8);
 
-    inline void atomic_memcpy(
-        void *__restrict__ dest_, void const *__restrict__ src_, size_t bytes,
-        std::memory_order load_ord = std::memory_order_acquire,
-        std::memory_order store_ord = std::memory_order_release)
-    {
-        MONAD_ASSERT((((uintptr_t)dest_) & 7) == 0);
-        MONAD_ASSERT((((uintptr_t)src_) & 7) == 0);
-        MONAD_ASSERT((((uintptr_t)bytes) & 7) == 0);
-        auto *dest = reinterpret_cast<std::atomic<uint64_t> *>(dest_);
-        auto const *src = reinterpret_cast<std::atomic<uint64_t> const *>(src_);
-        while (bytes >= 64) {
-            auto const a0 = (src++)->load(load_ord);
-            auto const a1 = (src++)->load(load_ord);
-            auto const a2 = (src++)->load(load_ord);
-            auto const a3 = (src++)->load(load_ord);
-            auto const a4 = (src++)->load(load_ord);
-            auto const a5 = (src++)->load(load_ord);
-            auto const a6 = (src++)->load(load_ord);
-            auto const a7 = (src++)->load(load_ord);
-            (dest++)->store(a0, store_ord);
-            (dest++)->store(a1, store_ord);
-            (dest++)->store(a2, store_ord);
-            (dest++)->store(a3, store_ord);
-            (dest++)->store(a4, store_ord);
-            (dest++)->store(a5, store_ord);
-            (dest++)->store(a6, store_ord);
-            (dest++)->store(a7, store_ord);
-            bytes -= 64;
-        }
-        for (size_t n = 0; n < bytes; n += 8) {
-            (dest++)->store((src++)->load(load_ord), store_ord);
-        }
-    }
-
     /* A dirty bit setting memcpy implementation, so the dirty bit gets held
     high during the memory copy.
     */
@@ -517,8 +483,8 @@ namespace detail
         dest->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM
         auto const old_next_version = intr->root_offsets.next_version_;
         intr->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM
-        atomic_memcpy((void *)dest, buffer, sizeof(db_metadata));
-        atomic_memcpy(
+        memcpy((void *)dest, buffer, sizeof(db_metadata));
+        memcpy(
             ((std::byte *)dest) + sizeof(db_metadata),
             ((std::byte const *)src) + sizeof(db_metadata),
             bytes - sizeof(db_metadata));

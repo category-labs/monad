@@ -51,8 +51,6 @@
         return f<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>(__VA_ARGS__);     \
     case EVMC_HOMESTEAD:                                                       \
         return f<::monad::EvmTraits<EVMC_HOMESTEAD>>(__VA_ARGS__);             \
-    case EVMC_FRONTIER:                                                        \
-        return f<::monad::EvmTraits<EVMC_FRONTIER>>(__VA_ARGS__);              \
     default:                                                                   \
         break;                                                                 \
     }

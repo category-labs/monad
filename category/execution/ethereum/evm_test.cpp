@@ -729,18 +729,9 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
         auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
             s, a, std::move(r));
         EXPECT_EQ(r2.gas_left, 700);
-        if constexpr (TestFixture::Trait::evm_rev() == EVMC_FRONTIER) {
-            EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
-            EXPECT_EQ(r2.create_address, a);
-            EXPECT_TRUE(s.account_exists(a));
-            auto const icode = s.get_code(a)->intercode();
-            EXPECT_EQ(icode->size(), 0);
-        }
-        else {
-            // Fail to deploy code - out of gas (EIP-2)
-            EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
-            EXPECT_EQ(r2.create_address, 0x00_address);
-        }
+        // Fail to deploy code - out of gas (EIP-2)
+        EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(r2.create_address, 0x00_address);
     }
 }
 

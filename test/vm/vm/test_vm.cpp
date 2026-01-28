@@ -128,6 +128,9 @@ evmc::Result BlockchainTestVM::execute(
     auto new_rt_ctx =
         runtime::Context::from(host, context, msg, {code, code_size});
     rt_ctx_ = &new_rt_ctx;
+    if (rev < EVMC_HOMESTEAD) {
+        rev = EVMC_HOMESTEAD;
+    }
 
     auto res = [&] {
         if (msg->sender == SYSTEM_ADDRESS) {

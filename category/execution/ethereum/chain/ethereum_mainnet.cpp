@@ -98,6 +98,10 @@ EthereumMainnet::static_validate_header(BlockHeader const &header) const
             header.extra_data != dao::extra_data)) {
         return BlockError::WrongDaoExtraData;
     }
+    if (MONAD_UNLIKELY(
+            header.number < constants::EARLIEST_SUPPORTED_EVM_FORK)) {
+        return BlockError::UnsupportedFork;
+    }
     return success();
 }
 

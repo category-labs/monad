@@ -31,11 +31,6 @@ namespace monad::vm::utils::evm_as
         return EvmBuilder<EvmTraits<EVMC_LATEST_STABLE_REVISION>>{};
     }
 
-    inline EvmBuilder<EvmTraits<EVMC_FRONTIER>> frontier()
-    {
-        return EvmBuilder<EvmTraits<EVMC_FRONTIER>>{};
-    }
-
     inline EvmBuilder<EvmTraits<EVMC_HOMESTEAD>> homestead()
     {
         return EvmBuilder<EvmTraits<EVMC_HOMESTEAD>>{};

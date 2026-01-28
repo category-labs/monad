@@ -3129,7 +3129,7 @@ TEST(Emitter, call_runtime_impl)
     pure_bin_instr_test(
         rt,
         EXP,
-        [](Emitter &emit) { emit.exp<EvmTraits<EVMC_FRONTIER>>(0); },
+        [](Emitter &emit) { emit.exp<EvmTraits<EVMC_HOMESTEAD>>(0); },
         10,
         20,
         100000000000000000000_u256);

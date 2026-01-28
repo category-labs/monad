@@ -84,21 +84,11 @@ evmc::Result deploy_contract_code(
     auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
 
     if (result.gas_left < deploy_cost) {
-        if constexpr (traits::evm_rev() == EVMC_FRONTIER) {
-            // From YP: "No code is deposited in the state if the gas
-            // does not cover the additional per-byte contract deposit
-            // fee, however, the value is still transferred and the
-            // execution side- effects take place."
-            result.create_address = address;
-            state.set_code(address, {});
-        }
-        else {
-            // EIP-2: If contract creation does not have enough gas to
-            // pay for the final gas fee for adding the contract code to
-            // the state, the contract creation fails (ie. goes
-            // out-of-gas) rather than leaving an empty contract.
-            result.status_code = EVMC_OUT_OF_GAS;
-        }
+        // EIP-2: If contract creation does not have enough gas to
+        // pay for the final gas fee for adding the contract code to
+        // the state, the contract creation fails (ie. goes
+        // out-of-gas) rather than leaving an empty contract.
+        result.status_code = EVMC_OUT_OF_GAS;
     }
     else {
         result.create_address = address;

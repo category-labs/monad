@@ -43,7 +43,6 @@
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
-#include <category/execution/monad/reserve_balance.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -4121,5 +4120,128 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             nlohmann::json::from_cbor(encoded_state_diff_trace_2));
     }
 
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, reserve_balance_precompile_indirect_call)
+{
+    // This test case checks that the reserve balance precompile cannot be
+    // called by a smart contract.
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto to{
+        0x5353535353535353535353535353535353535353_address};
+    {
+        using namespace monad::vm::utils;
+        auto eb = evm_as::latest();
+
+        uint64_t const gas = 15275;
+        size_t const arg_ret_size = sizeof(uint256_t);
+
+        eb.push(4, 0x82ab890a)
+            .push0()
+            .mstore()
+            .push(arg_ret_size)
+            .push0()
+            .push(sizeof(uint32_t))
+            .push0()
+            .push0()
+            .push(20, 0x1001)
+            .push(gas)
+            .call()
+            .stop();
+        EXPECT_TRUE(evm_as::validate(eb));
+
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        byte_string code{bytecode.data(), bytecode.data() + bytecode.size()};
+
+        bytes32_t const code_hash = to_bytes(keccak256(code));
+        StateDeltas const deltas{
+            {to,
+             StateDelta{
+                 .account = {
+                     std::nullopt,
+                     Account{
+                         .balance = std::numeric_limits<uint256_t>::max(),
+                         .code_hash = code_hash,
+                         .nonce = 1}}}}};
+        commit_sequential(
+            tdb,
+            deltas,
+            {{code_hash, monad::vm::make_shared_intercode(code)}},
+            BlockHeader{.number = 0});
+    }
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    Transaction const tx{
+        .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
+    BlockHeader const header{.number = 256};
+
+    commit_sequential(tdb, {}, {}, header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        STATEDIFF_TRACER,
+        true);
+    f.get();
+
+    // Monad precompiles returns EVMC_SUCCESS even in the event of an error
+    // inside the precompile. So we use the statediff trace to check that no
+    // value was updated.
+    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 21129);
+    // EXPECT_EQ(ctx.result->gas_used, 36404);
+    EXPECT_EQ(ctx.result->output_data_len, 0);
+
+    std::vector<uint8_t> const encoded_state_diff_trace(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    // The reserve balance precompile should not appear in the trace, as we did
+    // not update anything.
+    auto const *const expected = R"({
+        "post": {
+            "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+                "balance": "0x0",
+                "nonce": 1
+            }
+        },
+        "pre": {}
+    })";
+
+    EXPECT_EQ(
+        nlohmann::json::parse(expected),
+        nlohmann::json::from_cbor(encoded_state_diff_trace));
+
+    monad_state_override_destroy(state_override);
     monad_executor_destroy(executor);
 }

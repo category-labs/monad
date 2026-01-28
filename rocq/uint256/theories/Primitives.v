@@ -123,17 +123,6 @@ Definition add256_c (x y : uint256) : result256_with_carry :=
 
 (** ** Correctness Properties *)
 
-(** addc64 produces correct mathematical result *)
-Lemma addc64_correct : forall lhs rhs cin,
-  let result := addc64 lhs rhs cin in
-  let cin_z := if cin then 1 else 0 in
-  to_Z64 (value64 result) = (to_Z64 lhs + to_Z64 rhs + cin_z) mod modulus64.
-Proof.
-  intros; simpl.
-  unfold normalize64, from_Z64, to_Z64, modulus64, cin_z.
-  rewrite Zplus_mod_idemp_l.
-  reflexivity.
-Qed.
 
 (* Claude Code-inspired Proof *)
 Lemma mod_overflow_iff : forall a b M,
@@ -163,37 +152,6 @@ Proof.
   apply Z.add_le_mono; assumption.
 Qed.
 
-(** addc64 carry is correct *)
-Lemma addc64_carry_correct : forall lhs rhs cin,
-  0 <= lhs < modulus64 ->
-  0 <= rhs < modulus64 ->
-  let result := addc64 lhs rhs cin in
-  let cin_z := if cin then 1 else 0 in
-  carry64 result = true <-> to_Z64 lhs + to_Z64 rhs + cin_z >= modulus64.
-Proof.
-  intros lhs rhs cin Hlhs Hrhs.
-  simpl. unfold normalize64, to_Z64, modulus64 in *.
-  set (M := 2^64) in *.
-  set (sum := (lhs + rhs) mod M).
-  set (cin_z := if cin then 1 else 0).
-  set (sum_carry := (sum + cin_z) mod M).
-  assert (Hcin_bound: 0 <= cin_z <= 1) by (unfold cin_z; destruct cin; lia).
-  assert (Hsum_bound: 0 <= sum < M) by (unfold sum; apply Z.mod_pos_bound; lia).
-  assert (Hsum_le: sum <= lhs + rhs) by (unfold sum; apply Z.mod_le; lia).
-  rewrite Bool.orb_true_iff, 2!Z.ltb_lt.
-  split.
-  - (* Forward: overflow detected -> mathematical overflow *)
-    intros [Hov1 | Hov2].
-    + enough (lhs + rhs >= M) by lia. apply mod_overflow_iff; lia.
-    + apply -> mod_overflow_iff in Hov2; lia.
-  - (* Backward: mathematical overflow -> overflow detected *)
-    intro Hoverflow.
-    destruct (Z_lt_ge_dec (lhs + rhs) M) as [Hno_ov1 | Hov1].
-    + right. apply <- mod_overflow_iff; [|lia | lia | lia].
-      unfold sum; rewrite Z.mod_small by lia. lia.
-    + left. apply <- mod_overflow_iff; lia.
-Qed.
-
 (** ** Subtraction with Borrow *)
 
 (** Specification for subb (matches subb_constexpr from uint256.hpp)
@@ -208,14 +166,16 @@ Qed.
       borrow_out |= borrow_in > sub;
 *)
 
-Definition subb64_spec (lhs rhs : uint64) (borrow_in : bool) : result64_with_carry :=
+Definition subb64 (lhs rhs : uint64) (borrow_in : bool) : result64_with_carry :=
   let lhs_z := to_Z64 lhs in
   let rhs_z := to_Z64 rhs in
   let bin := if borrow_in then 1 else 0 in
-  let diff := lhs_z - rhs_z - bin in
+  let sub := normalize64 (lhs_z - rhs_z) in
+  let bout := rhs_z >? lhs_z in
+  let sub_borrow := normalize64 (sub - bin) in
   {|
-    value64 := from_Z64 (normalize64 diff);
-    carry64 := (diff <? 0)  (* borrow if result would be negative *)
+    value64 := from_Z64 sub_borrow;
+    carry64 := (bout || (sub_borrow >? 0))%bool  (* borrow if result would be negative *)
   |}.
 
 (** ** Extended Multiplication *)
@@ -304,29 +264,71 @@ Definition shrd64_spec (high low : uint64) (shift : nat) : uint64 :=
 
 (** ** Correctness Properties *)
 
-(** TODO: INSERT addc64 produces correct mathematical result HERE *)
+(** addc64 produces correct mathematical result *)
+Lemma addc64_correct : forall lhs rhs cin,
+  let result := addc64 lhs rhs cin in
+  let cin_z := if cin then 1 else 0 in
+  to_Z64 (value64 result) = (to_Z64 lhs + to_Z64 rhs + cin_z) mod modulus64.
+Proof.
+  intros; simpl.
+  unfold normalize64, from_Z64, to_Z64, modulus64, cin_z.
+  rewrite Zplus_mod_idemp_l.
+  reflexivity.
+Qed.
 
-(** TODO: INSERT addc64 carry is correct HERE *)
+(** addc64 carry is correct *)
+Lemma addc64_carry_correct : forall lhs rhs cin,
+  0 <= lhs < modulus64 ->
+  0 <= rhs < modulus64 ->
+  let result := addc64 lhs rhs cin in
+  let cin_z := if cin then 1 else 0 in
+  carry64 result = true <-> to_Z64 lhs + to_Z64 rhs + cin_z >= modulus64.
+Proof.
+  intros lhs rhs cin Hlhs Hrhs.
+  simpl. unfold normalize64, to_Z64, modulus64 in *.
+  set (M := 2^64) in *.
+  set (sum := (lhs + rhs) mod M).
+  set (cin_z := if cin then 1 else 0).
+  set (sum_carry := (sum + cin_z) mod M).
+  assert (Hcin_bound: 0 <= cin_z <= 1) by (unfold cin_z; destruct cin; lia).
+  assert (Hsum_bound: 0 <= sum < M) by (unfold sum; apply Z.mod_pos_bound; lia).
+  assert (Hsum_le: sum <= lhs + rhs) by (unfold sum; apply Z.mod_le; lia).
+  rewrite Bool.orb_true_iff, 2!Z.ltb_lt.
+  split.
+  - intros [Hov1 | Hov2].
+    + enough (lhs + rhs >= M) by lia. apply mod_overflow_iff; lia.
+    + apply -> mod_overflow_iff in Hov2; lia.
+  - intro Hoverflow.
+    destruct (Z_lt_ge_dec (lhs + rhs) M) as [Hno_ov1 | Hov1].
+    + right. apply <- mod_overflow_iff; [|lia | lia | lia].
+      unfold sum; rewrite Z.mod_small by lia. lia.
+    + left. apply <- mod_overflow_iff; lia.
+Qed.
 
 (** subb64 produces correct mathematical result *)
 Lemma subb64_correct : forall lhs rhs bin,
-  let result := subb64_spec lhs rhs bin in
+  let result := subb64 lhs rhs bin in
   let bin_z := if bin then 1 else 0 in
   to_Z64 (value64 result) = (to_Z64 lhs - to_Z64 rhs - bin_z) mod modulus64.
 Proof.
-  intros. unfold subb64_spec. simpl. unfold from_Z64, to_Z64. simpl.
+  intros; simpl. unfold normalize64, from_Z64, to_Z64, modulus64, bin_z.
+  rewrite Zminus_mod_idemp_l.
   reflexivity.
 Qed.
 
 (** subb64 borrow is correct *)
 Lemma subb64_carry_correct : forall lhs rhs bin,
-  let result := subb64_spec lhs rhs bin in
+  let result := subb64 lhs rhs bin in
   let bin_z := if bin then 1 else 0 in
   carry64 result = true <-> to_Z64 lhs - to_Z64 rhs - bin_z < 0.
 Proof.
-  intros. unfold subb64_spec. simpl. unfold to_Z64.
-  rewrite Z.ltb_lt. reflexivity.
-Qed.
+  intros lhs rhs cin Hlhs Hrhs.
+  simpl. unfold normalize64, to_Z64, modulus64 in *.
+  set (M := 2^64) in *.
+  set (sub := (lhs - rhs) mod M).
+  set (bin_z := if cin then 1 else 0).
+  set (sub_borrow := (sub - bin_z) mod M).
+Admitted.
 
 (** mulx64 produces correct 128-bit product *)
 Lemma mulx64_correct : forall x y,

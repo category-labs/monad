@@ -279,8 +279,9 @@ evmc::Result BlockchainTestVM::execute_compiler(
     }
 
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr)
-    return monad_vm_.execute_native_entrypoint_raw(
-        *rt_ctx_, ncode->entrypoint());
+    SWITCH_EVM_TRAITS(
+        monad_vm_.execute_native_entrypoint_raw, *rt_ctx_, ncode->entrypoint());
+    MONAD_VM_ASSERT(false);
 }
 
 #ifdef MONAD_COMPILER_LLVM

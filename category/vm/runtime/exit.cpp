@@ -17,7 +17,7 @@
 
 extern "C" void monad_vm_runtime_exit [[noreturn]] (void *);
 
-extern "C" void monad_vm_runtime_context_error_exit
+extern "C" void monad_vm_runtime_context_out_of_gas_exit
     [[noreturn]] (monad::vm::runtime::Context *ctx)
 {
     ctx->result.status = monad::vm::runtime::StatusCode::OutOfGas;

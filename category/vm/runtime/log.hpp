@@ -16,11 +16,13 @@
 #pragma once
 
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
 namespace monad::vm::runtime
 {
+    template <Traits traits>
     inline void log_impl(
         Context *ctx, uint256_t const &offset_word, uint256_t const &size_word,
         std::span<evmc::bytes32 const> topics)
@@ -34,7 +36,7 @@ namespace monad::vm::runtime
 
         if (*size > 0) {
             offset = ctx->get_memory_offset(offset_word);
-            ctx->expand_memory(offset + size);
+            ctx->expand_memory<traits>(offset + size);
             ctx->deduct_gas(size * bin<8>);
         }
 
@@ -47,17 +49,19 @@ namespace monad::vm::runtime
             topics.size());
     }
 
+    template <Traits traits>
     inline void
     log0(Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr)
     {
-        log_impl(ctx, *offset_ptr, *size_ptr, {});
+        log_impl<traits>(ctx, *offset_ptr, *size_ptr, {});
     }
 
+    template <Traits traits>
     inline void log1(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr)
     {
-        log_impl(
+        log_impl<traits>(
             ctx,
             *offset_ptr,
             *size_ptr,
@@ -66,11 +70,12 @@ namespace monad::vm::runtime
             }});
     }
 
+    template <Traits traits>
     inline void log2(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr)
     {
-        log_impl(
+        log_impl<traits>(
             ctx,
             *offset_ptr,
             *size_ptr,
@@ -80,12 +85,13 @@ namespace monad::vm::runtime
             }});
     }
 
+    template <Traits traits>
     inline void log3(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
         uint256_t const *topic3_ptr)
     {
-        log_impl(
+        log_impl<traits>(
             ctx,
             *offset_ptr,
             *size_ptr,
@@ -96,12 +102,13 @@ namespace monad::vm::runtime
             }});
     }
 
+    template <Traits traits>
     inline void log4(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
         uint256_t const *topic3_ptr, uint256_t const *topic4_ptr)
     {
-        log_impl(
+        log_impl<traits>(
             ctx,
             *offset_ptr,
             *size_ptr,

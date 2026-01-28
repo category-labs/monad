@@ -819,7 +819,7 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         checked_runtime_call<SHA3, traits>(
-            runtime::sha3,
+            runtime::sha3<traits>,
             ctx,
             analysis,
             stack_bottom,
@@ -940,7 +940,7 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         checked_runtime_call<CALLDATACOPY, traits>(
-            runtime::calldatacopy,
+            runtime::calldatacopy<traits>,
             ctx,
             analysis,
             stack_bottom,
@@ -971,7 +971,7 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         checked_runtime_call<CODECOPY, traits>(
-            runtime::codecopy,
+            runtime::codecopy<traits>,
             ctx,
             analysis,
             stack_bottom,
@@ -1053,7 +1053,7 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         checked_runtime_call<RETURNDATACOPY, traits>(
-            runtime::returndatacopy,
+            runtime::returndatacopy<traits>,
             ctx,
             analysis,
             stack_bottom,
@@ -1259,7 +1259,7 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         checked_runtime_call<MLOAD, traits>(
-            runtime::mload,
+            runtime::mload<traits>,
             ctx,
             analysis,
             stack_bottom,
@@ -1277,7 +1277,7 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         checked_runtime_call<MSTORE, traits>(
-            runtime::mstore,
+            runtime::mstore<traits>,
             ctx,
             analysis,
             stack_bottom,
@@ -1295,7 +1295,7 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         checked_runtime_call<MSTORE8, traits>(
-            runtime::mstore8,
+            runtime::mstore8<traits>,
             ctx,
             analysis,
             stack_bottom,
@@ -1313,7 +1313,7 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         checked_runtime_call<MCOPY, traits>(
-            runtime::mcopy,
+            runtime::mcopy<traits>,
             ctx,
             analysis,
             stack_bottom,
@@ -1593,11 +1593,11 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         static constexpr auto impls = std::tuple{
-            &runtime::log0,
-            &runtime::log1,
-            &runtime::log2,
-            &runtime::log3,
-            &runtime::log4,
+            &runtime::log0<traits>,
+            &runtime::log1<traits>,
+            &runtime::log2<traits>,
+            &runtime::log3<traits>,
+            &runtime::log4<traits>,
         };
 
         checked_runtime_call<LOG0 + N, traits>(

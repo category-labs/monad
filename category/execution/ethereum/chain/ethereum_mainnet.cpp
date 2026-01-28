@@ -82,10 +82,7 @@ evmc_revision EthereumMainnet::get_revision(
     else if (block_number >= 2463000) {
         return EVMC_TANGERINE_WHISTLE;
     }
-    else if (block_number >= 1150000) {
-        return EVMC_HOMESTEAD;
-    }
-    return EVMC_FRONTIER;
+    return EVMC_HOMESTEAD;
 }
 
 Result<void>

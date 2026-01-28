@@ -277,7 +277,7 @@ namespace monad
         is_specialization_of_v<MonadTraits, T>;
 
     static_assert(is_monad_trait_v<MonadTraits<MONAD_ZERO>> == true);
-    static_assert(is_monad_trait_v<EvmTraits<EVMC_FRONTIER>> == false);
+    static_assert(is_monad_trait_v<EvmTraits<EVMC_BERLIN>> == false);
     static_assert(is_evm_trait_v<MonadTraits<MONAD_ZERO>> == false);
-    static_assert(is_evm_trait_v<EvmTraits<EVMC_FRONTIER>> == true);
+    static_assert(is_evm_trait_v<EvmTraits<EVMC_BERLIN>> == true);
 }

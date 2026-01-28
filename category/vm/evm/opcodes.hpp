@@ -254,7 +254,7 @@ namespace monad::vm::compiler
 
     consteval evmc_revision previous_evm_revision(evmc_revision rev)
     {
-        MONAD_VM_DEBUG_ASSERT(rev > EVMC_FRONTIER);
+        MONAD_VM_DEBUG_ASSERT(rev > EVMC_HOMESTEAD);
         return evmc_revision(std::to_underlying(rev) - 1);
     }
 
@@ -291,7 +291,7 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_FRONTIER>>()
+    make_opcode_table<EvmTraits<EVMC_HOMESTEAD>>()
     {
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
@@ -553,7 +553,7 @@ namespace monad::vm::compiler
             OpCodeInfo{"CALL", 0, 7, 1, true, 40, 0}, // 0xF1,
             OpCodeInfo{"CALLCODE", 0, 7, 1, true, 40, 0}, // 0xF2,
             OpCodeInfo{"RETURN", 0, 2, 0, true, 0, 0}, // 0xF3,
-            unknown_opcode_info,
+            OpCodeInfo{"DELEGATECALL", 0, 6, 1, true, 40, 0}, // 0xF4,
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
@@ -566,17 +566,6 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             OpCodeInfo{"SELFDESTRUCT", 0, 1, 0, true, 0, 0} // 0xFF,
         };
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_HOMESTEAD>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_HOMESTEAD)>>();
-        add_opcode(0xF4, table, {"DELEGATECALL", 0, 6, 1, true, 40, 0});
-
-        return table;
     }
 
     template <>

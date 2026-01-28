@@ -211,7 +211,7 @@ TEST(MonadVmInterface, VarcodeCache)
     auto icode0 = make_shared_intercode(bytecode0);
     asmjit::JitRuntime asmjit_rt;
     auto ncode0 = std::make_shared<Nativecode>(
-        asmjit_rt, EvmTraits<EVMC_FRONTIER>::id(), nullptr, std::monostate{});
+        asmjit_rt, EvmTraits<EVMC_HOMESTEAD>::id(), nullptr, std::monostate{});
 
     ASSERT_FALSE(cache.get(hash0).has_value());
     cache.set(hash0, icode0, ncode0);
@@ -269,7 +269,7 @@ TEST(MonadVmInterface, compile)
     auto [bytecode1, hash1] = make_bytecode(1);
     auto icode1 = make_shared_intercode(bytecode1);
 
-    auto ncode1 = vm.compiler().compile<EvmTraits<EVMC_FRONTIER>>(icode1);
+    auto ncode1 = vm.compiler().compile<EvmTraits<EVMC_HOMESTEAD>>(icode1);
     auto entry1 = ncode1->entrypoint();
     ASSERT_NE(entry1, nullptr);
 
@@ -290,7 +290,7 @@ TEST(MonadVmInterface, cached_compile)
     auto icode1 = make_shared_intercode(bytecode1);
 
     auto ncode1 =
-        vm.compiler().cached_compile<EvmTraits<EVMC_FRONTIER>>(hash1, icode1);
+        vm.compiler().cached_compile<EvmTraits<EVMC_HOMESTEAD>>(hash1, icode1);
     auto entry1 = ncode1->entrypoint();
     ASSERT_NE(entry1, nullptr);
 
@@ -314,7 +314,7 @@ TEST(MonadVmInterface, async_compile)
         auto [bytecode1, hash1] = make_bytecode(1);
         auto icode1 = make_shared_intercode(bytecode1);
 
-        ASSERT_TRUE(vm.compiler().async_compile<EvmTraits<EVMC_FRONTIER>>(
+        ASSERT_TRUE(vm.compiler().async_compile<EvmTraits<EVMC_HOMESTEAD>>(
             hash1, icode1));
         vm.compiler().debug_wait_for_empty_queue();
 
@@ -358,7 +358,7 @@ TEST(MonadVmInterface, execute_bytecode_raw)
     evmc_message msg{};
     msg.gas = 10;
 
-    auto result = vm.execute_bytecode_raw<EvmTraits<EVMC_FRONTIER>>(
+    auto result = vm.execute_bytecode_raw<EvmTraits<EVMC_HOMESTEAD>>(
         &host.get_interface(),
         host.to_context(),
         &msg,
@@ -379,7 +379,7 @@ TEST(MonadVmInterface, execute_intercode_raw)
     evmc_message msg{};
     msg.gas = 10;
 
-    auto result = vm.execute_intercode_raw<EvmTraits<EVMC_FRONTIER>>(
+    auto result = vm.execute_intercode_raw<EvmTraits<EVMC_HOMESTEAD>>(
         &host.get_interface(), host.to_context(), &msg, icode0);
     ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     ASSERT_EQ(result.output_size, 0);
@@ -393,7 +393,7 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
 
     auto [bytecode0, hash0] = make_bytecode(0);
     auto icode0 = make_shared_intercode(bytecode0);
-    auto ncode0 = vm.compiler().compile<EvmTraits<EVMC_FRONTIER>>(icode0);
+    auto ncode0 = vm.compiler().compile<EvmTraits<EVMC_HOMESTEAD>>(icode0);
     auto entry0 = ncode0->entrypoint();
     ASSERT_NE(entry0, nullptr);
 
@@ -439,7 +439,7 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute with interpreter on cold cache
-    execute_raw(EvmTraits<EVMC_FRONTIER>{}, hash0, vcode0);
+    execute_raw(EvmTraits<EVMC_HOMESTEAD>{}, hash0, vcode0);
 
     vm.compiler().debug_wait_for_empty_queue();
 
@@ -450,12 +450,12 @@ TEST(MonadVmInterface, execute_raw)
     ASSERT_NE(compiled_vcode0.value()->nativecode()->entrypoint(), nullptr);
     ASSERT_EQ(
         compiled_vcode0.value()->nativecode()->chain_id(),
-        EvmTraits<EVMC_FRONTIER>::id());
+        EvmTraits<EVMC_HOMESTEAD>::id());
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
     // Execute compiled bytecode on cold cache
-    execute_raw(EvmTraits<EVMC_FRONTIER>{}, hash0, compiled_vcode0.value());
+    execute_raw(EvmTraits<EVMC_HOMESTEAD>{}, hash0, compiled_vcode0.value());
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 

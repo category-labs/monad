@@ -51,10 +51,16 @@ struct fmt::formatter<monad::StateDelta> : public monad::BasicFormatter
     {
         fmt::format_to(ctx.out(), "{{");
         fmt::format_to(ctx.out(), "Account Delta: {} ", state_delta.account);
-        fmt::format_to(ctx.out(), "Storage Deltas: {{");
-        for (auto const &[key, storage_delta] : state_delta.storage) {
+        fmt::format_to(ctx.out(), "Page Storage Deltas: {{");
+        for (auto const &[page_key, page_delta] : state_delta.storage) {
+            size_t changed_slots = 0;
+            for (uint8_t i = 0; i < monad::bytes4k_t::SLOTS; ++i) {
+                if (page_delta.first[i] != page_delta.second[i]) {
+                    ++changed_slots;
+                }
+            }
             fmt::format_to(
-                ctx.out(), " Key: {}, Storage Delta: {}", key, storage_delta);
+                ctx.out(), " PageKey: {}, ChangedSlots: {}", page_key, changed_slots);
         }
         fmt::format_to(ctx.out(), "}}");
         fmt::format_to(ctx.out(), "}}");

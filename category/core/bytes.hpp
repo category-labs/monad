@@ -26,6 +26,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <functional>
@@ -36,6 +37,36 @@ using bytes32_t = ::evmc::bytes32;
 
 static_assert(sizeof(bytes32_t) == 32);
 static_assert(alignof(bytes32_t) == 1);
+
+struct bytes4k_t
+{
+    static constexpr size_t SLOTS = 128;
+    static constexpr size_t SLOT_SIZE = 32;
+
+    bytes32_t slots[SLOTS];
+
+    constexpr bytes4k_t() noexcept : slots{} {}
+
+    constexpr bool operator==(bytes4k_t const &other) const = default;
+
+    bytes32_t &operator[](uint8_t const offset) { return slots[offset]; }
+
+    bytes32_t const &operator[](uint8_t const offset) const
+    {
+        return slots[offset];
+    }
+
+    bool is_empty() const
+    {
+        return std::all_of(
+            std::begin(slots), std::end(slots), [](bytes32_t const &s) {
+                return s == bytes32_t{};
+            });
+    }
+};
+
+static_assert(sizeof(bytes4k_t) == 4096);
+static_assert(alignof(bytes4k_t) == 1);
 
 constexpr bytes32_t to_bytes(uint256_t const n) noexcept
 {
@@ -57,6 +88,16 @@ constexpr bytes32_t to_bytes(byte_string_view const data) noexcept
         data.size(),
         byte.bytes + sizeof(bytes32_t) - data.size());
     return byte;
+}
+
+constexpr bytes4k_t to_page(byte_string_view const data) noexcept
+{
+    MONAD_ASSERT(data.size() <= sizeof(bytes4k_t));
+
+    bytes4k_t page;
+    auto *dest = reinterpret_cast<uint8_t *>(page.slots);
+    std::copy_n(data.begin(), data.size(), dest + sizeof(bytes4k_t) - data.size());
+    return page;
 }
 
 using namespace evmc::literals;

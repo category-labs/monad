@@ -83,7 +83,7 @@ namespace trace
         void encode(StateDeltas const &, State &);
 
     private:
-        StorageDeltas generate_storage_deltas(
+        PageStorageDeltas generate_storage_deltas(
             AccountState::StorageMap const &, AccountState::StorageMap const &);
         nlohmann::json &storage_;
     };

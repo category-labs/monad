@@ -61,6 +61,8 @@ public:
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
+    virtual bytes4k_t
+    read_storage_page(Address const &, Incarnation, bytes32_t const &page_key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
     virtual void set_block_and_prefix(
         uint64_t block_number,

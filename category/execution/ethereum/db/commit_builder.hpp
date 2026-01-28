@@ -31,6 +31,7 @@ struct Transaction;
 struct BlockHeader;
 struct Receipt;
 struct Withdrawal;
+struct Db;
 
 class CommitBuilder
 {
@@ -39,9 +40,10 @@ class CommitBuilder
     std::deque<hash256> hash_alloc_;
     mpt::UpdateList updates_;
     uint64_t block_number_;
+    Db &db_;
 
 public:
-    explicit CommitBuilder(uint64_t block_number);
+    CommitBuilder(uint64_t block_number, Db &db);
 
     CommitBuilder &add_state_deltas(StateDeltas const &);
 

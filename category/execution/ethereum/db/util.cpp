@@ -737,6 +737,29 @@ Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
     return res.second;
 };
 
+byte_string encode_storage_page_db(bytes4k_t const &page)
+{
+    byte_string encoded;
+    for (uint8_t i = 0; i < bytes4k_t::SLOTS; ++i) {
+        encoded += rlp::encode_bytes32_compact(page[i]);
+    }
+    return rlp::encode_list2(encoded);
+}
+
+Result<bytes4k_t> decode_storage_page_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+    bytes4k_t page{};
+    for (uint8_t i = 0; i < bytes4k_t::SLOTS; ++i) {
+        BOOST_OUTCOME_TRY(auto const slot_view, rlp::decode_string(payload));
+        page[i] = to_bytes(slot_view);
+    }
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    return page;
+}
+
 void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,
     uint64_t const block_number)

@@ -3,6 +3,7 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/vm/vm.hpp>
 
@@ -11,6 +12,7 @@
 #include <evmc/evmc.h>
 
 #include <filesystem>
+#include <unordered_map>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -55,6 +57,44 @@ namespace test_resource
 MONAD_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
+
+inline PageStorageDeltas make_page_storage(
+    bytes32_t const &slot_key, bytes32_t const &orig, bytes32_t const &curr)
+{
+    bytes32_t const page_key = compute_page_key(slot_key);
+    uint8_t const slot_offset = compute_slot_offset(slot_key);
+    bytes4k_t orig_page{}, curr_page{};
+    orig_page[slot_offset] = orig;
+    curr_page[slot_offset] = curr;
+    PageStorageDeltas storage{};
+    storage.emplace(page_key, std::make_pair(orig_page, curr_page));
+    return storage;
+}
+
+// Create page storage from multiple slot entries
+inline PageStorageDeltas make_page_storage_multi(
+    std::initializer_list<std::tuple<bytes32_t, bytes32_t, bytes32_t>> slots)
+{
+    // First pass: group slots by page_key
+    std::unordered_map<bytes32_t, std::vector<std::tuple<uint8_t, bytes32_t, bytes32_t>>>
+        pages;
+    for (auto const &[slot_key, orig, curr] : slots) {
+        bytes32_t const page_key = compute_page_key(slot_key);
+        uint8_t const slot_offset = compute_slot_offset(slot_key);
+        pages[page_key].emplace_back(slot_offset, orig, curr);
+    }
+    // Second pass: build pages and insert into storage
+    PageStorageDeltas storage{};
+    for (auto const &[page_key, page_slots] : pages) {
+        bytes4k_t orig_page{}, curr_page{};
+        for (auto const &[slot_offset, orig, curr] : page_slots) {
+            orig_page[slot_offset] = orig;
+            curr_page[slot_offset] = curr;
+        }
+        storage.emplace(page_key, std::make_pair(orig_page, curr_page));
+    }
+    return storage;
+}
 
 inline constexpr auto ADDR_A =
     0x0000000000000000000000000000000000000100_address;
@@ -134,10 +174,10 @@ inline void load_db(TrieDb &db, uint64_t const n)
                       Account{
                           .balance = 0xba1a9ce0ba1a9ce,
                           .code_hash = A_CODE_HASH}},
-                 .storage =
-                     {{bytes32_t{},
-                       {bytes32_t{},
-                        0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe_bytes32}}}}},
+                 .storage = make_page_storage(
+                     bytes32_t{},
+                     bytes32_t{},
+                     0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe_bytes32)}},
             {ADDR_B,
              StateDelta{
                  .account =

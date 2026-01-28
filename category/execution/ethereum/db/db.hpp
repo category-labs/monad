@@ -41,6 +41,9 @@ struct Db
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
 
+    virtual bytes4k_t
+    read_storage_page(Address const &, Incarnation, bytes32_t const &page_key) = 0;
+
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 
     virtual BlockHeader read_eth_header() = 0;

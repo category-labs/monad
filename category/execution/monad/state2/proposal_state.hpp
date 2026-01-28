@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/vm/vm.hpp>
 
@@ -78,10 +79,12 @@ public:
             result = {};
             return true;
         }
+        bytes32_t const page_key = compute_page_key(key);
+        uint8_t const slot_offset = compute_slot_offset(key);
         auto const &storage = it->second.storage;
-        StorageDeltas::const_accessor it2{};
-        if (storage.find(it2, key)) {
-            result = it2->second.second;
+        PageStorageDeltas::const_accessor it2{};
+        if (storage.find(it2, page_key)) {
+            result = it2->second.second[slot_offset];
             return true;
         }
         return false;

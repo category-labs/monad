@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -140,25 +141,32 @@ namespace
         return call_frame.value();
     }
 
+    // Returns (slot_key, value) for compatibility with existing tests.
+    // With page storage, slot_key is reconstructed from page lookup.
     std::pair<bytes32_t, bytes32_t> read_storage_and_slot(
         mpt::Node::SharedPtr const &root, mpt::Db const &db,
         uint64_t const block_number, Address const &addr, bytes32_t const &key)
     {
+        bytes32_t const page_key = compute_page_key(key);
+        uint8_t const slot_offset = compute_slot_offset(key);
+
         auto const find_res = db.find(
             root,
             mpt::concat(
                 FINALIZED_NIBBLE,
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+                mpt::NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
             block_number);
         if (!find_res.has_value()) {
             return {};
         }
-        auto encoded_storage = find_res.value().node->value();
-        auto const storage = decode_storage_db(encoded_storage);
-        MONAD_ASSERT(!storage.has_error());
-        return storage.value();
+        auto encoded_page = find_res.value().node->value();
+        auto const page = decode_storage_page_db(encoded_page);
+        MONAD_ASSERT(!page.has_error());
+        bytes32_t const value = page.value()[slot_offset];
+        // Return (key, value) - key is the original slot key passed in
+        return {key, value};
     }
 
     std::vector<Address>
@@ -251,7 +259,7 @@ TYPED_TEST(DBTest, read_storage)
             {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+                 .storage = make_page_storage(key1, bytes32_t{}, value1)}}},
         Code{},
         BlockHeader{});
 
@@ -366,9 +374,9 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
             {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
-                 .storage =
-                     {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
+                 .storage = make_page_storage_multi({
+                     {key1, bytes32_t{}, value1},
+                     {key2, bytes32_t{}, value2}})}}},
         Code{},
         BlockHeader{.number = 0});
 
@@ -379,13 +387,13 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
             {ADDR_A,
              StateDelta{
                  .account = {acct, acct},
-                 .storage = {{key2, {value2, value1}}}}}},
+                 .storage = make_page_storage(key2, value2, value1)}}},
         Code{},
         BlockHeader{.number = 1});
 
     EXPECT_EQ(
         tdb.state_root(),
-        0x6303ffa4281cd596bc9fbfc21c28c1721ee64ec8e0f5753209eb8a13a739dae8_bytes32);
+        0xddbcedff4a57bed1b22e513262bcad25fe060e12d55ced4c0b8ac0779e87e187_bytes32);
 }
 
 TYPED_TEST(DBTest, touch_without_modify_regression)
@@ -412,9 +420,9 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
             {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
-                 .storage =
-                     {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
+                 .storage = make_page_storage_multi({
+                     {key1, bytes32_t{}, value1},
+                     {key2, bytes32_t{}, value2}})}}},
         Code{},
         BlockHeader{.number = 0});
 
@@ -424,8 +432,9 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
             {ADDR_A,
              StateDelta{
                  .account = {acct, std::nullopt},
-                 .storage =
-                     {{key1, {value1, value2}}, {key2, {value2, value1}}}}}},
+                 .storage = make_page_storage_multi({
+                     {key1, value1, value2},
+                     {key2, value2, value1}})}}},
         Code{},
         BlockHeader{.number = 1});
 
@@ -445,9 +454,9 @@ TYPED_TEST(DBTest, storage_deletion)
             {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
-                 .storage =
-                     {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
+                 .storage = make_page_storage_multi({
+                     {key1, bytes32_t{}, value1},
+                     {key2, bytes32_t{}, value2}})}}},
         Code{},
         BlockHeader{.number = 0});
 
@@ -458,13 +467,77 @@ TYPED_TEST(DBTest, storage_deletion)
             {ADDR_A,
              StateDelta{
                  .account = {acct, acct},
-                 .storage = {{key1, {value1, bytes32_t{}}}}}}},
+                 .storage = make_page_storage(key1, value1, bytes32_t{})}}},
         Code{},
         BlockHeader{.number = 1});
 
     EXPECT_EQ(
         tdb.state_root(),
-        0x1f54a52a44ffa5b8298f7ed596dea62455816e784dce02d79ea583f3a4146598_bytes32);
+        0xe69f06d76388a10cb17ab1166e18261ed4e68cf5bb635c4bd141242c63335a5e_bytes32);
+}
+
+TYPED_TEST(DBTest, multiple_slots_same_page)
+{
+    // Create slot keys that all fall on the same page (same upper 249 bits)
+    // slot_offset = key & 0x7F, page_key = keccak(key >> 7)
+    // Keys 0x00, 0x01, 0x02, 0x7F all have (key >> 7) == 0, so same page
+    constexpr auto slot0 =
+        0x0000000000000000000000000000000000000000000000000000000000000000_bytes32;
+    constexpr auto slot1 =
+        0x0000000000000000000000000000000000000000000000000000000000000001_bytes32;
+    constexpr auto slot2 =
+        0x0000000000000000000000000000000000000000000000000000000000000002_bytes32;
+    constexpr auto slot127 =
+        0x000000000000000000000000000000000000000000000000000000000000007f_bytes32;
+
+    constexpr auto val0 =
+        0x1111111111111111111111111111111111111111111111111111111111111111_bytes32;
+    constexpr auto val1 =
+        0x2222222222222222222222222222222222222222222222222222222222222222_bytes32;
+    constexpr auto val2 =
+        0x3333333333333333333333333333333333333333333333333333333333333333_bytes32;
+    constexpr auto val127 =
+        0x4444444444444444444444444444444444444444444444444444444444444444_bytes32;
+
+    // Verify they're all on the same page
+    EXPECT_EQ(compute_page_key(slot0), compute_page_key(slot1));
+    EXPECT_EQ(compute_page_key(slot0), compute_page_key(slot2));
+    EXPECT_EQ(compute_page_key(slot0), compute_page_key(slot127));
+
+    // Verify different slot offsets
+    EXPECT_EQ(compute_slot_offset(slot0), 0);
+    EXPECT_EQ(compute_slot_offset(slot1), 1);
+    EXPECT_EQ(compute_slot_offset(slot2), 2);
+    EXPECT_EQ(compute_slot_offset(slot127), 127);
+
+    Account acct{.balance = 1'000'000, .nonce = 1};
+    TrieDb tdb{this->db};
+
+    // Commit all slots at once
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = make_page_storage_multi({
+                     {slot0, bytes32_t{}, val0},
+                     {slot1, bytes32_t{}, val1},
+                     {slot2, bytes32_t{}, val2},
+                     {slot127, bytes32_t{}, val127}})}}},
+        Code{},
+        BlockHeader{.number = 0});
+
+    // Read back each slot and verify
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot0), val0);
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot1), val1);
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot2), val2);
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot127), val127);
+
+    // Verify unset slots return zero
+    constexpr auto slot3 =
+        0x0000000000000000000000000000000000000000000000000000000000000003_bytes32;
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot3), bytes32_t{});
 }
 
 TYPED_TEST(DBTest, commit_receipts_transactions)
@@ -756,9 +829,9 @@ TYPED_TEST(DBTest, to_json)
     "address": "0x0000000000000000000000000000000000000100",
     "nonce": "0x0",
     "storage": {
-      "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563":
+      "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563:00":
       {
-        "slot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "slot_offset": 0,
         "value": "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"
       }
     }

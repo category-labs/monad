@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -121,24 +122,50 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 bytes32_t
 TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
+    bytes32_t const page_key = compute_page_key(key);
+    uint8_t const slot_offset = compute_slot_offset(key);
+
     auto const res = db_.find(
         curr_root_,
         concat(
             prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+            NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
         block_number_);
     if (res.has_error()) {
         stats_storage_no_value();
         return {};
     }
     stats_storage_value();
-    auto encoded_storage = res.value().node->value();
-    auto const storage = decode_storage_db_ignore_slot(encoded_storage);
-    MONAD_ASSERT(!storage.has_error());
-    return to_bytes(storage.value());
-};
+
+    auto encoded_page = res.value().node->value();
+    auto const page = decode_storage_page_db(encoded_page);
+    MONAD_ASSERT(!page.has_error());
+
+    return page.value()[slot_offset];
+}
+
+bytes4k_t
+TrieDb::read_storage_page(Address const &addr, Incarnation, bytes32_t const &page_key)
+{
+    auto const res = db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            STATE_NIBBLE,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+        block_number_);
+    if (res.has_error()) {
+        return bytes4k_t{};
+    }
+
+    auto encoded_page = res.value().node->value();
+    auto const page = decode_storage_page_db(encoded_page);
+    MONAD_ASSERT(!page.has_error());
+    return page.value();
+}
 
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
@@ -186,7 +213,7 @@ void TrieDb::commit(
     }
     block_number_ = header.number;
 
-    CommitBuilder builder(block_number_);
+    CommitBuilder builder(block_number_, *this);
     builder.add_state_deltas(state_deltas)
         .add_code(code)
         .add_receipts(receipts)
@@ -459,30 +486,36 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
         {
             MONAD_ASSERT(node.has_value());
 
-            auto encoded_storage = node.value();
-
-            auto const storage = decode_storage_db(encoded_storage);
-            MONAD_DEBUG_ASSERT(!storage.has_error());
+            auto encoded_page = node.value();
+            auto const page = decode_storage_page_db(encoded_page);
+            MONAD_DEBUG_ASSERT(!page.has_error());
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
 
-            auto const key = fmt::format(
+            // The trie key is the page_key (hash of storage_key >> 7)
+            auto const page_key_str = fmt::format(
                 "{}",
                 NibblesView{path}.substr(
                     KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
 
-            auto storage_data_json = nlohmann::json::object();
-            storage_data_json["slot"] = fmt::format(
-                "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(storage.value().first.bytes)), ""));
-            storage_data_json["value"] = fmt::format(
-                "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(storage.value().second.bytes)),
-                    ""));
-            json[acct_key]["storage"][key] = storage_data_json;
+            // Output each non-zero slot in the page
+            for (uint8_t i = 0; i < bytes4k_t::SLOTS; ++i) {
+                auto const &slot_value = page.value()[i];
+                if (slot_value != bytes32_t{}) {
+                    auto storage_data_json = nlohmann::json::object();
+                    // slot_offset identifies the position within the page
+                    storage_data_json["slot_offset"] = i;
+                    storage_data_json["value"] = fmt::format(
+                        "0x{:02x}",
+                        fmt::join(
+                            std::as_bytes(std::span(slot_value.bytes)), ""));
+                    // Key by page_key:slot_offset
+                    auto const slot_key =
+                        fmt::format("{}:{:02x}", page_key_str, i);
+                    json[acct_key]["storage"][slot_key] = storage_data_json;
+                }
+            }
         }
 
         virtual std::unique_ptr<TraverseMachine> clone() const override

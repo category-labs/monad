@@ -18,6 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
@@ -93,12 +94,15 @@ public:
     virtual bytes32_t read_storage(
         Address const &addr, Incarnation, bytes32_t const &key) override
     {
+        bytes32_t const page_key = compute_page_key(key);
+        uint8_t const slot_offset = compute_slot_offset(key);
+
         auto storage_leaf_res = db_.find(
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+                mpt::NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
@@ -107,10 +111,33 @@ public:
                 "Block was invalidated in db while execution was in progress");
             return {};
         }
-        auto encoded_storage = storage_leaf_res.value().node->value();
-        auto const storage = decode_storage_db_ignore_slot(encoded_storage);
-        MONAD_ASSERT(!storage.has_error());
-        return to_bytes(storage.value());
+        auto encoded_page = storage_leaf_res.value().node->value();
+        auto const page = decode_storage_page_db(encoded_page);
+        MONAD_ASSERT(!page.has_error());
+        return page.value()[slot_offset];
+    }
+
+    virtual bytes4k_t
+    read_storage_page(Address const &addr, Incarnation, bytes32_t const &page_key) override
+    {
+        auto storage_leaf_res = db_.find(
+            prefix_cursor_,
+            mpt::concat(
+                STATE_NIBBLE,
+                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                mpt::NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+            block_number_);
+        if (!storage_leaf_res.has_value()) {
+            MONAD_ASSERT_THROW(
+                storage_leaf_res.assume_error() !=
+                    ::monad::mpt::DbError::version_no_longer_exist,
+                "Block was invalidated in db while execution was in progress");
+            return bytes4k_t{};
+        }
+        auto encoded_page = storage_leaf_res.value().node->value();
+        auto const page = decode_storage_page_db(encoded_page);
+        MONAD_ASSERT(!page.has_error());
+        return page.value();
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override

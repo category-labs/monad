@@ -152,6 +152,24 @@ Proof.
   apply Z.add_le_mono; assumption.
 Qed.
 
+(* Underflow detection: (a - b) mod M > a iff a < b (when 0 <= a, b < M) *)
+Lemma mod_underflow_iff : forall a b M,
+    0 <= a < M -> 0 <= b < M -> M > 0 ->
+    ((a - b) mod M > a <-> a < b).
+Proof.
+  intros a b M Ha Hb HM.
+  split; intro H.
+  - (* -> direction: (a - b) mod M > a implies a < b *)
+    destruct (Z_lt_ge_dec a b) as [Hlt | Hge].
+    + assumption.
+    + (* a >= b, so a - b >= 0, mod is identity, contradiction *)
+      rewrite Z.mod_small in H; lia.
+  - (* <- direction: a < b implies (a - b) mod M > a *)
+    rewrite Z.mod_eq by lia.
+    replace ((a - b) / M) with (-1) by (apply Z.div_unique with (a - b + M); lia).
+    lia.
+Qed.
+
 (** ** Subtraction with Borrow *)
 
 (** Specification for subb (matches subb_constexpr from uint256.hpp)
@@ -175,7 +193,7 @@ Definition subb64 (lhs rhs : uint64) (borrow_in : bool) : result64_with_carry :=
   let sub_borrow := normalize64 (sub - bin) in
   {|
     value64 := from_Z64 sub_borrow;
-    carry64 := (bout || (sub_borrow >? 0))%bool  (* borrow if result would be negative *)
+    carry64 := (bout || (bin >? sub))%bool  (* borrow if result would be negative *)
   |}.
 
 (** ** Extended Multiplication *)
@@ -318,17 +336,43 @@ Qed.
 
 (** subb64 borrow is correct *)
 Lemma subb64_carry_correct : forall lhs rhs bin,
+  0 <= lhs < modulus64 ->
+  0 <= rhs < modulus64 ->
   let result := subb64 lhs rhs bin in
   let bin_z := if bin then 1 else 0 in
   carry64 result = true <-> to_Z64 lhs - to_Z64 rhs - bin_z < 0.
 Proof.
-  intros lhs rhs cin Hlhs Hrhs.
+  intros lhs rhs bin Hlhs Hrhs.
   simpl. unfold normalize64, to_Z64, modulus64 in *.
   set (M := 2^64) in *.
   set (sub := (lhs - rhs) mod M).
-  set (bin_z := if cin then 1 else 0).
+  set (bin_z := if bin then 1 else 0).
   set (sub_borrow := (sub - bin_z) mod M).
-Admitted.
+  assert (Hbin_bound: 0 <= bin_z <= 1) by (unfold bin_z; destruct bin; lia).
+  assert (Hsub_bound: 0 <= sub < M) by (unfold sub; apply Z.mod_pos_bound; lia).
+  assert (Hsub_ge: sub >= lhs - rhs).
+  { unfold sub.
+    destruct (Z_lt_ge_dec (lhs - rhs) 0) as [Hneg | Hpos].
+    - (* Negative case: lhs - rhs < 0 *)
+      pose proof (Z.mod_pos_bound (lhs - rhs) M ltac:(lia)) as Hmod_bound.
+      lia.
+    - (* Positive case: lhs - rhs >= 0 *)
+      rewrite Z.mod_small; lia. }
+  rewrite Bool.orb_true_iff, Z.gtb_lt, Z.gtb_lt.
+  split.
+  - (* Forward: borrow detected -> mathematical underflow *)
+    intros [Huf1 | Huf2].
+    + lia.
+    + lia.
+  - (* Backward: mathematical underflow -> borrow detected *)
+    intro Hunderflow.
+    destruct (Z_lt_ge_dec (lhs - rhs) 0) as [Huf1 | Hno_uf1].
+    + left. lia.
+    + right.
+      (* lhs >= rhs but lhs - rhs - bin_z < 0, so bin_z = 1 and lhs = rhs *)
+      assert (Hsub_eq: sub = lhs - rhs) by (unfold sub; rewrite Z.mod_small; lia).
+      lia.
+Qed.
 
 (** mulx64 produces correct 128-bit product *)
 Lemma mulx64_correct : forall x y,

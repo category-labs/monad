@@ -182,9 +182,6 @@ namespace monad::vm::llvm
     load_from_disk(evmc_revision rev, std::string_view fn)
     {
         switch (rev) {
-        case EVMC_FRONTIER:
-            return load_from_disk_impl<EvmTraits<EVMC_FRONTIER>>(fn);
-
         case EVMC_HOMESTEAD:
             return load_from_disk_impl<EvmTraits<EVMC_HOMESTEAD>>(fn);
 
@@ -224,9 +221,12 @@ namespace monad::vm::llvm
         case EVMC_PRAGUE:
             return load_from_disk_impl<EvmTraits<EVMC_PRAGUE>>(fn);
 
-        default:
-            MONAD_VM_ASSERT(rev == EVMC_OSAKA);
+        case EVMC_OSAKA:
             return load_from_disk_impl<EvmTraits<EVMC_OSAKA>>(fn);
+
+        default:
+            MONAD_VM_ASSERT(
+                false && "Tried to load unsupported EVM revision from disk");
         }
     }
 
@@ -241,9 +241,6 @@ namespace monad::vm::llvm
         std::string const &dbg_nm)
     {
         switch (rev) {
-        case EVMC_FRONTIER:
-            return compile_impl<EvmTraits<EVMC_FRONTIER>>(code, dbg_nm);
-
         case EVMC_HOMESTEAD:
             return compile_impl<EvmTraits<EVMC_HOMESTEAD>>(code, dbg_nm);
 
@@ -284,9 +281,12 @@ namespace monad::vm::llvm
         case EVMC_PRAGUE:
             return compile_impl<EvmTraits<EVMC_PRAGUE>>(code, dbg_nm);
 
-        default:
-            MONAD_VM_ASSERT(rev == EVMC_OSAKA);
+        case EVMC_OSAKA:
             return compile_impl<EvmTraits<EVMC_OSAKA>>(code, dbg_nm);
+
+        default:
+            MONAD_VM_ASSERT(
+                false && "Tried to compile unsupported EVM revision");
         }
     }
 }

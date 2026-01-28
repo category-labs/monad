@@ -84,7 +84,7 @@ evmc_revision EthereumMainnet::get_revision(
     else if (block_number >= 1150000) {
         return EVMC_HOMESTEAD;
     }
-    return EVMC_FRONTIER;
+    MONAD_ASSERT(false, "unsupported fork");
 }
 
 GenesisState EthereumMainnet::get_genesis_state() const

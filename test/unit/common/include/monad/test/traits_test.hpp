@@ -44,16 +44,20 @@ namespace detail
     template <std::size_t... Is>
     constexpr auto make_evm_revision_types(std::index_sequence<Is...>)
     {
-        return ::testing::Types<
-            EvmRevisionConstant<static_cast<evmc_revision>(Is)>...>{};
+        return ::testing::Types<EvmRevisionConstant<static_cast<evmc_revision>(
+            Is + monad::constants::EARLIEST_SUPPORTED_EVM_FORK)>...>{};
     }
 
     using MonadRevisionTypes = decltype(make_monad_revision_types(
         std::make_index_sequence<MONAD_NEXT + 1>{}));
 
-    // Skip over EVMC_REVISION which is EVMC_EXPERIMENTAL
+    // Skip over unsupported forks and EVMC_REVISION which is EVMC_EXPERIMENTAL
+    // Generate revisions in the half-open range [EARLIEST_SUPPORTED_EVM_FORK,
+    // EVMC_MAX_REVISION), i.e., up to but not including EVMC_MAX_REVISION
     using EvmRevisionTypes = decltype(make_evm_revision_types(
-        std::make_index_sequence<EVMC_MAX_REVISION>{}));
+        std::make_index_sequence<
+            EVMC_MAX_REVISION -
+            monad::constants::EARLIEST_SUPPORTED_EVM_FORK>{}));
 
     // Helper to concatenate two ::testing::Types
     template <typename... Ts>

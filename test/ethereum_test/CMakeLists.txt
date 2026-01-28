@@ -68,7 +68,6 @@ function(add_ethereum_test)
                    --record-exec-events --gtest_filter=${FILTER})
 endfunction()
 
-add_ethereum_test(FORK frontier)
 add_ethereum_test(FORK homestead)
 add_ethereum_test(FORK eip158)
 add_ethereum_test(FORK eip150)

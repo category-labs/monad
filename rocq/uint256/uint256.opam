@@ -1,0 +1,24 @@
+opam-version: "2.0"
+name: "uint256"
+version: "0.1.0"
+synopsis: "Formal verification of uint256 operations"
+description: """
+Rocq/Coq proofs for 256-bit unsigned integer operations,
+verifying the implementation in uint256.hpp.
+"""
+maintainer: "Monad"
+license: "MIT"
+
+depends: [
+  "ocaml" {>= "5.3"}
+  "rocq-core" {>= "9.0"}
+  "rocq-stdlib" {>= "9.0"}
+]
+
+build: [
+  [make "-j%{jobs}%"]
+]
+
+install: [
+  [make "install"]
+]

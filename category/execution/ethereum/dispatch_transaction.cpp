@@ -27,8 +27,7 @@ Result<Receipt> dispatch_transaction(
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer,
-    RevertTransactionFn const &revert_transaction)
+    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
 {
     return ExecuteTransaction<traits>{
         chain,
@@ -43,7 +42,7 @@ Result<Receipt> dispatch_transaction(
         prev,
         call_tracer,
         state_tracer,
-        revert_transaction}();
+        chain_ctx}();
 }
 
 EXPLICIT_EVM_TRAITS(dispatch_transaction)

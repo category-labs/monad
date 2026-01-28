@@ -57,8 +57,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     std::span<std::unique_ptr<CallTracerBase>>,
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
-    RevertTransactionFn const & = [](Address const &, Transaction const &,
-                                     uint64_t, State &) { return false; });
+    ChainContext<traits> const &chain_ctx);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
@@ -67,8 +66,7 @@ Result<std::vector<Receipt>> execute_block(
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     std::span<std::unique_ptr<CallTracerBase>>,
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
-    RevertTransactionFn const & = [](Address const &, Transaction const &,
-                                     uint64_t, State &) { return false; });
+    ChainContext<traits> const &chain_ctx);
 
 std::vector<std::optional<Address>>
 recover_senders(std::span<Transaction const>, fiber::PriorityPool &);

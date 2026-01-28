@@ -79,15 +79,12 @@ template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     std::span<std::optional<Address> const> const authorities,
-    BlockHeader const &header, uint64_t const i,
-    RevertTransactionFn const &revert_transaction)
+    BlockHeader const &header)
     : chain_{chain}
     , tx_{tx}
     , sender_{sender}
     , authorities_{authorities}
     , header_{header}
-    , i_{i}
-    , revert_transaction_{revert_transaction}
 {
 }
 
@@ -267,14 +264,9 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         }
     }
 
-    auto const revert_transaction = [this, &state] {
-        return revert_transaction_(sender_, tx_, i_, state);
-    };
-
-    auto result =
-        (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
-            ? ::monad::create<traits>(&host, state, msg, revert_transaction)
-            : ::monad::call<traits>(&host, state, msg, revert_transaction);
+    auto result = (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+                      ? ::monad::create<traits>(&host, state, msg)
+                      : ::monad::call<traits>(&host, state, msg);
 
     result.gas_refund += auth_refund;
     return result;
@@ -290,10 +282,11 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer,
-    RevertTransactionFn const &revert_transaction)
+    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
     : ExecuteTransactionNoValidation<
-          traits>{chain, tx, sender, authorities, header, i, revert_transaction}
+          traits>{chain, tx, sender, authorities, header}
+    , i_{i}
+    , chain_ctx_{chain_ctx}
     , block_hash_buffer_{block_hash_buffer}
     , block_state_{block_state}
     , block_metrics_{block_metrics}
@@ -329,9 +322,14 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
     auto const tx_context =
         get_tx_context<traits>(tx_, sender_, header_, chain_.get_chain_id());
     EvmcHost<traits> host{
-        call_tracer_, tx_context, block_hash_buffer_, state, [this, &state] {
-            return revert_transaction_(sender_, tx_, i_, state);
-        }};
+        call_tracer_,
+        tx_context,
+        block_hash_buffer_,
+        state,
+        tx_,
+        header_.base_fee_per_gas,
+        i_,
+        chain_ctx_};
 
     return ExecuteTransactionNoValidation<traits>::operator()(state, host);
 }

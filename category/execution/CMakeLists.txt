@@ -142,6 +142,8 @@ add_library(
   "ethereum/precompiles_bls12.cpp"
   "ethereum/precompiles_bls12.hpp"
   "ethereum/precompiles_impl.cpp"
+  "ethereum/reserve_balance.cpp"
+  "ethereum/reserve_balance.hpp"
   "ethereum/trace/call_frame.cpp"
   "ethereum/trace/call_frame.hpp"
   "ethereum/trace/call_tracer.cpp"

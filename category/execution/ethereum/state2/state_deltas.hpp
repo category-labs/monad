@@ -22,6 +22,7 @@
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/vm/vm.hpp>
 
 #pragma GCC diagnostic push
@@ -43,24 +44,29 @@ using AccountDelta = Delta<std::optional<Account>>;
 static_assert(sizeof(AccountDelta) == 176);
 static_assert(alignof(AccountDelta) == 8);
 
-using StorageDelta = Delta<bytes32_t>;
+using PageStorageDelta = Delta<storage_page_t>;
 
-static_assert(sizeof(StorageDelta) == 64);
-static_assert(alignof(StorageDelta) == 1);
+static_assert(sizeof(PageStorageDelta) == sizeof(storage_page_t) * 2);
+static_assert(alignof(PageStorageDelta) == 1);
 
-using StorageDeltas = oneapi::tbb::concurrent_hash_map<
-    bytes32_t, StorageDelta, BytesHashCompare<bytes32_t>>;
+using PageStorageDeltas = oneapi::tbb::concurrent_hash_map<
+    bytes32_t, PageStorageDelta, BytesHashCompare<bytes32_t>>;
 
-static_assert(sizeof(StorageDeltas) == 576);
-static_assert(alignof(StorageDeltas) == 8);
+static_assert(sizeof(PageStorageDeltas) == 576);
+static_assert(alignof(PageStorageDeltas) == 8);
+
+// Maps page_key -> list of original slot keys for that page
+using PageSlotKeys = oneapi::tbb::concurrent_hash_map<
+    bytes32_t, std::vector<bytes32_t>, BytesHashCompare<bytes32_t>>;
 
 struct StateDelta
 {
     AccountDelta account;
-    StorageDeltas storage{};
+    PageStorageDeltas storage{};
+    PageSlotKeys slot_keys{};
 };
 
-static_assert(sizeof(StateDelta) == 752);
+static_assert(sizeof(StateDelta) == 1328);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<

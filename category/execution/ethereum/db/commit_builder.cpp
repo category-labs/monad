@@ -27,6 +27,8 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -37,7 +39,11 @@
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <limits>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -74,18 +80,19 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
         if (account.has_value()) {
-            for (auto const &[key, delta] : delta.storage) {
-                if (delta.first != delta.second) {
+            for (auto const &[page_key, page_delta] : delta.storage) {
+                if (page_delta.first != page_delta.second) {
+                    auto const &page = page_delta.second;
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
-                            .key = hash_alloc_.emplace_back(
-                                keccak256({key.bytes, sizeof(key.bytes)})),
-                            .value = delta.second == bytes32_t{}
-                                         ? std::nullopt
-                                         : std::make_optional<byte_string_view>(
-                                               bytes_alloc_.emplace_back(
-                                                   encode_storage_db(
-                                                       key, delta.second))),
+                            .key = hash_alloc_.emplace_back(keccak256(
+                                {page_key.bytes, sizeof(page_key.bytes)})),
+                            .value =
+                                page.is_empty()
+                                    ? std::nullopt
+                                    : std::make_optional<byte_string_view>(
+                                          bytes_alloc_.emplace_back(
+                                              encode_storage_page_db(page))),
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));

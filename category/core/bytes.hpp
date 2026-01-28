@@ -26,6 +26,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <functional>

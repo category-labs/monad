@@ -41,7 +41,7 @@ class CommitBuilder
     uint64_t block_number_;
 
 public:
-    explicit CommitBuilder(uint64_t block_number);
+    CommitBuilder(uint64_t block_number);
 
     CommitBuilder &add_state_deltas(StateDeltas const &);
 

@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/variant.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -123,17 +124,29 @@ namespace trace
             storage_);
     }
 
-    StorageDeltas StateDiffTracer::generate_storage_deltas(
+    PageStorageDeltas StateDiffTracer::generate_storage_deltas(
         AccountState::StorageMap const &original,
         AccountState::StorageMap const &current)
     {
-        StorageDeltas deltas{};
+        // Storage deltas are now page-based. We still track which pages have
+        // changes for the empty() check, but JSON output reads from State.
+        // First, build pages in a local map since PageStorageDelta.first is const.
+        ankerl::unordered_dense::map<bytes32_t, std::pair<storage_page_t, storage_page_t>> local_pages;
         for (auto const &[key, value] : current) {
             auto const *it = original.find(key);
             MONAD_ASSERT(it != nullptr);
             if (value != *it) {
-                deltas.emplace(key, std::make_pair(*it, value));
+                bytes32_t const page_key = compute_page_key(key);
+                uint8_t const slot_offset = compute_slot_offset(key);
+                auto &page_pair = local_pages[page_key];
+                page_pair.first[slot_offset] = *it;
+                page_pair.second[slot_offset] = value;
             }
+        }
+        // Transfer to PageStorageDeltas
+        PageStorageDeltas deltas{};
+        for (auto const &[page_key, page_pair] : local_pages) {
+            deltas.emplace(page_key, std::make_pair(page_pair.first, page_pair.second));
         }
         return deltas;
     }
@@ -444,23 +457,46 @@ namespace trace
                     pre[address_key] = account_to_json(original_account, state);
                 }
             }
-            // Storage
+            // Storage - get slot-level data from State
             {
                 json pre_storage = json::object();
                 json post_storage = json::object();
-                for (auto const &[key, storage_delta] : state_delta.storage) {
-                    auto const key_json = bytes_to_hex(key.bytes);
-                    auto const &original_storage = storage_delta.first;
-                    auto const &current_storage = storage_delta.second;
-                    if (MONAD_LIKELY(original_storage != bytes32_t{})) {
-                        pre_storage[key_json] =
-                            bytes_to_hex(original_storage.bytes);
+
+                auto const &current_state = state.current();
+                auto const &original_state = state.original();
+                auto const current_it = current_state.find(address);
+                auto const original_it = original_state.find(address);
+
+                if (current_it != current_state.end()) {
+                    auto const &current_storage =
+                        current_it->second.recent().storage_;
+                    AccountState::StorageMap const *original_storage = nullptr;
+                    if (original_it != original_state.end()) {
+                        original_storage = &original_it->second.storage_;
                     }
-                    if (MONAD_LIKELY(current_storage != bytes32_t{})) {
-                        post_storage[key_json] =
-                            bytes_to_hex(current_storage.bytes);
+
+                    for (auto const &[key, current_value] : current_storage) {
+                        bytes32_t original_value{};
+                        if (original_storage) {
+                            auto const *orig_it = original_storage->find(key);
+                            if (orig_it != nullptr) {
+                                original_value = *orig_it;
+                            }
+                        }
+                        if (original_value != current_value) {
+                            auto const key_json = bytes_to_hex(key.bytes);
+                            if (MONAD_LIKELY(original_value != bytes32_t{})) {
+                                pre_storage[key_json] =
+                                    bytes_to_hex(original_value.bytes);
+                            }
+                            if (MONAD_LIKELY(current_value != bytes32_t{})) {
+                                post_storage[key_json] =
+                                    bytes_to_hex(current_value.bytes);
+                            }
+                        }
                     }
                 }
+
                 if (!pre_storage.empty()) {
                     pre[address_key]["storage"] = std::move(pre_storage);
                 }

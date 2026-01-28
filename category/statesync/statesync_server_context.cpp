@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/mpt/db.hpp>
 #include <category/statesync/statesync_server_context.hpp>
@@ -50,15 +51,23 @@ void on_commit(
     for (auto const &[addr, delta] : state_deltas) {
         auto const &account = delta.account.second;
         if (account.has_value()) {
-            for (auto const &[key, delta] : delta.storage) {
-                if (delta.first != delta.second &&
-                    delta.second == bytes32_t{}) {
-                    LOG_INFO(
-                        "Deleting Storage n={} addr={} storage={} ",
-                        n,
-                        addr,
-                        key);
-                    deletions.emplace_back(addr, key);
+            // Storage is page-based. Use slot_keys to get original slot keys.
+            for (auto const &[page_key, page_delta] : delta.storage) {
+                PageSlotKeys::const_accessor sk_acc{};
+                if (delta.slot_keys.find(sk_acc, page_key)) {
+                    for (auto const &key : sk_acc->second) {
+                        uint8_t const slot_offset = compute_slot_offset(key);
+                        auto const &orig_value = page_delta.first[slot_offset];
+                        auto const &curr_value = page_delta.second[slot_offset];
+                        if (orig_value != curr_value && curr_value == bytes32_t{}) {
+                            LOG_INFO(
+                                "Deleting Storage n={} addr={} storage={} ",
+                                n,
+                                addr,
+                                key);
+                            deletions.emplace_back(addr, key);
+                        }
+                    }
                 }
             }
         }
@@ -230,6 +239,12 @@ bytes32_t monad_statesync_server_context::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
     return rw.read_storage(addr, incarnation, key);
+}
+
+storage_page_t monad_statesync_server_context::read_storage_page(
+    Address const &addr, Incarnation incarnation, bytes32_t const &page_key)
+{
+    return rw.read_storage_page(addr, incarnation, page_key);
 }
 
 monad::vm::SharedIntercode

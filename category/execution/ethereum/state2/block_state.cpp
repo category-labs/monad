@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -79,6 +80,9 @@ std::optional<Account> BlockState::read_account(Address const &address)
 bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
+    bytes32_t const page_key = compute_page_key(key);
+    uint8_t const slot_offset = compute_slot_offset(key);
+
     bool read_storage = false;
     // block state
     {
@@ -91,9 +95,9 @@ bytes32_t BlockState::read_storage(
         }
         auto const &storage = it->second.storage;
         {
-            StorageDeltas::const_accessor it2{};
-            if (MONAD_LIKELY(storage.find(it2, key))) {
-                return it2->second.second;
+            PageStorageDeltas::const_accessor it2{};
+            if (MONAD_LIKELY(storage.find(it2, page_key))) {
+                return it2->second.second[slot_offset];
             }
         }
         auto const &orig_account = it->second.account.first;
@@ -104,19 +108,19 @@ bytes32_t BlockState::read_storage(
     // database
     {
         auto const result = read_storage
-                                ? db_.read_storage(address, incarnation, key)
-                                : bytes32_t{};
+                                ? db_.read_storage_page(address, incarnation, page_key)
+                                : storage_page_t{};
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
-            return result;
+            return result[slot_offset];
         }
         auto &storage = it->second.storage;
         {
-            StorageDeltas::const_accessor it2{};
-            storage.emplace(it2, key, std::make_pair(result, result));
-            return it2->second.second;
+            PageStorageDeltas::const_accessor it2{};
+            storage.emplace(it2, page_key, std::make_pair(result, result));
+            return it2->second.second[slot_offset];
         }
     }
 }
@@ -170,9 +174,11 @@ bool BlockState::can_merge(State &state) const
         }
         // TODO account.has_value()???
         for (auto const &[key, value] : storage) {
-            StorageDeltas::const_accessor it2{};
-            if (it->second.storage.find(it2, key)) {
-                if (value != it2->second.second) {
+            bytes32_t const page_key = compute_page_key(key);
+            uint8_t const slot_offset = compute_slot_offset(key);
+            PageStorageDeltas::const_accessor it2{};
+            if (it->second.storage.find(it2, page_key)) {
+                if (value != it2->second.second[slot_offset]) {
                     return false;
                 }
             }
@@ -220,14 +226,22 @@ void BlockState::merge(State const &state)
         it->second.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
-                StorageDeltas::accessor it2{};
-                if (it->second.storage.find(it2, key)) {
-                    it2->second.second = value;
+                bytes32_t const page_key = compute_page_key(key);
+                uint8_t const slot_offset = compute_slot_offset(key);
+                PageStorageDeltas::accessor it2{};
+                if (it->second.storage.find(it2, page_key)) {
+                    it2->second.second[slot_offset] = value;
                 }
                 else {
+                    storage_page_t page{};
+                    page[slot_offset] = value;
                     it->second.storage.emplace(
-                        key, std::make_pair(bytes32_t{}, value));
+                        page_key, std::make_pair(storage_page_t{}, page));
                 }
+                // Track the original slot key for statesync and other consumers
+                PageSlotKeys::accessor sk{};
+                it->second.slot_keys.insert(sk, page_key);
+                sk->second.push_back(key);
             }
         }
         else {

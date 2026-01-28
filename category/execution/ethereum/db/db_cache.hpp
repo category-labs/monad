@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
@@ -38,35 +39,35 @@ class DbCache final : public Db
 {
     Db &db_;
 
-    struct StorageKey
+    struct PageKey
     {
         static constexpr size_t k_bytes =
             sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
 
         uint8_t bytes[k_bytes];
 
-        StorageKey() = default;
+        PageKey() = default;
 
-        StorageKey(
-            Address const &addr, Incarnation incarnation, bytes32_t const &key)
+        PageKey(
+            Address const &addr, Incarnation incarnation, bytes32_t const &page_key)
         {
             memcpy(bytes, addr.bytes, sizeof(Address));
             memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
             memcpy(
                 &bytes[sizeof(Address) + sizeof(Incarnation)],
-                key.bytes,
+                page_key.bytes,
                 sizeof(bytes32_t));
         }
     };
 
     using AddressHashCompare = BytesHashCompare<Address>;
-    using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
+    using PageKeyHashCompare = BytesHashCompare<PageKey>;
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
-    using StorageCache = LruCache<StorageKey, bytes32_t, StorageKeyHashCompare>;
+    using PageCache = LruCache<PageKey, storage_page_t, PageKeyHashCompare>;
 
     AccountsCache accounts_{10'000'000};
-    StorageCache storage_{10'000'000};
+    PageCache pages_{1'000'000};
     Proposals proposals_;
 
 public:
@@ -101,14 +102,27 @@ public:
                 address, incarnation, key, result, truncated)) {
             return result;
         }
+        bytes32_t const page_key = compute_page_key(key);
+        uint8_t const slot_offset = compute_slot_offset(key);
         if (!truncated) {
-            StorageKey const skey{address, incarnation, key};
-            StorageCache::ConstAccessor acc{};
-            if (storage_.find(acc, skey)) {
-                return acc->second.value_;
+            PageKey const pkey{address, incarnation, page_key};
+            PageCache::ConstAccessor acc{};
+            if (pages_.find(acc, pkey)) {
+                return acc->second.value_[slot_offset];
             }
         }
         return db_.read_storage(address, incarnation, key);
+    }
+
+    virtual storage_page_t read_storage_page(
+        Address const &address, Incarnation incarnation, bytes32_t const &page_key) override
+    {
+        PageKey const pkey{address, incarnation, page_key};
+        PageCache::ConstAccessor acc{};
+        if (pages_.find(acc, pkey)) {
+            return acc->second.value_;
+        }
+        return db_.read_storage_page(address, incarnation, page_key);
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
@@ -135,7 +149,7 @@ public:
         else {
             // Finalizing a truncated proposal. Clear LRU caches.
             accounts_.clear();
-            storage_.clear();
+            pages_.clear();
         }
         db_.finalize(block_number, block_id);
         proposals_.set_block_and_prefix(block_number, block_id);
@@ -222,7 +236,7 @@ public:
     virtual std::string print_stats() override
     {
         return db_.print_stats() + ",ac=" + accounts_.print_stats() +
-               ",sc=" + storage_.print_stats();
+               ",sc=" + pages_.print_stats();
     }
 
     virtual uint64_t get_block_number() const override
@@ -240,14 +254,14 @@ private:
             auto const &storage = it->second.storage;
             auto const &account = account_delta.second;
             if (account.has_value()) {
+                auto const incarnation = account->incarnation;
                 for (auto it2 = storage.cbegin(); it2 != storage.cend();
                      ++it2) {
-                    auto const &key = it2->first;
-                    auto const &storage_delta = it2->second;
-                    auto const incarnation = account->incarnation;
-                    storage_.insert(
-                        StorageKey(address, incarnation, key),
-                        storage_delta.second);
+                    auto const &page_key = it2->first;
+                    auto const &page_delta = it2->second;
+                    pages_.insert(
+                        PageKey(address, incarnation, page_key),
+                        page_delta.second);
                 }
             }
         }

@@ -69,6 +69,14 @@ class State
 
     bool const relaxed_validation_{false};
 
+    bool rb_tracking_enabled_{false};
+    bool rb_use_recent_code_hash_{false};
+    Address rb_sender_{};
+    uint256_t rb_sender_gas_fees_{0};
+    uint256_t rb_max_reserve_{0};
+    bool rb_sender_gas_fees_exceed_reserve_{false};
+    Set<Address> rb_check_failed_accounts_{};
+
 public:
     OriginalAccountState &original_account_state(Address const &);
 
@@ -80,6 +88,15 @@ private:
     std::optional<Account> const &recent_account(Address const &);
 
     std::optional<Account> &current_account(Address const &);
+
+    void update_rb_violation(Address const &, AccountState *account_state);
+
+    bool rb_subject_account(Address const &);
+
+    uint256_t rb_reserve_cap(Address const &, OriginalAccountState &);
+
+    bool rb_is_delegated_for_code_hash(
+        OriginalAccountState &, bytes32_t const &code_hash);
 
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
@@ -192,6 +209,17 @@ public:
      * to take place before any of the actual transactions in a block.
      */
     void create_account_no_rollback(Address const &);
+
+    ////////////////////////////////////////
+
+    void set_reserve_balance_context(
+        Address const &sender, uint256_t const &gas_fees,
+        bool use_recent_code_hash);
+
+    [[nodiscard]] bool reserve_balance_tracking_enabled() const;
+    [[nodiscard]] bool reserve_balance_sender_gas_fees_exceed_reserve() const;
+    [[nodiscard]] bool reserve_balance_failed_for(Address const &) const;
+    [[nodiscard]] bool reserve_balance_failed_other_than(Address const &) const;
 
     ////////////////////////////////////////
 

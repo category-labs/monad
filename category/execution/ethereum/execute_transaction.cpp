@@ -220,6 +220,14 @@ template <Traits traits>
 evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     State &state, EvmcHost<traits> &host)
 {
+    if constexpr (monad::vm::evm::is_monad_trait_v<traits>) {
+        state.set_reserve_balance_context(
+            sender_,
+            uint256_t{tx_.gas_limit} *
+                gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0)),
+            traits::monad_rev() >= MONAD_EIGHT);
+    }
+
     irrevocable_change<traits>(
         state,
         tx_,

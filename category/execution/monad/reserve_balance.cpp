@@ -60,70 +60,45 @@ bool dipped_into_reserve(
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
 
-    uint256_t const gas_fees =
-        uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
+    (void)tx;
+    (void)base_fee_per_gas;
+
+    MONAD_ASSERT(state.reserve_balance_tracking_enabled());
+
     auto const &orig = state.original();
-    for (auto const &[addr, cur_account] : state.current()) {
-        MONAD_ASSERT(orig.contains(addr));
-        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
-        bytes32_t const effective_code_hash =
-            (traits::monad_rev() >= MONAD_EIGHT)
-                ? cur_account.recent().get_code_hash()
-                : orig_code_hash;
-        bool effective_is_delegated = false;
 
-        // Skip if not EOA
-        if (effective_code_hash != NULL_HASH) {
-            vm::SharedIntercode const intercode =
-                state.read_code(effective_code_hash)->intercode();
-            effective_is_delegated = monad::vm::evm::is_delegated(
-                {intercode->code(), intercode->size()});
-            if (!effective_is_delegated) {
-                continue;
-            }
-        }
-
-        // Check if dipped into reserve
-        std::optional<uint256_t> const violation_threshold =
-            [&] -> std::optional<uint256_t> {
-            uint256_t const max_reserve = get_max_reserve<traits>(addr);
-            uint256_t const reserve =
-                state.check_min_original_balance(addr, max_reserve)
-                    ? max_reserve
-                    : state.get_original_balance(addr);
-            if (addr == sender) {
-                if (gas_fees > reserve) { // must be dipping
-                    return std::nullopt;
-                }
-                return reserve - gas_fees;
-            }
-            return reserve;
-        }();
-        if (!violation_threshold.has_value() ||
-            !state.check_min_balance(addr, violation_threshold.value())) {
-            if (addr == sender) {
-                if (!can_sender_dip_into_reserve(
-                        sender, i, effective_is_delegated, ctx)) {
-                    // Safety: this assertion is recoverable because it can be
-                    // triggered via RPC parameter setting.
-                    MONAD_ASSERT_THROW(
-                        violation_threshold.has_value(),
-                        "gas fee greater than reserve for non-dipping "
-                        "transaction");
-                    return true;
-                }
-                // Skip if allowed to dip into reserve
-            }
-            else {
-                // Safety: this assertion should not be a recoverable one, as it
-                // indicates a logic error in the surrounding code: the
-                // violation threshold can only be nullopt when addr == sender,
-                // which is not the case in this branch.
-                MONAD_ASSERT(violation_threshold.has_value());
-                return true;
-            }
-        }
+    bytes32_t const orig_code_hash =
+        orig.contains(sender) ? orig.at(sender).get_code_hash()
+                              : state.get_code_hash(sender);
+    bytes32_t const effective_code_hash =
+        (traits::monad_rev() >= MONAD_EIGHT) ? state.get_code_hash(sender)
+                                             : orig_code_hash;
+    bool effective_is_delegated = false;
+    if (effective_code_hash != NULL_HASH) {
+        vm::SharedIntercode const intercode =
+            state.read_code(effective_code_hash)->intercode();
+        effective_is_delegated = monad::vm::evm::is_delegated(
+            {intercode->code(), intercode->size()});
     }
+
+    bool const sender_can_dip =
+        can_sender_dip_into_reserve(sender, i, effective_is_delegated, ctx);
+
+    if (!sender_can_dip &&
+        state.reserve_balance_sender_gas_fees_exceed_reserve()) {
+        MONAD_ASSERT_THROW(
+            false,
+            "gas fee greater than reserve for non-dipping transaction");
+        return true;
+    }
+
+    if (state.reserve_balance_failed_other_than(sender)) {
+        return true;
+    }
+    if (state.reserve_balance_failed_for(sender) && !sender_can_dip) {
+        return true;
+    }
+
     return false;
 }
 

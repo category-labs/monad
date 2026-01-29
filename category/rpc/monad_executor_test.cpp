@@ -2490,6 +2490,8 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
         BlockState block_state{tdb, vm};
         State state{
             block_state, Incarnation{header.number - 1, Incarnation::LAST_TX}};
+        state.set_reserve_balance_context(
+            sender, gas_fee, MONAD_NEXT >= MONAD_EIGHT);
         state.subtract_from_balance(sender, gas_fee);
         state.subtract_from_balance(sender, value);
         EXPECT_TRUE(block_state.can_merge(state));

@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -49,6 +50,13 @@
 #include <optional>
 #include <utility>
 #include <vector>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+constexpr uint256_t WEI_PER_MON{1000000000000000000};
+constexpr uint256_t DEFAULT_MAX_RESERVE = uint256_t{10} * WEI_PER_MON;
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
@@ -82,6 +90,10 @@ AccountState &State::current_account_state(Address const &address)
         // original
         auto const &account_state = original_account_state(address);
         it = current_.try_emplace(address, account_state, version_).first;
+        if (rb_tracking_enabled_) {
+            auto &current_state = it->second.current(version_);
+            update_rb_violation(address, &current_state);
+        }
     }
     if (!dirty_.empty()) {
         dirty_.back().emplace(address);
@@ -101,6 +113,123 @@ State::State(
     , incarnation_{incarnation}
     , relaxed_validation_{relaxed_validation}
 {
+}
+
+void State::set_reserve_balance_context(
+    Address const &sender, uint256_t const &gas_fees,
+    bool const use_recent_code_hash)
+{
+    rb_tracking_enabled_ = true;
+    rb_use_recent_code_hash_ = use_recent_code_hash;
+    rb_sender_ = sender;
+    rb_sender_gas_fees_ = gas_fees;
+    rb_sender_gas_fees_exceed_reserve_ = false;
+    rb_max_reserve_ = DEFAULT_MAX_RESERVE;
+    rb_check_failed_accounts_.clear();
+    update_rb_violation(sender, nullptr);
+}
+
+bool State::reserve_balance_tracking_enabled() const
+{
+    return rb_tracking_enabled_;
+}
+
+bool State::reserve_balance_sender_gas_fees_exceed_reserve() const
+{
+    return rb_sender_gas_fees_exceed_reserve_;
+}
+
+bool State::reserve_balance_failed_for(Address const &addr) const
+{
+    return rb_check_failed_accounts_.contains(addr);
+}
+
+bool State::reserve_balance_failed_other_than(Address const &addr) const
+{
+    return !rb_check_failed_accounts_.empty() &&
+           !rb_check_failed_accounts_.contains(addr);
+}
+
+bool State::rb_subject_account(Address const &address)
+{
+    OriginalAccountState &orig_state = original_account_state(address);
+    bytes32_t const code_hash =
+        rb_use_recent_code_hash_ ? recent_account_state(address).get_code_hash()
+                                 : orig_state.get_code_hash();
+    if (code_hash == NULL_HASH) {
+        return true;
+    }
+
+    return rb_is_delegated_for_code_hash(orig_state, code_hash);
+}
+
+uint256_t State::rb_reserve_cap(
+    Address const &address, OriginalAccountState &orig_state)
+{
+    if (!orig_state.rb_reserve_cap_cached()) {
+        uint256_t const reserve =
+            check_min_original_balance(address, rb_max_reserve_)
+                ? rb_max_reserve_
+                : get_original_balance(address);
+        orig_state.set_rb_reserve_cap(reserve);
+    }
+    return orig_state.rb_reserve_cap();
+}
+
+bool State::rb_is_delegated_for_code_hash(
+    OriginalAccountState &orig_state, bytes32_t const &code_hash)
+{
+    if (orig_state.rb_is_delegated_cached()) {
+        return orig_state.rb_is_delegated();
+    }
+    if (code_hash == NULL_HASH) {
+        return false;
+    }
+    auto const vcode = read_code(code_hash);
+    MONAD_ASSERT(vcode);
+    auto const &icode = vcode->intercode();
+    bool const delegated = monad::vm::evm::is_delegated(
+        {icode->code(), icode->size()});
+    orig_state.set_rb_is_delegated(delegated);
+    return delegated;
+}
+
+void State::update_rb_violation(
+    Address const &address, AccountState *account_state)
+{
+    if (!rb_tracking_enabled_) {
+        return;
+    }
+
+    AccountState const &acct_state =
+        account_state ? *account_state : recent_account_state(address);
+
+    if (!rb_subject_account(address)) {
+        rb_check_failed_accounts_.erase(address);
+        return;
+    }
+
+    OriginalAccountState &orig_state = original_account_state(address);
+    uint256_t const reserve = rb_reserve_cap(address, orig_state);
+
+    uint256_t effective_reserve = reserve;
+    if (address == rb_sender_) {
+        if (rb_sender_gas_fees_ > reserve) {
+            rb_sender_gas_fees_exceed_reserve_ = true;
+            rb_check_failed_accounts_.erase(address);
+            return;
+        }
+        rb_sender_gas_fees_exceed_reserve_ = false;
+        effective_reserve -= rb_sender_gas_fees_;
+    }
+
+    if (!check_account_min_balance(
+            orig_state, acct_state.account_, effective_reserve)) {
+        rb_check_failed_accounts_.insert(address);
+    }
+    else {
+        rb_check_failed_accounts_.erase(address);
+    }
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const
@@ -168,6 +297,12 @@ void State::pop_reject()
     while (removals.size()) {
         current_.erase(removals.back());
         removals.pop_back();
+    }
+
+    if (rb_tracking_enabled_) {
+        for (auto const &dirty_address : accounts) {
+            update_rb_violation(dirty_address, nullptr);
+        }
     }
 
     --version_;
@@ -322,6 +457,10 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
 
     account.value().balance += delta;
     account_state.touch();
+    if (rb_tracking_enabled_ &&
+        rb_check_failed_accounts_.contains(address)) {
+        update_rb_violation(address, &account_state);
+    }
 }
 
 void State::subtract_from_balance(
@@ -337,6 +476,7 @@ void State::subtract_from_balance(
 
     account.value().balance -= delta;
     account_state.touch();
+    update_rb_violation(address, &account_state);
 }
 
 void State::set_code_hash(Address const &address, bytes32_t const &hash)
@@ -344,6 +484,8 @@ void State::set_code_hash(Address const &address, bytes32_t const &hash)
     auto &account = current_account(address);
     MONAD_ASSERT(account.has_value());
     account.value().code_hash = hash;
+    auto &account_state = current_account_state(address);
+    update_rb_violation(address, &account_state);
 }
 
 evmc_storage_status State::set_storage(
@@ -552,6 +694,8 @@ void State::set_code(Address const &address, byte_string_view const code)
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     account.value().code_hash = code_hash;
+    auto &account_state = current_account_state(address);
+    update_rb_violation(address, &account_state);
 }
 
 void State::create_contract(Address const &address)

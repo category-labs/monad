@@ -65,21 +65,25 @@ bool dipped_into_reserve(
     auto const &orig = state.original();
     for (auto const &[addr, cur_account] : state.current()) {
         MONAD_ASSERT(orig.contains(addr));
-        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
+        auto const &effective_account = (traits::monad_rev() >= MONAD_EIGHT)
+                                            ? cur_account.recent().account_
+                                            : orig.at(addr).account_;
         bytes32_t const effective_code_hash =
-            (traits::monad_rev() >= MONAD_EIGHT)
-                ? cur_account.recent().get_code_hash()
-                : orig_code_hash;
+            effective_account.has_value() ? effective_account->get_code_hash()
+                                          : NULL_HASH;
         bool effective_is_delegated = false;
 
         // Skip if not EOA
         if (effective_code_hash != NULL_HASH) {
-            vm::SharedIntercode const intercode =
-                state.read_code(effective_code_hash)->intercode();
-            effective_is_delegated = monad::vm::evm::is_delegated(
-                {intercode->code(), intercode->size()});
+            effective_is_delegated = effective_account->inline_delegated_code();
             if (!effective_is_delegated) {
-                continue;
+                vm::SharedIntercode const intercode =
+                    state.read_code(effective_code_hash)->intercode();
+                effective_is_delegated = monad::vm::evm::is_delegated(
+                    {intercode->code(), intercode->size()});
+                if (!effective_is_delegated) {
+                    continue;
+                }
             }
         }
 

@@ -150,13 +150,13 @@ TYPED_TEST(TraitsTest, execute_success)
                      {std::nullopt,
                       Account{
                           .balance = 0x200000,
-                          .code_hash = NULL_HASH,
+                          .code_or_hash = NULL_HASH,
                           .nonce = 0x0}}}},
             {ADDR_B,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+                      Account{.balance = 0, .code_or_hash = NULL_HASH}}}}},
         Code{},
         BlockHeader{});
 
@@ -225,13 +225,13 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
                      {std::nullopt,
                       Account{
                           .balance = 0x10000,
-                          .code_hash = NULL_HASH,
+                          .code_or_hash = NULL_HASH,
                           .nonce = 0x0}}}},
             {ADDR_B,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{.balance = 0, .code_hash = NULL_HASH}}}}},
+                      Account{.balance = 0, .code_or_hash = NULL_HASH}}}}},
         Code{},
         BlockHeader{});
 
@@ -309,7 +309,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{.balance = 0, .code_hash = code_hash}}}}},
+                      Account{.balance = 0, .code_or_hash = code_hash}}}}},
         Code{
             {code_hash, icode},
         },
@@ -422,7 +422,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{.balance = 0, .code_hash = code_hash}}}}},
+                      Account{.balance = 0, .code_or_hash = code_hash}}}}},
         Code{
             {code_hash, icode},
         },

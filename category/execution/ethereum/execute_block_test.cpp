@@ -133,7 +133,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
                      {std::nullopt,
                       Account{
                           .balance = 0xffffffffffffffffffffffffffffffff_u128,
-                          .code_hash = NULL_HASH,
+                          .code_or_hash = NULL_HASH,
                           .nonce = 0x0}}}},
             {to,
              StateDelta{
@@ -141,12 +141,12 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
                      {std::nullopt,
                       Account{
                           .balance = 0x0fffffffffffff,
-                          .code_hash = STRESS_TEST_CODE_HASH}}}},
+                          .code_or_hash = STRESS_TEST_CODE_HASH}}}},
             {ca,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}}},
+                      Account{.balance = 0x1b58, .code_or_hash = NULL_HASH}}}}},
         Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE}},
         BlockHeader{.number = 0});
 
@@ -290,7 +290,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
                      {std::nullopt,
                       Account{
                           .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = NULL_HASH,
+                          .code_or_hash = NULL_HASH,
                           .nonce = 0x0}}}},
             {to,
              StateDelta{
@@ -298,7 +298,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
                      {std::nullopt,
                       Account{
                           .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = STRESS_TEST_CODE_HASH}}}}},
+                          .code_or_hash = STRESS_TEST_CODE_HASH}}}}},
         Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE}},
         BlockHeader{.number = 0});
 
@@ -420,7 +420,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
                      {std::nullopt,
                       Account{
                           .balance = 0x989680,
-                          .code_hash = NULL_HASH,
+                          .code_or_hash = NULL_HASH,
                           .nonce = 0x0}}}},
             {to,
              StateDelta{
@@ -428,7 +428,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
                      {std::nullopt,
                       Account{
                           .balance = 0x0,
-                          .code_hash = NULL_HASH,
+                          .code_or_hash = NULL_HASH,
                           .nonce = 0x01}}}},
             {ca,
              StateDelta{
@@ -436,7 +436,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
                      {std::nullopt,
                       Account{
                           .balance = 0x1b58,
-                          .code_hash = REFUND_TEST_CODE_HASH}},
+                          .code_or_hash = REFUND_TEST_CODE_HASH}},
                  .storage =
                      {{bytes32_t{0x01}, {bytes32_t{}, bytes32_t{0x01}}},
                       {bytes32_t{0x02}, {bytes32_t{}, bytes32_t{0x01}}},

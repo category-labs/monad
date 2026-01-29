@@ -444,12 +444,17 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
                 fmt::format("{}", acct.value().second.balance);
             json[key]["nonce"] =
                 fmt::format("0x{:x}", acct.value().second.nonce);
-
-            auto const icode = db.read_code(acct.value().second.code_hash);
-            MONAD_ASSERT(icode);
-            json[key]["code"] =
-                "0x" + evmc::hex({icode->code(), icode->size()});
-
+            if (acct.value().second.inline_delegated_code()) {
+                json[key]["code"] =
+                    "0x" + evmc::hex(acct.value().second.code_view());
+            }
+            else {
+                auto const icode =
+                    db.read_code(acct.value().second.get_code_hash());
+                MONAD_ASSERT(icode);
+                json[key]["code"] =
+                    "0x" + evmc::hex({icode->code(), icode->size()});
+            }
             if (!json[key].contains("storage")) {
                 json[key]["storage"] = nlohmann::json::object();
             }

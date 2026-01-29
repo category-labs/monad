@@ -46,9 +46,7 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 bool sender_has_balance(State &state, evmc_message const &msg) noexcept
 {
     uint256_t const value = intx::be::load<uint256_t>(msg.value);
-    // for optimistic execution, we do NOT require the original balance to match
-    // exactly, just add a lower bound constraint to suffice for this debit
-    return state.record_balance_constraint_for_debit(msg.sender, value);
+    return state.check_min_balance(msg.sender, value);
 }
 
 void transfer_balances(State &state, evmc_message const &msg, Address const &to)

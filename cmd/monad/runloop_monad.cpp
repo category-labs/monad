@@ -354,6 +354,7 @@ Result<BlockExecOutput> propose_block(
     LOG_INFO(
         "__exec_block,bl={:8},id={},ts={}"
         ",tx={:5},rt={:4},rtp={:5.2f}%"
+        ",ala={:3},alk={:4},alt={:>7}"
         ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
         ",gas={:9},gpse={:4},gps={:3}{}{}{}",
         block.header.number,
@@ -365,6 +366,9 @@ Result<BlockExecOutput> propose_block(
         block_metrics.num_retries,
         100.0 * (double)block_metrics.num_retries /
             std::max(1.0, (double)block.transactions.size()),
+        block_metrics.num_access_list_addrs,
+        block_metrics.num_access_list_keys,
+        block_metrics.access_list_time,
         sender_recovery_time,
         block_metrics.tx_exec_time,
         commit_time,

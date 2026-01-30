@@ -62,9 +62,7 @@ OriginalAccountState &State::original_account_state(Address const &address)
         it = original_.try_emplace(address, account).first;
         auto &orig_state = it->second;
         bytes32_t const code_hash = orig_state.get_code_hash();
-        bool const delegated = code_hash == NULL_HASH
-                                   ? false
-                                   : rb_is_delegated_for_code_hash(code_hash);
+        bool const delegated = is_delegated(code_hash);
         orig_state.set_rb_is_delegated(delegated);
     }
     return it->second;
@@ -163,13 +161,18 @@ uint256_t State::rb_reserve_cap(
 
 bool State::rb_is_delegated_for_code_hash(bytes32_t const &code_hash)
 {
-    if (code_hash == NULL_HASH) {
+    return is_delegated(code_hash);
+}
+
+bool State::is_delegated(bytes32_t const &code_hash)
+{
+    if (MONAD_UNLIKELY(code_hash == NULL_HASH)) {
         return false;
     }
     auto const vcode = read_code(code_hash);
     MONAD_ASSERT(vcode);
     auto const &icode = vcode->intercode();
-    return monad::vm::evm::is_delegated({icode->code(), icode->size()});
+    return vm::evm::is_delegated({icode->code(), icode->size()});
 }
 
 void State::update_rb_violation(

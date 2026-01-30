@@ -250,18 +250,18 @@ Definition div64_precondition (u_hi v : uint64) : Prop :=
     This matches shld_constexpr:
       return (high << shift) | ((low >> 1) >> (63 - shift));
 
-    The peculiar formulation (low >> 1) >> (63 - shift) instead of
-    low >> (64 - shift) is to avoid undefined behavior when shift = 0.
+    The peculiar formulation (low >> 1) >> (63 - shift) instead of low
+    >> (64 - shift) is to avoid undefined behavior when shift = 0 (x86
+    masks the shift count to 6 bits).
 *)
-Definition shld64_spec (high low : uint64) (shift : nat) : uint64 :=
-  if Nat.eqb shift 0 then high
-  else if Nat.leb 64 shift then from_Z64 0
+Definition shld64 (high low : uint64) (shift : nat) : uint64 :=
+  if Nat.leb 64 shift then from_Z64 0
   else
     let h := to_Z64 high in
     let l := to_Z64 low in
     let shifted_high := Z.shiftl h (Z.of_nat shift) in
     let shifted_low := Z.shiftr (Z.shiftr l 1) (Z.of_nat (63 - shift)) in
-    from_Z64 (Z.lor shifted_high shifted_low).
+    normalize64 (Z.lor shifted_high shifted_low).
 
 (** Right shift with double precision (shrd instruction)
 
@@ -269,16 +269,18 @@ Definition shld64_spec (high low : uint64) (shift : nat) : uint64 :=
 
     This matches shrd_constexpr:
       return (low >> shift) | ((high << 1) << (63 - shift));
+
+    Note: We use normalize64 on shifted_high to simulate C++ uint64_t
+    overflow behavior (shifting left by 64 or more gives 0).
 *)
-Definition shrd64_spec (high low : uint64) (shift : nat) : uint64 :=
-  if Nat.eqb shift 0 then low
-  else if Nat.leb 64 shift then from_Z64 0
+Definition shrd64 (high low : uint64) (shift : nat) : uint64 :=
+  if Nat.leb 64 shift then from_Z64 0
   else
     let h := to_Z64 high in
     let l := to_Z64 low in
     let shifted_low := Z.shiftr l (Z.of_nat shift) in
     let shifted_high := Z.shiftl (Z.shiftl h 1) (Z.of_nat (63 - shift)) in
-    from_Z64 (Z.lor shifted_low shifted_high).
+    normalize64 (Z.lor shifted_low shifted_high).
 
 (** ** Correctness Properties *)
 
@@ -410,23 +412,30 @@ Admitted.
 
 (** shld64 returns high when shift is 0 *)
 Lemma shld64_shift_0 : forall high low,
-  shld64_spec high low 0 = high.
+  0 <= high < modulus64 ->
+  0 <= low < modulus64 ->
+  shld64 high low 0 = high.
 Proof.
-  intros. unfold shld64_spec. simpl. reflexivity.
+  intros high low Hhigh Hlow.
+  unfold shld64, from_Z64, to_Z64, normalize64, modulus64 in *. simpl.
+  rewrite Z.shiftr_shiftr by lia. simpl (1 + 63).
+  rewrite Z.shiftr_div_pow2 by lia.
+  rewrite Z.div_small by lia.
+  rewrite Z.lor_0_r.
+  rewrite Z.mod_small by lia.
+  reflexivity.
 Qed.
 
 (** shld64 returns 0 when shift >= 64 *)
 Lemma shld64_shift_ge_64 : forall high low shift,
   (64 <= shift)%nat ->
-  shld64_spec high low shift = from_Z64 0.
+  shld64 high low shift = from_Z64 0.
 Proof.
   intros high low shift Hshift.
-  unfold shld64_spec.
-  destruct (Nat.eqb shift 0) eqn:Heq0.
-  - apply Nat.eqb_eq in Heq0. lia.
-  - destruct (Nat.leb 64 shift) eqn:Hle.
-    + reflexivity.
-    + apply Nat.leb_gt in Hle. lia.
+  unfold shld64.
+  destruct (Nat.leb 64 shift) eqn:Hle.
+  - reflexivity.
+  - apply Nat.leb_gt in Hle. lia.
 Qed.
 
 (** shld64 computes high bits of 128-bit left shift *)
@@ -436,38 +445,78 @@ Lemma shld64_correct : forall high low shift,
   (0 < shift < 64)%nat ->
   let combined := high * modulus64 + low in
   let shifted := Z.shiftl combined (Z.of_nat shift) in
-  to_Z64 (shld64_spec high low shift) = Z.shiftr shifted 64 mod modulus64.
+  to_Z64 (shld64 high low shift) = normalize64 (Z.shiftr shifted 64).
 Proof.
   intros high low shift Hhigh Hlow Hshift.
-  unfold shld64_spec.
-  destruct (Nat.eqb shift 0) eqn:Heq0.
-  - apply Nat.eqb_eq in Heq0. lia.
-  - destruct (Nat.leb 64 shift) eqn:Hle.
-    + apply Nat.leb_le in Hle. lia.
-    + unfold from_Z64, to_Z64, modulus64. simpl.
-      (* The proof involves bit manipulation algebra *)
-      admit.
-Admitted.
+  unfold shld64, normalize64.
+  destruct (Nat.leb 64 shift) eqn:Hle.
+  { apply Nat.leb_le in Hle. lia. }
+  unfold from_Z64, to_Z64, modulus64.
+  rewrite Z.shiftr_shiftl_r by lia.
+  rewrite Z.shiftr_shiftr by lia.
+  replace (1 + Z.of_nat (63 - shift)) with (64 - Z.of_nat shift) by lia.
+  rewrite Z.shiftr_div_pow2 by lia.
+  rewrite Z.shiftl_mul_pow2 by lia.
+  rewrite Z.shiftr_div_pow2 by lia.
+  assert (Hpow: 2 ^ 64 = 2 ^ (64 - Z.of_nat shift) * 2 ^ Z.of_nat shift).
+  { rewrite <- Z.pow_add_r by lia. f_equal. lia. }
+  replace (high * 2 ^ 64 + low) with
+    (high * 2 ^ Z.of_nat shift * 2 ^ (64 - Z.of_nat shift) + low)
+    by (rewrite Hpow; ring).
+  rewrite Z.div_add_l by (apply Z.pow_nonzero; lia).
+  f_equal.
+  set (a := high * 2 ^ Z.of_nat shift).
+  set (b := low / 2 ^ (64 - Z.of_nat shift)).
+  rewrite <- Z.add_0_r at 1.
+  enough (Z.land a b = 0) by (rewrite <- H; apply Z.add_lor_land).
+  unfold a, b.
+  apply Z.bits_inj'. intros n Hn.
+  rewrite Z.land_spec. rewrite Z.bits_0.
+  destruct (Z.lt_ge_cases n (Z.of_nat shift)) as [Hlt | Hge].
+  - (* n < shift: high * 2^shift has no bits below shift *)
+    rewrite Bool.andb_false_iff. left.
+    rewrite <- Z.shiftl_mul_pow2 by lia.
+    rewrite Z.shiftl_spec_low by lia.
+    reflexivity.
+  - (* n >= shift: low / 2^(64-shift) has no bits at or above shift *)
+    rewrite Bool.andb_false_iff. right.
+    rewrite <- Z.shiftr_div_pow2 by lia.
+    rewrite Z.shiftr_spec by lia.
+    apply Z.bits_above_log2; [lia|].
+    enough (Z.log2 low < 64) by lia.
+    destruct (Z.eq_dec low 0).
+    + subst; simpl; lia.
+    + apply Z.log2_lt_pow2; unfold modulus64 in Hlow; lia.
+Qed.
 
 (** shrd64 returns low when shift is 0 *)
 Lemma shrd64_shift_0 : forall high low,
-  shrd64_spec high low 0 = low.
+  0 <= high < modulus64 ->
+  0 <= low < modulus64 ->
+  shrd64 high low 0 = low.
 Proof.
-  intros. unfold shrd64_spec. simpl. reflexivity.
+  intros high low Hhigh Hlow.
+  unfold shrd64. simpl (Nat.leb 64 0). cbv iota.
+  simpl (63 - 0)%nat. simpl (Z.of_nat 0). simpl (Z.of_nat 63).
+  rewrite Z.shiftr_0_r.
+  unfold normalize64, from_Z64, to_Z64, modulus64 in *.
+  rewrite Z.shiftl_shiftl by lia. simpl (1 + 63).
+  rewrite Z.shiftl_mul_pow2 by lia.
+  replace ((high * 2 ^ 64) mod 2 ^ 64) with 0.
+  - apply Z.lor_0_r.
+  - rewrite Z.mod_eq by lia. rewrite Z.div_mul by lia. ring.
 Qed.
 
 (** shrd64 returns 0 when shift >= 64 *)
 Lemma shrd64_shift_ge_64 : forall high low shift,
   (64 <= shift)%nat ->
-  shrd64_spec high low shift = from_Z64 0.
+  shrd64 high low shift = from_Z64 0.
 Proof.
   intros high low shift Hshift.
-  unfold shrd64_spec.
-  destruct (Nat.eqb shift 0) eqn:Heq0.
-  - apply Nat.eqb_eq in Heq0. lia.
-  - destruct (Nat.leb 64 shift) eqn:Hle.
-    + reflexivity.
-    + apply Nat.leb_gt in Hle. lia.
+  unfold shrd64.
+  destruct (Nat.leb 64 shift) eqn:Hle.
+  - reflexivity.
+  - apply Nat.leb_gt in Hle. lia.
 Qed.
 
 (** shrd64 computes low bits of 128-bit right shift *)
@@ -477,17 +526,15 @@ Lemma shrd64_correct : forall high low shift,
   (0 < shift < 64)%nat ->
   let combined := high * modulus64 + low in
   let shifted := Z.shiftr combined (Z.of_nat shift) in
-  to_Z64 (shrd64_spec high low shift) = shifted mod modulus64.
+  to_Z64 (shrd64 high low shift) = shifted mod modulus64.
 Proof.
   intros high low shift Hhigh Hlow Hshift.
-  unfold shrd64_spec.
-  destruct (Nat.eqb shift 0) eqn:Heq0.
-  - apply Nat.eqb_eq in Heq0. lia.
-  - destruct (Nat.leb 64 shift) eqn:Hle.
-    + apply Nat.leb_le in Hle. lia.
-    + unfold from_Z64, to_Z64, modulus64. simpl.
-      (* The proof involves bit manipulation algebra *)
-      admit.
+  unfold shrd64.
+  destruct (Nat.leb 64 shift) eqn:Hle.
+  - apply Nat.leb_le in Hle. lia.
+  - unfold from_Z64, to_Z64, modulus64. simpl.
+    (* The proof involves bit manipulation algebra *)
+    admit.
 Admitted.
 
 (** ** Multi-word Addition Helper *)

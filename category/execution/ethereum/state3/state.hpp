@@ -44,6 +44,8 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockState;
+struct BlockHeader;
+struct Transaction;
 
 class State
 {
@@ -232,6 +234,15 @@ public:
     bool check_min_balance(Address const &, uint512_t const &);
 
     AccountState &rb_account_state_or_original(Address const &);
+
+    template <Traits traits>
+        requires is_monad_trait_v<traits>
+    void init_reserve_balance_context(
+        Address const &sender, Transaction const &tx,
+        BlockHeader const &header, uint64_t i, ChainContext<traits> const &ctx)
+    {
+        rb_.init_from_tx<traits>(sender, tx, header, i, ctx);
+    }
 
 private:
     bool check_account_min_balance(

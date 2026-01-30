@@ -234,23 +234,8 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     }
 
     if constexpr (monad::vm::evm::is_monad_trait_v<traits>) {
-        bytes32_t const sender_code_hash =
-            (traits::monad_rev() >= MONAD_EIGHT)
-                ? state.get_code_hash(sender_)
-                : state.original_account_state(sender_).get_code_hash();
-        bool const sender_is_delegated = state.is_delegated(sender_code_hash);
-
-        bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
-            sender_, host.i_, sender_is_delegated, host.chain_ctx_);
-        state.set_reserve_balance_context(
-            sender_,
-            uint256_t{tx_.gas_limit} *
-                gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0)),
-            traits::monad_rev() >= MONAD_EIGHT,
-            sender_can_dip,
-            [](Address const &addr) {
-                return get_max_reserve<traits>(addr);
-            });
+        state.init_reserve_balance_context<traits>(
+            sender_, tx_, header_, host.i_, host.chain_ctx_);
     }
 
     // EIP-3651

@@ -68,6 +68,137 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
+ReserveBalance::ReserveBalance(State *state)
+    : state_{state}
+{
+}
+
+void ReserveBalance::set_context(
+    Address const &sender, uint256_t const &gas_fees,
+    bool const use_recent_code_hash, bool const sender_can_dip,
+    std::function<uint256_t(Address const &)> get_max_reserve)
+{
+    tracking_enabled_ = true;
+    use_recent_code_hash_ = use_recent_code_hash;
+    sender_ = sender;
+    sender_gas_fees_ = gas_fees;
+    sender_can_dip_ = sender_can_dip;
+    get_max_reserve_ = std::move(get_max_reserve);
+    failed_.clear();
+}
+
+bool ReserveBalance::tracking_enabled() const
+{
+    return tracking_enabled_;
+}
+
+bool ReserveBalance::has_violation() const
+{
+    return !failed_.empty();
+}
+
+bool ReserveBalance::failed_contains(Address const &address) const
+{
+    return failed_.contains(address);
+}
+
+bool ReserveBalance::subject_account(Address const &address)
+{
+    OriginalAccountState &orig_state = state_->original_account_state(address);
+    bytes32_t const effective_code_hash =
+        use_recent_code_hash_ ? state_->get_code_hash(address)
+                              : orig_state.get_code_hash();
+    if (effective_code_hash == NULL_HASH) {
+        return true;
+    }
+    return state_->is_delegated(effective_code_hash);
+}
+
+uint256_t ReserveBalance::reserve_cap(
+    Address const &address, OriginalAccountState &orig_state)
+{
+    if (!orig_state.rb_reserve_cap_cached()) {
+        MONAD_ASSERT(get_max_reserve_);
+        uint256_t const max_reserve = get_max_reserve_(address);
+        uint256_t const reserve =
+            state_->check_min_original_balance(address, max_reserve)
+                ? max_reserve
+                : state_->get_original_balance(address);
+        orig_state.set_rb_reserve_cap(reserve);
+    }
+    return orig_state.rb_reserve_cap();
+}
+
+void ReserveBalance::update_violation(
+    Address const &address, AccountState *account_state)
+{
+    if (!tracking_enabled_) {
+        return;
+    }
+
+    AccountState &acct_state = account_state
+                                   ? *account_state
+                                   : state_->rb_account_state_or_original(
+                                         address);
+    OriginalAccountState &orig_state = state_->original_account_state(address);
+
+    if (!acct_state.rb_effective_reserve_cached()) {
+        if (!subject_account(address)) {
+            acct_state.set_rb_effective_reserve(uint256_t{0});
+            failed_.erase(address);
+            return;
+        }
+
+        uint256_t const reserve = reserve_cap(address, orig_state);
+        uint256_t effective_reserve = reserve;
+        if (address == sender_) {
+            if (sender_can_dip_) {
+                acct_state.set_rb_effective_reserve(uint256_t{0});
+                failed_.erase(address);
+                return;
+            }
+            MONAD_ASSERT_THROW(
+                sender_gas_fees_ <= reserve,
+                "gas fee greater than reserve for non-dipping transaction");
+            effective_reserve = reserve - sender_gas_fees_;
+        }
+        acct_state.set_rb_effective_reserve(effective_reserve);
+    }
+
+    uint256_t const effective_reserve = acct_state.rb_effective_reserve();
+    if (effective_reserve == 0) {
+        failed_.erase(address);
+        return;
+    }
+
+    if (!state_->check_min_balance(address, effective_reserve)) {
+        failed_.insert(address);
+    }
+    else {
+        failed_.erase(address);
+    }
+}
+
+void ReserveBalance::on_pop_reject(FailedSet const &accounts)
+{
+    if (!tracking_enabled_) {
+        return;
+    }
+    for (auto const &dirty_address : accounts) {
+        update_violation(dirty_address, nullptr);
+    }
+}
+
+void ReserveBalance::on_code_change(
+    Address const &address, AccountState &account_state)
+{
+    if (!tracking_enabled_) {
+        return;
+    }
+    account_state.set_rb_effective_reserve(uint256_t{0});
+    failed_.erase(address);
+}
+
 template <Traits traits>
 bool revert_transaction(
     Address const &sender, Transaction const &tx,

@@ -105,6 +105,7 @@ State::State(
     : block_state_{block_state}
     , incarnation_{incarnation}
     , relaxed_validation_{relaxed_validation}
+    , rb_{this}
 {
 }
 
@@ -113,50 +114,19 @@ void State::set_reserve_balance_context(
     bool const use_recent_code_hash, bool const sender_can_dip,
     std::function<uint256_t(Address const &)> get_max_reserve)
 {
-    rb_tracking_enabled_ = true;
-    rb_use_recent_code_hash_ = use_recent_code_hash;
-    rb_sender_ = sender;
-    rb_sender_gas_fees_ = gas_fees;
-    rb_sender_can_dip_ = sender_can_dip;
-    rb_get_max_reserve_ = std::move(get_max_reserve);
-    rb_check_failed_accounts_.clear();
+    rb_.set_context(
+        sender, gas_fees, use_recent_code_hash, sender_can_dip,
+        std::move(get_max_reserve));
 }
 
 bool State::reserve_balance_tracking_enabled() const
 {
-    return rb_tracking_enabled_;
+    return rb_.tracking_enabled();
 }
 
 bool State::reserve_balance_has_violation() const
 {
-    return !rb_check_failed_accounts_.empty();
-}
-
-bool State::rb_subject_account(Address const &address)
-{
-    OriginalAccountState &orig_state = original_account_state(address);
-    bytes32_t const effective_code_hash =
-        rb_use_recent_code_hash_ ? recent_account_state(address).get_code_hash()
-                                 : orig_state.get_code_hash();
-    if (effective_code_hash == NULL_HASH) {
-        return true;
-    }
-
-    return is_delegated(effective_code_hash);
-}
-
-uint256_t State::rb_reserve_cap(
-    Address const &address, OriginalAccountState &orig_state)
-{
-    if (!orig_state.rb_reserve_cap_cached()) {
-        MONAD_ASSERT(rb_get_max_reserve_);
-        uint256_t const max_reserve = rb_get_max_reserve_(address);
-        uint256_t const reserve =
-            check_min_original_balance(address, max_reserve) ? max_reserve
-                : get_original_balance(address);
-        orig_state.set_rb_reserve_cap(reserve);
-    }
-    return orig_state.rb_reserve_cap();
+    return rb_.has_violation();
 }
 
 bool State::is_delegated(bytes32_t const &code_hash)
@@ -168,60 +138,6 @@ bool State::is_delegated(bytes32_t const &code_hash)
     MONAD_ASSERT(vcode);
     auto const &icode = vcode->intercode();
     return vm::evm::is_delegated({icode->code(), icode->size()});
-}
-
-void State::update_rb_violation(
-    Address const &address, AccountState *account_state)
-{
-    if (!rb_tracking_enabled_) {
-        return;
-    }
-
-    AccountState &acct_state = account_state ? *account_state : [&]() -> AccountState & {
-        auto it = current_.find(address);
-        if (it != current_.end()) {
-            return it->second.current(version_);
-        }
-        return original_account_state(address);
-    }();
-    OriginalAccountState &orig_state = original_account_state(address);
-
-    if (!acct_state.rb_effective_reserve_cached()) {
-        if (!rb_subject_account(address)) {
-            acct_state.set_rb_effective_reserve(uint256_t{0});
-            rb_check_failed_accounts_.erase(address);
-            return;
-        }
-
-        uint256_t const reserve = rb_reserve_cap(address, orig_state);
-        uint256_t effective_reserve = reserve;
-        if (address == rb_sender_) {
-            if (rb_sender_can_dip_) {
-                acct_state.set_rb_effective_reserve(uint256_t{0});
-                rb_check_failed_accounts_.erase(address);
-                return;
-            }
-            MONAD_ASSERT_THROW(
-                rb_sender_gas_fees_ <= reserve,
-                "gas fee greater than reserve for non-dipping transaction");
-            effective_reserve = reserve - rb_sender_gas_fees_;
-        }
-        acct_state.set_rb_effective_reserve(effective_reserve);
-    }
-
-    uint256_t const effective_reserve = acct_state.rb_effective_reserve();
-    if (effective_reserve == 0) {
-        rb_check_failed_accounts_.erase(address);
-        return;
-    }
-
-    if (!check_account_min_balance(
-            orig_state, acct_state.account_, effective_reserve)) {
-        rb_check_failed_accounts_.insert(address);
-    }
-    else {
-        rb_check_failed_accounts_.erase(address);
-    }
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const
@@ -291,11 +207,7 @@ void State::pop_reject()
         removals.pop_back();
     }
 
-    if (rb_tracking_enabled_) {
-        for (auto const &dirty_address : accounts) {
-            update_rb_violation(dirty_address, nullptr);
-        }
-    }
+    rb_.on_pop_reject(accounts);
 
     --version_;
 }
@@ -449,9 +361,8 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
 
     account.value().balance += delta;
     account_state.touch();
-    if (rb_tracking_enabled_ &&
-        rb_check_failed_accounts_.contains(address)) {
-        update_rb_violation(address, &account_state);
+    if (rb_.tracking_enabled() && rb_.failed_contains(address)) {
+        rb_.update_violation(address, &account_state);
     }
 }
 
@@ -468,7 +379,7 @@ void State::subtract_from_balance(
 
     account.value().balance -= delta;
     account_state.touch();
-    update_rb_violation(address, &account_state);
+    rb_.update_violation(address, &account_state);
 }
 
 void State::set_code_hash(Address const &address, bytes32_t const &hash)
@@ -477,10 +388,7 @@ void State::set_code_hash(Address const &address, bytes32_t const &hash)
     auto &account = account_state.account_;
     MONAD_ASSERT(account.has_value());
     account.value().code_hash = hash;
-    if (rb_tracking_enabled_) {
-        account_state.set_rb_effective_reserve(uint256_t{0});
-        rb_check_failed_accounts_.erase(address);
-    }
+    rb_.on_code_change(address, account_state);
 }
 
 evmc_storage_status State::set_storage(
@@ -690,10 +598,7 @@ void State::set_code(Address const &address, byte_string_view const code)
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     account.value().code_hash = code_hash;
-    if (rb_tracking_enabled_) {
-        account_state.set_rb_effective_reserve(uint256_t{0});
-        rb_check_failed_accounts_.erase(address);
-    }
+    rb_.on_code_change(address, account_state);
 }
 
 void State::create_contract(Address const &address)
@@ -839,6 +744,15 @@ bool State::check_min_balance(Address const &address, uint512_t const &value)
     return value > std::numeric_limits<uint256_t>::max()
                ? false
                : check_min_balance(address, static_cast<uint256_t>(value));
+}
+
+AccountState &State::rb_account_state_or_original(Address const &address)
+{
+    auto it = current_.find(address);
+    if (it != current_.end()) {
+        return it->second.current(version_);
+    }
+    return original_account_state(address);
 }
 
 bool State::check_account_min_balance(

@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
@@ -69,14 +70,7 @@ class State
     std::deque<Set<Address>> dirty_;
 
     bool const relaxed_validation_{false};
-
-    bool rb_tracking_enabled_{false};
-    bool rb_use_recent_code_hash_{false};
-    Address rb_sender_{};
-    uint256_t rb_sender_gas_fees_{0};
-    bool rb_sender_can_dip_{false};
-    Set<Address> rb_check_failed_accounts_{};
-    std::function<uint256_t(Address const &)> rb_get_max_reserve_{};
+    ReserveBalance rb_;
 
 public:
     OriginalAccountState &original_account_state(Address const &);
@@ -89,12 +83,6 @@ private:
     std::optional<Account> const &recent_account(Address const &);
 
     std::optional<Account> &current_account(Address const &);
-
-    void update_rb_violation(Address const &, AccountState *account_state);
-
-    bool rb_subject_account(Address const &);
-
-    uint256_t rb_reserve_cap(Address const &, OriginalAccountState &);
 
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
@@ -242,6 +230,8 @@ public:
     bool check_min_original_balance(Address const &, uint256_t const &);
     bool check_min_balance(Address const &, uint256_t const &);
     bool check_min_balance(Address const &, uint512_t const &);
+
+    AccountState &rb_account_state_or_original(Address const &);
 
 private:
     bool check_account_min_balance(

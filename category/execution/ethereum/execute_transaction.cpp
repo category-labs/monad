@@ -220,6 +220,19 @@ template <Traits traits>
 evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     State &state, EvmcHost<traits> &host)
 {
+    irrevocable_change<traits>(
+        state,
+        tx_,
+        sender_,
+        header_.base_fee_per_gas.value_or(0),
+        header_.excess_blob_gas.value_or(0));
+
+    // EIP-7702
+    uint64_t auth_refund = 0u;
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+        auth_refund = process_authorizations(state, host);
+    }
+
     if constexpr (monad::vm::evm::is_monad_trait_v<traits>) {
         bytes32_t const sender_code_hash =
             (traits::monad_rev() >= MONAD_EIGHT)
@@ -238,19 +251,6 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
             [](Address const &addr) {
                 return get_max_reserve<traits>(addr);
             });
-    }
-
-    irrevocable_change<traits>(
-        state,
-        tx_,
-        sender_,
-        header_.base_fee_per_gas.value_or(0),
-        header_.excess_blob_gas.value_or(0));
-
-    // EIP-7702
-    uint64_t auth_refund = 0u;
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
-        auth_refund = process_authorizations(state, host);
     }
 
     // EIP-3651

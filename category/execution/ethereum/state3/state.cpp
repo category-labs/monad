@@ -181,27 +181,42 @@ void State::update_rb_violation(
         return;
     }
 
-    AccountState const &acct_state =
-        account_state ? *account_state : recent_account_state(address);
-
-    if (!rb_subject_account(address)) {
-        rb_check_failed_accounts_.erase(address);
-        return;
-    }
-
+    AccountState &acct_state = account_state ? *account_state : [&]() -> AccountState & {
+        auto it = current_.find(address);
+        if (it != current_.end()) {
+            return it->second.current(version_);
+        }
+        return original_account_state(address);
+    }();
     OriginalAccountState &orig_state = original_account_state(address);
-    uint256_t const reserve = rb_reserve_cap(address, orig_state);
 
-    uint256_t effective_reserve = reserve;
-    if (address == rb_sender_) {
-        if (rb_sender_can_dip_) {
+    if (!acct_state.rb_effective_reserve_cached()) {
+        if (!rb_subject_account(address)) {
+            acct_state.set_rb_effective_reserve(uint256_t{0});
             rb_check_failed_accounts_.erase(address);
             return;
         }
-        MONAD_ASSERT_THROW(
-            rb_sender_gas_fees_ <= reserve,
-            "gas fee greater than reserve for non-dipping transaction");
-        effective_reserve = reserve - rb_sender_gas_fees_;
+
+        uint256_t const reserve = rb_reserve_cap(address, orig_state);
+        uint256_t effective_reserve = reserve;
+        if (address == rb_sender_) {
+            if (rb_sender_can_dip_) {
+                acct_state.set_rb_effective_reserve(uint256_t{0});
+                rb_check_failed_accounts_.erase(address);
+                return;
+            }
+            MONAD_ASSERT_THROW(
+                rb_sender_gas_fees_ <= reserve,
+                "gas fee greater than reserve for non-dipping transaction");
+            effective_reserve = reserve - rb_sender_gas_fees_;
+        }
+        acct_state.set_rb_effective_reserve(effective_reserve);
+    }
+
+    uint256_t const effective_reserve = acct_state.rb_effective_reserve();
+    if (effective_reserve == 0) {
+        rb_check_failed_accounts_.erase(address);
+        return;
     }
 
     if (!check_account_min_balance(
@@ -462,10 +477,12 @@ void State::subtract_from_balance(
 
 void State::set_code_hash(Address const &address, bytes32_t const &hash)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
     MONAD_ASSERT(account.has_value());
     account.value().code_hash = hash;
     if (rb_tracking_enabled_) {
+        account_state.set_rb_effective_reserve(uint256_t{0});
         rb_check_failed_accounts_.erase(address);
     }
 }
@@ -668,7 +685,8 @@ size_t State::copy_code(
 
 void State::set_code(Address const &address, byte_string_view const code)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
         return;
     }
@@ -677,6 +695,7 @@ void State::set_code(Address const &address, byte_string_view const code)
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     account.value().code_hash = code_hash;
     if (rb_tracking_enabled_) {
+        account_state.set_rb_effective_reserve(uint256_t{0});
         rb_check_failed_accounts_.erase(address);
     }
 }

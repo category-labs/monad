@@ -56,6 +56,7 @@ public: // TODO
 
 protected:
     std::optional<Account> account_{};
+    std::optional<uint256_t> rb_effective_reserve_{};
 
 private:
     friend class State;
@@ -153,9 +154,25 @@ public:
     {
         transient_storage_ = transient_storage_.insert({key, value});
     }
+
+    [[nodiscard]] bool rb_effective_reserve_cached() const
+    {
+        return rb_effective_reserve_.has_value();
+    }
+
+    [[nodiscard]] uint256_t const &rb_effective_reserve() const
+    {
+        MONAD_ASSERT(rb_effective_reserve_.has_value());
+        return *rb_effective_reserve_;
+    }
+
+    void set_rb_effective_reserve(uint256_t const &value)
+    {
+        rb_effective_reserve_ = value;
+    }
 };
 
-static_assert(sizeof(AccountState) == 144);
+static_assert(sizeof(AccountState) == 184);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

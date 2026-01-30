@@ -62,44 +62,11 @@ bool dipped_into_reserve(
 
     (void)tx;
     (void)base_fee_per_gas;
+    (void)ctx;
 
     MONAD_ASSERT(state.reserve_balance_tracking_enabled());
-
-    auto const &orig = state.original();
-
-    bytes32_t const orig_code_hash =
-        orig.contains(sender) ? orig.at(sender).get_code_hash()
-                              : state.get_code_hash(sender);
-    bytes32_t const effective_code_hash =
-        (traits::monad_rev() >= MONAD_EIGHT) ? state.get_code_hash(sender)
-                                             : orig_code_hash;
-    bool effective_is_delegated = false;
-    if (effective_code_hash != NULL_HASH) {
-        vm::SharedIntercode const intercode =
-            state.read_code(effective_code_hash)->intercode();
-        effective_is_delegated = monad::vm::evm::is_delegated(
-            {intercode->code(), intercode->size()});
-    }
-
-    bool const sender_can_dip =
-        can_sender_dip_into_reserve(sender, i, effective_is_delegated, ctx);
-
-    if (!sender_can_dip &&
-        state.reserve_balance_sender_gas_fees_exceed_reserve()) {
-        MONAD_ASSERT_THROW(
-            false,
-            "gas fee greater than reserve for non-dipping transaction");
-        return true;
-    }
-
-    if (state.reserve_balance_failed_other_than(sender)) {
-        return true;
-    }
-    if (state.reserve_balance_failed_for(sender) && !sender_can_dip) {
-        return true;
-    }
-
-    return false;
+    return state.reserve_balance_failed_other_than(sender) ||
+           state.reserve_balance_failed_for(sender);
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END

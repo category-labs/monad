@@ -113,13 +113,13 @@ State::State(
 
 void State::set_reserve_balance_context(
     Address const &sender, uint256_t const &gas_fees,
-    bool const use_recent_code_hash)
+    bool const use_recent_code_hash, bool const sender_can_dip)
 {
     rb_tracking_enabled_ = true;
     rb_use_recent_code_hash_ = use_recent_code_hash;
     rb_sender_ = sender;
     rb_sender_gas_fees_ = gas_fees;
-    rb_sender_gas_fees_exceed_reserve_ = false;
+    rb_sender_can_dip_ = sender_can_dip;
     rb_max_reserve_ = DEFAULT_MAX_RESERVE;
     rb_check_failed_accounts_.clear();
 }
@@ -127,11 +127,6 @@ void State::set_reserve_balance_context(
 bool State::reserve_balance_tracking_enabled() const
 {
     return rb_tracking_enabled_;
-}
-
-bool State::reserve_balance_sender_gas_fees_exceed_reserve() const
-{
-    return rb_sender_gas_fees_exceed_reserve_;
 }
 
 bool State::reserve_balance_failed_for(Address const &addr) const
@@ -209,13 +204,14 @@ void State::update_rb_violation(
 
     uint256_t effective_reserve = reserve;
     if (address == rb_sender_) {
-        if (rb_sender_gas_fees_ > reserve) {
-            rb_sender_gas_fees_exceed_reserve_ = true;
+        if (rb_sender_can_dip_) {
             rb_check_failed_accounts_.erase(address);
             return;
         }
-        rb_sender_gas_fees_exceed_reserve_ = false;
-        effective_reserve -= rb_sender_gas_fees_;
+        MONAD_ASSERT_THROW(
+            rb_sender_gas_fees_ <= reserve,
+            "gas fee greater than reserve for non-dipping transaction");
+        effective_reserve = reserve - rb_sender_gas_fees_;
     }
 
     if (!check_account_min_balance(

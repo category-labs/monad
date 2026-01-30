@@ -74,7 +74,7 @@ class State
     Address rb_sender_{};
     uint256_t rb_sender_gas_fees_{0};
     uint256_t rb_max_reserve_{0};
-    bool rb_sender_gas_fees_exceed_reserve_{false};
+    bool rb_sender_can_dip_{false};
     Set<Address> rb_check_failed_accounts_{};
 
 public:
@@ -214,10 +214,9 @@ public:
 
     void set_reserve_balance_context(
         Address const &sender, uint256_t const &gas_fees,
-        bool use_recent_code_hash);
+        bool use_recent_code_hash, bool sender_can_dip);
 
     [[nodiscard]] bool reserve_balance_tracking_enabled() const;
-    [[nodiscard]] bool reserve_balance_sender_gas_fees_exceed_reserve() const;
     [[nodiscard]] bool reserve_balance_failed_for(Address const &) const;
     [[nodiscard]] bool reserve_balance_failed_other_than(Address const &) const;
 

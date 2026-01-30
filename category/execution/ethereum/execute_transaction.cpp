@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -221,11 +222,26 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     State &state, EvmcHost<traits> &host)
 {
     if constexpr (monad::vm::evm::is_monad_trait_v<traits>) {
+        bytes32_t const sender_code_hash =
+            (traits::monad_rev() >= MONAD_EIGHT)
+                ? state.get_code_hash(sender_)
+                : state.original_account_state(sender_).get_code_hash();
+        bool sender_is_delegated = false;
+        if (sender_code_hash != NULL_HASH) {
+            vm::SharedIntercode const intercode =
+                state.read_code(sender_code_hash)->intercode();
+            sender_is_delegated = monad::vm::evm::is_delegated(
+                {intercode->code(), intercode->size()});
+        }
+
+        bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
+            sender_, host.i_, sender_is_delegated, host.chain_ctx_);
         state.set_reserve_balance_context(
             sender_,
             uint256_t{tx_.gas_limit} *
                 gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0)),
-            traits::monad_rev() >= MONAD_EIGHT);
+            traits::monad_rev() >= MONAD_EIGHT,
+            sender_can_dip);
     }
 
     irrevocable_change<traits>(

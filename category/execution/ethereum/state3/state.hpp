@@ -35,6 +35,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <deque>
 #include <optional>
 #include <vector>
@@ -73,9 +74,9 @@ class State
     bool rb_use_recent_code_hash_{false};
     Address rb_sender_{};
     uint256_t rb_sender_gas_fees_{0};
-    uint256_t rb_max_reserve_{0};
     bool rb_sender_can_dip_{false};
     Set<Address> rb_check_failed_accounts_{};
+    std::function<uint256_t(Address const &)> rb_get_max_reserve_{};
 
 public:
     OriginalAccountState &original_account_state(Address const &);
@@ -213,8 +214,8 @@ public:
 
     void set_reserve_balance_context(
         Address const &sender, uint256_t const &gas_fees,
-        uint256_t const &max_reserve, bool use_recent_code_hash,
-        bool sender_can_dip);
+        bool use_recent_code_hash, bool sender_can_dip,
+        std::function<uint256_t(Address const &)> get_max_reserve);
 
     [[nodiscard]] bool reserve_balance_tracking_enabled() const;
     [[nodiscard]] bool reserve_balance_has_violation() const;

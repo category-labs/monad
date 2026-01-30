@@ -112,15 +112,15 @@ State::State(
 
 void State::set_reserve_balance_context(
     Address const &sender, uint256_t const &gas_fees,
-    uint256_t const &max_reserve, bool const use_recent_code_hash,
-    bool const sender_can_dip)
+    bool const use_recent_code_hash, bool const sender_can_dip,
+    std::function<uint256_t(Address const &)> get_max_reserve)
 {
     rb_tracking_enabled_ = true;
     rb_use_recent_code_hash_ = use_recent_code_hash;
     rb_sender_ = sender;
     rb_sender_gas_fees_ = gas_fees;
     rb_sender_can_dip_ = sender_can_dip;
-    rb_max_reserve_ = max_reserve;
+    rb_get_max_reserve_ = std::move(get_max_reserve);
     rb_check_failed_accounts_.clear();
 }
 
@@ -151,9 +151,10 @@ uint256_t State::rb_reserve_cap(
     Address const &address, OriginalAccountState &orig_state)
 {
     if (!orig_state.rb_reserve_cap_cached()) {
+        MONAD_ASSERT(rb_get_max_reserve_);
+        uint256_t const max_reserve = rb_get_max_reserve_(address);
         uint256_t const reserve =
-            check_min_original_balance(address, rb_max_reserve_)
-                ? rb_max_reserve_
+            check_min_original_balance(address, max_reserve) ? max_reserve
                 : get_original_balance(address);
         orig_state.set_rb_reserve_cap(reserve);
     }

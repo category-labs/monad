@@ -24,6 +24,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/types.hpp>
 
 #include <asmjit/core/jitruntime.h>
 
@@ -34,6 +35,7 @@
 #include <memory>
 #include <variant>
 
+using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::basic_blocks;
 using namespace monad::vm::compiler::native;
@@ -47,6 +49,10 @@ namespace
     void emit_instr(
         Emitter &emit, Instruction const &instr, int64_t remaining_base_gas)
     {
+        static constexpr auto memory_version =
+            traits::mip_3_active() ? runtime::Memory::Version::MIP3
+                                   : runtime::Memory::Version::V1;
+
         using enum OpCode;
         switch (instr.opcode()) {
         case Add:
@@ -215,13 +221,13 @@ namespace
             emit.pop();
             break;
         case MLoad:
-            emit.mload();
+            emit.mload<memory_version>();
             break;
         case MStore:
-            emit.mstore();
+            emit.mstore<memory_version>();
             break;
         case MStore8:
-            emit.mstore8();
+            emit.mstore8<memory_version>();
             break;
         case SLoad:
             emit.sload<traits>(remaining_base_gas);

@@ -110,123 +110,183 @@ TEST_F(RuntimeTest, CallDataSize)
     ASSERT_EQ(ctx_.env.input_data_size, 128);
 }
 
-TEST_F(RuntimeTest, CallDataCopyAll)
+TYPED_TEST(RuntimeTraitsTest, CallDataCopyAll)
 {
-    auto copy = wrap(calldatacopy);
+    using traits = TestFixture::Trait;
+    auto copy = TestFixture::wrap(calldatacopy<traits>);
 
-    ctx_.gas_remaining = 24;
+    constexpr auto initial_gas = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 14;
+            }
+        }
+        return 24;
+    }();
+
+    this->ctx_.gas_remaining = initial_gas;
     copy(0, 0, 128);
 
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.size, 128);
-    for (auto i = 0u; i < ctx_.memory.size; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], i);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.size, 128);
+    for (auto i = 0u; i < this->ctx_.memory.size; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], i);
     }
 }
 
-TEST_F(RuntimeTest, CallDataCopyPartial)
+TYPED_TEST(RuntimeTraitsTest, CallDataCopyPartial)
 {
-    auto copy = wrap(calldatacopy);
+    using traits = TestFixture::Trait;
+    auto copy = TestFixture::wrap(calldatacopy<traits>);
 
-    ctx_.gas_remaining = 12;
+    constexpr auto initial_gas = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 4;
+            }
+        }
+        return 12;
+    }();
+
+    this->ctx_.gas_remaining = initial_gas;
     copy(67, 5, 23);
 
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.size, 96);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.size, 96);
 
     for (auto i = 0u; i < 67; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 0);
+        ASSERT_EQ(this->ctx_.memory.data[i], 0);
     }
 
     for (auto i = 67u; i < 90; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], i - 62);
+        ASSERT_EQ(this->ctx_.memory.data[i], i - 62);
     }
 
-    for (auto i = 90u; i < ctx_.memory.size; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 0);
+    for (auto i = 90u; i < this->ctx_.memory.size; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], 0);
     }
 }
 
-TEST_F(RuntimeTest, CallDataCopyOutOfBounds)
+TYPED_TEST(RuntimeTraitsTest, CallDataCopyOutOfBounds)
 {
-    auto copy = wrap(calldatacopy);
+    using traits = TestFixture::Trait;
+    auto copy = TestFixture::wrap(calldatacopy<traits>);
 
-    ctx_.gas_remaining = 51;
+    constexpr auto initial_gas = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 28;
+            }
+        }
+        return 51;
+    }();
+
+    this->ctx_.gas_remaining = initial_gas;
     copy(17, 0, 256);
 
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.size, 288);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.size, 288);
 
     for (auto i = 0u; i < 17; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 0);
+        ASSERT_EQ(this->ctx_.memory.data[i], 0);
     }
 
     for (auto i = 17u; i < 145; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], i - 17);
+        ASSERT_EQ(this->ctx_.memory.data[i], i - 17);
     }
 
-    for (auto i = 145u; i < ctx_.memory.size; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 0);
+    for (auto i = 145u; i < this->ctx_.memory.size; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], 0);
     }
 }
 
-TEST_F(RuntimeTest, CodeCopyAll)
+TYPED_TEST(RuntimeTraitsTest, CodeCopyAll)
 {
-    auto copy = wrap(codecopy);
+    using traits = TestFixture::Trait;
+    auto copy = TestFixture::wrap(codecopy<traits>);
 
-    ctx_.gas_remaining = 24;
+    constexpr auto initial_gas = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 14;
+            }
+        }
+        return 24;
+    }();
+
+    this->ctx_.gas_remaining = initial_gas;
     copy(0, 0, 128);
 
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.size, 128);
-    for (auto i = 0u; i < ctx_.memory.size; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 127 - i);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.size, 128);
+    for (auto i = 0u; i < this->ctx_.memory.size; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], 127 - i);
     }
 }
 
-TEST_F(RuntimeTest, CodeCopyPartial)
+TYPED_TEST(RuntimeTraitsTest, CodeCopyPartial)
 {
-    auto copy = wrap(codecopy);
+    using traits = TestFixture::Trait;
+    auto copy = TestFixture::wrap(codecopy<traits>);
 
-    ctx_.gas_remaining = 12;
+    constexpr auto initial_gas = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 4;
+            }
+        }
+        return 12;
+    }();
+
+    this->ctx_.gas_remaining = initial_gas;
     copy(47, 12, 23);
 
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.size, 96);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.size, 96);
 
     for (auto i = 0u; i < 47; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 0);
+        ASSERT_EQ(this->ctx_.memory.data[i], 0);
     }
 
     for (auto i = 47u; i < 70; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 162 - i);
+        ASSERT_EQ(this->ctx_.memory.data[i], 162 - i);
     }
 
-    for (auto i = 70u; i < ctx_.memory.size; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 0);
+    for (auto i = 70u; i < this->ctx_.memory.size; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], 0);
     }
 }
 
-TEST_F(RuntimeTest, CodeCopyOutOfBounds)
+TYPED_TEST(RuntimeTraitsTest, CodeCopyOutOfBounds)
 {
-    auto copy = wrap(codecopy);
+    using traits = TestFixture::Trait;
+    auto copy = TestFixture::wrap(codecopy<traits>);
 
-    ctx_.gas_remaining = 51;
+    constexpr auto initial_gas = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 28;
+            }
+        }
+        return 51;
+    }();
+
+    this->ctx_.gas_remaining = initial_gas;
     copy(25, 0, 256);
 
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.size, 288);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.size, 288);
 
     for (auto i = 0u; i < 25; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 0);
+        ASSERT_EQ(this->ctx_.memory.data[i], 0);
     }
 
     for (auto i = 25u; i < 153; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 152 - i);
+        ASSERT_EQ(this->ctx_.memory.data[i], 152 - i);
     }
 
-    for (auto i = 153u; i < ctx_.memory.size; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], 0);
+    for (auto i = 153u; i < this->ctx_.memory.size; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], 0);
     }
 }
 
@@ -238,7 +298,16 @@ TYPED_TEST(RuntimeTraitsTest, ExtCodeCopy)
     this->host_.accounts[address_from_uint256(addr)].code =
         evmc::bytes(this->code_.begin(), this->code_.end());
 
-    this->ctx_.gas_remaining = 10'006;
+    constexpr auto initial_gas = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 10'003;
+            }
+        }
+        return 10'006;
+    }();
+
+    this->ctx_.gas_remaining = initial_gas;
     copy(addr, 0, 0, 32);
 
     ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining_cold_access<traits>());
@@ -257,7 +326,16 @@ TYPED_TEST(RuntimeTraitsTest, ExtCodeCopyOutOfBounds)
     this->host_.accounts[address_from_uint256(addr)].code =
         evmc::bytes(this->code_.begin(), this->code_.end());
 
-    this->ctx_.gas_remaining = 10'006;
+    constexpr auto initial_gas = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 10'003;
+            }
+        }
+        return 10'006;
+    }();
+
+    this->ctx_.gas_remaining = initial_gas;
     copy(addr, 0, 112, 32);
 
     ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining_cold_access<traits>());
@@ -312,19 +390,29 @@ TEST_F(RuntimeTest, ReturnDataSize)
     ASSERT_EQ(ctx_.gas_remaining, 0);
 }
 
-TEST_F(RuntimeTest, ReturnDataCopyAll)
+TYPED_TEST(RuntimeTraitsTest, ReturnDataCopyAll)
 {
-    auto copy = wrap(returndatacopy);
+    using traits = TestFixture::Trait;
+    auto copy = TestFixture::wrap(returndatacopy<traits>);
 
-    auto return_data = result_data();
-    ctx_.env.return_data = return_data.data();
-    ctx_.env.return_data_size = return_data.size();
-    ctx_.gas_remaining = 24;
+    constexpr auto initial_gas = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                return 14;
+            }
+        }
+        return 24;
+    }();
+
+    auto return_data = TestFixture::result_data();
+    this->ctx_.env.return_data = return_data.data();
+    this->ctx_.env.return_data_size = return_data.size();
+    this->ctx_.gas_remaining = initial_gas;
     copy(0, 0, 128);
 
-    ASSERT_EQ(ctx_.gas_remaining, 0);
-    ASSERT_EQ(ctx_.memory.size, 128);
-    for (auto i = 0u; i < ctx_.memory.size; ++i) {
-        ASSERT_EQ(ctx_.memory.data[i], i);
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    ASSERT_EQ(this->ctx_.memory.size, 128);
+    for (auto i = 0u; i < this->ctx_.memory.size; ++i) {
+        ASSERT_EQ(this->ctx_.memory.data[i], i);
     }
 }

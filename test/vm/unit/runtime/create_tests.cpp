@@ -33,7 +33,7 @@ constexpr evmc_address result_addr = {0x42};
 
 TYPED_TEST(RuntimeTraitsTest, Create)
 {
-    TestFixture::call(mstore, 0, prog);
+    TestFixture::call(mstore<typename TestFixture::Trait>, 0, prog);
     ASSERT_EQ(this->ctx_.memory.data[31], 0xF3);
 
     this->ctx_.gas_remaining = 1000000;
@@ -98,7 +98,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateFailure)
 TYPED_TEST(RuntimeTraitsTest, Create2)
 {
     if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CONSTANTINOPLE) {
-        TestFixture::call(mstore, 0, prog);
+        TestFixture::call(mstore<typename TestFixture::Trait>, 0, prog);
         ASSERT_EQ(this->ctx_.memory.data[31], 0xF3);
 
         this->ctx_.gas_remaining = 1000000;

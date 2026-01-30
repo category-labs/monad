@@ -671,7 +671,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
     EXPECT_EQ(returned_code_vec, deployed_code_vec);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
-    EXPECT_EQ(ctx.result->gas_used, 68'137);
+    EXPECT_EQ(ctx.result->gas_used, 68'129);
 
     monad_state_override_destroy(state_override);
     monad_executor_destroy(executor);
@@ -1401,7 +1401,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .to = c_address,
         .value = 0,
         .gas = 46'762,
-        .gas_used = 1030,
+        .gas_used = 1027,
         .input = byte_string{},
         .output = byte_string{},
         .status = EVMC_SUCCESS,
@@ -1418,7 +1418,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
     EXPECT_EQ(call_frames.value()[3], a_to_c);
 
     EXPECT_EQ(ctx.result->gas_refund, 0);
-    EXPECT_EQ(ctx.result->gas_used, 54'299);
+    EXPECT_EQ(ctx.result->gas_used, 54'296);
 
     monad_state_override_destroy(state_override);
     monad_executor_destroy(executor);

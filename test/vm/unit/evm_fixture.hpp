@@ -17,6 +17,7 @@
 
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
+#include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 #include <test/vm/utils/test_message.hpp>
@@ -76,6 +77,12 @@ namespace monad::vm::compiler::test
             return monad::is_evm_trait_v<Trait>;
         }
 
+        static constexpr runtime::Memory::Version get_memory_version()
+        {
+            return Trait::mip_3_active() ? runtime::Memory::Version::MIP3
+                                         : runtime::Memory::Version::V1;
+        }
+
         monad::vm::VM vm_{};
 
         monad::vm::test::TestMessage test_msg_;
@@ -125,7 +132,8 @@ namespace monad::vm::compiler::test
                         icode);
 
                 ASSERT_TRUE(ncode->entrypoint() != nullptr);
-                result_ = evmc::Result{vm_.execute_native_entrypoint_raw(
+                result_ = evmc::Result{vm_.execute_native_entrypoint_raw<
+                    typename TraitsTest<T>::Trait>(
                     rt_ctx, ncode->entrypoint())};
             }
             else if (impl == Interpreter) {

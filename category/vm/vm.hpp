@@ -197,6 +197,7 @@ namespace monad::vm
             runtime::Context &rt_ctx, std::span<uint8_t const> code);
 
         /// Execute the entrypoint, without stack unwind support.
+        template <Traits traits>
         evmc::Result execute_native_entrypoint_raw(
             runtime::Context &, compiler::native::entrypoint_t);
 

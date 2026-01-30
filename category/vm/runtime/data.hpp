@@ -64,6 +64,7 @@ namespace monad::vm::runtime
         *result_ptr = uint256_load_bounded_be(ctx->env.input_data + i, n);
     }
 
+    template <Traits traits>
     inline void copy_impl(
         Context *ctx, uint256_t const &dest_offset_word,
         uint256_t const &offset_word, uint256_t const &size_word,
@@ -76,7 +77,7 @@ namespace monad::vm::runtime
 
         auto const dest_offset = ctx->get_memory_offset(dest_offset_word);
 
-        ctx->expand_memory(dest_offset + size);
+        ctx->expand_memory<traits>(dest_offset + size);
 
         auto const size_in_words = shr_ceil<5>(size);
         ctx->deduct_gas(size_in_words * bin<3>);
@@ -92,11 +93,12 @@ namespace monad::vm::runtime
         std::fill_n(dest_ptr + copy_size, *size - copy_size, 0);
     }
 
+    template <Traits traits>
     inline void calldatacopy(
         Context *ctx, uint256_t const *dest_offset_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr)
     {
-        copy_impl(
+        copy_impl<traits>(
             ctx,
             *dest_offset_ptr,
             *offset_ptr,
@@ -105,11 +107,12 @@ namespace monad::vm::runtime
             ctx->env.input_data_size);
     }
 
+    template <Traits traits>
     inline void codecopy(
         Context *ctx, uint256_t const *dest_offset_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr)
     {
-        copy_impl(
+        copy_impl<traits>(
             ctx,
             *dest_offset_ptr,
             *offset_ptr,
@@ -130,7 +133,7 @@ namespace monad::vm::runtime
         if (*size > 0) {
             dest_offset = ctx->get_memory_offset(*dest_offset_ptr);
 
-            ctx->expand_memory(dest_offset + size);
+            ctx->expand_memory<traits>(dest_offset + size);
 
             auto const size_in_words = shr_ceil<5>(size);
             ctx->deduct_gas(size_in_words * bin<3>);
@@ -160,6 +163,7 @@ namespace monad::vm::runtime
         }
     }
 
+    template <Traits traits>
     inline void returndatacopy(
         Context *ctx, uint256_t const *dest_offset_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr)
@@ -177,7 +181,7 @@ namespace monad::vm::runtime
         if (*size > 0) {
             auto const dest_offset = ctx->get_memory_offset(*dest_offset_ptr);
 
-            ctx->expand_memory(dest_offset + size);
+            ctx->expand_memory<traits>(dest_offset + size);
 
             auto const size_in_words = shr_ceil<5>(size);
             ctx->deduct_gas(size_in_words * bin<3>);

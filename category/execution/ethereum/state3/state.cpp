@@ -137,17 +137,14 @@ bool State::reserve_balance_has_violation() const
 bool State::rb_subject_account(Address const &address)
 {
     OriginalAccountState &orig_state = original_account_state(address);
-    bytes32_t const code_hash =
+    bytes32_t const effective_code_hash =
         rb_use_recent_code_hash_ ? recent_account_state(address).get_code_hash()
                                  : orig_state.get_code_hash();
-    if (code_hash == NULL_HASH) {
+    if (effective_code_hash == NULL_HASH) {
         return true;
     }
 
-    if (code_hash == orig_state.get_code_hash()) {
-        return orig_state.rb_is_delegated();
-    }
-    return rb_is_delegated_for_code_hash(code_hash);
+    return rb_is_delegated_for_code_hash(effective_code_hash);
 }
 
 uint256_t State::rb_reserve_cap(

@@ -90,10 +90,6 @@ AccountState &State::current_account_state(Address const &address)
         // original
         auto const &account_state = original_account_state(address);
         it = current_.try_emplace(address, account_state, version_).first;
-        if (rb_tracking_enabled_) {
-            auto &current_state = it->second.current(version_);
-            update_rb_violation(address, &current_state);
-        }
     }
     if (!dirty_.empty()) {
         dirty_.back().emplace(address);
@@ -126,7 +122,6 @@ void State::set_reserve_balance_context(
     rb_sender_gas_fees_exceed_reserve_ = false;
     rb_max_reserve_ = DEFAULT_MAX_RESERVE;
     rb_check_failed_accounts_.clear();
-    update_rb_violation(sender, nullptr);
 }
 
 bool State::reserve_balance_tracking_enabled() const
@@ -301,7 +296,9 @@ void State::pop_reject()
 
     if (rb_tracking_enabled_) {
         for (auto const &dirty_address : accounts) {
-            update_rb_violation(dirty_address, nullptr);
+            if (rb_check_failed_accounts_.contains(dirty_address)) {
+                update_rb_violation(dirty_address, nullptr);
+            }
         }
     }
 
@@ -484,8 +481,9 @@ void State::set_code_hash(Address const &address, bytes32_t const &hash)
     auto &account = current_account(address);
     MONAD_ASSERT(account.has_value());
     account.value().code_hash = hash;
-    auto &account_state = current_account_state(address);
-    update_rb_violation(address, &account_state);
+    if (rb_tracking_enabled_) {
+        rb_check_failed_accounts_.erase(address);
+    }
 }
 
 evmc_storage_status State::set_storage(
@@ -694,8 +692,9 @@ void State::set_code(Address const &address, byte_string_view const code)
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     account.value().code_hash = code_hash;
-    auto &account_state = current_account_state(address);
-    update_rb_violation(address, &account_state);
+    if (rb_tracking_enabled_) {
+        rb_check_failed_accounts_.erase(address);
+    }
 }
 
 void State::create_contract(Address const &address)

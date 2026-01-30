@@ -164,9 +164,7 @@ class OriginalAccountState final : public AccountState
 {
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
-    bool rb_reserve_cap_valid_{false};
-    uint256_t rb_reserve_cap_{0};
-    bool rb_delegated_valid_{false};
+    std::optional<uint256_t> rb_reserve_cap_{};
     bool rb_delegated_{false};
 
 public:
@@ -206,35 +204,27 @@ public:
 
     [[nodiscard]] bool rb_reserve_cap_cached() const
     {
-        return rb_reserve_cap_valid_;
+        return rb_reserve_cap_.has_value();
     }
 
     [[nodiscard]] uint256_t const &rb_reserve_cap() const
     {
-        MONAD_ASSERT(rb_reserve_cap_valid_);
-        return rb_reserve_cap_;
+        MONAD_ASSERT(rb_reserve_cap_.has_value());
+        return *rb_reserve_cap_;
     }
 
     void set_rb_reserve_cap(uint256_t const &value)
     {
-        rb_reserve_cap_valid_ = true;
         rb_reserve_cap_ = value;
-    }
-
-    [[nodiscard]] bool rb_is_delegated_cached() const
-    {
-        return rb_delegated_valid_;
     }
 
     [[nodiscard]] bool rb_is_delegated() const
     {
-        MONAD_ASSERT(rb_delegated_valid_);
         return rb_delegated_;
     }
 
     void set_rb_is_delegated(bool const value)
     {
-        rb_delegated_valid_ = true;
         rb_delegated_ = value;
     }
 

@@ -236,10 +236,12 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
 
         bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
             sender_, host.i_, sender_is_delegated, host.chain_ctx_);
+        uint256_t const max_reserve = get_max_reserve<traits>(sender_);
         state.set_reserve_balance_context(
             sender_,
             uint256_t{tx_.gas_limit} *
                 gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0)),
+            max_reserve,
             traits::monad_rev() >= MONAD_EIGHT,
             sender_can_dip);
     }

@@ -2490,8 +2490,14 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
         BlockState block_state{tdb, vm};
         State state{
             block_state, Incarnation{header.number - 1, Incarnation::LAST_TX}};
+        bool const sender_can_dip =
+            can_sender_dip_into_reserve<monad::MonadTraits<MONAD_NEXT>>(
+                sender, 0, false, chain_context);
+        uint256_t const max_reserve =
+            get_max_reserve<monad::MonadTraits<MONAD_NEXT>>(sender);
         state.set_reserve_balance_context(
-            sender, gas_fee, MONAD_NEXT >= MONAD_EIGHT);
+            sender, gas_fee, max_reserve, MONAD_NEXT >= MONAD_EIGHT,
+            sender_can_dip);
         state.subtract_from_balance(sender, gas_fee);
         state.subtract_from_balance(sender, value);
         EXPECT_TRUE(block_state.can_merge(state));

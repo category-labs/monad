@@ -52,21 +52,16 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits>
 bool dipped_into_reserve(
-    Address const &sender, Transaction const &tx,
-    uint256_t const &base_fee_per_gas, uint64_t const i,
+    Address const &, Transaction const &,
+    uint256_t const &, uint64_t const i,
     ChainContext<traits> const &ctx, State &state)
 {
     MONAD_ASSERT(i < ctx.senders.size());
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
 
-    (void)tx;
-    (void)base_fee_per_gas;
-    (void)ctx;
-
     MONAD_ASSERT(state.reserve_balance_tracking_enabled());
-    return state.reserve_balance_failed_other_than(sender) ||
-           state.reserve_balance_failed_for(sender);
+    return state.reserve_balance_has_violation();
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END

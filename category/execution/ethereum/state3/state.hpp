@@ -95,8 +95,7 @@ private:
 
     uint256_t rb_reserve_cap(Address const &, OriginalAccountState &);
 
-    bool rb_is_delegated_for_code_hash(
-        OriginalAccountState &, bytes32_t const &code_hash);
+    bool rb_is_delegated_for_code_hash(bytes32_t const &code_hash);
 
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
@@ -214,11 +213,11 @@ public:
 
     void set_reserve_balance_context(
         Address const &sender, uint256_t const &gas_fees,
-        bool use_recent_code_hash, bool sender_can_dip);
+        uint256_t const &max_reserve, bool use_recent_code_hash,
+        bool sender_can_dip);
 
     [[nodiscard]] bool reserve_balance_tracking_enabled() const;
-    [[nodiscard]] bool reserve_balance_failed_for(Address const &) const;
-    [[nodiscard]] bool reserve_balance_failed_other_than(Address const &) const;
+    [[nodiscard]] bool reserve_balance_has_violation() const;
 
     ////////////////////////////////////////
 

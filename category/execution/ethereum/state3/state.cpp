@@ -51,13 +51,6 @@
 #include <utility>
 #include <vector>
 
-MONAD_ANONYMOUS_NAMESPACE_BEGIN
-
-constexpr uint256_t WEI_PER_MON{1000000000000000000};
-constexpr uint256_t DEFAULT_MAX_RESERVE = uint256_t{10} * WEI_PER_MON;
-
-MONAD_ANONYMOUS_NAMESPACE_END
-
 MONAD_NAMESPACE_BEGIN
 
 OriginalAccountState &State::original_account_state(Address const &address)
@@ -67,6 +60,12 @@ OriginalAccountState &State::original_account_state(Address const &address)
         // block state
         auto const account = block_state_.read_account(address);
         it = original_.try_emplace(address, account).first;
+        auto &orig_state = it->second;
+        bytes32_t const code_hash = orig_state.get_code_hash();
+        bool const delegated = code_hash == NULL_HASH
+                                   ? false
+                                   : rb_is_delegated_for_code_hash(code_hash);
+        orig_state.set_rb_is_delegated(delegated);
     }
     return it->second;
 }
@@ -113,14 +112,15 @@ State::State(
 
 void State::set_reserve_balance_context(
     Address const &sender, uint256_t const &gas_fees,
-    bool const use_recent_code_hash, bool const sender_can_dip)
+    uint256_t const &max_reserve, bool const use_recent_code_hash,
+    bool const sender_can_dip)
 {
     rb_tracking_enabled_ = true;
     rb_use_recent_code_hash_ = use_recent_code_hash;
     rb_sender_ = sender;
     rb_sender_gas_fees_ = gas_fees;
     rb_sender_can_dip_ = sender_can_dip;
-    rb_max_reserve_ = DEFAULT_MAX_RESERVE;
+    rb_max_reserve_ = max_reserve;
     rb_check_failed_accounts_.clear();
 }
 
@@ -129,15 +129,9 @@ bool State::reserve_balance_tracking_enabled() const
     return rb_tracking_enabled_;
 }
 
-bool State::reserve_balance_failed_for(Address const &addr) const
+bool State::reserve_balance_has_violation() const
 {
-    return rb_check_failed_accounts_.contains(addr);
-}
-
-bool State::reserve_balance_failed_other_than(Address const &addr) const
-{
-    return !rb_check_failed_accounts_.empty() &&
-           !rb_check_failed_accounts_.contains(addr);
+    return !rb_check_failed_accounts_.empty();
 }
 
 bool State::rb_subject_account(Address const &address)
@@ -150,7 +144,10 @@ bool State::rb_subject_account(Address const &address)
         return true;
     }
 
-    return rb_is_delegated_for_code_hash(orig_state, code_hash);
+    if (code_hash == orig_state.get_code_hash()) {
+        return orig_state.rb_is_delegated();
+    }
+    return rb_is_delegated_for_code_hash(code_hash);
 }
 
 uint256_t State::rb_reserve_cap(
@@ -166,22 +163,15 @@ uint256_t State::rb_reserve_cap(
     return orig_state.rb_reserve_cap();
 }
 
-bool State::rb_is_delegated_for_code_hash(
-    OriginalAccountState &orig_state, bytes32_t const &code_hash)
+bool State::rb_is_delegated_for_code_hash(bytes32_t const &code_hash)
 {
-    if (orig_state.rb_is_delegated_cached()) {
-        return orig_state.rb_is_delegated();
-    }
     if (code_hash == NULL_HASH) {
         return false;
     }
     auto const vcode = read_code(code_hash);
     MONAD_ASSERT(vcode);
     auto const &icode = vcode->intercode();
-    bool const delegated = monad::vm::evm::is_delegated(
-        {icode->code(), icode->size()});
-    orig_state.set_rb_is_delegated(delegated);
-    return delegated;
+    return monad::vm::evm::is_delegated({icode->code(), icode->size()});
 }
 
 void State::update_rb_violation(

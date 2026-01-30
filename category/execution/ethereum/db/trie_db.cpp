@@ -131,7 +131,7 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
             prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{page_key}),
+            NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
         block_number_);
     if (res.has_error()) {
         stats_storage_no_value();
@@ -155,7 +155,7 @@ TrieDb::read_storage_page(Address const &addr, Incarnation, bytes32_t const &pag
             prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{page_key}),
+            NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
         block_number_);
     if (res.has_error()) {
         return bytes4k_t{};

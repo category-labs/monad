@@ -18,7 +18,6 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
-#include <category/core/keccak.hpp>
 
 #include <intx/intx.hpp>
 
@@ -26,15 +25,13 @@
 
 MONAD_NAMESPACE_BEGIN
 
-// Page key = keccak256(storage_key >> 7)
+// Page key = storage_key >> 7
 // Groups storage keys into pages of 128 slots
 inline bytes32_t compute_page_key(bytes32_t const &storage_key)
 {
     uint256_t const key_int = intx::be::load<uint256_t>(storage_key);
     uint256_t const shifted = key_int >> 7;
-    bytes32_t const shifted_bytes = intx::be::store<bytes32_t>(shifted);
-    return to_bytes(
-        keccak256({shifted_bytes.bytes, sizeof(shifted_bytes.bytes)}));
+    return intx::be::store<bytes32_t>(shifted);
 }
 
 // Slot offset = storage_key & 0x7F (lowest 7 bits)

@@ -86,7 +86,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                     auto const &page = page_delta.second;
                     storage_updates.push_front(update_alloc_.emplace_back(Update{
                         .key = hash_alloc_.emplace_back(
-                            std::bit_cast<hash256>(page_key)),
+                            keccak256({page_key.bytes, sizeof(page_key.bytes)})),
                         .value =
                             page.is_empty()
                                 ? std::nullopt

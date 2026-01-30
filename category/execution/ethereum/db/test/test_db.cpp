@@ -156,7 +156,7 @@ namespace
                 FINALIZED_NIBBLE,
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{page_key}),
+                mpt::NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
             block_number);
         if (!find_res.has_value()) {
             return {};

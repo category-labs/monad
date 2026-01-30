@@ -102,7 +102,7 @@ public:
             mpt::concat(
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{page_key}),
+                mpt::NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
@@ -125,7 +125,7 @@ public:
             mpt::concat(
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{page_key}),
+                mpt::NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(

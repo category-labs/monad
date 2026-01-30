@@ -34,7 +34,6 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
-#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -226,13 +225,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
             (traits::monad_rev() >= MONAD_EIGHT)
                 ? state.get_code_hash(sender_)
                 : state.original_account_state(sender_).get_code_hash();
-        bool sender_is_delegated = false;
-        if (sender_code_hash != NULL_HASH) {
-            vm::SharedIntercode const intercode =
-                state.read_code(sender_code_hash)->intercode();
-            sender_is_delegated = monad::vm::evm::is_delegated(
-                {intercode->code(), intercode->size()});
-        }
+        bool const sender_is_delegated = state.is_delegated(sender_code_hash);
 
         bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
             sender_, host.i_, sender_is_delegated, host.chain_ctx_);

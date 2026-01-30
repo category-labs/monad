@@ -142,7 +142,7 @@ bool State::rb_subject_account(Address const &address)
         return true;
     }
 
-    return rb_is_delegated_for_code_hash(effective_code_hash);
+    return is_delegated(effective_code_hash);
 }
 
 uint256_t State::rb_reserve_cap(
@@ -157,11 +157,6 @@ uint256_t State::rb_reserve_cap(
         orig_state.set_rb_reserve_cap(reserve);
     }
     return orig_state.rb_reserve_cap();
-}
-
-bool State::rb_is_delegated_for_code_hash(bytes32_t const &code_hash)
-{
-    return is_delegated(code_hash);
 }
 
 bool State::is_delegated(bytes32_t const &code_hash)

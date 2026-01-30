@@ -96,9 +96,6 @@ private:
 
     uint256_t rb_reserve_cap(Address const &, OriginalAccountState &);
 
-    bool rb_is_delegated_for_code_hash(bytes32_t const &code_hash);
-    bool is_delegated(bytes32_t const &code_hash);
-
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
 
@@ -220,6 +217,8 @@ public:
 
     [[nodiscard]] bool reserve_balance_tracking_enabled() const;
     [[nodiscard]] bool reserve_balance_has_violation() const;
+
+    bool is_delegated(bytes32_t const &code_hash);
 
     ////////////////////////////////////////
 

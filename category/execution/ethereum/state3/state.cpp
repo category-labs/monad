@@ -401,26 +401,30 @@ State::access_storage(Address const &address, bytes32_t const &key)
 }
 
 template <Traits traits>
-bool State::selfdestruct(Address const &address, Address const &beneficiary)
+std::pair<bool, uint256_t>
+State::selfdestruct(Address const &address, Address const &beneficiary)
 {
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     MONAD_ASSERT(account.has_value());
+    uint256_t transferred_balance = 0;
 
     if constexpr (traits::evm_rev() < EVMC_CANCUN) {
+        transferred_balance = account.value().balance;
         add_to_balance(beneficiary, account.value().balance);
         account.value().balance = 0;
         original_account_state(address).set_validate_exact_balance();
     }
     else {
         if (address != beneficiary || account->incarnation == incarnation_) {
+            transferred_balance = account.value().balance;
             add_to_balance(beneficiary, account.value().balance);
             account.value().balance = 0;
             original_account_state(address).set_validate_exact_balance();
         }
     }
 
-    return account_state.destruct();
+    return {account_state.destruct(), transferred_balance};
 }
 
 EXPLICIT_TRAITS_MEMBER(State::selfdestruct);

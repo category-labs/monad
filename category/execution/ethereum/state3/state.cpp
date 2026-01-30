@@ -282,9 +282,7 @@ void State::pop_reject()
 
     if (rb_tracking_enabled_) {
         for (auto const &dirty_address : accounts) {
-            if (rb_check_failed_accounts_.contains(dirty_address)) {
-                update_rb_violation(dirty_address, nullptr);
-            }
+            update_rb_violation(dirty_address, nullptr);
         }
     }
 

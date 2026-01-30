@@ -502,9 +502,22 @@ Proof.
   unfold normalize64, from_Z64, to_Z64, modulus64 in *.
   rewrite Z.shiftl_shiftl by lia. simpl (1 + 63).
   rewrite Z.shiftl_mul_pow2 by lia.
-  replace ((high * 2 ^ 64) mod 2 ^ 64) with 0.
-  - apply Z.lor_0_r.
-  - rewrite Z.mod_eq by lia. rewrite Z.div_mul by lia. ring.
+  rewrite <- Z.land_ones by lia.
+  rewrite Z.land_lor_distr_l.
+  rewrite Z.land_ones_low.
+  2: lia.
+  2: { destruct (Z.eq_dec low 0); [subst; simpl|apply Z.log2_lt_pow2]; lia. }
+  enough (Z.land (high * 2 ^ 64) (Z.ones 64) = 0) by (rewrite H; apply Z.lor_0_r).
+  apply Z.bits_inj'. intros n Hn.
+  rewrite Z.land_spec, Z.bits_0.
+  destruct (Z.lt_ge_cases n 64) as [Hlt | Hge].
+  - (* n < 64: high * 2^64 has no bits below 64 *)
+    rewrite Bool.andb_false_iff. left.
+    rewrite <- Z.shiftl_mul_pow2 by lia.
+    apply Z.shiftl_spec_low; lia.
+  - (* n >= 64: Z.ones 64 has no bits at or above 64 *)
+    rewrite Bool.andb_false_iff. right.
+    apply Z.ones_spec_high; lia.
 Qed.
 
 (** shrd64 returns 0 when shift >= 64 *)
@@ -529,13 +542,45 @@ Lemma shrd64_correct : forall high low shift,
   to_Z64 (shrd64 high low shift) = shifted mod modulus64.
 Proof.
   intros high low shift Hhigh Hlow Hshift.
-  unfold shrd64.
+  unfold shrd64, normalize64.
   destruct (Nat.leb 64 shift) eqn:Hle.
-  - apply Nat.leb_le in Hle. lia.
-  - unfold from_Z64, to_Z64, modulus64. simpl.
-    (* The proof involves bit manipulation algebra *)
-    admit.
-Admitted.
+  { apply Nat.leb_le in Hle. lia. }
+  unfold from_Z64, to_Z64, modulus64.
+  rewrite Z.shiftl_shiftl by lia.
+  replace (1 + Z.of_nat (63 - shift)) with (64 - Z.of_nat shift) by lia.
+  rewrite Z.shiftr_div_pow2 by lia.
+  rewrite Z.shiftl_mul_pow2 by lia.
+  rewrite Z.shiftr_div_pow2 by lia.
+  assert (Hpow: 2 ^ 64 = 2 ^ (64 - Z.of_nat shift) * 2 ^ Z.of_nat shift).
+  { rewrite <- Z.pow_add_r by lia. f_equal. lia. }
+  replace (high * 2 ^ 64 + low) with
+    (high * 2 ^ (64 - Z.of_nat shift) * 2 ^ Z.of_nat shift + low)
+    by (rewrite Hpow; ring).
+  rewrite Z.div_add_l by (apply Z.pow_nonzero; lia).
+  f_equal.
+  set (a := low / 2 ^ Z.of_nat shift).
+  set (b := high * 2 ^ (64 - Z.of_nat shift)).
+  rewrite Z.add_comm. rewrite <- Z.add_0_r at 1.
+  enough (Z.land a b = 0) by (rewrite <- H; apply Z.add_lor_land).
+  unfold a, b.
+  apply Z.bits_inj'. intros n Hn.
+  rewrite Z.land_spec. rewrite Z.bits_0.
+  destruct (Z.lt_ge_cases n (64 - Z.of_nat shift)) as [Hlt | Hge].
+  - (* n < 64 - shift: high * 2^(64-shift) has no bits below 64-shift *)
+    rewrite Bool.andb_false_iff. right.
+    rewrite <- Z.shiftl_mul_pow2 by lia.
+    rewrite Z.shiftl_spec_low by lia.
+    reflexivity.
+  - (* n >= 64 - shift: low / 2^shift has no bits at or above 64-shift *)
+    rewrite Bool.andb_false_iff. left.
+    rewrite <- Z.shiftr_div_pow2 by lia.
+    rewrite Z.shiftr_spec by lia.
+    apply Z.bits_above_log2; [lia|].
+    enough (Z.log2 low < 64) by lia.
+    destruct (Z.eq_dec low 0).
+    + subst; simpl; lia.
+    + apply Z.log2_lt_pow2; unfold modulus64 in Hlow; lia.
+Qed.
 
 (** ** Multi-word Addition Helper *)
 

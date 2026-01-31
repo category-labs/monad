@@ -234,7 +234,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
 
     if constexpr (::monad::is_monad_trait_v<traits>) {
         state.init_reserve_balance_context<traits>(
-            sender_, tx_, header_, host.i_, host.chain_ctx_);
+            sender_, tx_, header_.base_fee_per_gas, host.i_, host.chain_ctx_);
     }
 
     // EIP-3651

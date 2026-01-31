@@ -204,8 +204,9 @@ void ReserveBalance::on_code_change(
 template <Traits traits>
     requires is_monad_trait_v<traits>
 void ReserveBalance::init_from_tx(
-    Address const &sender, Transaction const &tx, BlockHeader const &header,
-    uint64_t i, ChainContext<traits> const &ctx)
+    Address const &sender, Transaction const &tx,
+    std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
+    ChainContext<traits> const &ctx)
 {
     bytes32_t const sender_code_hash =
         (traits::monad_rev() >= MONAD_EIGHT)
@@ -218,7 +219,7 @@ void ReserveBalance::init_from_tx(
     set_context(
         sender,
         uint256_t{tx.gas_limit} *
-            gas_price<traits>(tx, header.base_fee_per_gas.value_or(0)),
+            gas_price<traits>(tx, base_fee_per_gas.value_or(0)),
         traits::monad_rev() >= MONAD_EIGHT,
         sender_can_dip,
         [](Address const &addr) { return get_max_reserve<traits>(addr); });
@@ -228,7 +229,7 @@ void ReserveBalance::init_from_tx(
     template void ReserveBalance::init_from_tx<MonadTraits<rev>>(              \
         Address const &,                                                       \
         Transaction const &,                                                   \
-        BlockHeader const &,                                                   \
+        std::optional<uint256_t> const &,                                      \
         uint64_t,                                                              \
         ChainContext<MonadTraits<rev>> const &)
 

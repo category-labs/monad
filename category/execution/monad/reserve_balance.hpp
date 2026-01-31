@@ -20,7 +20,6 @@
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -32,6 +31,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -79,8 +79,9 @@ public:
     template <Traits traits>
         requires is_monad_trait_v<traits>
     void init_from_tx(
-        Address const &sender, Transaction const &tx, BlockHeader const &header,
-        uint64_t i, ChainContext<traits> const &ctx);
+        Address const &sender, Transaction const &tx,
+        std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
+        ChainContext<traits> const &ctx);
 };
 
 template <Traits traits>

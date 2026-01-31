@@ -21,7 +21,6 @@
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -173,12 +172,10 @@ create(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 
     if constexpr (is_monad_trait_v<traits>) {
         if (msg.depth == 0 && !state.reserve_balance_tracking_enabled()) {
-            BlockHeader header{};
-            header.base_fee_per_gas = host->base_fee_per_gas_;
             state.init_reserve_balance_context<traits>(
                 Address{msg.sender},
                 host->tx_,
-                header,
+                host->base_fee_per_gas_,
                 host->i_,
                 host->chain_ctx_);
         }
@@ -321,12 +318,10 @@ call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 
     if constexpr (is_monad_trait_v<traits>) {
         if (msg.depth == 0 && !state.reserve_balance_tracking_enabled()) {
-            BlockHeader header{};
-            header.base_fee_per_gas = host->base_fee_per_gas_;
             state.init_reserve_balance_context<traits>(
                 Address{msg.sender},
                 host->tx_,
-                header,
+                host->base_fee_per_gas_,
                 host->i_,
                 host->chain_ctx_);
         }

@@ -43,7 +43,6 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockState;
-struct BlockHeader;
 struct Transaction;
 
 class State
@@ -231,11 +230,12 @@ public:
 
     template <Traits traits>
     void init_reserve_balance_context(
-        Address const &sender, Transaction const &tx, BlockHeader const &header,
-        uint64_t i, ChainContext<traits> const &ctx)
+        Address const &sender, Transaction const &tx,
+        std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
+        ChainContext<traits> const &ctx)
     {
         if constexpr (is_monad_trait_v<traits>) {
-            rb_.init_from_tx<traits>(sender, tx, header, i, ctx);
+            rb_.init_from_tx<traits>(sender, tx, base_fee_per_gas, i, ctx);
             rb_.update_violation(sender, current_account_state(sender));
         }
     }

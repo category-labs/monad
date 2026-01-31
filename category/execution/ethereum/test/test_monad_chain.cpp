@@ -247,10 +247,11 @@ void run_revert_transaction_test(
         bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
             SENDER, 1, sender_is_delegated, chain_context);
         state.set_reserve_balance_context(
-            SENDER, gas_fee, traits::monad_rev() >= MONAD_EIGHT, sender_can_dip,
-            [](Address const &addr) {
-                return get_max_reserve<traits>(addr);
-            });
+            SENDER,
+            gas_fee,
+            traits::monad_rev() >= MONAD_EIGHT,
+            sender_can_dip,
+            [](Address const &addr) { return get_max_reserve<traits>(addr); });
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
         state.subtract_from_balance(SENDER, value);
@@ -453,14 +454,14 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         .authorities = authorities};
 
     auto const prepare_state = [&](State &state) {
-        bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
-            SENDER, 0, false, context);
+        bool const sender_can_dip =
+            can_sender_dip_into_reserve<traits>(SENDER, 0, false, context);
         state.set_reserve_balance_context(
-            SENDER, gas_cost, traits::monad_rev() >= MONAD_EIGHT,
+            SENDER,
+            gas_cost,
+            traits::monad_rev() >= MONAD_EIGHT,
             sender_can_dip,
-            [](Address const &addr) {
-                return get_max_reserve<traits>(addr);
-            });
+            [](Address const &addr) { return get_max_reserve<traits>(addr); });
         state.subtract_from_balance(SENDER, gas_cost);
         state.subtract_from_balance(NEW_CONTRACT, to_wei(3));
         byte_string const contract_code{0x60, 0x00};

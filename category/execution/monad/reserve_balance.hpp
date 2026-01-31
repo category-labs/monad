@@ -82,8 +82,8 @@ public:
     template <Traits traits>
         requires is_monad_trait_v<traits>
     void init_from_tx(
-        Address const &sender, Transaction const &tx,
-        BlockHeader const &header, uint64_t i, ChainContext<traits> const &ctx);
+        Address const &sender, Transaction const &tx, BlockHeader const &header,
+        uint64_t i, ChainContext<traits> const &ctx);
 };
 
 template <Traits traits>

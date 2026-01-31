@@ -114,7 +114,10 @@ void State::set_reserve_balance_context(
     std::function<uint256_t(Address const &)> get_max_reserve)
 {
     rb_.set_context(
-        sender, gas_fees, use_recent_code_hash, sender_can_dip,
+        sender,
+        gas_fees,
+        use_recent_code_hash,
+        sender_can_dip,
         std::move(get_max_reserve));
 }
 

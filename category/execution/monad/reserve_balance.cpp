@@ -52,8 +52,7 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits>
 bool dipped_into_reserve(
-    Address const &, Transaction const &,
-    uint256_t const &, uint64_t const i,
+    Address const &, Transaction const &, uint256_t const &, uint64_t const i,
     ChainContext<traits> const &ctx, State &state)
 {
     MONAD_ASSERT(i < ctx.senders.size());
@@ -107,9 +106,9 @@ bool ReserveBalance::failed_contains(Address const &address) const
 bool ReserveBalance::subject_account(Address const &address)
 {
     OriginalAccountState &orig_state = state_->original_account_state(address);
-    bytes32_t const effective_code_hash =
-        use_recent_code_hash_ ? state_->get_code_hash(address)
-                              : orig_state.get_code_hash();
+    bytes32_t const effective_code_hash = use_recent_code_hash_
+                                              ? state_->get_code_hash(address)
+                                              : orig_state.get_code_hash();
     if (effective_code_hash == NULL_HASH) {
         return true;
     }
@@ -234,8 +233,8 @@ void ReserveBalance::init_from_tx(
             : state_->original_account_state(sender).get_code_hash();
     bool const sender_is_delegated = state_->is_delegated(sender_code_hash);
 
-    bool const sender_can_dip =
-        can_sender_dip_into_reserve<traits>(sender, i, sender_is_delegated, ctx);
+    bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
+        sender, i, sender_is_delegated, ctx);
     set_context(
         sender,
         uint256_t{tx.gas_limit} *
@@ -247,7 +246,10 @@ void ReserveBalance::init_from_tx(
 
 #define INSTANTIATE_INIT_FROM_TX(rev)                                          \
     template void ReserveBalance::init_from_tx<MonadTraits<rev>>(              \
-        Address const &, Transaction const &, BlockHeader const &, uint64_t,   \
+        Address const &,                                                       \
+        Transaction const &,                                                   \
+        BlockHeader const &,                                                   \
+        uint64_t,                                                              \
         ChainContext<MonadTraits<rev>> const &)
 
 INSTANTIATE_INIT_FROM_TX(MONAD_ZERO);

@@ -36,8 +36,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <deque>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -237,8 +237,8 @@ public:
 
     template <Traits traits>
     void init_reserve_balance_context(
-        Address const &sender, Transaction const &tx,
-        BlockHeader const &header, uint64_t i, ChainContext<traits> const &ctx)
+        Address const &sender, Transaction const &tx, BlockHeader const &header,
+        uint64_t i, ChainContext<traits> const &ctx)
     {
         if constexpr (is_monad_trait_v<traits>) {
             rb_.init_from_tx<traits>(sender, tx, header, i, ctx);

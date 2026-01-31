@@ -2494,7 +2494,10 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
             can_sender_dip_into_reserve<monad::MonadTraits<MONAD_NEXT>>(
                 sender, 0, false, chain_context);
         state.set_reserve_balance_context(
-            sender, gas_fee, MONAD_NEXT >= MONAD_EIGHT, sender_can_dip,
+            sender,
+            gas_fee,
+            MONAD_NEXT >= MONAD_EIGHT,
+            sender_can_dip,
             [](Address const &addr) {
                 return get_max_reserve<monad::MonadTraits<MONAD_NEXT>>(addr);
             });

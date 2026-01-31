@@ -252,12 +252,6 @@ bool revert_transaction(
     ChainContext<traits> const &ctx)
 {
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
-        if (!state.reserve_balance_tracking_enabled()) {
-            BlockHeader header{};
-            header.base_fee_per_gas = base_fee_per_gas;
-            state.init_reserve_balance_context<traits>(
-                sender, tx, header, i, ctx);
-        }
         return dipped_into_reserve<traits>(
             sender, tx, base_fee_per_gas, i, ctx, state);
     }

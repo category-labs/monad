@@ -236,6 +236,7 @@ public:
     {
         if constexpr (is_monad_trait_v<traits>) {
             rb_.init_from_tx<traits>(sender, tx, header, i, ctx);
+            rb_.update_violation(sender, current_account_state(sender));
         }
     }
 

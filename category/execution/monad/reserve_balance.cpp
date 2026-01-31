@@ -115,19 +115,13 @@ bool ReserveBalance::subject_account(Address const &address)
     return state_->is_delegated(effective_code_hash);
 }
 
-uint256_t ReserveBalance::reserve_cap(
-    Address const &address, OriginalAccountState &orig_state)
+uint256_t ReserveBalance::reserve_cap(Address const &address)
 {
-    if (!orig_state.rb_reserve_cap_cached()) {
-        MONAD_ASSERT(get_max_reserve_);
-        uint256_t const max_reserve = get_max_reserve_(address);
-        uint256_t const reserve =
-            state_->check_min_original_balance(address, max_reserve)
-                ? max_reserve
-                : state_->get_original_balance(address);
-        orig_state.set_rb_reserve_cap(reserve);
-    }
-    return orig_state.rb_reserve_cap();
+    MONAD_ASSERT(get_max_reserve_);
+    uint256_t const max_reserve = get_max_reserve_(address);
+    return state_->check_min_original_balance(address, max_reserve)
+               ? max_reserve
+               : state_->get_original_balance(address);
 }
 
 void ReserveBalance::update_violation(
@@ -138,21 +132,19 @@ void ReserveBalance::update_violation(
     }
 
     AccountState &acct_state = account_state;
-    OriginalAccountState &orig_state = state_->original_account_state(address);
-
-    if (!acct_state.rb_effective_reserve_cached()) {
+    if (!acct_state.rb_violation_threshold_cached()) {
         if (!subject_account(address)) {
-            acct_state.set_rb_effective_reserve(uint256_t{0});
+            acct_state.set_rb_violation_threshold(uint256_t{0});
             failed_.erase(address);
             acct_state.set_rb_failed(false);
             return;
         }
 
-        uint256_t const reserve = reserve_cap(address, orig_state);
+        uint256_t const reserve = reserve_cap(address);
         uint256_t effective_reserve = reserve;
         if (address == sender_) {
             if (sender_can_dip_) {
-                acct_state.set_rb_effective_reserve(uint256_t{0});
+                acct_state.set_rb_violation_threshold(uint256_t{0});
                 failed_.erase(address);
                 acct_state.set_rb_failed(false);
                 return;
@@ -162,17 +154,17 @@ void ReserveBalance::update_violation(
                 "gas fee greater than reserve for non-dipping transaction");
             effective_reserve = reserve - sender_gas_fees_;
         }
-        acct_state.set_rb_effective_reserve(effective_reserve);
+        acct_state.set_rb_violation_threshold(effective_reserve);
     }
 
-    uint256_t const effective_reserve = acct_state.rb_effective_reserve();
-    if (effective_reserve == 0) {
+    uint256_t const violation_threshold = acct_state.rb_violation_threshold();
+    if (violation_threshold == 0) {
         failed_.erase(address);
         acct_state.set_rb_failed(false);
         return;
     }
 
-    if (!state_->check_min_balance(address, effective_reserve)) {
+    if (!state_->check_min_balance(address, violation_threshold)) {
         failed_.insert(address);
         acct_state.set_rb_failed(true);
     }
@@ -206,7 +198,7 @@ void ReserveBalance::on_code_change(
     if (!use_recent_code_hash_) {
         return;
     }
-    account_state.set_rb_effective_reserve(uint256_t{0});
+    account_state.set_rb_violation_threshold(uint256_t{0});
     account_state.set_rb_failed(false);
     failed_.erase(address);
 }

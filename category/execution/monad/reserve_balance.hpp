@@ -54,7 +54,7 @@ class ReserveBalance
     std::function<uint256_t(Address const &)> get_max_reserve_{};
 
     bool subject_account(Address const &);
-    uint256_t reserve_cap(Address const &, OriginalAccountState &);
+    uint256_t reserve_cap(Address const &);
 
 public:
     explicit ReserveBalance(State *state);

@@ -56,7 +56,7 @@ public: // TODO
 
 protected:
     std::optional<Account> account_{};
-    std::optional<uint256_t> rb_effective_reserve_{};
+    std::optional<uint256_t> rb_violation_threshold_{};
     bool rb_failed_{false};
 
 private:
@@ -156,20 +156,20 @@ public:
         transient_storage_ = transient_storage_.insert({key, value});
     }
 
-    [[nodiscard]] bool rb_effective_reserve_cached() const
+    [[nodiscard]] bool rb_violation_threshold_cached() const
     {
-        return rb_effective_reserve_.has_value();
+        return rb_violation_threshold_.has_value();
     }
 
-    [[nodiscard]] uint256_t const &rb_effective_reserve() const
+    [[nodiscard]] uint256_t const &rb_violation_threshold() const
     {
-        MONAD_ASSERT(rb_effective_reserve_.has_value());
-        return *rb_effective_reserve_;
+        MONAD_ASSERT(rb_violation_threshold_.has_value());
+        return *rb_violation_threshold_;
     }
 
-    void set_rb_effective_reserve(uint256_t const &value)
+    void set_rb_violation_threshold(uint256_t const &value)
     {
-        rb_effective_reserve_ = value;
+        rb_violation_threshold_ = value;
     }
 
     [[nodiscard]] bool rb_failed() const
@@ -192,7 +192,6 @@ class OriginalAccountState final : public AccountState
 {
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
-    std::optional<uint256_t> rb_reserve_cap_{};
     bool rb_delegated_{false};
 
 public:
@@ -228,22 +227,6 @@ public:
             return account_->balance;
         }
         return 0;
-    }
-
-    [[nodiscard]] bool rb_reserve_cap_cached() const
-    {
-        return rb_reserve_cap_.has_value();
-    }
-
-    [[nodiscard]] uint256_t const &rb_reserve_cap() const
-    {
-        MONAD_ASSERT(rb_reserve_cap_.has_value());
-        return *rb_reserve_cap_;
-    }
-
-    void set_rb_reserve_cap(uint256_t const &value)
-    {
-        rb_reserve_cap_ = value;
     }
 
     [[nodiscard]] bool rb_is_delegated() const

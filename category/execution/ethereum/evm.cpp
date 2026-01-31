@@ -170,17 +170,6 @@ create(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
-    if constexpr (is_monad_trait_v<traits>) {
-        if (msg.depth == 0 && !state.reserve_balance_tracking_enabled()) {
-            state.init_reserve_balance_context<traits>(
-                Address{msg.sender},
-                host->tx_,
-                host->base_fee_per_gas_,
-                host->i_,
-                host->chain_ctx_);
-        }
-    }
-
     if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
         if constexpr (is_monad_trait_v<traits>) {
             /**
@@ -315,17 +304,6 @@ call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
-
-    if constexpr (is_monad_trait_v<traits>) {
-        if (msg.depth == 0 && !state.reserve_balance_tracking_enabled()) {
-            state.init_reserve_balance_context<traits>(
-                Address{msg.sender},
-                host->tx_,
-                host->base_fee_per_gas_,
-                host->i_,
-                host->chain_ctx_);
-        }
-    }
 
     if (auto result = pre_call<traits>(msg, state); result.has_value()) {
         call_tracer.on_exit(result.value());

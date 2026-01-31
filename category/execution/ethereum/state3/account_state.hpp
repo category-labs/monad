@@ -57,6 +57,7 @@ public: // TODO
 protected:
     std::optional<Account> account_{};
     std::optional<uint256_t> rb_effective_reserve_{};
+    bool rb_failed_{false};
 
 private:
     friend class State;
@@ -170,9 +171,19 @@ public:
     {
         rb_effective_reserve_ = value;
     }
+
+    [[nodiscard]] bool rb_failed() const
+    {
+        return rb_failed_;
+    }
+
+    void set_rb_failed(bool const value)
+    {
+        rb_failed_ = value;
+    }
 };
 
-static_assert(sizeof(AccountState) == 184);
+static_assert(sizeof(AccountState) == 192);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

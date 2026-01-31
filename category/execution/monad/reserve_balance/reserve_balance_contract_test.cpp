@@ -40,7 +40,7 @@
 
 using namespace monad;
 
-struct ReserveBalance : public ::testing::Test
+struct ReserveBalanceTest : public ::testing::Test
 {
     static constexpr auto account_a = Address{0xdeadbeef};
     static constexpr auto account_b = Address{0xcafebabe};
@@ -56,7 +56,7 @@ struct ReserveBalance : public ::testing::Test
     ReserveBalanceContract contract{state, call_tracer};
 };
 
-struct ReserveBalanceEvm : public ReserveBalance
+struct ReserveBalanceEvm : public ReserveBalanceTest
 {
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const empty_tx{};

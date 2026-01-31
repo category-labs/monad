@@ -60,7 +60,9 @@ bool dipped_into_reserve(
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
 
-    MONAD_ASSERT(state.reserve_balance_tracking_enabled());
+    if (!state.reserve_balance_tracking_enabled()) {
+        return false;
+    }
     return state.reserve_balance_has_violation();
 }
 
@@ -130,22 +132,20 @@ uint256_t ReserveBalance::reserve_cap(
 }
 
 void ReserveBalance::update_violation(
-    Address const &address, AccountState *account_state)
+    Address const &address, AccountState &account_state)
 {
     if (!tracking_enabled_) {
         return;
     }
 
-    AccountState &acct_state = account_state
-                                   ? *account_state
-                                   : state_->rb_account_state_or_original(
-                                         address);
+    AccountState &acct_state = account_state;
     OriginalAccountState &orig_state = state_->original_account_state(address);
 
     if (!acct_state.rb_effective_reserve_cached()) {
         if (!subject_account(address)) {
             acct_state.set_rb_effective_reserve(uint256_t{0});
             failed_.erase(address);
+            acct_state.set_rb_failed(false);
             return;
         }
 
@@ -155,6 +155,7 @@ void ReserveBalance::update_violation(
             if (sender_can_dip_) {
                 acct_state.set_rb_effective_reserve(uint256_t{0});
                 failed_.erase(address);
+                acct_state.set_rb_failed(false);
                 return;
             }
             MONAD_ASSERT_THROW(
@@ -168,14 +169,17 @@ void ReserveBalance::update_violation(
     uint256_t const effective_reserve = acct_state.rb_effective_reserve();
     if (effective_reserve == 0) {
         failed_.erase(address);
+        acct_state.set_rb_failed(false);
         return;
     }
 
     if (!state_->check_min_balance(address, effective_reserve)) {
         failed_.insert(address);
+        acct_state.set_rb_failed(true);
     }
     else {
         failed_.erase(address);
+        acct_state.set_rb_failed(false);
     }
 }
 
@@ -185,7 +189,12 @@ void ReserveBalance::on_pop_reject(FailedSet const &accounts)
         return;
     }
     for (auto const &dirty_address : accounts) {
-        update_violation(dirty_address, nullptr);
+        if (state_->rb_failed_flag(dirty_address)) {
+            failed_.insert(dirty_address);
+        }
+        else {
+            failed_.erase(dirty_address);
+        }
     }
 }
 
@@ -195,16 +204,64 @@ void ReserveBalance::on_code_change(
     if (!tracking_enabled_) {
         return;
     }
+    if (!use_recent_code_hash_) {
+        return;
+    }
     account_state.set_rb_effective_reserve(uint256_t{0});
+    account_state.set_rb_failed(false);
     failed_.erase(address);
 }
 
 void ReserveBalance::prime_original_state(
     OriginalAccountState &orig_state, bytes32_t const &code_hash)
 {
+    if (!tracking_enabled_) {
+        return;
+    }
     bool const delegated = state_->is_delegated(code_hash);
     orig_state.set_rb_is_delegated(delegated);
 }
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+void ReserveBalance::init_from_tx(
+    Address const &sender, Transaction const &tx, BlockHeader const &header,
+    uint64_t i, ChainContext<traits> const &ctx)
+{
+    bytes32_t const sender_code_hash =
+        (traits::monad_rev() >= MONAD_EIGHT)
+            ? state_->get_code_hash(sender)
+            : state_->original_account_state(sender).get_code_hash();
+    bool const sender_is_delegated = state_->is_delegated(sender_code_hash);
+
+    bool const sender_can_dip =
+        can_sender_dip_into_reserve<traits>(sender, i, sender_is_delegated, ctx);
+    set_context(
+        sender,
+        uint256_t{tx.gas_limit} *
+            gas_price<traits>(tx, header.base_fee_per_gas.value_or(0)),
+        traits::monad_rev() >= MONAD_EIGHT,
+        sender_can_dip,
+        [](Address const &addr) { return get_max_reserve<traits>(addr); });
+}
+
+#define INSTANTIATE_INIT_FROM_TX(rev)                                          \
+    template void ReserveBalance::init_from_tx<MonadTraits<rev>>(              \
+        Address const &, Transaction const &, BlockHeader const &, uint64_t,   \
+        ChainContext<MonadTraits<rev>> const &)
+
+INSTANTIATE_INIT_FROM_TX(MONAD_ZERO);
+INSTANTIATE_INIT_FROM_TX(MONAD_ONE);
+INSTANTIATE_INIT_FROM_TX(MONAD_TWO);
+INSTANTIATE_INIT_FROM_TX(MONAD_THREE);
+INSTANTIATE_INIT_FROM_TX(MONAD_FOUR);
+INSTANTIATE_INIT_FROM_TX(MONAD_FIVE);
+INSTANTIATE_INIT_FROM_TX(MONAD_SIX);
+INSTANTIATE_INIT_FROM_TX(MONAD_SEVEN);
+INSTANTIATE_INIT_FROM_TX(MONAD_EIGHT);
+INSTANTIATE_INIT_FROM_TX(MONAD_NEXT);
+
+#undef INSTANTIATE_INIT_FROM_TX
 
 template <Traits traits>
 bool revert_transaction(

@@ -232,7 +232,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         auth_refund = process_authorizations(state, host);
     }
 
-    if constexpr (monad::vm::evm::is_monad_trait_v<traits>) {
+    if constexpr (::monad::is_monad_trait_v<traits>) {
         state.init_reserve_balance_context<traits>(
             sender_, tx_, header_, host.i_, host.chain_ctx_);
     }

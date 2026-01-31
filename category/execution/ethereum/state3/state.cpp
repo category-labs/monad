@@ -361,7 +361,7 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
     account.value().balance += delta;
     account_state.touch();
     if (rb_.tracking_enabled() && rb_.failed_contains(address)) {
-        rb_.update_violation(address, &account_state);
+        rb_.update_violation(address, account_state);
     }
 }
 
@@ -378,7 +378,7 @@ void State::subtract_from_balance(
 
     account.value().balance -= delta;
     account_state.touch();
-    rb_.update_violation(address, &account_state);
+    rb_.update_violation(address, account_state);
 }
 
 void State::set_code_hash(Address const &address, bytes32_t const &hash)
@@ -745,13 +745,15 @@ bool State::check_min_balance(Address const &address, uint512_t const &value)
                : check_min_balance(address, static_cast<uint256_t>(value));
 }
 
-AccountState &State::rb_account_state_or_original(Address const &address)
+bool State::rb_failed_flag(Address const &address) const
 {
-    auto it = current_.find(address);
-    if (it != current_.end()) {
-        return it->second.current(version_);
+    if (auto const it = current_.find(address); it != current_.end()) {
+        return it->second.recent().rb_failed();
     }
-    return original_account_state(address);
+    if (auto const it = original_.find(address); it != original_.end()) {
+        return it->second.rb_failed();
+    }
+    return false;
 }
 
 bool State::check_account_min_balance(

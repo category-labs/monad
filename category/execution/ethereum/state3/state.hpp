@@ -37,7 +37,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <functional>
 #include <optional>
 #include <vector>
 
@@ -199,11 +198,6 @@ public:
     void create_account_no_rollback(Address const &);
 
     ////////////////////////////////////////
-
-    void set_reserve_balance_context(
-        Address const &sender, uint256_t const &gas_fees,
-        bool use_recent_code_hash, bool sender_can_dip,
-        std::function<uint256_t(Address const &)> get_max_reserve);
 
     [[nodiscard]] bool reserve_balance_tracking_enabled() const;
     [[nodiscard]] bool reserve_balance_has_violation() const;

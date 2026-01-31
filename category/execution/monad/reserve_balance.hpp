@@ -76,9 +76,6 @@ public:
 
     void on_code_change(Address const &address, AccountState &account_state);
 
-    void prime_original_state(
-        OriginalAccountState &orig_state, bytes32_t const &code_hash);
-
     template <Traits traits>
         requires is_monad_trait_v<traits>
     void init_from_tx(

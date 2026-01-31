@@ -192,7 +192,6 @@ class OriginalAccountState final : public AccountState
 {
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
-    bool rb_delegated_{false};
 
 public:
     explicit OriginalAccountState(std::optional<Account> &&account)
@@ -227,16 +226,6 @@ public:
             return account_->balance;
         }
         return 0;
-    }
-
-    [[nodiscard]] bool rb_is_delegated() const
-    {
-        return rb_delegated_;
-    }
-
-    void set_rb_is_delegated(bool const value)
-    {
-        rb_delegated_ = value;
     }
 
 private:

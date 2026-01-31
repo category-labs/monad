@@ -60,9 +60,6 @@ OriginalAccountState &State::original_account_state(Address const &address)
         // block state
         auto const account = block_state_.read_account(address);
         it = original_.try_emplace(address, account).first;
-        auto &orig_state = it->second;
-        bytes32_t const code_hash = orig_state.get_code_hash();
-        rb_.prime_original_state(orig_state, code_hash);
     }
     return it->second;
 }

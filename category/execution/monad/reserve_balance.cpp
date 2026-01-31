@@ -203,16 +203,6 @@ void ReserveBalance::on_code_change(
     failed_.erase(address);
 }
 
-void ReserveBalance::prime_original_state(
-    OriginalAccountState &orig_state, bytes32_t const &code_hash)
-{
-    if (!tracking_enabled_) {
-        return;
-    }
-    bool const delegated = state_->is_delegated(code_hash);
-    orig_state.set_rb_is_delegated(delegated);
-}
-
 template <Traits traits>
     requires is_monad_trait_v<traits>
 void ReserveBalance::init_from_tx(

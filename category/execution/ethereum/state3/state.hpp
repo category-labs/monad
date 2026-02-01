@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
@@ -42,6 +43,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockState;
+struct Transaction;
 
 class State
 {
@@ -68,6 +70,7 @@ class State
     std::deque<Set<Address>> dirty_;
 
     bool const relaxed_validation_{false};
+    ReserveBalance rb_;
 
 public:
     OriginalAccountState &original_account_state(Address const &);
@@ -195,6 +198,13 @@ public:
 
     ////////////////////////////////////////
 
+    [[nodiscard]] bool reserve_balance_tracking_enabled() const;
+    [[nodiscard]] bool reserve_balance_has_violation() const;
+
+    bool is_delegated(bytes32_t const &code_hash);
+
+    ////////////////////////////////////////
+
     immer::vector<Receipt::Log> const &logs();
 
     void store_log(Receipt::Log const &);
@@ -215,6 +225,20 @@ public:
     bool check_min_original_balance(Address const &, uint256_t const &);
     bool check_min_balance(Address const &, uint256_t const &);
     bool check_min_balance(Address const &, uint512_t const &);
+
+    bool rb_failed_flag(Address const &) const;
+
+    template <Traits traits>
+    void init_reserve_balance_context(
+        Address const &sender, Transaction const &tx,
+        std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
+        ChainContext<traits> const &ctx)
+    {
+        if constexpr (is_monad_trait_v<traits>) {
+            rb_.init_from_tx<traits>(sender, tx, base_fee_per_gas, i, ctx);
+            rb_.update_violation_status(sender, current_account_state(sender));
+        }
+    }
 
 private:
     bool check_account_min_balance(

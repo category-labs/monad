@@ -40,7 +40,7 @@
 
 using namespace monad;
 
-struct ReserveBalance : public ::testing::Test
+struct ReserveBalanceTest : public ::testing::Test
 {
     static constexpr auto account_a = Address{0xdeadbeef};
     static constexpr auto account_b = Address{0xcafebabe};
@@ -56,7 +56,7 @@ struct ReserveBalance : public ::testing::Test
     ReserveBalanceContract contract{state, call_tracer};
 };
 
-struct ReserveBalanceEvm : public ReserveBalance
+struct ReserveBalanceEvm : public ReserveBalanceTest
 {
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const empty_tx{};
@@ -101,6 +101,15 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
         .input_size = input.size(),
         .code_address = RESERVE_BALANCE_CA,
     };
+
+    if (!state.reserve_balance_tracking_enabled()) {
+        state.init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
+            Address{m.sender},
+            empty_tx,
+            h.base_fee_per_gas_,
+            h.i_,
+            h.chain_ctx_);
+    }
 
     auto const result = h.call(m);
     EXPECT_EQ(result.status_code, EVMC_REVERT);

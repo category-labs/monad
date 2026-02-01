@@ -196,6 +196,10 @@ void ReserveBalance::on_code_change(
     if (!use_recent_code_hash_) {
         return;
     }
+    // EIP7702 auth processing is assumed to be done before the call to
+    // this->init_from_tx, which turns on tracking.
+    // So we assume here that the new code is not a delegation marker.
+    // So this account is a non-EOA account => it becomes exempt.
     account_state.set_rb_violation_threshold(uint256_t{0});
     account_state.set_rb_failed(false);
     failed_.erase(address);

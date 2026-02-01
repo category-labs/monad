@@ -122,7 +122,7 @@ uint256_t ReserveBalance::reserve_cap(Address const &address)
                : state_->get_original_balance(address);
 }
 
-void ReserveBalance::update_violation(
+void ReserveBalance::update_violation_status(
     Address const &address, AccountState &account_state)
 {
     if (!tracking_enabled_) {

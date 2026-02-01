@@ -348,7 +348,7 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
     account.value().balance += delta;
     account_state.touch();
     if (rb_.tracking_enabled() && rb_.failed_contains(address)) {
-        rb_.update_violation(address, account_state);
+        rb_.update_violation_status(address, account_state);
     }
 }
 
@@ -365,7 +365,7 @@ void State::subtract_from_balance(
 
     account.value().balance -= delta;
     account_state.touch();
-    rb_.update_violation(address, account_state);
+    rb_.update_violation_status(address, account_state);
 }
 
 void State::set_code_hash(Address const &address, bytes32_t const &hash)

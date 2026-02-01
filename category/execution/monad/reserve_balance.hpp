@@ -70,7 +70,7 @@ public:
 
     bool failed_contains(Address const &address) const;
 
-    void update_violation(Address const &, AccountState &account_state);
+    void update_violation_status(Address const &, AccountState &account_state);
 
     void on_pop_reject(FailedSet const &accounts);
 

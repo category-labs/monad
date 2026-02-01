@@ -198,17 +198,14 @@ void ReserveBalance::init_from_tx(
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
     ChainContext<traits> const &ctx)
 {
+    use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
     bytes32_t const sender_code_hash =
-        (traits::monad_rev() >= MONAD_EIGHT)
+        use_recent_code_hash_
             ? state_->get_code_hash(sender)
             : state_->original_account_state(sender).get_code_hash();
-    bool const sender_is_delegated = state_->is_delegated(sender_code_hash);
-
     bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
-        sender, i, sender_is_delegated, ctx);
-
+        sender, i, state_->is_delegated(sender_code_hash), ctx);
     tracking_enabled_ = true;
-    use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
     sender_ = sender;
     sender_gas_fees_ = uint256_t{tx.gas_limit} *
                        gas_price<traits>(tx, base_fee_per_gas.value_or(0));

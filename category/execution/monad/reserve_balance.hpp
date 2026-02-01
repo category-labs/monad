@@ -59,11 +59,6 @@ class ReserveBalance
 public:
     explicit ReserveBalance(State *state);
 
-    void set_context(
-        Address const &sender, uint256_t const &gas_fees,
-        bool use_recent_code_hash, bool sender_can_dip,
-        std::function<uint256_t(Address const &)> get_max_reserve);
-
     bool tracking_enabled() const;
 
     bool has_violation() const;

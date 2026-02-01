@@ -72,20 +72,6 @@ ReserveBalance::ReserveBalance(State *state)
 {
 }
 
-void ReserveBalance::set_context(
-    Address const &sender, uint256_t const &gas_fees,
-    bool const use_recent_code_hash, bool const sender_can_dip,
-    std::function<uint256_t(Address const &)> get_max_reserve)
-{
-    tracking_enabled_ = true;
-    use_recent_code_hash_ = use_recent_code_hash;
-    sender_ = sender;
-    sender_gas_fees_ = gas_fees;
-    sender_can_dip_ = sender_can_dip;
-    get_max_reserve_ = std::move(get_max_reserve);
-    failed_.clear();
-}
-
 bool ReserveBalance::tracking_enabled() const
 {
     return tracking_enabled_;
@@ -220,13 +206,17 @@ void ReserveBalance::init_from_tx(
 
     bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
         sender, i, sender_is_delegated, ctx);
-    set_context(
-        sender,
-        uint256_t{tx.gas_limit} *
-            gas_price<traits>(tx, base_fee_per_gas.value_or(0)),
-        traits::monad_rev() >= MONAD_EIGHT,
-        sender_can_dip,
-        [](Address const &addr) { return get_max_reserve<traits>(addr); });
+
+    tracking_enabled_ = true;
+    use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
+    sender_ = sender;
+    sender_gas_fees_ = uint256_t{tx.gas_limit} *
+                       gas_price<traits>(tx, base_fee_per_gas.value_or(0));
+    sender_can_dip_ = sender_can_dip;
+    get_max_reserve_ = [](Address const &addr) {
+        return get_max_reserve<traits>(addr);
+    };
+    failed_.clear();
 }
 
 #define INSTANTIATE_INIT_FROM_TX(rev)                                          \

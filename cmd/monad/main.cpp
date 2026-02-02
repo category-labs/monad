@@ -496,13 +496,14 @@ try {
     sync_server.reset();
 
     if (!dump_snapshot.empty()) {
-        LOG_INFO("Dump db of block: {}", block_num);
         mpt::AsyncIOContext io_ctx(mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu,
             .dbname_paths = dbname_paths,
             .concurrent_read_io_limit = 128});
         mpt::Db db{io_ctx};
         TrieDb ro_db{db};
+        block_num = ro_db.get_block_number();
+        LOG_INFO("Dump db of block: {}", block_num);
         write_to_file(ro_db.to_json(), dump_snapshot, block_num);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;

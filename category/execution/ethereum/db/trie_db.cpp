@@ -384,6 +384,7 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
         TrieDb &db;
         nlohmann::json &json;
         Nibbles path{};
+        Address acct_address{};
 
         explicit Traverse(TrieDb &db, nlohmann::json &json)
             : db(db)
@@ -437,9 +438,8 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             auto acct = decode_account_db(encoded_account);
             MONAD_DEBUG_ASSERT(!acct.has_error());
 
-            auto const key = fmt::format("{}", NibblesView{path});
-
-            json[key]["address"] = fmt::format("{}", acct.value().first);
+            acct_address = acct.value().first;
+            auto const key = fmt::format("{}", acct_address);
             json[key]["balance"] =
                 fmt::format("{}", acct.value().second.balance);
             json[key]["nonce"] =
@@ -464,19 +464,10 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_DEBUG_ASSERT(!storage.has_error());
 
-            auto const acct_key = fmt::format(
-                "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
-
-            auto const key = fmt::format(
-                "{}",
-                NibblesView{path}.substr(
-                    KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
-
+            auto const acct_key = fmt::format("{}", acct_address);
+            auto const slot = storage.value().first;
+            auto const key = fmt::format("{}", slot);
             auto storage_data_json = nlohmann::json::object();
-            storage_data_json["slot"] = fmt::format(
-                "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(storage.value().first.bytes)), ""));
             storage_data_json["value"] = fmt::format(
                 "0x{:02x}",
                 fmt::join(

@@ -23,6 +23,7 @@
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/account_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
@@ -100,6 +101,7 @@ namespace
         ::monad::mpt::Db &db_;
         std::deque<mpt::Update> update_alloc_;
         std::deque<byte_string> bytes_alloc_;
+        std::deque<hash256> hash_alloc_;
         size_t buf_size_;
         std::unique_ptr<unsigned char[]> buf_;
         uint64_t block_id_;
@@ -153,6 +155,7 @@ namespace
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
+                    hash_alloc_.clear();
                 });
             load(
                 code,
@@ -187,6 +190,7 @@ namespace
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
+                    hash_alloc_.clear();
                 });
             return root_;
         }
@@ -240,9 +244,9 @@ namespace
         size_t parse_accounts(byte_string_view in, UpdateList &account_updates)
         {
             constexpr auto account_fixed_size =
-                sizeof(bytes32_t) + sizeof(uint256_t) + sizeof(uint64_t) +
+                sizeof(Address) + sizeof(uint256_t) + sizeof(uint64_t) +
                 sizeof(bytes32_t) + sizeof(uint64_t);
-            static_assert(account_fixed_size == 112);
+            static_assert(account_fixed_size == 100);
             size_t total_processed = 0;
             while (in.size() >= account_fixed_size) {
                 constexpr auto num_storage_offset =
@@ -296,15 +300,16 @@ namespace
 
         Update handle_account(byte_string_view curr)
         {
-            constexpr auto balance_offset = sizeof(bytes32_t);
+            constexpr auto balance_offset = sizeof(Address);
             constexpr auto nonce_offset = balance_offset + sizeof(uint256_t);
             constexpr auto code_hash_offset = nonce_offset + sizeof(uint64_t);
 
+            auto const key_view = curr.substr(0, sizeof(Address));
+            Address addr = to_address(key_view);
             return Update{
-                .key = curr.substr(0, sizeof(bytes32_t)),
+                .key = hash_alloc_.emplace_back(keccak256(addr)),
                 .value = bytes_alloc_.emplace_back(encode_account_db(
-                    Address{}, // TODO: Update this when binary checkpoint
-                               // includes unhashed address
+                    addr,
                     Account{
                         .balance = unaligned_load<uint256_t>(
                             curr.substr(balance_offset, sizeof(uint256_t))
@@ -324,11 +329,11 @@ namespace
         {
             UpdateList storage_updates;
             while (!in.empty()) {
+                auto const slot_key = in.substr(0, sizeof(bytes32_t));
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
+                    .key = hash_alloc_.emplace_back(keccak256(slot_key)),
                     .value = bytes_alloc_.emplace_back(encode_storage_db(
-                        bytes32_t{}, // TODO: update this when binary checkpoint
-                                     // includes unhashed storage slot
+                        to_bytes(slot_key),
                         unaligned_load<bytes32_t>(
                             in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
                                 .data()))),

@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -269,8 +270,7 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
     for (auto const &[addr, j_account] : json.items()) {
         nlohmann::json const addr_json = addr;
         auto const addr_bytes = addr_json.get<Address>();
-        auto const hashed_account = to_bytes(keccak256(addr_bytes.bytes));
-        auto const db_addr_key = fmt::format("{}", hashed_account);
+        auto const db_addr_key = fmt::format("{}", addr_bytes);
 
         ASSERT_TRUE(db.contains(db_addr_key)) << db_addr_key;
         auto const &db_account = db.at(db_addr_key);
@@ -298,8 +298,7 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
         for (auto const &[key, j_value] : j_account.at("storage").items()) {
             nlohmann::json const key_json = key;
             auto const key_bytes = key_json.get<bytes32_t>();
-            auto const db_storage_key =
-                fmt::format("{}", to_bytes(keccak256(key_bytes.bytes)));
+            auto const db_storage_key = fmt::format("{}", key_bytes);
             ASSERT_TRUE(db_storage.contains(db_storage_key)) << db_storage_key;
             auto const expected_value =
                 fmt::format("{}", j_value.get<bytes32_t>());

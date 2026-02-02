@@ -741,70 +741,56 @@ TYPED_TEST(DBTest, to_json)
     load_db(tdb, 0);
 
     auto const expected_payload = nlohmann::json::parse(R"(
-{
-  "0x03601462093b5945d1676df093446790fd31b20e7b12a2e8e5e09d068109616b": {
-    "balance": "838137708090664833",
-    "code": "0x",
-    "address": "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b",
-    "nonce": "0x1",
-    "storage": {}
-  },
-  "0x227a737497210f7cc2f464e3bfffadefa9806193ccdf873203cd91c8d3eab518": {
+    {
+  "0x0000000000000000000000000000000000000100": {
     "balance": "838137708091124174",
-    "code":
-    "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
-    "address": "0x0000000000000000000000000000000000000100",
+    "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
     "nonce": "0x0",
     "storage": {
-      "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563":
-      {
-        "slot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000000000000000000000000000": {
         "value": "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"
       }
     }
   },
-  "0x4599828688a5c37132b6fc04e35760b4753ce68708a7b7d4d97b940047557fdb": {
+  "0x0000000000000000000000000000000000000101": {
     "balance": "838137708091124174",
-    "code":
-    "0x60047fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
-    "address": "0x0000000000000000000000000000000000000101",
+    "code": "0x60047fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
     "nonce": "0x0",
     "storage": {}
   },
-  "0x4c933a84259efbd4fb5d1522b5255e6118da186a2c71ec5efaa5c203067690b7": {
+  "0x0000000000000000000000000000000000000102": {
     "balance": "838137708091124174",
-    "code":
-    "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff60010160005500",
-    "address": "0x0000000000000000000000000000000000000104",
+    "code": "0x60017fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
     "nonce": "0x0",
     "storage": {}
   },
-  "0x9d860e7bb7e6b09b87ab7406933ef2980c19d7d0192d8939cf6dc6908a03305f": {
-    "balance": "459340",
-    "code": "0x",
-    "address": "0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba",
-    "nonce": "0x0",
-    "storage": {}
-  },
-  "0xa17eacbc25cda025e81db9c5c62868822c73ce097cee2a63e33a2e41268358a1": {
-    "balance": "838137708091124174",
-    "code":
-    "0x60017fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
-    "address": "0x0000000000000000000000000000000000000102",
-    "nonce": "0x0",
-    "storage": {}
-  },
-  "0xa5cc446814c4e9060f2ecb3be03085683a83230981ca8f19d35a4438f8c2d277": {
+  "0x0000000000000000000000000000000000000103": {
     "balance": "838137708091124174",
     "code": "0x600060000160005500",
-    "address": "0x0000000000000000000000000000000000000103",
     "nonce": "0x0",
     "storage": {}
   },
-  "0xf057b39b049c7df5dfa86c4b0869abe798cef059571a5a1e5bbf5168cf6c097b": {
+  "0x0000000000000000000000000000000000000104": {
+    "balance": "838137708091124174",
+    "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff60010160005500",
+    "nonce": "0x0",
+    "storage": {}
+  },
+  "0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba": {
+    "balance": "459340",
+    "code": "0x",
+    "nonce": "0x0",
+    "storage": {}
+  },
+  "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b": {
+    "balance": "838137708090664833",
+    "code": "0x",
+    "nonce": "0x1",
+    "storage": {}
+  },
+  "0xcccccccccccccccccccccccccccccccccccccccc": {
     "balance": "838137708091124175",
     "code": "0x600060006000600060006004356101000162fffffff100",
-    "address": "0xcccccccccccccccccccccccccccccccccccccccc",
     "nonce": "0x0",
     "storage": {}
   }

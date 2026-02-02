@@ -208,7 +208,7 @@ Definition subb64 (lhs rhs : uint64) (borrow_in : bool) : result64_with_carry :=
       r_hi = static_cast<uint64_t>(prod >> uint128_t{64});
       r_lo = static_cast<uint64_t>(prod);
 *)
-Definition mulx64_spec (x y : uint64) : mulx_result :=
+Definition mulx64 (x y : uint64) : mulx_result :=
   let prod := to_Z64 x * to_Z64 y in
   {|
     hi := from_Z64 (Z.shiftr prod 64);
@@ -229,7 +229,7 @@ Definition mulx64_spec (x y : uint64) : mulx_result :=
       auto const quot = static_cast<uint64_t>(u / v);
       auto const rem = static_cast<uint64_t>(u % v);
 *)
-Definition div64_spec (u_hi u_lo v : uint64) : div64_result :=
+Definition div64 (u_hi u_lo v : uint64) : div64_result :=
   let u := Z.shiftl (to_Z64 u_hi) 64 + to_Z64 u_lo in
   let v_z := to_Z64 v in
   {|
@@ -379,34 +379,37 @@ Qed.
 (** mulx64 produces correct 128-bit product *)
 Lemma mulx64_correct : forall x y,
   0 <= x -> 0 <= y ->
-  let result := mulx64_spec x y in
+  let result := mulx64 x y in
   let prod := to_Z64 x * to_Z64 y in
   prod = Z.shiftl (to_Z64 (hi result)) 64 + to_Z64 (lo result).
 Proof.
   intros x y Hx Hy.
-  unfold mulx64_spec, from_Z64, to_Z64, normalize64, modulus64.
+  unfold mulx64. cbn [hi lo].
+  unfold from_Z64, to_Z64, normalize64, modulus64.
   set (p := x * y).
   assert (Hp: 0 <= p) by (unfold p; lia).
   rewrite Z.shiftl_mul_pow2 by lia.
   rewrite Z.shiftr_div_pow2 by lia.
   rewrite Z.mod_eq by lia.
-Admitted.
+  ring.
+Qed.
 
 (** div64 produces correct quotient and remainder *)
 Lemma div64_correct : forall u_hi u_lo v,
   0 < v ->
   div64_precondition u_hi v ->
-  let result := div64_spec u_hi u_lo v in
+  let result := div64 u_hi u_lo v in
   let u := Z.shiftl (to_Z64 u_hi) 64 + to_Z64 u_lo in
   u = to_Z64 (quot64 result) * to_Z64 v + to_Z64 (rem64 result) /\
   to_Z64 (rem64 result) < to_Z64 v.
 Proof.
-  intros u_hi u_lo v Hv_pos Hprecond. unfold div64_spec. simpl.
-  unfold from_Z64, to_Z64. simpl.
+  intros u_hi u_lo v Hv_pos Hprecond.
+  unfold div64. cbn [quot64 rem64].
+  unfold from_Z64, to_Z64.
   split.
-  (* - apply Z.div_mod. lia. *)
-  (* - apply Z.mod_pos_bound. lia. *)
-Admitted.
+  - rewrite Z.mul_comm. apply Z_div_mod_eq_full.
+  - apply Z.mod_pos_bound. lia.
+Qed.
 
 (** ** Double-Precision Shift Correctness *)
 

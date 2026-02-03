@@ -153,6 +153,9 @@ add_library(
   "runtime/uint256.hpp"
   # test
   "test_util/gtest_signal_stacktrace_printer.hpp"
+  # thread
+  "thread/thread_pool.cpp"
+  "thread/thread_pool.hpp"
   # util
   "util/stopwatch.hpp")
 
@@ -209,6 +212,7 @@ target_link_libraries(monad_core PUBLIC ankerl_hash)
 target_link_libraries(monad_core PUBLIC Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
+target_link_libraries(monad_core PUBLIC concurrentqueue)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC intx)

@@ -50,6 +50,10 @@ struct ChainContext<T>
         &senders_and_authorities;
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
+
+    // Returns an empty ChainContext for unit testing purposes.
+    // Not intended for production use.
+    static ChainContext<T> debug_empty();
 };
 
 struct MonadChain : Chain

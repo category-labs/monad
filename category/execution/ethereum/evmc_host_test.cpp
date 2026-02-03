@@ -73,32 +73,6 @@ bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
                sizeof(evmc_bytes32));
 }
 
-namespace
-{
-    static ankerl::unordered_dense::segmented_set<Address> const
-        empty_senders_and_authorities{};
-    static std::vector<Address> const empty_senders{Address{0}};
-    static std::vector<std::vector<std::optional<Address>>> const
-        empty_authorities{{}};
-
-    template <Traits traits>
-    ChainContext<traits> empty_chain_ctx()
-    {
-        if constexpr (is_monad_trait_v<traits>) {
-            return ChainContext<traits>{
-                .grandparent_senders_and_authorities =
-                    empty_senders_and_authorities,
-                .parent_senders_and_authorities = empty_senders_and_authorities,
-                .senders_and_authorities = empty_senders_and_authorities,
-                .senders = empty_senders,
-                .authorities = empty_authorities};
-        }
-        else {
-            return ChainContext<traits>{};
-        }
-    }
-}
-
 TYPED_TEST(TraitsTest, get_tx_context)
 {
     static constexpr auto from{
@@ -167,7 +141,8 @@ TYPED_TEST(TraitsTest, emit_log)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     Transaction tx{};
-    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
@@ -206,7 +181,8 @@ TYPED_TEST(TraitsTest, access_precompile)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     Transaction tx{};
-    auto const chain_ctx = empty_chain_ctx<typename TestFixture::Trait>();
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,

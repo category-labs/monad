@@ -61,6 +61,12 @@ template <typename T>
     requires is_evm_trait_v<T>
 struct ChainContext<T>
 {
+    // Returns an empty ChainContext for unit testing purposes.
+    // Not intended for production use.
+    static ChainContext<T> debug_empty()
+    {
+        return {};
+    }
 };
 
 MONAD_NAMESPACE_END

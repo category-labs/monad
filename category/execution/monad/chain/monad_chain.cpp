@@ -31,6 +31,18 @@
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
+
+namespace
+{
+    using namespace monad;
+
+    static ankerl::unordered_dense::segmented_set<Address> const
+        empty_senders_and_authorities{};
+    static std::vector<Address> const empty_senders{Address{0}};
+    static std::vector<std::vector<std::optional<Address>>> const
+        empty_authorities{{}};
+}
 
 MONAD_NAMESPACE_BEGIN
 
@@ -60,5 +72,19 @@ Result<void> MonadChain::validate_transaction(
     return validate_monad_transaction(
         monad_rev, rev, tx, sender, state, base_fee_per_gas, authorities);
 }
+
+template <typename T>
+    requires is_monad_trait_v<T>
+ChainContext<T> ChainContext<T>::debug_empty()
+{
+    return ChainContext<T>{
+        .grandparent_senders_and_authorities = empty_senders_and_authorities,
+        .parent_senders_and_authorities = empty_senders_and_authorities,
+        .senders_and_authorities = empty_senders_and_authorities,
+        .senders = empty_senders,
+        .authorities = empty_authorities};
+}
+
+EXPLICIT_MONAD_TRAITS_STRUCT(ChainContext);
 
 MONAD_NAMESPACE_END

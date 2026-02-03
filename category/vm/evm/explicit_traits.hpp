@@ -117,6 +117,18 @@
     EXPLICIT_EVM_TRAITS_CLASS(c)                                               \
     EXPLICIT_MONAD_TRAITS_CLASS(c)
 
+#define EXPLICIT_MONAD_TRAITS_STRUCT(c)                                        \
+    template struct c<::monad::MonadTraits<MONAD_ZERO>>;                       \
+    template struct c<::monad::MonadTraits<MONAD_ONE>>;                        \
+    template struct c<::monad::MonadTraits<MONAD_TWO>>;                        \
+    template struct c<::monad::MonadTraits<MONAD_THREE>>;                      \
+    template struct c<::monad::MonadTraits<MONAD_FOUR>>;                       \
+    template struct c<::monad::MonadTraits<MONAD_FIVE>>;                       \
+    template struct c<::monad::MonadTraits<MONAD_SIX>>;                        \
+    template struct c<::monad::MonadTraits<MONAD_SEVEN>>;                      \
+    template struct c<::monad::MonadTraits<MONAD_EIGHT>>;                      \
+    template struct c<::monad::MonadTraits<MONAD_NEXT>>;
+
 // Template member functions
 
 #define EXPLICIT_TRAITS_MEMBER_HEADER(f, id)                                   \

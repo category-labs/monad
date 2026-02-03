@@ -261,6 +261,10 @@ constexpr uint64_t expmod_min_gas()
 static uint256_t
 uint256_load_partial_be(byte_string_view const input, size_t const len)
 {
+    if (MONAD_UNLIKELY(input.empty())) {
+        return 0;
+    }
+
     uint256_t result{};
     MONAD_VM_ASSERT(32 >= len);
     std::memcpy(

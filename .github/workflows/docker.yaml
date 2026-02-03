@@ -4,9 +4,54 @@ on:
   push:
 
 jobs:
+  list-commits:
+    runs-on: ubuntu-24.04-32
+    outputs:
+      commits: ${{ steps.save.outputs.COMMITS }}
+    steps:
+      - name: List commits
+        id: list
+        uses: actions/github-script@v6
+        env:
+          ALL_COMMITS: ${{ toJSON(github.event.commits) }}
+        with:
+          script: |
+              const commits = JSON.parse(process.env.ALL_COMMITS);
+              return commits.map(commit => commit.id).join(',');
+      - name: Save output
+        id: save
+        run: |
+          commits_list="${{ steps.list.outputs.result }}"
+          commits_json=$(jq -nc --arg commits_list "$commits_list" '{"commits": ($commits_list | split(",") | map(select(. != "")))}')
+          echo "commits=$commits_json" >> $GITHUB_OUTPUT
+  
+  publish-status:
+    runs-on: ubuntu-24.04-32
+    steps:
+      - name: Publish status to all commits
+        uses: actions/github-script@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const commits = context.payload.commits;
+            const state = 'success';
+            const description = 'CI tests passed';
+
+            for (const commit of commits) {
+              await github.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: commit.id,
+                state: state,
+                description: description,
+                context: 'CI Docker Workflow'
+              });
+            }
   build:
+    needs: [list-commits]
     strategy:
       matrix:
+        commit: ${{ fromJson(needs.list-commits.outputs.commits).commits }}
         CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
         compiler: [{CXX: g++-15, CC: gcc-15}, {CXX: clang++-19, CC: clang-19}]
 

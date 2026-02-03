@@ -3,10 +3,62 @@ name: Docker
 on:
   push:
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
+  list-commits:
+    runs-on: ubuntu-24.04-32
+    outputs:
+      commits: ${{ steps.save.outputs.commits }}
+    steps:
+      - name: List commits
+        id: list
+        uses: actions/github-script@v6
+        env:
+          ALL_COMMITS: ${{ toJSON(github.event.commits) }}
+        with:
+          script: |
+            const commits = JSON.parse(process.env.ALL_COMMITS);
+            return JSON.stringify(commits.map(commit => commit.id));
+      - name: Save output
+        id: save
+        run: |
+          echo "commits=${{ steps.list.outputs.result }}" >> $GITHUB_OUTPUT
+
+  publish-status:
+    needs: list-commits
+    runs-on: ubuntu-24.04-32
+    steps:
+      - name: Publish status to all commits
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const commits = JSON.parse('${{ needs.list-commits.outputs.commits }}');
+            const state = 'success';
+            const description = 'CI tests passed';
+
+            for (const commit_sha of commits) {
+              if (commit_sha) {
+                await github.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha: commit_sha,
+                  state: state,
+                  description: description,
+                  context: 'CI Docker Workflow'
+                });
+              }
+            }
+
   build:
+    needs: list-commits
+    name: ${{ matrix.commit == github.sha && format('build ({0}, {1}, {2})', matrix.CMAKE_BUILD_TYPE, matrix.compiler.CXX, matrix.compiler.CC) || format('build ({0}, {1}, {2}) - {3}', matrix.CMAKE_BUILD_TYPE, matrix.compiler.CXX, matrix.compiler.CC, matrix.commit) }}
     strategy:
       matrix:
+        commit: ${{ fromJson(needs.list-commits.outputs.commits) }}
         CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
         compiler: [{CXX: g++-15, CC: gcc-15}, {CXX: clang++-19, CC: clang-19}]
 
@@ -17,9 +69,11 @@ jobs:
         run: |
            git config --global submodule.fetchJobs 8
 
-      - name: Checkout repo and submodules
+      - name: Checkout specific commit
         uses: actions/checkout@v4
         with:
+          ref: ${{ matrix.commit }}
+          fetch-depth: 1 # This is the depth of commit, not submodule
           submodules: recursive
 
       - name: Setup Docker Buildx

@@ -2283,6 +2283,7 @@ namespace monad::vm::compiler::native
             }
         }
         else {
+            AvxRegReserv const e_reserv{e};
             auto [tmp_elem, reserv] = alloc_avx_reg();
             auto const y = avx_reg_to_ymm(*tmp_elem->avx_reg());
             if (e->avx_reg()) {

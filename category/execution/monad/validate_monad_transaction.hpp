@@ -49,9 +49,10 @@ enum class MonadTransactionError
     SystemTransactionSenderIsAuthority,
 };
 
-Result<void> validate_monad_transaction(
-    monad_revision, evmc_revision, Transaction const &, Address const &sender,
-    State &, uint256_t const &base_fee_per_gas,
+template <Traits traits>
+Result<void> validate_transaction(
+    Transaction const &, Address const &sender, State &,
+    uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> authorities);
 
 MONAD_NAMESPACE_END

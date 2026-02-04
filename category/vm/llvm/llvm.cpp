@@ -16,6 +16,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/llvm/execute.hpp>
 #include <category/vm/llvm/llvm.hpp>
@@ -105,13 +106,17 @@ namespace monad::vm::llvm
         return ptr;
     }
 
+    template <Traits traits>
+    static evmc::Result copy_to_evmc_result_impl(runtime::Context &ctx)
+    {
+        auto result = ctx.copy_to_evmc_result<traits>();
+        return result;
+    }
+
     evmc::Result VM::execute_llvm(
         evmc_revision rev, evmc::bytes32 const &code_hash,
-        evmc_host_interface const *host, evmc_host_context *context,
-        evmc_message const *msg, uint8_t const *code, size_t code_size)
+        runtime::Context &ctx, uint8_t const *code, size_t code_size)
     {
-        auto ctx =
-            runtime::Context::from(host, context, msg, {code, code_size});
 
         auto const stack_ptr = stack_allocator_.allocate();
         uint256_t *evm_stack = reinterpret_cast<uint256_t *>(stack_ptr.get());
@@ -120,7 +125,9 @@ namespace monad::vm::llvm
 
         monad::vm::llvm::execute(*llvm, ctx, evm_stack);
 
-        return ctx.copy_to_evmc_result();
+        SWITCH_EVM_TRAITS(copy_to_evmc_result_impl, ctx);
+
+        std::unreachable();
     }
 
     void execute_compiled_llvm(

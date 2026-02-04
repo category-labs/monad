@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/unaligned.hpp>
@@ -32,6 +33,7 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
@@ -47,6 +49,8 @@
 #include <category/mpt/traverse_util.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <boost/outcome/try.hpp>
 
@@ -100,6 +104,7 @@ namespace
         ::monad::mpt::Db &db_;
         std::deque<mpt::Update> update_alloc_;
         std::deque<byte_string> bytes_alloc_;
+        std::deque<hash256> hash_alloc_;
         size_t buf_size_;
         std::unique_ptr<unsigned char[]> buf_;
         uint64_t block_id_;
@@ -153,6 +158,7 @@ namespace
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
+                    hash_alloc_.clear();
                 });
             load(
                 code,
@@ -187,6 +193,7 @@ namespace
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
+                    hash_alloc_.clear();
                 });
             return root_;
         }
@@ -240,9 +247,9 @@ namespace
         size_t parse_accounts(byte_string_view in, UpdateList &account_updates)
         {
             constexpr auto account_fixed_size =
-                sizeof(bytes32_t) + sizeof(uint256_t) + sizeof(uint64_t) +
+                sizeof(Address) + sizeof(uint256_t) + sizeof(uint64_t) +
                 sizeof(bytes32_t) + sizeof(uint64_t);
-            static_assert(account_fixed_size == 112);
+            static_assert(account_fixed_size == 100);
             size_t total_processed = 0;
             while (in.size() >= account_fixed_size) {
                 constexpr auto num_storage_offset =
@@ -296,15 +303,15 @@ namespace
 
         Update handle_account(byte_string_view curr)
         {
-            constexpr auto balance_offset = sizeof(bytes32_t);
+            constexpr auto balance_offset = sizeof(Address);
             constexpr auto nonce_offset = balance_offset + sizeof(uint256_t);
             constexpr auto code_hash_offset = nonce_offset + sizeof(uint64_t);
 
+            auto const addr = to_address(curr.substr(0, sizeof(Address)));
             return Update{
-                .key = curr.substr(0, sizeof(bytes32_t)),
+                .key = hash_alloc_.emplace_back(keccak256(addr)),
                 .value = bytes_alloc_.emplace_back(encode_account_db(
-                    Address{}, // TODO: Update this when binary checkpoint
-                               // includes unhashed address
+                    addr,
                     Account{
                         .balance = unaligned_load<uint256_t>(
                             curr.substr(balance_offset, sizeof(uint256_t))
@@ -322,20 +329,30 @@ namespace
 
         UpdateList handle_storage(byte_string_view in)
         {
-            UpdateList storage_updates;
+            // Group slots into pages
+            ankerl::unordered_dense::map<bytes32_t, bytes4k_t> pages;
             while (!in.empty()) {
+                auto const slot_key =
+                    unaligned_load<bytes32_t>(in.substr(0, sizeof(bytes32_t)).data());
+                auto const slot_value = unaligned_load<bytes32_t>(
+                    in.substr(sizeof(bytes32_t), sizeof(bytes32_t)).data());
+
+                auto const page_key = compute_page_key(slot_key);
+                auto const slot_offset = compute_slot_offset(slot_key);
+                pages[page_key][slot_offset] = slot_value;
+
+                in = in.substr(storage_entry_size);
+            }
+
+            // Create updates for each page
+            UpdateList storage_updates;
+            for (auto const &[page_key, page] : pages) {
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = bytes_alloc_.emplace_back(encode_storage_db(
-                        bytes32_t{}, // TODO: update this when binary checkpoint
-                                     // includes unhashed storage slot
-                        unaligned_load<bytes32_t>(
-                            in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
-                                .data()))),
+                    .key = hash_alloc_.emplace_back(keccak256(page_key)),
+                    .value = bytes_alloc_.emplace_back(encode_storage_page_db(page)),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_id_)}));
-                in = in.substr(storage_entry_size);
             }
             return storage_updates;
         }

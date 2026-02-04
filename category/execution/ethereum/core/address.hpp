@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 
 #include <evmc/evmc.hpp>
@@ -35,6 +37,15 @@ static_assert(alignof(Address) == 1);
 constexpr bool is_zero(evmc_address const &addr)
 {
     return std::ranges::all_of(addr.bytes, [](auto const b) { return b == 0; });
+}
+
+constexpr Address to_address(byte_string_view const data) noexcept
+{
+    MONAD_ASSERT(data.size() == sizeof(Address));
+
+    Address addr;
+    std::copy_n(data.begin(), data.size(), addr.bytes);
+    return addr;
 }
 
 MONAD_NAMESPACE_END

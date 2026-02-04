@@ -99,8 +99,4 @@ public:
     Result<Receipt> operator()();
 };
 
-uint64_t g_star(
-    evmc_revision, Transaction const &, uint64_t gas_remaining,
-    uint64_t gas_refund);
-
 MONAD_NAMESPACE_END

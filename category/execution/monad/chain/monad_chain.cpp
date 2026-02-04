@@ -60,19 +60,6 @@ evmc_revision MonadChain::get_revision(
     return EVMC_CANCUN;
 }
 
-Result<void> MonadChain::validate_transaction(
-    uint64_t const block_number, uint64_t const timestamp,
-    Transaction const &tx, Address const &sender, State &state,
-    uint256_t const &base_fee_per_gas,
-    std::span<std::optional<Address> const> const authorities) const
-{
-
-    monad_revision const monad_rev = get_monad_revision(timestamp);
-    evmc_revision const rev = get_revision(block_number, timestamp);
-    return validate_monad_transaction(
-        monad_rev, rev, tx, sender, state, base_fee_per_gas, authorities);
-}
-
 template <typename T>
     requires is_monad_trait_v<T>
 ChainContext<T> ChainContext<T>::debug_empty()

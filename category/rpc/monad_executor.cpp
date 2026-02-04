@@ -53,6 +53,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
@@ -323,8 +324,8 @@ namespace
             // a subroutine. Solving this issue by manually setting account to
             // be EOA for validation
             state.set_code(sender, {});
-            BOOST_OUTCOME_TRY(
-                validate_transaction<traits>(enriched_txn, sender, state));
+            BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
+                enriched_txn, sender, state));
         }
 
         auto const senders = std::vector{sender};

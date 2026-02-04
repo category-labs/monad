@@ -174,14 +174,6 @@ gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 
 EXPLICIT_TRAITS(gas_price);
 
-uint256_t gas_price(
-    evmc_revision rev, Transaction const &tx,
-    uint256_t const &base_fee_per_gas) noexcept
-{
-    SWITCH_EVM_TRAITS(gas_price, tx, base_fee_per_gas);
-    MONAD_ABORT("invalid revision");
-}
-
 // YP Eqn 72 - template version for each revision
 template <Traits traits>
 uint64_t g_star(

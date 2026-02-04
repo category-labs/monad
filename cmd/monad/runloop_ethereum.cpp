@@ -89,7 +89,6 @@ Result<void> process_ethereum_block(
     auto const block_begin = std::chrono::steady_clock::now();
 
     // Block input validation
-    BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
     BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
 
     // Sender and authority recovery

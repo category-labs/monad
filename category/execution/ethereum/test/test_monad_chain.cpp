@@ -477,14 +477,8 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
     State state{bs, Incarnation{0, 0}};
     std::vector<std::optional<Address>> const authorities = {SYSTEM_SENDER};
 
-    auto const res = validate_monad_transaction(
-        TestFixture::Trait::monad_rev(),
-        TestFixture::Trait::evm_rev(),
-        {},
-        {},
-        state,
-        0,
-        authorities);
+    auto const res = validate_transaction<typename TestFixture::Trait>(
+        {}, {}, state, 0, authorities);
     if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
         EXPECT_TRUE(res.has_value());
     }

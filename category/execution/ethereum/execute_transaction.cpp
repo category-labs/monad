@@ -301,9 +301,7 @@ template <Traits traits>
 Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 {
     auto const validate_lambda = [this, &state] {
-        auto result = chain_.validate_transaction(
-            header_.number,
-            header_.timestamp,
+        auto result = validate_transaction<traits>(
             tx_,
             sender_,
             state,
@@ -450,13 +448,5 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 }
 
 EXPLICIT_TRAITS_CLASS(ExecuteTransaction);
-
-uint64_t g_star(
-    evmc_revision const rev, Transaction const &tx,
-    uint64_t const gas_remaining, uint64_t const refund)
-{
-    SWITCH_EVM_TRAITS(g_star, tx, gas_remaining, refund);
-    MONAD_ASSERT(false);
-}
 
 MONAD_NAMESPACE_END

@@ -62,11 +62,6 @@ struct MonadChain : Chain
     get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
     virtual monad_revision get_monad_revision(uint64_t timestamp) const = 0;
-
-    virtual Result<void> validate_transaction(
-        uint64_t block_number, uint64_t timestamp, Transaction const &,
-        Address const &sender, State &, uint256_t const &base_fee_per_gas,
-        std::span<std::optional<Address> const> authorities) const override;
 };
 
 MONAD_NAMESPACE_END

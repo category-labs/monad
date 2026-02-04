@@ -22,7 +22,6 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -33,14 +32,6 @@
 #include <intx/intx.hpp>
 
 #include <boost/outcome/config.hpp>
-// TODO unstable paths between versions
-#if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
-    #include <boost/outcome/experimental/status-code/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/status-code/generic_code.hpp>
-#else
-    #include <boost/outcome/experimental/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/generic_code.hpp>
-#endif
 #include <boost/outcome/success_failure.hpp>
 
 #include <silkpre/secp256k1n.hpp>
@@ -210,108 +201,14 @@ Result<void> static_validate_transaction(
 EXPLICIT_TRAITS(static_validate_transaction);
 
 template <Traits traits>
-Result<void>
-validate_transaction(Transaction const &tx, Address const &sender, State &state)
-{
-    // YP (70)
-    uint512_t v0 = tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
-    if (tx.type == TransactionType::eip4844) {
-        v0 += tx.max_fee_per_blob_gas * get_total_blob_gas(tx);
-    }
-
-    if (MONAD_UNLIKELY(!state.account_exists(sender))) {
-        // YP (71)
-        if (tx.nonce) {
-            return TransactionError::BadNonce;
-        }
-        // YP (71)
-        if (v0) {
-            return TransactionError::InsufficientBalance;
-        }
-        return success();
-    }
-
-    // YP (71)
-    bool sender_is_eoa = state.get_code_hash(sender) == NULL_HASH;
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
-        // EIP-7702
-        auto const icode = state.get_code(sender)->intercode();
-        sender_is_eoa = sender_is_eoa ||
-                        vm::evm::is_delegated({icode->code(), icode->size()});
-    }
-
-    if (MONAD_UNLIKELY(!sender_is_eoa)) {
-        return TransactionError::SenderNotEoa;
-    }
-
-    // YP (71)
-    if (MONAD_UNLIKELY(state.get_nonce(sender) != tx.nonce)) {
-        return TransactionError::BadNonce;
-    }
-
-    // YP (71)
-    // RELAXED MERGE
-    // note this passes because `v0` includes gas which is later deducted in
-    // `irrevocable_change` before relaxed merge logic in `sender_has_balance`
-    // this is fragile as it depends on values in two locations matching
-    if (MONAD_UNLIKELY(state.get_balance(sender) < v0)) {
-        return TransactionError::InsufficientBalance;
-    }
-
-    // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement
-    // (It requires knowing the parent block)
-
-    return success();
-}
-
-EXPLICIT_TRAITS(validate_transaction);
-
 Result<void> validate_transaction(
-    evmc_revision const rev, Transaction const &tx, Address const &sender,
-    State &state)
+    Transaction const &tx, Address const &sender, State &state,
+    uint256_t const & /*base_fee_per_gas*/,
+    std::span<std::optional<Address> const> const /*authorities*/)
 {
-    SWITCH_EVM_TRAITS(validate_transaction, tx, sender, state);
-    MONAD_ABORT("invalid revision");
+    return validate_ethereum_transaction<traits>(tx, sender, state);
 }
+
+EXPLICIT_EVM_TRAITS(validate_transaction);
 
 MONAD_NAMESPACE_END
-
-BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
-
-std::initializer_list<
-    quick_status_code_from_enum<monad::TransactionError>::mapping> const &
-quick_status_code_from_enum<monad::TransactionError>::value_mappings()
-{
-    using monad::TransactionError;
-
-    static std::initializer_list<mapping> const v = {
-        {TransactionError::Success, "success", {errc::success}},
-        {TransactionError::InsufficientBalance, "insufficient balance", {}},
-        {TransactionError::IntrinsicGasGreaterThanLimit,
-         "intrinsic gas greater than limit",
-         {}},
-        {TransactionError::BadNonce, "bad nonce", {}},
-        {TransactionError::SenderNotEoa, "sender not eoa", {}},
-        {TransactionError::TypeNotSupported, "type not supported", {}},
-        {TransactionError::MaxFeeLessThanBase, "max fee less than base", {}},
-        {TransactionError::PriorityFeeGreaterThanMax,
-         "priority fee greater than max",
-         {}},
-        {TransactionError::NonceExceedsMax, "nonce exceeds max", {}},
-        {TransactionError::InitCodeLimitExceeded,
-         "init code limit exceeded",
-         {}},
-        {TransactionError::GasLimitReached, "gas limit reached", {}},
-        {TransactionError::WrongChainId, "wrong chain id", {}},
-        {TransactionError::MissingSender, "missing sender", {}},
-        {TransactionError::GasLimitOverflow, "gas limit overflow", {}},
-        {TransactionError::InvalidSignature, "invalid signature", {}},
-        {TransactionError::InvalidBlobHash, "invalid blob hash", {}},
-        {TransactionError::EmptyAuthorizationList,
-         "empty authorization list",
-         {}}};
-
-    return v;
-}
-
-BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_END

@@ -44,14 +44,7 @@ struct Chain
     virtual evmc_revision
     get_revision(uint64_t block_number, uint64_t timestamp) const = 0;
 
-    virtual Result<void> static_validate_header(BlockHeader const &) const;
-
     virtual GenesisState get_genesis_state() const = 0;
-
-    virtual Result<void> validate_transaction(
-        uint64_t block_number, uint64_t timestamp, Transaction const &,
-        Address const &sender, State &, uint256_t const &base_fee_per_gas,
-        std::span<std::optional<Address> const> authorities) const = 0;
 };
 
 template <typename T>

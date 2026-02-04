@@ -22,13 +22,11 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet_alloc.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
-#include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/vm/evm/switch_traits.hpp>
 
 #include <evmc/evmc.h>
 
@@ -88,19 +86,6 @@ evmc_revision EthereumMainnet::get_revision(
     return EVMC_FRONTIER;
 }
 
-Result<void>
-EthereumMainnet::static_validate_header(BlockHeader const &header) const
-{
-    // EIP-779
-    if (MONAD_UNLIKELY(
-            header.number >= dao::dao_block_number &&
-            header.number <= dao::dao_block_number + 9 &&
-            header.extra_data != dao::extra_data)) {
-        return BlockError::WrongDaoExtraData;
-    }
-    return success();
-}
-
 GenesisState EthereumMainnet::get_genesis_state() const
 {
     BlockHeader header;
@@ -111,15 +96,6 @@ GenesisState EthereumMainnet::get_genesis_state() const
                                        "db3db69cbdb7a38e1e50b1b82fa")
                             .value();
     return {header, ETHEREUM_MAINNET_ALLOC};
-}
-
-Result<void> EthereumMainnet::validate_transaction(
-    uint64_t const block_number, uint64_t const timestamp,
-    Transaction const &tx, Address const &sender, State &state,
-    uint256_t const &, std::span<std::optional<Address> const>) const
-{
-    evmc_revision const rev = get_revision(block_number, timestamp);
-    return ::monad::validate_transaction(rev, tx, sender, state);
 }
 
 MONAD_NAMESPACE_END

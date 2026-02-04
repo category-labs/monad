@@ -242,6 +242,8 @@ void run_revert_transaction_test(
 
     {
         State state{bs, Incarnation{1, 1}};
+        state.init_reserve_balance_context<traits>(
+            SENDER, tx, BASE_FEE_PER_GAS, 1, chain_context);
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
         state.subtract_from_balance(SENDER, value);
@@ -444,6 +446,8 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         .authorities = authorities};
 
     auto const prepare_state = [&](State &state) {
+        state.init_reserve_balance_context<traits>(
+            SENDER, tx, BASE_FEE_PER_GAS, 0, context);
         state.subtract_from_balance(SENDER, gas_cost);
         state.subtract_from_balance(NEW_CONTRACT, to_wei(3));
         byte_string const contract_code{0x60, 0x00};

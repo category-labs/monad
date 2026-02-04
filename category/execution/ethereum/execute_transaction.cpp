@@ -33,7 +33,6 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -220,6 +219,11 @@ template <Traits traits>
 evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     State &state, EvmcHost<traits> &host)
 {
+    if constexpr (::monad::is_monad_trait_v<traits>) {
+        state.init_reserve_balance_context<traits>(
+            sender_, tx_, header_.base_fee_per_gas, host.i_, host.chain_ctx_);
+    }
+
     irrevocable_change<traits>(
         state,
         tx_,

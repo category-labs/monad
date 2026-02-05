@@ -751,7 +751,7 @@ namespace monad::vm::compiler::native
         void negate_gpq256(Gpq256 const &);
 
         template <typename T, size_t N>
-        void array_or(bool, std::array<T, N> const &, size_t count);
+        void array_or(asmjit::x86::Gpq, std::array<T, N> const &, size_t count);
 
         template <typename... LiveSet>
         void test_high_bits192(StackElemRef, std::tuple<LiveSet...> const &);

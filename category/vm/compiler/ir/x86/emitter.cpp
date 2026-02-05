@@ -6149,38 +6149,23 @@ namespace monad::vm::compiler::native
     }
 
     // OR together elements of an array and set flags.
-    // The operands in `arr` must be ordered from least to most significant.
+    // The operands in `arr` must be ordered from least to most significant,
+    // with acc being initially zero or containing the least significant part.
     //
     // If `count` is provided, only the first `count` elements are checked.
     // This allows skipping elements known to be zero based on bound information.
     template <typename T, size_t N>
-    void Emitter::array_or(bool inplace, std::array<T, N> const &arr, size_t count)
+    void Emitter::array_or(x86::Gpq acc, std::array<T, N> const &arr, size_t count)
     {
         MONAD_VM_DEBUG_ASSERT(count > 0 && count <= N);
 
         if (count == 1) {
             // Single element: need explicit test to set flags
-            as_.mov(x86::rax, arr[0]);
-            as_.test(x86::rax, x86::rax);
-        }
-        else if (inplace) {
-            // If T is a register, arr[0] is mutated. Otherwise, use rax
-            if constexpr (std::is_same_v<T, x86::Gpq>) {
-                for (size_t i = 1; i < count; ++i) {
-                    as_.or_(arr[0], arr[i]);
-                }
-            }
-            else {
-                as_.mov(x86::rax, arr[0]);
-                for (size_t i = 1; i < count; ++i) {
-                    as_.or_(x86::rax, arr[i]);
-                }
-            }
+            as_.test(acc, acc);
         }
         else {
-            as_.mov(x86::rax, arr[0]);
             for (size_t i = 1; i < count; ++i) {
-                as_.or_(x86::rax, arr[i]);
+                as_.or_(acc, arr[i]);
             }
         }
     }
@@ -6193,20 +6178,26 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(!stack_.has_deferred_comparison());
         MONAD_VM_DEBUG_ASSERT(!elem->literal());
 
-        auto const bound = elem->bit_upper_bound();
+        auto const elem_bound = elem->bit_upper_bound();
 
         // If we know the value fits in 64 bits, the upper 192 bits are zero.
         // Set ZF=1 and return.
-        if (bound <= 64) {
+        if (elem_bound <= 64) {
             as_.xor_(x86::eax, x86::eax);
             return;
         }
 
         if (elem->general_reg()) {
             auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
-            size_t const count = bound > 192 ? 3 : (bound > 128 ? 2 : 1);
+            size_t const count = elem_bound > 192 ? 3 : (elem_bound > 128 ? 2 : 1);
             std::array<asmjit::x86::Gpq, 3> const &gpq_r64 = {gpq[1], gpq[2], gpq[3]};
-            array_or(!is_live(elem, live), gpq_r64, count);
+            if (is_live(elem, live)) {
+                as_.mov(x86::rax, gpq[1]);
+                array_or(x86::rax, gpq_r64, count);
+            }
+            else {
+                array_or(gpq[1], gpq_r64, count);
+            }
         }
         else if (elem->avx_reg()) {
             uint256_t const mask{
@@ -6221,9 +6212,10 @@ namespace monad::vm::compiler::native
             auto const mem256 = stack_offset_to_mem256(*elem->stack_offset());
 
             // Use bound information to skip upper bits above bound.
-            size_t const count = bound > 192 ? 3 : (bound > 128 ? 2 : 1);
+            size_t const count = elem_bound > 192 ? 3 : (elem_bound > 128 ? 2 : 1);
             std::array<x86::Mem, 3> const mems = {mem256[1], mem256[2], mem256[3]};
-            array_or(false, mems, count);
+            as_.mov(x86::rax, mem256[1]);
+            array_or(x86::rax, mems, count);
         }
     }
 

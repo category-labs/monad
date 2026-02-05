@@ -750,6 +750,9 @@ namespace monad::vm::compiler::native
         StackElemRef negate_by_sub(StackElemRef);
         void negate_gpq256(Gpq256 const &);
 
+        template <typename T, size_t N>
+        void array_or(bool, std::array<T, N> const &, size_t count);
+
         template <typename... LiveSet>
         void test_high_bits192(StackElemRef, std::tuple<LiveSet...> const &);
 

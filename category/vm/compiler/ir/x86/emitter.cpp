@@ -2441,7 +2441,7 @@ namespace monad::vm::compiler::native
         GENERAL_BIN_INSTR(sub, sbb)
         (dst, dst_loc, src, src_loc, [](size_t i, uint64_t x) {
             return i == 0 && x == 0;
-        });
+        }, result_bound);
 
         dst->set_bit_upper_bound(result_bound);
         return dst;
@@ -2493,7 +2493,7 @@ namespace monad::vm::compiler::native
         GENERAL_BIN_INSTR(add, adc)
         (dst, dst_loc, src, src_loc, [](size_t i, uint64_t x) {
             return i == 0 && x == 0;
-        });
+        }, result_bound);
 
         dst->set_bit_upper_bound(result_bound);
         return dst;
@@ -2745,9 +2745,13 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
-        // Computing result bound before `pre_dst` and `pre_src` are moved
+        // Computing bounds before `pre_dst` and `pre_src` are moved
         auto const result_bound =
             std::min(pre_dst->bit_upper_bound(), pre_src->bit_upper_bound());
+        // For and_, we must process all qwords up to max(a,b) because
+        // `and dst, 0` zeros the destination (not a no-op).
+        auto const operand_bound =
+            std::max(pre_dst->bit_upper_bound(), pre_src->bit_upper_bound());
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, left, left_loc, right, right_loc] =
             get_avx_or_general_arguments_commutative(
@@ -2756,7 +2760,7 @@ namespace monad::vm::compiler::native
         AVX_OR_GENERAL_BIN_INSTR(and_, vpand)
         (dst, left, left_loc, right, right_loc, [](size_t, uint64_t x) {
             return x == std::numeric_limits<uint64_t>::max();
-        });
+        }, operand_bound);
 
         dst->set_bit_upper_bound(result_bound);
         return dst;
@@ -2823,7 +2827,7 @@ namespace monad::vm::compiler::native
         AVX_OR_GENERAL_BIN_INSTR(or_, vpor)
         (dst, left, left_loc, right, right_loc, [](size_t, uint64_t x) {
             return x == 0;
-        });
+        }, result_bound);
 
         dst->set_bit_upper_bound(result_bound);
         return dst;
@@ -2877,7 +2881,7 @@ namespace monad::vm::compiler::native
         AVX_OR_GENERAL_BIN_INSTR(xor_, vpxor)
         (dst, left, left_loc, right, right_loc, [](size_t, uint64_t x) {
             return x == 0;
-        });
+        }, result_bound);
 
         dst->set_bit_upper_bound(result_bound);
         return dst;
@@ -2914,6 +2918,8 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
+        auto const operand_bound =
+            std::max(pre_dst->bit_upper_bound(), pre_src->bit_upper_bound());
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, left, left_loc, right, right_loc] =
             get_avx_or_general_arguments_commutative(
@@ -2922,7 +2928,7 @@ namespace monad::vm::compiler::native
         AVX_OR_GENERAL_BIN_INSTR(xor_, vpxor)
         (dst, left, left_loc, right, right_loc, [](size_t, uint64_t x) {
             return x == 0;
-        });
+        }, operand_bound);
 
         if (left_loc == LocationType::AvxReg) {
             x86::Ymm const &y = avx_reg_to_ymm(*dst->avx_reg());
@@ -2931,9 +2937,18 @@ namespace monad::vm::compiler::native
         else {
             MONAD_VM_DEBUG_ASSERT(left_loc == LocationType::GeneralReg);
             Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
-            as_.or_(gpq[0], gpq[1]);
-            as_.or_(gpq[2], gpq[3]);
-            as_.or_(gpq[0], gpq[2]);
+            if (operand_bound > 64) {
+                as_.or_(gpq[0], gpq[1]);
+            }
+            if (operand_bound > 128) {
+                as_.or_(gpq[0], gpq[2]);
+            }
+            if (operand_bound > 192) {
+                as_.or_(gpq[0], gpq[3]);
+            }
+            if (operand_bound <= 64) {
+                as_.test(gpq[0], gpq[0]);
+            }
         }
         stack_.push_deferred_comparison(Comparison::Equal);
     }
@@ -4034,13 +4049,16 @@ namespace monad::vm::compiler::native
             return;
         }
 
+        auto const max_bound = std::max(
+            pre_dst->bit_upper_bound(), pre_src->bit_upper_bound());
+
         // Empty live set, because only `pre_dst` and `pre_src` are live:
         auto [dst, dst_loc, src, src_loc] = get_general_dest_and_source(
             false, std::move(pre_dst), std::move(pre_src), {});
         GENERAL_BIN_INSTR(cmp, sbb)
         (dst, dst_loc, src, src_loc, [](size_t i, uint64_t x) {
             return i == 0 && x == 0;
-        });
+        }, max_bound);
         if (negate) {
             stack_.push_deferred_comparison(Comparison::AboveEqual);
         }
@@ -4108,7 +4126,7 @@ namespace monad::vm::compiler::native
         GENERAL_BIN_INSTR(cmp, sbb)
         (dst, dst_loc, src, src_loc, [](size_t i, uint64_t x) {
             return i == 0 && x == 0;
-        });
+        }, 256);
         if (negate) {
             stack_.push_deferred_comparison(Comparison::GreaterEqual);
         }
@@ -5766,8 +5784,11 @@ namespace monad::vm::compiler::native
     void Emitter::general_bin_instr(
         StackElemRef dst, LocationType dst_loc, StackElemRef src,
         LocationType src_loc,
-        std::function<bool(size_t, uint64_t)> is_no_operation)
+        std::function<bool(size_t, uint64_t)> is_no_operation,
+        unsigned bit_bound)
     {
+        size_t const qword_count = std::clamp((bit_bound + 63u) / 64u, 1u, 4u);
+
         auto dst_op = get_operand(dst, dst_loc);
         auto src_op = get_operand(src, src_loc);
         MONAD_VM_DEBUG_ASSERT(!std::holds_alternative<x86::Ymm>(src_op));
@@ -5789,7 +5810,7 @@ namespace monad::vm::compiler::native
             std::visit(
                 Cases{
                     [&](Gpq256 const &src_gpq) {
-                        for (size_t i = 0; i < 4; ++i) {
+                        for (size_t i = 0; i < qword_count; ++i) {
                             if (!isnop(instr_ix, i)) {
                                 (as_.*GG[instr_ix++])(dst_gpq[i], src_gpq[i]);
                             }
@@ -5798,13 +5819,13 @@ namespace monad::vm::compiler::native
                     [&](x86::Mem const &src_mem) {
                         x86::Mem temp{src_mem};
                         if (!src->literal()) {
-                            for (size_t i = 0; i < 4; ++i) {
+                            for (size_t i = 0; i < qword_count; ++i) {
                                 (as_.*GM[instr_ix++])(dst_gpq[i], temp);
                                 temp.addOffset(8);
                             }
                             return;
                         }
-                        for (size_t i = 0; i < 4; ++i) {
+                        for (size_t i = 0; i < qword_count; ++i) {
                             uint64_t const x = src->literal()->value[i];
                             if (!is_no_operation(instr_ix, x)) {
                                 if (is_uint64_bounded(x)) {
@@ -5818,7 +5839,7 @@ namespace monad::vm::compiler::native
                         }
                     },
                     [&](Imm256 const &src_imm) {
-                        for (size_t i = 0; i < 4; ++i) {
+                        for (size_t i = 0; i < qword_count; ++i) {
                             if (!isnop(instr_ix, i)) {
                                 (as_.*GI[instr_ix++])(dst_gpq[i], src_imm[i]);
                             }
@@ -5837,7 +5858,7 @@ namespace monad::vm::compiler::native
                 Cases{
                     [&](Gpq256 const &src_gpq) {
                         x86::Mem temp{dst_mem};
-                        for (size_t i = 0; i < 4; ++i) {
+                        for (size_t i = 0; i < qword_count; ++i) {
                             if (!isnop(instr_ix, i)) {
                                 (as_.*MG[instr_ix++])(temp, src_gpq[i]);
                             }
@@ -5846,7 +5867,7 @@ namespace monad::vm::compiler::native
                     },
                     [&](Imm256 const &src_imm) {
                         x86::Mem temp{dst_mem};
-                        for (size_t i = 0; i < 4; ++i) {
+                        for (size_t i = 0; i < qword_count; ++i) {
                             if (!isnop(instr_ix, i)) {
                                 (as_.*MI[instr_ix++])(temp, src_imm[i]);
                             }
@@ -5858,8 +5879,9 @@ namespace monad::vm::compiler::native
                 src_op);
         }
 
-        // This is not required to be an invariant, but it currently is:
-        MONAD_VM_DEBUG_ASSERT(instr_ix > 0);
+        // With bound optimization, instr_ix can be 0 when all qwords within
+        // bounds are no-ops (e.g., AND with all-1s mask). The destination
+        // already holds the correct value in that case.
     }
 
     template <typename... LiveSet>
@@ -6106,7 +6128,8 @@ namespace monad::vm::compiler::native
     void Emitter::avx_or_general_bin_instr(
         StackElemRef dst, StackElemRef left, LocationType left_loc,
         StackElemRef right, LocationType right_loc,
-        std::function<bool(size_t, uint64_t)> is_no_operation)
+        std::function<bool(size_t, uint64_t)> is_no_operation,
+        unsigned bit_bound)
     {
         if (left_loc == LocationType::GeneralReg) {
             general_bin_instr<GG, GM, GI, MG, MI>(
@@ -6114,7 +6137,8 @@ namespace monad::vm::compiler::native
                 left_loc,
                 std::move(right),
                 right_loc,
-                std::move(is_no_operation));
+                std::move(is_no_operation),
+                bit_bound);
             return;
         }
         auto left_op = get_operand(left, left_loc);

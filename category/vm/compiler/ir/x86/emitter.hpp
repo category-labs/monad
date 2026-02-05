@@ -983,7 +983,8 @@ namespace monad::vm::compiler::native
         void general_bin_instr(
             StackElemRef dst, LocationType dst_loc, StackElemRef src,
             LocationType src_loc,
-            std::function<bool(size_t, uint64_t)> is_no_operation);
+            std::function<bool(size_t, uint64_t)> is_no_operation,
+            unsigned bit_bound);
 
         template <typename... LiveSet>
         std::tuple<StackElemRef, StackElemRef, LocationType> get_una_arguments(
@@ -1012,7 +1013,8 @@ namespace monad::vm::compiler::native
         void avx_or_general_bin_instr(
             StackElemRef dst, StackElemRef left, LocationType left_loc,
             StackElemRef right, LocationType right_loc,
-            std::function<bool(size_t, uint64_t)> is_no_operation);
+            std::function<bool(size_t, uint64_t)> is_no_operation,
+            unsigned bit_bound);
 
         template <typename... LiveSet>
         std::tuple<

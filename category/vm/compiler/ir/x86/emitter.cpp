@@ -7258,7 +7258,7 @@ namespace monad::vm::compiler::native
             // multiplication instruction.
             stack_.pop();
             stack_.pop();
-            StackElemRef res = mul_with_bit_size(256, std::move(b_elem), a, {});
+            StackElemRef res = mul_with_bit_size(result_bound, std::move(b_elem), a, {});
             res->set_bit_upper_bound(result_bound);
             stack_.push(std::move(res));
             return true;

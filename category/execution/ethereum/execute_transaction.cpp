@@ -264,9 +264,10 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         }
     }
 
-    auto result = (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
-                      ? ::monad::create<traits>(&host, state, msg)
-                      : ::monad::call<traits>(&host, state, msg);
+    auto result =
+        (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+            ? ::monad::execute_create_message<traits>(&host, state, msg)
+            : ::monad::execute_call_message<traits>(&host, state, msg);
 
     result.gas_refund += auth_refund;
     return result;

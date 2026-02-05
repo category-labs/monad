@@ -2497,13 +2497,7 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
         state.subtract_from_balance(sender, value);
         EXPECT_TRUE(block_state.can_merge(state));
         bool const should_revert =
-            revert_transaction<monad::MonadTraits<MONAD_NEXT>>(
-                sender,
-                tx,
-                BASE_FEE_PER_GAS,
-                0, // transaction index
-                state,
-                chain_context);
+            revert_transaction<monad::MonadTraits<MONAD_NEXT>>(state);
         EXPECT_TRUE(should_revert);
     }
 

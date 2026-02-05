@@ -51,13 +51,8 @@ unsigned monad_default_max_reserve_balance_mon(enum monad_revision)
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits>
-bool dipped_into_reserve(
-    Address const &, Transaction const &, uint256_t const &, uint64_t const i,
-    ChainContext<traits> const &ctx, State &state)
+bool dipped_into_reserve(State &state)
 {
-    MONAD_ASSERT(i < ctx.senders.size());
-    MONAD_ASSERT(i < ctx.authorities.size());
-    MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
     MONAD_ASSERT(state.reserve_balance_tracking_enabled());
     return state.reserve_balance_has_violation();
 }
@@ -213,6 +208,9 @@ void ReserveBalance::init_from_tx(
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
     ChainContext<traits> const &ctx)
 {
+    MONAD_ASSERT(i < ctx.senders.size());
+    MONAD_ASSERT(i < ctx.authorities.size());
+    MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
     use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
     bytes32_t const sender_code_hash =
         use_recent_code_hash_
@@ -231,36 +229,13 @@ void ReserveBalance::init_from_tx(
     failed_.clear();
 }
 
-#define INSTANTIATE_INIT_FROM_TX(rev)                                          \
-    template void ReserveBalance::init_from_tx<MonadTraits<rev>>(              \
-        Address const &,                                                       \
-        Transaction const &,                                                   \
-        std::optional<uint256_t> const &,                                      \
-        uint64_t,                                                              \
-        ChainContext<MonadTraits<rev>> const &)
-
-INSTANTIATE_INIT_FROM_TX(MONAD_ZERO);
-INSTANTIATE_INIT_FROM_TX(MONAD_ONE);
-INSTANTIATE_INIT_FROM_TX(MONAD_TWO);
-INSTANTIATE_INIT_FROM_TX(MONAD_THREE);
-INSTANTIATE_INIT_FROM_TX(MONAD_FOUR);
-INSTANTIATE_INIT_FROM_TX(MONAD_FIVE);
-INSTANTIATE_INIT_FROM_TX(MONAD_SIX);
-INSTANTIATE_INIT_FROM_TX(MONAD_SEVEN);
-INSTANTIATE_INIT_FROM_TX(MONAD_EIGHT);
-INSTANTIATE_INIT_FROM_TX(MONAD_NEXT);
-
-#undef INSTANTIATE_INIT_FROM_TX
+EXPLICIT_MONAD_TRAITS_MEMBER(ReserveBalance::init_from_tx);
 
 template <Traits traits>
-bool revert_transaction(
-    Address const &sender, Transaction const &tx,
-    uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
-    ChainContext<traits> const &ctx)
+bool revert_transaction(State &state)
 {
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
-        return dipped_into_reserve<traits>(
-            sender, tx, base_fee_per_gas, i, ctx, state);
+        return dipped_into_reserve<traits>(state);
     }
     else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
         return false;

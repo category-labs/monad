@@ -107,6 +107,15 @@ void ReserveBalance::update_violation_status(
         return;
     }
 
+    if (account_state.is_destructed() &&
+        state_->is_current_incarnation(address)) {
+        // Contracts that selfdestruct during init never get a code hash.
+        account_state.set_rb_violation_threshold(uint256_t{0});
+        failed_.erase(address);
+        account_state.set_rb_failed(false);
+        return;
+    }
+
     if (!account_state.rb_violation_threshold_cached()) {
         if (!subject_account(address)) {
             account_state.set_rb_violation_threshold(uint256_t{0});

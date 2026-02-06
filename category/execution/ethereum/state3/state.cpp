@@ -261,6 +261,15 @@ bytes32_t State::get_code_hash(Address const &address)
     return NULL_HASH;
 }
 
+bool State::is_current_incarnation(Address const &address)
+{
+    auto const &account = recent_account(address);
+    if (MONAD_LIKELY(account.has_value())) {
+        return account.value().incarnation == incarnation_;
+    }
+    return false;
+}
+
 bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
 {
     auto const it = current_.find(address);

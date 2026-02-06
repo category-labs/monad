@@ -44,6 +44,7 @@
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/reserve_balance.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -2490,17 +2491,13 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
         BlockState block_state{tdb, vm};
         State state{
             block_state, Incarnation{header.number - 1, Incarnation::LAST_TX}};
+        state.init_reserve_balance_context<monad::MonadTraits<MONAD_NEXT>>(
+            sender, tx, header.base_fee_per_gas, 0, chain_context);
         state.subtract_from_balance(sender, gas_fee);
         state.subtract_from_balance(sender, value);
         EXPECT_TRUE(block_state.can_merge(state));
         bool const should_revert =
-            revert_transaction<monad::MonadTraits<MONAD_NEXT>>(
-                sender,
-                tx,
-                BASE_FEE_PER_GAS,
-                0, // transaction index
-                state,
-                chain_context);
+            revert_transaction<monad::MonadTraits<MONAD_NEXT>>(state);
         EXPECT_TRUE(should_revert);
     }
 

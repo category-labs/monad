@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -100,7 +101,29 @@ State::State(
     : block_state_{block_state}
     , incarnation_{incarnation}
     , relaxed_validation_{relaxed_validation}
+    , rb_{this}
 {
+}
+
+bool State::reserve_balance_tracking_enabled() const
+{
+    return rb_.tracking_enabled();
+}
+
+bool State::reserve_balance_has_violation() const
+{
+    return rb_.has_violation();
+}
+
+bool State::is_delegated(bytes32_t const &code_hash)
+{
+    if (MONAD_UNLIKELY(code_hash == NULL_HASH)) {
+        return false;
+    }
+    auto const vcode = read_code(code_hash);
+    MONAD_ASSERT(vcode);
+    auto const &icode = vcode->intercode();
+    return vm::evm::is_delegated({icode->code(), icode->size()});
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const
@@ -169,6 +192,8 @@ void State::pop_reject()
         current_.erase(removals.back());
         removals.pop_back();
     }
+
+    rb_.on_pop_reject(accounts);
 
     --version_;
 }
@@ -322,6 +347,7 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
 
     account.value().balance += delta;
     account_state.touch();
+    rb_.on_credit(address, account_state);
 }
 
 void State::subtract_from_balance(
@@ -337,13 +363,16 @@ void State::subtract_from_balance(
 
     account.value().balance -= delta;
     account_state.touch();
+    rb_.on_debit(address, account_state);
 }
 
 void State::set_code_hash(Address const &address, bytes32_t const &hash)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
     MONAD_ASSERT(account.has_value());
     account.value().code_hash = hash;
+    // NOTE: Production code must use set_code instead of set_code_hash.
 }
 
 evmc_storage_status State::set_storage(
@@ -544,7 +573,8 @@ size_t State::copy_code(
 
 void State::set_code(Address const &address, byte_string_view const code)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
         return;
     }
@@ -552,6 +582,7 @@ void State::set_code(Address const &address, byte_string_view const code)
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     account.value().code_hash = code_hash;
+    rb_.on_set_code(address, account_state, code);
 }
 
 void State::create_contract(Address const &address)
@@ -675,6 +706,17 @@ bool State::try_fix_account_mismatch(
     // it easier to write the class invariant
     original_state.set_validate_exact_balance();
     return true;
+}
+
+bool State::rb_failed_flag(Address const &address) const
+{
+    if (auto const it = current_.find(address); it != current_.end()) {
+        return it->second.recent().rb_failed();
+    }
+    if (auto const it = original_.find(address); it != original_.end()) {
+        return it->second.rb_failed();
+    }
+    return false;
 }
 
 bool State::record_balance_constraint_for_debit(

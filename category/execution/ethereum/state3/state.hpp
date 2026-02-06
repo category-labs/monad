@@ -125,6 +125,8 @@ public:
 
     bytes32_t get_code_hash(Address const &);
 
+    bool is_current_incarnation(Address const &);
+
     bytes32_t get_storage(Address const &, bytes32_t const &key);
 
     bytes32_t get_transient_storage(Address const &, bytes32_t const &key);

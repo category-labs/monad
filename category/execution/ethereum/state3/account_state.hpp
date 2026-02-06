@@ -54,9 +54,6 @@ public: // TODO
     using StorageMap = immer::map<
         bytes32_t, bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
 
-protected:
-    std::optional<Account> account_{};
-
 private:
     friend class State;
     friend class BlockState;
@@ -68,6 +65,7 @@ private:
     }
 
 public:
+    std::optional<Account> account_{};
     StorageMap storage_{};
     StorageMap transient_storage_{};
 
@@ -103,7 +101,7 @@ public:
     [[nodiscard]] bytes32_t get_code_hash() const
     {
         if (MONAD_LIKELY(account_.has_value())) {
-            return account_->code_hash;
+            return account_->get_code_hash();
         }
         return NULL_HASH;
     }

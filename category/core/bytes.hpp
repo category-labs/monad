@@ -59,6 +59,11 @@ constexpr bytes32_t to_bytes(byte_string_view const data) noexcept
     return byte;
 }
 
+constexpr byte_string to_byte_string(bytes32_t const &n) noexcept
+{
+    return {n.bytes, sizeof(n.bytes)};
+}
+
 using namespace evmc::literals;
 inline constexpr bytes32_t NULL_HASH{
     0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470_bytes32};

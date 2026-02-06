@@ -23,12 +23,14 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
 #include <category/statesync/statesync_version.h>
+#include <category/vm/evm/delegation.hpp>
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>
@@ -184,6 +186,13 @@ namespace
                 &statesync_server_recv,
                 &statesync_server_send_upsert,
                 &statesync_server_send_done);
+        }
+
+        void reinit()
+        {
+            monad_statesync_client_context_destroy(cctx);
+            monad_statesync_server_destroy(server);
+            init();
         }
 
         void run()
@@ -389,7 +398,7 @@ TEST_F(StateSyncFixture, sync_from_some)
                       {std::nullopt,
                        Account{
                            .balance = 1337,
-                           .code_hash = code_hash,
+                           .code_or_hash = code_hash,
                            .nonce = 1,
                            .incarnation = Incarnation{3, 0}}},
                   .storage =
@@ -502,6 +511,128 @@ TEST_F(StateSyncFixture, sync_from_some)
         EXPECT_FALSE(cdb.find(concat(FINALIZED_NIBBLE, nibble), hdr6.number)
                          .has_value());
     }
+}
+
+TEST_F(StateSyncFixture, sync_with_account_delegation)
+{
+    init();
+
+    mpt::RODb cro{ReadOnlyOnDiskDbConfig{.dbname_paths = {cdbname}}};
+    TrieRODb ctdb{cro};
+
+    BlockHeader hdr{.parent_hash = NULL_HASH, .number = 0};
+    commit_sequential(sctx, StateDeltas{}, Code{}, hdr);
+
+    constexpr auto DELEGATED =
+        0x001762430ea9c3a26e5749afdb70da5f78ddbb8c_address;
+    constexpr auto EOA = 0x000d836201318ec6899a67540690382780743280_address;
+
+    auto const delegated_code = evmc::from_hex("0x5F5F5FF0").value();
+    auto const delegated_code_hash = to_bytes(keccak256(delegated_code));
+    auto const delegated_icode = vm::make_shared_intercode(delegated_code);
+
+    uint8_t eoa_code[23] = {0xEF, 0x01, 0x00};
+    std::copy_n(DELEGATED.bytes, 20, &eoa_code[3]);
+    auto const eoa_icode = vm::make_shared_intercode(eoa_code);
+    auto const eoa_code_hash = to_bytes(keccak256(eoa_code));
+    byte_string const eoa_code_bytes{eoa_code, sizeof(eoa_code)};
+
+    // Delegate b using old format with inserted code
+    Account const a{
+        .balance = 1337,
+        .code_or_hash = delegated_code_hash,
+        .nonce = 1,
+        .incarnation = Incarnation{1, 0}};
+    Account b{.balance = 1000, .code_or_hash = eoa_code_hash, .nonce = 1};
+
+    hdr.parent_hash =
+        to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    hdr.state_root =
+        0x1f8baedbafa3cbbdf6353bc564dac7e0536045096b6cd9296baeb533de1fbbda_bytes32;
+    hdr.number = 1;
+    commit_sequential(
+        sctx,
+        StateDeltas{
+            {DELEGATED,
+             {.account = {std::nullopt, a},
+              .storage =
+                  {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
+                    {{},
+                     0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}},
+            {EOA, {.account = {std::nullopt, b}}}},
+        Code{
+            {delegated_code_hash, delegated_icode}, {eoa_code_hash, eoa_icode}},
+        hdr);
+    ASSERT_EQ(sctx.state_root(), hdr.state_root);
+    handle_target(cctx, hdr);
+    run();
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    ctdb.set_block_and_prefix(hdr.number);
+    auto acct_b = ctdb.read_account(EOA);
+    ASSERT_TRUE(acct_b.has_value());
+    EXPECT_FALSE(acct_b->inline_delegated_code());
+    EXPECT_EQ(acct_b->code_view(), eoa_code_hash);
+    auto const code_b = ctdb.read_code(eoa_code_hash);
+    EXPECT_TRUE(vm::evm::is_delegated(code_b->code_span())) << code_b;
+    EXPECT_FALSE(ctdb.read_account(DELEGATED)->inline_delegated_code());
+
+    reinit();
+
+    // undelegate b
+    hdr.parent_hash =
+        to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    hdr.number = 2;
+    hdr.state_root =
+        0xcf92aa7edc9ba86eabc6c161913bf51762a6e480df4ea8d45fe9cdcdb5331265_bytes32;
+    acct_b = stdb.read_account(EOA);
+    ASSERT_TRUE(acct_b.has_value());
+    ASSERT_EQ(*acct_b, b);
+    b.code_or_hash = NULL_HASH;
+    b.nonce++;
+    ASSERT_FALSE(b.has_code());
+    commit_sequential(
+        sctx, StateDeltas{{EOA, {.account = {acct_b, b}}}}, Code{}, hdr);
+    ASSERT_EQ(sctx.state_root(), hdr.state_root);
+
+    handle_target(cctx, hdr);
+    run();
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    ctdb.set_block_and_prefix(hdr.number);
+    acct_b = ctdb.read_account(EOA);
+    ASSERT_TRUE(acct_b.has_value());
+    EXPECT_FALSE(acct_b->inline_delegated_code());
+    EXPECT_FALSE(acct_b->has_code());
+    EXPECT_FALSE(ctdb.read_account(DELEGATED)->inline_delegated_code());
+
+    reinit();
+
+    // redelegate b using the new format with inline code
+    hdr.parent_hash =
+        to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    hdr.number = 3;
+    hdr.state_root =
+        0x40d8efbe3c45a76df73fbbfdfc293e752b7428f013571ccbf2cca7215cd36c57_bytes32;
+    acct_b = stdb.read_account(EOA);
+    ASSERT_TRUE(acct_b.has_value());
+    ASSERT_EQ(*acct_b, b);
+    b.code_or_hash = eoa_code_bytes;
+    b.nonce++;
+    commit_sequential(
+        sctx, StateDeltas{{EOA, {.account = {acct_b, b}}}}, Code{}, hdr);
+    ASSERT_EQ(sctx.state_root(), hdr.state_root);
+
+    handle_target(cctx, hdr);
+    run();
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    ctdb.set_block_and_prefix(hdr.number);
+    acct_b = ctdb.read_account(EOA);
+    ASSERT_TRUE(acct_b.has_value());
+    EXPECT_TRUE(acct_b->inline_delegated_code());
+    EXPECT_EQ(acct_b->code_view(), eoa_code_bytes);
+    EXPECT_FALSE(ctdb.read_account(DELEGATED)->inline_delegated_code());
 }
 
 TEST_F(StateSyncFixture, deletion_proposal)
@@ -964,7 +1095,7 @@ TEST_F(StateSyncFixture, update_contract_twice)
 
     Account const a{
         .balance = 1337,
-        .code_hash = code_hash,
+        .code_or_hash = code_hash,
         .nonce = 1,
         .incarnation = Incarnation{1, 0}};
 

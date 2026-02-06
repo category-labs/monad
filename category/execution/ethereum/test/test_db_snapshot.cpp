@@ -16,6 +16,8 @@
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
@@ -24,10 +26,11 @@
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/vm/evm/delegation.hpp>
 
-#include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <filesystem>
 
 namespace
@@ -60,6 +63,16 @@ TEST(DbBinarySnapshot, Basic)
 
     auto const src_db = tmp_dbname();
 
+    constexpr uint64_t delegated_idx = 88;
+    static constexpr Address delegated_addr{delegated_idx};
+    byte_string const delegated_code = evmc::from_hex("0x5F5F5FF0").value();
+    bytes32_t const delegated_code_hash = to_bytes(keccak256(delegated_code));
+    // Accounts with an index that is a multiple of 100 are EOAs with delegation
+    uint8_t eoa_code_data[23] = {0xEF, 0x01, 0x00};
+    std::copy_n(delegated_addr.bytes, 20, &eoa_code_data[3]);
+    byte_string const eoa_code{eoa_code_data, sizeof(eoa_code_data)};
+    ASSERT_TRUE(vm::evm::is_delegated({eoa_code_data, sizeof(eoa_code_data)}));
+
     bytes32_t root_hash;
     Code code_delta;
     BlockHeader last_header;
@@ -74,19 +87,26 @@ TEST(DbBinarySnapshot, Basic)
         StateDeltas deltas;
         for (uint64_t i = 0; i < 100'000; ++i) {
             StorageDeltas storage;
+            Account acct{.balance = i, .nonce = i};
             if ((i % 100) == 0) {
+                acct.code_or_hash = eoa_code;
                 for (uint64_t j = 0; j < 10; ++j) {
                     storage.emplace(
                         bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
                 }
             }
+            else if (i == delegated_idx) {
+                acct.code_or_hash = delegated_code_hash;
+            }
             deltas.emplace(
                 Address{i},
                 StateDelta{
-                    .account =
-                        {std::nullopt, Account{.balance = i, .nonce = i}},
-                    .storage = storage});
+                    .account = {std::nullopt, acct}, .storage = storage});
         }
+
+        code_delta.emplace(
+            to_bytes(delegated_code_hash),
+            vm::make_shared_intercode(delegated_code));
         for (uint64_t i = 0; i < 1'000; ++i) {
             std::vector<uint64_t> const bytes(100, i);
             byte_string_view const code{
@@ -144,6 +164,18 @@ TEST(DbBinarySnapshot, Basic)
         tdb.set_block_and_prefix(100);
         EXPECT_EQ(tdb.read_eth_header(), last_header);
         EXPECT_EQ(tdb.state_root(), root_hash);
+
+        for (uint64_t i = 100; i < 100'000; i += 100) {
+            auto const acct = tdb.read_account(Address{i});
+            ASSERT_TRUE(acct.has_value());
+            EXPECT_EQ(acct->code_or_hash, eoa_code);
+            EXPECT_TRUE(acct->inline_delegated_code());
+        }
+        auto const acct = tdb.read_account(delegated_addr);
+        ASSERT_TRUE(acct.has_value());
+        EXPECT_EQ(acct->code_or_hash, delegated_code_hash);
+        EXPECT_FALSE(acct->inline_delegated_code());
+
         for (auto const &[hash, icode] : code_delta) {
             auto const from_db = tdb.read_code(hash);
             ASSERT_TRUE(from_db);

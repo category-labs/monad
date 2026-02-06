@@ -47,6 +47,7 @@
 #include <category/mpt/traverse_util.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
+#include <category/vm/evm/delegation.hpp>
 
 #include <boost/outcome/try.hpp>
 
@@ -54,6 +55,8 @@
 
 #include <quill/Quill.h> // NOLINT
 #include <quill/detail/LogMacros.h>
+
+#include <ankerl/unordered_dense.h>
 
 #include <algorithm>
 #include <chrono>
@@ -104,6 +107,8 @@ namespace
         std::unique_ptr<unsigned char[]> buf_;
         uint64_t block_id_;
         Node::SharedPtr root_;
+        ankerl::unordered_dense::segmented_map<bytes32_t, byte_string>
+            delegated_code_;
 
     public:
         BinaryDbLoader(
@@ -119,6 +124,40 @@ namespace
 
         Node::SharedPtr load(std::istream &accounts, std::istream &code)
         {
+            load(
+                code,
+                [&](byte_string_view in, UpdateList &updates) {
+                    return parse_code(in, updates);
+                },
+                [&](UpdateList code_updates) {
+                    UpdateList updates;
+                    auto code_update = Update{
+                        .key = code_nibbles,
+                        .value = byte_string_view{},
+                        .incarnation = false,
+                        .next = std::move(code_updates),
+                        .version = static_cast<int64_t>(block_id_)};
+                    updates.push_front(code_update);
+
+                    UpdateList finalized_updates;
+                    Update finalized{
+                        .key = finalized_nibbles,
+                        .value = byte_string_view{},
+                        .incarnation = false,
+                        .next = std::move(updates),
+                        .version = static_cast<int64_t>(block_id_),
+                    };
+                    finalized_updates.push_front(finalized);
+                    root_ = db_.upsert(
+                        std::move(root_),
+                        std::move(finalized_updates),
+                        block_id_,
+                        false,
+                        false);
+
+                    update_alloc_.clear();
+                    bytes_alloc_.clear();
+                });
             load(
                 accounts,
                 [&](byte_string_view in, UpdateList &updates) {
@@ -150,40 +189,6 @@ namespace
                         false,
                         false);
                     db_.update_finalized_version(block_id_);
-
-                    update_alloc_.clear();
-                    bytes_alloc_.clear();
-                });
-            load(
-                code,
-                [&](byte_string_view in, UpdateList &updates) {
-                    return parse_code(in, updates);
-                },
-                [&](UpdateList code_updates) {
-                    UpdateList updates;
-                    auto code_update = Update{
-                        .key = code_nibbles,
-                        .value = byte_string_view{},
-                        .incarnation = false,
-                        .next = std::move(code_updates),
-                        .version = static_cast<int64_t>(block_id_)};
-                    updates.push_front(code_update);
-
-                    UpdateList finalized_updates;
-                    Update finalized{
-                        .key = finalized_nibbles,
-                        .value = byte_string_view{},
-                        .incarnation = false,
-                        .next = std::move(updates),
-                        .version = static_cast<int64_t>(block_id_),
-                    };
-                    finalized_updates.push_front(finalized);
-                    root_ = db_.upsert(
-                        std::move(root_),
-                        std::move(finalized_updates),
-                        block_id_,
-                        false,
-                        false);
 
                     update_alloc_.clear();
                     bytes_alloc_.clear();
@@ -281,13 +286,21 @@ namespace
                 if (in.size() < entry_size) {
                     return total_processed;
                 }
-                code_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = in.substr(hash_and_len_size, code_len),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_id_)}));
-
+                auto const code_hash = in.substr(0, sizeof(bytes32_t));
+                auto const code = in.substr(hash_and_len_size, code_len);
+                if (vm::evm::is_delegated(code)) {
+                    // skip inserting delegated code to the code section,
+                    // store it inline with the account instead
+                    delegated_code_.emplace(to_bytes(code_hash), code);
+                }
+                else {
+                    code_updates.push_front(update_alloc_.emplace_back(Update{
+                        .key = code_hash,
+                        .value = code,
+                        .incarnation = false,
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(block_id_)}));
+                }
                 total_processed += entry_size;
                 in = in.substr(entry_size);
             }
@@ -300,6 +313,9 @@ namespace
             constexpr auto nonce_offset = balance_offset + sizeof(uint256_t);
             constexpr auto code_hash_offset = nonce_offset + sizeof(uint64_t);
 
+            bytes32_t const code_hash =
+                to_bytes(curr.substr(code_hash_offset, sizeof(bytes32_t)));
+            auto const it = delegated_code_.find(code_hash);
             return Update{
                 .key = curr.substr(0, sizeof(bytes32_t)),
                 .value = bytes_alloc_.emplace_back(encode_account_db(
@@ -309,9 +325,9 @@ namespace
                         .balance = unaligned_load<uint256_t>(
                             curr.substr(balance_offset, sizeof(uint256_t))
                                 .data()),
-                        .code_hash = unaligned_load<bytes32_t>(
-                            curr.substr(code_hash_offset, sizeof(bytes32_t))
-                                .data()),
+                        .code_or_hash = (it != delegated_code_.end())
+                                            ? CodeStorage(it->second)
+                                            : CodeStorage(code_hash),
                         .nonce = unaligned_load<uint64_t>(
                             curr.substr(nonce_offset, sizeof(uint64_t))
                                 .data())})),
@@ -354,7 +370,10 @@ namespace
 
             auto encoded_account = node.value();
             auto const acct = decode_account_db_ignore_address(encoded_account);
-            MONAD_ASSERT(!acct.has_error());
+            MONAD_ASSERT_PRINTF(
+                !acct.has_error(),
+                "decode error %s",
+                acct.assume_error().message().c_str());
             MONAD_ASSERT(encoded_account.empty());
             bytes32_t storage_root = NULL_ROOT;
             if (node.number_of_children()) {
@@ -451,7 +470,11 @@ namespace
         BOOST_OUTCOME_TRY(
             acct.balance, rlp::decode_unsigned<uint256_t>(payload));
         if (!payload.empty()) {
-            BOOST_OUTCOME_TRY(acct.code_hash, rlp::decode_bytes32(payload));
+            BOOST_OUTCOME_TRY(acct.code_or_hash, rlp::decode_string(payload));
+            if (acct.inline_delegated_code()) {
+                MONAD_DEBUG_ASSERT(vm::evm::is_delegated(acct.code_view()));
+            }
+            MONAD_ASSERT(acct.has_code());
         }
         if (MONAD_UNLIKELY(!payload.empty())) {
             return rlp::DecodeError::InputTooLong;
@@ -671,8 +694,9 @@ byte_string encode_account_db(Address const &address, Account const &account)
     encoded_account += rlp::encode_unsigned(account.incarnation.to_int());
     encoded_account += rlp::encode_unsigned(account.nonce);
     encoded_account += rlp::encode_unsigned(account.balance);
-    if (account.code_hash != NULL_HASH) {
-        encoded_account += rlp::encode_bytes32(account.code_hash);
+    if (account.has_code()) {
+        MONAD_ASSERT(account.code_view() != NULL_HASH);
+        encoded_account += rlp::encode_string2(account.code_view());
     }
     return rlp::encode_list2(encoded_account);
 }

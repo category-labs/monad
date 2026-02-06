@@ -283,7 +283,7 @@ TYPED_TEST(DBTest, read_storage)
 
 TYPED_TEST(DBTest, read_code)
 {
-    Account acct_a{.balance = 1, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account acct_a{.balance = 1, .code_or_hash = A_CODE_HASH, .nonce = 1};
     TrieDb tdb{this->db};
     commit_sequential(
         tdb,
@@ -294,7 +294,7 @@ TYPED_TEST(DBTest, read_code)
     auto const a_icode = tdb.read_code(A_CODE_HASH);
     EXPECT_EQ(byte_string_view(a_icode->code(), a_icode->size()), A_CODE);
 
-    Account acct_b{.balance = 0, .code_hash = B_CODE_HASH, .nonce = 1};
+    Account acct_b{.balance = 0, .code_or_hash = B_CODE_HASH, .nonce = 1};
     commit_sequential(
         tdb,
         StateDeltas{{ADDR_B, StateDelta{.account = {std::nullopt, acct_b}}}},
@@ -358,7 +358,8 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
 {
-    Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
+    Account acct{
+        .balance = 1'000'000, .code_or_hash = bytes32_t{}, .nonce = 1337};
     TrieDb tdb{this->db};
     commit_sequential(
         tdb,
@@ -404,7 +405,8 @@ TYPED_TEST(DBTest, touch_without_modify_regression)
 
 TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 {
-    Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
+    Account acct{
+        .balance = 1'000'000, .code_or_hash = bytes32_t{}, .nonce = 1337};
     TrieDb tdb{this->db};
     commit_sequential(
         tdb,
@@ -436,7 +438,8 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 
 TYPED_TEST(DBTest, storage_deletion)
 {
-    Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
+    Account acct{
+        .balance = 1'000'000, .code_or_hash = bytes32_t{}, .nonce = 1337};
 
     TrieDb tdb{this->db};
     commit_sequential(

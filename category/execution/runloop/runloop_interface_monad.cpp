@@ -170,7 +170,7 @@ struct MonadRunloopDbCache : public Db
                 state_deltas->emplace(a, sd);
             }
             else {
-                auto const orig = read_account(a);
+                auto const orig = db_cache.read_account(a);
                 AccountDelta const ad{orig, sd.account.second};
                 StateDelta new_sd{ad, sd.storage};
                 state_deltas->emplace(a, new_sd);

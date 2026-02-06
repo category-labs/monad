@@ -365,6 +365,8 @@ public:
             elapsed; // set upon completion if capture_io_latencies enabled
     };
 
+    unsigned num_eagain{0};
+
     struct rbtree_node_traits
     {
         using node = rbtree_t_;
@@ -616,7 +618,7 @@ public:
     }
 };
 
-static_assert(sizeof(erased_connected_operation) == 64);
+static_assert(sizeof(erased_connected_operation) == 72);
 static_assert(alignof(erased_connected_operation) == 8);
 
 MONAD_ASYNC_NAMESPACE_END

@@ -488,10 +488,6 @@ struct OnDiskWithWorkerThreadImpl
                     did_nothing = false;
                 }
                 async_io.io.poll_nonblocking(1);
-                boost::this_fiber::yield();
-                if (boost::fibers::has_ready_fibers()) {
-                    did_nothing = false;
-                }
                 if (did_nothing && async_io.io.io_in_flight() > 0) {
                     did_nothing = false;
                 }
@@ -649,10 +645,6 @@ struct OnDiskWithWorkerThreadImpl
                     did_nothing = false;
                 }
                 async_io.io.poll_nonblocking(1);
-                boost::this_fiber::yield();
-                if (boost::fibers::has_ready_fibers()) {
-                    did_nothing = false;
-                }
                 if (did_nothing && async_io.io.io_in_flight() > 0) {
                     did_nothing = false;
                 }

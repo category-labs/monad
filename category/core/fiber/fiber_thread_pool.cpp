@@ -87,10 +87,12 @@ FiberThreadPool::FiberThreadPool(
                 }
             }};
 
-        bootstrap_fiber.detach();
+        {
+            std::unique_lock<boost::fibers::mutex> lock{mutex_};
+            cv_.wait(lock, [this] { return done_; });
+        }
 
-        std::unique_lock<boost::fibers::mutex> lock{mutex_};
-        cv_.wait(lock, [this] { return done_; });
+        bootstrap_fiber.join();
     });
     threads_.push_back(std::move(thread));
 }

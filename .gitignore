@@ -162,3 +162,6 @@ tmux-fuzzer-log/
 
 # optional third-party dependencies
 third_party/evmone/
+
+# Claude Code
+.claude/

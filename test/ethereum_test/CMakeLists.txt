@@ -25,6 +25,16 @@ ExternalProject_Add(
   INSTALL_COMMAND ""
   LOG_DOWNLOAD ON)
 
+ExternalProject_Add(
+  MonadSpecTestFixtures
+  URL "https://github.com/monad-developers/execution-spec-tests/releases/download/monad@v1.0.0/fixtures_monad.tar.gz"
+  URL_HASH "SHA256=94b68a8cb1eb66f03a60156ac1cc73191fc084257cf8673fb259992e44c7ed0d"
+  PREFIX ${CMAKE_BINARY_DIR}
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND ""
+  LOG_DOWNLOAD ON)
+
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE GTest::gtest monad-test-utils)
 target_sources(
@@ -66,6 +76,29 @@ function(add_ethereum_test)
            COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
                    --record-exec-events --gtest_filter=${FILTER})
 endfunction()
+
+function(add_monad_test)
+  set(ONE_VALUE_ARGS FORK)
+  cmake_parse_arguments(ADD_MONAD_TEST "" "${ONE_VALUE_ARGS}" "" ${ARGN})
+
+  set(EXCLUSION_FILE
+      "${CMAKE_CURRENT_SOURCE_DIR}/exclude/${ADD_MONAD_TEST_FORK}.cmake")
+  include(${EXCLUSION_FILE})
+  set(TESTS_EXCLUDED "${ADD_MONAD_TEST_FORK}_excluded_tests")
+
+  list(JOIN ${TESTS_EXCLUDED} ":" TESTS_EXCLUDED)
+  set(FILTER "-:${TESTS_EXCLUDED}")
+
+  add_test(NAME ${ADD_MONAD_TEST_FORK}_monad_ethereum_test
+           COMMAND monad-ethereum-test --fork ${ADD_MONAD_TEST_FORK}
+                  # TODO: not ready yet
+                  #  --record-exec-events
+                   --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadSpecTestFixtures/blockchain_tests
+                   --gtest_filter=${FILTER})
+endfunction()
+
+add_monad_test(FORK MONAD_EIGHT)
+add_monad_test(FORK MONAD_NINE)
 
 add_ethereum_test(FORK homestead)
 add_ethereum_test(FORK eip158)

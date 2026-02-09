@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 CTEST_PARALLEL_LEVEL=${CTEST_PARALLEL_LEVEL:-$(nproc)} \
-  ctest --output-on-failure --timeout 500 --test-dir build
+  ctest --output-on-failure --timeout 1500 --test-dir build
 
 # test_disas pins x86-64 codegen and is only stable under clang* + RelWithDebInfo
 # (goldens captured with Clang 19; regenerate on a compiler upgrade). On the

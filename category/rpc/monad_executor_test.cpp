@@ -48,6 +48,8 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/rpc/monad_executor.h>
+#include <category/rpc/overrides.h>
+#include <category/rpc/overrides.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -4122,4 +4124,138 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
     }
 
     monad_executor_destroy(executor);
+}
+
+TEST(BlockOverride, create_destroy)
+{
+    auto *bo = monad_block_override_create();
+    ASSERT_NE(bo, nullptr);
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, set_all_fields)
+{
+    auto *bo = monad_block_override_create();
+
+    set_block_override_number(bo, 42);
+    set_block_override_time(bo, 1700000000);
+    set_block_override_gas_limit(bo, 30'000'000);
+
+    uint8_t addr_bytes[20] = {};
+    addr_bytes[19] = 0xAB;
+    set_block_override_fee_recipient(bo, addr_bytes, sizeof(addr_bytes));
+
+    uint8_t randao_bytes[32] = {};
+    randao_bytes[0] = 0xFF;
+    randao_bytes[31] = 0x01;
+    set_block_override_prev_randao(bo, randao_bytes, sizeof(randao_bytes));
+
+    uint8_t fee_bytes[32] = {};
+    fee_bytes[31] = 9;
+    set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes));
+
+    uint8_t blob_fee_bytes[32] = {};
+    blob_fee_bytes[31] = 1;
+    set_block_override_blob_base_fee(
+        bo, blob_fee_bytes, sizeof(blob_fee_bytes));
+
+    EXPECT_EQ(bo->number, 42u);
+    EXPECT_EQ(bo->time, 1700000000u);
+    EXPECT_EQ(bo->gas_limit, 30'000'000u);
+
+    ASSERT_TRUE(bo->fee_recipient.has_value());
+    EXPECT_EQ(
+        *bo->fee_recipient, 0x00000000000000000000000000000000000000ab_address);
+
+    ASSERT_TRUE(bo->prev_randao.has_value());
+    EXPECT_EQ(
+        *bo->prev_randao,
+        0xff00000000000000000000000000000000000000000000000000000000000001_bytes32);
+
+    ASSERT_TRUE(bo->base_fee_per_gas.has_value());
+    EXPECT_EQ(*bo->base_fee_per_gas, uint256_t{9});
+
+    ASSERT_TRUE(bo->blob_base_fee.has_value());
+    EXPECT_EQ(*bo->blob_base_fee, uint256_t{1});
+
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, partial_fields)
+{
+    auto *bo = monad_block_override_create();
+
+    set_block_override_number(bo, 100);
+
+    uint8_t fee_bytes[32] = {};
+    fee_bytes[31] = 7;
+    set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes));
+
+    EXPECT_EQ(bo->number, 100u);
+    EXPECT_EQ(bo->base_fee_per_gas, uint256_t{7});
+
+    EXPECT_EQ(bo->time, std::nullopt);
+    EXPECT_EQ(bo->gas_limit, std::nullopt);
+    EXPECT_EQ(bo->fee_recipient, std::nullopt);
+    EXPECT_EQ(bo->prev_randao, std::nullopt);
+    EXPECT_EQ(bo->blob_base_fee, std::nullopt);
+
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, uint256_big_endian)
+{
+    auto *bo = monad_block_override_create();
+
+    // base_fee = 0x09 in big-endian 32-byte representation
+    uint8_t base_fee[32] = {};
+    base_fee[31] = 0x09;
+    set_block_override_base_fee_per_gas(bo, base_fee, sizeof(base_fee));
+    ASSERT_TRUE(bo->base_fee_per_gas.has_value());
+    EXPECT_EQ(*bo->base_fee_per_gas, uint256_t{9});
+
+    // blob_base_fee = 0x0100 = 256 in big-endian
+    uint8_t blob_fee[32] = {};
+    blob_fee[30] = 0x01;
+    blob_fee[31] = 0x00;
+    set_block_override_blob_base_fee(bo, blob_fee, sizeof(blob_fee));
+    ASSERT_TRUE(bo->blob_base_fee.has_value());
+    EXPECT_EQ(*bo->blob_base_fee, uint256_t{256});
+
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, address_20_bytes)
+{
+    auto *bo = monad_block_override_create();
+
+    uint8_t addr[20];
+    for (int i = 0; i < 20; ++i) {
+        addr[i] = static_cast<uint8_t>(i + 1);
+    }
+    set_block_override_fee_recipient(bo, addr, sizeof(addr));
+
+    ASSERT_TRUE(bo->fee_recipient.has_value());
+    EXPECT_EQ(
+        *bo->fee_recipient, 0x0102030405060708090a0b0c0d0e0f1011121314_address);
+
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, prev_randao_32_bytes)
+{
+    auto *bo = monad_block_override_create();
+
+    uint8_t randao[32];
+    for (int i = 0; i < 32; ++i) {
+        randao[i] = static_cast<uint8_t>(0xFF - i);
+    }
+    set_block_override_prev_randao(bo, randao, sizeof(randao));
+
+    ASSERT_TRUE(bo->prev_randao.has_value());
+    EXPECT_EQ(
+        *bo->prev_randao,
+        0xfffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0_bytes32);
+
+    monad_block_override_destroy(bo);
 }

@@ -23,7 +23,8 @@ add_library(
   monad_rpc
   OBJECT
   # rpc
-  "monad_executor.cpp" "monad_executor.h")
+  "monad_executor.cpp" "monad_executor.h"
+  "overrides.cpp" "overrides.h" "overrides.hpp")
 
 target_include_directories(monad_rpc PUBLIC ${CATEGORY_MAIN_DIR})
 

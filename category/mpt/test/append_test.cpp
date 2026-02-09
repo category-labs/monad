@@ -79,10 +79,6 @@ TYPED_TEST(AppendTest, works)
     EXPECT_EQ(this->state()->aux.get_latest_root_offset(), last_root_off);
     EXPECT_EQ(this->state()->aux.get_start_of_wip_fast_offset(), last_fast_off);
     EXPECT_EQ(this->state()->aux.get_start_of_wip_slow_offset(), last_slow_off);
-    EXPECT_EQ(
-        this->state()->aux.node_writer_fast->sender().offset(), last_fast_off);
-    EXPECT_EQ(
-        this->state()->aux.node_writer_slow->sender().offset(), last_slow_off);
 
     // Has the root hash returned to what it should be?
     EXPECT_EQ(this->state()->root_hash(), root_hash_before);

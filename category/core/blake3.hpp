@@ -37,4 +37,10 @@ inline hash256 blake3(byte_string_view const bytes)
     return hash;
 }
 
+template <size_t N>
+inline hash256 blake3(unsigned char const (&a)[N])
+{
+    return blake3(to_byte_string_view(a));
+}
+
 MONAD_NAMESPACE_END

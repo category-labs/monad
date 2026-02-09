@@ -16,7 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
+#include <category/core/blake3.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -76,7 +76,7 @@ public:
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+                mpt::NibblesView{blake3({addr.bytes, sizeof(addr.bytes)})}),
             block_number_);
         if (!acc_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
@@ -101,8 +101,8 @@ public:
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+                mpt::NibblesView{blake3({addr.bytes, sizeof(addr.bytes)})},
+                mpt::NibblesView{blake3({page_key.bytes, sizeof(page_key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
@@ -124,8 +124,8 @@ public:
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+                mpt::NibblesView{blake3({addr.bytes, sizeof(addr.bytes)})},
+                mpt::NibblesView{blake3({page_key.bytes, sizeof(page_key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(

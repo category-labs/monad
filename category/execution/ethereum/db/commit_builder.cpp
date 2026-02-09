@@ -16,7 +16,7 @@
 #include "commit_builder.hpp"
 
 #include <category/core/assert.h>
-#include <category/core/keccak.hpp>
+#include <category/core/blake3.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
@@ -85,7 +85,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                     auto const &page = page_delta.second;
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
-                            .key = hash_alloc_.emplace_back(keccak256(
+                            .key = hash_alloc_.emplace_back(blake3(
                                 {page_key.bytes, sizeof(page_key.bytes)})),
                             .value =
                                 page.is_empty()
@@ -108,7 +108,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 delta.account.first->incarnation != account->incarnation;
             account_updates.push_front(update_alloc_.emplace_back(Update{
                 .key = hash_alloc_.emplace_back(
-                    keccak256({addr.bytes, sizeof(addr.bytes)})),
+                    blake3({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
                 .incarnation = incarnation,
                 .next = std::move(storage_updates),
@@ -206,7 +206,7 @@ CommitBuilder &CommitBuilder::add_transactions(
             .version = static_cast<int64_t>(block_number_)}));
 
         txn_hash_updates.push_front(update_alloc_.emplace_back(Update{
-            .key = NibblesView{hash_alloc_.emplace_back(keccak256(encoded_tx))},
+            .key = NibblesView{hash_alloc_.emplace_back(blake3(encoded_tx))},
             .value = bytes_alloc_.emplace_back(
                 rlp::encode_list2(encoded_block_number, rlp_index)),
             .incarnation = false,
@@ -318,7 +318,7 @@ CommitBuilder &CommitBuilder::add_block_header(BlockHeader const &header)
 
     UpdateList block_hash_nested_updates;
     block_hash_nested_updates.push_front(update_alloc_.emplace_back(Update{
-        .key = hash_alloc_.emplace_back(keccak256(eth_header_rlp)),
+        .key = hash_alloc_.emplace_back(blake3(eth_header_rlp)),
         .value = bytes_alloc_.emplace_back(rlp::encode_unsigned(header.number)),
         .incarnation = false,
         .next = UpdateList{},

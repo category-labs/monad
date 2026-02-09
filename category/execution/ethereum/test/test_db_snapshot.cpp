@@ -15,6 +15,8 @@
 
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
+#include <category/core/blake3.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>

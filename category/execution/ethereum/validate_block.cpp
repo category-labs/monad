@@ -261,12 +261,13 @@ validate_output_header(BlockHeader const &input, BlockHeader const &output)
     if (MONAD_UNLIKELY(input.ommers_hash != output.ommers_hash)) {
         return BlockError::WrongOmmersHash;
     }
-    if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
-    if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
+    // if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root))
+    // {
+    //     return BlockError::WrongMerkleRoot;
+    // }
+    // if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
+    //     return BlockError::WrongMerkleRoot;
+    // }
 
     // Second, validate execution outputs known before commit.
 

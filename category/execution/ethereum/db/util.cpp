@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/blake3.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
@@ -309,7 +310,7 @@ namespace
 
             auto const addr = to_address(curr.substr(0, sizeof(Address)));
             return Update{
-                .key = hash_alloc_.emplace_back(keccak256(addr)),
+                .key = hash_alloc_.emplace_back(blake3({addr.bytes, sizeof(addr.bytes)})),
                 .value = bytes_alloc_.emplace_back(encode_account_db(
                     addr,
                     Account{
@@ -348,7 +349,7 @@ namespace
             UpdateList storage_updates;
             for (auto const &[page_key, page] : pages) {
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = hash_alloc_.emplace_back(keccak256(page_key)),
+                    .key = hash_alloc_.emplace_back(blake3({page_key.bytes, sizeof(page_key.bytes)})),
                     .value = bytes_alloc_.emplace_back(encode_storage_page_db(page_key, page)),
                     .incarnation = false,
                     .next = UpdateList{},
@@ -433,8 +434,10 @@ namespace
         }
     };
 
-    using AccountMerkleCompute = MerkleComputeBase<AccountLeafProcessor>;
-    using StorageMerkleCompute = MerkleComputeBase<StorageLeafProcessor>;
+    using AccountMerkleCompute =
+        MerkleComputeBase<Blake3Hasher, AccountLeafProcessor>;
+    using StorageMerkleCompute =
+        MerkleComputeBase<Blake3Hasher, StorageLeafProcessor>;
 
     struct StorageRootMerkleCompute : public StorageMerkleCompute
     {
@@ -442,7 +445,7 @@ namespace
         compute(unsigned char *const buffer, Node const &node) override
         {
             MONAD_ASSERT(node.has_value());
-            return encode_two_pieces(
+            return encode_two_pieces<Blake3Hasher>(
                 buffer,
                 node.path_nibble_view(),
                 AccountLeafProcessor::process(node),
@@ -492,13 +495,16 @@ mpt::Compute &MachineBase::get_compute() const
     static StorageMerkleCompute storage_compute;
     static StorageRootMerkleCompute storage_root_compute;
 
-    static VarLenMerkleCompute generic_merkle_compute;
-    static RootVarLenMerkleCompute generic_root_merkle_compute;
+    static VarLenMerkleCompute<Blake3Hasher> generic_merkle_compute;
+    static RootVarLenMerkleCompute<Blake3Hasher> generic_root_merkle_compute;
 
-    static VarLenMerkleCompute<ReceiptLeafProcessor> receipt_compute;
-    static RootVarLenMerkleCompute<ReceiptLeafProcessor> receipt_root_compute;
-    static VarLenMerkleCompute<TransactionLeafProcessor> transaction_compute;
-    static RootVarLenMerkleCompute<TransactionLeafProcessor>
+    static VarLenMerkleCompute<Blake3Hasher, ReceiptLeafProcessor>
+        receipt_compute;
+    static RootVarLenMerkleCompute<Blake3Hasher, ReceiptLeafProcessor>
+        receipt_root_compute;
+    static VarLenMerkleCompute<Blake3Hasher, TransactionLeafProcessor>
+        transaction_compute;
+    static RootVarLenMerkleCompute<Blake3Hasher, TransactionLeafProcessor>
         transaction_root_compute;
 
     auto const prefix_length = prefix_len();

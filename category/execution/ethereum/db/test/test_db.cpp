@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/blake3.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -155,8 +156,8 @@ namespace
             mpt::concat(
                 FINALIZED_NIBBLE,
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+                mpt::NibblesView{blake3({addr.bytes, sizeof(addr.bytes)})},
+                mpt::NibblesView{blake3({page_key.bytes, sizeof(page_key.bytes)})}),
             block_number);
         if (!find_res.has_value()) {
             return {};
@@ -393,7 +394,7 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
 
     EXPECT_EQ(
         tdb.state_root(),
-        0xf8aaf5be195172f71ebdf257ea675ff61986524266d6205933db16c39e9ec89d_bytes32);
+        0x55b668a77589d46a0b32b99d7100c205efa015fc9ac3094077060c90e921b5c8_bytes32);
 }
 
 TYPED_TEST(DBTest, touch_without_modify_regression)
@@ -473,7 +474,7 @@ TYPED_TEST(DBTest, storage_deletion)
 
     EXPECT_EQ(
         tdb.state_root(),
-        0xaecda70591d64963a2547362320bba1eb8d4a21599859e3508df7e33826b0ed9_bytes32);
+        0x86fe65e493bb75004f12891e5590d580b24d9caf9ce3bb9229a7b033a9ec3b97_bytes32);
 }
 
 TYPED_TEST(DBTest, multiple_slots_same_page)
@@ -594,11 +595,11 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     Transaction t3 = t2;
     t3.nonce = 11;
     tx_hash.emplace_back(
-        keccak256(rlp::encode_transaction(transactions.emplace_back(t1))));
+        blake3(rlp::encode_transaction(transactions.emplace_back(t1))));
     tx_hash.emplace_back(
-        keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
+        blake3(rlp::encode_transaction(transactions.emplace_back(t2))));
     tx_hash.emplace_back(
-        keccak256(rlp::encode_transaction(transactions.emplace_back(t3))));
+        blake3(rlp::encode_transaction(transactions.emplace_back(t3))));
     ASSERT_EQ(receipts.size(), transactions.size());
 
     std::vector<std::vector<CallFrame>> call_frames;
@@ -616,10 +617,10 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
-        0x7ea023138ee7d80db04eeec9cf436dc35806b00cc5fe8e5f611fb7cf1b35b177_bytes32);
+        0xa8be9fa6d4487c559adc26bb75ba3702715866cbda08b579688514f233607591_bytes32);
     EXPECT_EQ(
         tdb.transactions_root(),
-        0xfb4fce4331706502d2893deafe470d4cc97b4895294f725ccb768615a5510801_bytes32);
+        0xeaf58062e195ec42f7f24144f4626847f392ea0f2144010de47225707dc981ba_bytes32);
 
     auto verify_read_and_parse_receipt = [&](uint64_t const block_id) {
         size_t log_i = 0;
@@ -690,9 +691,9 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     t1.nonce = 12;
     t2.nonce = 13;
     tx_hash.emplace_back(
-        keccak256(rlp::encode_transaction(transactions.emplace_back(t1))));
+        blake3(rlp::encode_transaction(transactions.emplace_back(t1))));
     tx_hash.emplace_back(
-        keccak256(rlp::encode_transaction(transactions.emplace_back(t2))));
+        blake3(rlp::encode_transaction(transactions.emplace_back(t2))));
     ASSERT_EQ(receipts.size(), transactions.size());
     call_frames.resize(receipts.size());
     senders = recover_senders(transactions);
@@ -707,10 +708,10 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         transactions);
     EXPECT_EQ(
         tdb.receipts_root(),
-        0x61f9b4707b28771a63c1ac6e220b2aa4e441dd74985be385eaf3cd7021c551e9_bytes32);
+        0x8a61271ae82c2436425d1fef431c112db873bf7d59fd33d9a20dd0fdb391fa30_bytes32);
     EXPECT_EQ(
         tdb.transactions_root(),
-        0x0800aa3014aaa87b4439510e1206a7ef2568337477f0ef0c444cbc2f691e52cf_bytes32);
+        0xf01b2479c42cff850013322c2e18657d68dd1500d04cf1e8e67ea4432bfb65db_bytes32);
     verify_tx_hash(tx_hash[0], first_block, 0);
     verify_tx_hash(tx_hash[1], first_block, 1);
     verify_tx_hash(tx_hash[2], first_block, 2);
@@ -815,51 +816,14 @@ TYPED_TEST(DBTest, to_json)
 
     auto const expected_payload = nlohmann::json::parse(R"(
 {
-  "0x03601462093b5945d1676df093446790fd31b20e7b12a2e8e5e09d068109616b": {
-    "balance": "838137708090664833",
-    "code": "0x",
-    "address": "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b",
-    "nonce": "0x1",
-    "storage": {}
-  },
-  "0x227a737497210f7cc2f464e3bfffadefa9806193ccdf873203cd91c8d3eab518": {
-    "balance": "838137708091124174",
-    "code":
-    "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
-    "address": "0x0000000000000000000000000000000000000100",
-    "nonce": "0x0",
-    "storage": {
-      "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563:00":
-      {
-        "slot_offset": 0,
-        "value": "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"
-      }
-    }
-  },
-  "0x4599828688a5c37132b6fc04e35760b4753ce68708a7b7d4d97b940047557fdb": {
-    "balance": "838137708091124174",
-    "code":
-    "0x60047fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
-    "address": "0x0000000000000000000000000000000000000101",
-    "nonce": "0x0",
-    "storage": {}
-  },
-  "0x4c933a84259efbd4fb5d1522b5255e6118da186a2c71ec5efaa5c203067690b7": {
-    "balance": "838137708091124174",
-    "code":
-    "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff60010160005500",
-    "address": "0x0000000000000000000000000000000000000104",
-    "nonce": "0x0",
-    "storage": {}
-  },
-  "0x9d860e7bb7e6b09b87ab7406933ef2980c19d7d0192d8939cf6dc6908a03305f": {
+  "0x0e5a45c7216b58139e80d0968680166e790d01fc58c61ff631473e7e972f4753": {
     "balance": "459340",
     "code": "0x",
     "address": "0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba",
     "nonce": "0x0",
     "storage": {}
   },
-  "0xa17eacbc25cda025e81db9c5c62868822c73ce097cee2a63e33a2e41268358a1": {
+  "0x0f126aa204bf79d3e64444fc83fc8f0468fed225a9a26a24e2a972122b3262cb": {
     "balance": "838137708091124174",
     "code":
     "0x60017fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
@@ -867,17 +831,54 @@ TYPED_TEST(DBTest, to_json)
     "nonce": "0x0",
     "storage": {}
   },
-  "0xa5cc446814c4e9060f2ecb3be03085683a83230981ca8f19d35a4438f8c2d277": {
-    "balance": "838137708091124174",
-    "code": "0x600060000160005500",
-    "address": "0x0000000000000000000000000000000000000103",
-    "nonce": "0x0",
-    "storage": {}
-  },
-  "0xf057b39b049c7df5dfa86c4b0869abe798cef059571a5a1e5bbf5168cf6c097b": {
+  "0x42f9b2a8e6ca215088c906772d186fc7b9e9421d10b3e8a51bfbf589ba20d7d3": {
     "balance": "838137708091124175",
     "code": "0x600060006000600060006004356101000162fffffff100",
     "address": "0xcccccccccccccccccccccccccccccccccccccccc",
+    "nonce": "0x0",
+    "storage": {}
+  },
+  "0x77136ee7e5c26821a0c51cc50ea3b061008d6d226468467aef7b38edae6fbb00": {
+    "balance": "838137708090664833",
+    "code": "0x",
+    "address": "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b",
+    "nonce": "0x1",
+    "storage": {}
+  },
+  "0x9f09c42d9b9f6ed03e094f291e8396d4d6bab1d23b6344044f97127379d369c6": {
+    "balance": "838137708091124174",
+    "code":
+    "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff60010160005500",
+    "address": "0x0000000000000000000000000000000000000104",
+    "nonce": "0x0",
+    "storage": {}
+  },
+  "0xb56268dd1c72fe938902fb980707f552ec2274124c0e9fe914bfb33ac7b0f1bc": {
+    "balance": "838137708091124174",
+    "code":
+    "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
+    "address": "0x0000000000000000000000000000000000000100",
+    "nonce": "0x0",
+    "storage": {
+      "0x2ada83c1819a5372dae1238fc1ded123c8104fdaa15862aaee69428a1820fcda:00":
+      {
+        "slot_offset": 0,
+        "value": "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"
+      }
+    }
+  },
+  "0xbb12f215eb9a24a4bdf8adef2a9c06b68290d2a93cbdc73e2f56ec26c21686f4": {
+    "balance": "838137708091124174",
+    "code":
+    "0x60047fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
+    "address": "0x0000000000000000000000000000000000000101",
+    "nonce": "0x0",
+    "storage": {}
+  },
+  "0xbe062aa4fa9792046a862628ab5decb714c4c742a335fb0f973c0b76b478ec5b": {
+    "balance": "838137708091124174",
+    "code": "0x600060000160005500",
+    "address": "0x0000000000000000000000000000000000000103",
     "nonce": "0x0",
     "storage": {}
   }

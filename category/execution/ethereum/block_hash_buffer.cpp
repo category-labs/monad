@@ -16,7 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
+#include <category/core/blake3.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -176,7 +176,7 @@ bool init_block_hash_buffer_from_triedb(
                 header.error().message().c_str());
             return false;
         }
-        auto const h = to_bytes(keccak256(header.value().node->value()));
+        auto const h = to_bytes(blake3(header.value().node->value()));
         block_hash_buffer.set(b, h);
     }
 

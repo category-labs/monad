@@ -17,8 +17,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/blake3.hpp>
 #include <category/core/keccak.h>
-#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
@@ -105,7 +105,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
         concat(
             prefix_,
             STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+            NibblesView{blake3({addr.bytes, sizeof(addr.bytes)})}),
         block_number_);
     if (res.has_error()) {
         stats_account_no_value();
@@ -130,8 +130,8 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
         concat(
             prefix_,
             STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+            NibblesView{blake3({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{blake3({page_key.bytes, sizeof(page_key.bytes)})}),
         block_number_);
     if (res.has_error()) {
         stats_storage_no_value();
@@ -154,8 +154,8 @@ storage_page_t TrieDb::read_storage_page(
         concat(
             prefix_,
             STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+            NibblesView{blake3({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{blake3({page_key.bytes, sizeof(page_key.bytes)})}),
         block_number_);
     if (res.has_error()) {
         return storage_page_t{};

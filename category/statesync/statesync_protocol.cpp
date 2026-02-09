@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/blake3.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/unaligned.hpp>
@@ -187,7 +188,7 @@ bool StatesyncProtocolV1::handle_upsert(
     byte_string_view raw{val, size};
     if (type == SYNC_TYPE_UPSERT_CODE) {
         // code is immutable once inserted - no deletions
-        ctx->code.emplace(std::bit_cast<bytes32_t>(keccak256(raw)), raw);
+        ctx->code.emplace(std::bit_cast<bytes32_t>(blake3(raw)), raw);
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT) {
         auto const res = decode_account_db(raw);

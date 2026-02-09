@@ -58,7 +58,7 @@ constexpr bytes32_t abi_encode_uint(I const &i)
 
 constexpr bytes32_t abi_encode_bool(bool const b)
 {
-    u64_be as_int = b ? 1 : 0;
+    u64_be const as_int = b ? 1 : 0;
     return abi_encode_uint(as_int);
 }
 
@@ -159,7 +159,8 @@ public:
     byte_string encode_final()
     {
         for (auto const [unresolved, tail_cumsum] : unresolved_offsets_) {
-            u256_be offset = static_cast<uint256_t>(head_.size()) + tail_cumsum;
+            u256_be const offset =
+                static_cast<uint256_t>(head_.size()) + tail_cumsum;
             uint8_t *const p = &head_[unresolved];
             bytes32_t encoded = abi_encode_uint(offset);
             std::memcpy(p, encoded.bytes, sizeof(bytes32_t));

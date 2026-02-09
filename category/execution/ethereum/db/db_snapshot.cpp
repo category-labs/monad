@@ -21,6 +21,7 @@
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -40,6 +41,7 @@ struct monad_db_snapshot_loader
     std::array<monad::byte_string, 256> eth_headers;
     std::deque<monad::hash256> hash_alloc;
     std::deque<monad::mpt::Update> update_alloc;
+    std::deque<monad::byte_string> bytes_alloc;
     std::array<
         ankerl::unordered_dense::segmented_map<uint64_t, monad::mpt::Update>,
         MONAD_SNAPSHOT_SHARDS>
@@ -121,6 +123,7 @@ void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
         false);
     loader->hash_alloc.clear();
     loader->update_alloc.clear();
+    loader->bytes_alloc.clear();
     for (auto &map : loader->account_offset_to_update) {
         map.clear();
     }
@@ -288,27 +291,32 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         }
         else {
             MONAD_ASSERT(nibble == STATE_NIBBLE);
-            monad_snapshot_type type;
             if (path.length() == HASH_SIZE) {
-                type = MONAD_SNAPSHOT_ACCOUNT;
                 account_offset = account_bytes_written.at(shard);
                 account_bytes_written.at(shard) += val.size();
+                MONAD_ASSERT(
+                    write(shard, MONAD_SNAPSHOT_ACCOUNT, val.data(), val.size(), user) ==
+                    val.size());
             }
             else {
                 MONAD_ASSERT(path.length() == (HASH_SIZE * 2));
-                type = MONAD_SNAPSHOT_STORAGE;
-                MONAD_ASSERT(
-                    write(
-                        shard,
-                        MONAD_SNAPSHOT_STORAGE,
-                        reinterpret_cast<unsigned char const *>(
-                            &account_offset),
-                        sizeof(account_offset),
-                        user) == sizeof(account_offset));
+                byte_string_view val_copy = val;
+                auto const res = decode_storage_page_db_with_key(val_copy);
+                MONAD_ASSERT(res.has_value());
+                auto const &[page_key, page] = res.value();
+                for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
+                    if (page[i] == bytes32_t{}) continue;
+                    bytes32_t const slot_key = compute_slot_key(page_key, i);
+                    auto const encoded = encode_storage_db(slot_key, page[i]);
+                    MONAD_ASSERT(
+                        write(shard, MONAD_SNAPSHOT_STORAGE,
+                            reinterpret_cast<unsigned char const *>(&account_offset),
+                            sizeof(account_offset), user) == sizeof(account_offset));
+                    MONAD_ASSERT(
+                        write(shard, MONAD_SNAPSHOT_STORAGE, encoded.data(),
+                            encoded.size(), user) == encoded.size());
+                }
             }
-
-            MONAD_ASSERT(
-                write(shard, type, val.data(), val.size(), user) == val.size());
         }
 
         return true;
@@ -476,6 +484,12 @@ void monad_db_snapshot_loader_load(
         byte_string_view storage_view{storage, storage_len};
         auto &account_offset_to_update =
             loader->account_offset_to_update.at(shard);
+
+        ankerl::unordered_dense::segmented_map<
+            uint64_t,
+            ankerl::unordered_dense::map<bytes32_t, storage_page_t>>
+            account_pages;
+
         while (!storage_view.empty()) {
             uint64_t const account_offset =
                 unaligned_load<uint64_t>(storage_view.data());
@@ -487,18 +501,32 @@ void monad_db_snapshot_loader_load(
             byte_string_view const before{storage_view};
             auto const res = decode_storage_db_raw(storage_view);
             MONAD_ASSERT(res.has_value());
-            auto &update = account_offset_to_update.at(account_offset);
             uint64_t const consumed = before.size() - storage_view.size();
-            update.next.push_front(loader->update_alloc.emplace_back(Update{
-                .key = loader->hash_alloc.emplace_back(
-                    keccak256(to_bytes(res.value().first))),
-                .value = before.substr(0, consumed),
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(loader->block)}));
-            loader->bytes_read += consumed;
-            if (loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
-                monad_db_snapshot_loader_flush(loader);
+            loader->bytes_read += sizeof(account_offset) + consumed;
+
+            bytes32_t const slot_key = to_bytes(res.value().first);
+            bytes32_t const slot_value = to_bytes(res.value().second);
+            bytes32_t const page_key = compute_page_key(slot_key);
+            uint8_t const slot_offset = compute_slot_offset(slot_key);
+            account_pages[account_offset][page_key][slot_offset] = slot_value;
+        }
+
+        for (auto const &[account_offset, page_map] : account_pages) {
+            auto &update = account_offset_to_update.at(account_offset);
+            for (auto const &[page_key, page] : page_map) {
+                update.next.push_front(
+                    loader->update_alloc.emplace_back(Update{
+                        .key = loader->hash_alloc.emplace_back(
+                            keccak256(page_key)),
+                        .value = loader->bytes_alloc.emplace_back(
+                            encode_storage_page_db(page_key, page)),
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(loader->block)}));
             }
+        }
+
+        if (loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
+            monad_db_snapshot_loader_flush(loader);
         }
     }
 

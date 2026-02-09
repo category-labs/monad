@@ -31,7 +31,7 @@ using bytes32_t = ::evmc::bytes32;
 
 struct storage_page_t
 {
-    static constexpr size_t SLOTS = 16;
+    static constexpr size_t SLOTS = 64;
     static constexpr size_t SLOT_SIZE = 32;
     static constexpr size_t SLOT_BITS = std::bit_width(SLOTS) - 1;
     static constexpr uint8_t SLOT_MASK = SLOTS - 1;
@@ -79,6 +79,13 @@ inline bytes32_t compute_page_key(bytes32_t const &storage_key)
 inline uint8_t compute_slot_offset(bytes32_t const &storage_key)
 {
     return storage_key.bytes[31] & storage_page_t::SLOT_MASK;
+}
+
+inline bytes32_t compute_slot_key(bytes32_t const &page_key, uint8_t slot_offset)
+{
+    uint256_t const page_int = intx::be::load<uint256_t>(page_key);
+    uint256_t const slot_int = (page_int << storage_page_t::SLOT_BITS) | slot_offset;
+    return intx::be::store<bytes32_t>(slot_int);
 }
 
 MONAD_NAMESPACE_END

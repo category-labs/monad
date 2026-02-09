@@ -393,7 +393,7 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
 
     EXPECT_EQ(
         tdb.state_root(),
-        0x57cd484168b573e4754d1945894eef2594f254e449c77729d9089cf9c69ee7aa_bytes32);
+        0xf8aaf5be195172f71ebdf257ea675ff61986524266d6205933db16c39e9ec89d_bytes32);
 }
 
 TYPED_TEST(DBTest, touch_without_modify_regression)
@@ -473,7 +473,7 @@ TYPED_TEST(DBTest, storage_deletion)
 
     EXPECT_EQ(
         tdb.state_root(),
-        0x817b04a73016af777d5c7bc2c2f7b73f33ceb6355422df7348373843b61d4b46_bytes32);
+        0xaecda70591d64963a2547362320bba1eb8d4a21599859e3508df7e33826b0ed9_bytes32);
 }
 
 TYPED_TEST(DBTest, multiple_slots_same_page)

@@ -349,7 +349,7 @@ namespace
             for (auto const &[page_key, page] : pages) {
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = hash_alloc_.emplace_back(keccak256(page_key)),
-                    .value = bytes_alloc_.emplace_back(encode_storage_page_db(page)),
+                    .value = bytes_alloc_.emplace_back(encode_storage_page_db(page_key, page)),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_id_)}));
@@ -754,9 +754,10 @@ Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
     return res.second;
 };
 
-byte_string encode_storage_page_db(storage_page_t const &page)
+byte_string encode_storage_page_db(bytes32_t const &page_key, storage_page_t const &page)
 {
     byte_string encoded;
+    encoded += rlp::encode_bytes32_compact(page_key);
     for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
         encoded += rlp::encode_bytes32_compact(page[i]);
     }
@@ -766,6 +767,8 @@ byte_string encode_storage_page_db(storage_page_t const &page)
 Result<storage_page_t> decode_storage_page_db(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(auto const page_key_skip, rlp::decode_string(payload));
+    (void)page_key_skip;
     storage_page_t page{};
     for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
         BOOST_OUTCOME_TRY(auto const slot_view, rlp::decode_string(payload));
@@ -775,6 +778,22 @@ Result<storage_page_t> decode_storage_page_db(byte_string_view &enc)
         return rlp::DecodeError::InputTooLong;
     }
     return page;
+}
+
+Result<std::pair<bytes32_t, storage_page_t>> decode_storage_page_db_with_key(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(auto const page_key_view, rlp::decode_string(payload));
+    bytes32_t const page_key = to_bytes(page_key_view);
+    storage_page_t page{};
+    for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
+        BOOST_OUTCOME_TRY(auto const slot_view, rlp::decode_string(payload));
+        page[i] = to_bytes(slot_view);
+    }
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    return std::pair{page_key, page};
 }
 
 void write_to_file(

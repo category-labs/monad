@@ -92,7 +92,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                                     ? std::nullopt
                                     : std::make_optional<byte_string_view>(
                                           bytes_alloc_.emplace_back(
-                                              encode_storage_page_db(page))),
+                                              encode_storage_page_db(page_key, page))),
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));

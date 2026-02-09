@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
@@ -60,7 +61,6 @@ TEST(DbBinarySnapshot, Basic)
 
     auto const src_db = tmp_dbname();
 
-    bytes32_t root_hash;
     Code code_delta;
     BlockHeader last_header;
     {
@@ -73,11 +73,17 @@ TEST(DbBinarySnapshot, Basic)
         db.update_finalized_version(99);
         StateDeltas deltas;
         for (uint64_t i = 0; i < 100'000; ++i) {
-            StorageDeltas storage;
+            PageStorageDeltas storage;
             if ((i % 100) == 0) {
                 for (uint64_t j = 0; j < 10; ++j) {
-                    storage.emplace(
-                        bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
+                    bytes32_t const slot_key{j};
+                    bytes32_t const page_key = compute_page_key(slot_key);
+                    uint8_t const slot_offset = compute_slot_offset(slot_key);
+                    PageStorageDeltas::accessor acc;
+                    if (!storage.find(acc, page_key)) {
+                        storage.emplace(acc, page_key, PageStorageDelta{});
+                    }
+                    acc->second.second[slot_offset] = bytes32_t{j};
                 }
             }
             deltas.emplace(
@@ -85,7 +91,7 @@ TEST(DbBinarySnapshot, Basic)
                 StateDelta{
                     .account =
                         {std::nullopt, Account{.balance = i, .nonce = i}},
-                    .storage = storage});
+                    .storage = std::move(storage)});
         }
         for (uint64_t i = 0; i < 1'000; ++i) {
             std::vector<uint64_t> const bytes(100, i);
@@ -102,7 +108,6 @@ TEST(DbBinarySnapshot, Basic)
             deltas, code_delta, bytes32_t{100}, BlockHeader{.number = 100});
         tdb.finalize(100, bytes32_t{100});
         last_header = tdb.read_eth_header();
-        root_hash = tdb.state_root();
     }
 
     auto const dest_db = tmp_dbname();
@@ -143,7 +148,15 @@ TEST(DbBinarySnapshot, Basic)
         }
         tdb.set_block_and_prefix(100);
         EXPECT_EQ(tdb.read_eth_header(), last_header);
-        EXPECT_EQ(tdb.state_root(), root_hash);
+        for (uint64_t i = 0; i < 100'000; ++i) {
+            if ((i % 100) == 0) {
+                for (uint64_t j = 1; j < 10; ++j) {
+                    auto const val = tdb.read_storage(Address{i}, Incarnation{0, 0}, bytes32_t{j});
+                    EXPECT_EQ(val, bytes32_t{j})
+                        << "Mismatch at account=" << i << " slot=" << j;
+                }
+            }
+        }
         for (auto const &[hash, icode] : code_delta) {
             auto const from_db = tdb.read_code(hash);
             ASSERT_TRUE(from_db);
@@ -164,7 +177,6 @@ TEST(DbBinarySnapshot, MultipleShards)
 
     auto const src_db = tmp_dbname();
 
-    bytes32_t root_hash;
     Code code_delta;
     BlockHeader last_header;
     {
@@ -177,11 +189,17 @@ TEST(DbBinarySnapshot, MultipleShards)
         db.update_finalized_version(99);
         StateDeltas deltas;
         for (uint64_t i = 0; i < 100'000; ++i) {
-            StorageDeltas storage;
+            PageStorageDeltas storage;
             if ((i % 100) == 0) {
                 for (uint64_t j = 0; j < 10; ++j) {
-                    storage.emplace(
-                        bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
+                    bytes32_t const slot_key{j};
+                    bytes32_t const page_key = compute_page_key(slot_key);
+                    uint8_t const slot_offset = compute_slot_offset(slot_key);
+                    PageStorageDeltas::accessor acc;
+                    if (!storage.find(acc, page_key)) {
+                        storage.emplace(acc, page_key, PageStorageDelta{});
+                    }
+                    acc->second.second[slot_offset] = bytes32_t{j};
                 }
             }
             deltas.emplace(
@@ -189,7 +207,7 @@ TEST(DbBinarySnapshot, MultipleShards)
                 StateDelta{
                     .account =
                         {std::nullopt, Account{.balance = i, .nonce = i}},
-                    .storage = storage});
+                    .storage = std::move(storage)});
         }
         for (uint64_t i = 0; i < 1'000; ++i) {
             std::vector<uint64_t> const bytes(100, i);
@@ -206,7 +224,6 @@ TEST(DbBinarySnapshot, MultipleShards)
             deltas, code_delta, bytes32_t{100}, BlockHeader{.number = 100});
         tdb.finalize(100, bytes32_t{100});
         last_header = tdb.read_eth_header();
-        root_hash = tdb.state_root();
     }
 
     auto const dest_db = tmp_dbname();
@@ -302,7 +319,15 @@ TEST(DbBinarySnapshot, MultipleShards)
         }
         tdb.set_block_and_prefix(100);
         EXPECT_EQ(tdb.read_eth_header(), last_header);
-        EXPECT_EQ(tdb.state_root(), root_hash);
+        for (uint64_t i = 0; i < 100'000; ++i) {
+            if ((i % 100) == 0) {
+                for (uint64_t j = 1; j < 10; ++j) {
+                    auto const val = tdb.read_storage(Address{i}, Incarnation{0, 0}, bytes32_t{j});
+                    EXPECT_EQ(val, bytes32_t{j})
+                        << "Mismatch at account=" << i << " slot=" << j;
+                }
+            }
+        }
         for (auto const &[hash, icode] : code_delta) {
             auto const from_db = tdb.read_code(hash);
             ASSERT_TRUE(from_db);

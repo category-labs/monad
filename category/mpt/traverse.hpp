@@ -253,7 +253,9 @@ namespace detail
                    idx > reads_to_initiate_sidx) {
                 while (outstanding_reads < max_outstanding_reads &&
                        !reads_to_initiate[idx].empty()) {
-                    async_read(aux, std::move(reads_to_initiate[idx].front()));
+                    // Defer submission to batch reads together
+                    async_read(
+                        aux, std::move(reads_to_initiate[idx].front()), true);
                     ++outstanding_reads;
                     reads_to_initiate[idx].pop_front();
                     --reads_to_initiate_count;
@@ -355,7 +357,8 @@ namespace detail
                         ++sender.reads_to_initiate_count;
                         continue;
                     }
-                    async_read(sender.aux, std::move(receiver));
+                    // Defer submission to batch reads together
+                    async_read(sender.aux, std::move(receiver), true);
                     ++sender.outstanding_reads;
                 }
                 else {

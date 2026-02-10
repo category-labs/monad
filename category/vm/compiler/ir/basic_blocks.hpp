@@ -113,12 +113,7 @@ namespace monad::vm::compiler::basic_blocks
         case Jump:
             return 8;
         case SelfDestruct: {
-            if constexpr (traits::evm_rev() < EVMC_TANGERINE_WHISTLE) {
-                return 0;
-            }
-            else {
-                return 5000;
-            }
+            return 5000;
         }
         case Stop:
             return 0;

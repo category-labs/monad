@@ -254,7 +254,8 @@ namespace monad::vm::compiler
 
     consteval evmc_revision previous_evm_revision(evmc_revision rev)
     {
-        MONAD_VM_DEBUG_ASSERT(rev > EVMC_TANGERINE_WHISTLE);
+        MONAD_VM_DEBUG_ASSERT(
+            rev > monad::constants::EARLIEST_SUPPORTED_EVM_FORK);
         return evmc_revision(std::to_underlying(rev) - 1);
     }
 
@@ -291,7 +292,7 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_TANGERINE_WHISTLE>>()
+    make_opcode_table<EvmTraits<EVMC_SPURIOUS_DRAGON>>()
     {
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
@@ -566,14 +567,6 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             OpCodeInfo{"SELFDESTRUCT", 0, 1, 0, true, 5000, 0} // 0xFF,
         };
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_SPURIOUS_DRAGON>>()
-    {
-        return make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_SPURIOUS_DRAGON)>>();
     }
 
     template <>

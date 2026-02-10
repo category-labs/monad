@@ -47,8 +47,6 @@
         return f<::monad::EvmTraits<EVMC_BYZANTIUM>>(__VA_ARGS__);             \
     case EVMC_SPURIOUS_DRAGON:                                                 \
         return f<::monad::EvmTraits<EVMC_SPURIOUS_DRAGON>>(__VA_ARGS__);       \
-    case EVMC_TANGERINE_WHISTLE:                                               \
-        return f<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>(__VA_ARGS__);     \
     default:                                                                   \
         break;                                                                 \
     }

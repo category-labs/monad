@@ -47,10 +47,7 @@ TYPED_TEST(RuntimeTraitsTest, Create)
     ASSERT_EQ(addr, uint256_from_address(result_addr));
     ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
     constexpr auto gas_remaining = [] {
-        if constexpr (TestFixture::Trait::evm_rev() < EVMC_TANGERINE_WHISTLE) {
-            return 900'000;
-        }
-        else if constexpr (TestFixture::Trait::evm_rev() < EVMC_SHANGHAI) {
+        if constexpr (TestFixture::Trait::evm_rev() < EVMC_SHANGHAI) {
             return 915'625;
         }
         else {
@@ -72,15 +69,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateSizeIsZero)
 
     ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
     ASSERT_EQ(addr, uint256_from_address(result_addr));
-    constexpr auto gas_remaining = [] {
-        if constexpr (TestFixture::Trait::evm_rev() < EVMC_TANGERINE_WHISTLE) {
-            return 900'000;
-        }
-        else {
-            return 915'625;
-        }
-    }();
-    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
+    ASSERT_EQ(this->ctx_.gas_remaining, 915'625);
 }
 
 TYPED_TEST(RuntimeTraitsTest, CreateFailure)

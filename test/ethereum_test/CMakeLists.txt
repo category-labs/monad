@@ -69,7 +69,6 @@ function(add_ethereum_test)
 endfunction()
 
 add_ethereum_test(FORK eip158)
-add_ethereum_test(FORK eip150)
 add_ethereum_test(FORK byzantium)
 add_ethereum_test(FORK constantinoplefix)
 add_ethereum_test(FORK istanbul)

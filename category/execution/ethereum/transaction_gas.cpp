@@ -109,11 +109,7 @@ EXPLICIT_TRAITS(g_data);
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
-    if constexpr (traits::evm_rev() < EVMC_HOMESTEAD) {
-        // YP, section 6.2, Eqn. 60
-        return 21'000 + g_data<traits>(tx);
-    }
-    else if constexpr (traits::evm_rev() < EVMC_BERLIN) {
+    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
         return 21'000 + g_data<traits>(tx) + g_txn_create(tx);
     }
     else if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {

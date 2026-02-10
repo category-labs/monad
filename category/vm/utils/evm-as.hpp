@@ -31,9 +31,11 @@ namespace monad::vm::utils::evm_as
         return EvmBuilder<EvmTraits<EVMC_LATEST_STABLE_REVISION>>{};
     }
 
-    inline EvmBuilder<EvmTraits<EVMC_HOMESTEAD>> homestead()
+    inline EvmBuilder<EvmTraits<monad::constants::EARLIEST_SUPPORTED_EVM_FORK>>
+    earliest_supported()
     {
-        return EvmBuilder<EvmTraits<EVMC_HOMESTEAD>>{};
+        return EvmBuilder<
+            EvmTraits<monad::constants::EARLIEST_SUPPORTED_EVM_FORK>>{};
     }
 
     inline EvmBuilder<EvmTraits<EVMC_TANGERINE_WHISTLE>> tangerine_whistle()

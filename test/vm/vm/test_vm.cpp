@@ -128,8 +128,8 @@ evmc::Result BlockchainTestVM::execute(
     auto new_rt_ctx =
         runtime::Context::from(host, context, msg, {code, code_size});
     rt_ctx_ = &new_rt_ctx;
-    if (rev < EVMC_HOMESTEAD) {
-        rev = EVMC_HOMESTEAD;
+    if (rev < monad::constants::EARLIEST_SUPPORTED_EVM_FORK) {
+        rev = monad::constants::EARLIEST_SUPPORTED_EVM_FORK;
     }
 
     auto res = [&] {

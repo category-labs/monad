@@ -908,14 +908,14 @@ TEST(EvmAs, lookup)
 
 TEST(EvmAs, Legacy)
 {
-    auto eb = evm_as::homestead();
+    auto eb = evm_as::earliest_supported();
     std::vector<evm_as::ValidationError> errors{};
     eb.push0();
     ASSERT_FALSE(evm_as::validate(eb, errors));
     ASSERT_EQ(errors.size(), 1);
     ASSERT_EQ(errors[0].msg, "Invalid instruction '0x5F'");
 
-    eb = evm_as::homestead();
+    eb = evm_as::earliest_supported();
     eb.push(0);
     ASSERT_TRUE(evm_as::validate(eb));
 

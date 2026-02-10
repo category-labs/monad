@@ -529,7 +529,7 @@ set it to the desired size beforehand).
                 while (std::chrono::steady_clock::now() - begin <
                        std::chrono::seconds(duration_secs));
                 shared_state.done = true;
-                io.wait_until_done();
+                io.flush();
             }
             print_statistics();
         }

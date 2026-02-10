@@ -279,7 +279,7 @@ size_t load_all(UpdateAuxImpl &aux, StateMachine &sm, NodeCursor const &root)
 {
     load_all_impl_ impl(aux);
     impl.process(root, sm);
-    aux.io->wait_until_done();
+    aux.io->flush();
     return impl.nodes_loaded;
 }
 

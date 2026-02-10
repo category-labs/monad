@@ -419,7 +419,7 @@ inline bool preorder_traverse_ondisk(
         TraverseReceiver{version_expired_before_traverse_complete}));
     state->initiate();
 
-    aux.io->wait_until_done();
+    aux.io->flush();
 
     // return traversal succeeds or not
     return !version_expired_before_traverse_complete;

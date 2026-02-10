@@ -1236,12 +1236,8 @@ TYPED_TEST(TraitsTest, cold_account_access)
             else if constexpr (TestFixture::Trait::evm_rev() >= EVMC_ISTANBUL) {
                 return 700;
             }
-            else if constexpr (
-                TestFixture::Trait::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-                return 400;
-            }
             else {
-                return 20;
+                return 400;
             }
         }
     }();

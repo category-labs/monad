@@ -200,32 +200,17 @@ TYPED_TEST(RuntimeTraitsTest, Exp)
 
     this->ctx_.gas_remaining = 50;
     ASSERT_EQ(f(10, 2), 100);
-    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
-        ASSERT_EQ(this->ctx_.gas_remaining, 40);
-    }
-    else {
-        ASSERT_EQ(this->ctx_.gas_remaining, 0);
-    }
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
 
     this->ctx_.gas_remaining = 100;
     ASSERT_EQ(
         f(3, 256),
         0xC7ADEEB80D4FFF81FED242815E55BC8375A205DE07597D51D2105F2F0730F401_u256);
-    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
-        ASSERT_EQ(this->ctx_.gas_remaining, 80);
-    }
-    else {
-        ASSERT_EQ(this->ctx_.gas_remaining, 0);
-    }
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
 
     this->ctx_.gas_remaining = 150;
     ASSERT_EQ(
         f(5, 65536),
         0x6170C9D4CF040C5B5B784780A1BD33BA7B6BB3803AA626C24C21067A267C0001_u256);
-    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
-        ASSERT_EQ(this->ctx_.gas_remaining, 120);
-    }
-    else {
-        ASSERT_EQ(this->ctx_.gas_remaining, 0);
-    }
+    ASSERT_EQ(this->ctx_.gas_remaining, 0);
 }

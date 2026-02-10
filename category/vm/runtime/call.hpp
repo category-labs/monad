@@ -132,15 +132,7 @@ namespace monad::vm::runtime
         }
 
         auto gas = clamp_cast<std::int64_t>(gas_word);
-
-        if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-            gas = std::min(gas, gas_left_here - (gas_left_here / 64));
-        }
-        else {
-            if (MONAD_VM_UNLIKELY(gas > gas_left_here)) {
-                ctx->exit(StatusCode::OutOfGas);
-            }
-        }
+        gas = std::min(gas, gas_left_here - (gas_left_here / 64));
 
         if (has_value) {
             gas += 2300;

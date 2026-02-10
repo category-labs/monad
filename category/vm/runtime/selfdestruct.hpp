@@ -44,23 +44,18 @@ namespace monad::vm::runtime
             }
         }
 
-        if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-            auto const non_zero_transfer = [ctx] {
-                if constexpr (traits::evm_rev() == EVMC_TANGERINE_WHISTLE) {
-                    return true;
-                }
-                auto const balance =
-                    ctx->host->get_balance(ctx->context, &ctx->env.recipient);
-                return balance != evmc::bytes32{};
-            }();
+        auto const non_zero_transfer = [ctx] {
+            auto const balance =
+                ctx->host->get_balance(ctx->context, &ctx->env.recipient);
+            return balance != evmc::bytes32{};
+        }();
 
-            if (non_zero_transfer) {
-                auto const exists =
-                    ctx->host->account_exists(ctx->context, &address);
+        if (non_zero_transfer) {
+            auto const exists =
+                ctx->host->account_exists(ctx->context, &address);
 
-                if (!exists) {
-                    ctx->deduct_gas(25000);
-                }
+            if (!exists) {
+                ctx->deduct_gas(25000);
             }
         }
 

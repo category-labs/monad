@@ -25,8 +25,6 @@
 // Template free functions
 
 #define EXPLICIT_EVM_TRAITS(f)                                                 \
-    template decltype(f<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>)           \
-        f<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>;                         \
     template decltype(f<::monad::EvmTraits<EVMC_SPURIOUS_DRAGON>>)             \
         f<::monad::EvmTraits<EVMC_SPURIOUS_DRAGON>>;                           \
     template decltype(f<::monad::EvmTraits<EVMC_BYZANTIUM>>)                   \
@@ -81,7 +79,6 @@
 // Template classes
 
 #define EXPLICIT_EVM_TRAITS_CLASS(c)                                           \
-    template class c<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>;              \
     template class c<::monad::EvmTraits<EVMC_SPURIOUS_DRAGON>>;                \
     template class c<::monad::EvmTraits<EVMC_BYZANTIUM>>;                      \
     template class c<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>;                 \
@@ -118,8 +115,6 @@
     constexpr auto id = &f<traits>;
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_LIST(f, id)                                 \
-    template decltype(id<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>)          \
-        id<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>;                        \
     template decltype(id<::monad::EvmTraits<EVMC_SPURIOUS_DRAGON>>)            \
         id<::monad::EvmTraits<EVMC_SPURIOUS_DRAGON>>;                          \
     template decltype(id<::monad::EvmTraits<EVMC_BYZANTIUM>>)                  \

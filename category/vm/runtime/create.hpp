@@ -82,9 +82,7 @@ namespace monad::vm::runtime
         }
 
         auto gas = ctx->gas_remaining + remaining_block_base_gas;
-        if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-            gas = gas - (gas / 64);
-        }
+        gas = gas - (gas / 64);
 
         auto const message = evmc_message{
             .kind = kind,

@@ -37,30 +37,31 @@
 #include <intx/intx.hpp>
 
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <utility>
 
-MONAD_ANONYMOUS_NAMESPACE_BEGIN
-
-bool sender_has_balance(State &state, evmc_message const &msg) noexcept
-{
-    uint256_t const value = intx::be::load<uint256_t>(msg.value);
-    // for optimistic execution, we do NOT require the original balance to match
-    // exactly, just add a lower bound constraint to suffice for this debit
-    return state.record_balance_constraint_for_debit(msg.sender, value);
-}
-
-void transfer_balances(State &state, evmc_message const &msg, Address const &to)
-{
-    uint256_t const value = intx::be::load<uint256_t>(msg.value);
-    state.subtract_from_balance(msg.sender, value);
-    state.add_to_balance(to, value);
-}
-
-MONAD_ANONYMOUS_NAMESPACE_END
-
 MONAD_NAMESPACE_BEGIN
+
+namespace
+{
+
+    bool sender_has_balance(State &state, evmc_message const &msg) noexcept
+    {
+        uint256_t const value = intx::be::load<uint256_t>(msg.value);
+        // for optimistic execution, we do NOT require the original balance to
+        // match exactly, just add a lower bound constraint to suffice for this
+        // debit
+        return state.record_balance_constraint_for_debit(msg.sender, value);
+    }
+
+    void
+    transfer_balances(State &state, evmc_message const &msg, Address const &to)
+    {
+        uint256_t const value = intx::be::load<uint256_t>(msg.value);
+        state.subtract_from_balance(msg.sender, value);
+        state.add_to_balance(to, value);
+    }
+} // anonymous namespace
 
 template <Traits traits>
 evmc::Result deploy_contract_code(
@@ -164,8 +165,8 @@ void post_call(State &state, evmc::Result const &result)
 }
 
 template <Traits traits>
-evmc::Result
-create(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+evmc::Result execute_create_message(
+    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
@@ -294,11 +295,11 @@ create(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
     return result;
 }
 
-EXPLICIT_TRAITS(create);
+EXPLICIT_TRAITS(execute_create_message);
 
 template <Traits traits>
-evmc::Result
-call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+evmc::Result execute_call_message(
+    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -342,6 +343,5 @@ call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
     return result;
 }
 
-EXPLICIT_TRAITS(call);
-
+EXPLICIT_TRAITS(execute_call_message);
 MONAD_NAMESPACE_END

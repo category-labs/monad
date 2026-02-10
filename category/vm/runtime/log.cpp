@@ -1,0 +1,139 @@
+// Copyright (C) 2025 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#include "category/core/runtime/uint256.hpp"
+#include "category/vm/core/assert.h"
+#include "category/vm/evm/traits.hpp"
+#include "category/vm/runtime/bin.hpp"
+#include "category/vm/runtime/transmute.hpp"
+#include "category/vm/runtime/types.hpp"
+#include "evmc/evmc.h"
+#include "evmc/evmc.hpp"
+#include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/runtime/log.hpp>
+#include <span>
+
+namespace monad::vm::runtime
+{
+    template <Traits traits>
+    void log_impl(
+        Context *ctx, uint256_t const &offset_word, uint256_t const &size_word,
+        std::span<evmc::bytes32 const> topics)
+    {
+        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
+            ctx->exit(StatusCode::Error);
+        }
+
+        Memory::Offset offset;
+        auto const size = ctx->get_memory_offset(size_word);
+
+        if (*size > 0) {
+            offset = ctx->get_memory_offset(offset_word);
+            ctx->expand_memory<traits>(offset + size);
+            ctx->deduct_gas(size * bin<8>);
+        }
+
+        ctx->host->emit_log(
+            ctx->context,
+            &ctx->env.recipient,
+            ctx->memory.data + *offset,
+            *size,
+            topics.data(),
+            topics.size());
+    }
+
+    EXPLICIT_TRAITS(log_impl);
+
+    template <Traits traits>
+    void
+    log0(Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr)
+    {
+        log_impl<traits>(ctx, *offset_ptr, *size_ptr, {});
+    }
+
+    EXPLICIT_TRAITS(log0);
+
+    template <Traits traits>
+    void log1(
+        Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
+        uint256_t const *topic1_ptr)
+    {
+        log_impl<traits>(
+            ctx,
+            *offset_ptr,
+            *size_ptr,
+            {{
+                bytes32_from_uint256(*topic1_ptr),
+            }});
+    }
+
+    EXPLICIT_TRAITS(log1);
+
+    template <Traits traits>
+    void log2(
+        Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
+        uint256_t const *topic1_ptr, uint256_t const *topic2_ptr)
+    {
+        log_impl<traits>(
+            ctx,
+            *offset_ptr,
+            *size_ptr,
+            {{
+                bytes32_from_uint256(*topic1_ptr),
+                bytes32_from_uint256(*topic2_ptr),
+            }});
+    }
+
+    EXPLICIT_TRAITS(log2);
+
+    template <Traits traits>
+    void log3(
+        Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
+        uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
+        uint256_t const *topic3_ptr)
+    {
+        log_impl<traits>(
+            ctx,
+            *offset_ptr,
+            *size_ptr,
+            {{
+                bytes32_from_uint256(*topic1_ptr),
+                bytes32_from_uint256(*topic2_ptr),
+                bytes32_from_uint256(*topic3_ptr),
+            }});
+    }
+
+    EXPLICIT_TRAITS(log3);
+
+    template <Traits traits>
+    void log4(
+        Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
+        uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
+        uint256_t const *topic3_ptr, uint256_t const *topic4_ptr)
+    {
+        log_impl<traits>(
+            ctx,
+            *offset_ptr,
+            *size_ptr,
+            {{
+                bytes32_from_uint256(*topic1_ptr),
+                bytes32_from_uint256(*topic2_ptr),
+                bytes32_from_uint256(*topic3_ptr),
+                bytes32_from_uint256(*topic4_ptr),
+            }});
+    }
+
+    EXPLICIT_TRAITS(log4);
+}

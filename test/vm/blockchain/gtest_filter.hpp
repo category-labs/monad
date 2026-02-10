@@ -19,6 +19,8 @@
 
 static std::string const base_gtest_filter =
     ":-"
+    // Unsupported fork, double_kill relies on frontier/homestead gas amounts
+    "GeneralStateTests/Pyspecs/frontier/opcodes.double_kill:"
     // Slow
     "GeneralStateTests/VMTests/vmPerformance.loopExp:"
     "GeneralStateTests/VMTests/vmPerformance.loopMul:"

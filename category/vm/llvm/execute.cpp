@@ -182,9 +182,6 @@ namespace monad::vm::llvm
     load_from_disk(evmc_revision rev, std::string_view fn)
     {
         switch (rev) {
-        case EVMC_HOMESTEAD:
-            return load_from_disk_impl<EvmTraits<EVMC_HOMESTEAD>>(fn);
-
         case EVMC_TANGERINE_WHISTLE:
             return load_from_disk_impl<EvmTraits<EVMC_TANGERINE_WHISTLE>>(fn);
 
@@ -238,9 +235,6 @@ namespace monad::vm::llvm
         std::string const &dbg_nm)
     {
         switch (rev) {
-        case EVMC_HOMESTEAD:
-            return compile_impl<EvmTraits<EVMC_HOMESTEAD>>(code, dbg_nm);
-
         case EVMC_TANGERINE_WHISTLE:
             return compile_impl<EvmTraits<EVMC_TANGERINE_WHISTLE>>(
                 code, dbg_nm);

@@ -47,7 +47,7 @@ namespace fiber
 } // namespace fiber
 
 template <Traits traits>
-void execute_block_header(Chain const &, BlockState &, BlockHeader const &);
+void execute_block_header(BlockState &, BlockHeader const &);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(

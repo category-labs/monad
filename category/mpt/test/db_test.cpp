@@ -1127,7 +1127,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
                 result_holder}));
         state->initiate();
     }
-    ctx->aux.io->wait_until_done();
+    ctx->aux.io->flush();
     for (auto &r : results) {
         EXPECT_TRUE(r.traverse_success);
         EXPECT_EQ(r.num_leaves_traversed, nkeys);
@@ -1146,7 +1146,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
                 block_id),
             expect_failure}));
     state->initiate();
-    ctx->aux.io->wait_until_done();
+    ctx->aux.io->flush();
     EXPECT_FALSE(expect_failure.traverse_success);
     EXPECT_EQ(expect_failure.num_leaves_traversed, 0);
 }

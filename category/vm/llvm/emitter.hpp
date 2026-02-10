@@ -36,9 +36,10 @@
 namespace monad::vm::runtime
 {
 
+    template <Traits traits>
     inline void context_expand_memory(Context *ctx, Bin<29> min_size)
     {
-        ctx->expand_memory(min_size);
+        ctx->expand_memory<traits>(min_size);
     }
 
     inline void llvm_runtime_debug(
@@ -1473,7 +1474,7 @@ namespace monad::vm::llvm
             if (context_expand_memory_f == nullptr) {
                 auto f = declare_symbol(
                     "context_expand_memory",
-                    (void *)(context_expand_memory),
+                    (void *)(context_expand_memory<traits>),
                     llvm.void_ty,
                     {
                         llvm.ptr_ty(context_ty),
@@ -1514,7 +1515,7 @@ namespace monad::vm::llvm
             llvm.insert_at(entry);
 
             uint256_t const max_offset =
-                (uint64_t{1} << 29) - static_cast<uint32_t>(width);
+                (uint64_t{1} << 31) - static_cast<uint32_t>(width);
             auto *isgt = llvm.ugt(offset, llvm.lit_word(max_offset));
             llvm.condbr(isgt, offset_err_lbl, offset_ok_lbl, false);
 
@@ -1753,7 +1754,7 @@ namespace monad::vm::llvm
                 return ffi_runtime(instr, exp<traits>);
 
             case Sha3:
-                return ffi_runtime(instr, sha3);
+                return ffi_runtime(instr, sha3<traits>);
 
             case MLoad:
                 return llvm_mload(instr);
@@ -1768,16 +1769,16 @@ namespace monad::vm::llvm
                 return ffi_runtime(instr, tstore);
 
             case CallDataCopy:
-                return ffi_runtime(instr, calldatacopy);
+                return ffi_runtime(instr, calldatacopy<traits>);
 
             case CodeCopy:
-                return ffi_runtime(instr, codecopy);
+                return ffi_runtime(instr, codecopy<traits>);
 
             case MCopy:
-                return ffi_runtime(instr, mcopy);
+                return ffi_runtime(instr, mcopy<traits>);
 
             case ReturnDataCopy:
-                return ffi_runtime(instr, returndatacopy);
+                return ffi_runtime(instr, returndatacopy<traits>);
 
             case ExtCodeCopy:
                 return ffi_runtime(instr, extcodecopy<traits>);
@@ -1785,20 +1786,20 @@ namespace monad::vm::llvm
             case Log:
                 switch (instr.index()) {
                 case 0:
-                    return ffi_runtime(instr, log0);
+                    return ffi_runtime(instr, log0<traits>);
 
                 case 1:
-                    return ffi_runtime(instr, log1);
+                    return ffi_runtime(instr, log1<traits>);
 
                 case 2:
-                    return ffi_runtime(instr, log2);
+                    return ffi_runtime(instr, log2<traits>);
 
                 case 3:
-                    return ffi_runtime(instr, log3);
+                    return ffi_runtime(instr, log3<traits>);
 
                 default:
                     MONAD_VM_ASSERT(instr.index() == 4);
-                    return ffi_runtime(instr, log4);
+                    return ffi_runtime(instr, log4<traits>);
                 }
 
             case Address:

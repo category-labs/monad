@@ -81,7 +81,7 @@ namespace monad::vm::llvm
         LLVMState &llvm = *ptr;
 
         llvm.insert_symbol(
-            "ffi_context_expand_memory", (void *)context_expand_memory);
+            "ffi_context_expand_memory", (void *)context_expand_memory<traits>);
 
         llvm.insert_symbol(
             "ffi_llvm_runtime_debug", (void *)llvm_runtime_debug);
@@ -112,19 +112,20 @@ namespace monad::vm::llvm
         llvm.insert_symbol("ffi_TLOAD", (void *)tload);
         llvm.insert_symbol("ffi_EXP", (void *)exp<traits>);
 
-        llvm.insert_symbol("ffi_KECCAK256", (void *)sha3);
+        llvm.insert_symbol("ffi_KECCAK256", (void *)sha3<traits>);
 
         llvm.insert_symbol("ffi_TSTORE", (void *)tstore);
-        llvm.insert_symbol("ffi_CALLDATACOPY", (void *)calldatacopy);
-        llvm.insert_symbol("ffi_CODECOPY", (void *)codecopy);
-        llvm.insert_symbol("ffi_MCOPY", (void *)mcopy);
-        llvm.insert_symbol("ffi_RETURNDATACOPY", (void *)returndatacopy);
+        llvm.insert_symbol("ffi_CALLDATACOPY", (void *)calldatacopy<traits>);
+        llvm.insert_symbol("ffi_CODECOPY", (void *)codecopy<traits>);
+        llvm.insert_symbol("ffi_MCOPY", (void *)mcopy<traits>);
+        llvm.insert_symbol(
+            "ffi_RETURNDATACOPY", (void *)returndatacopy<traits>);
         llvm.insert_symbol("ffi_EXTCODECOPY", (void *)extcodecopy<traits>);
-        llvm.insert_symbol("ffi_LOG0", (void *)log0);
-        llvm.insert_symbol("ffi_LOG1", (void *)log1);
-        llvm.insert_symbol("ffi_LOG2", (void *)log2);
-        llvm.insert_symbol("ffi_LOG3", (void *)log3);
-        llvm.insert_symbol("ffi_LOG4", (void *)log4);
+        llvm.insert_symbol("ffi_LOG0", (void *)log0<traits>);
+        llvm.insert_symbol("ffi_LOG1", (void *)log1<traits>);
+        llvm.insert_symbol("ffi_LOG2", (void *)log2<traits>);
+        llvm.insert_symbol("ffi_LOG3", (void *)log3<traits>);
+        llvm.insert_symbol("ffi_LOG4", (void *)log4<traits>);
 
         llvm.insert_symbol("rt_EXIT", (void *)&rt_exit);
         llvm.insert_symbol("ffi_SelfDestruct", (void *)selfdestruct<traits>);

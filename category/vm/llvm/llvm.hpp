@@ -42,8 +42,7 @@ namespace monad::vm::llvm
 
         evmc::Result execute_llvm(
             evmc_revision rev, evmc::bytes32 const &code_hash,
-            evmc_host_interface const *host, evmc_host_context *context,
-            evmc_message const *msg, uint8_t const *code, size_t code_size);
+            runtime::Context &ctx, uint8_t const *code, size_t code_size);
 
         std::shared_ptr<LLVMState> cache_llvm(
             evmc_revision rev, evmc::bytes32 const &code_hash,

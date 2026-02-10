@@ -31,7 +31,6 @@ find_cursor_result_type find_blocking(
     UpdateAuxImpl const &aux, NodeCursor root, NibblesView const key,
     uint64_t const version)
 {
-    auto g(aux.shared_lock());
     if (!root.is_valid()) {
         return {NodeCursor{}, find_result::root_node_is_null_failure};
     }
@@ -50,16 +49,12 @@ find_cursor_result_type find_blocking(
             if (auto const idx = node->to_child_index(nibble);
                 !node->next(idx)) {
                 MONAD_ASSERT(aux.is_on_disk());
-                auto g2(g.upgrade());
-                if (g2.upgrade_was_atomic() || !node->next(idx)) {
-                    auto next_node_ondisk =
-                        read_node_blocking(aux, node->fnext(idx), version);
-                    if (!next_node_ondisk) {
-                        return {
-                            NodeCursor{}, find_result::version_no_longer_exist};
-                    }
-                    node->set_next(idx, std::move(next_node_ondisk));
+                auto next_node_ondisk =
+                    read_node_blocking(aux, node->fnext(idx), version);
+                if (!next_node_ondisk) {
+                    return {NodeCursor{}, find_result::version_no_longer_exist};
                 }
+                node->set_next(idx, std::move(next_node_ondisk));
             }
             node = node->next(node->to_child_index(nibble));
             MONAD_ASSERT(node);

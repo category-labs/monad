@@ -53,7 +53,7 @@ struct NodeWriterTestBase : public ::testing::Test
     monad::io::Ring ring2;
     monad::io::Buffers rwbuf;
     AsyncIO io;
-    UpdateAux<> aux;
+    UpdateAux aux;
 
     NodeWriterTestBase()
         : pool{[] {

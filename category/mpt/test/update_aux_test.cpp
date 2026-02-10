@@ -83,30 +83,12 @@ TEST(update_aux_test, set_io_reader_dirty)
 
     struct TestAux : public monad::mpt::UpdateAuxImpl
     {
-        monad::mpt::UpdateAux<> &write_aux;
+        monad::mpt::UpdateAux &write_aux;
         bool was_dirty{false};
 
-        TestAux(monad::mpt::UpdateAux<> &write_aux_)
+        TestAux(monad::mpt::UpdateAux &write_aux_)
             : write_aux(write_aux_)
         {
-        }
-
-        void lock_unique_() const override {}
-
-        void unlock_unique_() const noexcept override {}
-
-        void lock_shared_() const override {}
-
-        void unlock_shared_() const noexcept override {}
-
-        bool upgrade_shared_to_unique_() const noexcept override
-        {
-            return true;
-        }
-
-        bool downgrade_unique_to_shared_() const noexcept override
-        {
-            return true;
         }
 
         void on_read_only_init_with_dirty_bit() noexcept override
@@ -130,7 +112,7 @@ TEST(update_aux_test, set_io_reader_dirty)
     // This should throw. Dirty bit stays set.
     ASSERT_DEATH(
         ({
-            monad::mpt::UpdateAux<> aux_reader{};
+            monad::mpt::UpdateAux aux_reader{};
             aux_reader.set_io(testio, AUX_TEST_HISTORY_LENGTH);
         }),
         "DB metadata was closed dirty, but not opened for healing");
@@ -230,7 +212,7 @@ TEST(update_aux_test, configurable_root_offset_chunks)
         EXPECT_EQ(pool.chunks(monad::async::storage_pool::cnv), 5);
 
         monad::async::AsyncIO testio(pool, testbuf);
-        monad::mpt::UpdateAux<> aux(testio);
+        monad::mpt::UpdateAux aux(testio);
 
         // Verify that exactly 4 chunks were allocated to hold two copies of
         // root offsets, since chunk 0 is used for metadata
@@ -245,7 +227,7 @@ TEST(update_aux_test, configurable_root_offset_chunks)
             flags);
         EXPECT_EQ(pool.chunks(monad::async::storage_pool::cnv), 5);
         monad::async::AsyncIO testio(pool, testbuf);
-        monad::mpt::UpdateAux<> aux(testio);
+        monad::mpt::UpdateAux aux(testio);
         EXPECT_EQ(aux.db_metadata()->root_offsets.storage_.cnv_chunks_len, 4);
         EXPECT_EQ(aux.root_offsets().capacity(), 2ULL << 25);
     }

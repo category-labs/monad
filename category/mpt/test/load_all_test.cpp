@@ -31,7 +31,7 @@ struct LoadAllTest
 
 TEST_F(LoadAllTest, works)
 {
-    monad::test::UpdateAux<void> aux{state()->io};
+    monad::test::UpdateAux aux{state()->io};
     monad::test::StateMachineAlwaysMerkle sm;
     monad::mpt::Node::SharedPtr root{monad::mpt::read_node_blocking(
         state()->aux,

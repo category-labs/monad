@@ -77,7 +77,7 @@ struct Db::Impl
 {
     virtual ~Impl() = default;
 
-    virtual UpdateAux<> &aux() = 0;
+    virtual UpdateAux &aux() = 0;
     virtual Node::SharedPtr upsert_fiber_blocking(
         Node::SharedPtr, UpdateList &&, uint64_t, bool enable_compaction,
         bool can_write_to_fast, bool write_root) = 0;
@@ -165,7 +165,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
 
 class Db::ROOnDiskBlocking final : public Db::Impl
 {
-    UpdateAux<> aux_;
+    UpdateAux aux_;
 
 public:
     explicit ROOnDiskBlocking(AsyncIOContext &io_ctx)
@@ -175,12 +175,11 @@ public:
 
     virtual ~ROOnDiskBlocking()
     {
-        aux_.unique_lock();
         // must be destroyed before aux is destroyed
         aux_.unset_io();
     }
 
-    virtual UpdateAux<> &aux() override
+    virtual UpdateAux &aux() override
     {
         return aux_;
     }
@@ -255,7 +254,7 @@ public:
 
 class Db::InMemory final : public Db::Impl
 {
-    UpdateAux<> aux_;
+    UpdateAux aux_;
     StateMachine &machine_;
 
 public:
@@ -265,7 +264,7 @@ public:
     {
     }
 
-    virtual UpdateAux<> &aux() override
+    virtual UpdateAux &aux() override
     {
         return aux_;
     }
@@ -396,7 +395,7 @@ struct OnDiskWithWorkerThreadImpl
     {
         OnDiskWithWorkerThreadImpl *parent;
         AsyncIOContext async_io;
-        UpdateAux<> aux;
+        UpdateAux aux;
         std::atomic<bool> sleeping{false}, done{false};
 
         DbAsyncWorker(
@@ -701,7 +700,7 @@ struct OnDiskWithWorkerThreadImpl
 
     std::unique_ptr<DbAsyncWorker> worker_;
     std::thread worker_thread_;
-    UpdateAux<> *aux_;
+    UpdateAux *aux_;
 
     explicit OnDiskWithWorkerThreadImpl(OnDiskDbConfig const &options)
         : worker_thread_([&, options = options] {
@@ -771,13 +770,13 @@ public:
     {
     }
 
-    virtual UpdateAux<> &aux() override
+    virtual UpdateAux &aux() override
     {
         MONAD_ASSERT(aux_)
         return *aux_;
     }
 
-    UpdateAux<> const &aux() const
+    UpdateAux const &aux() const
     {
         MONAD_ASSERT(aux_)
         return *aux_;
@@ -960,7 +959,7 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
     {
     }
 
-    UpdateAux<> &aux()
+    UpdateAux &aux()
     {
         MONAD_ASSERT(aux_);
         return *aux_;
@@ -1413,7 +1412,7 @@ namespace detail
         find_result_type<T> &get_result;
         async::erased_connected_operation *const io_state;
         uint64_t const version;
-        UpdateAux<> &aux;
+        UpdateAux &aux;
 
         static constexpr bool lifetime_managed_internally = true;
 

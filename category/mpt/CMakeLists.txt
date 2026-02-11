@@ -50,7 +50,6 @@ add_library(
   "find.cpp"
   "find_notify_fiber.cpp"
   "find_request_sender.hpp"
-  "merkle_hasher.hpp"
   "nibbles_view.hpp"
   "nibbles_view_fmt.hpp"
   "node.cpp"
@@ -72,7 +71,6 @@ target_include_directories(monad_trie PUBLIC ${CATEGORY_MAIN_DIR})
 target_include_directories(monad_trie PRIVATE "third_party")
 monad_compile_options(monad_trie)
 target_link_libraries(monad_trie PRIVATE Boost::boost)
-target_link_libraries(monad_trie PUBLIC BLAKE3::blake3)
 target_link_libraries(monad_trie PUBLIC concurrentqueue)
 target_link_libraries(monad_trie PUBLIC monad_async)
 target_link_libraries(monad_trie PUBLIC quill::quill) # TODO: remove

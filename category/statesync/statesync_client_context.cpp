@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/blake3.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -122,7 +121,7 @@ void monad_statesync_client_context::commit()
             value = bytes_alloc.emplace_back(encode_account_db(addr, acct));
             for (auto const &[key, val] : deltas) {
                 storage.push_front(alloc.emplace_back(Update{
-                    .key = hash_alloc.emplace_back(blake3(key.bytes)),
+                    .key = hash_alloc.emplace_back(keccak256(key.bytes)),
                     .value = val == bytes32_t{}
                                  ? std::nullopt
                                  : std::make_optional<byte_string_view>(
@@ -134,7 +133,7 @@ void monad_statesync_client_context::commit()
             }
         }
         accounts.push_front(alloc.emplace_back(Update{
-            .key = hash_alloc.emplace_back(blake3(addr.bytes)),
+            .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
             .value = value,
             .incarnation = false,
             .next = std::move(storage),

@@ -33,18 +33,17 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 namespace detail
 {
-    template <MerkleHasher Hasher>
     struct InternalMerkleState
     {
-        unsigned char buffer[HASH_SIZE];
+        unsigned char buffer[KECCAK256_SIZE];
         unsigned len{0};
 
-        void hash_inplace_to_root_hash()
+        void keccak_inplace_to_root_hash()
         {
-            MONAD_DEBUG_ASSERT(len <= HASH_SIZE);
-            if (len < HASH_SIZE) {
-                Hasher::hash(buffer, len, buffer);
-                len = HASH_SIZE;
+            MONAD_DEBUG_ASSERT(len <= KECCAK256_SIZE);
+            if (len < KECCAK256_SIZE) {
+                keccak256(buffer, len, buffer);
+                len = KECCAK256_SIZE;
             }
         }
     };
@@ -58,37 +57,9 @@ encode_16_children(std::span<ChildData>, std::span<unsigned char> result);
 std::span<unsigned char>
 encode_16_children(Node const &, std::span<unsigned char> result);
 
-template <MerkleHasher Hasher>
 unsigned encode_two_pieces(
     unsigned char *const dest, NibblesView const path,
-    byte_string_view const second, bool const has_value)
-{
-    constexpr size_t max_compact_encode_size = HASH_SIZE + 1;
-
-    MONAD_DEBUG_ASSERT(path.data_size() <= HASH_SIZE);
-
-    unsigned char path_arr[max_compact_encode_size];
-    auto const first = compact_encode(path_arr, path, has_value);
-    MONAD_ASSERT(first.size() <= max_compact_encode_size);
-    // leaf and hashed node ref requires rlp encoding,
-    // rlp encoded but unhashed branch node ref doesn't
-    bool const need_encode_second = has_value || second.size() >= HASH_SIZE;
-    auto const concat_len =
-        rlp::string_length(first) +
-        (need_encode_second ? rlp::string_length(second) : second.size());
-    byte_string concat_rlp(concat_len, 0);
-    auto result = rlp::encode_string(concat_rlp, first);
-    result = need_encode_second ? rlp::encode_string(result, second) : [&] {
-        std::memcpy(result.data(), second.data(), second.size());
-        return result.subspan(second.size());
-    }();
-    MONAD_DEBUG_ASSERT(
-        (unsigned long)(result.data() - concat_rlp.data()) == concat_len);
-
-    byte_string rlp(rlp::list_length(concat_len), 0);
-    rlp::encode_list(rlp, {concat_rlp.data(), concat_rlp.size()});
-    return to_node_reference<Hasher>({rlp.data(), rlp.size()}, dest);
-}
+    byte_string_view const second, bool const has_value = false);
 
 struct Compute
 {
@@ -133,17 +104,15 @@ concept leaf_processor = requires(Node const &node) {
     { T::process(node) } -> std::convertible_to<byte_string_view>;
 };
 
-template <MerkleHasher Hasher, leaf_processor LeafValueProcessor>
+template <leaf_processor LeafValueProcessor>
 struct MerkleComputeBase : Compute
 {
-    using hasher = Hasher;
-
     static constexpr auto max_branch_rlp_size = rlp::list_length(
-        rlp::list_length(HASH_SIZE) * 16 + rlp::list_length(0));
+        rlp::list_length(KECCAK256_SIZE) * 16 + rlp::list_length(0));
     static constexpr auto max_leaf_data_size = rlp::list_length( // account rlp
         rlp::list_length(32) // balance
-        + rlp::list_length(HASH_SIZE) // code hash
-        + rlp::list_length(HASH_SIZE) // storage hash
+        + rlp::list_length(KECCAK256_SIZE) // code hash
+        + rlp::list_length(KECCAK256_SIZE) // storage hash
         + rlp::list_length(8) // nonce
     );
     static_assert(max_branch_rlp_size == 532);
@@ -172,8 +141,8 @@ struct MerkleComputeBase : Compute
             MONAD_DEBUG_ASSERT(it->ptr);
             compute_hash_with_extra_nibble_to_state_(*it);
             // root data of a subtrie is always a hash
-            state.hash_inplace_to_root_hash();
-            return HASH_SIZE;
+            state.keccak_inplace_to_root_hash();
+            return KECCAK256_SIZE;
         }
 
         unsigned char branch_str_rlp[max_branch_rlp_size];
@@ -191,11 +160,10 @@ struct MerkleComputeBase : Compute
         rlp::encode_list(
             branch_rlp, byte_string_view{branch_str_rlp, concat_len});
         // Compute hash to internal state and return hash length
-        state.len =
-            to_node_reference<Hasher>({branch_rlp, rlp_len}, state.buffer);
+        state.len = to_node_reference({branch_rlp, rlp_len}, state.buffer);
         // root data of merkle trie is always a hash
-        state.hash_inplace_to_root_hash();
-        return HASH_SIZE;
+        state.keccak_inplace_to_root_hash();
+        return KECCAK256_SIZE;
     }
 
     virtual unsigned
@@ -217,7 +185,7 @@ struct MerkleComputeBase : Compute
     compute(unsigned char *const buffer, Node const &node) override
     {
         if (node.has_value()) {
-            return encode_two_pieces<Hasher>(
+            return encode_two_pieces(
                 buffer,
                 node.path_nibble_view(),
                 LeafValueProcessor::process(node), // processed leaf data
@@ -225,30 +193,30 @@ struct MerkleComputeBase : Compute
         }
         MONAD_DEBUG_ASSERT(node.number_of_children() > 1);
         if (node.has_path()) {
-            unsigned char reference[HASH_SIZE];
+            unsigned char reference[KECCAK256_SIZE];
             unsigned len = compute_branch_reference_(reference, node);
-            return encode_two_pieces<Hasher>(
+            return encode_two_pieces(
                 buffer, node.path_nibble_view(), {reference, len}, false);
         }
         return compute_branch_reference_(buffer, node);
     }
 
 private:
-    detail::InternalMerkleState<Hasher> state{};
+    detail::InternalMerkleState state{};
 
     unsigned compute_hash_with_extra_nibble_to_state_(ChildData &single_child)
     {
         Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
 
-        return state.len = encode_two_pieces<Hasher>(
+        return state.len = encode_two_pieces(
                 state.buffer,
                 concat(single_child.branch, node->path_nibble_view()),
                 (node->has_value()
                      ? LeafValueProcessor::process(*node)
                      : (node->has_path()
                             ? ([&] -> byte_string {
-                                  unsigned char branch_hash[HASH_SIZE];
+                                  unsigned char branch_hash[KECCAK256_SIZE];
                                   return {
                                       branch_hash,
                                       compute_branch_reference_(branch_hash, *node)};
@@ -275,7 +243,7 @@ private:
         unsigned char branch_rlp[max_branch_rlp_size];
         rlp::encode_list(
             branch_rlp, byte_string_view{branch_str_rlp, concat_len});
-        return to_node_reference<Hasher>({branch_rlp, branch_rlp_len}, buffer);
+        return to_node_reference({branch_rlp, branch_rlp_len}, buffer);
     }
 };
 
@@ -293,14 +261,13 @@ struct NoopProcessor
     }
 };
 
-template <
-    MerkleHasher Hasher, leaf_processor LeafValueProcessor = NoopProcessor>
+template <leaf_processor LeafValueProcessor = NoopProcessor>
 struct VarLenMerkleCompute : Compute
 {
     static constexpr auto calc_rlp_max_size =
         [](unsigned const leaf_data_size) -> unsigned {
         return static_cast<unsigned>(rlp::list_length(
-            rlp::list_length(HASH_SIZE) * 16 +
+            rlp::list_length(KECCAK256_SIZE) * 16 +
             rlp::list_length(leaf_data_size)));
     };
 
@@ -342,7 +309,7 @@ struct VarLenMerkleCompute : Compute
         // Ethereum leaf: leaf node hash without child
         if (node.number_of_children() == 0) {
             MONAD_ASSERT(node.has_value());
-            return encode_two_pieces<Hasher>(
+            return encode_two_pieces(
                 buffer,
                 node.path_nibble_view(),
                 LeafValueProcessor::process(node),
@@ -352,7 +319,7 @@ struct VarLenMerkleCompute : Compute
         // rlp(encoded path, inline branch hash)
         if (node.has_path()) { // extension node, rlp encode with path too
             MONAD_ASSERT(node.bitpacked.data_len);
-            return encode_two_pieces<Hasher>(
+            return encode_two_pieces(
                 buffer, node.path_nibble_view(), node.data(), node.has_value());
         }
         // Ethereum branch
@@ -360,7 +327,7 @@ struct VarLenMerkleCompute : Compute
     }
 
 protected:
-    detail::InternalMerkleState<Hasher> state;
+    detail::InternalMerkleState state;
 
     unsigned do_compute_node_data_len(
         std::span<ChildData> const children,
@@ -383,8 +350,7 @@ protected:
         byte_string rlp(rlp::list_length(concat_len), 0);
         rlp::encode_list(rlp, {branch_str_rlp.data(), concat_len});
         // Compute hash to internal state and return hash length
-        state.len =
-            to_node_reference<Hasher>({rlp.data(), rlp.size()}, state.buffer);
+        state.len = to_node_reference({rlp.data(), rlp.size()}, state.buffer);
         return state.len;
     }
 
@@ -403,17 +369,15 @@ protected:
             static_cast<size_t>(result.data() - branch_str_rlp.data());
         byte_string branch_rlp(rlp::list_length(concat_len), 0);
         rlp::encode_list(branch_rlp, {branch_str_rlp.data(), concat_len});
-        return to_node_reference<Hasher>(
+        return to_node_reference(
             {branch_rlp.data(), branch_rlp.size()}, buffer);
     }
 };
 
-template <
-    MerkleHasher Hasher, leaf_processor LeafValueProcessor = NoopProcessor>
-struct RootVarLenMerkleCompute
-    : public VarLenMerkleCompute<Hasher, LeafValueProcessor>
+template <leaf_processor LeafValueProcessor = NoopProcessor>
+struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafValueProcessor>
 {
-    using Base = VarLenMerkleCompute<Hasher, LeafValueProcessor>;
+    using Base = VarLenMerkleCompute<LeafValueProcessor>;
     using Base::compute_branch_reference_;
     using Base::state;
 
@@ -441,8 +405,8 @@ struct RootVarLenMerkleCompute
             Base::do_compute_node_data_len(children, value);
         }
         // root data of a merkle trie is always a hash
-        state.hash_inplace_to_root_hash();
-        return HASH_SIZE;
+        state.keccak_inplace_to_root_hash();
+        return KECCAK256_SIZE;
     }
 
     virtual unsigned
@@ -457,14 +421,14 @@ private:
         Node *const node = single_child.ptr.get();
         MONAD_DEBUG_ASSERT(node);
 
-        return state.len = encode_two_pieces<Hasher>(
+        return state.len = encode_two_pieces(
                    state.buffer,
                    concat(single_child.branch, node->path_nibble_view()),
                    /* second: branch hash or leaf value */
                    node->mask ? (node->bitpacked.data_len ? node->data()
                                                           : [&] -> byte_string {
                        MONAD_ASSERT(!node->has_path());
-                       unsigned char branch_hash[HASH_SIZE];
+                       unsigned char branch_hash[KECCAK256_SIZE];
                        return {
                            branch_hash,
                            compute_branch_reference_(branch_hash, *node)};

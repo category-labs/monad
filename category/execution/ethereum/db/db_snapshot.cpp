@@ -14,9 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
-#include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/config.hpp>
 #include <category/core/endian.hpp> // little endian
 #include <category/core/nibble.h>
@@ -151,7 +149,7 @@ uint64_t monad_db_snapshot_loader_read_account(
         loader->account_offset_to_update.at(shard).emplace(
             account_offset,
             Update{
-                .key = loader->hash_alloc.emplace_back(blake3(address)),
+                .key = loader->hash_alloc.emplace_back(keccak256(address)),
                 .value = before.substr(0, bytes_consumed),
                 .incarnation = false,
                 .next = UpdateList{},
@@ -244,7 +242,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
     {
         using namespace monad;
         using namespace monad::mpt;
-        constexpr unsigned HASH_NIBBLES = 64;
+        constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
 
         if (branch == INVALID_BRANCH) {
             MONAD_ASSERT(path.length() == 0);
@@ -278,7 +276,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
 
         byte_string_view const val = node.value();
         if (nibble == CODE_NIBBLE) {
-            MONAD_ASSERT(path.length() == HASH_NIBBLES);
+            MONAD_ASSERT(path.length() == HASH_SIZE);
             uint64_t const len = val.size();
             MONAD_ASSERT(
                 write(
@@ -293,7 +291,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         }
         else {
             MONAD_ASSERT(nibble == STATE_NIBBLE);
-            if (path.length() == HASH_NIBBLES) {
+            if (path.length() == HASH_SIZE) {
                 account_offset = account_bytes_written.at(shard);
                 account_bytes_written.at(shard) += val.size();
                 MONAD_ASSERT(
@@ -301,7 +299,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
                     val.size());
             }
             else {
-                MONAD_ASSERT(path.length() == (HASH_NIBBLES * 2));
+                MONAD_ASSERT(path.length() == (HASH_SIZE * 2));
                 byte_string_view val_copy = val;
                 auto const res = decode_storage_page_db_with_key(val_copy);
                 MONAD_ASSERT(res.has_value());
@@ -519,7 +517,7 @@ void monad_db_snapshot_loader_load(
                 update.next.push_front(
                     loader->update_alloc.emplace_back(Update{
                         .key = loader->hash_alloc.emplace_back(
-                            blake3(page_key)),
+                            keccak256(page_key)),
                         .value = loader->bytes_alloc.emplace_back(
                             encode_storage_page_db(page_key, page)),
                         .next = UpdateList{},

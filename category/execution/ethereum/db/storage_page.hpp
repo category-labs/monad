@@ -33,7 +33,7 @@ using bytes32_t = ::evmc::bytes32;
 
 struct storage_page_t
 {
-    static constexpr size_t SLOTS = 32;
+    static constexpr size_t SLOTS = 64;
     static constexpr size_t SLOT_SIZE = 32;
     static constexpr size_t SLOT_BITS = std::bit_width(SLOTS) - 1;
     static constexpr uint8_t SLOT_MASK = SLOTS - 1;

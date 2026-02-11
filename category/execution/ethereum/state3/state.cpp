@@ -347,7 +347,7 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
 
     account.value().balance += delta;
     account_state.touch();
-    rb_.on_credit(address, account_state);
+    rb_.on_credit(address);
 }
 
 void State::subtract_from_balance(
@@ -363,7 +363,7 @@ void State::subtract_from_balance(
 
     account.value().balance -= delta;
     account_state.touch();
-    rb_.on_debit(address, account_state);
+    rb_.on_debit(address);
 }
 
 void State::set_code_hash(Address const &address, bytes32_t const &hash)
@@ -584,7 +584,7 @@ void State::set_code(Address const &address, byte_string_view const code)
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     account.value().code_hash = code_hash;
-    rb_.on_set_code(address, account_state, code);
+    rb_.on_set_code(address, code);
 }
 
 void State::create_contract(Address const &address)
@@ -708,17 +708,6 @@ bool State::try_fix_account_mismatch(
     // it easier to write the class invariant
     original_state.set_validate_exact_balance();
     return true;
-}
-
-bool State::rb_failed_flag(Address const &address) const
-{
-    if (auto const it = current_.find(address); it != current_.end()) {
-        return it->second.recent().rb_failed();
-    }
-    if (auto const it = original_.find(address); it != original_.end()) {
-        return it->second.rb_failed();
-    }
-    return false;
 }
 
 bool State::record_balance_constraint_for_debit(

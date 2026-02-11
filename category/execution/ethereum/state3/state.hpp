@@ -232,8 +232,6 @@ public:
     bool record_balance_constraint_for_debit(
         Address const &, uint256_t const &debit);
 
-    bool rb_failed_flag(Address const &) const;
-
     template <Traits traits>
     void init_reserve_balance_context(
         Address const &sender, Transaction const &tx,

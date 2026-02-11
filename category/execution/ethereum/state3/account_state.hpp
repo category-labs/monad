@@ -56,8 +56,6 @@ public: // TODO
 
 protected:
     std::optional<Account> account_{};
-    std::optional<uint256_t> rb_violation_threshold_{};
-    bool rb_failed_{false};
 
 private:
     friend class State;
@@ -155,40 +153,9 @@ public:
     {
         transient_storage_ = transient_storage_.insert({key, value});
     }
-
-    [[nodiscard]] bool rb_violation_threshold_cached() const
-    {
-        return rb_violation_threshold_.has_value();
-    }
-
-    [[nodiscard]] uint256_t const &rb_violation_threshold() const
-    {
-        MONAD_ASSERT(rb_violation_threshold_.has_value());
-        return *rb_violation_threshold_;
-    }
-
-    void set_rb_violation_threshold(uint256_t const &value)
-    {
-        rb_violation_threshold_ = value;
-    }
-
-    void clear_rb_violation_threshold()
-    {
-        rb_violation_threshold_.reset();
-    }
-
-    [[nodiscard]] bool rb_failed() const
-    {
-        return rb_failed_;
-    }
-
-    void set_rb_failed(bool const value)
-    {
-        rb_failed_ = value;
-    }
 };
 
-static_assert(sizeof(AccountState) == 192);
+static_assert(sizeof(AccountState) == 144);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

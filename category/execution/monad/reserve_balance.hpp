@@ -41,6 +41,8 @@ struct Transaction;
 class ReserveBalance
 {
     using FailedSet = ankerl::unordered_dense::segmented_set<Address>;
+    using ViolationThresholdMap = ankerl::unordered_dense::segmented_map<
+        Address, std::optional<uint256_t>>;
 
     State *state_;
     bool tracking_enabled_{false};
@@ -49,11 +51,12 @@ class ReserveBalance
     uint256_t sender_gas_fees_{0};
     bool sender_can_dip_{false};
     FailedSet failed_{};
+    ViolationThresholdMap violation_thresholds_{};
     std::function<uint256_t(Address const &)> get_max_reserve_{};
 
     bool subject_account(Address const &);
     uint256_t pretx_reserve(Address const &);
-    void update_violation_status(Address const &, AccountState &account_state);
+    void update_violation_status(Address const &);
 
 public:
     explicit ReserveBalance(State *state);
@@ -64,14 +67,12 @@ public:
 
     bool failed_contains(Address const &address) const;
 
-    void on_credit(Address const &, AccountState &account_state);
-    void on_debit(Address const &, AccountState &account_state);
+    void on_credit(Address const &);
+    void on_debit(Address const &);
 
     void on_pop_reject(FailedSet const &accounts);
 
-    void on_set_code(
-        Address const &address, AccountState &account_state,
-        byte_string_view const code);
+    void on_set_code(Address const &address, byte_string_view const code);
 
     template <Traits traits>
     void init_from_tx(

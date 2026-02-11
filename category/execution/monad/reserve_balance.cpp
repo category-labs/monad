@@ -100,27 +100,25 @@ uint256_t ReserveBalance::pretx_reserve(Address const &address)
     return std::min(max_reserve, state_->get_original_balance(address));
 }
 
-void ReserveBalance::update_violation_status(
-    Address const &address, AccountState &account_state)
+void ReserveBalance::update_violation_status(Address const &address)
 {
     if (!tracking_enabled_) {
         return;
     }
 
-    if (!account_state.rb_violation_threshold_cached()) {
+    auto &violation_threshold = violation_thresholds_[address];
+    if (!violation_threshold.has_value()) {
         if (!subject_account(address)) {
-            account_state.set_rb_violation_threshold(uint256_t{0});
+            violation_threshold = uint256_t{0};
             failed_.erase(address);
-            account_state.set_rb_failed(false);
             return;
         }
 
         uint256_t reserve = pretx_reserve(address);
         if (address == sender_) {
             if (sender_can_dip_) {
-                account_state.set_rb_violation_threshold(uint256_t{0});
+                violation_threshold = uint256_t{0};
                 failed_.erase(address);
-                account_state.set_rb_failed(false);
                 return;
             }
             MONAD_ASSERT_THROW(
@@ -128,42 +126,35 @@ void ReserveBalance::update_violation_status(
                 "gas fee greater than reserve for non-dipping transaction");
             reserve = reserve - sender_gas_fees_;
         }
-        account_state.set_rb_violation_threshold(reserve);
+        violation_threshold = reserve;
     }
 
-    uint256_t const violation_threshold =
-        account_state.rb_violation_threshold();
-    if (violation_threshold == 0) {
+    if (*violation_threshold == 0) {
         failed_.erase(address);
-        account_state.set_rb_failed(false);
         return;
     }
 
-    if (state_->get_balance(address) < violation_threshold) {
+    if (state_->get_balance(address) < *violation_threshold) {
         failed_.insert(address);
-        account_state.set_rb_failed(true);
     }
     else {
         failed_.erase(address);
-        account_state.set_rb_failed(false);
     }
 }
 
-void ReserveBalance::on_credit(
-    Address const &address, AccountState &account_state)
+void ReserveBalance::on_credit(Address const &address)
 {
     if (!tracking_enabled_) {
         return;
     }
     if (failed_.contains(address)) {
-        update_violation_status(address, account_state);
+        update_violation_status(address);
     }
 }
 
-void ReserveBalance::on_debit(
-    Address const &address, AccountState &account_state)
+void ReserveBalance::on_debit(Address const &address)
 {
-    update_violation_status(address, account_state);
+    update_violation_status(address);
 }
 
 void ReserveBalance::on_pop_reject(FailedSet const &accounts)
@@ -172,18 +163,13 @@ void ReserveBalance::on_pop_reject(FailedSet const &accounts)
         return;
     }
     for (auto const &dirty_address : accounts) {
-        if (state_->rb_failed_flag(dirty_address)) {
-            failed_.insert(dirty_address);
-        }
-        else {
-            failed_.erase(dirty_address);
-        }
+        violation_thresholds_[dirty_address].reset();
+        update_violation_status(dirty_address);
     }
 }
 
 void ReserveBalance::on_set_code(
-    Address const &address, AccountState &account_state,
-    byte_string_view const code)
+    Address const &address, byte_string_view const code)
 {
     if (!tracking_enabled_) {
         return;
@@ -191,14 +177,14 @@ void ReserveBalance::on_set_code(
     if (!use_recent_code_hash_) {
         return;
     }
+    auto &violation_threshold = violation_thresholds_[address];
     if (!vm::evm::is_delegated({code.data(), code.size()})) {
-        account_state.set_rb_violation_threshold(uint256_t{0});
-        account_state.set_rb_failed(false);
+        violation_threshold = uint256_t{0};
         failed_.erase(address);
         return;
     }
-    account_state.clear_rb_violation_threshold();
-    update_violation_status(address, account_state);
+    violation_threshold.reset();
+    update_violation_status(address);
 }
 
 template <Traits traits>
@@ -246,6 +232,7 @@ void ReserveBalance::init_from_tx(
         return get_max_reserve<traits>(addr);
     };
     failed_.clear();
+    violation_thresholds_.clear();
 }
 
 EXPLICIT_MONAD_TRAITS_MEMBER(ReserveBalance::init_from_tx);

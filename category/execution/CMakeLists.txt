@@ -89,6 +89,7 @@ add_library(
   "ethereum/core/variant.hpp"
   "ethereum/core/withdrawal.hpp"
   # ethereum/db
+  "ethereum/db/storage_page.cpp"
   "ethereum/db/block_db.cpp"
   "ethereum/db/block_db.hpp"
   "ethereum/db/commit_builder.cpp"

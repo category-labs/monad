@@ -14,11 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
-#include <category/core/blake3.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
@@ -310,7 +310,8 @@ namespace
 
             auto const addr = to_address(curr.substr(0, sizeof(Address)));
             return Update{
-                .key = hash_alloc_.emplace_back(blake3({addr.bytes, sizeof(addr.bytes)})),
+                .key = hash_alloc_.emplace_back(
+                    blake3({addr.bytes, sizeof(addr.bytes)})),
                 .value = bytes_alloc_.emplace_back(encode_account_db(
                     addr,
                     Account{
@@ -333,8 +334,8 @@ namespace
             // Group slots into pages
             ankerl::unordered_dense::map<bytes32_t, storage_page_t> pages;
             while (!in.empty()) {
-                auto const slot_key =
-                    unaligned_load<bytes32_t>(in.substr(0, sizeof(bytes32_t)).data());
+                auto const slot_key = unaligned_load<bytes32_t>(
+                    in.substr(0, sizeof(bytes32_t)).data());
                 auto const slot_value = unaligned_load<bytes32_t>(
                     in.substr(sizeof(bytes32_t), sizeof(bytes32_t)).data());
 
@@ -349,8 +350,10 @@ namespace
             UpdateList storage_updates;
             for (auto const &[page_key, page] : pages) {
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = hash_alloc_.emplace_back(blake3({page_key.bytes, sizeof(page_key.bytes)})),
-                    .value = bytes_alloc_.emplace_back(encode_storage_page_db(page_key, page)),
+                    .key = hash_alloc_.emplace_back(
+                        blake3({page_key.bytes, sizeof(page_key.bytes)})),
+                    .value = bytes_alloc_.emplace_back(
+                        encode_storage_page_db(page_key, page)),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_id_)}));
@@ -760,13 +763,12 @@ Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
     return res.second;
 };
 
-byte_string encode_storage_page_db(bytes32_t const &page_key, storage_page_t const &page)
+byte_string
+encode_storage_page_db(bytes32_t const &page_key, storage_page_t const &page)
 {
     byte_string encoded;
     encoded += rlp::encode_bytes32_compact(page_key);
-    for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
-        encoded += rlp::encode_bytes32_compact(page[i]);
-    }
+    encoded += rlp::encode_string2(encode_storage_page(page));
     return rlp::encode_list2(encoded);
 }
 
@@ -775,30 +777,24 @@ Result<storage_page_t> decode_storage_page_db(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(auto const page_key_skip, rlp::decode_string(payload));
     (void)page_key_skip;
-    storage_page_t page{};
-    for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
-        BOOST_OUTCOME_TRY(auto const slot_view, rlp::decode_string(payload));
-        page[i] = to_bytes(slot_view);
-    }
+    BOOST_OUTCOME_TRY(auto page_enc, rlp::decode_string(payload));
     if (MONAD_UNLIKELY(!payload.empty())) {
         return rlp::DecodeError::InputTooLong;
     }
-    return page;
+    return decode_storage_page(page_enc);
 }
 
-Result<std::pair<bytes32_t, storage_page_t>> decode_storage_page_db_with_key(byte_string_view &enc)
+Result<std::pair<bytes32_t, storage_page_t>>
+decode_storage_page_db_with_key(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(auto const page_key_view, rlp::decode_string(payload));
     bytes32_t const page_key = to_bytes(page_key_view);
-    storage_page_t page{};
-    for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
-        BOOST_OUTCOME_TRY(auto const slot_view, rlp::decode_string(payload));
-        page[i] = to_bytes(slot_view);
-    }
+    BOOST_OUTCOME_TRY(auto page_enc, rlp::decode_string(payload));
     if (MONAD_UNLIKELY(!payload.empty())) {
         return rlp::DecodeError::InputTooLong;
     }
+    BOOST_OUTCOME_TRY(auto page, decode_storage_page(page_enc));
     return std::pair{page_key, page};
 }
 

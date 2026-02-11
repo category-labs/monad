@@ -157,7 +157,8 @@ namespace
                 FINALIZED_NIBBLE,
                 STATE_NIBBLE,
                 mpt::NibblesView{blake3({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{blake3({page_key.bytes, sizeof(page_key.bytes)})}),
+                mpt::NibblesView{
+                    blake3({page_key.bytes, sizeof(page_key.bytes)})}),
             block_number);
         if (!find_res.has_value()) {
             return {};
@@ -375,9 +376,9 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
             {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
-                 .storage = make_page_storage_multi({
-                     {key1, bytes32_t{}, value1},
-                     {key2, bytes32_t{}, value2}})}}},
+                 .storage = make_page_storage_multi(
+                     {{key1, bytes32_t{}, value1},
+                      {key2, bytes32_t{}, value2}})}}},
         Code{},
         BlockHeader{.number = 0});
 
@@ -394,7 +395,7 @@ TYPED_TEST(DBTest, ModifyStorageOfAccount)
 
     EXPECT_EQ(
         tdb.state_root(),
-        0x55b668a77589d46a0b32b99d7100c205efa015fc9ac3094077060c90e921b5c8_bytes32);
+        0xb4fd4eb4db739c44e609a8e3a56d5550c05e43f1ef6d2365dce95cc5d711fa7e_bytes32);
 }
 
 TYPED_TEST(DBTest, touch_without_modify_regression)
@@ -421,9 +422,9 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
             {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
-                 .storage = make_page_storage_multi({
-                     {key1, bytes32_t{}, value1},
-                     {key2, bytes32_t{}, value2}})}}},
+                 .storage = make_page_storage_multi(
+                     {{key1, bytes32_t{}, value1},
+                      {key2, bytes32_t{}, value2}})}}},
         Code{},
         BlockHeader{.number = 0});
 
@@ -433,9 +434,8 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
             {ADDR_A,
              StateDelta{
                  .account = {acct, std::nullopt},
-                 .storage = make_page_storage_multi({
-                     {key1, value1, value2},
-                     {key2, value2, value1}})}}},
+                 .storage = make_page_storage_multi(
+                     {{key1, value1, value2}, {key2, value2, value1}})}}},
         Code{},
         BlockHeader{.number = 1});
 
@@ -455,9 +455,9 @@ TYPED_TEST(DBTest, storage_deletion)
             {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
-                 .storage = make_page_storage_multi({
-                     {key1, bytes32_t{}, value1},
-                     {key2, bytes32_t{}, value2}})}}},
+                 .storage = make_page_storage_multi(
+                     {{key1, bytes32_t{}, value1},
+                      {key2, bytes32_t{}, value2}})}}},
         Code{},
         BlockHeader{.number = 0});
 
@@ -474,7 +474,7 @@ TYPED_TEST(DBTest, storage_deletion)
 
     EXPECT_EQ(
         tdb.state_root(),
-        0x86fe65e493bb75004f12891e5590d580b24d9caf9ce3bb9229a7b033a9ec3b97_bytes32);
+        0xf3571a49ce0e96b3d712a57f762f9f0f7b62ae90f4f6bc8db3d0c2b526e00ece_bytes32);
 }
 
 TYPED_TEST(DBTest, multiple_slots_same_page)
@@ -521,11 +521,11 @@ TYPED_TEST(DBTest, multiple_slots_same_page)
             {ADDR_A,
              StateDelta{
                  .account = {std::nullopt, acct},
-                 .storage = make_page_storage_multi({
-                     {slot0, bytes32_t{}, val0},
-                     {slot1, bytes32_t{}, val1},
-                     {slot2, bytes32_t{}, val2},
-                     {slot_last, bytes32_t{}, val_last}})}}},
+                 .storage = make_page_storage_multi(
+                     {{slot0, bytes32_t{}, val0},
+                      {slot1, bytes32_t{}, val1},
+                      {slot2, bytes32_t{}, val2},
+                      {slot_last, bytes32_t{}, val_last}})}}},
         Code{},
         BlockHeader{.number = 0});
 

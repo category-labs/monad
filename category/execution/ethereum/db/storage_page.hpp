@@ -15,8 +15,10 @@
 
 #pragma once
 
+#include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/result.hpp>
 
 #include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
@@ -31,7 +33,7 @@ using bytes32_t = ::evmc::bytes32;
 
 struct storage_page_t
 {
-    static constexpr size_t SLOTS = 64;
+    static constexpr size_t SLOTS = 32;
     static constexpr size_t SLOT_SIZE = 32;
     static constexpr size_t SLOT_BITS = std::bit_width(SLOTS) - 1;
     static constexpr uint8_t SLOT_MASK = SLOTS - 1;
@@ -81,11 +83,20 @@ inline uint8_t compute_slot_offset(bytes32_t const &storage_key)
     return storage_key.bytes[31] & storage_page_t::SLOT_MASK;
 }
 
-inline bytes32_t compute_slot_key(bytes32_t const &page_key, uint8_t slot_offset)
+inline bytes32_t
+compute_slot_key(bytes32_t const &page_key, uint8_t slot_offset)
 {
     uint256_t const page_int = intx::be::load<uint256_t>(page_key);
-    uint256_t const slot_int = (page_int << storage_page_t::SLOT_BITS) | slot_offset;
+    uint256_t const slot_int =
+        (page_int << storage_page_t::SLOT_BITS) | slot_offset;
     return intx::be::store<bytes32_t>(slot_int);
 }
+
+// RLE-encode/decode storage page slot values.
+// Optimizes for minimum encoding size (both empty and non-empty slots) and
+// fast encoding speed. See storage_page.cpp for format details.
+byte_string encode_storage_page(storage_page_t const &);
+
+Result<storage_page_t> decode_storage_page(byte_string_view &);
 
 MONAD_NAMESPACE_END

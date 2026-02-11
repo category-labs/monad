@@ -287,7 +287,7 @@ Definition shrd64 (high low : uint64) (shift : nat) : uint64 :=
 (** ** Correctness Properties *)
 
 (** addc64 produces correct mathematical result *)
-Lemma addc64_correct : forall lhs rhs cin,
+Lemma addc64_value_correct : forall lhs rhs cin,
   let result := addc64 lhs rhs cin in
   let cin_z := if cin then 1 else 0 in
   to_Z64 (value64 result) = (to_Z64 lhs + to_Z64 rhs + cin_z) mod modulus64.
@@ -642,41 +642,6 @@ Definition add128_spec (x_hi x_lo y_hi y_lo : uint64) : mulx_result :=
     lo := value64 r0
   |}.
 
-(** ** Chaining Lemmas *)
-
-(** Chaining two addc operations correctly computes the sum *)
-Lemma addc64_chain_2 : forall x0 x1 y0 y1,
-  let r0 := addc64 x0 y0 false in
-  let r1 := addc64 x1 y1 (carry64 r0) in
-  let x := Z.shiftl (to_Z64 x1) 64 + to_Z64 x0 in
-  let y := Z.shiftl (to_Z64 y1) 64 + to_Z64 y0 in
-  let result := Z.shiftl (to_Z64 (value64 r1)) 64 + to_Z64 (value64 r0) in
-  result = (x + y) mod (2^128).
-Proof.
-  intros.
-  (* This proof would expand the definitions and use arithmetic properties *)
-  (* For now we admit it as a lemma to be proven *)
-Admitted.
-
-(** Similarly for 4-word (256-bit) addition *)
-Lemma addc64_chain_4 : forall x0 x1 x2 x3 y0 y1 y2 y3,
-  let r0 := addc64 x0 y0 false in
-  let r1 := addc64 x1 y1 (carry64 r0) in
-  let r2 := addc64 x2 y2 (carry64 r1) in
-  let r3 := addc64 x3 y3 (carry64 r2) in
-  let x := Z.shiftl (to_Z64 x3) 192 + Z.shiftl (to_Z64 x2) 128 +
-           Z.shiftl (to_Z64 x1) 64 + to_Z64 x0 in
-  let y := Z.shiftl (to_Z64 y3) 192 + Z.shiftl (to_Z64 y2) 128 +
-           Z.shiftl (to_Z64 y1) 64 + to_Z64 y0 in
-  let result := Z.shiftl (to_Z64 (value64 r3)) 192 +
-                Z.shiftl (to_Z64 (value64 r2)) 128 +
-                Z.shiftl (to_Z64 (value64 r1)) 64 +
-                to_Z64 (value64 r0) in
-  result = (x + y) mod (2^256).
-Proof.
-  (* This is the key lemma for proving 256-bit addition correctness *)
-Admitted.
-
 (** * Word-List Representation for Multi-Word Arithmetic *)
 
 (** A word list represents a multi-word unsigned integer in little-endian order.
@@ -778,6 +743,19 @@ Proof.
     + simpl. rewrite IH. reflexivity.
 Qed.
 
+(** set_word preserves words_valid *)
+Lemma set_word_valid : forall ws i v,
+  words_valid ws ->
+  0 <= v < modulus64 ->
+  words_valid (set_word ws i v).
+Proof.
+  unfold words_valid.
+  induction ws as [|w rest IH]; intros i v Hvalid Hv.
+  - constructor.
+  - destruct i; inversion Hvalid; subst; cbn [set_word];
+    constructor; try assumption. apply IH; assumption.
+Qed.
+
 (** get_word after set_word at same index *)
 Lemma get_set_word_same : forall ws i v,
   (i < length ws)%nat ->
@@ -785,9 +763,8 @@ Lemma get_set_word_same : forall ws i v,
 Proof.
   induction ws as [|w rest IH]; intros i v Hi.
   - simpl in Hi. lia.
-  - destruct i.
-    + simpl. reflexivity.
-    + simpl in Hi. simpl. apply IH. lia.
+  - destruct i; simpl in *; [reflexivity|].
+    apply IH; lia.
 Qed.
 
 (** get_word after set_word at different index *)
@@ -797,17 +774,15 @@ Lemma get_set_word_other : forall ws i j v,
 Proof.
   induction ws as [|w rest IH]; intros i j v Hij.
   - simpl. reflexivity.
-  - destruct i; destruct j; try lia.
-    + simpl. reflexivity.
-    + simpl. reflexivity.
-    + simpl. apply IH. lia.
+  - destruct i; destruct j; auto; try lia.
+    simpl. apply IH. lia.
 Qed.
 
 (** Length of extend_words *)
 Lemma extend_words_length : forall n,
   length (extend_words n) = n.
 Proof.
-  intros. unfold extend_words. apply repeat_length.
+  unfold extend_words; auto using repeat_length.
 Qed.
 
 (** get_word from extend_words returns 0 *)
@@ -836,8 +811,22 @@ Lemma to_Z_extend_words : forall n,
 Proof.
   intros n. induction n as [|n' IH].
   - simpl. reflexivity.
-  - unfold extend_words in *. simpl.
+  - unfold extend_words in *; cbn [repeat to_Z_words].
     unfold to_Z64. rewrite IH. lia.
+Qed.
+
+(** to_Z_words of appended single word *)
+Lemma to_Z_words_app_single : forall ws w,
+  to_Z_words (ws ++ [w]) = to_Z_words ws + to_Z64 w * 2^(64 * Z.of_nat (length ws)).
+Proof.
+  induction ws as [|w0 rest IH]; intros w.
+  - cbn [app to_Z_words length Z.of_nat Z.mul Z.pow_pos Pos.mul].
+    unfold to_Z64. ring.
+  - cbn [app to_Z_words length]. rewrite IH. unfold to_Z64.
+    rewrite Nat2Z.inj_succ.
+    replace (64 * Z.succ (Z.of_nat (length rest)))
+      with (64 + 64 * Z.of_nat (length rest)) by lia.
+    rewrite Z.pow_add_r by lia. ring.
 Qed.
 
 (** ** Word List Mathematical Properties *)
@@ -854,18 +843,18 @@ Proof.
   induction ws as [|w rest IH]; intros i v Hi Hvalid Hv.
   - simpl in Hi. lia.
   - destruct i.
-    + simpl. unfold get_word. simpl.
+    + cbn [set_word get_word to_Z_words nth Z.of_nat Z.mul Z.pow_pos Pos.mul].
       unfold to_Z64. ring.
     + simpl in Hi.
       inversion Hvalid as [|w' rest' Hw Hrest]; subst.
-      cbn [set_word to_Z_words].
-      specialize (IH i v ltac:(lia) Hrest Hv).
-      unfold to_Z64, get_word in *.
-      rewrite IH.
+      cbn [set_word to_Z_words get_word nth].
+      rewrite IH by (try lia; assumption).
+      unfold get_word, to_Z64.
       rewrite Nat2Z.inj_succ.
-      replace (64 * Z.succ (Z.of_nat i)) with (64 + 64 * Z.of_nat i) by ring.
+      replace (64 * Z.succ (Z.of_nat i)) with (64 + 64 * Z.of_nat i) by lia.
       rewrite Z.pow_add_r by lia.
-Admitted.
+      ring.
+Qed.
 
 (** * Truncating Multiplication (constexpr version)
 
@@ -955,17 +944,15 @@ Record long_div_result := mk_long_div_result {
 }.
 
 (** Process words from most significant to least significant.
-    Input: us in little-endian order, we use fold_right semantics to process
-    from the tail (MSW) toward the head (LSW). *)
+    Input: list in MSW-first order (i.e., rev of little-endian).
+    Each step divides (rem * 2^64 + u) by v, passing remainder forward. *)
 Fixpoint long_div_fold (us : words) (v : uint64) (rem : uint64) : long_div_result :=
   match us with
   | [] => mk_long_div_result [] rem
   | u :: rest =>
-      (* First process more significant words (rest) *)
-      let rec_result := long_div_fold rest v rem in
-      (* Then divide this word using remainder from more significant *)
-      let r := div64 (ld_rem rec_result) u v in
-      mk_long_div_result (quot64 r :: ld_quot rec_result) (rem64 r)
+      let r := div64 rem u v in
+      let rec_result := long_div_fold rest v (rem64 r) in
+      mk_long_div_result (quot64 r :: ld_quot rec_result) (ld_rem rec_result)
   end.
 
 (** long_div: divide word list by single word.
@@ -977,68 +964,9 @@ Definition long_div (us : words) (v : uint64) : long_div_result :=
 
 (** ** Correctness Properties for Multi-Word Operations *)
 
-(** *** Helper Lemmas for addc64 Carry Computation *)
-
-(** When adding with carry, the result value is correct regardless of bounds *)
-Lemma addc64_value_correct : forall lhs rhs cin,
-  to_Z64 (value64 (addc64 lhs rhs cin)) =
-  (to_Z64 lhs + to_Z64 rhs + (if cin then 1 else 0)) mod modulus64.
-Proof.
-  intros. unfold addc64, value64, to_Z64, from_Z64, normalize64, modulus64.
-  simpl. rewrite Zplus_mod_idemp_l. reflexivity.
-Qed.
-
-(** Boolean carry output can be converted to integer *)
-Definition carry_to_Z (c : bool) : Z := if c then 1 else 0.
-
-(** Carry propagation: when adding a, b, cin, the carry out is 1 iff sum >= modulus *)
-Lemma addc64_carry_value : forall lhs rhs cin,
-  0 <= to_Z64 lhs < modulus64 ->
-  0 <= to_Z64 rhs < modulus64 ->
-  carry_to_Z (carry64 (addc64 lhs rhs cin)) =
-    (to_Z64 lhs + to_Z64 rhs + carry_to_Z cin) / modulus64.
-Proof.
-  intros lhs rhs cin Hlhs Hrhs.
-  unfold carry_to_Z.
-  destruct (carry64 (addc64 lhs rhs cin)) eqn:Hcarry.
-  - (* carry = true *)
-    apply addc64_carry_correct in Hcarry; [|assumption|assumption].
-    unfold to_Z64 in *.
-Admitted.
-(*     destruct cin; simpl in *. *)
-(*     + assert (lhs + rhs + 1 >= modulus64) by lia. *)
-(*       assert (lhs + rhs + 1 < 2 * modulus64) by (unfold modulus64 in *; lia). *)
-(*       rewrite Z.div_small_iff in *; [|unfold modulus64; lia]. *)
-(*       destruct H0; [lia|]. *)
-(*       apply Z.div_unique with (r := lhs + rhs + 1 - modulus64); lia. *)
-(*     + assert (lhs + rhs >= modulus64) by lia. *)
-(*       assert (lhs + rhs < 2 * modulus64) by (unfold modulus64 in *; lia). *)
-(*       apply Z.div_unique with (r := lhs + rhs - modulus64); lia. *)
-(*   - (* carry = false *) *)
-(*     unfold addc64 in Hcarry. simpl in Hcarry. *)
-(*     unfold to_Z64, normalize64, modulus64 in *. *)
-(*     apply Bool.orb_false_elim in Hcarry. *)
-(*     destruct Hcarry as [H1 H2]. *)
-(*     apply Z.ltb_ge in H1. *)
-(*     apply Z.ltb_ge in H2. *)
-(*     destruct cin; simpl in *. *)
-(*     + assert ((lhs + rhs) mod 2^64 + 1 >= (lhs + rhs) mod 2^64) by lia. *)
-(*       destruct (Z_lt_ge_dec (lhs + rhs) (2^64)) as [Hno_ov | Hov]. *)
-(*       * rewrite Z.mod_small in H2 by lia. *)
-(*         rewrite Z.mod_small in H1 by lia. *)
-(*         rewrite Z.div_small; lia. *)
-(*       * (* overflow on first add: sum mod M < lhs, but H1 says sum mod M >= lhs *) *)
-(*         rewrite Z.mod_eq in H1 by lia. *)
-(*         assert ((lhs + rhs) / 2^64 = 1) by (apply Z.div_unique with (r := lhs + rhs - 2^64); lia). *)
-(*         lia. *)
-(*     + destruct (Z_lt_ge_dec (lhs + rhs) (2^64)) as [Hno_ov | Hov]. *)
-(*       * rewrite Z.div_small; lia. *)
-(*       * rewrite Z.mod_eq in H1 by lia. *)
-(*         assert ((lhs + rhs) / 2^64 = 1) by (apply Z.div_unique with (r := lhs + rhs - 2^64); lia). *)
-(*         lia. *)
-(* Qed. *)
-
 (** *** mulx64 Bounds Lemmas *)
+
+(* TODO: Should probably use mul_spec ?? *)
 
 (** mulx64 high result is bounded *)
 Lemma mulx64_hi_bounded : forall x y,
@@ -1046,16 +974,14 @@ Lemma mulx64_hi_bounded : forall x y,
   0 <= y < modulus64 ->
   0 <= to_Z64 (hi (mulx64 x y)) < modulus64.
 Proof.
-Admitted.
-(*   intros x y Hx Hy. *)
-(*   unfold mulx64, hi, from_Z64, to_Z64, modulus64 in *. *)
-(*   split. *)
-(*   - apply Z.shiftr_nonneg. lia. *)
-(*   - rewrite Z.shiftr_div_pow2 by lia. *)
-(*     apply Z.div_lt_upper_bound; [lia|]. *)
-(*     assert (x * y < 2^64 * 2^64) by lia. *)
-(*     rewrite <- Z.pow_add_r by lia. simpl. lia. *)
-(* Qed. *)
+  intros x y Hx Hy.
+  unfold mulx64, hi, from_Z64, to_Z64, modulus64 in *. split.
+  - apply Z.shiftr_nonneg. lia.
+  - rewrite Z.shiftr_div_pow2 by lia.
+    apply Z.div_lt_upper_bound; [lia|].
+    assert (x * y < 2^64 * 2^64) by nia.
+    rewrite <- Z.pow_add_r by lia. simpl. lia.
+Qed.
 
 (** mulx64 low result is bounded *)
 Lemma mulx64_lo_bounded : forall x y,
@@ -1063,11 +989,10 @@ Lemma mulx64_lo_bounded : forall x y,
   0 <= y < modulus64 ->
   0 <= to_Z64 (lo (mulx64 x y)) < modulus64.
 Proof.
-Admitted.
-(*   intros x y Hx Hy. *)
-(*   unfold mulx64, lo, from_Z64, to_Z64, normalize64, modulus64 in *. *)
-(*   apply Z.mod_pos_bound. lia. *)
-(* Qed. *)
+  intros x y Hx Hy.
+  unfold mulx64, lo, from_Z64, to_Z64, normalize64, modulus64 in *.
+  apply Z.mod_pos_bound. lia.
+Qed.
 
 (** *** Inner Loop Invariant *)
 
@@ -1084,59 +1009,49 @@ Lemma constexpr_inner_loop_valid : forall xs y result j i R carry,
   length result = R ->
   words_valid (fst (constexpr_inner_loop xs y result j i R carry)).
 Proof.
-Admitted.
-(*   induction xs as [|x rest IH]; intros y result j i R carry Hxs Hy Hcarry Hresult HR. *)
-(*   - simpl. assumption. *)
-(*   - simpl. *)
-(*     destruct (i + j <? R)%nat eqn:Hlt. *)
-(*     + apply Nat.ltb_lt in Hlt. *)
-(*       inversion Hxs as [|x' rest' Hx Hrest]; subst. *)
-(*       apply IH; try assumption. *)
-(*       * (* carry from s2 is valid *) *)
-(*         unfold addc64, value64, from_Z64, normalize64, modulus64. simpl. *)
-(*         apply Z.mod_pos_bound. lia. *)
-(*       * (* set_word preserves validity *) *)
-(*         unfold words_valid, set_word. *)
-(*         apply Forall_forall. intros w Hw. *)
-(*         { (* New result after set_word is valid *) *)
-(*           assert (Hvalid_val: 0 <= value64 (addc64 (value64 (addc64 (lo (mulx64 x y)) *)
-(*                               (get_word result (i + j)) false)) carry false) < modulus64). *)
-(*           { unfold addc64, value64, from_Z64, normalize64, modulus64. simpl. *)
-(*             apply Z.mod_pos_bound. lia. } *)
-(*           (* The new word list contains either the new value or existing words *) *)
-(*           clear IH. *)
-(*           generalize dependent i. *)
-(*           generalize dependent result. *)
-(*           induction result as [|r0 rrest IHr]; intros Hresult HR i Hlt Hw. *)
-(*           - simpl in Hw. destruct Hw. *)
-(*           - destruct i. *)
-(*             + simpl in Hw. destruct Hw as [Heq | Hin]. *)
-(*               * subst. unfold modulus64 in Hvalid_val. assumption. *)
-(*               * inversion Hresult; subst. rewrite Forall_forall in H2. *)
-(*                 apply H2. assumption. *)
-(*             + simpl in Hw. destruct Hw as [Heq | Hin]. *)
-(*               * subst. inversion Hresult; subst. assumption. *)
-(*               * inversion Hresult; subst. *)
-(*                 eapply IHr; try eassumption. *)
-(*                 -- simpl in HR. lia. *)
-(*                 -- simpl in Hlt. lia. *)
-(*         } *)
-(*       * rewrite set_word_length. assumption. *)
-(*     + simpl. assumption. *)
-(* Qed. *)
+  induction xs as [|x rest IH]; intros y result j i R carry Hxs Hy Hcarry Hresult HR.
+  - assumption.
+  - unfold constexpr_inner_loop; fold constexpr_inner_loop.
+    destruct (i + j <? R)%nat eqn:Hlt.
+    + apply Nat.ltb_lt in Hlt.
+      inversion Hxs as [|x' rest' Hx Hrest]; subst.
+      apply IH.
+      * assumption.
+      * assumption.
+      * unfold addc64, value64, from_Z64, normalize64, modulus64;
+        apply Z.mod_pos_bound; lia.
+      * apply set_word_valid; [assumption|].
+        unfold addc64, value64, from_Z64, normalize64, modulus64;
+        apply Z.mod_pos_bound; lia.
+      * apply set_word_length.
+    + assumption.
+Qed.
 
 (** Inner loop preserves result length *)
 Lemma constexpr_inner_loop_length : forall xs y result j i R carry,
   length (fst (constexpr_inner_loop xs y result j i R carry)) = length result.
 Proof.
-Admitted.
-(*   induction xs as [|x rest IH]; intros y result j i R carry. *)
-(*   - simpl. reflexivity. *)
-(*   - simpl. *)
-(*     destruct (i + j <? R)%nat eqn:Hlt. *)
-(*     + rewrite IH. rewrite set_word_length. reflexivity. *)
-(*     + reflexivity. *)
-(* Qed. *)
+  induction xs as [|x rest IH]; intros y result j i R carry.
+  - reflexivity.
+  - unfold constexpr_inner_loop; fold constexpr_inner_loop.
+    destruct (i + j <? R)%nat eqn:Hlt.
+    + rewrite IH. rewrite set_word_length. reflexivity.
+    + reflexivity.
+Qed.
+
+(** Inner loop carry output is bounded *)
+Lemma constexpr_inner_loop_carry_bounded : forall xs y result j i R carry,
+  0 <= carry < modulus64 ->
+  0 <= snd (constexpr_inner_loop xs y result j i R carry) < modulus64.
+Proof.
+  induction xs as [|x rest IH]; intros y result j i R carry Hcarry.
+  - assumption.
+  - unfold constexpr_inner_loop; fold constexpr_inner_loop.
+    destruct (i + j <? R)%nat eqn:Hlt.
+    + apply IH. unfold addc64, value64, from_Z64, normalize64, modulus64;
+      apply Z.mod_pos_bound; lia.
+    + assumption.
+Qed.
 
 (** *** Outer Loop Invariant *)
 
@@ -1148,94 +1063,50 @@ Lemma constexpr_outer_loop_valid : forall xs ys result j R,
   length result = R ->
   words_valid (constexpr_outer_loop xs ys result j R).
 Proof.
-Admitted.
-(*   intros xs ys. revert j. *)
-(*   induction ys as [|y rest IH]; intros j result R Hxs Hys Hresult HR. *)
-(*   - simpl. assumption. *)
-(*   - simpl. *)
-(*     inversion Hys as [|y' rest' Hy Hrest]; subst. *)
-(*     destruct (constexpr_inner_loop xs y result j 0 R 0) as [new_result carry] eqn:Hinner. *)
-(*     apply IH; try assumption. *)
-(*     + (* final_result is valid *) *)
-(*       destruct (j + length xs <? R)%nat eqn:Hlt. *)
-(*       * apply Nat.ltb_lt in Hlt. *)
-(*         unfold words_valid. apply Forall_forall. *)
-(*         intros w Hw. *)
-(*         assert (Hnew_valid: words_valid new_result). *)
-(*         { assert (H := constexpr_inner_loop_valid xs y result j 0 R 0 *)
-(*                         Hxs Hy ltac:(unfold modulus64; lia) Hresult HR). *)
-(*           rewrite Hinner in H. simpl in H. assumption. } *)
-(*         assert (Hcarry_bound: 0 <= carry < modulus64). *)
-(*         { (* carry is the second component of inner_loop result *) *)
-(*           clear IH. *)
-(*           revert j result Hresult HR Hinner. *)
-(*           induction xs as [|x xrest IHx]; intros j result Hresult HR Hinner. *)
-(*           - simpl in Hinner. inversion Hinner. unfold modulus64. lia. *)
-(*           - simpl in Hinner. *)
-(*             destruct (0 + j <? R)%nat eqn:Hlt'. *)
-(*             + (* inner loop continues *) *)
-(*               inversion Hxs; subst. *)
-(*               eapply IHx; try eassumption. *)
-(*               * apply (constexpr_inner_loop_valid [x] y result j 0 R 0). *)
-(*                 -- constructor; [assumption|constructor]. *)
-(*                 -- assumption. *)
-(*                 -- unfold modulus64; lia. *)
-(*                 -- assumption. *)
-(*                 -- assumption. *)
-(*               * rewrite set_word_length. assumption. *)
-(*             + inversion Hinner. unfold modulus64. lia. *)
-(*         } *)
-(*         generalize dependent (j + length xs). *)
-(*         intros idx Hlt Hw. *)
-(*         destruct idx. *)
-(*         -- simpl in Hw. destruct Hw as [Heq | Hin]. *)
-(*            ++ subst. assumption. *)
-(*            ++ rewrite Forall_forall in Hnew_valid. apply Hnew_valid. assumption. *)
-(*         -- simpl in Hw. destruct Hw as [Heq | Hin]. *)
-(*            ++ subst. destruct new_result; simpl in *. *)
-(*               ** destruct Hin. *)
-(*               ** inversion Hnew_valid; subst. assumption. *)
-(*            ++ clear Hlt. *)
-(*               revert new_result Hnew_valid Hw idx. *)
-(*               induction new_result as [|n0 nrest IHn]; intros Hnew_valid Hw idx. *)
-(*               ** simpl in Hw. destruct Hw. *)
-(*               ** destruct idx. *)
-(*                  --- simpl in Hw. destruct Hw as [Heq | Hin]. *)
-(*                      +++ subst. assumption. *)
-(*                      +++ inversion Hnew_valid; subst. *)
-(*                          rewrite Forall_forall in H2. apply H2. assumption. *)
-(*                  --- simpl in Hw. destruct Hw as [Heq | Hin]. *)
-(*                      +++ subst. inversion Hnew_valid; subst. assumption. *)
-(*                      +++ inversion Hnew_valid; subst. eapply IHn; eassumption. *)
-(*       * assert (H := constexpr_inner_loop_valid xs y result j 0 R 0 *)
-(*                       Hxs Hy ltac:(unfold modulus64; lia) Hresult HR). *)
-(*         rewrite Hinner in H. simpl in H. assumption. *)
-(*     + destruct (j + length xs <? R)%nat. *)
-(*       * rewrite set_word_length. *)
-(*         assert (H := constexpr_inner_loop_length xs y result j 0 R 0). *)
-(*         rewrite Hinner in H. simpl in H. rewrite H. assumption. *)
-(*       * assert (H := constexpr_inner_loop_length xs y result j 0 R 0). *)
-(*         rewrite Hinner in H. simpl in H. rewrite H. assumption. *)
-(* Qed. *)
+  intro xs. induction ys as [|y rest IH]; intros result j R Hxs Hys Hresult HR.
+  - assumption.
+  - unfold constexpr_outer_loop; fold constexpr_outer_loop.
+    destruct (constexpr_inner_loop xs y result j 0 R 0)
+      as [new_result carry] eqn:Hinner.
+    inversion Hys as [|y' rest' Hy Hrest]; subst.
+    apply IH; try assumption.
+    + assert (Hnew_valid: words_valid new_result).
+      { pose proof (constexpr_inner_loop_valid xs y result j 0 (length result) 0
+                        Hxs Hy ltac:(unfold modulus64; lia) Hresult eq_refl) as H.
+        rewrite Hinner in H. exact H. }
+      assert (Hcarry_bound: 0 <= carry < modulus64).
+      { pose proof (constexpr_inner_loop_carry_bounded xs y result j 0
+                        (length result) 0 ltac:(unfold modulus64; lia)) as H.
+        rewrite Hinner in H. exact H. }
+      destruct (j + length xs <? length result)%nat.
+      * apply set_word_valid; assumption.
+      * assumption.
+    + assert (Hlen: length new_result = length result).
+      { pose proof (constexpr_inner_loop_length xs y result j 0 (length result) 0) as H.
+        rewrite Hinner in H. exact H. }
+      destruct (j + length xs <? length result)%nat.
+      * rewrite set_word_length. exact Hlen.
+      * exact Hlen.
+Qed.
 
-(* (** Outer loop preserves result length *) *)
-(* Lemma constexpr_outer_loop_length : forall xs ys result j R, *)
-(*   length result = R -> *)
-(*   length (constexpr_outer_loop xs ys result j R) = R. *)
-(* Proof. *)
-(*   intros xs ys. revert xs. *)
-(*   induction ys as [|y rest IH]; intros xs j result R HR. *)
-(*   - simpl. assumption. *)
-(*   - simpl. *)
-(*     destruct (constexpr_inner_loop xs y result j 0 R 0) as [new_result carry] eqn:Hinner. *)
-(*     apply IH. *)
-(*     destruct (j + length xs <? R)%nat. *)
-(*     + rewrite set_word_length. *)
-(*       assert (H := constexpr_inner_loop_length xs y result j 0 R 0). *)
-(*       rewrite Hinner in H. simpl in H. rewrite H. assumption. *)
-(*     + assert (H := constexpr_inner_loop_length xs y result j 0 R 0). *)
-(*       rewrite Hinner in H. simpl in H. rewrite H. assumption. *)
-(* Qed. *)
+(** Outer loop preserves result length *)
+Lemma constexpr_outer_loop_length : forall xs ys result j R,
+  length result = R ->
+  length (constexpr_outer_loop xs ys result j R) = R.
+Proof.
+  intro xs. induction ys as [|y rest IH]; intros result j R HR.
+  - assumption.
+  - unfold constexpr_outer_loop; fold constexpr_outer_loop.
+    destruct (constexpr_inner_loop xs y result j 0 R 0)
+      as [new_result carry] eqn:Hinner.
+    apply IH.
+    assert (Hlen: length new_result = length result).
+    { pose proof (constexpr_inner_loop_length xs y result j 0 R 0) as H.
+      rewrite Hinner in H. exact H. }
+    destruct (j + length xs <? R)%nat.
+    + rewrite set_word_length. rewrite Hlen. assumption.
+    + rewrite Hlen. assumption.
+Qed.
 
 (** *** Truncating Multiplication Correctness *)
 
@@ -1245,26 +1116,22 @@ Lemma truncating_mul_constexpr_valid : forall xs ys R,
   words_valid ys ->
   words_valid (truncating_mul_constexpr xs ys R).
 Proof.
-Admitted.
-(*   intros xs ys R Hxs Hys. *)
-(*   unfold truncating_mul_constexpr. *)
-(*   apply constexpr_outer_loop_valid; try assumption. *)
-(*   - apply extend_words_valid. *)
-(*   - apply extend_words_length. *)
-(* Qed. *)
+  intros xs ys R Hxs Hys. unfold truncating_mul_constexpr.
+  apply constexpr_outer_loop_valid; try assumption.
+  - apply extend_words_valid.
+  - apply extend_words_length.
+Qed.
 
 (** truncating_mul_constexpr produces correct length *)
 Lemma truncating_mul_constexpr_length : forall xs ys R,
   length (truncating_mul_constexpr xs ys R) = R.
 Proof.
-Admitted.
-(*   intros xs ys R. *)
-(*   unfold truncating_mul_constexpr. *)
-(*   apply constexpr_outer_loop_length. *)
-(*   apply extend_words_length. *)
-(* Qed. *)
+  intros xs ys R. unfold truncating_mul_constexpr.
+  apply constexpr_outer_loop_length. apply extend_words_length.
+Qed.
 
 (** Main correctness theorem for truncating multiplication (stated but proof is complex) *)
+(* TODO: Should probably use Spec.v definitions *)
 Theorem truncating_mul256_constexpr_correct : forall x y,
   words_valid (uint256_to_words x) ->
   words_valid (uint256_to_words y) ->
@@ -1285,90 +1152,68 @@ Lemma long_div_fold_length : forall us v rem,
   length (ld_quot (long_div_fold us v rem)) = length us.
 Proof.
   induction us as [|u rest IH]; intros v rem.
-  - simpl. reflexivity.
-  - simpl. rewrite IH. simpl. reflexivity.
+  - reflexivity.
+  - unfold long_div_fold; fold long_div_fold.
+    cbn [ld_quot length]. rewrite IH. reflexivity.
 Qed.
 
 (** long_div produces quotient with same length as input *)
 Lemma long_div_length : forall us v,
   length (ld_quot (long_div us v)) = length us.
 Proof.
-  intros us v.
-  unfold long_div.
-Admitted.
-(*   rewrite rev_length. *)
-(*   rewrite long_div_fold_length. *)
-(*   rewrite rev_length. *)
-(*   reflexivity. *)
-(* Qed. *)
+  intros us v. unfold long_div. simpl.
+  rewrite length_rev. rewrite long_div_fold_length. rewrite length_rev.
+  reflexivity.
+Qed.
 
-(** Correctness of long_div_fold: processes MSW-first (reversed list) *)
+(** Correctness of long_div_fold: processes MSW-first list.
+    The invariant uses rev to convert from the big-endian quotient order
+    produced by long_div_fold to the little-endian to_Z_words interpretation. *)
 Lemma long_div_fold_correct : forall us v rem,
   0 < v < modulus64 ->
   0 <= rem < v ->
   words_valid us ->
   let r := long_div_fold us v rem in
-  (* The division invariant: rem * base^n + u = quot * v + rem' *)
-  rem * modulus_words (length us) + to_Z_words us =
-    to_Z_words (ld_quot r) * to_Z64 v + to_Z64 (ld_rem r) /\
+  rem * modulus_words (length us) + to_Z_words (rev us) =
+    to_Z_words (rev (ld_quot r)) * to_Z64 v + to_Z64 (ld_rem r) /\
   0 <= to_Z64 (ld_rem r) < to_Z64 v.
 Proof.
-Admitted.
-(*   induction us as [|u rest IH]; intros v rem Hv Hrem Hvalid. *)
-(*   - simpl. split. *)
-(*     + unfold modulus_words, words_bits. simpl. ring. *)
-(*     + unfold to_Z64. assumption. *)
-(*   - simpl. *)
-(*     inversion Hvalid as [|u' rest' Hu Hrest]; subst. *)
-(*     specialize (IH v rem Hv Hrem Hrest). *)
-(*     destruct IH as [IHeq IHrem]. *)
-(*     set (rec_result := long_div_fold rest v rem) in *. *)
-(*     set (r := div64 (ld_rem rec_result) u v). *)
-(*     split. *)
-(*     + (* Main equation *) *)
-(*       unfold modulus_words, words_bits in *. *)
-(*       simpl length. *)
-(*       rewrite Nat2Z.inj_succ. *)
-(*       replace (Z.succ (Z.of_nat (length rest)) * 64) with *)
-(*               (64 + Z.of_nat (length rest) * 64) by ring. *)
-(*       rewrite Z.pow_add_r by lia. *)
-(*       unfold to_Z_words at 1. fold to_Z_words. *)
-(*       unfold to_Z64 at 1 3. *)
-(*       (* Use the division equation for div64 *) *)
-(*       assert (Hdiv: let u128 := Z.shiftl (to_Z64 (ld_rem rec_result)) 64 + to_Z64 u in *)
-(*                     u128 = to_Z64 (quot64 r) * to_Z64 v + to_Z64 (rem64 r) /\ *)
-(*                     to_Z64 (rem64 r) < to_Z64 v). *)
-(*       { apply div64_correct. *)
-(*         - unfold to_Z64. lia. *)
-(*         - unfold div64_precondition, to_Z64. *)
-(*           assert (0 <= ld_rem rec_result < v) by (unfold to_Z64 in IHrem; lia). *)
-(*           lia. } *)
-(*       destruct Hdiv as [Hdiv_eq Hdiv_rem]. *)
-(*       unfold r at 2. simpl. *)
-(*       rewrite Z.shiftl_mul_pow2 in Hdiv_eq by lia. *)
-(*       unfold to_Z64 in Hdiv_eq at 1. *)
-(*       (* Now relate to the recursive result *) *)
-(*       rewrite IHeq. *)
-(*       unfold to_Z64 at 4. *)
-(*       (* Algebraic manipulation *) *)
-(*       assert (Hpow: 2^64 = modulus64) by reflexivity. *)
-(*       rewrite Hpow in Hdiv_eq. *)
-(*       unfold to_Z64 at 3 4 5. *)
-(*       ring_simplify. *)
-(*       rewrite Hdiv_eq. *)
-(*       ring. *)
-(*     + (* Remainder bound *) *)
-(*       unfold r. *)
-(*       assert (Hdiv: to_Z64 (rem64 (div64 (ld_rem rec_result) u v)) < to_Z64 v). *)
-(*       { apply div64_correct. *)
-(*         - unfold to_Z64. lia. *)
-(*         - unfold div64_precondition, to_Z64. *)
-(*           assert (0 <= ld_rem rec_result < v) by (unfold to_Z64 in IHrem; lia). *)
-(*           lia. } *)
-(*       unfold to_Z64 in *. split; [|assumption]. *)
-(*       unfold div64, rem64, from_Z64. *)
-(*       apply Z.mod_pos_bound. lia. *)
-(* Qed. *)
+  induction us as [|u rest IH]; intros v rem Hv Hrem Hvalid.
+  - cbn [long_div_fold ld_quot ld_rem rev length].
+    cbn [to_Z_words modulus_words words_bits Z.of_nat Z.mul Z.pow_pos Pos.mul].
+    unfold modulus_words, words_bits. cbn [Z.of_nat Z.mul Z.pow_pos Pos.mul].
+    unfold to_Z64. split; lia.
+  - unfold long_div_fold; fold long_div_fold. cbn [ld_quot ld_rem].
+    set (r := div64 rem u v). set (rec := long_div_fold rest v (rem64 r)).
+    assert (Hdiv: Z.shiftl (to_Z64 rem) 64 + to_Z64 u =
+            to_Z64 (quot64 r) * to_Z64 v + to_Z64 (rem64 r) /\
+            to_Z64 (rem64 r) < to_Z64 v).
+    { apply div64_correct. lia. unfold div64_precondition, to_Z64. lia. }
+    destruct Hdiv as [Hdiv_eq Hdiv_rem_lt].
+    assert (Hrem64_nn: 0 <= to_Z64 (rem64 r)).
+    { subst r. unfold div64, rem64, from_Z64, normalize64, to_Z64.
+      apply Z.mod_pos_bound. unfold modulus64. lia. }
+    assert (Hvalid_rest: words_valid rest). { inversion Hvalid; assumption. }
+    pose proof (IH v (rem64 r) Hv (conj Hrem64_nn Hdiv_rem_lt) Hvalid_rest) as HIH.
+    change (long_div_fold rest v (rem64 r)) with rec in HIH.
+    destruct HIH as [HIH_eq HIH_rem].
+    split; [| exact HIH_rem].
+    cbn [rev]. rewrite !to_Z_words_app_single. rewrite !length_rev.
+    assert (Hlen_rec: length (ld_quot rec) = length rest).
+    { subst rec. apply long_div_fold_length. }
+    rewrite Hlen_rec. cbn [length].
+    unfold modulus_words, words_bits. rewrite Nat2Z.inj_succ.
+    replace (Z.succ (Z.of_nat (length rest)) * 64)
+      with (64 + 64 * Z.of_nat (length rest)) by lia.
+    rewrite Z.pow_add_r by lia.
+    set (M := 2 ^ (64 * Z.of_nat (length rest))).
+    unfold to_Z64 in *. rewrite Z.shiftl_mul_pow2 in Hdiv_eq by lia.
+    unfold modulus_words, words_bits in HIH_eq.
+    replace (Z.of_nat (length rest) * 64)
+      with (64 * Z.of_nat (length rest)) in HIH_eq by lia.
+    fold M in HIH_eq.
+    nia.
+Qed.
 
 (** Main correctness theorem for long_div *)
 Theorem long_div_correct : forall us v,
@@ -1378,26 +1223,16 @@ Theorem long_div_correct : forall us v,
   to_Z_words us = to_Z_words (ld_quot r) * to_Z64 v + to_Z64 (ld_rem r) /\
   0 <= to_Z64 (ld_rem r) < to_Z64 v.
 Proof.
-Admitted.
-(*   intros us v Hvalid Hv. *)
-(*   unfold long_div. *)
-(*   (* Use correctness of long_div_fold on reversed input *) *)
-(*   assert (Hrev_valid: words_valid (rev us)). *)
-(*   { unfold words_valid in *. apply Forall_rev. assumption. } *)
-(*   assert (H := long_div_fold_correct (rev us) v 0 Hv ltac:(lia) Hrev_valid). *)
-(*   destruct H as [Heq Hrem]. *)
-(*   rewrite rev_length in Heq. *)
-(*   (* The reversed quotient, when reversed back, gives the correct value *) *)
-(*   (* This requires showing that reversing preserves the mathematical value *)
-(*      when the word positions are also reversed *) *)
-(*   split. *)
-(*   - (* Main division equation *) *)
-(*     (* This proof requires relating to_Z_words on reversed lists *) *)
-(*     (* For now we admit it *) *)
-(*     admit. *)
-(*   - (* Remainder bound *) *)
-(*     assumption. *)
-(* Admitted. *)
+  intros us v Hvalid Hv. unfold long_div. cbn [ld_quot ld_rem].
+  set (r := long_div_fold (rev us) v 0).
+  assert (Hvalid_rev: words_valid (rev us)).
+  { unfold words_valid in *. apply Forall_rev. exact Hvalid. }
+  pose proof (long_div_fold_correct (rev us) v 0 Hv
+    (conj (Z.le_refl 0) (proj1 Hv)) Hvalid_rev) as Hfold.
+  change (long_div_fold (rev us) v 0) with r in Hfold.
+  cbv zeta in Hfold. rewrite rev_involutive in Hfold.
+  rewrite Z.mul_0_l, Z.add_0_l in Hfold. exact Hfold.
+Qed.
 
 (** ** Notes on Implementation *)
 

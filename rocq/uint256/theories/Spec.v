@@ -59,8 +59,6 @@ Definition addc_spec (x y : uint256) : result_with_carry := {|
   value := normalize256 (x + y);
   carry := (x + y >=? modulus)
 |}.
-(** NB: Update these specifications...
-    ***********************************
 
 (** Subtraction modulo 2^256 *)
 Definition sub_spec (x y : uint256) : uint256 :=
@@ -74,7 +72,7 @@ Definition subb_spec (x y : uint256) : result_with_carry := {|
 
 (** Multiplication modulo 2^256 *)
 Definition mul_spec (x y : uint256) : uint256 :=
-  from_Z (to_Z x * to_Z y).
+  normalize256 (to_Z x * to_Z y).
 
 (** Division with remainder *)
 Definition udivrem_spec (x y : uint256) : div_result := {|
@@ -85,6 +83,10 @@ Definition udivrem_spec (x y : uint256) : div_result := {|
 (** Division *)
 Definition div_spec (x y : uint256) : uint256 :=
   from_Z (to_Z x / to_Z y).
+
+(**
+ NB: Update these specifications...
+    ***********************************
 
 (** Modulo *)
 Definition mod_spec (x y : uint256) : uint256 :=

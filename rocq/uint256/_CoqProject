@@ -4,3 +4,4 @@
 
 theories/Spec.v
 theories/Primitives.v
+theories/Addition.v

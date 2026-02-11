@@ -19,6 +19,9 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
@@ -53,11 +56,12 @@ protected:
     evmc_tx_context const &tx_context_;
     State &state_;
     CallTracerBase &call_tracer_;
+    bool log_native_transfers_;
 
 public:
     EvmcHostBase(
         CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &) noexcept;
+        State &, bool log_native_transfers) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -98,7 +102,7 @@ public:
         bytes32_t const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 56);
+static_assert(sizeof(EvmcHostBase) == 64);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -113,8 +117,9 @@ struct EvmcHost final : public EvmcHostBase
         CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> base_fee_per_gas,
-        uint64_t i, ChainContext<traits> const &chain_ctx) noexcept
-        : EvmcHostBase{call_tracer, tx_context, block_hash_buffer, state}
+        uint64_t i, ChainContext<traits> const &chain_ctx,
+        bool const log_native_transfers = false) noexcept
+        : EvmcHostBase{call_tracer, tx_context, block_hash_buffer, state, log_native_transfers}
         , tx_{tx}
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
@@ -142,8 +147,18 @@ struct EvmcHost final : public EvmcHostBase
         try {
             auto const [result, transferred_balance] =
                 state_.selfdestruct<traits>(address, beneficiary);
+
             call_tracer_.on_self_destruct(
                 address, beneficiary, transferred_balance);
+
+            // Skip emitting native transfer events when the beneficiary and
+            // destructed contract are the same account (i.e. no net transfer of
+            // funds).
+            if (result && address != beneficiary) {
+                emit_native_transfer_event(
+                    address, beneficiary, transferred_balance);
+            }
+
             return result;
         }
         catch (...) {
@@ -193,16 +208,52 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
+    void transfer_balances(evmc_message const &msg, Address const &to)
+    {
+        uint256_t const value = intx::be::load<uint256_t>(msg.value);
+        state_.subtract_from_balance(msg.sender, value);
+        state_.add_to_balance(to, value);
+
+        // Skip self-transfers when emitting native transfer events (those where
+        // the sender is also the destination).
+        if (msg.sender != to) {
+            emit_native_transfer_event(msg.sender, to, value);
+        }
+    }
+
     CallTracerBase &get_call_tracer() noexcept
     {
         return call_tracer_;
     }
+
+private:
+    void emit_native_transfer_event(
+        Address const &from, Address const &to, uint256_t const &value)
+    {
+        if (log_native_transfers_ && value > 0) {
+            static constexpr auto sender =
+                0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
+            static constexpr auto signature =
+                abi_encode_event_signature("Transfer(address,address,uint256)");
+            static_assert(
+                signature ==
+                0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32);
+
+            auto event = EventBuilder(sender, signature)
+                             .add_topic(abi_encode_address(from))
+                             .add_topic(abi_encode_address(to))
+                             .add_data(abi_encode_uint(u256_be{value}))
+                             .build();
+
+            state_.store_log(event);
+            call_tracer_.on_log(std::move(event));
+        }
+    }
 };
 
-static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 120);
+static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 128);
 static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
-
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 120);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 128);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

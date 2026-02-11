@@ -37,7 +37,7 @@ struct BigEndian
 
     BigEndian() = default;
 
-    constexpr BigEndian(T const &x) noexcept
+    constexpr explicit(false) BigEndian(T const &x) noexcept
     {
         auto const be = intx::bswap(x);
         unaligned_store(bytes, be);

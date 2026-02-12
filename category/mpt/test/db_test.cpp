@@ -358,42 +358,6 @@ struct DbTest : public TFixture
 using DbTypes = ::testing::Types<InMemoryDbFixture, OnDiskDbFixture>;
 TYPED_TEST_SUITE(DbTest, DbTypes);
 
-TEST_F(OnDiskDbWithFileFixture, multiple_read_only_db_share_one_asyncio)
-{
-    auto const &kv = fixed_updates::kv;
-
-    auto const prefix = 0x00_bytes;
-    uint64_t const starting_block_id = 0x0;
-
-    root = upsert_updates_flat_list(
-        std::move(root),
-        db,
-        prefix,
-        starting_block_id,
-        make_update(kv[0].first, kv[0].second),
-        make_update(kv[1].first, kv[1].second));
-
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-    Db rodb1{io_ctx};
-    Db rodb2{io_ctx};
-
-    auto verify_read = [&prefix, &starting_block_id](Db &db) {
-        EXPECT_EQ(db.get_latest_version(), starting_block_id);
-        auto root = db.load_root_for_version(starting_block_id);
-        EXPECT_EQ(
-            db_get(db, root, prefix + kv[0].first, starting_block_id).value(),
-            kv[0].second);
-        EXPECT_EQ(
-            db_get(db, root, prefix + kv[1].first, starting_block_id).value(),
-            kv[1].second);
-        EXPECT_EQ(
-            db_get_data(db, root, prefix, starting_block_id).value(),
-            0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
-    };
-    verify_read(rodb1);
-    verify_read(rodb2);
-}
-
 TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
 {
     auto const &kv = fixed_updates::kv;

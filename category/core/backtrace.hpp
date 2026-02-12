@@ -57,25 +57,6 @@ public:
     */
     static ptr capture(std::span<std::byte> storage) noexcept;
 
-    /*! \brief Construct a stack backtrace by deserialising it from the buffer.
-    ASYNC SIGNAL SAFE.
-    */
-    static ptr deserialize(
-        std::span<std::byte> storage,
-        std::span<std::byte const> serialised) noexcept;
-
-    /*! \brief Serialise this stack backtrace into the buffer, returning the
-    number of bytes serialised. ASYNC SIGNAL SAFE.
-
-    \note The returned value may be larger that the buffer supplied, in which
-    case the operation failed and you need to supply a larger buffer of the
-    size specified. Passing in an empty span is allowed, but remember `malloc`
-    is not async signal safe so dynamically allocated buffers may not be
-    possible.
-    */
-    virtual size_t
-    serialize(std::span<std::byte> serialised) const noexcept = 0;
-
     /*! \brief Print this stack backtrace in a human readable format to
     the specified file descriptor. ASYNC SIGNAL SAFE (probably).
 
@@ -86,8 +67,7 @@ public:
     However for printing integers it is usually async signal safe.
 
     You have an option of printing function name, source file and line
-    number, however these are highly async signal unsafe. If you need to
-    do this, serialise the stack trace and print it elsewhere.
+    number, however these are highly async signal unsafe.
     */
     virtual void print(
         int fd, unsigned indent,

@@ -100,33 +100,6 @@ struct stack_backtrace_impl final : public stack_backtrace
     {
     }
 
-    stack_backtrace_impl(
-        std::span<std::byte> storage, void const *begin, size_t bytes)
-        : main_alloc(storage, storage_end)
-        , stacktrace(stacktrace_implementation_type::from_dump(
-              begin, bytes, stacktrace_allocator_type{main_alloc}))
-    {
-    }
-
-    virtual size_t
-    serialize(std::span<std::byte> serialised) const noexcept override
-    {
-        auto const willneed =
-            stacktrace.size() *
-            sizeof(boost::stacktrace::frame::native_frame_ptr_t);
-        if (willneed > serialised.size()) {
-            return willneed;
-        }
-        std::span const tofill(
-            reinterpret_cast<boost::stacktrace::frame::native_frame_ptr_t *>(
-                serialised.data()),
-            stacktrace.size());
-        for (size_t n = 0; n < stacktrace.size(); n++) {
-            tofill[n] = stacktrace[n].address();
-        }
-        return willneed;
-    }
-
     virtual void print(
         int fd, unsigned indent,
         bool print_async_signal_unsafe_info) const noexcept override
@@ -180,17 +153,6 @@ stack_backtrace::capture(std::span<std::byte> storage) noexcept
     assert(storage.size() > sizeof(stack_backtrace_impl));
     return ptr(new (storage.data()) stack_backtrace_impl(
         storage.subspan(sizeof(stack_backtrace_impl))));
-}
-
-stack_backtrace::ptr stack_backtrace::deserialize(
-    std::span<std::byte> storage,
-    std::span<std::byte const> serialised) noexcept
-{
-    assert(storage.size() > sizeof(stack_backtrace_impl));
-    return ptr(new (storage.data()) stack_backtrace_impl(
-        storage.subspan(sizeof(stack_backtrace_impl)),
-        serialised.data(),
-        serialised.size()));
 }
 
 extern "C" void monad_stack_backtrace_capture_and_print(

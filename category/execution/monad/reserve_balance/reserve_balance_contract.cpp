@@ -22,8 +22,10 @@
 #include <category/execution/monad/reserve_balance/reserve_balance_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
+#include <bit>
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
+#include <category/core/unaligned.hpp>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -53,12 +55,17 @@ template <Traits traits>
 std::pair<ReserveBalanceContract::PrecompileFunc, uint64_t>
 ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
 {
+    // input is big-endian; byteswap converts to host order
+    static_assert(
+        std::endian::native == std::endian::little,
+        "precompile_dispatch requires little-endian for byteswap");
+
     if (MONAD_UNLIKELY(input.size() < 4)) {
         return {&ReserveBalanceContract::precompile_fallback, FALLBACK_COST};
     }
 
     auto const signature =
-        intx::be::unsafe::load<uint32_t>(input.substr(0, 4).data());
+        std::byteswap(unaligned_load<uint32_t>(input.substr(0, 4).data()));
     input.remove_prefix(4);
 
     switch (signature) {

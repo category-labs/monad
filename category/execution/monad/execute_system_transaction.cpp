@@ -13,9 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <bit>
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 #include <category/core/assert.h>
+#include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -203,6 +205,11 @@ template <Traits traits>
 Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     State &state, byte_string_view calldata, uint256_t const &value)
 {
+    // calldata is big-endian; byteswap converts to host order
+    static_assert(
+        std::endian::native == std::endian::little,
+        "execute_staking_syscall requires little-endian for byteswap");
+
     // creates staking account in state if it doesn't exist
     state.add_to_balance(staking::STAKING_CA, 0);
 
@@ -212,7 +219,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     }
 
     auto const signature =
-        intx::be::unsafe::load<uint32_t>(calldata.substr(0, 4).data());
+        std::byteswap(unaligned_load<uint32_t>(calldata.substr(0, 4).data()));
     calldata.remove_prefix(4);
 
     switch (signature) {

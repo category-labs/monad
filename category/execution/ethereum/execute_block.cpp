@@ -78,15 +78,6 @@ void process_withdrawal(
     }
 }
 
-void transfer_balance_dao(State &state)
-{
-    for (auto const &addr : dao::child_accounts) {
-        uint256_t const balance = state.get_balance(addr);
-        state.add_to_balance(dao::withdraw_account, balance);
-        state.subtract_from_balance(addr, balance);
-    }
-}
-
 // EIP-4788
 void set_beacon_root(State &state, BlockHeader const &header)
 {
@@ -177,8 +168,7 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
 }
 
 template <Traits traits>
-void execute_block_header(
-    Chain const &chain, BlockState &block_state, BlockHeader const &header)
+void execute_block_header(BlockState &block_state, BlockHeader const &header)
 {
     State state{block_state, Incarnation{header.number, 0}};
 
@@ -187,15 +177,6 @@ void execute_block_header(
 
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         set_beacon_root(state, header);
-    }
-
-    // Ethereum mainnet dao fork
-    if constexpr (traits::evm_rev() == EVMC_HOMESTEAD) {
-        if (MONAD_UNLIKELY(header.number == dao::dao_block_number)) {
-            if (chain.get_chain_id() == 1) {
-                transfer_balance_dao(state);
-            }
-        }
     }
 
     // TODO: move to execute_monad_block eventually
@@ -339,7 +320,7 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
 
-    execute_block_header<traits>(chain, block_state, block.header);
+    execute_block_header<traits>(block_state, block.header);
 
     BOOST_OUTCOME_TRY(
         auto const retvals,

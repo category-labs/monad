@@ -357,7 +357,7 @@ namespace monad::vm::interpreter
             call<traits>, // 0xF1,
             callcode<traits>, // 0xF2,
             return_<traits>, // 0xF3,
-            since(EVMC_HOMESTEAD, delegatecall<traits>), // 0xF4,
+            since(EVMC_TANGERINE_WHISTLE, delegatecall<traits>), // 0xF4,
             since(EVMC_CONSTANTINOPLE, create2<traits>), // 0xF5,
             invalid, //
             invalid, //

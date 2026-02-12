@@ -373,7 +373,6 @@ static arguments parse_args(int const argc, char **const argv)
         "Print message result statistics when logging");
 
     auto const rev_map = std::map<std::string, evmc_revision>{
-        {"HOMESTEAD", EVMC_HOMESTEAD},
         {"TANGERINE_WHISTLE", EVMC_TANGERINE_WHISTLE},
         {"TANGERINE WHISTLE", EVMC_TANGERINE_WHISTLE},
         {"SPURIOUS_DRAGON", EVMC_SPURIOUS_DRAGON},

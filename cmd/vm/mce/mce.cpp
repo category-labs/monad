@@ -265,10 +265,7 @@ int main(int argc, char **argv)
     std::ios_base::sync_with_stdio(false);
     auto args = parse_args(argc, argv);
     std::string const rev = uppercase(args.revision);
-    if (rev == "HOMESTEAD") {
-        return mce_main<EvmTraits<EVMC_HOMESTEAD>>(args);
-    }
-    else if (rev == "TANGERINE_WHISTLE") {
+    if (rev == "TANGERINE_WHISTLE") {
         return mce_main<EvmTraits<EVMC_TANGERINE_WHISTLE>>(args);
     }
     else if (rev == "SPURIOUS_DRAGON") {

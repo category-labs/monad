@@ -178,8 +178,7 @@ Result<void> static_validate_transaction(
     }
 
     // EIP-2
-    if (MONAD_UNLIKELY(!silkpre::is_valid_signature(
-            tx.sc.r, tx.sc.s, traits::evm_rev() >= EVMC_HOMESTEAD))) {
+    if (MONAD_UNLIKELY(!silkpre::is_valid_signature(tx.sc.r, tx.sc.s, true))) {
         return TransactionError::InvalidSignature;
     }
 

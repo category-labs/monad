@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <category/vm/compiler/types.hpp>
@@ -107,6 +108,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(
             !stack_offset_ && !avx_reg_ && !general_reg_ && !literal_);
         stack_.deferred_comparison_.set(this, c);
+        bit_upper_bound_ = 1u; // Result of comparison is either 0 or 1.
     }
 
     void StackElem::deferred_comparison()
@@ -118,6 +120,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(
             !stack_offset_ && !avx_reg_ && !general_reg_ && !literal_);
         stack_.deferred_comparison_.stack_elem = this;
+        bit_upper_bound_ = 1u; // Result of comparison is either 0 or 1.
     }
 
     void StackElem::negated_deferred_comparison()
@@ -128,6 +131,7 @@ namespace monad::vm::compiler::native
         MONAD_VM_DEBUG_ASSERT(
             !stack_offset_ && !avx_reg_ && !general_reg_ && !literal_);
         stack_.deferred_comparison_.negated_stack_elem = this;
+        bit_upper_bound_ = 1u; // Result of comparison is either 0 or 1.
     }
 
     void StackElem::discharge_deferred_comparison()
@@ -151,6 +155,7 @@ namespace monad::vm::compiler::native
     {
         MONAD_VM_ASSERT(!literal_.has_value());
         literal_ = x;
+        bit_upper_bound_ = static_cast<std::uint32_t>(bit_width(x.value));
     }
 
     void StackElem::insert_stack_offset(StackOffset x)

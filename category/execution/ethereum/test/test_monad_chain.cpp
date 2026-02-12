@@ -320,6 +320,22 @@ TYPED_TEST(MonadTraitsTest, revert_transaction_no_dip_gas_fee_with_value_false)
     }
 }
 
+TYPED_TEST(MonadTraitsTest, reserve_balance_checks_disabled_before_monad_four)
+{
+    if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
+        // For revisions before MONAD_FOUR, reserve-balance tracking must stay
+        // disabled. If it is accidentally enabled, this case hits
+        // sender_gas_fees > reserve for a non-dipping sender and throws.
+        run_revert_transaction_test<typename TestFixture::Trait>(
+            (1 << IsDelegated), // not allowed to dip into reserve
+            20, // initial balance (MON)
+            11, // gas fee (MON), strictly greater than reserve (10 MON)
+            0, // value (MON)
+            false // expected should_revert
+        );
+    }
+}
+
 TYPED_TEST(MonadTraitsTest, revert_transaction_dip_false)
 {
     run_revert_transaction_test<typename TestFixture::Trait>(

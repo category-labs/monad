@@ -13,7 +13,6 @@ packages=(
   libgmp-dev
   libgtest-dev
   libhugetlbfs-dev
-  libmagicenum-dev
   libtbb-dev
   liburing-dev
   libzstd-dev

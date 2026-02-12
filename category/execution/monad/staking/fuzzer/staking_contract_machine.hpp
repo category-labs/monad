@@ -17,13 +17,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
 
-#if __has_include("magic_enum/magic_enum.hpp")
-    // ubuntu 25.10
-    #include <magic_enum/magic_enum.hpp>
-#else
-    // ubuntu 25.04
-    #include <magic_enum.hpp>
-#endif
+#include <magic_enum/magic_enum.hpp>
 
 #include <random>
 #include <unordered_map>

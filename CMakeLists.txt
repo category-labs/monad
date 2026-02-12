@@ -173,7 +173,7 @@ if(MONAD_COMPILER_LLVM)
 endif()
 
 # magic_enum
-find_package(magic_enum REQUIRED)
+add_subdirectory("third_party/magic_enum")
 
 # nanobench
 add_subdirectory("third_party/nanobench")

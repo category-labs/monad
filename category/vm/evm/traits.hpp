@@ -29,6 +29,10 @@ namespace monad
 {
     namespace constants
     {
+        inline constexpr evmc_revision EARLIEST_SUPPORTED_EVM_FORK =
+            EVMC_HOMESTEAD;
+        inline constexpr uint64_t EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER = 1150000;
+
         inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
         inline constexpr size_t MAX_INITCODE_SIZE_EIP3860 =
             2 * MAX_CODE_SIZE_EIP170; // 0xC000
@@ -294,7 +298,7 @@ namespace monad
         is_specialization_of_v<MonadTraits, T>;
 
     static_assert(is_monad_trait_v<MonadTraits<MONAD_ZERO>> == true);
-    static_assert(is_monad_trait_v<EvmTraits<EVMC_FRONTIER>> == false);
+    static_assert(is_monad_trait_v<EvmTraits<EVMC_BERLIN>> == false);
     static_assert(is_evm_trait_v<MonadTraits<MONAD_ZERO>> == false);
-    static_assert(is_evm_trait_v<EvmTraits<EVMC_FRONTIER>> == true);
+    static_assert(is_evm_trait_v<EvmTraits<EVMC_BERLIN>> == true);
 }

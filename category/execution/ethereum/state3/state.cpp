@@ -368,8 +368,7 @@ void State::subtract_from_balance(
 
 void State::set_code_hash(Address const &address, bytes32_t const &hash)
 {
-    auto &account_state = current_account_state(address);
-    auto &account = account_state.account_;
+    auto &account = current_account(address);
     MONAD_ASSERT(account.has_value());
     account.value().code_hash = hash;
     // NOTE: Production code must use set_code instead of set_code_hash.
@@ -575,8 +574,7 @@ size_t State::copy_code(
 
 void State::set_code(Address const &address, byte_string_view const code)
 {
-    auto &account_state = current_account_state(address);
-    auto &account = account_state.account_;
+    auto &account = current_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
         return;
     }

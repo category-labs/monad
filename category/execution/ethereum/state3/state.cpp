@@ -440,13 +440,13 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
 
     if constexpr (traits::evm_rev() < EVMC_CANCUN) {
         add_to_balance(beneficiary, account.value().balance);
-        account.value().balance = 0;
+        subtract_from_balance(address, account.value().balance);
         original_account_state(address).set_validate_exact_balance();
     }
     else {
         if (address != beneficiary || account->incarnation == incarnation_) {
             add_to_balance(beneficiary, account.value().balance);
-            account.value().balance = 0;
+            subtract_from_balance(address, account.value().balance);
             original_account_state(address).set_validate_exact_balance();
         }
     }

@@ -128,6 +128,12 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         }
     }
 
+    void simulate_txn_end()
+    {
+        state.set_transient_storage(
+            STAKING_CA, contract.vars.LOOPING_TSTORE_LOCK_KEY, bytes32_t{0});
+    }
+
     void inc_epoch()
     {
         uint64_t const next_epoch = contract.vars.epoch.load().native() + 1;
@@ -2040,6 +2046,39 @@ TEST_F(StakeLatest, validator_external_rewards_uniform_reward_pool)
             contract.vars.delegator(val.id, d).rewards().load().native(),
             4 * MON);
     }
+}
+
+TEST_F(StakeLatest, validator_external_rewards_locked)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+
+    skip_to_next_epoch();
+
+    // Claim Rewards fails because external rewards sets transaction lock
+    EXPECT_FALSE(external_reward(val.id, auth_address, 20 * MON).has_error());
+    EXPECT_TRUE(claim_rewards(val.id, auth_address).has_error());
+}
+
+TEST_F(StakeLatest, validator_external_rewards_unlocked)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+
+    skip_to_next_epoch();
+
+    // Claim Rewards passes because no transaction lock
+    EXPECT_FALSE(claim_rewards(val.id, auth_address).has_error());
+    EXPECT_FALSE(external_reward(val.id, auth_address, 20 * MON).has_error());
+
+    simulate_txn_end();
+
+    // CLAIM rewards passes because transaction lock cleared
+    EXPECT_FALSE(claim_rewards(val.id, auth_address).has_error());
 }
 
 /////////////////////

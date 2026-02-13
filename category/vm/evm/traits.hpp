@@ -34,7 +34,7 @@ namespace monad
             2 * MAX_CODE_SIZE_EIP170; // 0xC000
 
         inline constexpr size_t MAX_CODE_SIZE_MONAD_TWO = 128 * 1024;
-        inline constexpr size_t MAX_INITCODE_SIZE_MONAD_FOUR =
+        inline constexpr size_t MAX_INITCODE_SIZE_MONAD_TWO =
             2 * MAX_CODE_SIZE_MONAD_TWO;
     }
 
@@ -55,7 +55,8 @@ namespace monad
 
         // Constants
         { T::max_code_size() } -> std::same_as<size_t>;
-        { T::max_initcode_size() } -> std::same_as<size_t>;
+        { T::max_create_opcode_initcode_size() } -> std::same_as<size_t>;
+        { T::max_top_level_initcode_size() } -> std::same_as<size_t>;
         { T::cold_account_cost() } -> std::same_as<int64_t>;
         { T::cold_storage_cost() } -> std::same_as<int64_t>;
 
@@ -123,13 +124,14 @@ namespace monad
             return std::numeric_limits<size_t>::max();
         }
 
-        static consteval size_t max_initcode_size() noexcept
+        static consteval size_t max_create_opcode_initcode_size() noexcept
         {
-            if constexpr (Rev >= EVMC_SHANGHAI) {
-                return constants::MAX_INITCODE_SIZE_EIP3860;
-            }
+            return max_initcode_size();
+        }
 
-            return std::numeric_limits<size_t>::max();
+        static consteval size_t max_top_level_initcode_size() noexcept
+        {
+            return max_initcode_size();
         }
 
         static consteval int64_t cold_account_cost() noexcept
@@ -153,6 +155,16 @@ namespace monad
         static consteval uint64_t id() noexcept
         {
             return static_cast<uint64_t>(Rev);
+        }
+
+    private:
+        static consteval size_t max_initcode_size() noexcept
+        {
+            if constexpr (Rev >= EVMC_SHANGHAI) {
+                return constants::MAX_INITCODE_SIZE_EIP3860;
+            }
+
+            return std::numeric_limits<size_t>::max();
         }
     };
 
@@ -242,10 +254,25 @@ namespace monad
             return constants::MAX_CODE_SIZE_EIP170;
         }
 
-        static consteval size_t max_initcode_size() noexcept
+        static consteval size_t max_create_opcode_initcode_size() noexcept
         {
             if constexpr (Rev >= MONAD_FOUR) {
-                return constants::MAX_INITCODE_SIZE_MONAD_FOUR;
+                // Due to a bug in the VM, the maximum initcode size for
+                // CREATE[2] opcodes was not increased at the MONAD_TWO revision
+                // as the name of this constant suggests, but later at
+                // MONAD_FOUR. This means that in the range [MONAD_TWO,
+                // MONAD_FOUR), it was possible to run larger initcode with a
+                // top-level transaction than it was with a CREATE[2] opcode.
+                return constants::MAX_INITCODE_SIZE_MONAD_TWO;
+            }
+
+            return constants::MAX_INITCODE_SIZE_EIP3860;
+        }
+
+        static consteval size_t max_top_level_initcode_size() noexcept
+        {
+            if constexpr (Rev >= MONAD_TWO) {
+                return constants::MAX_INITCODE_SIZE_MONAD_TWO;
             }
 
             return constants::MAX_INITCODE_SIZE_EIP3860;

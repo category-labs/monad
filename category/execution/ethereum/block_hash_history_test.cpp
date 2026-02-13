@@ -179,8 +179,8 @@ namespace
         static constexpr Address test_addr =
             0x0000000000000000000000000000000000000123_address;
         state.create_contract(test_addr);
-        state.set_code_hash(test_addr, code_hash);
         state.set_code(test_addr, bytecode_view);
+        EXPECT_EQ(state.get_code_hash(test_addr), code_hash);
         state.set_nonce(test_addr, 1);
     }
 }

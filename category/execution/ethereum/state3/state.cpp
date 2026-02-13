@@ -339,13 +339,6 @@ void State::subtract_from_balance(
     account_state.touch();
 }
 
-void State::set_code_hash(Address const &address, bytes32_t const &hash)
-{
-    auto &account = current_account(address);
-    MONAD_ASSERT(account.has_value());
-    account.value().code_hash = hash;
-}
-
 evmc_storage_status State::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {

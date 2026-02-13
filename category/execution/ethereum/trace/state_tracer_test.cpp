@@ -1436,9 +1436,9 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
 
     State s(bs, Incarnation{0, 0});
 
-    // Modify the code hash of the beneficiary, which implies it
+    // Re-setting beneficiary code marks account as modified and
     // must show up in the prestate trace.
-    s.set_code_hash(ADDR_A, A_CODE_HASH);
+    s.set_code(ADDR_A, A_CODE);
 
     {
         // Run prestate tracer

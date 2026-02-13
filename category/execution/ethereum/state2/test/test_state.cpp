@@ -19,6 +19,7 @@
 #include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
@@ -272,15 +273,15 @@ TEST_F(InMemoryStateTest, get_code_hash)
     EXPECT_EQ(s.get_code_hash(c), NULL_HASH);
 }
 
-TEST_F(InMemoryStateTest, set_code_hash)
+TEST_F(InMemoryStateTest, set_code_sets_code_hash)
 {
     BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(b);
-    s.set_code_hash(b, hash1);
+    s.set_code(b, code1);
 
-    EXPECT_EQ(s.get_code_hash(b), hash1);
+    EXPECT_EQ(s.get_code_hash(b), to_bytes(keccak256(code1)));
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)

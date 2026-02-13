@@ -332,6 +332,8 @@ void State::set_nonce(Address const &address, uint64_t const nonce)
     account.value().nonce = nonce;
 }
 
+// except in try_fix_account_mismatch(),
+// only use add_to_balance() and subtract_from_balance() to modify balances
 void State::add_to_balance(Address const &address, uint256_t const &delta)
 {
     auto &account_state = current_account_state(address);
@@ -371,7 +373,6 @@ void State::set_code_hash(Address const &address, bytes32_t const &hash)
     auto &account = current_account(address);
     MONAD_ASSERT(account.has_value());
     account.value().code_hash = hash;
-    // NOTE: Production code must use set_code instead of set_code_hash.
 }
 
 evmc_storage_status State::set_storage(

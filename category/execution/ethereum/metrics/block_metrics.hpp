@@ -25,6 +25,9 @@ struct BlockMetrics
 {
     uint32_t num_retries{0};
     std::chrono::microseconds tx_exec_time{1};
+    std::chrono::microseconds access_list_time{1};
+    size_t num_access_list_addrs{0};
+    size_t num_access_list_keys{0};
 };
 
 MONAD_NAMESPACE_END

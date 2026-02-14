@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -75,6 +76,21 @@ bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)
 template <Traits traits>
 Result<void> static_validate_header(BlockHeader const &header)
 {
+    // There's a subtle way in which this introduces a bug that doesn't really
+    // matter - if for some reason we were trying to run non-mainnet Ethereum
+    // blocks with Homestead block numbers, this check would incorrectly get
+    // fired. However this, check will soon be removed once we drop support for
+    // EVMC_HOMESTEAD
+    if constexpr (is_evm_trait_v<traits>) {
+        // EIP-779
+        if (MONAD_UNLIKELY(
+                header.number >= dao::dao_block_number &&
+                header.number <= dao::dao_block_number + 9 &&
+                header.extra_data != dao::extra_data)) {
+            return BlockError::WrongDaoExtraData;
+        }
+    }
+
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_limit < 5000)) {
         return BlockError::InvalidGasLimit;
@@ -247,12 +263,6 @@ Result<void> static_validate_block(Block const &block)
 }
 
 EXPLICIT_TRAITS(static_validate_block);
-
-Result<void> static_validate_block(evmc_revision const rev, Block const &block)
-{
-    SWITCH_EVM_TRAITS(static_validate_block, block);
-    MONAD_ASSERT(false);
-}
 
 Result<void>
 validate_output_header(BlockHeader const &input, BlockHeader const &output)

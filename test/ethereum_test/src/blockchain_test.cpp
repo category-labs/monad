@@ -123,39 +123,6 @@ struct TraitsMainnet : MonadChain
         MONAD_ASSERT(false);
     }
 
-    virtual Result<void>
-    static_validate_header(BlockHeader const &header) const override
-    {
-        if constexpr (is_evm_trait_v<traits>) {
-            return EthereumMainnet{}.static_validate_header(header);
-        }
-        else {
-            return MonadMainnet{}.static_validate_header(header);
-        }
-    };
-
-    virtual Result<void> validate_transaction(
-        uint64_t const, uint64_t const, Transaction const &tx,
-        Address const &sender, State &state, uint256_t const &base_fee_per_gas,
-        std::span<std::optional<Address> const> const authorities)
-        const override
-    {
-        if constexpr (is_evm_trait_v<traits>) {
-            return ::monad::validate_transaction(
-                traits::evm_rev(), tx, sender, state);
-        }
-        else {
-            return validate_monad_transaction(
-                traits::monad_rev(),
-                traits::evm_rev(),
-                tx,
-                sender,
-                state,
-                base_fee_per_gas,
-                authorities);
-        }
-    }
-
     virtual GenesisState get_genesis_state() const override
     {
         if constexpr (is_evm_trait_v<traits>) {

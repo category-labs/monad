@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/success_failure.hpp>
 
@@ -28,21 +29,21 @@
 
 MONAD_NAMESPACE_BEGIN
 
-Result<void> validate_monad_transaction(
-    monad_revision const monad_rev, evmc_revision const rev,
+template <Traits traits>
+Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities)
 {
-    auto res = ::monad::validate_transaction(rev, tx, sender, state);
-    if (MONAD_LIKELY(monad_rev >= MONAD_FOUR)) {
+    auto res = validate_ethereum_transaction<traits>(tx, sender, state);
+    if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {
             return res;
         }
 
         uint256_t const gas_fee =
-            uint256_t{tx.gas_limit} * gas_price(rev, tx, base_fee_per_gas);
+            uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
         if (MONAD_UNLIKELY(state.get_balance(sender) < gas_fee)) {
             return MonadTransactionError::InsufficientBalanceForFee;
         }
@@ -51,15 +52,13 @@ Result<void> validate_monad_transaction(
             return MonadTransactionError::SystemTransactionSenderIsAuthority;
         }
     }
-    else if (monad_rev >= MONAD_ZERO) {
+    else {
         return res;
     }
-    else {
-        MONAD_ABORT("invalid revision");
-    }
-
     return outcome::success();
 }
+
+EXPLICIT_MONAD_TRAITS(validate_transaction);
 
 MONAD_NAMESPACE_END
 

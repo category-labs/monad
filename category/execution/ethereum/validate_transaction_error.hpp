@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -16,13 +16,8 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
-#include <category/core/result.hpp>
-#include <category/execution/ethereum/core/address.hpp>
-#include <category/vm/evm/monad/revision.h>
 
-#include <evmc/evmc.h>
-
+#include <boost/outcome/config.hpp>
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
     #include <boost/outcome/experimental/status-code/status-code/config.hpp>
@@ -33,39 +28,41 @@
 #endif
 
 #include <initializer_list>
-#include <optional>
-#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
-struct Transaction;
-class State;
-
-enum class MonadTransactionError
+enum class TransactionError
 {
     Success = 0,
-    InsufficientBalanceForFee, ///< Account doesn't have enough balance to pay
-                               ///< transaction fees
-    SystemTransactionSenderIsAuthority,
+    InsufficientBalance,
+    IntrinsicGasGreaterThanLimit,
+    BadNonce,
+    SenderNotEoa,
+    TypeNotSupported,
+    MaxFeeLessThanBase,
+    PriorityFeeGreaterThanMax,
+    NonceExceedsMax,
+    InitCodeLimitExceeded,
+    GasLimitReached,
+    WrongChainId,
+    MissingSender,
+    GasLimitOverflow,
+    InvalidSignature,
+    InvalidBlobHash,
+    EmptyAuthorizationList,
 };
-
-template <Traits traits>
-Result<void> validate_transaction(
-    Transaction const &, Address const &sender, State &,
-    uint256_t const &base_fee_per_gas,
-    std::span<std::optional<Address> const> authorities);
 
 MONAD_NAMESPACE_END
 
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
 
 template <>
-struct quick_status_code_from_enum<monad::MonadTransactionError>
-    : quick_status_code_from_enum_defaults<monad::MonadTransactionError>
+struct quick_status_code_from_enum<monad::TransactionError>
+    : quick_status_code_from_enum_defaults<monad::TransactionError>
 {
-    static constexpr auto const domain_name = "Monad Transaction Error";
+    static constexpr auto const domain_name = "Transaction Error";
     static constexpr auto const domain_uuid =
-        "3f33419a9e8e4f14fcc2fc2ff439eb23e391";
+        "2f22309f9d7d3e03fbb1eb1ff328da12d290";
 
     static std::initializer_list<mapping> const &value_mappings();
 };

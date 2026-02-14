@@ -71,8 +71,6 @@ Result<void> static_validate_header(BlockHeader const &);
 template <Traits traits>
 Result<void> static_validate_block(Block const &);
 
-Result<void> static_validate_block(evmc_revision, Block const &);
-
 Result<void>
 validate_output_header(BlockHeader const &input, BlockHeader const &output);
 

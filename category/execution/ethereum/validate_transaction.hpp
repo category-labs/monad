@@ -19,48 +19,23 @@
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 
-// TODO unstable paths between versions
-#if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
-    #include <boost/outcome/experimental/status-code/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/status-code/quick_status_code_from_enum.hpp>
-#else
-    #include <boost/outcome/experimental/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/quick_status_code_from_enum.hpp>
-#endif
+#include <boost/outcome/config.hpp>
+#include <boost/outcome/success_failure.hpp>
 
 #include <initializer_list>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
-
-enum class TransactionError
-{
-    Success = 0,
-    InsufficientBalance,
-    IntrinsicGasGreaterThanLimit,
-    BadNonce,
-    SenderNotEoa,
-    TypeNotSupported,
-    MaxFeeLessThanBase,
-    PriorityFeeGreaterThanMax,
-    NonceExceedsMax,
-    InitCodeLimitExceeded,
-    GasLimitReached,
-    WrongChainId,
-    MissingSender,
-    GasLimitOverflow,
-    InvalidSignature,
-    InvalidBlobHash,
-    EmptyAuthorizationList,
-};
-
-class State;
-struct Transaction;
 
 template <Traits traits>
 Result<void> static_validate_transaction(
@@ -68,25 +43,66 @@ Result<void> static_validate_transaction(
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id);
 
 template <Traits traits>
-Result<void>
-validate_transaction(Transaction const &, Address const &sender, State &);
-
 Result<void> validate_transaction(
-    evmc_revision, Transaction const &, Address const &sender, State &);
+    Transaction const &tx, Address const &sender, State &state,
+    uint256_t const &base_fee_per_gas,
+    std::span<std::optional<Address> const> const authorities);
+
+template <Traits traits>
+[[gnu::always_inline]] inline Result<void> validate_ethereum_transaction(
+    Transaction const &tx, Address const &sender, State &state)
+{
+    using BOOST_OUTCOME_V2_NAMESPACE::success;
+
+    // YP (70)
+    uint512_t v0 = tx.value + max_gas_cost(tx.gas_limit, tx.max_fee_per_gas);
+    if (tx.type == TransactionType::eip4844) {
+        v0 += tx.max_fee_per_blob_gas * get_total_blob_gas(tx);
+    }
+
+    if (MONAD_UNLIKELY(!state.account_exists(sender))) {
+        // YP (71)
+        if (tx.nonce) {
+            return TransactionError::BadNonce;
+        }
+        // YP (71)
+        if (v0) {
+            return TransactionError::InsufficientBalance;
+        }
+        return success();
+    }
+
+    // YP (71)
+    bool sender_is_eoa = state.get_code_hash(sender) == NULL_HASH;
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+        // EIP-7702
+        auto const icode = state.get_code(sender)->intercode();
+        sender_is_eoa = sender_is_eoa ||
+                        vm::evm::is_delegated({icode->code(), icode->size()});
+    }
+
+    if (MONAD_UNLIKELY(!sender_is_eoa)) {
+        return TransactionError::SenderNotEoa;
+    }
+
+    // YP (71)
+    if (MONAD_UNLIKELY(state.get_nonce(sender) != tx.nonce)) {
+        return TransactionError::BadNonce;
+    }
+
+    // YP (71)
+    // RELAXED MERGE
+    // note this passes because `v0` includes gas which is later deducted in
+    // `irrevocable_change` before relaxed merge logic in `sender_has_balance`
+    // this is fragile as it depends on values in two locations matching
+    if (MONAD_UNLIKELY(state.get_balance(sender) < v0)) {
+        return TransactionError::InsufficientBalance;
+    }
+
+    // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement
+    // (It requires knowing the parent block)
+
+    return success();
+}
 
 MONAD_NAMESPACE_END
-
-BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
-
-template <>
-struct quick_status_code_from_enum<monad::TransactionError>
-    : quick_status_code_from_enum_defaults<monad::TransactionError>
-{
-    static constexpr auto const domain_name = "Transaction Error";
-    static constexpr auto const domain_uuid =
-        "2f22309f9d7d3e03fbb1eb1ff328da12d290";
-
-    static std::initializer_list<mapping> const &value_mappings();
-};
-
-BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_END

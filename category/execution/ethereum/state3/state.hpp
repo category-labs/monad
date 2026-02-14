@@ -59,7 +59,7 @@ class State
 
     Map<Address, OriginalAccountState> original_{};
 
-    Map<Address, VersionStack<AccountState>> current_{};
+    Map<Address, VersionStack<CurrentAccountState>> current_{};
 
     VersionStack<immer::vector<Receipt::Log>> logs_{{}};
 
@@ -78,7 +78,7 @@ public:
 private:
     AccountState const &recent_account_state(Address const &);
 
-    AccountState &current_account_state(Address const &);
+    CurrentAccountState &current_account_state(Address const &);
 
     std::optional<Account> const &recent_account(Address const &);
 
@@ -94,7 +94,7 @@ public:
 
     Map<Address, OriginalAccountState> const &original() const;
 
-    Map<Address, VersionStack<AccountState>> const &current() const;
+    Map<Address, VersionStack<CurrentAccountState>> const &current() const;
 
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
 

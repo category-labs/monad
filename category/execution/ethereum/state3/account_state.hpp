@@ -48,7 +48,7 @@ namespace trace
     struct StateDiffTracer;
 }
 
-class AccountState : public AccountSubstate
+class AccountState
 {
 public: // TODO
     using StorageMap = immer::map<
@@ -69,7 +69,6 @@ private:
 
 public:
     StorageMap storage_{};
-    StorageMap transient_storage_{};
 
     evmc_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
@@ -124,15 +123,6 @@ public:
         return std::nullopt;
     }
 
-    bytes32_t get_transient_storage(bytes32_t const &key) const
-    {
-        if (auto const *const it = transient_storage_.find(key);
-            MONAD_LIKELY(it)) {
-            return *it;
-        }
-        return {};
-    }
-
     evmc_storage_status set_storage(
         bytes32_t const &key, bytes32_t const &value,
         bytes32_t const &original_value)
@@ -148,6 +138,43 @@ public:
         }
         return set_current_value(key, value, original_value, current_value);
     }
+};
+
+static_assert(sizeof(AccountState) == 104);
+
+class CurrentAccountState final : public AccountState, public AccountSubstate
+{
+public:
+    StorageMap transient_storage_{};
+
+    explicit CurrentAccountState(std::optional<Account> &&account)
+        : AccountState(std::move(account))
+    {
+    }
+
+    explicit CurrentAccountState(std::optional<Account> const &account)
+        : AccountState{account}
+    {
+    }
+
+    explicit CurrentAccountState(AccountState const &account_state)
+        : AccountState(account_state)
+    {
+    }
+
+    CurrentAccountState(CurrentAccountState &&) noexcept = default;
+    CurrentAccountState(CurrentAccountState const &) = default;
+    CurrentAccountState &operator=(CurrentAccountState &&) noexcept = default;
+    CurrentAccountState &operator=(CurrentAccountState const &) = default;
+
+    bytes32_t get_transient_storage(bytes32_t const &key) const
+    {
+        if (auto const *const it = transient_storage_.find(key);
+            MONAD_LIKELY(it)) {
+            return *it;
+        }
+        return {};
+    }
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
@@ -155,7 +182,7 @@ public:
     }
 };
 
-static_assert(sizeof(AccountState) == 144);
+static_assert(sizeof(CurrentAccountState) == 144);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

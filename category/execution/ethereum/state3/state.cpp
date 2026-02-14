@@ -75,14 +75,18 @@ AccountState const &State::recent_account_state(Address const &address)
     return original_account_state(address);
 }
 
-AccountState &State::current_account_state(Address const &address)
+CurrentAccountState &State::current_account_state(Address const &address)
 {
     // current
     auto it = current_.find(address);
     if (MONAD_UNLIKELY(it == current_.end())) {
         // original
-        auto const &account_state = original_account_state(address);
-        it = current_.try_emplace(address, account_state, version_).first;
+        it = current_
+                 .try_emplace(
+                     address,
+                     CurrentAccountState{original_account_state(address)},
+                     version_)
+                 .first;
     }
     if (!dirty_.empty()) {
         dirty_.back().emplace(address);
@@ -131,7 +135,8 @@ State::Map<Address, OriginalAccountState> const &State::original() const
     return original_;
 }
 
-State::Map<Address, VersionStack<AccountState>> const &State::current() const
+State::Map<Address, VersionStack<CurrentAccountState>> const &
+State::current() const
 {
     return current_;
 }
@@ -314,13 +319,20 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
 bytes32_t
 State::get_transient_storage(Address const &address, bytes32_t const &key)
 {
-    return recent_account_state(address).get_transient_storage(key);
+    auto const it = current_.find(address);
+    if (it == current_.end()) {
+        return {};
+    }
+    return it->second.recent().get_transient_storage(key);
 }
 
 bool State::is_touched(Address const &address)
 {
-    auto const &account_state = recent_account_state(address);
-    return account_state.is_touched();
+    auto const it = current_.find(address);
+    if (it == current_.end()) {
+        return false;
+    }
+    return it->second.recent().is_touched();
 }
 
 void State::set_nonce(Address const &address, uint64_t const nonce)

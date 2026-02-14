@@ -82,7 +82,7 @@ struct AccountAccessInfo
 {
     Address const *address;
     OriginalAccountState const *prestate; // State as it existed in original
-    AccountState const *modified_state; // Last state as it existed in current
+    CurrentAccountState const *modified_state; // Last state in current
 
     bool is_read_only_access() const
     {
@@ -217,8 +217,7 @@ void record_account_events(
         .modified_nonce = modified_nonce,
         .storage_key_count =
             static_cast<uint32_t>(size(account_info.prestate->storage_)),
-        .transient_count = static_cast<uint32_t>(
-            size(account_info.prestate->transient_storage_))};
+        .transient_count = 0};
     exec_recorder->commit(account_access);
 
     auto const *const post_state_storage_map =
@@ -235,6 +234,7 @@ void record_account_events(
         post_state_storage_map,
         false);
 
+    static AccountState::StorageMap const empty_transient_storage{};
     auto const *const post_state_transient_map =
         account_info.is_read_only_access()
             ? nullptr
@@ -245,7 +245,7 @@ void record_account_events(
         opt_txn_num,
         index,
         account_info.address,
-        &account_info.prestate->transient_storage_,
+        &empty_transient_storage,
         post_state_transient_map,
         true);
 }
@@ -270,7 +270,7 @@ void record_account_access_events_internal(
 
     auto const &current_state_map = state.current();
     for (uint32_t index = 0; auto const &[address, prestate] : prestate_map) {
-        AccountState const *current_state = nullptr;
+        CurrentAccountState const *current_state = nullptr;
         if (auto const i = current_state_map.find(address);
             i != end(current_state_map)) {
             current_state = std::addressof(i->second.recent());

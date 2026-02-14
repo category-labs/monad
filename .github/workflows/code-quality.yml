@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Formatting Check
-        uses: jidicula/clang-format-action@v4.13.0
+        uses: jidicula/clang-format-action@v4.16.0
         with:
           clang-format-version: 19
           include-regex: './(category|cmd|test)/.*\.(cpp|hpp|c|h)'

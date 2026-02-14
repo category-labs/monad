@@ -1,0 +1,11 @@
+[package]
+name = "monad-cxx"
+version = "0.1.0"
+edition = "2021"
+links = "monad_execution"
+
+[dependencies]
+tracing = { workspace = true, features = ["log"] }
+
+[build-dependencies]
+cmake = { workspace = true }

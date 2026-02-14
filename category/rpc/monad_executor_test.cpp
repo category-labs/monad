@@ -48,6 +48,8 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/rpc/monad_executor.h>
+#include <category/rpc/overrides.h>
+#include <category/rpc/overrides.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -4120,6 +4122,217 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             nlohmann::json::parse(expected_2),
             nlohmann::json::from_cbor(encoded_state_diff_trace_2));
     }
+
+    monad_executor_destroy(executor);
+}
+
+TEST(BlockOverride, create_destroy)
+{
+    auto *bo = monad_block_override_create();
+    ASSERT_NE(bo, nullptr);
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, set_all_fields)
+{
+    auto *bo = monad_block_override_create();
+
+    set_block_override_number(bo, 42);
+    set_block_override_time(bo, 1700000000);
+    set_block_override_gas_limit(bo, 30'000'000);
+
+    uint8_t addr_bytes[20] = {};
+    addr_bytes[19] = 0xAB;
+    set_block_override_fee_recipient(bo, addr_bytes, sizeof(addr_bytes));
+
+    uint8_t randao_bytes[32] = {};
+    randao_bytes[0] = 0xFF;
+    randao_bytes[31] = 0x01;
+    set_block_override_prev_randao(bo, randao_bytes, sizeof(randao_bytes));
+
+    uint8_t fee_bytes[32] = {};
+    fee_bytes[31] = 9;
+    set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes));
+
+    uint8_t blob_fee_bytes[32] = {};
+    blob_fee_bytes[31] = 1;
+    set_block_override_blob_base_fee(
+        bo, blob_fee_bytes, sizeof(blob_fee_bytes));
+
+    EXPECT_EQ(bo->number, 42u);
+    EXPECT_EQ(bo->time, 1700000000u);
+    EXPECT_EQ(bo->gas_limit, 30'000'000u);
+
+    ASSERT_TRUE(bo->fee_recipient.has_value());
+    EXPECT_EQ(
+        *bo->fee_recipient, 0x00000000000000000000000000000000000000ab_address);
+
+    ASSERT_TRUE(bo->prev_randao.has_value());
+    EXPECT_EQ(
+        *bo->prev_randao,
+        0xff00000000000000000000000000000000000000000000000000000000000001_bytes32);
+
+    ASSERT_TRUE(bo->base_fee_per_gas.has_value());
+    EXPECT_EQ(*bo->base_fee_per_gas, uint256_t{9});
+
+    ASSERT_TRUE(bo->blob_base_fee.has_value());
+    EXPECT_EQ(*bo->blob_base_fee, uint256_t{1});
+
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, partial_fields)
+{
+    auto *bo = monad_block_override_create();
+
+    set_block_override_number(bo, 100);
+
+    uint8_t fee_bytes[32] = {};
+    fee_bytes[31] = 7;
+    set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes));
+
+    EXPECT_EQ(bo->number, 100u);
+    EXPECT_EQ(bo->base_fee_per_gas, uint256_t{7});
+
+    EXPECT_EQ(bo->time, std::nullopt);
+    EXPECT_EQ(bo->gas_limit, std::nullopt);
+    EXPECT_EQ(bo->fee_recipient, std::nullopt);
+    EXPECT_EQ(bo->prev_randao, std::nullopt);
+    EXPECT_EQ(bo->blob_base_fee, std::nullopt);
+
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, uint256_big_endian)
+{
+    auto *bo = monad_block_override_create();
+
+    // base_fee = 0x09 in big-endian 32-byte representation
+    uint8_t base_fee[32] = {};
+    base_fee[31] = 0x09;
+    set_block_override_base_fee_per_gas(bo, base_fee, sizeof(base_fee));
+    ASSERT_TRUE(bo->base_fee_per_gas.has_value());
+    EXPECT_EQ(*bo->base_fee_per_gas, uint256_t{9});
+
+    // blob_base_fee = 0x0100 = 256 in big-endian
+    uint8_t blob_fee[32] = {};
+    blob_fee[30] = 0x01;
+    blob_fee[31] = 0x00;
+    set_block_override_blob_base_fee(bo, blob_fee, sizeof(blob_fee));
+    ASSERT_TRUE(bo->blob_base_fee.has_value());
+    EXPECT_EQ(*bo->blob_base_fee, uint256_t{256});
+
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, address_20_bytes)
+{
+    auto *bo = monad_block_override_create();
+
+    uint8_t addr[20];
+    for (int i = 0; i < 20; ++i) {
+        addr[i] = static_cast<uint8_t>(i + 1);
+    }
+    set_block_override_fee_recipient(bo, addr, sizeof(addr));
+
+    ASSERT_TRUE(bo->fee_recipient.has_value());
+    EXPECT_EQ(
+        *bo->fee_recipient, 0x0102030405060708090a0b0c0d0e0f1011121314_address);
+
+    monad_block_override_destroy(bo);
+}
+
+TEST(BlockOverride, prev_randao_32_bytes)
+{
+    auto *bo = monad_block_override_create();
+
+    uint8_t randao[32];
+    for (int i = 0; i < 32; ++i) {
+        randao[i] = static_cast<uint8_t>(0xFF - i);
+    }
+    set_block_override_prev_randao(bo, randao, sizeof(randao));
+
+    ASSERT_TRUE(bo->prev_randao.has_value());
+    EXPECT_EQ(
+        *bo->prev_randao,
+        0xfffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0_bytes32);
+
+    monad_block_override_destroy(bo);
+}
+
+TEST_F(EthCallFixture, eth_simulate_v1)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto const rlp_senders =
+        evmc::from_hex(
+            "0xecd594f39fd6e51aad88f6f4ce6ab8827279cfffb92266d594f39fd6e51aad88"
+            "f6f4ce6ab8827279cfffb92266")
+            .value();
+    auto const rlp_calls =
+        evmc::from_hex(
+            "0xf860efae02ec80808080840bebc20094deadbeef000000000000000000000000"
+            "00000000880de0b6b3a764000080c0808080efae02ec80808080840bebc20094"
+            "deadbeef00000000000000000000000000000000880de0b6b3a764000080c080"
+            "8080")
+            .value();
+    auto const rlp_header =
+        evmc::from_hex(
+            "0xf9027ba05fd394e577312a24f795e7ebf9f062e6d8d5e28cde39aee0da823786"
+            "259f300fa01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142"
+            "fd40d4934794021975c418abfeb75e9d0639d8cc936aa92eee4ba04df6681acc"
+            "08b2da72815e2f1f897d0bbcf41b1d6c9103782a7268ff57ee483ea056e81f17"
+            "1bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a056e81f"
+            "171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421b90100"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000"
+            "8009840bebc20080846970d851a0000000000000000000000000000000000000"
+            "0000000000000000000000000000a005fe3e81096be507381829318a3ca21ac3"
+            "5283886e56233b075340bf4661d05f88000000000000000080a056e81f171bcc"
+            "55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b4218080a0000000"
+            "0000000000000000000000000000000000000000000000000000000000a00000"
+            "000000000000000000000000000000000000000000000000000000000000")
+            .value();
+
+    // auto const rlp_block_id =
+    //     evmc::from_hex("0xa0c23f4adce46b7197489a2d335c001aa305c05a0f2df903160b7"
+    //                    "e7fc974b3d4e3")
+    //         .value();
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto const state_overrides =
+        std::vector<monad_state_override const *>{5, nullptr};
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1, // block_number
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_overrides.data(),
+        state_overrides.size(),
+        complete_callback,
+        (void *)&ctx);
+    f.get();
 
     monad_executor_destroy(executor);
 }

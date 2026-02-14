@@ -242,16 +242,12 @@ void run_revert_transaction_test(
 
     {
         State state{bs, Incarnation{1, 1}};
+        state.init_reserve_balance_context<traits>(
+            SENDER, tx, BASE_FEE_PER_GAS, 1, chain_context);
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
         state.subtract_from_balance(SENDER, value);
-        bool should_revert = revert_transaction<traits>(
-            SENDER,
-            tx,
-            BASE_FEE_PER_GAS,
-            1, // transaction index
-            state,
-            chain_context);
+        bool should_revert = revert_transaction<traits>(state);
 
         EXPECT_EQ(should_revert, expected)
             << std::bitset<64>{prevent_dip_bitset};
@@ -319,6 +315,22 @@ TYPED_TEST(MonadTraitsTest, revert_transaction_no_dip_gas_fee_with_value_false)
             15, // initial balance (MON)
             5, // gas fee (MON)
             5, // value (MON)
+            false // expected should_revert
+        );
+    }
+}
+
+TYPED_TEST(MonadTraitsTest, reserve_balance_checks_disabled_before_monad_four)
+{
+    if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
+        // For revisions before MONAD_FOUR, reserve-balance tracking must stay
+        // disabled. If it is accidentally enabled, this case hits
+        // sender_gas_fees > reserve for a non-dipping sender and throws.
+        run_revert_transaction_test<typename TestFixture::Trait>(
+            (1 << IsDelegated), // not allowed to dip into reserve
+            20, // initial balance (MON)
+            11, // gas fee (MON), strictly greater than reserve (10 MON)
+            0, // value (MON)
             false // expected should_revert
         );
     }
@@ -444,6 +456,8 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         .authorities = authorities};
 
     auto const prepare_state = [&](State &state) {
+        state.init_reserve_balance_context<traits>(
+            SENDER, tx, BASE_FEE_PER_GAS, 0, context);
         state.subtract_from_balance(SENDER, gas_cost);
         state.subtract_from_balance(NEW_CONTRACT, to_wei(3));
         byte_string const contract_code{0x60, 0x00};
@@ -453,8 +467,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     State state{bs, Incarnation{1, 1}};
     prepare_state(state);
 
-    bool const should_revert = revert_transaction<traits>(
-        SENDER, tx, BASE_FEE_PER_GAS, 0, state, context);
+    bool const should_revert = revert_transaction<traits>(state);
 
     if constexpr (traits::monad_rev() < MONAD_FOUR) {
         EXPECT_FALSE(should_revert);

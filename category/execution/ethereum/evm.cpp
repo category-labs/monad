@@ -262,13 +262,7 @@ create(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
     }
 
     if (msg.depth == 0) {
-        if (revert_transaction<traits>(
-                msg.sender,
-                host->tx_,
-                host->base_fee_per_gas_.value_or(0),
-                host->i_,
-                state,
-                host->chain_ctx_)) {
+        if (revert_transaction<traits>(state)) {
             result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
         }
     }
@@ -325,13 +319,7 @@ call(EvmcHost<traits> *const host, State &state, evmc_message const &msg)
     }
 
     if (msg.depth == 0) {
-        if (revert_transaction<traits>(
-                msg.sender,
-                host->tx_,
-                host->base_fee_per_gas_.value_or(0),
-                host->i_,
-                state,
-                host->chain_ctx_)) {
+        if (revert_transaction<traits>(state)) {
             result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
             result.gas_refund = 0;
         }

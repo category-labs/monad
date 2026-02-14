@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -100,7 +101,29 @@ State::State(
     : block_state_{block_state}
     , incarnation_{incarnation}
     , relaxed_validation_{relaxed_validation}
+    , rb_{this}
 {
+}
+
+bool State::reserve_balance_tracking_enabled() const
+{
+    return rb_.tracking_enabled();
+}
+
+bool State::reserve_balance_has_violation() const
+{
+    return rb_.has_violation();
+}
+
+bool State::is_delegated(bytes32_t const &code_hash)
+{
+    if (MONAD_UNLIKELY(code_hash == NULL_HASH)) {
+        return false;
+    }
+    auto const vcode = read_code(code_hash);
+    MONAD_ASSERT(vcode);
+    auto const &icode = vcode->intercode();
+    return vm::evm::is_delegated({icode->code(), icode->size()});
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const
@@ -169,6 +192,8 @@ void State::pop_reject()
         current_.erase(removals.back());
         removals.pop_back();
     }
+
+    rb_.on_pop_reject(accounts);
 
     --version_;
 }
@@ -307,6 +332,8 @@ void State::set_nonce(Address const &address, uint64_t const nonce)
     account.value().nonce = nonce;
 }
 
+// except in try_fix_account_mismatch(),
+// only use add_to_balance() and subtract_from_balance() to modify balances
 void State::add_to_balance(Address const &address, uint256_t const &delta)
 {
     auto &account_state = current_account_state(address);
@@ -322,6 +349,7 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
 
     account.value().balance += delta;
     account_state.touch();
+    rb_.on_credit(address);
 }
 
 void State::subtract_from_balance(
@@ -337,6 +365,7 @@ void State::subtract_from_balance(
 
     account.value().balance -= delta;
     account_state.touch();
+    rb_.on_debit(address);
 }
 
 evmc_storage_status State::set_storage(
@@ -404,13 +433,13 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
 
     if constexpr (traits::evm_rev() < EVMC_CANCUN) {
         add_to_balance(beneficiary, account.value().balance);
-        account.value().balance = 0;
+        subtract_from_balance(address, account.value().balance);
         original_account_state(address).set_validate_exact_balance();
     }
     else {
         if (address != beneficiary || account->incarnation == incarnation_) {
             add_to_balance(beneficiary, account.value().balance);
-            account.value().balance = 0;
+            subtract_from_balance(address, account.value().balance);
             original_account_state(address).set_validate_exact_balance();
         }
     }
@@ -547,6 +576,7 @@ void State::set_code(Address const &address, byte_string_view const code)
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     account.value().code_hash = code_hash;
+    rb_.on_set_code(address, code);
 }
 
 void State::create_contract(Address const &address)

@@ -20,9 +20,7 @@
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-bool revert_transaction(
-    Address const &, Transaction const &, uint256_t const &, uint64_t const,
-    State &, ChainContext<traits> const &)
+bool revert_transaction(State &)
 {
     return false;
 }

@@ -28,12 +28,8 @@
 MONAD_NAMESPACE_BEGIN
 
 class State;
-struct Transaction;
 
 template <Traits traits>
-bool revert_transaction(
-    Address const &sender, Transaction const &,
-    uint256_t const &base_fee_per_gas, uint64_t i, State &,
-    ChainContext<traits> const &);
+bool revert_transaction(State &);
 
 MONAD_NAMESPACE_END

@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/core/eth_ctypes.h>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -107,30 +108,71 @@ uint64_t g_data(Transaction const &tx) noexcept
 EXPLICIT_TRAITS(g_data);
 
 template <Traits traits>
-uint64_t intrinsic_gas(Transaction const &tx) noexcept
+monad_c_eth_intrinsic_gas
+intrinsic_gas_breakdown(Transaction const &tx) noexcept
 {
     if constexpr (traits::evm_rev() < EVMC_HOMESTEAD) {
         // YP, section 6.2, Eqn. 60
-        return 21'000 + g_data<traits>(tx);
+        return monad_c_eth_intrinsic_gas{
+            .base = 21'000,
+            .data = g_data<traits>(tx),
+            .creation = 0,
+            .init_code = 0,
+            .access_list = 0,
+            .authorizations = 0};
     }
     else if constexpr (traits::evm_rev() < EVMC_BERLIN) {
-        return 21'000 + g_data<traits>(tx) + g_txn_create(tx);
+        return monad_c_eth_intrinsic_gas{
+            .base = 21'000,
+            .data = g_data<traits>(tx),
+            .creation = g_txn_create(tx),
+            .init_code = 0,
+            .access_list = 0,
+            .authorizations = 0};
     }
     else if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
-        return 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
-               g_access_and_storage(tx);
+        return monad_c_eth_intrinsic_gas{
+            .base = 21'000,
+            .data = g_data<traits>(tx),
+            .creation = g_txn_create(tx),
+            .init_code = 0,
+            .access_list = g_access_and_storage(tx),
+            .authorizations = 0};
     }
     else if constexpr (traits::evm_rev() < EVMC_CANCUN) {
         // EIP-3860
-        return 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
-               g_access_and_storage(tx) + g_extra_cost_init(tx);
+        return monad_c_eth_intrinsic_gas{
+            .base = 21'000,
+            .data = g_data<traits>(tx),
+            .creation = g_txn_create(tx),
+            .init_code = g_extra_cost_init(tx),
+            .access_list = g_access_and_storage(tx),
+            .authorizations = 0};
     }
     else {
         // EIP-7702
-        return 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
-               g_access_and_storage(tx) + g_extra_cost_init(tx) +
-               g_authorization(tx);
+        return monad_c_eth_intrinsic_gas{
+            .base = 21'000,
+            .data = g_data<traits>(tx),
+            .creation = g_txn_create(tx),
+            .init_code = g_extra_cost_init(tx),
+            .access_list = g_access_and_storage(tx),
+            .authorizations = g_authorization(tx)};
     }
+}
+
+EXPLICIT_TRAITS(intrinsic_gas_breakdown);
+
+uint64_t sum(monad_c_eth_intrinsic_gas const &g) noexcept
+{
+    return g.base + g.data + g.creation + g.init_code + g.access_list +
+           g.authorizations;
+}
+
+template <Traits traits>
+uint64_t intrinsic_gas(Transaction const &tx) noexcept
+{
+    return sum(intrinsic_gas_breakdown<traits>(tx));
 }
 
 EXPLICIT_TRAITS(intrinsic_gas);

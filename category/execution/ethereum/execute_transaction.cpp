@@ -85,6 +85,7 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     , sender_{sender}
     , authorities_{authorities}
     , header_{header}
+    , intrinsic_gas_{intrinsic_gas_breakdown<traits>(tx)}
 {
 }
 
@@ -200,7 +201,7 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
         .kind = to_address.first,
         .flags = 0,
         .depth = 0,
-        .gas = static_cast<int64_t>(tx_.gas_limit - intrinsic_gas<traits>(tx_)),
+        .gas = static_cast<int64_t>(tx_.gas_limit - sum(this->intrinsic_gas_)),
         .recipient = to_address.second,
         .sender = sender_,
         .input_data = tx_.data.data(),
@@ -387,7 +388,10 @@ Receipt ExecuteTransaction<traits>::execute_final(
     trace::run_tracer<traits>(state_tracer_, state);
     record_txn_output_events(
         static_cast<uint32_t>(this->i_),
+        this->tx_,
         receipt,
+        static_cast<uint64_t>(result.gas_left),
+        this->intrinsic_gas_,
         call_tracer_.get_call_frames(),
         state);
 

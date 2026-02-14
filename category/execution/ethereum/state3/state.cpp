@@ -333,7 +333,7 @@ void State::subtract_from_balance(
         account = Account{.incarnation = incarnation_};
     }
 
-    MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
+    MONAD_ASSERT_THROW(check_min_balance(address, delta), "balance underflow");
 
     account.value().balance -= delta;
     account_state.touch();
@@ -672,13 +672,33 @@ bool State::try_fix_account_mismatch(
     return true;
 }
 
-bool State::record_balance_constraint_for_debit(
-    Address const &address, uint256_t const &debit)
+bool State::check_min_original_balance(
+    Address const &address, uint256_t const &value)
+{
+    auto &orig_state = original_account_state(address);
+    auto const &account = orig_state.account_;
+    return check_account_min_balance(orig_state, account, value);
+}
+
+bool State::check_min_balance(Address const &address, uint256_t const &value)
 {
     auto const &account = recent_account(address);
-    uint256_t const balance = account.has_value() ? account->balance : 0;
+    OriginalAccountState &orig_state = original_account_state(address);
+    return check_account_min_balance(orig_state, account, value);
+}
 
-    auto &original_state = original_account_state(address);
+bool State::check_min_balance(Address const &address, uint512_t const &value)
+{
+    return value > std::numeric_limits<uint256_t>::max()
+               ? false
+               : check_min_balance(address, static_cast<uint256_t>(value));
+}
+
+bool State::check_account_min_balance(
+    OriginalAccountState &original_state, std::optional<Account> const &account,
+    uint256_t const &debit)
+{
+    uint256_t const balance = account ? account->balance : 0;
     // RELAXED MERGE
     // if current balance  >= `debit`, then:
     // 1. compute the amount that current balance exceeds `debit`

@@ -53,7 +53,6 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
-#include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/vm/evm/switch_traits.hpp>

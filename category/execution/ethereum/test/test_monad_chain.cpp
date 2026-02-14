@@ -31,8 +31,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
-#include <category/execution/monad/reserve_balance.h>
-#include <category/execution/monad/reserve_balance.hpp>
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/db.hpp>
@@ -163,7 +162,15 @@ void run_revert_transaction_test(
     vm::VM vm;
     BlockState bs{tdb, vm};
 
-    ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()), 10);
+    {
+        NoopCallTracer noop_tracer{};
+        State state{bs, Incarnation{0, 0}};
+        ReserveBalanceView reserve_view{state};
+        auto const max_reserve = reserve_view.get_delayed_urb(SENDER);
+
+        constexpr uint256_t WEI_PER_MON{1'000'000'000'000'000'000};
+        ASSERT_EQ(max_reserve, 10 * WEI_PER_MON);
+    }
 
     // Set up initial state
     {

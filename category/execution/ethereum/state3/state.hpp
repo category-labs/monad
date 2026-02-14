@@ -219,6 +219,12 @@ public:
      */
     bool record_balance_constraint_for_debit(
         Address const &, uint256_t const &debit);
+
+    // TODO(dhil): Just expose incarnation member?
+    Incarnation const &incarnation() const
+    {
+        return incarnation_;
+    }
 };
 
 MONAD_NAMESPACE_END

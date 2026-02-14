@@ -114,6 +114,8 @@ add_library(
   "ethereum/event/exec_iter_help.h"
   "ethereum/event/record_block_events.cpp"
   "ethereum/event/record_block_events.hpp"
+  "ethereum/event/record_consensus_events.cpp"
+  "ethereum/event/record_consensus_events.hpp"
   "ethereum/event/record_txn_events.cpp"
   "ethereum/event/record_txn_events.hpp"
   # ethereum/execution

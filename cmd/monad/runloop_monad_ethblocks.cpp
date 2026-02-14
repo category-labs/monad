@@ -26,6 +26,10 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
+#include <category/execution/ethereum/event/record_block_events.hpp>
+#include <category/execution/ethereum/event/record_consensus_events.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -124,6 +128,23 @@ Result<void> process_monad_block(
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
 
+    // This is exactly the same as the recording call in runloop_ethereum.cpp;
+    // even though these are historical Monad block inputs, we don't have the
+    // additional information from the consensus header here (the consensus
+    // timestamp, the `monad_c_native_block_input` protocol extensions, etc.),
+    // so there are a few std::nullopt values, and the timestamp is approximate
+    record_block_start(
+        block_id,
+        chain.get_chain_id(),
+        block.header,
+        block.header.parent_hash,
+        block.header.number,
+        0,
+        block.header.timestamp * 1'000'000'000UL,
+        block.transactions.size(),
+        std::nullopt,
+        std::nullopt);
+
     // Block input validation
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
     BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
@@ -196,6 +217,7 @@ Result<void> process_monad_block(
 
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<traits>(
@@ -210,6 +232,7 @@ Result<void> process_monad_block(
             call_tracers,
             state_tracers,
             chain_context));
+    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
@@ -233,16 +256,20 @@ Result<void> process_monad_block(
             commit_time);
     }
     // Post-commit validation of header, with Merkle root fields filled in
-    auto const output_header = db.read_eth_header();
-    BOOST_OUTCOME_TRY(validate_output_header(block.header, output_header));
+    BlockExecOutput exec_output;
+    exec_output.eth_header = db.read_eth_header();
+    BOOST_OUTCOME_TRY(
+        validate_output_header(block.header, exec_output.eth_header));
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
-    auto const eth_block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(output_header)));
-    block_hash_buffer.set(block.header.number, eth_block_hash);
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+    block_hash_buffer.set(
+        exec_output.eth_header.number, exec_output.eth_block_hash);
+    (void)record_block_result(exec_output);
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
@@ -269,10 +296,11 @@ Result<void> process_monad_block(
             (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_time.count()),
-        output_header.gas_used,
-        output_header.gas_used /
+        exec_output.eth_header.gas_used,
+        exec_output.eth_header.gas_used /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
-        output_header.gas_used / (uint64_t)std::max(1L, block_time.count()),
+        exec_output.eth_header.gas_used /
+            (uint64_t)std::max(1L, block_time.count()),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
@@ -397,6 +425,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 
+        record_mock_consensus_events(block_id, block_num);
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();
         total_gas += block.header.gas_used;

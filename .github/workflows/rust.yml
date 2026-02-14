@@ -1,0 +1,81 @@
+name: Rust
+
+on:
+  push:
+    paths:
+      - '.github/workflows/rust.yml'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'category/**'
+      - 'rust/**'
+      - 'docker/Dockerfile'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-32
+
+    steps:
+      - name: Tell git to do submodules in parallel
+        run: |
+          git config --global submodule.fetchJobs "$(nproc)"
+
+      - name: Checkout repo and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build `base` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: base
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,scope=base,mode=max
+
+      - name: Build `base_rust` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: base_rust
+          cache-from: |
+            type=gha,scope=base
+            type=gha,scope=base_rust
+          cache-to: type=gha,scope=base_rust,mode=max
+
+      - name: Build `build_and_test_rust` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: build_and_test_rust
+          build-args: |
+            CC=gcc-15
+            CXX=g++-15
+          cache-from: |
+            type=gha,scope=base
+            type=gha,scope=base_rust
+            type=gha,scope=build_and_test_rust
+          cache-to: type=gha,scope=build_and_test_rust,mode=max
+
+      - name: Build `code_quality_rust` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: code_quality_rust
+          cache-from: |
+            type=gha,scope=base
+            type=gha,scope=base_rust
+            type=gha,scope=code_quality_rust
+          cache-to: type=gha,scope=code_quality_rust,mode=max
+

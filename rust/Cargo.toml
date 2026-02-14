@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[profile.release]
+debug = true
+lto = "thin"
+panic = "abort"
+
+[workspace.metadata.cargo-shear]
+ignored = [
+    "monad-cxx",
+]
+
+
+[workspace.dependencies]
+monad-cxx = { path = "./crates/monad-cxx" }
+
+cmake = "0.1"
+tracing = "0.1"

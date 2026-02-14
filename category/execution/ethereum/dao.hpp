@@ -20,8 +20,6 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 
-#include <intx/intx.hpp>
-
 MONAD_NAMESPACE_BEGIN
 
 namespace dao

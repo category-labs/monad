@@ -84,8 +84,8 @@ private:
 
     std::optional<Account> &current_account(Address const &);
 
-    void add_to_balance(
-        AccountHistory &, Address const &, uint256_t const &delta);
+    void
+    add_to_balance(AccountHistory &, Address const &, uint256_t const &delta);
 
     void subtract_from_balance(
         AccountHistory &, Address const &, uint256_t const &delta);

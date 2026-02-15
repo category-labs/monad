@@ -151,7 +151,9 @@ public:
 
 static_assert(sizeof(AccountState) == 104);
 
-class CurrentAccountState final : public AccountState, public AccountSubstate
+class CurrentAccountState final
+    : public AccountState
+    , public AccountSubstate
 {
 public:
     StorageMap transient_storage_{};
@@ -339,8 +341,7 @@ public:
 
     void add_to_balance(
         StateKey const key, unsigned const version,
-        Incarnation const &incarnation,
-        uint256_t const &delta)
+        Incarnation const &incarnation, uint256_t const &delta)
     {
         auto &account_state = current_state(key, version);
         auto &account = account_state.account_;
@@ -359,8 +360,7 @@ public:
 
     void subtract_from_balance(
         StateKey const key, unsigned const version,
-        Incarnation const &incarnation,
-        uint256_t const &delta)
+        Incarnation const &incarnation, uint256_t const &delta)
     {
         auto &account_state = current_state(key, version);
         auto &account = account_state.account_;
@@ -368,7 +368,8 @@ public:
             account = Account{.incarnation = incarnation};
         }
 
-        MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
+        MONAD_ASSERT_THROW(
+            delta <= account.value().balance, "balance underflow");
 
         account.value().balance -= delta;
         account_state.touch();
@@ -389,7 +390,6 @@ public:
     }
 
 public:
-
     [[nodiscard]] uint256_t balance_with_exact_validation()
     {
         original_.set_validate_exact_balance();
@@ -416,7 +416,6 @@ public:
         original_.set_validate_exact_balance();
         return false;
     }
-
 };
 
 MONAD_NAMESPACE_END

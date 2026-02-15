@@ -68,7 +68,8 @@ namespace trace
         }
         OriginalAccountState const &original_state =
             account_history.original_state();
-        AccountState const &current_state = account_history.recent_current_state();
+        AccountState const &current_state =
+            account_history.recent_current_state();
 
         // If the original state has no account, then the beneficiary was
         // created during the block and if the current state has an account,
@@ -114,9 +115,9 @@ namespace trace
     void PrestateTracer::encode(State &state)
     {
         storage_ = nullptr;
-        auto const beneficiary =
-            retain_beneficiary(state) ? std::nullopt
-                                      : std::optional<Address>{beneficiary_};
+        auto const beneficiary = retain_beneficiary(state)
+                                     ? std::nullopt
+                                     : std::optional<Address>{beneficiary_};
 
         for (auto const &[address, account_history] : state.history()) {
             // Skip beneficiary account, if present
@@ -166,7 +167,8 @@ namespace trace
             auto const &current_account_state = current_stack.recent();
             auto const &current_account = current_account_state.account_;
             auto const &current_storage = current_account_state.storage_;
-            auto const &original_account_state = account_history.original_state();
+            auto const &original_account_state =
+                account_history.original_state();
             auto const &original_account = original_account_state.account_;
             auto const &original_storage = original_account_state.storage_;
 
@@ -260,9 +262,7 @@ namespace trace
         return std::visit(
             overloaded{
                 [](std::monostate) {},
-                [&state](PrestateTracer &prestate) {
-                    prestate.encode(state);
-                },
+                [&state](PrestateTracer &prestate) { prestate.encode(state); },
                 [&state](StateDiffTracer &statediff) {
                     statediff.encode(statediff.trace(state), state);
                 },

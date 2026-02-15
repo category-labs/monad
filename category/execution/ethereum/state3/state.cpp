@@ -449,14 +449,14 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
                 beneficiary_history, beneficiary, account.value().balance);
         }
         subtract_from_balance(sender_history, address, account.value().balance);
-        sender_history
-            .original_state(AccountHistory::StateKey{})
+        sender_history.original_state(AccountHistory::StateKey{})
             .set_validate_exact_balance();
     }
     else {
         if (address != beneficiary || account->incarnation == incarnation_) {
             if (address == beneficiary) {
-                add_to_balance(sender_history, address, account.value().balance);
+                add_to_balance(
+                    sender_history, address, account.value().balance);
             }
             else {
                 auto &beneficiary_history = account_history(beneficiary);
@@ -465,8 +465,7 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
             }
             subtract_from_balance(
                 sender_history, address, account.value().balance);
-            sender_history
-                .original_state(AccountHistory::StateKey{})
+            sender_history.original_state(AccountHistory::StateKey{})
                 .set_validate_exact_balance();
         }
     }

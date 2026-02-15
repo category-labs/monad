@@ -57,9 +57,7 @@ class State
 
     Incarnation const incarnation_;
 
-    Map<Address, OriginalAccountState> original_{};
-
-    Map<Address, VersionStack<CurrentAccountState>> current_{};
+    Map<Address, AccountHistory> history_{};
 
     VersionStack<immer::vector<Receipt::Log>> logs_{{}};
 
@@ -76,6 +74,8 @@ public:
     OriginalAccountState &original_account_state(Address const &);
 
 private:
+    AccountHistory &account_history(Address const &);
+
     AccountState const &recent_account_state(Address const &);
 
     CurrentAccountState &current_account_state(Address const &);
@@ -83,6 +83,12 @@ private:
     std::optional<Account> const &recent_account(Address const &);
 
     std::optional<Account> &current_account(Address const &);
+
+    void add_to_balance(
+        AccountHistory &, Address const &, uint256_t const &delta);
+
+    void subtract_from_balance(
+        AccountHistory &, Address const &, uint256_t const &delta);
 
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
@@ -92,9 +98,7 @@ public:
     State &operator=(State &&) = delete;
     State &operator=(State const &) = delete;
 
-    Map<Address, OriginalAccountState> const &original() const;
-
-    Map<Address, VersionStack<CurrentAccountState>> const &current() const;
+    Map<Address, AccountHistory> const &history() const;
 
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
 

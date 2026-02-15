@@ -15,22 +15,29 @@
 
 #include "test_fixtures_base.hpp"
 
-#include <category/async/config.hpp>
+#include <category/async/concepts.hpp>
+#include <category/async/connected_operation.hpp>
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/storage_pool.hpp>
-#include <category/async/util.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
+#include <category/core/keccak.h>
 #include <category/core/result.hpp>
 #include <category/core/small_prng.hpp>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/core/unaligned.hpp>
+#include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
+#include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
+#include <category/mpt/node.hpp>
+#include <category/mpt/node_cursor.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
@@ -38,20 +45,20 @@
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
-
-#include <gtest/gtest.h>
-
 #include <boost/fiber/fiber.hpp>
 #include <boost/fiber/future/promise.hpp>
 #include <boost/fiber/operations.hpp>
 
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <deque>
 #include <filesystem>
 #include <functional>
@@ -59,14 +66,13 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
-#include <stdexcept>
+#include <optional>
 #include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <stdlib.h>
-#include <unistd.h>
 
 using namespace monad::mpt;
 using namespace monad::test;
@@ -172,7 +178,8 @@ namespace
             };
 
             auto *state = new auto(monad::async::connect(
-                std::move(sender), receiver_t{this, std::move(callback)}));
+                std::forward<decltype(sender)>(sender),
+                receiver_t{this, std::move(callback)}));
             state->initiate();
         }
 
@@ -379,8 +386,10 @@ TEST_F(OnDiskDbWithFileFixture, multiple_read_only_db_share_one_asyncio)
 
     auto verify_read = [&prefix, &starting_block_id](Db &db) {
         EXPECT_EQ(db.get_latest_version(), starting_block_id);
-        auto root = db.load_root_for_version(starting_block_id);
+        auto const root = db.load_root_for_version(starting_block_id);
         EXPECT_EQ(
+            // appears to be a bug in the checker
+            // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
             db_get(db, root, prefix + kv[0].first, starting_block_id).value(),
             kv[0].second);
         EXPECT_EQ(
@@ -494,6 +503,8 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_access_multi_version)
     }
     for (uint64_t version = 0; version < num_versions; ++version) {
         if (version == 0) {
+            // only occurs on first loop
+            // NOLINTNEXTLINE(bugprone-use-after-move)
             roots[0] = db.upsert({}, std::move(ls), version);
         }
         else {
@@ -508,7 +519,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_access_multi_version)
 
     // concurrent find across all versions
     monad::fiber::PriorityPool pool{1, 8};
-    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+    std::shared_ptr<boost::fibers::promise<void>[]> const promises{
         new boost::fibers::promise<void>[num_versions]};
     for (unsigned i = 0; i < num_versions; ++i) {
         pool.submit(
@@ -563,11 +574,13 @@ TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
     }
 
     // read the same set of keys from all blocks, and invalid blocks and keys
+    // nolint due to missing constructor for `promixe<void>`
+    // NOLINTNEXTLINE(modernize-make-shared)
     promises.reset(new boost::fibers::promise<void>[num_blocks]);
     for (unsigned b = 0; b < num_blocks; ++b) {
         pool.submit(0, [b = b, &db = ro_db, promises = promises] {
             for (unsigned i = 0; i < keys_per_block; ++i) {
-                auto kv_bytes = keccak_int_to_string(i);
+                auto const kv_bytes = keccak_int_to_string(i);
                 auto const res = db.find(kv_bytes, b);
                 ASSERT_TRUE(res.has_value());
                 EXPECT_EQ(res.value().node->value(), kv_bytes);
@@ -680,7 +693,7 @@ TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)
 {
     // construct RODb
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-    Db ro_db{io_ctx};
+    Db const ro_db{io_ctx};
     // RODb root is invalid
     EXPECT_EQ(ro_db.get_latest_version(), INVALID_BLOCK_NUM);
     EXPECT_EQ(ro_db.get_earliest_version(), INVALID_BLOCK_NUM);
@@ -699,7 +712,7 @@ TEST_F(OnDiskDbWithFileFixture, DISABLED_read_only_db_concurrent)
 
     auto upsert_new_version = [&](Db &db, uint64_t const version) {
         UpdateList ul;
-        auto version_bytes = serialize_as_big_endian<6>(version);
+        auto const version_bytes = serialize_as_big_endian<6>(version);
         auto u = make_update(version_bytes, version_bytes);
         ul.push_front(u);
 
@@ -717,10 +730,12 @@ TEST_F(OnDiskDbWithFileFixture, DISABLED_read_only_db_concurrent)
     auto keep_query = [&]() {
         // construct RODb
         AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-        Db ro_db{io_ctx};
+        Db const ro_db{io_ctx};
 
         uint64_t read_version = 0;
-        auto start_version_bytes = serialize_as_big_endian<6>(read_version);
+        // currently unused but keeping around in case it's useful
+        // auto const start_version_bytes =
+        //     serialize_as_big_endian<6>(read_version);
 
         unsigned nsuccess = 0;
         unsigned nfailed = 0;
@@ -732,7 +747,7 @@ TEST_F(OnDiskDbWithFileFixture, DISABLED_read_only_db_concurrent)
         ASSERT_TRUE(ro_db.get_latest_version() != INVALID_BLOCK_NUM);
         ASSERT_TRUE(ro_db.get_earliest_version() != INVALID_BLOCK_NUM);
         while (!done.load(std::memory_order_acquire)) {
-            auto version_bytes = serialize_as_big_endian<6>(read_version);
+            auto const version_bytes = serialize_as_big_endian<6>(read_version);
             auto res = ro_db.find(prefix + version_bytes, read_version);
             if (res.has_value()) {
                 ASSERT_EQ(res.value().node->value(), version_bytes)
@@ -794,7 +809,7 @@ TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
 
     EXPECT_TRUE(ro_db.find(NibblesView{k1}, block_id).has_error());
 
-    ul.clear();
+    ul = UpdateList{};
     auto u2 = make_update(k2, k2);
     ul.push_front(u2);
     root = this->db.upsert(std::move(root), std::move(ul), block_id);
@@ -825,8 +840,7 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     // prepare updates with 8KB size value
     std::deque<monad::byte_string> bytes_alloc;
     std::deque<Update> updates_alloc;
-    auto const &large_value =
-        bytes_alloc.emplace_back(monad::byte_string(8 * 1024, 0xf));
+    auto const &large_value = bytes_alloc.emplace_back(8 * 1024, 0xf);
     for (size_t i = 0; i < nkeys; ++i) {
         updates_alloc.push_back(Update{
             .key = bytes_alloc.emplace_back(keccak_int_to_string(i)),
@@ -846,7 +860,7 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     monad::io::Buffers read_buffers = monad::io::make_buffers_for_read_only(
         read_ring, 128, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
     monad::async::AsyncIO io_ctx(pool, read_buffers);
-    UpdateAux aux_reader{io_ctx};
+    UpdateAux const aux_reader{io_ctx};
 
     auto batch_upsert_once = [&](uint64_t const version) {
         UpdateList ls;
@@ -940,6 +954,8 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
 
     auto upsert_once = [&] {
         UpdateList ls;
+        // appears to be a checker bug
+        // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
         for (auto &u : updates_alloc) {
             ls.push_front(u);
         }
@@ -1128,7 +1144,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
         state->initiate();
     }
     ctx->aux.io->wait_until_done();
-    for (auto &r : results) {
+    for (auto const &r : results) {
         EXPECT_TRUE(r.traverse_success);
         EXPECT_EQ(r.num_leaves_traversed, nkeys);
     }
@@ -1154,10 +1170,10 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
 TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
 {
     auto const dbname = create_temp_file(2); // 2Gb db
-    auto undb = monad::make_scope_exit(
+    auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlwaysEmpty machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
@@ -1216,10 +1232,10 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
 TEST(DbTest, out_of_order_upserts_with_compaction)
 {
     auto const dbname = create_temp_file(3); // 3Gb db
-    auto undb = monad::make_scope_exit(
+    auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlwaysMerkle machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
@@ -1232,6 +1248,8 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
         -> std::pair<uint32_t, uint32_t> {
         MONAD_ASSERT(bytes.size() == 8);
         return {
+            // copy size is implicitly part of the `unaligned_load` call
+            // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
             monad::unaligned_load<uint32_t>(bytes.data()),
             monad::unaligned_load<uint32_t>(bytes.data() + sizeof(uint32_t))};
     };
@@ -1268,7 +1286,7 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
         auto const res = db_get(
             rodb, rodb.load_root_for_version(block_id - 1), {}, block_id - 1);
         ASSERT_TRUE(res.has_value());
-        auto const result_before = res.value();
+        auto const &result_before = res.value();
         auto const [fast_n_1, slow_n_1] = get_release_offsets(result_before);
         EXPECT_GE(fast_n, fast_n_1);
         EXPECT_GE(slow_n, slow_n_1);
@@ -1376,7 +1394,7 @@ TYPED_TEST(DbTest, simple_with_same_prefix)
 
     auto res = this->db.find(this->root, prefix, block_id);
     ASSERT_TRUE(res.has_value());
-    NodeCursor const root_under_prefix = res.value();
+    NodeCursor const &root_under_prefix = res.value();
     EXPECT_EQ(
         this->db.find(root_under_prefix, kv[2].first, block_id)
             .value()
@@ -1442,7 +1460,7 @@ TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)
 
     auto res = this->db.find(this->root, NibblesView{prefix}, block_id);
     ASSERT_TRUE(res.has_value());
-    NodeCursor const root_under_prefix = res.value();
+    NodeCursor const &root_under_prefix = res.value();
     EXPECT_EQ(
         this->db.find(root_under_prefix, kv[2].first, block_id)
             .value()
@@ -1481,7 +1499,7 @@ TYPED_TEST(DbTraverseTest, traverse)
         size_t index{0};
         size_t num_up{0};
 
-        SimpleTraverse(size_t &num_leaves)
+        explicit SimpleTraverse(size_t &num_leaves)
             : num_leaves(num_leaves)
         {
         }
@@ -1601,7 +1619,7 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
         unsigned curr_level{0};
         size_t &num_leaves;
 
-        TrimmedTraverse(size_t &num_leaves)
+        explicit TrimmedTraverse(size_t &num_leaves)
             : num_leaves(num_leaves)
         {
         }
@@ -1720,14 +1738,14 @@ TEST_F(OnDiskDbFixture, rw_query_old_version)
 TEST(DbTest, auto_expire_large_set)
 {
     auto const dbname = create_temp_file(8);
-    auto undb = monad::make_scope_exit(
+    auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlways<
         EmptyCompute,
         StateMachineConfig{.expire = true, .cache_depth = 3}>
         machine{};
     constexpr auto history_len = 20;
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
@@ -1738,18 +1756,18 @@ TEST(DbTest, auto_expire_large_set)
     auto const prefix = 0x00_bytes;
     monad::byte_string const value(256 * 1024, 0);
     std::vector<monad::byte_string> keys;
-    std::vector<monad::byte_string> values;
+    std::vector<monad::byte_string> const values;
     constexpr unsigned keys_per_block = 5;
     constexpr uint64_t blocks = 1000;
     keys.reserve(blocks * keys_per_block);
 
     // randomize keys
-    auto const seed = static_cast<uint32_t>(time(NULL));
+    auto const seed = static_cast<uint32_t>(time(nullptr));
     std::cout << "seed to reproduce: " << seed << std::endl;
     monad::small_prng rand(seed);
     for (uint64_t block_id = 0; block_id < blocks; ++block_id) {
         for (unsigned i = 0; i < keys_per_block; ++i) {
-            auto &key = keys.emplace_back(monad::byte_string(32, 0));
+            auto &key = keys.emplace_back(32, 0);
             uint64_t raw = rand();
             keccak256((unsigned char const *)&raw, 8, key.data());
         }
@@ -1786,13 +1804,13 @@ TEST(DbTest, auto_expire_large_set)
 TEST(DbTest, auto_expire)
 {
     auto const dbname = create_temp_file(8);
-    auto undb = monad::make_scope_exit(
+    auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlways<
         EmptyCompute,
         StateMachineConfig{.expire = true, .cache_depth = 3}>
         machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
@@ -1803,6 +1821,7 @@ TEST(DbTest, auto_expire)
     auto const prefix = 0x00_bytes;
     // insert 10 keys
     std::vector<monad::byte_string> keys;
+    keys.reserve(10);
     for (uint64_t i = 0; i < 10; ++i) {
         keys.emplace_back(serialize_as_big_endian<8>(i));
     }
@@ -1820,8 +1839,8 @@ TEST(DbTest, auto_expire)
             << block_id;
     }
 
-    uint64_t latest_block_id = db.get_latest_version(),
-             earliest_block_id = db.get_earliest_version();
+    uint64_t latest_block_id = db.get_latest_version();
+    uint64_t earliest_block_id = db.get_earliest_version();
     for (unsigned i = 0; i <= latest_block_id; ++i) {
         auto const res = db_get(db, root, prefix + keys[i], latest_block_id);
         if (i < earliest_block_id) { // keys 0-4 are expired
@@ -1877,12 +1896,12 @@ TEST_F(OnDiskDbFixture, metadata)
     db.update_verified_version(100);
     EXPECT_EQ(db.get_latest_verified_version(), 100);
 
-    monad::bytes32_t voted_block_id{10};
+    monad::bytes32_t const voted_block_id{10};
     db.update_voted_metadata(101, voted_block_id);
     EXPECT_EQ(db.get_latest_voted_version(), 101);
     EXPECT_EQ(db.get_latest_voted_block_id(), voted_block_id);
 
-    monad::bytes32_t proposed_block_id{12};
+    monad::bytes32_t const proposed_block_id{12};
     db.update_proposed_metadata(102, proposed_block_id);
     EXPECT_EQ(db.get_latest_proposed_version(), 102);
     EXPECT_EQ(db.get_latest_proposed_block_id(), proposed_block_id);
@@ -1916,12 +1935,14 @@ TEST_F(OnDiskDbFixture, copy_trie_from_to_same_version)
 
     auto verify_dest_state = [&](Db &db, monad::byte_string const prefix) {
         EXPECT_EQ(db.get_latest_version(), version);
-        auto root = db.load_root_for_version(version);
+        auto const root = db.load_root_for_version(version);
         auto const data_res = db_get_data(db, root, prefix, version);
         EXPECT_TRUE(data_res.has_value()) << NibblesView{prefix};
         EXPECT_EQ(src_prefix_data, data_res.value()) << NibblesView{prefix};
         // look up from prefix, assert same data as src trie
         for (unsigned i = 0; i < nkeys; ++i) {
+            // appears to be a bug in the checker
+            // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
             auto const res = db_get(db, root, prefix + kv_alloc[i], version);
             EXPECT_TRUE(res.has_value()) << NibblesView{prefix};
             EXPECT_EQ(res.value(), kv_alloc[i]) << NibblesView{prefix};
@@ -2110,7 +2131,7 @@ TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
 TEST(DbTest, move_trie_version_forward_history_ring_wrap_around)
 {
     auto const dbname = create_temp_file(2);
-    auto undb = monad::make_scope_exit(
+    auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlwaysEmpty machine{};
     OnDiskDbConfig config{
@@ -2131,7 +2152,7 @@ TEST(DbTest, move_trie_version_forward_history_ring_wrap_around)
         monad::io::Buffers robuf = monad::io::make_buffers_for_read_only(
             ring, 2, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         monad::async::AsyncIO testio(pool_ro, robuf);
-        monad::mpt::UpdateAux<> aux_reader{testio};
+        monad::mpt::UpdateAux<> const aux_reader{testio};
         return aux_reader.root_offsets().capacity();
     }();
 
@@ -2195,7 +2216,7 @@ TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
         kv_alloc.emplace_back(keccak_int_to_string(i));
     }
 
-    uint64_t root_offsets_ring_capacity = [&] {
+    uint64_t const root_offsets_ring_capacity = [&] {
         monad::async::storage_pool::creation_flags pool_options;
         pool_options.open_read_only = true;
         monad::async::storage_pool pool_ro(
@@ -2206,7 +2227,7 @@ TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
         monad::io::Buffers robuf = monad::io::make_buffers_for_read_only(
             ring, 2, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         monad::async::AsyncIO testio(pool_ro, robuf);
-        monad::mpt::UpdateAux<> aux_reader{testio};
+        monad::mpt::UpdateAux<> const aux_reader{testio};
         return aux_reader.root_offsets().capacity();
     }();
     std::cout << root_offsets_ring_capacity << std::endl;
@@ -2383,7 +2404,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_within_history_range)
 {
     EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-    Db ro_db{io_ctx};
+    Db const ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
     auto const &kv = fixed_updates::kv;
@@ -2423,7 +2444,7 @@ TEST_F(
 {
     EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-    Db ro_db{io_ctx};
+    Db const ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
     auto const &kv = fixed_updates::kv;
@@ -2532,7 +2553,7 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
     config.append = true;
     while (config.fixed_history_length > end_history_length) {
         config.fixed_history_length = *config.fixed_history_length - 1;
-        Db new_db{machine, config};
+        Db const new_db{machine, config};
         EXPECT_EQ(new_db.get_history_length(), config.fixed_history_length);
         EXPECT_EQ(new_db.get_latest_version(), MPT_TEST_HISTORY_LENGTH - 1);
     }
@@ -2575,7 +2596,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
         db.find(prefix + kv[1].first, min_block_num_before).has_value());
 
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
-    Db ro_db{io_ctx};
+    Db const ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
     EXPECT_TRUE(ro_db.find(prefix + kv[1].first, 0).has_error());
     EXPECT_TRUE(ro_db.find(prefix + kv[1].first, max_block_id).has_value());
@@ -2589,7 +2610,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     config.fixed_history_length = MPT_TEST_HISTORY_LENGTH / 2;
     config.append = true;
     {
-        Db new_rw{machine, config};
+        Db const new_rw{machine, config};
         EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
         EXPECT_EQ(new_rw.get_latest_version(), max_block_id);
     }
@@ -2608,7 +2629,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
 
     // Reopen rwdb with a longer history length
     config.fixed_history_length = MPT_TEST_HISTORY_LENGTH;
-    Db new_rw{machine, config};
+    Db const new_rw{machine, config};
     EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
     EXPECT_EQ(new_rw.get_earliest_version(), min_block_num_after);
     EXPECT_EQ(ro_db.get_history_length(), config.fixed_history_length);
@@ -2680,7 +2701,8 @@ TYPED_TEST(DbTest, scalability)
                     }
                     while (latch.load(std::memory_order_relaxed) == 0) {
                         size_t const idx = rand() % COUNT;
-                        auto r = this->db.find(this->root, keys[idx], BLOCK_ID);
+                        auto const r =
+                            this->db.find(this->root, keys[idx], BLOCK_ID);
                         MONAD_ASSERT(r);
                         ops.fetch_add(1, std::memory_order_relaxed);
                         ::boost::this_fiber::yield();
@@ -2728,7 +2750,8 @@ TYPED_TEST(DbTest, scalability)
                     }
                     while (latch.load(std::memory_order_relaxed) == 0) {
                         size_t const idx = rand() % COUNT;
-                        auto r = this->db.find(this->root, keys[idx], BLOCK_ID);
+                        auto const r =
+                            this->db.find(this->root, keys[idx], BLOCK_ID);
                         MONAD_ASSERT(r);
                         ops.fetch_add(1, std::memory_order_relaxed);
                         ::boost::this_fiber::yield();

@@ -21,10 +21,12 @@
 #include <category/async/io_senders.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
-#include <category/core/nibble.h>
+#include <category/core/likely.h>
 #include <category/mpt/config.hpp>
+#include <category/mpt/deserialize_node_from_receiver_result.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/node_cursor.hpp>
 #include <category/mpt/request.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/update.hpp>
@@ -39,15 +41,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
 #include <tuple>
 #include <utility>
 #include <vector>
-
-#include "deserialize_node_from_receiver_result.hpp"
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -180,8 +179,8 @@ Node::SharedPtr upsert(
         return impl();
     }
     else {
-        auto g(aux.unique_lock());
-        auto g2(aux.set_current_upsert_tid());
+        auto const g(aux.unique_lock());
+        auto const g2(aux.set_current_upsert_tid());
         return impl();
     }
 }
@@ -232,7 +231,7 @@ struct load_all_impl_
             MONAD_ASSERT(buffer_);
             // load node from read buffer
             {
-                auto g(impl->aux.unique_lock());
+                auto const g(impl->aux.unique_lock());
                 MONAD_ASSERT(root.node->next(branch_index) == nullptr);
                 root.node->set_next(
                     branch_index,
@@ -251,7 +250,7 @@ struct load_all_impl_
 
     void process(NodeCursor const &node_cursor, StateMachine &sm)
     {
-        auto node = node_cursor.node;
+        auto const node = node_cursor.node;
         for (auto const [idx, i] : NodeChildrenRange(node->mask)) {
             NibblesView const nv =
                 node->path_nibble_view().substr(node_cursor.prefix_index);
@@ -355,12 +354,12 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
         return {true, nullptr};
     }
     auto const mask = tnode->mask;
-    auto &orig = tnode->node;
+    auto const &orig = tnode->node;
     auto const number_of_children = static_cast<size_t>(std::popcount(mask));
     if (number_of_children == 1 && !orig->has_value()) {
         auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
         auto const child_index = orig->to_child_index(child_branch);
-        auto single_child = orig->move_next(child_index);
+        auto const single_child = orig->move_next(child_index);
         if (!single_child) {
             node_receiver_t recv{
                 [aux = &aux,
@@ -475,14 +474,14 @@ Node::SharedPtr create_node_from_children_if_any(
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
     if (number_of_children == 0) {
         return leaf_data.has_value()
-                   ? make_node(0, {}, path, leaf_data.value(), {}, version)
+                   ? make_node(0, {}, path, leaf_data, {}, version)
                    : Node::SharedPtr{};
     }
     else if (number_of_children == 1 && !leaf_data.has_value()) {
         auto const j = bitmask_index(
             orig_mask, static_cast<unsigned>(std::countr_zero(mask)));
         MONAD_DEBUG_ASSERT(children[j].ptr);
-        auto node = std::move(children[j].ptr);
+        auto const node = std::move(children[j].ptr);
         /* Note: there's a potential superfluous extension hash recomputation
         when node coaleases upon erases, because we compute node hash when path
         is not yet the final form. There's not yet a good way to avoid this
@@ -537,7 +536,7 @@ void create_node_compute_data_possibly_async(
     tnode_unique_ptr tnode, bool const might_on_disk)
 {
     if (might_on_disk && tnode->number_of_children() == 1) {
-        auto &child = tnode->children[bitmask_index(
+        auto const &child = tnode->children[bitmask_index(
             tnode->orig_mask,
             static_cast<unsigned>(std::countr_zero(tnode->mask)))];
         if (!child.ptr) {
@@ -749,7 +748,7 @@ void create_new_trie_from_requests_(
             sm,
             version,
             children[index],
-            std::move(requests)[branch],
+            std::move(requests[branch]),
             prefix_index + 1);
         sm.up(1);
     }
@@ -811,7 +810,7 @@ void upsert_(
     auto const prefix_index_start = prefix_index;
     Requests requests;
     while (true) {
-        NibblesView path = old->path_nibble_view().substr(
+        NibblesView const path = old->path_nibble_view().substr(
             old_prefix_index_start, old_prefix_index - old_prefix_index_start);
         if (updates.size() == 1 &&
             prefix_index == updates.front().key.nibble_size()) {
@@ -822,8 +821,8 @@ void upsert_(
                 aux, sm, parent, entry, std::move(old), path, update);
             break;
         }
-        unsigned const number_of_sublists = requests.split_into_sublists(
-            std::move(updates), prefix_index); // NOLINT
+        unsigned const number_of_sublists =
+            requests.split_into_sublists(std::move(updates), prefix_index);
         MONAD_ASSERT(requests.mask > 0);
         if (old_prefix_index == old->path_nibbles_len()) {
             MONAD_ASSERT(
@@ -845,11 +844,12 @@ void upsert_(
                 version);
             break;
         }
-        if (auto old_nibble = old->path_nibble_view().get(old_prefix_index);
+        if (auto const old_nibble =
+                old->path_nibble_view().get(old_prefix_index);
             number_of_sublists == 1 &&
             requests.get_first_branch() == old_nibble) {
             MONAD_DEBUG_ASSERT(requests.opt_leaf == std::nullopt);
-            updates = std::move(requests)[old_nibble];
+            updates = std::move(requests[old_nibble]);
             sm.down(old_nibble);
             ++prefix_index;
             ++old_prefix_index;
@@ -878,13 +878,14 @@ void fillin_entry(
     UpdateTNode &parent, ChildData &entry)
 {
     if (tnode->npending) {
-        tnode.release();
+        (void)tnode.release();
     }
     else {
         create_node_compute_data_possibly_async(
             aux, sm, parent, entry, std::move(tnode));
     }
-}
+} // NOLINT(clang-analyzer-unix.Malloc)
+  // this is related to the `tnode.release()` call above
 
 /* dispatch updates at the end of old node's path. old node may have leaf data,
  * and there might be update to the leaf value. */
@@ -921,7 +922,7 @@ void dispatch_updates_impl_(
                     children[index],
                     old->move_next(old->to_child_index(branch)),
                     old->fnext(old->to_child_index(branch)),
-                    std::move(requests)[branch],
+                    std::move(requests[branch]),
                     prefix_index + 1);
                 sm.up(1);
             }
@@ -931,7 +932,7 @@ void dispatch_updates_impl_(
                     sm,
                     tnode->version,
                     children[index],
-                    std::move(requests)[branch],
+                    std::move(requests[branch]),
                     prefix_index + 1);
                 --tnode->npending;
                 sm.up(1);
@@ -1010,9 +1011,9 @@ void mismatch_handler_(
                     sm,
                     *tnode,
                     children[index],
-                    std::move(old_ptr),
+                    old_ptr,
                     INVALID_OFFSET,
-                    std::move(requests)[branch],
+                    std::move(requests[branch]),
                     prefix_index + 1,
                     old_prefix_index + 1);
             }
@@ -1022,7 +1023,7 @@ void mismatch_handler_(
                     sm,
                     tnode->version,
                     children[index],
-                    std::move(requests)[branch],
+                    std::move(requests[branch]),
                     prefix_index + 1);
                 --tnode->npending;
             }
@@ -1116,7 +1117,8 @@ void expire_(
                     parent = next_parent;
                 }
             },
-            node_offset};
+            node_offset}; // NOLINT(clang-analyzer*.Malloc)
+                          // false positive for moved `tnode`
         aux.collect_expire_stats(true);
         async_read(aux, std::move(recv));
         return;
@@ -1219,7 +1221,7 @@ void try_fillin_parent_after_expiration(
     UpdateAuxImpl &aux, StateMachine &sm, ExpireTNode::unique_ptr_type tnode)
 {
     if (tnode->npending) {
-        tnode.release();
+        (void)tnode.release();
         return;
     }
     auto const index = tnode->index;
@@ -1333,7 +1335,7 @@ void try_fillin_parent_with_rewritten_node(
     UpdateAuxImpl &aux, CompactTNode::unique_ptr_type tnode)
 {
     if (tnode->npending) { // there are unfinished async below node
-        tnode.release();
+        (void)tnode.release();
         return;
     }
     auto [min_offset_fast, min_offset_slow] =
@@ -1374,9 +1376,9 @@ void try_fillin_parent_with_rewritten_node(
         MONAD_DEBUG_ASSERT(
             parent->type == tnode_type::compact ||
             parent->type == tnode_type::expire);
-        auto &node = (parent->type == tnode_type::compact)
-                         ? parent->node
-                         : ((ExpireTNode *)parent)->node;
+        auto const &node = (parent->type == tnode_type::compact)
+                               ? parent->node
+                               : ((ExpireTNode *)parent)->node;
         MONAD_ASSERT(node);
         node->set_fnext(index, new_offset);
         node->set_min_offset_fast(index, min_offset_fast);
@@ -1405,7 +1407,7 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
         aux.db_metadata()->at(sender->offset().id)->in_fast_list;
     auto const *ci_ = aux.db_metadata()->free_list_end();
     MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
-    auto idx = ci_->index(aux.db_metadata());
+    auto const idx = ci_->index(aux.db_metadata());
     chunk_offset_t const offset_of_new_writer{idx, 0};
     // Pad buffer of existing node write that is about to get initiated so it's
     // O_DIRECT i/o aligned
@@ -1564,7 +1566,7 @@ retry:
             // serialization will not cross chunk boundary
             ret.offset_written_to =
                 sender->offset().add_to_offset(sender->written_buffer_bytes());
-            auto bytes_to_append = std::min(
+            auto const bytes_to_append = std::min(
                 (unsigned)remaining_bytes, size - offset_in_on_disk_node);
             auto *where_to_serialize =
                 (unsigned char *)node_writer->sender().advance_buffer_append(
@@ -1598,13 +1600,13 @@ retry:
             node_writer->sender().buffer().size());
         node_writer->initiate();
         // shall be recycled by the i/o receiver
-        node_writer.release();
+        (void)node_writer.release();
         node_writer = std::move(new_node_writer);
         // serialize the rest of the node to buffer
         while (offset_in_on_disk_node < size) {
             auto *where_to_serialize =
                 (unsigned char *)node_writer->sender().buffer().data();
-            auto bytes_to_append = std::min(
+            auto const bytes_to_append = std::min(
                 (unsigned)node_writer->sender().remaining_buffer_bytes(),
                 size - offset_in_on_disk_node);
             serialize_node_to_buffer(
@@ -1629,7 +1631,7 @@ retry:
                         node_writer->sender().buffer().size());
                     node_writer->initiate();
                     // shall be recycled by the i/o receiver
-                    node_writer.release();
+                    (void)node_writer.release();
                     node_writer = std::move(new_node_writer);
                 }
             }
@@ -1667,8 +1669,8 @@ void flush_buffered_writes(UpdateAuxImpl &aux)
     // Round up with all bits zero
     auto replace = [&](node_writer_unique_ptr_type &node_writer) {
         auto *sender = &node_writer->sender();
-        auto written = sender->written_buffer_bytes();
-        auto paddedup = round_up_align<DISK_PAGE_BITS>(written);
+        auto const written = sender->written_buffer_bytes();
+        auto const paddedup = round_up_align<DISK_PAGE_BITS>(written);
         auto const tozerobytes = paddedup - written;
         auto *tozero = sender->advance_buffer_append(tozerobytes);
         MONAD_DEBUG_ASSERT(tozero != nullptr);
@@ -1684,7 +1686,7 @@ void flush_buffered_writes(UpdateAuxImpl &aux)
             to_initiate->sender().written_buffer_bytes());
         to_initiate->initiate();
         // shall be recycled by the i/o receiver
-        to_initiate.release();
+        (void)to_initiate.release();
     };
     replace(aux.node_writer_fast);
     if (aux.node_writer_slow->sender().written_buffer_bytes()) {

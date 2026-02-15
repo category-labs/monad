@@ -36,6 +36,7 @@
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cache.hpp>
+#include <category/mpt/node_cursor.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
@@ -53,12 +54,11 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
-#include <iterator>
+#include <functional>
 #include <memory>
 #include <mutex>
-#include <stdexcept>
-#include <system_error>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -124,7 +124,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     : pool{[&] -> async::storage_pool {
         async::storage_pool::creation_flags pool_options;
         pool_options.num_cnv_chunks = options.root_offsets_chunk_count + 1;
-        auto len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
+        auto const len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
         if (options.dbname_paths.empty()) {
             return async::storage_pool{
                 async::use_anonymous_sized_inode_tag{}, len, pool_options};
@@ -136,7 +136,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
                     dbname_path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
                 MONAD_ASSERT_PRINTF(
                     fd != -1, "open failed due to %s", strerror(errno));
-                auto unfd =
+                auto const unfd =
                     monad::make_scope_exit([fd]() noexcept { ::close(fd); });
                 MONAD_ASSERT_PRINTF(
                     ::ftruncate(fd, len) != -1,
@@ -955,7 +955,7 @@ public:
 
 struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
 {
-    Impl(ReadOnlyOnDiskDbConfig const &options)
+    explicit Impl(ReadOnlyOnDiskDbConfig const &options)
         : OnDiskWithWorkerThreadImpl{options}
     {
     }
@@ -1083,7 +1083,7 @@ Result<NodeCursor>
 RODb::find(NibblesView const key, uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
-    NodeCursor cursor = impl_->load_root_fiber_blocking(block_id);
+    NodeCursor const cursor = impl_->load_root_fiber_blocking(block_id);
     return find(cursor, key, block_id);
 }
 
@@ -1134,7 +1134,7 @@ Db::find(NibblesView const key, uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(impl_->aux().is_on_disk());
-    auto root = impl_->load_root_for_version(block_id);
+    auto const root = impl_->load_root_for_version(block_id);
     return find(NodeCursor{root}, key, block_id);
 }
 
@@ -1378,8 +1378,8 @@ namespace detail
             MONAD_ASSERT(buffer_);
 
             auto &inflights = sender->context.inflight_roots;
-            auto it = inflights.find(sender->block_id);
-            auto pendings = std::move(it->second);
+            auto const it = inflights.find(sender->block_id);
+            auto const pendings = std::move(it->second);
             inflights.erase(it);
             std::shared_ptr<Node> root{};
             bool const block_alive_after_read =
@@ -1389,7 +1389,7 @@ namespace detail
                     std::move(buffer_), buffer_off, io_state);
                 root = sender->root;
                 sender->res_root = {{sender->root}, find_result::success};
-                auto virt_offset =
+                auto const virt_offset =
                     sender->context.aux.physical_to_virtual(offset);
                 sender->context.node_cache.insert(virt_offset, sender->root);
             }
@@ -1397,7 +1397,7 @@ namespace detail
                 sender->res_root = {{}, find_result::version_no_longer_exist};
             }
 
-            for (auto &invoc : pendings) {
+            for (auto const &invoc : pendings) {
                 // Calling invoc() may invoke user code which deletes `sender`.
                 // It is no longer safe to rely on the `sender` lifetime
                 invoc(root);
@@ -1438,8 +1438,8 @@ namespace detail
     };
 
     template <return_type T>
-    async::result<void> DbGetSender<T>::operator()(
-        async::erased_connected_operation *io_state) noexcept
+    async::result<void>
+    DbGetSender<T>::operator()(async::erased_connected_operation *io_state)
     {
         switch (op_type) {
         case op_t::op_get1:
@@ -1447,7 +1447,7 @@ namespace detail
         case op_t::op_get_node1: {
             chunk_offset_t const offset =
                 context.aux.get_root_offset_at_version(block_id);
-            auto virt_offset = context.aux.physical_to_virtual(offset);
+            auto const virt_offset = context.aux.physical_to_virtual(offset);
             NodeCache::ConstAccessor acc;
             if (context.node_cache.find(acc, virt_offset)) {
                 // found in LRU - no IO necessary
@@ -1474,7 +1474,8 @@ namespace detail
                 io_state->completed(async::success());
             };
             auto &inflights = context.inflight_roots;
-            if (auto it = inflights.find(block_id); it != inflights.end()) {
+            if (auto const it = inflights.find(block_id);
+                it != inflights.end()) {
                 it->second.emplace_back(cont);
             }
             else {

@@ -13,9 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/mpt/test/fuzz/one_hundred_updates.hpp>
+
 #include "test_fixtures_fuzz.hpp"
 
-#include "one_hundred_updates.hpp"
 #include <category/core/byte_string.hpp>
 
 #include <array>
@@ -29,10 +30,13 @@ inline constexpr auto MAX_VALUE_SIZE = 110u;
 extern "C" int LLVMFuzzerTestOneInput(uint8_t const *input, size_t bytes)
 {
     ::monad::test::fuzztest_input_filler filler({input, bytes});
-    auto groups = filler.get<std::array<size_t, 100>>(
+    auto const groups = filler.get<std::array<size_t, 100>>(
         size_t(0), ::monad::test::one_hundred_updates.size() - 1);
-    auto mods = filler.get<std::map<size_t, std::optional<monad::byte_string>>>(
-        {0, ::monad::test::one_hundred_updates.size() - 1}, 1, MAX_VALUE_SIZE);
+    auto const mods =
+        filler.get<std::map<size_t, std::optional<monad::byte_string>>>(
+            {0, ::monad::test::one_hundred_updates.size() - 1},
+            1,
+            MAX_VALUE_SIZE);
 
     static MONAD_TRIE_FUZZTEST_FIXTURE fixture;
     fixture.reset();

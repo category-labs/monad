@@ -13,16 +13,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/assert.h>
-
 #include <category/async/config.hpp>
+#include <category/async/io.hpp>
+#include <category/async/storage_pool.hpp>
+#include <category/core/assert.h>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <utility>
+
+#include <stdlib.h>
+#include <unistd.h>
 
 using namespace MONAD_MPT_NAMESPACE;
 using namespace MONAD_ASYNC_NAMESPACE;
@@ -90,7 +99,7 @@ struct NodeWriterTestBase : public ::testing::Test
 
     ~NodeWriterTestBase()
     {
-        for (auto &device : pool.devices()) {
+        for (auto const &device : pool.devices()) {
             auto const path = device.current_path();
             if (std::filesystem::exists(path)) {
                 std::filesystem::remove(path);
@@ -117,7 +126,7 @@ struct NodeWriterTestBase : public ::testing::Test
             MONAD_ASSERT(new_node_writer);
             node_writer->initiate();
             // shall be recycled by the i/o receiver
-            node_writer.release();
+            (void)node_writer.release();
             node_writer = std::move(new_node_writer);
         }
     }
@@ -148,7 +157,7 @@ TEST_F(NodeWriterTest, write_nodes_each_within_buffer)
     unsigned const node_disk_size = 1024;
     unsigned const num_nodes =
         AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE / node_disk_size;
-    auto node = make_node_of_size(node_disk_size);
+    auto const node = make_node_of_size(node_disk_size);
     for (unsigned i = 0; i < num_nodes; ++i) {
         auto const node_offset = async_write_node_set_spare(aux, *node, true);
         EXPECT_EQ(node_offset.offset, node_disk_size * i);
@@ -187,7 +196,7 @@ TEST_F(NodeWriterTest, write_node_across_buffers_ends_at_buffer_boundary)
     EXPECT_EQ(node_writer_chunk_count_before, 2);
 
     // node spans buffer 3 buffers
-    auto node = make_node_of_size(chunk_remaining_bytes);
+    auto const node = make_node_of_size(chunk_remaining_bytes);
     auto const node_offset = async_write_node_set_spare(aux, *node, true);
     EXPECT_EQ(
         get_writer_chunk_count(aux.node_writer_fast),
@@ -222,7 +231,7 @@ TEST_F(NodeWriterTest, write_node_at_new_chunk)
     EXPECT_EQ(node_writer_chunk_count_before_write_node, 2);
 
     // make a node that is too big to fit in current chunk
-    auto node = make_node_of_size(chunk_remaining_bytes + 1024);
+    auto const node = make_node_of_size(chunk_remaining_bytes + 1024);
     auto const node_offset = async_write_node_set_spare(aux, *node, true);
     auto const node_offset_chunk_count =
         aux.db_metadata()->at(node_offset.id)->insertion_count();

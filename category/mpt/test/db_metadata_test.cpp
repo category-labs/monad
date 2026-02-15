@@ -13,17 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "gtest/gtest.h"
 #include <category/async/detail/scope_polyfill.hpp>
-
-#include <atomic>
+#include <category/core/assert.h>
+#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/detail/db_metadata.hpp>
 
+#include <gtest/gtest.h>
+
+#include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <ostream>
 #include <stop_token>
 #include <thread>
-
-#include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 TEST(db_metadata, DISABLED_copy)
 {
@@ -37,7 +41,7 @@ TEST(db_metadata, DISABLED_copy)
         1, sizeof(monad::mpt::detail::db_metadata));
     metadata[2] = (monad::mpt::detail::db_metadata *)calloc(
         1, sizeof(monad::mpt::detail::db_metadata));
-    auto unmetadata = monad::make_scope_exit([&]() noexcept {
+    auto const unmetadata = monad::make_scope_exit([&]() noexcept {
         free(metadata[0]);
         free(metadata[1]);
         free(metadata[2]);

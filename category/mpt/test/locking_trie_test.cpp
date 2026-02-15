@@ -18,9 +18,8 @@
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp" // NOLINT
 
-#include <category/mpt/trie.hpp>
-
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/mpt/trie.hpp>
 
 #include <boost/thread/pthread/shared_mutex.hpp>
 
@@ -59,7 +58,7 @@ struct TestMutex
 
     std::ostream &dump(std::ostream &s)
     {
-        for (auto &ev : events) {
+        for (auto const &ev : events) {
             s << "   ";
             switch (ev.type) {
             case event_t::unknown:
@@ -162,7 +161,7 @@ struct LockingTrieTest
 TEST_F(LockingTrieTest, works)
 {
     auto &aux = this->state()->aux;
-    auto &root = this->state()->root;
+    auto const &root = this->state()->root;
     auto const version = aux.db_history_max_version();
     auto &keys = this->state()->keys;
     // Appending blocks only does exclusive lock and unlock and nothing else

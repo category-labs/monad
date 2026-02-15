@@ -20,12 +20,12 @@
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
 
+#include <cstdint>
+
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include <cstdint>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -50,10 +50,11 @@ Node::SharedPtr read_node_blocking(
     uint16_t const buffer_off = uint16_t(node_offset.offset - rd_offset);
     auto *buffer =
         (unsigned char *)aligned_alloc(DISK_PAGE_SIZE, bytes_to_read);
-    auto unbuffer = make_scope_exit([buffer]() noexcept { ::free(buffer); });
+    auto const unbuffer =
+        make_scope_exit([buffer]() noexcept { ::free(buffer); });
 
-    auto &chunk = pool.chunk(pool.seq, node_offset.id);
-    auto fd = chunk.read_fd();
+    auto const &chunk = pool.chunk(pool.seq, node_offset.id);
+    auto const fd = chunk.read_fd();
     ssize_t const bytes_read = pread(
         fd.first,
         buffer,

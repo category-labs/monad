@@ -50,7 +50,8 @@ compact_encode_len(unsigned const si, unsigned const ei)
 
     unsigned res_ci = 2;
     for (; i < nibbles.nibble_size(); i++) {
-        set_nibble(res, res_ci++, nibbles.get(i));
+        set_nibble(res, res_ci, nibbles.get(i));
+        ++res_ci;
     }
 
     return byte_string_view{

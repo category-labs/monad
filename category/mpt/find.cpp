@@ -14,16 +14,15 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
-#include <category/core/nibble.h>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/trie.hpp>
 
-#include <bit>
 #include <cassert>
 #include <cstdint>
+#include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -31,7 +30,7 @@ find_cursor_result_type find_blocking(
     UpdateAuxImpl const &aux, NodeCursor root, NibblesView const key,
     uint64_t const version)
 {
-    auto g(aux.shared_lock());
+    auto const g(aux.shared_lock());
     if (!root.is_valid()) {
         return {NodeCursor{}, find_result::root_node_is_null_failure};
     }
@@ -50,7 +49,7 @@ find_cursor_result_type find_blocking(
             if (auto const idx = node->to_child_index(nibble);
                 !node->next(idx)) {
                 MONAD_ASSERT(aux.is_on_disk());
-                auto g2(g.upgrade());
+                auto const g2(g.upgrade());
                 if (g2.upgrade_was_atomic() || !node->next(idx)) {
                     auto next_node_ondisk =
                         read_node_blocking(aux, node->fnext(idx), version);

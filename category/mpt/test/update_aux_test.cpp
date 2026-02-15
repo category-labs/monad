@@ -13,23 +13,28 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "gtest/gtest.h"
-
-#include <chrono>
-#include <thread>
-
 #include <category/async/config.hpp>
-#include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
+#include <category/core/assert.h>
 #include <category/core/io/buffers.hpp>
-#include <category/core/io/config.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
 
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <bits/chrono.h>
+#include <csignal>
+#include <cstdint>
+#include <filesystem>
+#include <span>
+#include <stdlib.h>
+#include <stop_token>
+#include <thread>
 #include <unistd.h>
 
 using namespace std::chrono_literals;
@@ -48,7 +53,7 @@ TEST(update_aux_test, set_io_reader_dirty)
 
     monad::mpt::UpdateAux aux_writer{};
     std::atomic<bool> io_set = false;
-    std::jthread rw_asyncio([&](std::stop_token token) {
+    std::jthread const rw_asyncio([&](std::stop_token token) {
         monad::io::Ring ring1;
         monad::io::Ring ring2;
         monad::io::Buffers testbuf =
@@ -86,7 +91,7 @@ TEST(update_aux_test, set_io_reader_dirty)
         monad::mpt::UpdateAux<> &write_aux;
         bool was_dirty{false};
 
-        TestAux(monad::mpt::UpdateAux<> &write_aux_)
+        explicit TestAux(monad::mpt::UpdateAux<> &write_aux_)
             : write_aux(write_aux_)
         {
         }
@@ -230,7 +235,7 @@ TEST(update_aux_test, configurable_root_offset_chunks)
         EXPECT_EQ(pool.chunks(monad::async::storage_pool::cnv), 5);
 
         monad::async::AsyncIO testio(pool, testbuf);
-        monad::mpt::UpdateAux<> aux(testio);
+        monad::mpt::UpdateAux<> const aux(testio);
 
         // Verify that exactly 4 chunks were allocated to hold two copies of
         // root offsets, since chunk 0 is used for metadata
@@ -245,7 +250,7 @@ TEST(update_aux_test, configurable_root_offset_chunks)
             flags);
         EXPECT_EQ(pool.chunks(monad::async::storage_pool::cnv), 5);
         monad::async::AsyncIO testio(pool, testbuf);
-        monad::mpt::UpdateAux<> aux(testio);
+        monad::mpt::UpdateAux<> const aux(testio);
         EXPECT_EQ(aux.db_metadata()->root_offsets.storage_.cnv_chunks_len, 4);
         EXPECT_EQ(aux.root_offsets().capacity(), 2ULL << 25);
     }

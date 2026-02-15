@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 
 #include <unistd.h> // for gettid()
 

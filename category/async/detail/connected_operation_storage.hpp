@@ -207,6 +207,11 @@ namespace detail
                 }
             }
             if (thisio != nullptr) {
+                // 1. assumes this is acting as an `else` branch for the `if`
+                // 2. if `sender_(...)` returns `success` the operation is
+                //    in progress and `thisio`/`this` haven't been deleted
+                //    yet.
+                // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDelete)
                 thisio->notify_operation_initiation_success_(this);
             }
             return initiation_result::initiation_success;

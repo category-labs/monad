@@ -1085,14 +1085,17 @@ TEST(PrestateTracer, prestate_access_storage)
     // First access the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
     EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
-    EXPECT_TRUE(s.original().find(ADDR_A) != s.original().end());
-    EXPECT_TRUE(s.current().find(ADDR_A) != s.current().end());
+    {
+        auto const it = s.history().find(ADDR_A);
+        ASSERT_TRUE(it != s.history().end());
+        EXPECT_TRUE(it->second.has_current_state());
+    }
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
     {
         // Run prestate tracer
         nlohmann::json trace;
         trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        tracer.encode(s);
 
         auto const json_str = R"(
         {
@@ -1155,7 +1158,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
         // Run pretracer
         nlohmann::json trace;
         trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        tracer.encode(s);
 
         auto const json_str = R"(
         {
@@ -1228,7 +1231,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
         // Run prestate tracer
         nlohmann::json trace;
         trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        tracer.encode(s);
 
         auto const json_str = R"(
         {
@@ -1305,7 +1308,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
         trace::PrestateTracer tracer{trace, ADDR_A};
 
         // Run tracer
-        tracer.encode(s.original(), s);
+        tracer.encode(s);
 
         auto const json_str = R"(
         {
@@ -1375,7 +1378,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
         // Run prestate tracer
         nlohmann::json trace;
         trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        tracer.encode(s);
 
         auto const json_str = R"(
         {
@@ -1444,7 +1447,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
         // Run prestate tracer
         nlohmann::json trace;
         trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        tracer.encode(s);
 
         auto const json_str = R"(
         {
@@ -1516,14 +1519,17 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     // First access the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
     EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
-    EXPECT_TRUE(s.original().find(ADDR_A) != s.original().end());
-    EXPECT_TRUE(s.current().find(ADDR_A) != s.current().end());
+    {
+        auto const it = s.history().find(ADDR_A);
+        ASSERT_TRUE(it != s.history().end());
+        EXPECT_TRUE(it->second.has_current_state());
+    }
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
     {
         // Run prestate tracer
         nlohmann::json trace;
         trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        tracer.encode(s);
 
         auto const json_str = R"(
         {
@@ -1579,17 +1585,19 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
 
     State s(bs, Incarnation{0, 0});
 
-    // Touch the account, so it shows up in `state.original` and
-    // `state.current`.
+    // Touch the account, so it shows up in state history with current state.
     EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
-    EXPECT_TRUE(s.original().find(ADDR_A) != s.original().end());
-    EXPECT_TRUE(s.current().find(ADDR_A) != s.current().end());
+    {
+        auto const it = s.history().find(ADDR_A);
+        ASSERT_TRUE(it != s.history().end());
+        EXPECT_TRUE(it->second.has_current_state());
+    }
 
     {
         // Run prestate tracer
         nlohmann::json trace;
         trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        tracer.encode(s);
 
         auto const json_str = "null";
 
@@ -1631,14 +1639,13 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
 
     // Apply block reward.
     apply_block_reward<MonadTraits<MONAD_NEXT>>(s, block);
-    EXPECT_TRUE(s.original().find(ADDR_A) == s.original().end());
-    EXPECT_TRUE(s.current().find(ADDR_A) == s.current().end());
+    EXPECT_TRUE(s.history().find(ADDR_A) == s.history().end());
 
     {
         // Run prestate tracer
         nlohmann::json trace;
         trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        tracer.encode(s);
 
         auto const json_str = "null";
 

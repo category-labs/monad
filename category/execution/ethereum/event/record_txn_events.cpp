@@ -82,7 +82,7 @@ struct AccountAccessInfo
 {
     Address const *address;
     OriginalAccountState const *prestate; // State as it existed in original
-    AccountState const *modified_state; // Last state as it existed in current
+    CurrentAccountState const *modified_state; // Last state in current
 
     bool is_read_only_access() const
     {
@@ -95,15 +95,8 @@ struct AccountAccessInfo
             return {0, false};
         }
 
-        std::optional<Account> const &prestate_account =
-            get_account_for_trace(*prestate);
-        std::optional<Account> const &modified_account =
-            get_account_for_trace(*modified_state);
-
-        uint64_t const prestate_nonce =
-            is_dead(prestate_account) ? 0 : prestate_account->nonce;
-        uint64_t const modified_nonce =
-            is_dead(modified_account) ? 0 : modified_account->nonce;
+        uint64_t const prestate_nonce = prestate->get_nonce();
+        uint64_t const modified_nonce = modified_state->get_nonce();
         return {modified_nonce, prestate_nonce != modified_nonce};
     }
 
@@ -113,15 +106,8 @@ struct AccountAccessInfo
             return {0, false};
         }
 
-        std::optional<Account> const &prestate_account =
-            get_account_for_trace(*prestate);
-        std::optional<Account> const &modified_account =
-            get_account_for_trace(*modified_state);
-
-        uint256_t const prestate_balance =
-            is_dead(prestate_account) ? 0 : prestate_account->balance;
-        uint256_t const modified_balance =
-            is_dead(modified_account) ? 0 : modified_account->balance;
+        uint256_t const prestate_balance = prestate->get_balance();
+        uint256_t const modified_balance = modified_state->get_balance();
         return {modified_balance, prestate_balance != modified_balance};
     }
 };
@@ -189,14 +175,9 @@ void record_account_events(
 {
     MONAD_ASSERT(account_info.prestate);
     monad_c_eth_account_state initial_state;
-    std::optional<Account> const &prestate_account =
-        get_account_for_trace(*account_info.prestate);
-    bool const prestate_valid = !is_dead(prestate_account);
-
-    initial_state.nonce = prestate_valid ? prestate_account->nonce : 0;
-    initial_state.balance = prestate_valid ? prestate_account->balance : 0;
-    initial_state.code_hash =
-        prestate_valid ? prestate_account->code_hash : NULL_HASH;
+    initial_state.nonce = account_info.prestate->get_nonce();
+    initial_state.balance = account_info.prestate->get_balance();
+    initial_state.code_hash = account_info.prestate->get_code_hash();
 
     auto const [modified_balance, is_balance_modified] =
         account_info.get_balance_modification();
@@ -217,8 +198,7 @@ void record_account_events(
         .modified_nonce = modified_nonce,
         .storage_key_count =
             static_cast<uint32_t>(size(account_info.prestate->storage_)),
-        .transient_count = static_cast<uint32_t>(
-            size(account_info.prestate->transient_storage_))};
+        .transient_count = 0};
     exec_recorder->commit(account_access);
 
     auto const *const post_state_storage_map =
@@ -235,6 +215,7 @@ void record_account_events(
         post_state_storage_map,
         false);
 
+    static AccountState::StorageMap const empty_transient_storage{};
     auto const *const post_state_transient_map =
         account_info.is_read_only_access()
             ? nullptr
@@ -245,7 +226,7 @@ void record_account_events(
         opt_txn_num,
         index,
         account_info.address,
-        &account_info.prestate->transient_storage_,
+        &empty_transient_storage,
         post_state_transient_map,
         true);
 }
@@ -258,22 +239,22 @@ void record_account_access_events_internal(
     monad_exec_account_access_context ctx, std::optional<uint32_t> opt_txn_num,
     State const &state)
 {
-    auto const &prestate_map = state.original();
+    auto const &history_map = state.history();
 
     ReservedExecEvent const list_header =
         reserve_event<monad_exec_account_access_list_header>(
             exec_recorder, MONAD_EXEC_ACCOUNT_ACCESS_LIST_HEADER, opt_txn_num);
     *list_header.payload = monad_exec_account_access_list_header{
-        .entry_count = static_cast<uint32_t>(prestate_map.size()),
+        .entry_count = static_cast<uint32_t>(history_map.size()),
         .access_context = ctx};
     exec_recorder->commit(list_header);
 
-    auto const &current_state_map = state.current();
-    for (uint32_t index = 0; auto const &[address, prestate] : prestate_map) {
-        AccountState const *current_state = nullptr;
-        if (auto const i = current_state_map.find(address);
-            i != end(current_state_map)) {
-            current_state = std::addressof(i->second.recent());
+    for (uint32_t index = 0;
+         auto const &[address, account_history] : history_map) {
+        auto const &prestate = account_history.original_state();
+        CurrentAccountState const *current_state = nullptr;
+        if (account_history.has_current_state()) {
+            current_state = &account_history.recent_current_state();
         }
         record_account_events(
             exec_recorder,

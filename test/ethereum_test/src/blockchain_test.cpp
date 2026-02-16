@@ -320,11 +320,11 @@ Result<BlockExecOutput> execute(
 {
     using namespace monad::test;
 
-    BOOST_OUTCOME_TRY(static_validate_block<traits>(block));
+    TraitsMainnet<traits> const chain{};
+    BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
 
     BlockState block_state(db, vm);
     BlockMetrics metrics;
-    TraitsMainnet<traits> const chain{};
     auto const recovered_senders = recover_senders(block.transactions, *pool_);
     auto const recovered_authorities =
         recover_authorities(block.transactions, *pool_);

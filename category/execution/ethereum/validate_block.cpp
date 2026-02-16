@@ -20,6 +20,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -160,7 +161,8 @@ Result<void> static_validate_header(BlockHeader const &header)
 EXPLICIT_TRAITS(static_validate_header);
 
 template <Traits traits>
-constexpr Result<void> static_validate_ommers(Block const &block)
+constexpr Result<void>
+static_validate_ommers(Chain const &chain, Block const &block)
 {
     // YP eq. 33
     if (compute_ommers_hash(block.ommers) != block.header.ommers_hash) {
@@ -187,7 +189,12 @@ constexpr Result<void> static_validate_ommers(Block const &block)
 
     // YP eq. 167
     for (auto const &ommer : block.ommers) {
-        BOOST_OUTCOME_TRY(static_validate_header<traits>(ommer));
+        evmc_revision const rev =
+            chain.get_revision(ommer.number, ommer.timestamp);
+        BOOST_OUTCOME_TRY([&] {
+            SWITCH_EVM_TRAITS(static_validate_header, ommer);
+            MONAD_ABORT_PRINTF("unhandled ommer rev switch case: %d", rev);
+        }());
     }
 
     return success();
@@ -216,7 +223,8 @@ constexpr Result<void> static_validate_4844(Block const &block)
 }
 
 template <Traits traits>
-constexpr Result<void> static_validate_body(Block const &block)
+constexpr Result<void>
+static_validate_body(Chain const &chain, Block const &block)
 {
     // EIP-4895
     if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
@@ -230,27 +238,28 @@ constexpr Result<void> static_validate_body(Block const &block)
         }
     }
 
-    BOOST_OUTCOME_TRY(static_validate_ommers<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_ommers<traits>(chain, block));
     BOOST_OUTCOME_TRY(static_validate_4844<traits>(block));
 
     return success();
 }
 
 template <Traits traits>
-Result<void> static_validate_block(Block const &block)
+Result<void> static_validate_block(Chain const &chain, Block const &block)
 {
     BOOST_OUTCOME_TRY(static_validate_header<traits>(block.header));
 
-    BOOST_OUTCOME_TRY(static_validate_body<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_body<traits>(chain, block));
 
     return success();
 }
 
 EXPLICIT_TRAITS(static_validate_block);
 
-Result<void> static_validate_block(evmc_revision const rev, Block const &block)
+Result<void> static_validate_block(
+    evmc_revision const rev, Chain const &chain, Block const &block)
 {
-    SWITCH_EVM_TRAITS(static_validate_block, block);
+    SWITCH_EVM_TRAITS(static_validate_block, chain, block);
     MONAD_ASSERT(false);
 }
 

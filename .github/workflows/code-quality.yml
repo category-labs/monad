@@ -12,14 +12,20 @@ jobs:
   formatting-check:
     name: Check clang-format
     runs-on: ubuntu-24.04
+    env:
+      LLVM_VERSION: '19'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Formatting Check
-        uses: jidicula/clang-format-action@v4.13.0
         with:
-          clang-format-version: 19
-          include-regex: './(category|cmd|test)/.*\.(cpp|hpp|c|h)'
+            submodules: false
+      - name: Install clang-format-${{ env.LLVM_VERSION }}
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh ${{ env.LLVM_VERSION }}
+          sudo apt install -y clang-format-${{ env.LLVM_VERSION }}
+      - name: Run clang-format check
+        run: |
+          find category cmd test -regex '.*\.\(cpp\|hpp\|c\|h\)' -exec clang-format-${{ env.LLVM_VERSION }} -style=file --dry-run --Werror {} + 
 
   traits-check:
       name: Trait instantiation check

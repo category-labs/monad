@@ -127,7 +127,7 @@ namespace monad::vm::runtime
         void debug_clear_cache() const
         {
             while (!T::cache_list.empty()) {
-                std::free(T::cache_list.template pop<false>());
+                std::free(T::cache_list.pop());
             }
         }
 

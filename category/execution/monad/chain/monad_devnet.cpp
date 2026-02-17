@@ -15,15 +15,19 @@
 
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/likely.h>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_devnet_alloc.hpp>
 #include <category/vm/evm/monad/revision.h>
 
 MONAD_NAMESPACE_BEGIN
 
-monad_revision MonadDevnet::get_monad_revision(uint64_t /*timestamp*/) const
+monad_revision MonadDevnet::get_monad_revision(uint64_t timestamp) const
 {
-    return MONAD_NEXT;
+    if (MONAD_LIKELY(timestamp >= 1771382523)) { // 2026-02-17T18:42:00 PST - MONAD_NINE activation
+        return MONAD_NEXT;
+    }
+    return MONAD_EIGHT;
 }
 
 uint256_t MonadDevnet::get_chain_id() const

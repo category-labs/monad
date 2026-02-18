@@ -367,8 +367,11 @@ namespace detail
                 auto *tail = at_(list.end);
                 uint32_t const insertion_count =
                     uint32_t(tail->insertion_count()) + 1;
+                // Strict less-than because MAX_COUNT is reserved for
+                // INVALID_VIRTUAL_OFFSET so that no valid virtual offset
+                // compacts to INVALID_COMPACT_VIRTUAL_OFFSET.
                 MONAD_ASSERT(
-                    insertion_count <= virtual_chunk_offset_t::MAX_COUNT,
+                    insertion_count < virtual_chunk_offset_t::MAX_COUNT,
                     "Chunk count overflow detected. The 20-bit address "
                     "space for chunk count has been exhausted. Please "
                     "perform a database reset. TODO: expand the address "

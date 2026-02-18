@@ -158,6 +158,18 @@ void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx) noexcept
         db_metadata_[0].main->free_capacity_add_(capacity);
         db_metadata_[1].main->free_capacity_add_(capacity);
     }
+    else {
+        auto const insertion_count = static_cast<uint32_t>(
+            db_metadata_[0].main->at(idx)->insertion_count());
+        if (insertion_count >= virtual_chunk_offset_t::MAX_COUNT * 9 / 10) {
+            LOG_WARNING_CFORMAT(
+                "Virtual offset space is running out "
+                "(insertion count: %u / %u). "
+                "Please perform a database reset.",
+                insertion_count,
+                (uint32_t)virtual_chunk_offset_t::MAX_COUNT);
+        }
+    }
 }
 
 void UpdateAuxImpl::remove(uint32_t const idx) noexcept

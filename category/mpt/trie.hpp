@@ -759,25 +759,12 @@ calc_min_offsets(
     auto fast_ret = INVALID_COMPACT_VIRTUAL_OFFSET;
     auto slow_ret = INVALID_COMPACT_VIRTUAL_OFFSET;
     if (node_virtual_offset != INVALID_VIRTUAL_OFFSET) {
-        auto const truncated_offset =
-            compact_virtual_chunk_offset_t{node_virtual_offset};
-        if (node_virtual_offset.in_fast_list()) {
-            fast_ret = truncated_offset;
-        }
-        else {
-            slow_ret = truncated_offset;
-        }
+        auto &ret = node_virtual_offset.in_fast_list() ? fast_ret : slow_ret;
+        ret = compact_virtual_chunk_offset_t{node_virtual_offset};
     }
     for (unsigned i = 0; i < node.number_of_children(); ++i) {
         fast_ret = std::min(fast_ret, node.min_offset_fast(i));
         slow_ret = std::min(slow_ret, node.min_offset_slow(i));
-    }
-    // if ret is valid
-    if (fast_ret != INVALID_COMPACT_VIRTUAL_OFFSET) {
-        MONAD_ASSERT(fast_ret < (1u << 31));
-    }
-    if (slow_ret != INVALID_COMPACT_VIRTUAL_OFFSET) {
-        MONAD_ASSERT(slow_ret < (1u << 31));
     }
     return {fast_ret, slow_ret};
 }

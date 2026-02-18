@@ -920,28 +920,26 @@ Proof.
   - (* ys_tail = y :: rest *)
     cbn [truncating_mul_runtime_recur].
     inversion Hys as [|y' rest' Hy Hrest_valid]; subst.
-Admitted.
-(*     set (result' := mul_add_line I R xs y result). *)
-(*     (* Apply IH to the recursive call *) *)
-(*     rewrite IH; try assumption. *)
-(*     + (* Arithmetic: compose mul_add_line_correct with IH *) *)
-(*       pose proof (mul_add_line_correct I R xs y result Hxs Hy Hresult Hlen HR HRI) *)
-(*         as Hmal. *)
-(*       cbn [to_Z_words]. unfold to_Z64 at 3. *)
-(*       rewrite Z.add_mod with (a := to_Z_words result') by *)
-(*         (unfold modulus_words, words_bits; apply Z.pow_nonzero; lia). *)
-(*       rewrite Hmal. *)
-(*       rewrite <- Z.add_mod by *)
-(*         (unfold modulus_words, words_bits; apply Z.pow_nonzero; lia). *)
-(*       f_equal. rewrite Nat2Z.inj_succ. *)
-(*       replace (64 * Z.succ (Z.of_nat I)) with (64 + 64 * Z.of_nat I) by lia. *)
-(*       rewrite Z.pow_add_r by lia. ring. *)
-(*     + exact Hxs. *)
-(*     + exact Hrest_valid. *)
-(*     + unfold result'. apply mul_add_line_valid; assumption. *)
-(*     + unfold result'. rewrite mul_add_line_length; assumption. *)
-(*     + lia. *)
-(* Qed. *)
+    set (R := length result) in *.
+    set (result' := mul_add_line I R xs y result).
+    rewrite IH.
+    2: exact Hxs. 2: exact Hrest_valid.
+    2: unfold result'; apply mul_add_line_valid; try assumption; reflexivity.
+    2: unfold result'; rewrite mul_add_line_length; reflexivity.
+    2: exact HR. 2: exact HlenR. 2: lia.
+    pose proof (mul_add_line_correct I R xs y result Hxs Hy Hresult
+          ltac:(reflexivity) HR HRI) as Hmal.
+    fold result' in Hmal.
+    assert (HMR_nz: modulus_words R <> 0)
+      by (unfold modulus_words, words_bits; apply Z.pow_nonzero; lia).
+    rewrite Z.add_mod with (a := to_Z_words result') by exact HMR_nz.
+    rewrite Hmal.
+    rewrite <- Z.add_mod by exact HMR_nz.
+    f_equal.
+    cbn [to_Z_words]. rewrite Nat2Z.inj_succ.
+    replace (64 * Z.succ (Z.of_nat I)) with (64 + 64 * Z.of_nat I) by lia.
+    rewrite Z.pow_add_r by lia. ring.
+Qed.
 
 (** The runtime multiplication computes the truncated product:
     to_Z_words(result) = (to_Z_words xs * to_Z_words ys) mod 2^(64*R) *)

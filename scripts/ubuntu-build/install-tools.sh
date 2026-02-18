@@ -14,7 +14,11 @@ packages=(
   gdb
   git
   gnupg
+  libclang-common-19-dev
+  libclang-rt-19-dev
   libhugetlbfs-bin
+  llvm-19-dev
+  make
   ninja-build
   pkg-config
   python-is-python3
@@ -24,5 +28,4 @@ packages=(
   wget
 )
 
-apt-get update
-apt-get install -y "${packages[@]}"
+apt-get install -y --no-install-recommends "${packages[@]}"

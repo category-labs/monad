@@ -2,13 +2,16 @@
 
 FROM ubuntu:25.10 AS base
 
-RUN apt-get update && apt-get upgrade -y
-
 COPY scripts/ubuntu-build/ /opt
 
-RUN /opt/install-boost.sh
-RUN /opt/install-tools.sh
-RUN /opt/install-deps.sh
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    /opt/install-boost.sh && \
+    /opt/install-tools.sh && \
+    /opt/install-deps.sh && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    rm -rf /opt
 
 FROM base AS build_and_test
 

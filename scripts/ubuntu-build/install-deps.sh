@@ -18,5 +18,4 @@ packages=(
   libzstd-dev
 )
 
-apt-get update
-apt-get install -y "${packages[@]}"
+apt-get install -y --no-install-recommends "${packages[@]}"

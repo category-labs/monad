@@ -17,6 +17,7 @@
 
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/mpt/db.hpp>
@@ -31,8 +32,9 @@ struct InMemoryStateTestBase
     InMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
+    EthPageStorageCache cache{tdb};
     vm::VM vm;
-    BlockState block_state{tdb, vm};
+    BlockState block_state{tdb, cache, vm};
     State state{block_state, Incarnation{0, 0}};
 };
 

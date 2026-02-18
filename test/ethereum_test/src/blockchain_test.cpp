@@ -47,6 +47,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -324,7 +325,8 @@ Result<BlockExecOutput> execute(
     TraitsMainnet<traits> const chain{};
     BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
 
-    BlockState block_state(db, vm);
+    EthPageStorageCache cache{db};
+    BlockState block_state(db, cache, vm);
     BlockMetrics metrics;
     auto const recovered_senders = recover_senders(block.transactions, *pool_);
     auto const recovered_authorities =
@@ -539,7 +541,8 @@ void process_test(
             withdrawals.emplace(std::vector<Withdrawal>{});
         }
 
-        BlockState bs{tdb, vm};
+        EthPageStorageCache cache{tdb};
+        BlockState bs{tdb, cache, vm};
         State state{bs, Incarnation{0, 0}};
         j_contents.at("pre").get_to(state);
         bs.merge(state);

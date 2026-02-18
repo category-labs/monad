@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -36,12 +37,13 @@ class State;
 class BlockState final
 {
     Db &db_;
+    PageStorageCache &cache_;
     vm::VM &vm_;
     std::unique_ptr<StateDeltas> state_;
     Code code_;
 
 public:
-    BlockState(Db &, vm::VM &);
+    BlockState(Db &, PageStorageCache &, vm::VM &);
 
     vm::VM &vm()
     {

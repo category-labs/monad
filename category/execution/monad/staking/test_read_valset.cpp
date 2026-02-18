@@ -15,6 +15,7 @@
 
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -80,7 +81,8 @@ protected:
         vm::VM vm;
         mpt::Db db{machine, mpt::OnDiskDbConfig{.dbname_paths = {dbname}}};
         TrieDb tdb{db};
-        BlockState bs{tdb, vm};
+        EthPageStorageCache cache{tdb};
+        BlockState bs{tdb, cache, vm};
         State state{bs, Incarnation{0, 0}};
         NoopCallTracer call_tracer{};
         StakingContract contract{state, call_tracer};

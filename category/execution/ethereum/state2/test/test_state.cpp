@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -99,6 +100,7 @@ namespace
         InMemoryMachine machine;
         mpt::Db db{machine};
         TrieDb tdb{db};
+        EthPageStorageCache cache{tdb};
         vm::VM vm;
     };
 
@@ -107,6 +109,7 @@ namespace
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{}};
         TrieDb tdb{db};
+        EthPageStorageCache cache{tdb};
         vm::VM vm;
     };
 
@@ -138,7 +141,7 @@ DEFINE_TRAITS_FIXTURE(InMemoryStateTraitsTest);
 
 TEST_F(InMemoryStateTest, access_account)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -158,7 +161,7 @@ TEST_F(InMemoryStateTest, access_account)
 
 TEST_F(InMemoryStateTest, account_exists)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -178,7 +181,7 @@ TEST_F(InMemoryStateTest, account_exists)
 
 TEST_F(InMemoryStateTest, create_contract)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
@@ -192,7 +195,7 @@ TEST_F(InMemoryStateTest, create_contract)
 
 TEST_F(InMemoryStateTest, get_balance)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -211,7 +214,7 @@ TEST_F(InMemoryStateTest, get_balance)
 
 TEST_F(InMemoryStateTest, add_to_balance)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -229,7 +232,7 @@ TEST_F(InMemoryStateTest, add_to_balance)
 
 TEST_F(InMemoryStateTest, get_nonce)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -246,7 +249,7 @@ TEST_F(InMemoryStateTest, get_nonce)
 
 TEST_F(InMemoryStateTest, set_nonce)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.set_nonce(b, 1);
@@ -256,7 +259,7 @@ TEST_F(InMemoryStateTest, set_nonce)
 
 TEST_F(InMemoryStateTest, get_code_hash)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -275,7 +278,7 @@ TEST_F(InMemoryStateTest, get_code_hash)
 
 TEST_F(InMemoryStateTest, set_code_sets_code_hash)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(b);
@@ -286,7 +289,7 @@ TEST_F(InMemoryStateTest, set_code_sets_code_hash)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -332,7 +335,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -375,7 +378,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_same_tx)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -413,7 +416,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_same_tx)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_separate_tx)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -448,7 +451,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_separate_tx)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -476,7 +479,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -510,7 +513,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_incarnation)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_create_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -559,7 +562,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_create_incarnation)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -607,7 +610,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
 TYPED_TEST(
     InMemoryStateTraitsTest, selfdestruct_merge_create_commit_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -677,7 +680,7 @@ TYPED_TEST(
     InMemoryStateTraitsTest,
     selfdestruct_create_destroy_create_commit_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     {
         State s1{bs, Incarnation{1, 1}};
 
@@ -722,7 +725,7 @@ TYPED_TEST(
 
 TEST_F(InMemoryStateTest, create_conflict_address_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -744,7 +747,7 @@ TEST_F(InMemoryStateTest, create_conflict_address_incarnation)
 
 TYPED_TEST(InMemoryStateTraitsTest, destruct_touched_dead)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -789,7 +792,7 @@ TYPED_TEST(InMemoryStateTraitsTest, destruct_touched_dead)
 // Storage
 TEST_F(InMemoryStateTest, access_storage)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
@@ -804,7 +807,7 @@ TEST_F(InMemoryStateTest, access_storage)
 
 TEST_F(InMemoryStateTest, get_storage)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -834,7 +837,7 @@ TEST_F(InMemoryStateTest, get_storage)
 
 TEST_F(InMemoryStateTest, set_storage_modified)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -854,7 +857,7 @@ TEST_F(InMemoryStateTest, set_storage_modified)
 
 TEST_F(InMemoryStateTest, set_storage_deleted)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -878,7 +881,7 @@ TEST_F(InMemoryStateTest, set_storage_deleted)
 
 TEST_F(InMemoryStateTest, set_storage_added)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
@@ -897,7 +900,7 @@ TEST_F(InMemoryStateTest, set_storage_added)
 
 TEST_F(InMemoryStateTest, set_storage_different_assigned)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -919,7 +922,7 @@ TEST_F(InMemoryStateTest, set_storage_different_assigned)
 
 TEST_F(InMemoryStateTest, set_storage_unchanged_assigned)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -939,7 +942,7 @@ TEST_F(InMemoryStateTest, set_storage_unchanged_assigned)
 
 TEST_F(InMemoryStateTest, set_storage_added_deleted)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
@@ -956,7 +959,7 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted)
 
 TEST_F(InMemoryStateTest, set_storage_added_deleted_null)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
@@ -973,7 +976,7 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted_null)
 
 TEST_F(InMemoryStateTest, set_storage_modify_delete)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -994,7 +997,7 @@ TEST_F(InMemoryStateTest, set_storage_modify_delete)
 
 TEST_F(InMemoryStateTest, set_storage_delete_restored)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -1015,7 +1018,7 @@ TEST_F(InMemoryStateTest, set_storage_delete_restored)
 
 TEST_F(InMemoryStateTest, set_storage_modified_restored)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -1037,7 +1040,7 @@ TEST_F(InMemoryStateTest, set_storage_modified_restored)
 // Code
 TEST_F(InMemoryStateTest, get_code_size)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     Account acct{.code_hash = code_hash1};
     commit_sequential(
         this->tdb,
@@ -1051,7 +1054,7 @@ TEST_F(InMemoryStateTest, get_code_size)
 
 TEST_F(InMemoryStateTest, copy_code)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     Account acct_a{.code_hash = code_hash1};
     Account acct_b{.code_hash = code_hash2};
 
@@ -1105,7 +1108,7 @@ TEST_F(InMemoryStateTest, get_code)
 {
     byte_string const contract{0x60, 0x34, 0x00};
 
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1131,7 +1134,7 @@ TEST_F(InMemoryStateTest, get_code)
 
 TEST_F(InMemoryStateTest, set_code)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
@@ -1148,7 +1151,7 @@ TEST_F(InMemoryStateTest, set_code)
 
 TEST_F(InMemoryStateTest, can_merge_same_account_different_storage)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1183,7 +1186,7 @@ TEST_F(InMemoryStateTest, can_merge_same_account_different_storage)
 
 TEST_F(InMemoryStateTest, cant_merge_colliding_storage)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1219,7 +1222,7 @@ TEST_F(InMemoryStateTest, cant_merge_colliding_storage)
 
 TYPED_TEST(InMemoryStateTraitsTest, merge_txn0_and_txn1)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1263,7 +1266,7 @@ TYPED_TEST(InMemoryStateTraitsTest, merge_txn0_and_txn1)
 
 TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
@@ -1295,7 +1298,7 @@ TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
 TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
 {
     using namespace intx;
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->cache, this->vm};
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
@@ -1351,7 +1354,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
 
     { // Commit to Block 10 Round 5, on top of block 9 finalized
         this->tdb.set_block_and_prefix(9);
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->cache, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
@@ -1377,7 +1380,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         this->tdb.set_block_and_prefix(10, bytes32_t{10});
     }
     { // Commit to Block 11 Round 6, on top of block 10 round 5
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->cache, this->vm};
         State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
@@ -1460,7 +1463,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
     {
         // set to block 10 round 5
         this->tdb.set_block_and_prefix(10, bytes32_t{10});
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->cache, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
@@ -1489,7 +1492,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
     {
         // set to block 10 round 5
         this->tdb.set_block_and_prefix(10, bytes32_t{10});
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->cache, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 44'000);
@@ -1518,7 +1521,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
     {
         // set to block 10 round 5
         this->tdb.set_block_and_prefix(10, bytes32_t{10});
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->cache, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 32'000);
@@ -1573,7 +1576,8 @@ TEST_F(OnDiskStateTest, proposal_basics)
 
     DbCache db_cache(db);
     db_cache.set_block_and_prefix(10, bytes32_t{10});
-    BlockState bs1(db_cache, this->vm);
+    EthPageStorageCache cache1{db_cache};
+    BlockState bs1(db_cache, cache1, this->vm);
     EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
     auto [released_state1, released_code1] = std::move(bs1).release();
     commit_simple(
@@ -1585,7 +1589,8 @@ TEST_F(OnDiskStateTest, proposal_basics)
     db_cache.finalize(11, bytes32_t{11});
 
     db_cache.set_block_and_prefix(11, bytes32_t{11});
-    BlockState bs2(db_cache, this->vm);
+    EthPageStorageCache cache2{db_cache};
+    BlockState bs2(db_cache, cache2, this->vm);
     State as{bs2, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(a));
     as.add_to_balance(a, 10'000);
@@ -1656,7 +1661,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 11 round 111 on block 10 round 100");
     db_cache.set_block_and_prefix(10, bytes32_t{10});
-    BlockState bs_111(db_cache, this->vm);
+    EthPageStorageCache cache_111{db_cache};
+    BlockState bs_111(db_cache, cache_111, this->vm);
     // b11 r111 r100           +40 v2 --
     {
         State as{bs_111, Incarnation{11, 1}};
@@ -1688,7 +1694,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 12 round 121 on block 11 round 111");
     db_cache.set_block_and_prefix(11, bytes32_t{111});
-    BlockState bs_121(db_cache, this->vm);
+    EthPageStorageCache cache_121{db_cache};
+    BlockState bs_121(db_cache, cache_121, this->vm);
     // b12 r121 r111                        +10    v1
     {
         State as{bs_121, Incarnation{12, 1}};
@@ -1718,7 +1725,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 11 round 112 on block 10 round 100");
     db_cache.set_block_and_prefix(10, bytes32_t{10});
-    BlockState bs_112(db_cache, this->vm);
+    EthPageStorageCache cache_112{db_cache};
+    BlockState bs_112(db_cache, cache_112, this->vm);
     // b11 r112 r100    +20        --           --
     {
         State as{bs_112, Incarnation{11, 1}};
@@ -1738,7 +1746,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 12 round 122 on block 11 round 112");
     db_cache.set_block_and_prefix(11, bytes32_t{112});
-    BlockState bs_122(db_cache, this->vm);
+    EthPageStorageCache cache_122{db_cache};
+    BlockState bs_122(db_cache, cache_122, this->vm);
     //  b12 r122 r112           +20 v3              v1
     {
         State as{bs_122, Incarnation{12, 1}};
@@ -1757,7 +1766,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 13 round 131 on block 12 round 121");
     db_cache.set_block_and_prefix(12, bytes32_t{121});
-    BlockState bs_131(db_cache, this->vm);
+    EthPageStorageCache cache_131{db_cache};
+    BlockState bs_131(db_cache, cache_131, this->vm);
     //  b13 r131 r121    +30    +20    v1        v2 __
     {
         State as{bs_131, Incarnation{13, 1}};
@@ -1780,7 +1790,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 13 round 132 on block 12 round 122");
     db_cache.set_block_and_prefix(12, bytes32_t{122});
-    BlockState bs_132(db_cache, this->vm);
+    EthPageStorageCache cache_132{db_cache};
+    BlockState bs_132(db_cache, cache_132, this->vm);
     // b13 r132 r122                  --        v3
     {
         State as{bs_132, Incarnation{13, 1}};
@@ -2021,8 +2032,10 @@ namespace
             db2_.set_block_and_prefix(
                 block - 1,
                 parent.has_value() ? get_dummy_block_id(*parent) : bytes32_t{});
-            BlockState bs1(db1_, vm_);
-            BlockState bs2(db2_, vm_);
+            EthPageStorageCache cache1{db1_};
+            EthPageStorageCache cache2{db2_};
+            BlockState bs1(db1_, cache1, vm_);
+            BlockState bs2(db2_, cache2, vm_);
             Incarnation const inc{block, 1};
             State st1(bs1, inc);
             State st2(bs2, inc);

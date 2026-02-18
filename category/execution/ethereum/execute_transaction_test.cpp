@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
@@ -72,7 +73,8 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    EthPageStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     BlockMetrics metrics;
 
     {
@@ -176,7 +178,8 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    EthPageStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     BlockMetrics metrics;
 
     {
@@ -326,7 +329,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    EthPageStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     BlockMetrics metrics;
 
     // Sets s[0] = 1 if passed any data, clears s[0] if data is empty.
@@ -486,7 +490,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    EthPageStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     BlockMetrics metrics;
 
     // s[0] = 0; s[0] = 1

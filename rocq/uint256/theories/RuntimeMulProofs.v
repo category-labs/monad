@@ -804,66 +804,64 @@ Lemma mul_add_line_correct : forall I R xs y_i result,
 Proof.
   intros I R xs y_i result Hxs Hy Hresult Hlen HR HRI.
   unfold mul_add_line. destruct xs as [|x0 rest].
-  - (* xs = []: no contribution *)
-    cbn [to_Z_words]. rewrite Z.mul_0_r, Z.mul_0_l, Z.add_0_r. reflexivity.
-  - (* xs = x0 :: rest *)
-    inversion Hxs as [|x0' rest' Hx0 Hrest]; subst.
+  - cbn [to_Z_words]. rewrite Z.mul_0_r, Z.mul_0_l, Z.add_0_r. reflexivity.
+  - inversion Hxs as [|x0' rest' Hx0 Hrest]; subst x0' rest'.
     cbn [length] in HRI.
-Admitted.
-(*     destruct (I + 1 <? R)%nat eqn:HIR. *)
-(*     + (* I+1 < R: mulx x0 y_i → (hi r, lo r) *) *)
-(*       apply Nat.ltb_lt in HIR. *)
-(*       pose proof (mulx64_correct x0 y_i ltac:(lia) ltac:(lia)) as Hmulx. *)
-(*       pose proof (mulx64_hi_bounded x0 y_i Hx0 Hy) as Hhi. *)
-(*       pose proof (mulx64_lo_bounded x0 y_i Hx0 Hy) as Hlo. *)
-(*       set (r := mulx64 x0 y_i). *)
-(*       rewrite mul_add_line_recur_correct; try assumption. *)
-(*       * (* hi*M + lo = x0*y_i, so rest*y_i*M + hi*M + lo = rest*y_i*M + x0*y_i *) *)
-(*         f_equal. cbn [to_Z_words]. unfold to_Z64 in *. *)
-(*         rewrite Z.shiftl_mul_pow2 in Hmulx by lia. *)
-(*         replace (Z.of_nat (I + 0)) with (Z.of_nat I) by lia. *)
-(*         unfold modulus64 in *. nia. *)
-(*       * exact Hrest. *)
-(*       * exact Hyi. *)
-(*       * exact Hhi. *)
-(*       * exact Hlo. *)
-(*       * exact Hresult. *)
-(*       * exact Hlen. *)
-(*       * lia. *)
-(*     + (* I+1 >= R: c_hi = 0, c_lo = normalize64(x0 * y_i) *) *)
-(*       apply Nat.ltb_ge in HIR. *)
-(*       rewrite mul_add_line_recur_correct; try assumption. *)
-(*       * (* rest*y_i*M + (x0*y_i) mod M ≡ (x0 + M*rest)*y_i (mod M_R) *)
-(*            because (x0*y_i - (x0*y_i) mod M) * P is a multiple of M_R *) *)
-(*         set (P := 2^(64 * Z.of_nat I)). *)
-(*         set (M := modulus64). set (M_R := modulus_words R). *)
-(*         assert (HMP: exists k, M * P = M_R * 2^(64 * k) /\ 0 <= k). *)
-(*         { exists (Z.of_nat (I + 1 - R)). *)
-(*           unfold M_R, modulus_words, words_bits, P, M, modulus64. *)
-(*           split; [|lia]. *)
-(*           rewrite <- Z.pow_add_r by lia. f_equal. lia. } *)
-(*         destruct HMP as [k [HMP Hk]]. *)
-(*         replace (Z.of_nat (I + 0)) with (Z.of_nat I) by lia. fold P. *)
-(*         cbn [to_Z_words]. *)
-(*         unfold to_Z64 at 1 4 5. unfold normalize64. *)
-(*         pose proof (Z_div_mod_eq_full (x0 * y_i) M) as Hdm. *)
-(*         rewrite Z.add_mod with (a := to_Z_words result) (b := _ * P) *)
-(*           by (unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia). *)
-(*         rewrite Z.add_mod with (a := to_Z_words result) (b := to_Z64 y_i * _ * P) *)
-(*           by (unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia). *)
-(*         f_equal. f_equal. *)
-(*         apply Z.mod_divide_diff. *)
-(*         -- unfold M_R, modulus_words, words_bits. apply Z.pow_nonzero; lia. *)
-(*         -- exists ((x0 * y_i) / M * 2^(64 * k)). *)
-(*            unfold to_Z64 in *. rewrite <- HMP. nia. *)
-(*       * exact Hrest. *)
-(*       * exact Hyi. *)
-(*       * unfold modulus64; lia. *)
-(*       * unfold normalize64. apply Z.mod_pos_bound. unfold modulus64. lia. *)
-(*       * exact Hresult. *)
-(*       * exact Hlen. *)
-(*       * lia. *)
-(* Qed. *)
+    destruct (I + 1 <? R)%nat eqn:HIR.
+    + (* I+1 < R: mulx x0 y_i → (hi r, lo r) *)
+      apply Nat.ltb_lt in HIR.
+      pose proof (mulx64_correct x0 y_i ltac:(lia) ltac:(lia)) as Hmulx.
+      pose proof (mulx64_hi_bounded x0 y_i Hx0 Hy) as Hhi.
+      pose proof (mulx64_lo_bounded x0 y_i Hx0 Hy) as Hlo.
+      set (r := mulx64 x0 y_i).
+      rewrite mul_add_line_recur_correct; try assumption.
+      * (* hi*M + lo = x0*y_i, so rest*y_i*M + hi*M + lo = rest*y_i*M + x0*y_i *)
+        f_equal. cbn [to_Z_words]. unfold to_Z64 in *.
+        rewrite Z.shiftl_mul_pow2 in Hmulx by lia.
+        replace (Z.of_nat (I + 0)) with (Z.of_nat I) by lia.
+        unfold modulus64, r in *. nia.
+      * lia.
+    + (* I+1 >= R: c_hi = 0, c_lo = normalize64(x0 * y_i) *)
+      apply Nat.ltb_ge in HIR.
+      rewrite mul_add_line_recur_correct; try assumption.
+      * (* rest*y_i*M + (x0*y_i) mod M ≡ (x0 + M*rest)*y_i (mod M_R) *)
+(*            because (x0*y_i - (x0*y_i) mod M) * P is a multiple of M_R *)
+        set (P := 2^(64 * Z.of_nat I)).
+        set (M := modulus64).
+        set (M_R := modulus_words R).
+        assert (HMP: exists k, M * P = M_R * 2^(64 * k) /\ 0 <= k).
+        { exists (Z.of_nat (I + 1 - R)).
+          unfold M_R, modulus_words, words_bits, P, M, modulus64.
+          split; [|lia].
+          repeat rewrite <- Z.pow_add_r by lia.
+          f_equal. lia. }
+        destruct HMP as [k [HMP Hk]].
+        replace (Z.of_nat (I + 0)) with (Z.of_nat I) by lia. fold P.
+        cbn [to_Z_words].
+        unfold to_Z64 at 1 4 5. unfold normalize64.
+        pose proof (Z_div_mod_eq_full (x0 * y_i) M) as Hdm.
+        rewrite Z.add_mod with (a := to_Z_words result) (b := _ * P)
+          by (unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia).
+        rewrite Z.add_mod with (a := to_Z_words result) (b := y_i * _ * P)
+          by (unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia).
+        f_equal. f_equal.
+        unfold to_Z64. rewrite Z.mul_0_l, Z.add_0_r.
+        fold M.
+        rewrite Z.mul_add_distr_l.
+        rewrite (Z.mul_comm y_i x0). rewrite Hdm at 2.
+        replace ((M * (x0 * y_i / M) + (x0 * y_i) mod M + y_i * (2 ^ 64 * to_Z_words rest)) * P)
+                  with
+                  (((to_Z_words rest * y_i * M) + (x0 * y_i) mod M) * P +
+                     (x0 * y_i / M) * (M * P))
+          by (unfold M, modulus64; lia).
+        enough (H: x0 * y_i / M * (M * P) = x0 * y_i / M * 2 ^ (64 * k) * M_R)
+          by (rewrite H, Z_mod_plus_full; reflexivity).
+        rewrite HMP.
+        lia.
+      * unfold modulus64; lia.
+      * unfold normalize64. apply Z.mod_pos_bound. unfold modulus64. lia.
+      * lia.
+Qed.
 
 (** * Level 2: General Word-List Theorem *)
 

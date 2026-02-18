@@ -140,9 +140,8 @@ Proof.
     by (unfold modulus64 in *; nia).
   pose proof (Z.div_lt_upper_bound (x * y) modulus64 (modulus64 - 1)
     ltac:(unfold modulus64; lia) Hprod).
-Admitted.
-(*   lia. *)
-(* Qed. *)
+  unfold modulus64 in *. lia.
+Qed.
 
 (** adc_3 high output is bounded when x_2 <= modulus64 - 2
     (which is always the case when x_2 = hi(mulx64 a b)). *)
@@ -775,20 +774,19 @@ Proof.
   intros I R xs y_i result Hxs Hy Hresult Hlen HRI.
   unfold mul_add_line. destruct xs as [|x0 rest].
   - exact Hresult.
-  - inversion Hxs as [|x0' rest' Hx0 Hrest]; subst.
+  - inversion Hxs as [|x0' rest' Hx0 Hrest]; subst x0' rest'.
     cbn [length] in HRI.
-Admitted.
-(*     destruct (I + 1 <? R)%nat eqn:HIR. *)
-(*     + pose proof (mulx64_hi_bounded x0 y_i Hx0 Hy) as Hhi. *)
-(*       pose proof (mulx64_lo_bounded x0 y_i Hx0 Hy) as Hlo. *)
-(*       apply mul_add_line_recur_valid; try assumption; try exact Hhi; try exact Hlo. *)
-(*       lia. *)
-(*     + apply mul_add_line_recur_valid; try assumption. *)
-(*       * unfold modulus64; lia. *)
-(*       * unfold normalize64. split; [apply Z.mod_pos_bound; unfold modulus64; lia|]. *)
-(*         apply Z.mod_pos_bound. unfold modulus64. lia. *)
-(*       * lia. *)
-(* Qed. *)
+    destruct (I + 1 <? R)%nat eqn:HIR.
+    + pose proof (mulx64_hi_bounded x0 y_i Hx0 Hy) as Hhi.
+      pose proof (mulx64_lo_bounded x0 y_i Hx0 Hy) as Hlo.
+      apply mul_add_line_recur_valid; try assumption; try exact Hhi; try exact Hlo.
+      lia.
+    + apply mul_add_line_recur_valid; try assumption.
+      * unfold modulus64; lia.
+      * unfold normalize64. split; [apply Z.mod_pos_bound; unfold modulus64; lia|].
+        apply Z.mod_pos_bound. unfold modulus64. lia.
+      * lia.
+Qed.
 
 (** mul_add_line accumulates one row of partial products:
     to_Z_words(result') mod 2^(64*R)

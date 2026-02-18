@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
@@ -735,7 +736,36 @@ Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
         return rlp::DecodeError::InputTooLong;
     }
     return res.second;
-};
+}
+
+byte_string
+encode_storage_page_db(bytes32_t const &page_key, storage_page_t const &page)
+{
+    byte_string encoded;
+    encoded += rlp::encode_bytes32_compact(page_key);
+    encoded += encode_storage_page(page);
+    return rlp::encode_list2(encoded);
+}
+
+Result<storage_page_t> decode_storage_page_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(
+        auto const key_unused, rlp::decode_string(payload)); // skip page_key
+    (void)key_unused;
+    BOOST_OUTCOME_TRY(auto page, decode_storage_page(payload));
+    return page;
+}
+
+Result<std::pair<bytes32_t, storage_page_t>>
+decode_storage_page_db_with_key(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(auto const key_view, rlp::decode_string(payload));
+    bytes32_t const page_key = to_bytes(key_view);
+    BOOST_OUTCOME_TRY(auto page, decode_storage_page(payload));
+    return std::make_pair(page_key, page);
+}
 
 void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,

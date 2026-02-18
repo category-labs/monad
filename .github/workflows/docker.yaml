@@ -40,16 +40,6 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build `base` stage
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/Dockerfile
-          ulimit: "memlock=-1:-1"
-          target: base
-          cache-from: type=gha,scope=base
-          cache-to: type=gha,scope=base,mode=max
-
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
       - run: cat /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
       - run: sudo bash -c "echo 2048 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages"

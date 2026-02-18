@@ -27,7 +27,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-static constexpr Address RESERVE_BALANCE_CA = Address{0x1001};
+inline constexpr Address RESERVE_BALANCE_CA = Address{0x1001};
 
 class ReserveBalanceContract
 {

@@ -50,7 +50,7 @@ namespace trace
         {
         }
 
-        void encode(Map<Address, OriginalAccountState> const &, State &);
+        void encode(State &);
 
     private:
         bool retain_beneficiary(State const &state) const;

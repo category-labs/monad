@@ -151,10 +151,10 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
 bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);
-    auto const &original = state.original();
-    for (auto &kv : original) {
+    auto const &history = state.history();
+    for (auto &kv : history) {
         Address const &address = kv.first;
-        OriginalAccountState const &account_state = kv.second;
+        OriginalAccountState const &account_state = kv.second.original_state();
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::const_accessor it{};
@@ -190,8 +190,12 @@ void BlockState::merge(State const &state)
 {
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
-    auto const &current = state.current();
-    for (auto const &[address, stack] : current) {
+    auto const &history = state.history();
+    for (auto const &[address, account_history] : history) {
+        if (!account_history.has_current_state()) {
+            continue;
+        }
+        auto const &stack = account_history.current_stack();
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto const &account_state = stack.recent();
@@ -211,8 +215,11 @@ void BlockState::merge(State const &state)
     }
 
     MONAD_ASSERT(state_);
-    for (auto const &[address, stack] : current) {
-        auto const &account_state = stack.recent();
+    for (auto const &[address, account_history] : history) {
+        if (!account_history.has_current_state()) {
+            continue;
+        }
+        auto const &account_state = account_history.current_stack().recent();
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};

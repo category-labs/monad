@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/state_machine.hpp>
 
@@ -137,6 +138,12 @@ inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
+
+byte_string
+encode_storage_page_db(bytes32_t const &page_key, storage_page_t const &);
+Result<storage_page_t> decode_storage_page_db(byte_string_view &);
+Result<std::pair<bytes32_t, storage_page_t>>
+decode_storage_page_db_with_key(byte_string_view &);
 
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_account_db_raw(byte_string_view &);

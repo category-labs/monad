@@ -16,6 +16,18 @@ From Uint256 Require Import Primitives Words WordsLemmas RuntimeMul.
 Import ListNotations.
 Open Scope Z_scope.
 
+(** * General Modular Arithmetic Helper *)
+
+Lemma Z_mod_divide_diff : forall a b n,
+  n <> 0 ->
+  (exists k, a - b = k * n) ->
+  a mod n = b mod n.
+Proof.
+  intros a b n Hn [k Hk].
+  replace a with (b + k * n) by lia.
+  apply Z_mod_plus_full.
+Qed.
+
 (** * Level 5: Primitive Correctness *)
 
 (** adc_2_short computes exact 128-bit sum.
@@ -824,40 +836,23 @@ Proof.
     + (* I+1 >= R: c_hi = 0, c_lo = normalize64(x0 * y_i) *)
       apply Nat.ltb_ge in HIR.
       rewrite mul_add_line_recur_correct; try assumption.
-      * (* rest*y_i*M + (x0*y_i) mod M ≡ (x0 + M*rest)*y_i (mod M_R) *)
-(*            because (x0*y_i - (x0*y_i) mod M) * P is a multiple of M_R *)
+      * (* rest*y_i*M + (x0*y_i) mod M ≡ (x0 + M*rest)*y_i (mod M_R)
+             because (x0*y_i - (x0*y_i) mod M) * P is a multiple of M_R *)
+        apply Z_mod_divide_diff.
+        { unfold modulus_words, words_bits; apply Z.pow_nonzero; lia. }
         set (P := 2^(64 * Z.of_nat I)).
-        set (M := modulus64).
-        set (M_R := modulus_words R).
-        assert (HMP: exists k, M * P = M_R * 2^(64 * k) /\ 0 <= k).
-        { exists (Z.of_nat (I + 1 - R)).
-          unfold M_R, modulus_words, words_bits, P, M, modulus64.
-          split; [|lia].
-          repeat rewrite <- Z.pow_add_r by lia.
-          f_equal. lia. }
-        destruct HMP as [k [HMP Hk]].
+        assert (HMP: modulus64 * P = modulus_words R * 2^(64 * Z.of_nat (I + 1 - R))).
+        { unfold modulus_words, words_bits, P, modulus64.
+          repeat rewrite <- Z.pow_add_r by lia. f_equal. lia. }
         replace (Z.of_nat (I + 0)) with (Z.of_nat I) by lia. fold P.
-        cbn [to_Z_words].
-        unfold to_Z64 at 1 4 5. unfold normalize64.
-        pose proof (Z_div_mod_eq_full (x0 * y_i) M) as Hdm.
-        rewrite Z.add_mod with (a := to_Z_words result) (b := _ * P)
-          by (unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia).
-        rewrite Z.add_mod with (a := to_Z_words result) (b := y_i * _ * P)
-          by (unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia).
-        f_equal. f_equal.
-        unfold to_Z64. rewrite Z.mul_0_l, Z.add_0_r.
-        fold M.
-        rewrite Z.mul_add_distr_l.
-        rewrite (Z.mul_comm y_i x0). rewrite Hdm at 2.
-        replace ((M * (x0 * y_i / M) + (x0 * y_i) mod M + y_i * (2 ^ 64 * to_Z_words rest)) * P)
-                  with
-                  (((to_Z_words rest * y_i * M) + (x0 * y_i) mod M) * P +
-                     (x0 * y_i / M) * (M * P))
-          by (unfold M, modulus64; lia).
-        enough (H: x0 * y_i / M * (M * P) = x0 * y_i / M * 2 ^ (64 * k) * M_R)
-          by (rewrite H, Z_mod_plus_full; reflexivity).
-        rewrite HMP.
-        lia.
+        cbn [to_Z_words]. unfold to_Z64, normalize64.
+        pose proof (Z_div_mod_eq_full (x0 * y_i) modulus64) as Hdm.
+        exists (-(x0 * y_i / modulus64) * 2^(64 * Z.of_nat (I + 1 - R))).
+        assert (Hk: -(x0 * y_i / modulus64) * 2^(64 * Z.of_nat (I + 1 - R))
+                      * modulus_words R
+                  = -(x0 * y_i / modulus64) * (modulus64 * P))
+          by (rewrite HMP; ring).
+        rewrite Hk. unfold modulus64 in *. nia.
       * unfold modulus64; lia.
       * unfold normalize64. apply Z.mod_pos_bound. unfold modulus64. lia.
       * lia.
@@ -1002,7 +997,7 @@ Proof.
   - inversion Hys as [|y0' rest' Hy0 Hys_rest]; subst.
     rewrite truncating_mul_runtime_recur_correct; try assumption.
     + (* Compose mul_line_correct with recur *)
-      pose proof (mul_line_correct R xs y0 Hxs Hy0 HR HlenR) as Hml.
+      pose proof (mul_line_correct R xs y0 Hxs Hy0 HR) as Hml.
       set (result := mul_line R xs y0) in Hml |- *.
       rewrite Z.add_mod with (a := to_Z_words result) by
         (unfold modulus_words, words_bits; apply Z.pow_nonzero; lia).

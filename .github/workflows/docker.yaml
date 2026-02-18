@@ -2,6 +2,21 @@ name: Docker
 
 on:
   push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+    types: [ opened, synchronize, reopened, edited ]
+  workflow_dispatch:
+
+concurrency:
+  group: >
+    ${{
+      (github.event_name == 'push' && format('push-{0}-docker', github.ref))
+      || (github.event_name == 'pull_request' && format('pr-{0}-docker', github.event.pull_request.number))
+      || (github.event_name == 'workflow_dispatch' && format('workflow-dispatch-{0}-docker', github.run_id))
+      || format('{0}-docker', github.run_id)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

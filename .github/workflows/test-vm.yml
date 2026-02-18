@@ -2,6 +2,10 @@ name: VM Tests
 
 on:
   push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+    types: [ opened, synchronize, reopened, edited ]
     paths:
       - '.github/workflows/test-vm.yml'
       - 'CMakeLists.txt'
@@ -15,8 +19,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: >
+    ${{
+      (github.event_name == 'push' && format('push-{0}-vm-tests', github.ref))
+      || (github.event_name == 'pull_request' && format('pr-{0}-vm-tests', github.event.pull_request.number))
+      || (github.event_name == 'workflow_dispatch' && format('workflow-dispatch-{0}-vm-tests', github.run_id))
+      || format('{0}-vm-tests', github.run_id)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
     build:

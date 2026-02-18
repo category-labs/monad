@@ -68,9 +68,14 @@ using file_offset_t = __u64;
 //! An identifier of data within a `storage_pool`
 struct chunk_offset_t
 {
-    file_offset_t offset : 28; //!< Offset into the chunk, max is 256Mb
-    file_offset_t id : 20; //!< Id of the chunk, max is 1 million, therefore
-                           //!< maximum addressable storage is 256Tb
+    static constexpr unsigned OFFSET_BITS = 28;
+    static constexpr unsigned ID_BITS = 20;
+    static constexpr unsigned SPARE_BITS = 15;
+
+    file_offset_t offset : OFFSET_BITS; //!< Offset into the chunk, max is 256Mb
+    file_offset_t id : ID_BITS; //!< Id of the chunk, max is 1 million,
+                                //!< therefore maximum addressable storage
+                                //!< is 256Tb
 
     /*! Next fifteen bits are unused by the async library and can be used by
     client code for anything they wish. Triedb places a
@@ -79,13 +84,13 @@ struct chunk_offset_t
     a node's location within storage and how many bytes are needed to read it
     are encapsulated within a single dense 64 bit identifier for Triedb.
     */
-    file_offset_t spare : 15;
+    file_offset_t spare : SPARE_BITS;
     file_offset_t bits_format : 1; //! Reserve top bit to switch between
                                    //! different bits formatting
 
-    static constexpr file_offset_t max_offset = (1ULL << 28) - 1;
-    static constexpr file_offset_t max_id = (1U << 20) - 1;
-    static constexpr file_offset_t max_spare = (1ULL << 15) - 1;
+    static constexpr file_offset_t max_offset = (1ULL << OFFSET_BITS) - 1;
+    static constexpr file_offset_t max_id = (1U << ID_BITS) - 1;
+    static constexpr file_offset_t max_spare = (1ULL << SPARE_BITS) - 1;
 
     static constexpr chunk_offset_t invalid_value() noexcept
     {
@@ -131,22 +136,8 @@ struct chunk_offset_t
 
     constexpr file_offset_t raw() const noexcept
     {
-        union _
-        {
-            file_offset_t ret;
-            chunk_offset_t self;
-
-            constexpr _()
-                : ret{}
-            {
-            }
-        } u;
-
-        u.self = *this;
-        u.self.spare =
-            0; // must be flattened, otherwise can't go into the rbtree key
-        u.self.bits_format = 0;
-        return u.ret;
+        return (static_cast<file_offset_t>(id) << OFFSET_BITS) |
+               static_cast<file_offset_t>(offset);
     }
 
     void set_spare(uint16_t value) noexcept

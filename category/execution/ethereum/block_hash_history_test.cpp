@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -53,6 +54,7 @@ namespace
         InMemoryMachine machine;
         mpt::Db db;
         TrieDb tdb;
+        EthPageStorageCache cache;
         vm::VM vm;
         BlockState block_state;
         State state;
@@ -63,7 +65,8 @@ namespace
         BlockHistoryFixture()
             : db{machine}
             , tdb{db}
-            , block_state{tdb, vm}
+            , cache{tdb}
+            , block_state{tdb, cache, vm}
             , state{block_state, Incarnation{0, 0}}
             , block_hash_buffer{}
         {

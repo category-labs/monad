@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -136,7 +137,8 @@ TYPED_TEST(TraitsTest, emit_log)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    EthPageStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -176,7 +178,8 @@ TYPED_TEST(TraitsTest, access_precompile)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    EthPageStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;

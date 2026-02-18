@@ -47,8 +47,9 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(Db &db, vm::VM &monad_vm)
+BlockState::BlockState(Db &db, PageStorageCache &cache, vm::VM &monad_vm)
     : db_{db}
+    , cache_{cache}
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
 {
@@ -104,7 +105,7 @@ bytes32_t BlockState::read_storage(
     // database
     {
         auto const result = read_storage
-                                ? db_.read_storage(address, incarnation, key)
+                                ? cache_.read_storage(address, incarnation, key)
                                 : bytes32_t{};
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));

@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -56,7 +57,8 @@ TYPED_TEST(TraitsTest, apply_block_reward)
         Code{},
         BlockHeader{});
 
-    BlockState bs{tdb, vm};
+    EthPageStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     State as{bs, Incarnation{0, 0}};
 
     EXPECT_TRUE(as.account_exists(a));

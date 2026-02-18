@@ -111,6 +111,13 @@ public:
         return db_.read_storage(address, incarnation, key);
     }
 
+    virtual byte_string read_storage_page(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &page_key) override
+    {
+        return db_.read_storage_page(address, incarnation, page_key);
+    }
+
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
     {
         return db_.read_code(code_hash);

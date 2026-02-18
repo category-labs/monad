@@ -102,39 +102,28 @@ Lemma adc_3_correct : forall x_2 x_1 x_0 y_1 y_0,
   0 <= r_0 < modulus64 /\
   0 <= r_1 < modulus64.
 Proof.
-Admitted.
-(*   intros x_2 x_1 x_0 y_1 y_0 Hx2 Hx1 Hx0 Hy1 Hy0. *)
-(*   unfold adc_3. cbn [fst snd]. *)
-(*   set (sum := x_2 * modulus64 * modulus64 *)
-(*             + x_1 * modulus64 + x_0 *)
-(*             + y_1 * modulus64 + y_0). *)
-(*   set (M := modulus64). *)
-(*   assert (HM: 0 < M) by (unfold M, modulus64; lia). *)
-(*   assert (HMM: 0 < M * M) by lia. *)
-(*   assert (Hsum_nn: 0 <= sum) by (unfold sum, M, modulus64; nia). *)
-(*   pose proof (Z_div_mod_eq_full sum (M * M)) as Hdm1. *)
-(*   pose proof (Z.mod_pos_bound sum (M * M) HMM) as Hmod1. *)
-(*   pose proof (Z_div_mod_eq_full (sum mod (M * M)) M) as Hdm2. *)
-(*   pose proof (Z.mod_pos_bound (sum mod (M * M)) M HM) as Hmod2. *)
-(*   pose proof (Z.mod_pos_bound sum M HM) as Hmod3. *)
-(*   split. *)
-(*   - (* Main equation *) *)
-(*     pose proof (Z_div_mod_eq_full sum M) as Hdm3. *)
-(*     (* Replace sum mod M with (sum mod (M*M)) mod M, then nia closes *) *)
-(*     assert (Hmodmod: sum mod M = (sum mod (M * M)) mod M). *)
-(*     { symmetry. *)
-(*       enough (H: exists k, sum = k * M + (sum mod (M * M)) mod M). *)
-(*       { destruct H as [k Hk]. *)
-(*         pose proof (Z.mod_pos_bound (sum mod (M * M)) M HM) as Hb. *)
-(*         symmetry. rewrite Hk. rewrite Z_mod_plus_full. reflexivity. } *)
-(*       exists (sum / (M * M) * M + sum mod (M * M) / M). *)
-(*       nia. } *)
-(*     rewrite Hmodmod. nia. *)
-(*   - split; [lia|]. *)
-(*     split. *)
-(*     + apply Z.div_pos; lia. *)
-(*     + apply Z.div_lt_upper_bound; [lia|]. lia. *)
-(* Qed. *)
+  intros x_2 x_1 x_0 y_1 y_0 Hx2 Hx1 Hx0 Hy1 Hy0.
+  unfold adc_3. cbn [fst snd].
+  set (sum := x_2 * modulus64 * modulus64
+            + x_1 * modulus64 + x_0
+            + y_1 * modulus64 + y_0).
+  set (M := modulus64).
+  assert (HM: 0 < M) by (unfold M, modulus64; lia).
+  assert (HMM: 0 < M * M) by lia.
+  assert (Hsum_nn: 0 <= sum) by (unfold sum; nia).
+  pose proof (Z_div_mod_eq_full sum (M * M)) as Hdm1.
+  pose proof (Z.mod_pos_bound sum (M * M) HMM) as Hmod1.
+  pose proof (Z_div_mod_eq_full (sum mod (M * M)) M) as Hdm2.
+  pose proof (Z.mod_pos_bound (sum mod (M * M)) M HM) as Hmod2.
+  pose proof (Z.mod_pos_bound sum M HM) as Hmod3.
+  split.
+  - rewrite (Znumtheory.Zmod_div_mod M (M * M) sum HM HMM ltac:(exists M; ring)).
+    nia.
+  - split; [lia|].
+    split.
+    + apply Z.div_pos; lia.
+    + apply Z.div_lt_upper_bound; lia.
+Qed.
 
 (** ** Additional Helpers *)
 

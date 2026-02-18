@@ -397,56 +397,63 @@ Proof.
     cbn [mul_add_line_recur].
     inversion Hxs as [|x' rest' Hx Hrest]; subst.
     cbn [length] in HRI.
-Admitted.
-(*     destruct (I + J <? R)%nat eqn:H1. *)
-(*     + apply Nat.ltb_lt in H1. *)
-(*       destruct (I + J + 2 <? R)%nat eqn:H2. *)
-(*       * (* Full case: mulx + adc_3 *) *)
-(*         pose proof (mulx64_hi_bounded x y_i Hx Hyi) as Hhi. *)
-(*         pose proof (mulx64_lo_bounded x y_i Hx Hyi) as Hlo. *)
-(*         pose proof (mulx64_hi_le x y_i Hx Hyi) as Hhile. *)
-(*         pose proof (adc_3_correct (hi (mulx64 x y_i)) (lo (mulx64 x y_i)) *)
-(*           (get_word result (I + J)) c_hi c_lo *)
-(*           ltac:(lia) Hlo *)
-(*           ltac:(apply get_word_bounded; [assumption | lia]) Hchi Hclo) as Hadc3. *)
-(*         pose proof (adc_3_r2_bounded (hi (mulx64 x y_i)) (lo (mulx64 x y_i)) *)
-(*           (get_word result (I + J)) c_hi c_lo *)
-(*           ltac:(lia) Hlo *)
-(*           ltac:(apply get_word_bounded; [assumption | lia]) Hchi Hclo) as Hr2. *)
-(*         destruct (adc_3 (hi (mulx64 x y_i)) (lo (mulx64 x y_i)) *)
-(*           (get_word result (I + J)) c_hi c_lo) as [[c_hi' c_lo'] res_IJ] eqn:Hadc3_eq. *)
-(*         destruct Hadc3 as [_ [Hres_IJ Hclo']]. *)
-(*         apply IH; try assumption. *)
-(*         -- exact Hr2. *)
-(*         -- exact Hclo'. *)
-(*         -- apply set_word_valid; [exact Hresult | exact Hres_IJ]. *)
-(*         -- rewrite set_word_length. exact Hlen. *)
-(*         -- lia. *)
-(*       * destruct (I + J + 1 <? R)%nat eqn:H3. *)
-(*         -- (* Second-to-last: mulx low + adc_2_full *) *)
-(*            pose proof (adc_2_full_correct (normalize64 (x * y_i)) *)
-(*              (get_word result (I + J)) c_hi c_lo *)
-(*              ltac:(unfold normalize64; split; *)
-(*                [apply Z.mod_pos_bound; unfold modulus64; lia | *)
-(*                 apply Z.mod_pos_bound; unfold modulus64; lia]) *)
-(*              ltac:(apply get_word_bounded; [assumption | lia]) Hchi Hclo) as Hadc2. *)
-(*            destruct (adc_2_full (normalize64 (x * y_i)) *)
-(*              (get_word result (I + J)) c_hi c_lo) as [c_lo' res_IJ] eqn:Hadc2_eq. *)
-(*            destruct Hadc2 as [_ [Hres_IJ Hclo']]. *)
-(*            apply IH; try assumption. *)
-(*            ++ unfold modulus64; lia. *)
-(*            ++ exact Hclo'. *)
-(*            ++ apply set_word_valid; [exact Hresult | exact Hres_IJ]. *)
-(*            ++ rewrite set_word_length. exact Hlen. *)
-(*            ++ lia. *)
-(*         -- (* Last position: result[I+J] += c_lo *) *)
-(*            apply IH; try assumption. *)
-(*            ++ apply set_word_valid; [exact Hresult|]. *)
-(*               unfold normalize64. apply Z.mod_pos_bound. unfold modulus64. lia. *)
-(*            ++ rewrite set_word_length. exact Hlen. *)
-(*            ++ lia. *)
-(*     + exact Hresult. *)
-(* Qed. *)
+    destruct (I + J <? length result)%nat eqn:H1.
+    + apply Nat.ltb_lt in H1.
+      destruct (I + J + 2 <? length result)%nat eqn:H2.
+      * (* Full case: mulx + adc_3 *)
+        pose proof (mulx64_hi_bounded x y_i Hx Hyi) as Hhi.
+        pose proof (mulx64_lo_bounded x y_i Hx Hyi) as Hlo.
+        pose proof (mulx64_hi_le x y_i Hx Hyi) as Hhile.
+        unfold to_Z64 in Hhi, Hlo, Hhile.
+        pose proof (get_word_bounded result (I + J) Hresult ltac:(lia)) as Hgw.
+        pose proof (adc_3_correct (hi (mulx64 x y_i)) (lo (mulx64 x y_i))
+          (get_word result (I + J)) c_hi c_lo
+          ltac:(lia) Hlo Hgw Hchi Hclo) as Hadc3.
+        pose proof (adc_3_r2_bounded (hi (mulx64 x y_i)) (lo (mulx64 x y_i))
+          (get_word result (I + J)) c_hi c_lo
+          ltac:(lia) Hlo Hgw Hchi Hclo) as Hr2.
+        destruct (adc_3 (hi (mulx64 x y_i)) (lo (mulx64 x y_i))
+          (get_word result (I + J)) c_hi c_lo) as [[c_hi' c_lo'] res_IJ].
+        destruct Hadc3 as [_ [Hres_IJ Hclo']].
+        apply IH.
+        -- exact Hrest.
+        -- exact Hyi.
+        -- exact Hr2.
+        -- exact Hclo'.
+        -- apply set_word_valid; [exact Hresult | exact Hres_IJ].
+        -- rewrite set_word_length. reflexivity.
+        -- lia.
+      * destruct (I + J + 1 <? length result)%nat eqn:H3.
+        -- (* Second-to-last: mulx low + adc_2_full *)
+           pose proof (adc_2_full_correct (normalize64 (x * y_i))
+             (get_word result (I + J)) c_hi c_lo
+             ltac:(unfold normalize64; split;
+               [apply Z.mod_pos_bound; unfold modulus64; lia |
+                apply Z.mod_pos_bound; unfold modulus64; lia])
+             ltac:(apply get_word_bounded; [assumption | lia]) Hchi Hclo) as Hadc2.
+           destruct (adc_2_full (normalize64 (x * y_i))
+             (get_word result (I + J)) c_hi c_lo) as [c_lo' res_IJ].
+           destruct Hadc2 as [_ [Hres_IJ Hclo']].
+           apply IH.
+           ++ exact Hrest.
+           ++ exact Hyi.
+           ++ unfold modulus64; lia.
+           ++ exact Hclo'.
+           ++ apply set_word_valid; [exact Hresult | exact Hres_IJ].
+           ++ rewrite set_word_length. reflexivity.
+           ++ lia.
+        -- (* Last position: result[I+J] += c_lo *)
+           apply IH.
+           ++ exact Hrest.
+           ++ exact Hyi.
+           ++ exact Hchi.
+           ++ exact Hclo.
+           ++ apply set_word_valid; [exact Hresult|].
+              unfold normalize64. apply Z.mod_pos_bound. unfold modulus64. lia.
+           ++ rewrite set_word_length. reflexivity.
+           ++ lia.
+    + exact Hresult.
+Qed.
 
 (** mul_add_line_recur accumulates partial products with 2-word carry.
     Precondition: I + J + length xs_tail + 1 >= R ensures the carry flush

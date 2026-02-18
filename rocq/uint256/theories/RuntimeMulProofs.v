@@ -487,203 +487,172 @@ Proof.
       * (* pos < R, pos + 1 >= R: pos = R - 1. Add c_lo, drop c_hi *)
         apply Nat.ltb_ge in H1. apply Nat.ltb_lt in H2.
         assert (Hpos: pos = (R - 1)%nat) by lia.
-Admitted.
-(*         rewrite to_Z_words_set_word by (subst pos; lia || assumption). *)
-(*         unfold normalize64. *)
-(*         set (r_pos := get_word result pos). *)
-(*         set (P := 2^(64 * Z.of_nat pos)). *)
-(*         set (M_R := modulus_words R). *)
-(*         assert (HMP: modulus64 * P = M_R). *)
-(*         { unfold M_R, modulus_words, words_bits, P, modulus64. *)
-(*           rewrite <- Z.pow_add_r by lia. f_equal. subst pos. lia. } *)
-(*         replace (to_Z64 ((r_pos + c_lo) mod modulus64) * P) *)
-(*           with (((r_pos + c_lo) mod modulus64) * P) by reflexivity. *)
-(*         replace (to_Z64 (get_word result pos) * P) *)
-(*           with (r_pos * P) by reflexivity. *)
-(*         replace ((to_Z64 c_hi * modulus64 + to_Z64 c_lo) * P) *)
-(*           with (to_Z64 c_hi * M_R + to_Z64 c_lo * P) by (rewrite <- HMP; ring). *)
-(*         rewrite Z.add_assoc. *)
-(*         rewrite Z_mod_plus_full. *)
-(*         f_equal. *)
-(*         replace (((r_pos + c_lo) mod modulus64) * P - r_pos * P) *)
-(*           with (((r_pos + c_lo) mod modulus64 - r_pos) * P) by ring. *)
-(*         replace (to_Z64 c_lo * P) with (c_lo * P) by reflexivity. *)
-(*         f_equal. *)
-(*         replace (((r_pos + c_lo) mod modulus64 - r_pos) * P) *)
-(*           with (c_lo * P - (r_pos + c_lo) / modulus64 * (modulus64 * P)) *)
-(*           by nia. *)
-(*         rewrite HMP. rewrite Z_mod_plus_full. reflexivity. *)
-(*       * (* pos >= R: result unchanged, carry vanishes mod M_R *) *)
-(*         apply Nat.ltb_ge in H2. *)
-(*         unfold modulus_words, words_bits. *)
-(*         replace (64 * Z.of_nat pos) *)
-(*           with (64 * Z.of_nat R + 64 * (Z.of_nat pos - Z.of_nat R)) by lia. *)
-(*         rewrite Z.pow_add_r by lia. *)
-(*         set (M_R := 2^(64 * Z.of_nat R)). *)
-(*         set (excess := 2^(64 * (Z.of_nat pos - Z.of_nat R))). *)
-(*         replace (to_Z_words result *)
-(*           + (to_Z64 c_hi * modulus64 + to_Z64 c_lo) * (M_R * excess)) *)
-(*           with (to_Z_words result *)
-(*                 + (to_Z64 c_hi * modulus64 + to_Z64 c_lo) * excess * M_R) by ring. *)
-(*         rewrite Z_mod_plus_full. reflexivity. *)
-(*   - (* Inductive case: xs_tail = x :: rest *) *)
-(*     cbn [mul_add_line_recur]. *)
-(*     inversion Hxs as [|x' rest' Hx Hrest]; subst. *)
-(*     cbn [length] in HRI. *)
-(*     destruct (I + J <? R)%nat eqn:HIJ. *)
-(*     + (* I + J < R *) *)
-(*       apply Nat.ltb_lt in HIJ. *)
-(*       destruct (I + J + 2 <? R)%nat eqn:HIJ2. *)
-(*       * (* Sub-case: I+J+2 < R — full mulx + adc_3 *) *)
-(*         apply Nat.ltb_lt in HIJ2. *)
-(*         pose proof (mulx64_correct x y_i ltac:(lia) ltac:(lia)) as Hmulx. *)
-(*         pose proof (mulx64_hi_bounded x y_i Hx Hyi) as Hhi. *)
-(*         pose proof (mulx64_lo_bounded x y_i Hx Hyi) as Hlo. *)
-(*         pose proof (mulx64_hi_le x y_i Hx Hyi) as Hhile. *)
-(*         set (r := mulx64 x y_i). *)
-(*         pose proof (adc_3_correct (hi r) (lo r) (get_word result (I + J)) *)
-(*           c_hi c_lo ltac:(lia) Hlo *)
-(*           ltac:(apply get_word_bounded; [assumption | lia]) Hchi Hclo) as Hadc3. *)
-(*         pose proof (adc_3_r2_bounded (hi r) (lo r) (get_word result (I + J)) *)
-(*           c_hi c_lo ltac:(lia) Hlo *)
-(*           ltac:(apply get_word_bounded; [assumption | lia]) Hchi Hclo) as Hr2. *)
-(*         destruct (adc_3 (hi r) (lo r) (get_word result (I + J)) c_hi c_lo) *)
-(*           as [[c_hi' c_lo'] res_IJ] eqn:Hadc3_eq. *)
-(*         destruct Hadc3 as [Hadc3_main [Hres_IJ Hclo']]. *)
-(*         (* Apply IH *) *)
-(*         rewrite IH; try assumption. *)
-(*         -- (* Arithmetic *) *)
-(*            rewrite to_Z_words_set_word *)
-(*              by (try rewrite set_word_length; lia || assumption). *)
-(*            set (P := 2^(64 * Z.of_nat (I + J))). *)
-(*            set (M := modulus64). set (M_R := modulus_words R). *)
-(*            assert (Hadc_sum: *)
-(*              to_Z64 c_hi' * M * M + to_Z64 c_lo' * M + to_Z64 res_IJ *)
-(*              = to_Z64 (hi r) * M * M + to_Z64 (lo r) * M *)
-(*                + to_Z64 (get_word result (I + J)) + to_Z64 c_hi * M *)
-(*                + to_Z64 c_lo). *)
-(*            { unfold M. exact Hadc3_main. } *)
-(*            assert (Hmulx_eq: to_Z64 (hi r) * M + to_Z64 (lo r) = x * y_i). *)
-(*            { unfold M. unfold to_Z64 in Hmulx. *)
-(*              rewrite Z.shiftl_mul_pow2 in Hmulx by lia. lia. } *)
-(*            replace (Z.of_nat (I + (J + 1))) with (1 + Z.of_nat (I + J)) by lia. *)
-(*            replace (64 * (1 + Z.of_nat (I + J))) *)
-(*              with (64 + 64 * Z.of_nat (I + J)) by lia. *)
-(*            rewrite Z.pow_add_r by lia. fold P. fold M. *)
-(*            cbn [to_Z_words]. *)
-(*            f_equal. *)
-(*            unfold to_Z64 in Hadc_sum, Hmulx_eq |- *. *)
-(*            nia. *)
-(*         -- exact Hrest. *)
-(*         -- exact Hyi. *)
-(*         -- exact Hr2. *)
-(*         -- exact Hclo'. *)
-(*         -- apply set_word_valid; [exact Hresult | exact Hres_IJ]. *)
-(*         -- rewrite set_word_length. exact Hlen. *)
-(*         -- lia. *)
-(*       * (* I+J+2 >= R *) *)
-(*         apply Nat.ltb_ge in HIJ2. *)
-(*         destruct (I + J + 1 <? R)%nat eqn:HIJ1. *)
-(*         -- (* Sub-case: I+J+1 < R, I+J+2 >= R — adc_2_full *) *)
-(*            apply Nat.ltb_lt in HIJ1. *)
-(*            assert (HIJ_eq: (I + J + 2 = R)%nat) by lia. *)
-(*            set (lo_val := normalize64 (x * y_i)). *)
-(*            pose proof (adc_2_full_correct lo_val (get_word result (I + J)) *)
-(*              c_hi c_lo *)
-(*              ltac:(unfold lo_val, normalize64; split; *)
-(*                [apply Z.mod_pos_bound; unfold modulus64; lia | *)
-(*                 apply Z.mod_pos_bound; unfold modulus64; lia]) *)
-(*              ltac:(apply get_word_bounded; [assumption | lia]) *)
-(*              Hchi Hclo) as Hadc2. *)
-(*            destruct (adc_2_full lo_val (get_word result (I + J)) c_hi c_lo) *)
-(*              as [c_lo' res_IJ] eqn:Hadc2_eq. *)
-(*            destruct Hadc2 as [Hadc2_main [Hres_IJ Hclo']]. *)
-(*            (* Apply IH with c_hi = 0 *) *)
-(*            rewrite IH; try assumption. *)
-(*            ++ (* Arithmetic *) *)
-(*               rewrite to_Z_words_set_word by (lia || assumption). *)
-(*               set (P := 2^(64 * Z.of_nat (I + J))). *)
-(*               set (M := modulus64). set (M_R := modulus_words R). *)
-(*               replace (Z.of_nat (I + (J + 1))) with (1 + Z.of_nat (I + J)) by lia. *)
-(*               replace (64 * (1 + Z.of_nat (I + J))) *)
-(*                 with (64 + 64 * Z.of_nat (I + J)) by lia. *)
-(*               rewrite Z.pow_add_r by lia. fold P. fold M. *)
-(*               set (S := lo_val * M + to_Z64 (get_word result (I + J)) *)
-(*                         + to_Z64 c_hi * M + to_Z64 c_lo). *)
-(*               assert (Hmod_eq: to_Z64 c_lo' * M + to_Z64 res_IJ = S mod (M * M)). *)
-(*               { unfold S, M. exact Hadc2_main. } *)
-(*               assert (HM2P: M * M * P = M_R). *)
-(*               { unfold M_R, modulus_words, words_bits, P, M, modulus64. *)
-(*                 rewrite <- Z.pow_add_r by lia. f_equal. lia. } *)
-(*               cbn [to_Z_words]. *)
-(*               unfold to_Z64 in Hmod_eq |- *. *)
-(*               f_equal. *)
-(*               pose proof (Z_div_mod_eq_full S (M * M)) as HdmS. *)
-(*               pose proof (Z_div_mod_eq_full (x * y_i) M) as Hdmx. *)
-(*               unfold lo_val, normalize64, S, M in Hmod_eq, HdmS, Hdmx |- *. *)
-(*               rewrite <- HM2P. *)
-(*               nia. *)
-(*            ++ exact Hrest. *)
-(*            ++ exact Hyi. *)
-(*            ++ unfold modulus64; lia. *)
-(*            ++ exact Hclo'. *)
-(*            ++ apply set_word_valid; [exact Hresult | exact Hres_IJ]. *)
-(*            ++ rewrite set_word_length. exact Hlen. *)
-(*            ++ lia. *)
-(*         -- (* Sub-case: I+J < R, I+J+1 >= R — last position, I+J = R-1 *) *)
-(*            apply Nat.ltb_ge in HIJ1. *)
-(*            assert (HIJ_eq: (I + J = R - 1)%nat) by lia. *)
-(*            set (result' := set_word result (I + J) *)
-(*                   (normalize64 (get_word result (I + J) + c_lo))). *)
-(*            rewrite IH; try assumption. *)
-(*            ++ (* Arithmetic *) *)
-(*               set (P := 2^(64 * Z.of_nat (I + J))). *)
-(*               set (M := modulus64). set (M_R := modulus_words R). *)
-(*               assert (HMP: M * P = M_R). *)
-(*               { unfold M_R, modulus_words, words_bits, P, M, modulus64. *)
-(*                 rewrite <- Z.pow_add_r by lia. f_equal. lia. } *)
-(*               unfold result'. *)
-(*               rewrite to_Z_words_set_word by (lia || assumption). *)
-(*               unfold normalize64. *)
-(*               replace (Z.of_nat (I + (J + 1))) with (1 + Z.of_nat (I + J)) by lia. *)
-(*               replace (64 * (1 + Z.of_nat (I + J))) *)
-(*                 with (64 + 64 * Z.of_nat (I + J)) by lia. *)
-(*               rewrite Z.pow_add_r by lia. fold P. fold M. *)
-(*               cbn [to_Z_words]. *)
-(*               unfold to_Z64 at 5 6. *)
-(*               set (r_pos := get_word result (I + J)). *)
-(*               pose proof (Z_div_mod_eq_full (r_pos + c_lo) M) as Hdm. *)
-(*               pose proof (Z.mod_pos_bound (r_pos + c_lo) M *)
-(*                 ltac:(unfold M, modulus64; lia)) as Hmod. *)
-(*               unfold to_Z64 in |- *. *)
-(*               f_equal. *)
-(*               unfold M in HMP. *)
-(*               nia. *)
-(*            ++ exact Hrest. *)
-(*            ++ exact Hyi. *)
-(*            ++ exact Hchi. *)
-(*            ++ exact Hclo. *)
-(*            ++ unfold result'. apply set_word_valid; [exact Hresult|]. *)
-(*               unfold normalize64. apply Z.mod_pos_bound. unfold modulus64. lia. *)
-(*            ++ unfold result'. rewrite set_word_length. exact Hlen. *)
-(*            ++ lia. *)
-(*     + (* I + J >= R: result unchanged *) *)
-(*       apply Nat.ltb_ge in HIJ. *)
-(*       cbn [to_Z_words]. *)
-(*       unfold modulus_words, words_bits. *)
-(*       replace (64 * Z.of_nat (I + J)) *)
-(*         with (64 * Z.of_nat R + 64 * (Z.of_nat (I + J) - Z.of_nat R)) by lia. *)
-(*       rewrite Z.pow_add_r by lia. *)
-(*       set (M_R := 2^(64 * Z.of_nat R)). *)
-(*       set (excess := 2^(64 * (Z.of_nat (I + J) - Z.of_nat R))). *)
-(*       replace (to_Z_words result *)
-(*         + ((x + modulus64 * to_Z_words rest) * to_Z64 y_i * modulus64 *)
-(*            + to_Z64 c_hi * modulus64 + to_Z64 c_lo) * (M_R * excess)) *)
-(*         with (to_Z_words result *)
-(*               + ((x + modulus64 * to_Z_words rest) * to_Z64 y_i * modulus64 *)
-(*                  + to_Z64 c_hi * modulus64 + to_Z64 c_lo) * excess * M_R) by ring. *)
-(*       rewrite Z_mod_plus_full. reflexivity. *)
-(* Qed. *)
+        rewrite to_Z_words_set_word.
+        2: subst pos; lia. 2: exact Hresult.
+        2: unfold normalize64, modulus64; split; apply Z.mod_pos_bound; lia.
+        unfold normalize64. set (r_pos := get_word result pos).
+        set (P := 2^(64 * Z.of_nat pos)). set (M_R := modulus_words R).
+        assert (HMP: modulus64 * P = M_R).
+        { unfold M_R, modulus_words, words_bits, P, modulus64.
+          rewrite <- Z.pow_add_r by lia. f_equal. subst pos. lia. }
+        apply Z_mod_divide_diff;
+          [unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia | ].
+        pose proof (Z_div_mod_eq_full (r_pos + c_lo) modulus64) as Hdm.
+        exists (-((r_pos + c_lo) / modulus64 + to_Z64 c_hi)).
+        unfold to_Z64. rewrite <- HMP. nia.
+      * (* pos >= R: result unchanged, carry vanishes mod M_R *)
+        apply Nat.ltb_ge in H2.
+        unfold modulus_words, words_bits.
+        replace (64 * Z.of_nat pos)
+          with (64 * Z.of_nat R + 64 * (Z.of_nat pos - Z.of_nat R)) by lia.
+        rewrite Z.pow_add_r by lia.
+        replace (Z.of_nat R * 64) with (64 * Z.of_nat R) by lia.
+        set (M_R := 2^(64 * Z.of_nat R)).
+        set (excess := 2^(64 * (Z.of_nat pos - Z.of_nat R))).
+        replace ((to_Z64 c_hi * modulus64 + to_Z64 c_lo) * (M_R * excess))
+          with ((to_Z64 c_hi * modulus64 + to_Z64 c_lo) * excess * M_R) by ring.
+        rewrite Z_mod_plus_full. reflexivity.
+  - (* Inductive case: xs_tail = x :: rest *)
+    cbn [mul_add_line_recur].
+    inversion Hxs as [|x' rest' Hx Hrest]; subst x' rest'.
+    cbn [length] in HRI.
+    destruct (I + J <? R)%nat eqn:HIJ.
+    + (* I + J < R *)
+      apply Nat.ltb_lt in HIJ.
+      destruct (I + J + 2 <? R)%nat eqn:HIJ2.
+      * (* Sub-case: I+J+2 < R — full mulx + adc_3 *)
+        apply Nat.ltb_lt in HIJ2.
+        pose proof (mulx64_correct x y_i ltac:(lia) ltac:(lia)) as Hmulx.
+        pose proof (mulx64_hi_bounded x y_i Hx Hyi) as Hhi.
+        pose proof (mulx64_lo_bounded x y_i Hx Hyi) as Hlo.
+        pose proof (mulx64_hi_le x y_i Hx Hyi) as Hhile.
+        set (r := mulx64 x y_i). fold r in Hhi, Hlo, Hhile.
+        pose proof (get_word_bounded result (I + J) Hresult ltac:(lia)) as Hgw.
+        unfold to_Z64 in Hhi, Hlo, Hhile.
+        pose proof (adc_3_correct (hi r) (lo r) (get_word result (I + J))
+          c_hi c_lo ltac:(lia) Hlo Hgw Hchi Hclo) as Hadc3.
+        pose proof (adc_3_r2_bounded (hi r) (lo r) (get_word result (I + J))
+          c_hi c_lo ltac:(lia) Hlo Hgw Hchi Hclo) as Hr2.
+        destruct (adc_3 (hi r) (lo r) (get_word result (I + J)) c_hi c_lo)
+          as [[c_hi' c_lo'] res_IJ] eqn:Hadc3_eq.
+        destruct Hadc3 as [Hadc3_main [Hres_IJ Hclo']].
+        rewrite IH.
+        2: exact Hrest. 2: exact Hyi. 2: exact Hr2. 2: exact Hclo'.
+        2: apply set_word_valid; [exact Hresult | exact Hres_IJ].
+        2: rewrite set_word_length; exact Hlen. 2: lia.
+        rewrite to_Z_words_set_word
+          by (try rewrite set_word_length; lia || assumption).
+        set (P := 2^(64 * Z.of_nat (I + J))).
+        set (M := modulus64). set (M_R := modulus_words R).
+        assert (Hmulx_M: hi r * M + lo r = x * y_i).
+        { unfold M, r in Hmulx. cbv zeta in Hmulx. unfold to_Z64 in Hmulx.
+          rewrite Z.shiftl_mul_pow2 in Hmulx by lia. fold r in Hmulx.
+          change (2^64) with M in Hmulx. lia. }
+        replace (Z.of_nat (I + S J)) with (1 + Z.of_nat (I + J)) by lia.
+        replace (64 * (1 + Z.of_nat (I + J)))
+          with (64 + 64 * Z.of_nat (I + J)) by lia.
+        rewrite Z.pow_add_r by lia. fold P. change (2^64) with M.
+        cbn [to_Z_words]. f_equal.
+        unfold to_Z64 in Hadc3_main, Hmulx_M |- *.
+        change (2^64) with M. fold M in Hadc3_main. nia.
+      * (* I+J+2 >= R *)
+        apply Nat.ltb_ge in HIJ2.
+        destruct (I + J + 1 <? R)%nat eqn:HIJ1.
+        -- (* Sub-case: I+J+1 < R, I+J+2 >= R — adc_2_full *)
+           apply Nat.ltb_lt in HIJ1.
+           assert (HIJ_eq: (I + J + 2 = R)%nat) by lia.
+           set (lo_val := normalize64 (x * y_i)).
+           pose proof (adc_2_full_correct lo_val (get_word result (I + J))
+             c_hi c_lo
+             ltac:(unfold lo_val, normalize64; split;
+               [apply Z.mod_pos_bound; unfold modulus64; lia |
+                apply Z.mod_pos_bound; unfold modulus64; lia])
+             ltac:(apply get_word_bounded; [assumption | lia])
+             Hchi Hclo) as Hadc2.
+           destruct (adc_2_full lo_val (get_word result (I + J)) c_hi c_lo)
+             as [c_lo' res_IJ] eqn:Hadc2_eq.
+           destruct Hadc2 as [Hadc2_main [Hres_IJ Hclo']].
+           rewrite IH.
+           2: exact Hrest. 2: exact Hyi. 2: unfold modulus64; lia. 2: exact Hclo'.
+           2: apply set_word_valid; [exact Hresult | exact Hres_IJ].
+           2: rewrite set_word_length; exact Hlen. 2: lia.
+           rewrite to_Z_words_set_word by (lia || assumption).
+           set (P := 2^(64 * Z.of_nat (I + J))).
+           set (M := modulus64). set (M_R := modulus_words R).
+           replace (Z.of_nat (I + S J)) with (1 + Z.of_nat (I + J)) by lia.
+           replace (64 * (1 + Z.of_nat (I + J)))
+             with (64 + 64 * Z.of_nat (I + J)) by lia.
+           rewrite Z.pow_add_r by lia. fold P. change (2^64) with M.
+           set (S_ := lo_val * M + get_word result (I + J) + c_hi * M + c_lo).
+           assert (Hmod_eq: c_lo' * M + res_IJ = S_ mod (M * M)).
+           { unfold S_, M. exact Hadc2_main. }
+           assert (HM2P: M * M * P = M_R).
+           { unfold M_R, modulus_words, words_bits, P, M, modulus64.
+             repeat rewrite <- Z.pow_add_r by lia. f_equal. lia. }
+           pose proof (Z_div_mod_eq_full S_ (M * M)) as HdmS.
+           pose proof (Z_div_mod_eq_full (x * y_i) M) as Hdmx.
+           cbn [to_Z_words].
+           unfold to_Z64 in Hmod_eq, HdmS, Hdmx |- *.
+           unfold lo_val, normalize64, S_, M in Hmod_eq, HdmS, Hdmx |- *.
+           fold M in Hmod_eq, HdmS, Hdmx. fold S_ in Hmod_eq, HdmS.
+           change (2^64) with M. fold M in HM2P.
+           apply Z_mod_divide_diff;
+             [unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia | ].
+           exists (-(x * y_i / M + S_ / (M * M))).
+           assert (Hlo_eq: lo_val = (x * y_i) mod M) by reflexivity.
+           rewrite <- HM2P. nia.
+        -- (* Sub-case: I+J < R, I+J+1 >= R — last position, I+J = R-1 *)
+           apply Nat.ltb_ge in HIJ1.
+           assert (HIJ_eq: (I + J = R - 1)%nat) by lia.
+           set (result' := set_word result (I + J)
+                  (normalize64 (get_word result (I + J) + c_lo))).
+           rewrite IH.
+           2: exact Hrest. 2: exact Hyi. 2: exact Hchi. 2: exact Hclo.
+           2: unfold result'; apply set_word_valid; [exact Hresult|];
+              unfold normalize64; apply Z.mod_pos_bound; unfold modulus64; lia.
+           2: unfold result'; rewrite set_word_length; exact Hlen. 2: lia.
+           set (P := 2^(64 * Z.of_nat (I + J))).
+           set (M := modulus64). set (M_R := modulus_words R).
+           assert (HMP: M * P = M_R).
+           { unfold M_R, modulus_words, words_bits, P, M, modulus64.
+             rewrite <- Z.pow_add_r by lia. f_equal. lia. }
+           replace (Z.of_nat (I + S J)) with (1 + Z.of_nat (I + J)) by lia.
+           replace (64 * (1 + Z.of_nat (I + J)))
+             with (64 + 64 * Z.of_nat (I + J)) by lia.
+           rewrite Z.pow_add_r by lia. fold P. change (2^64) with M.
+           replace (M * P) with M_R by (rewrite <- HMP; ring).
+           rewrite Z_mod_plus_full.
+           unfold result'.
+           rewrite to_Z_words_set_word.
+           2: lia. 2: exact Hresult.
+           2: unfold normalize64; split;
+              [apply Z.mod_pos_bound; unfold modulus64; lia |
+               apply Z.mod_pos_bound; unfold modulus64; lia].
+           fold P. unfold normalize64.
+           set (r_pos := get_word result (I + J)).
+           cbn [to_Z_words]. change (2^64) with M. unfold to_Z64.
+           fold M.
+           pose proof (Z_div_mod_eq_full (r_pos + c_lo) M) as Hdm.
+           apply Z_mod_divide_diff;
+             [unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia | ].
+           exists (-((r_pos + c_lo) / M + (x + M * to_Z_words rest) * y_i + c_hi)).
+           rewrite <- HMP. nia.
+    + (* I + J >= R: result unchanged *)
+      apply Nat.ltb_ge in HIJ.
+      cbn [to_Z_words].
+      unfold modulus_words, words_bits.
+      replace (64 * Z.of_nat (I + J))
+        with (64 * Z.of_nat R + 64 * (Z.of_nat (I + J) - Z.of_nat R)) by lia.
+      rewrite Z.pow_add_r by lia.
+      replace (Z.of_nat R * 64) with (64 * Z.of_nat R) by lia.
+      set (M_R := 2^(64 * Z.of_nat R)).
+      set (excess := 2^(64 * (Z.of_nat (I + J) - Z.of_nat R))).
+      replace (((to_Z64 x + 2 ^ 64 * to_Z_words rest) * to_Z64 y_i * modulus64
+         + to_Z64 c_hi * modulus64 + to_Z64 c_lo) * (M_R * excess))
+        with (((to_Z64 x + 2 ^ 64 * to_Z_words rest) * to_Z64 y_i * modulus64
+               + to_Z64 c_hi * modulus64 + to_Z64 c_lo) * excess * M_R) by ring.
+      rewrite Z_mod_plus_full. reflexivity.
+Qed.
 
 (** * Level 3: Row-Level Correctness *)
 

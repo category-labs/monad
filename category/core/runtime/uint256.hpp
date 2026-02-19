@@ -690,7 +690,35 @@ namespace monad::vm::runtime
 
     static_assert(std::is_trivially_copyable_v<uint256_t>);
 
-    uint256_t signextend(uint256_t const &byte_index, uint256_t const &x);
+    [[gnu::always_inline]]
+    inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
+    {
+        if (byte_index_256 >= 31) {
+            return x;
+        }
+        uint64_t const byte_index = byte_index_256[0];
+        uint64_t const word_index = byte_index >> 3;
+        uint64_t const word = x[word_index];
+        int64_t const signed_word = static_cast<int64_t>(word);
+        uint64_t const bit_index = (byte_index & 7) * 8;
+        // NOLINTNEXTLINE(bugprone-signed-char-misuse)
+        int64_t const signed_byte = static_cast<int8_t>(word >> bit_index);
+        uint64_t const upper = static_cast<uint64_t>(signed_byte) << bit_index;
+        int64_t const signed_lower =
+            signed_word &
+            ~(std::numeric_limits<int64_t>::min() >> (63 - bit_index));
+        uint64_t const lower = static_cast<uint64_t>(signed_lower);
+        uint64_t const sign_bits = static_cast<uint64_t>(signed_byte >> 63);
+        uint256_t ret;
+        for (uint64_t j = 0; j < word_index; ++j) {
+            ret[j] = x[j];
+        }
+        ret[word_index] = upper | lower;
+        for (uint64_t j = word_index + 1; j < 4; ++j) {
+            ret[j] = sign_bits;
+        }
+        return ret;
+    }
 
     [[gnu::always_inline]]
     inline uint256_t sar(uint256_t const &shift, uint256_t const &x)

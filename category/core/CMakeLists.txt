@@ -149,7 +149,6 @@ add_library(
   "rlp/encode.hpp"
   # runtime
   "runtime/non_temporal_memory.hpp"
-  "runtime/uint256.cpp"
   "runtime/uint256.hpp"
   # test
   "test_util/gtest_signal_stacktrace_printer.hpp"

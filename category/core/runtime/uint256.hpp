@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 
 #include <algorithm>
 #include <bit>
@@ -246,7 +246,7 @@ namespace monad::vm::runtime
     constexpr inline div_result<uint64_t>
     div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
     {
-        MONAD_VM_DEBUG_ASSERT(u_hi < v);
+        MONAD_DEBUG_ASSERT(u_hi < v);
         if consteval {
             return div_constexpr(u_hi, u_lo, v);
         }
@@ -483,7 +483,7 @@ namespace monad::vm::runtime
         operator<<(uint256_t const &x, T shift0) noexcept
             requires std::is_convertible_v<T, uint64_t>
         {
-            if (MONAD_VM_UNLIKELY(static_cast<uint64_t>(shift0) >= 256)) {
+            if (MONAD_UNLIKELY(static_cast<uint64_t>(shift0) >= 256)) {
                 return 0;
             }
             auto shift = static_cast<uint8_t>(shift0);
@@ -533,7 +533,7 @@ namespace monad::vm::runtime
         [[gnu::always_inline]] friend inline constexpr uint256_t
         operator<<(uint256_t const &x, uint256_t const &shift) noexcept
         {
-            if (MONAD_VM_UNLIKELY(shift[3] | shift[2] | shift[1])) {
+            if (MONAD_UNLIKELY(shift[3] | shift[2] | shift[1])) {
                 return 0;
             }
             return x << shift[0];
@@ -559,7 +559,7 @@ namespace monad::vm::runtime
                                          std::numeric_limits<int64_t>::min();
                 fill = static_cast<uint64_t>(sign_bit >> 63);
             }
-            if (MONAD_VM_UNLIKELY(
+            if (MONAD_UNLIKELY(
                     shift0[3] | shift0[2] | shift0[1] | (shift0[0] >= 256))) {
                 return uint256_t{fill, fill, fill, fill};
             }
@@ -691,7 +691,8 @@ namespace monad::vm::runtime
     static_assert(std::is_trivially_copyable_v<uint256_t>);
 
     [[gnu::always_inline]]
-    inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
+    inline uint256_t
+    signextend(uint256_t const &byte_index_256, uint256_t const &x)
     {
         if (byte_index_256 >= 31) {
             return x;
@@ -726,7 +727,19 @@ namespace monad::vm::runtime
         return shift_right<uint256_t::RightShiftType::Arithmetic>(x, shift);
     }
 
-    uint256_t countr_zero(uint256_t const &x);
+    [[gnu::always_inline]]
+    inline uint256_t countr_zero(uint256_t const &x)
+    {
+        int total_count = 0;
+        for (size_t i = 0; i < 4; i++) {
+            int const count = std::countr_zero(x[i]);
+            total_count += count;
+            if (count < 64) {
+                return uint256_t{total_count};
+            }
+        }
+        return uint256_t{total_count};
+    }
 
     constexpr size_t popcount(uint256_t const &x)
     {
@@ -1078,8 +1091,8 @@ namespace monad::vm::runtime
     constexpr uint64_t
     long_div(size_t m, uint64_t const *u, uint64_t v, uint64_t *quot)
     {
-        MONAD_VM_DEBUG_ASSERT(m);
-        MONAD_VM_DEBUG_ASSERT(v);
+        MONAD_DEBUG_ASSERT(m);
+        MONAD_DEBUG_ASSERT(v);
         auto r = div(0, u[m - 1], v);
         quot[m - 1] = r.quot;
         for (int i = static_cast<int>(m - 2); i >= 0; i--) {
@@ -1095,9 +1108,9 @@ namespace monad::vm::runtime
     {
         constexpr size_t BASE_SHIFT = 64;
 
-        MONAD_VM_DEBUG_ASSERT(m >= n);
-        MONAD_VM_DEBUG_ASSERT(n > 1);
-        MONAD_VM_DEBUG_ASSERT(v[n - 1] & (uint64_t{1} << 63));
+        MONAD_DEBUG_ASSERT(m >= n);
+        MONAD_DEBUG_ASSERT(n > 1);
+        MONAD_DEBUG_ASSERT(v[n - 1] & (uint64_t{1} << 63));
 
         for (int i = static_cast<int>(m - n); i >= 0; i--) {
             auto const ix = static_cast<size_t>(i);
@@ -1112,8 +1125,8 @@ namespace monad::vm::runtime
             // it is either 0 (if shift = 0) or strictly less than v[n-1]
             // 2. In subsequent iterations, (u[ix+n .. ix]) is the
             // remainder of division by (v[n-1 .. 0]), whence u[ix+n] <= v[n-1]
-            MONAD_VM_DEBUG_ASSERT(u[ix + n] <= v[n - 1]);
-            if (MONAD_VM_UNLIKELY(u[ix + n] == v[n - 1])) {
+            MONAD_DEBUG_ASSERT(u[ix + n] <= v[n - 1]);
+            if (MONAD_UNLIKELY(u[ix + n] == v[n - 1])) {
                 q_hat = ~uint64_t{0};
 
                 // In this branch, we have q_hat-1 <= q <= q_hat, therefore only
@@ -1202,7 +1215,7 @@ namespace monad::vm::runtime
         auto const n = count_significant_words(v);
 
         // Check division by 0
-        MONAD_VM_ASSERT(n);
+        MONAD_ASSERT(n);
         if (m < n) {
             div_result<words_t<M>, words_t<N>> result;
             result.quot = {0};
@@ -1420,8 +1433,22 @@ namespace monad::vm::runtime
      * is, `remaining < n`), then treat the input as if it had been padded
      * to the right with zero bytes.
      */
-    uint256_t
-    from_bytes(std::size_t n, std::size_t remaining, uint8_t const *src);
+    [[gnu::always_inline]]
+    inline uint256_t
+    from_bytes(std::size_t n, std::size_t remaining, uint8_t const *src)
+    {
+        MONAD_ASSERT(n <= 32);
+
+        if (n == 0) {
+            return 0;
+        }
+
+        uint8_t dst[32] = {};
+
+        std::memcpy(&dst[32 - n], src, std::min(n, remaining));
+
+        return uint256_t::load_be(dst);
+    }
 
     /**
      * Parse a range of raw bytes with length `n` into a 256-bit big-endian
@@ -1431,7 +1458,11 @@ namespace monad::vm::runtime
      * not, use the safe overload that allows for the number of bytes
      * remaining to be specified.
      */
-    uint256_t from_bytes(std::size_t n, uint8_t const *src);
+    [[gnu::always_inline]]
+    inline uint256_t from_bytes(std::size_t const n, uint8_t const *src)
+    {
+        return from_bytes(n, n, src);
+    }
 
     inline constexpr size_t countl_zero(uint256_t const &x)
     {
@@ -1559,7 +1590,7 @@ namespace monad::vm::runtime
 
     inline std::string uint256_t::to_string(int const base0 = 10) const
     {
-        MONAD_VM_ASSERT(base0 >= 2 && base0 <= 36);
+        MONAD_ASSERT(base0 >= 2 && base0 <= 36);
 
         auto num = *this;
         auto const base = uint256_t{base0};

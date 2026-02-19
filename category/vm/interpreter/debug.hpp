@@ -22,8 +22,10 @@
 
 #include <evmc/evmc.h>
 
-#include <format>
-#include <iostream>
+#ifndef MONAD_ZKVM
+    #include <format>
+    #include <iostream>
+#endif
 
 namespace monad::vm::interpreter
 {
@@ -38,13 +40,16 @@ namespace monad::vm::interpreter
      */
     [[gnu::always_inline]]
     inline void trace(
-        Intercode const &analysis, std::int64_t gas_remaining,
-        std::uint8_t const *instr_ptr)
+        [[maybe_unused]] Intercode const &analysis,
+        [[maybe_unused]] std::int64_t gas_remaining,
+        [[maybe_unused]] std::uint8_t const *instr_ptr)
     {
+#ifndef MONAD_ZKVM
         std::cerr << std::format(
             "offset: 0x{:02x}  opcode: 0x{:x}  gas_left: {}\n",
             instr_ptr - analysis.code(),
             *instr_ptr,
             gas_remaining);
+#endif
     }
 }

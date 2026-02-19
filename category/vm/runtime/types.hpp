@@ -25,6 +25,9 @@
 #include <evmc/evmc.hpp>
 
 #include <cstddef>
+#ifdef MONAD_ZKVM
+    #include <csetjmp>
+#endif
 #include <span>
 #include <type_traits>
 #include <variant>
@@ -243,7 +246,11 @@ namespace monad::vm::runtime
 
         Memory memory;
 
+#ifdef MONAD_ZKVM
+        std::jmp_buf *exit_stack_ptr = nullptr;
+#else
         void *exit_stack_ptr = nullptr;
+#endif
         bool is_stack_unwinding_active = false;
 
         [[gnu::always_inline]]

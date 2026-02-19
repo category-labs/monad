@@ -18,6 +18,7 @@
 #include <evmc/evmc.hpp>
 
 #include <optional>
+#include <span>
 
 namespace monad::vm::evm
 {

@@ -15,13 +15,21 @@
 
 #include <category/vm/runtime/types.hpp>
 
+#ifdef MONAD_ZKVM
+    #include <csetjmp>
+#else
 extern "C" void monad_vm_runtime_exit [[noreturn]] (void *);
+#endif
 
 extern "C" void monad_vm_runtime_context_out_of_gas_exit
     [[noreturn]] (monad::vm::runtime::Context *ctx)
 {
     ctx->result.status = monad::vm::runtime::StatusCode::OutOfGas;
+#ifdef MONAD_ZKVM
+    std::longjmp(*ctx->exit_stack_ptr, 1);
+#else
     monad_vm_runtime_exit(ctx->exit_stack_ptr);
+#endif
 }
 
 namespace monad::vm::runtime
@@ -30,12 +38,20 @@ namespace monad::vm::runtime
     {
         is_stack_unwinding_active = true;
         result.status = StatusCode::Error;
+#ifdef MONAD_ZKVM
+        std::longjmp(*exit_stack_ptr, 1);
+#else
         monad_vm_runtime_exit(exit_stack_ptr);
+#endif
     }
 
     void Context::exit [[noreturn]] (StatusCode code) noexcept
     {
         result.status = code;
+#ifdef MONAD_ZKVM
+        std::longjmp(*exit_stack_ptr, 1);
+#else
         monad_vm_runtime_exit(exit_stack_ptr);
+#endif
     }
 }

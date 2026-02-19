@@ -22,6 +22,9 @@
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
+#ifdef MONAD_ZKVM
+    #include <category/zkvm/zkvm_allocator.h>
+#endif
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -58,8 +61,13 @@ extern "C" void monad_vm_runtime_increase_capacity(
 
     MONAD_VM_DEBUG_ASSERT((*new_total_capacity & 31) == 0);
 
+#ifdef MONAD_ZKVM
+    auto *const new_handle =
+        static_cast<uint8_t *>(zkvm_aligned_alloc(32, *new_total_capacity));
+#else
     auto *const new_handle =
         static_cast<uint8_t *>(std::aligned_alloc(32, *new_total_capacity));
+#endif
     MONAD_VM_ASSERT(new_handle);
 
     non_temporal_memcpy(new_handle, ctx->memory.data_handle, *old_total_size);

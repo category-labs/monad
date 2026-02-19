@@ -434,7 +434,7 @@ namespace monad::vm::interpreter
         std::int64_t gas_remaining, std::uint8_t const *instr_ptr)
     {
         checked_runtime_call<MUL, traits>(
-            monad_vm_runtime_mul,
+            runtime::mul,
             ctx,
             analysis,
             stack_bottom,
@@ -1487,9 +1487,13 @@ namespace monad::vm::interpreter
         check_requirements<SWAP1 + (N - 1), traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
+#ifdef MONAD_ZKVM
+        std::swap(*stack_top, *(stack_top - N));
+#else
         auto const top = stack_top->to_avx();
         *stack_top = *(stack_top - N);
         *(stack_top - N) = runtime::uint256_t{top};
+#endif
 
         MONAD_VM_NEXT(SWAP1 + (N - 1));
     }

@@ -23,6 +23,9 @@
 #include <category/vm/utils/traits.hpp>
 
 #include <cstdint>
+#ifdef MONAD_ZKVM
+    #include <csetjmp>
+#endif
 
 /**
  * Assembly trampoline into the interpreter's core loop (see entry.S). This
@@ -51,6 +54,14 @@ namespace monad::vm::interpreter
                 "Interpreter core loop and trampoline signatures must be "
                 "identical");
 
+#ifdef MONAD_ZKVM
+            jmp_buf exit_jmp;
+            if (setjmp(exit_jmp)) {
+                return;
+            }
+            ctx->exit_stack_ptr = &exit_jmp;
+#endif
+
             auto *const stack_top = stack_ptr - 1;
             auto const *const stack_bottom = stack_top;
             auto const *const instr_ptr = analysis->code();
@@ -74,12 +85,21 @@ namespace monad::vm::interpreter
         runtime::Context &ctx, Intercode const &analysis,
         std::uint8_t *stack_ptr)
     {
+#ifdef MONAD_ZKVM
+        core_loop<traits>(
+            nullptr,
+            &ctx,
+            &analysis,
+            reinterpret_cast<runtime::uint256_t *>(stack_ptr),
+            nullptr);
+#else
         monad_vm_interpreter_trampoline(
             static_cast<void *>(&ctx.exit_stack_ptr),
             &ctx,
             &analysis,
             reinterpret_cast<runtime::uint256_t *>(stack_ptr),
             reinterpret_cast<void *>(core_loop<traits>));
+#endif
     }
 
     EXPLICIT_TRAITS(execute);

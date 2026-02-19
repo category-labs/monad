@@ -15,6 +15,9 @@ on:
     paths-ignore:
       - 'third_party/**'
 
+permissions:
+  contents: read
+
 jobs:
   check-license:
     runs-on: ubuntu-24.04-32

@@ -8,6 +8,9 @@ on:
     types: [ opened, synchronize, reopened, edited ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: >
     ${{
@@ -95,3 +98,4 @@ jobs:
             file: docker/Dockerfile
             target: code_quality
             cache-from: type=gha,scope=base
+            github-token: ${{ secrets.GITHUB_TOKEN }}

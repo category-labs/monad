@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   build-base:
@@ -33,3 +34,4 @@ jobs:
           target: base
           cache-from: type=gha,scope=base
           cache-to: type=gha,scope=base,mode=max
+          github-token: ${{ secrets.GITHUB_TOKEN }}

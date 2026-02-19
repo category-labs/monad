@@ -8,6 +8,9 @@ on:
     types: [ opened, synchronize, reopened, edited ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: >
     ${{
@@ -60,3 +63,4 @@ jobs:
           ulimit: "memlock=-1:-1"
           target: build_and_test
           cache-from: type=gha,scope=base
+          github-token: ${{ secrets.GITHUB_TOKEN }}

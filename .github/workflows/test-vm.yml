@@ -18,6 +18,9 @@ on:
       - 'docker/Dockerfile'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: >
     ${{
@@ -104,6 +107,7 @@ jobs:
                   TOOLCHAIN=${{ matrix.build.TOOLCHAIN }}
                 target: build_and_test_vm
                 cache-from: type=gha,scope=base
+                github-token: ${{ secrets.GITHUB_TOKEN }}
 
     fuzz:
       name: VM Fuzz Tests
@@ -144,6 +148,7 @@ jobs:
           file: docker/Dockerfile
           target: vm_fuzz
           cache-from: type=gha,scope=base
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
     python-code-quality:
         name: Python code quality checks

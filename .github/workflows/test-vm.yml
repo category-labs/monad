@@ -17,6 +17,9 @@ on:
       - 'docker/Dockerfile'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: >
     ${{

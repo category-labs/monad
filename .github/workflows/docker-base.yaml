@@ -31,5 +31,4 @@ jobs:
           file: docker/Dockerfile
           ulimit: "memlock=-1:-1"
           target: base
-          cache-from: type=gha,scope=base
-          cache-to: type=gha,scope=base,mode=max
+          cache-to: type=gha,scope=base

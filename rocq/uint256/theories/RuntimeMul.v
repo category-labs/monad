@@ -62,7 +62,7 @@ Definition adc_2_full (x_1 x_0 y_1 y_0 : uint64) : uint64 * uint64 :=
       r_2 * 2^128 + r_1 * 2^64 + r_0
       = x_2 * 2^128 + x_1 * 2^64 + x_0 + y_1 * 2^64 + y_0
 
-    The 192-bit sum is exact (no overflow) when x_2 < 2^64 - 1,
+    The 192-bit sum is exact (no overflow) when x_2 <= 2^64 - 2,
     because the maximum carry into x_2 is 1. *)
 Definition adc_3 (x_2 x_1 x_0 y_1 y_0 : uint64)
     : uint64 * uint64 * uint64 :=
@@ -76,8 +76,16 @@ Definition adc_3 (x_2 x_1 x_0 y_1 y_0 : uint64)
 (** ** mul_line: First Row of Multiplication *)
 
 (** mul_line_recur models the template-recursive helper.
-    At each step: mulx(x[I], y) → (hi, lo), then adc_2(hi, lo, carry) → (carry', result[I]).
-    For the last word (I+1 >= R): result[I] = y * x[I] + carry (truncated to 64 bits). *)
+
+    In our model below, the C++ the template parameter M is encoded in
+    the length of the list xs which naturally leads to a
+    pattern-matching definition.
+
+    At each step: mulx(x[I], y) → (hi, lo), then adc_2(hi, lo, carry) →
+    (carry', result[I]).
+
+    For the last word (I+1 >= R): result[I] = y * x[I] + carry
+    (truncated to 64 bits). *)
 Fixpoint mul_line_recur (xs : words) (y : uint64) (result : words)
     (I R : nat) (carry : uint64) : words :=
   match xs with
@@ -117,7 +125,17 @@ Definition mul_line (R : nat) (xs : words) (y : uint64) : words :=
 (** ** mul_add_line: Subsequent Rows of Multiplication *)
 
 (** mul_add_line_recur models the template-recursive helper.
-    Uses 2-word carry (c_hi, c_lo) for efficiency.
+
+    Our model is slightly different in that we make a recursive call in
+    each innermost branch.  It is tantamount to the same thing but
+    a possible alternative would be to nest the inner conditional branch
+    in the non-empty case such that it assigns values to (c_hi', c_lo',
+    res_IJ) which are used in a single recursive call, i.e.
+
+       let (c_hi', c_lo', res_IJ) := (if (I + J < R)% then ...
+                                      else if ...) in
+           mul_add_line_recur rest y_i (set_word result (I + J) res_IJ)
+                              (S J) I R c_hi' c_lo'
 
     At each step (J+1 < M && I+J < R):
       - If I+J+2 < R: mulx(x[J+1], y_i) → (hi, lo), then
@@ -129,9 +147,9 @@ Definition mul_line (R : nat) (xs : words) (y : uint64) : words :=
     When J+1 >= M or I+J >= R (end of loop):
       - If I+M < R: adc_2(c_hi, c_lo, result[I+M-1]) → (result[I+M], result[I+M-1])
       - If I+M = R: result[I+M-1] += c_lo *)
-Fixpoint mul_add_line_recur (xs_tail : words) (y_i : uint64) (result : words)
+Fixpoint mul_add_line_recur (xs : words) (y_i : uint64) (result : words)
     (J I R : nat) (c_hi c_lo : uint64) : words :=
-  match xs_tail with
+  match xs with
   | [] =>
       (* End of x words: flush the carry *)
       let pos := (I + J)%nat in
@@ -143,22 +161,22 @@ Fixpoint mul_add_line_recur (xs_tail : words) (y_i : uint64) (result : words)
         (* Just add c_lo to result[pos] *)
         set_word result pos (normalize64 (get_word result pos + c_lo))
       else result
-  | x_next :: rest =>
+  | x :: rest =>
       if (I + J <? R)%nat then
         if (I + J + 2 <? R)%nat then
-          (* Full case: mulx + adc_3 *)
-          let r := mulx64 x_next y_i in
+          (* Full case requiring both c_hi and c_lo *)
+          let r := mulx64 x y_i in
           let '(c_hi', c_lo', res_IJ) :=
             adc_3 (hi r) (lo r) (get_word result (I + J)) c_hi c_lo in
           mul_add_line_recur rest y_i (set_word result (I + J) res_IJ)
                              (S J) I R c_hi' c_lo'
         else if (I + J + 1 <? R)%nat then
-          (* Second-to-last: lo = x_next * y_i, adc_2(lo, result[I+J], c_hi, c_lo) *)
-          let lo_val := normalize64 (x_next * y_i) in
+          (* Second-to-last: lo = x * y_i, adc_2(lo, result[I+J], c_hi, c_lo) *)
+          let lo_val := normalize64 (x * y_i) in
           let '(c_lo', res_IJ) :=
             adc_2_full lo_val (get_word result (I + J)) c_hi c_lo in
           mul_add_line_recur rest y_i (set_word result (I + J) res_IJ)
-                             (S J) I R 0 c_lo'
+                             (S J) I R c_hi c_lo'
         else
           (* Last position: result[I+J] += c_lo *)
           let result' := set_word result (I + J)
@@ -195,9 +213,9 @@ Definition mul_add_line (I R : nat) (xs : words) (y_i : uint64)
 (** ** truncating_mul_runtime: Full Runtime Multiplication *)
 
 (** Recursive helper: applies mul_add_line for rows I = 1..N-1 *)
-Fixpoint truncating_mul_runtime_recur (xs : words) (ys_tail : words)
+Fixpoint truncating_mul_runtime_recur (xs : words) (ys : words)
     (result : words) (I R : nat) : words :=
-  match ys_tail with
+  match ys with
   | [] => result
   | y_i :: rest =>
       let result' := mul_add_line I R xs y_i result in
@@ -214,9 +232,9 @@ Fixpoint truncating_mul_runtime_recur (xs : words) (ys_tail : words)
 Definition truncating_mul_runtime (xs ys : words) (R : nat) : words :=
   match ys with
   | [] => extend_words R
-  | y0 :: ys_rest =>
-      let result := mul_line R xs y0 in
-      truncating_mul_runtime_recur xs ys_rest result 1 R
+  | y :: rest =>
+      let result := mul_line R xs y in
+      truncating_mul_runtime_recur xs rest result 1 R
   end.
 
 (** Specialization for uint256: 4x4 -> 4 words *)

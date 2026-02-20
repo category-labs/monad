@@ -437,7 +437,7 @@ Proof.
            apply IH.
            ++ exact Hrest.
            ++ exact Hyi.
-           ++ unfold modulus64; lia.
+           ++ exact Hchi.
            ++ exact Hclo'.
            ++ apply set_word_valid; [exact Hresult | exact Hres_IJ].
            ++ rewrite set_word_length. reflexivity.
@@ -573,7 +573,7 @@ Proof.
              as [c_lo' res_IJ] eqn:Hadc2_eq.
            destruct Hadc2 as [Hadc2_main [Hres_IJ Hclo']].
            rewrite IH.
-           2: exact Hrest. 2: exact Hyi. 2: unfold modulus64; lia. 2: exact Hclo'.
+           2: exact Hrest. 2: exact Hyi. 2: exact Hchi. 2: exact Hclo'.
            2: apply set_word_valid; [exact Hresult | exact Hres_IJ].
            2: rewrite set_word_length; exact Hlen. 2: lia.
            rewrite to_Z_words_set_word by (lia || assumption).
@@ -598,7 +598,7 @@ Proof.
            change (2^64) with M. fold M in HM2P.
            apply Z_mod_divide_diff;
              [unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia | ].
-           exists (-(x * y_i / M + S_ / (M * M))).
+           exists (-(x * y_i / M + S_ / (M * M) - c_hi)).
            assert (Hlo_eq: lo_val = (x * y_i) mod M) by reflexivity.
            rewrite <- HM2P. nia.
         -- (* Sub-case: I+J < R, I+J+1 >= R — last position, I+J = R-1 *)

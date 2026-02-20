@@ -38,14 +38,15 @@
 
 // GCC's overeager SLP vectorizer sometimes pessimizes code. For functions that
 // are particularly sensitive about this (such as multiplication), the
-// vectorizer can be turned off with the MONAD_VM_NO_VECTORIZE pragma.
-// Since optimization pragmas are not applied to inlined functions, any function
-// that is annotated as MONAD_VM_NO_VECTORIZE should either be marked as
-// noinline or only called from other MONAD_VM_NO_VECTORIZE functions.
+// vectorizer can be turned off with the MONAD_VM_NO_VECTORIZE pragma.  Since
+// optimization pragmas are not applied to functions that are inlined at call
+// sites, any function that is annotated as MONAD_VM_NO_VECTORIZE should either
+// also be marked as noinline, or only called from other MONAD_VM_NO_VECTORIZE
+// functions (thus inheriting the caller's attributes).
 #if defined(__GNUC__) && !defined(__clang__)
-    #define MONAD_VM_NO_VECTORIZE __attribute__((optimize("no-tree-vectorize")))
+    #define MONAD_NO_VECTORIZE __attribute__((optimize("no-tree-vectorize")))
 #else
-    #define MONAD_VM_NO_VECTORIZE
+    #define MONAD_NO_VECTORIZE
 #endif
 
 namespace monad::vm::runtime
@@ -1058,7 +1059,7 @@ namespace monad::vm::runtime
      * corresponds to full precision multiplication
      */
     template <size_t R, size_t M, size_t N>
-    MONAD_VM_NO_VECTORIZE [[gnu::always_inline]]
+    MONAD_NO_VECTORIZE [[gnu::always_inline]]
     inline constexpr words_t<R>
     truncating_mul(words_t<M> const &x, words_t<N> const &y) noexcept
         requires(0 < R && 0 < M && 0 < N && R <= M + N)
@@ -1071,7 +1072,7 @@ namespace monad::vm::runtime
         }
     }
 
-    MONAD_VM_NO_VECTORIZE [[gnu::always_inline]]
+    MONAD_NO_VECTORIZE [[gnu::always_inline]]
     inline constexpr uint256_t
     truncating_mul(uint256_t const &x, uint256_t const &y) noexcept
     {
@@ -1079,7 +1080,7 @@ namespace monad::vm::runtime
             truncating_mul<uint256_t::num_words>(x.as_words(), y.as_words())};
     }
 
-    MONAD_VM_NO_VECTORIZE
+    MONAD_NO_VECTORIZE
     [[gnu::noinline]]
     inline constexpr uint256_t
     operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
@@ -1314,7 +1315,7 @@ namespace monad::vm::runtime
         return uint256_t{udivrem(sum, mod.as_words()).rem};
     }
 
-    MONAD_VM_NO_VECTORIZE
+    MONAD_NO_VECTORIZE
     [[gnu::noinline]]
     inline constexpr uint256_t mulmod(
         uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
@@ -1368,7 +1369,7 @@ namespace monad::vm::runtime
         return (~diff & (x < y)) | (x_neg & ~y_neg);
     }
 
-    MONAD_VM_NO_VECTORIZE
+    MONAD_NO_VECTORIZE
     [[gnu::noinline]] inline constexpr uint256_t
     exp(uint256_t base, uint256_t const &exponent) noexcept
     {

@@ -1536,6 +1536,18 @@ Result<byte_string> StakingContract::precompile_claim_rewards(
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
+
+    auto const lock_value =
+        state_.get_transient_storage(STAKING_CA, vars.LOOPING_TSTORE_LOCK_KEY);
+
+    if (MONAD_UNLIKELY(lock_value != bytes32_t{})) {
+        // If this fails, it means within the same transaction
+        // claim_rewards was called after external_reward. We
+        // disallow this to prevent flashloans from affecting the
+        // accumulator in a single transaction.
+        return StakingError::LockedFunction;
+    }
+
     auto del = vars.delegator(val_id, msg_sender);
     BOOST_OUTCOME_TRY(pull_delegator_up_to_date(val_id, del));
 
@@ -1606,7 +1618,11 @@ Result<byte_string> StakingContract::precompile_external_reward(
         return StakingError::NotInValidatorSet;
     }
 
-    // 2. Apply bounds checks
+    // 2. Set transaction lock for claim_rewards
+    state_.set_transient_storage(
+        STAKING_CA, vars.LOOPING_TSTORE_LOCK_KEY, bytes32_t{1});
+
+    // 3. Apply bounds checks
     if (MONAD_UNLIKELY(external_reward < limits::min_external_reward())) {
         return StakingError::ExternalRewardTooSmall;
     }
@@ -1614,7 +1630,7 @@ Result<byte_string> StakingContract::precompile_external_reward(
         return StakingError::ExternalRewardTooLarge;
     }
 
-    // 3. Update validator accumulator.
+    // 4. Update validator accumulator.
     BOOST_OUTCOME_TRY(
         apply_reward(val_id, sender, external_reward, active_stake));
 

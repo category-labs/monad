@@ -324,9 +324,32 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
     account_state.touch();
 }
 
+// It is the caller's duty to ensure (precondition 1) that the to-be-debited
+// account has sufficient balance. However, that is not enough: in case of
+// relaxed validation of balances, the caller is also responsible for ensuring
+// (precondition 2) that min_balance has been adjusted to account for this
+// debit, e.g. by calling State::record_balance_constraint_for_debit().
+// Otherwise, the MONAD_ASSERT guarding subtraction underflow in the body of
+// try_fix_account_mismatch() may fail when can_merge() happens later.
+//
+// State/AccountState disables direct accesses to balances and thus ensures that
+// any external non-friend caller who guarantees the precondition 1 also ends up
+// guaranteeing precondition 2: there are only 2 ways the external non-friend
+// caller can ensure precondition 1: either call
+// State::record_balance_constraint_for_debit() and check the returned bool is
+// true or call State::get_current_balance_pessimistic() and check that the
+// result is >= delta. The former correctly adjusts min_balance and latter will
+// disable relaxed validation for the account `address`.
+//
+// Care must be taken to also ensure precondition 2 at call sites of this method
+// in methods of State/AccountState or their friends. Alternatively, the call to
+// record_balance_constraint_for_debit() below can be commented out. That call
+// is probably cheap and if the caller already did it just before, the second
+// call will be a no-op.
 void State::subtract_from_balance(
     Address const &address, uint256_t const &delta)
 {
+    // record_balance_constraint_for_debit(address, delta);
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {

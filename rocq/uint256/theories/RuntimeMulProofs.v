@@ -654,6 +654,23 @@ Proof.
       rewrite Z_mod_plus_full. reflexivity.
 Qed.
 
+Lemma mul_add_line_recur_alt_eq : forall xs y_i result J I R c_hi c_lo,
+  mul_add_line_recur_alt xs y_i result J I R c_hi c_lo =
+  mul_add_line_recur xs y_i result J I R c_hi c_lo.
+Proof.
+  induction xs as [|x rest IH]; intros y_i result J I R c_hi c_lo.
+  - reflexivity.
+  - cbn [mul_add_line_recur_alt mul_add_line_recur].
+    destruct (I + J <? R)%nat eqn:HIJ; [| reflexivity].
+    destruct (I + J + 2 <? R)%nat eqn:HIJ2.
+    + destruct (adc_3 _ _ _ _ _) as [[c_hi' c_lo'] res_IJ].
+      apply IH.
+    + destruct (I + J + 1 <? R)%nat eqn:HIJ1.
+      * destruct (adc_2_full _ _ _ _) as [c_lo' res_IJ].
+        apply IH.
+      * apply IH.
+Qed.
+
 (** * Level 3: Row-Level Correctness *)
 
 (** ** mul_line *)

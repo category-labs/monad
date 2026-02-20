@@ -137,6 +137,9 @@ Definition mul_line (R : nat) (xs : words) (y : uint64) : words :=
            mul_add_line_recur rest y_i (set_word result (I + J) res_IJ)
                               (S J) I R c_hi' c_lo'
 
+    See mul_add_line_recur_alt_eq for a proof that this alternative
+    definition produces the same result.
+
     At each step (J+1 < M && I+J < R):
       - If I+J+2 < R: mulx(x[J+1], y_i) → (hi, lo), then
           adc_3(hi, lo, result[I+J], c_hi, c_lo) → (c_hi', c_lo', result[I+J])
@@ -182,6 +185,45 @@ Fixpoint mul_add_line_recur (xs : words) (y_i : uint64) (result : words)
           let result' := set_word result (I + J)
                            (normalize64 (get_word result (I + J) + c_lo)) in
           mul_add_line_recur rest y_i result' (S J) I R c_hi c_lo
+      else result
+  end.
+
+(**
+    An alternative model for mul_add_line_recur which is slightly more
+    faithful to the recursive structure.  Proved equivalent to
+    mul_add_line_recur by mul_add_line_recur_alt_eq. *)
+Fixpoint mul_add_line_recur_alt (xs : words) (y_i : uint64) (result : words)
+    (J I R : nat) (c_hi c_lo : uint64) : words :=
+  match xs with
+  | [] =>
+      (* End of x words: flush the carry *)
+      let pos := (I + J)%nat in
+      if (pos + 1 <? R)%nat then
+        (* adc_2(c_hi, c_lo, result[pos], result[pos+1], result[pos]) *)
+        let '(r_1, r_0) := adc_2_short c_hi c_lo (get_word result pos) in
+        set_word (set_word result pos r_0) (pos + 1) r_1
+      else if (pos <? R)%nat then
+        (* Just add c_lo to result[pos] *)
+        set_word result pos (normalize64 (get_word result pos + c_lo))
+      else result
+  | x :: rest =>
+      if (I + J <? R)%nat then
+        let '(c_hi', c_lo', res_IJ) :=
+          if (I + J + 2 <? R)%nat then
+            (* Full case requiring both c_hi and c_lo *)
+            let r := mulx64 x y_i in
+            adc_3 (hi r) (lo r) (get_word result (I + J)) c_hi c_lo
+          else if (I + J + 1 <? R)%nat then
+            (* Second-to-last: lo = x * y_i, adc_2(lo, result[I+J], c_hi, c_lo) *)
+            let lo_val := normalize64 (x * y_i) in
+            let '(c_lo', res_IJ) :=
+              adc_2_full lo_val (get_word result (I + J)) c_hi c_lo in
+            (c_hi, c_lo', res_IJ)
+          else
+            (* Last position: result[I+J] += c_lo *)
+            (c_hi, c_lo, (normalize64 (get_word result (I + J) + c_lo))) in
+        mul_add_line_recur_alt rest y_i (set_word result (I + J) res_IJ)
+                           (S J) I R c_hi' c_lo'
       else result
   end.
 

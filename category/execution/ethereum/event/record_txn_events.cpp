@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 
 #include <bit>
@@ -353,7 +354,9 @@ void record_txn_header_events(
 }
 
 void record_txn_output_events(
-    uint32_t const txn_num, Receipt const &receipt,
+    uint32_t const txn_num, Transaction const &transaction,
+    Receipt const &receipt, uint64_t gas_left,
+    monad_c_eth_intrinsic_gas const &intrinsic_gas,
     std::span<CallFrame const> const call_frames, State const &txn_state)
 {
     ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
@@ -397,6 +400,40 @@ void record_txn_output_events(
         std::span const return_bytes{
             call_frame.output.data(), call_frame.output.size()};
 
+        // The execution event publisher handles message call frame gas
+        // accounting differently than the CallTracer API, for the top-level
+        // message call.
+        //
+        // The RLP-encoded form of the CallFrame was designed around answering
+        // RPC queries, and contains some unfortunate adjustments for the sake
+        // of compatibility with popular JSON-RPC systems.
+        //
+        // For the top-level frame:
+        //
+        //   - TXN_CALL_FRAME shows the gas available to the top-level message
+        //     _net of_ (after subtracting) the intrinsic gas; this is
+        //     reasonable, since the intrinsic gas is not "available to" the
+        //     message anymore, and because the user knows the gas limit so
+        //     can compute the intrinsic gas if they want to
+        //
+        //   - CallFrame shows the gas available to the message _gross of_
+        //     (before subtracting) the intrinsic gas; this makes it harder
+        //     for them to compute the intrinsic gas
+        //
+        //   - TXN_CALL_FRAME shows the gas used by the top-level message to
+        //     be the gas used by the EVM until the point where the message
+        //     call exits
+        //
+        //   - CallFrame shows the gas used by the top-level message to be
+        //     whatever the Receipt said it was, which for the Monad chain
+        //     family, is the entire gas_limit; this makes it harder to see
+        //     what the true EVM gas cost was
+        uint64_t const gas_available =
+            index == 0 ? transaction.gas_limit - sum(intrinsic_gas)
+                       : call_frame.gas;
+        uint64_t const gas_used =
+            index == 0 ? gas_available - gas_left : call_frame.gas_used;
+
         ReservedExecEvent const txn_call_frame =
             exec_recorder->reserve_txn_event<monad_exec_txn_call_frame>(
                 MONAD_EXEC_TXN_CALL_FRAME,
@@ -410,8 +447,8 @@ void record_txn_output_events(
             .opcode = std::to_underlying(
                 get_call_frame_opcode(call_frame.type, call_frame.flags)),
             .value = call_frame.value,
-            .gas = call_frame.gas,
-            .gas_used = call_frame.gas_used,
+            .gas = gas_available,
+            .gas_used = gas_used,
             .evmc_status = std::to_underlying(call_frame.status),
             .depth = call_frame.depth,
             .input_length = call_frame.input.size(),

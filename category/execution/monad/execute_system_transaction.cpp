@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/core/eth_ctypes.h>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -193,7 +194,10 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
     trace::run_tracer<traits>(state_tracer_, state);
     record_txn_output_events(
         static_cast<uint32_t>(this->i_),
+        this->tx_,
         receipt,
+        /*gas_left=*/0,
+        monad_c_eth_intrinsic_gas{},
         call_tracer_.get_call_frames(),
         state);
     return receipt;

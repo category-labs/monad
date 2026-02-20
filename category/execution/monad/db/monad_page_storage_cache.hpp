@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/storage_page.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 
 #include <tbb/concurrent_hash_map.h>
@@ -84,17 +85,23 @@ public:
     }
 
     bytes32_t read_storage(
-        Address const &addr, Incarnation inc,
-        bytes32_t const &key) override
+        Address const &addr, Incarnation inc, bytes32_t const &key) override
     {
         bytes32_t const page_key = compute_page_key<SlotBits>(key);
         uint8_t const slot_offset = compute_slot_offset<SlotMask>(key);
+        return read_storage_page(addr, inc, page_key)[slot_offset];
+    }
+
+    storage_page_t read_storage_page(
+        Address const &addr, Incarnation inc,
+        bytes32_t const &page_key) override
+    {
         PageKey const pk{addr, inc, page_key};
 
         {
             typename PageMap::const_accessor acc;
             if (pages_.find(acc, pk)) {
-                return acc->second[slot_offset];
+                return acc->second;
             }
         }
 
@@ -103,12 +110,12 @@ public:
             auto const encoded = db_.read_storage_page(addr, inc, page_key);
             if (!encoded.empty()) {
                 byte_string_view view{encoded};
-                auto decoded = decode_storage_page(view);
+                auto decoded = decode_storage_page_db(view);
                 MONAD_ASSERT(!decoded.has_error());
                 acc->second = std::move(decoded.value());
             }
         }
-        return acc->second[slot_offset];
+        return acc->second;
     }
 };
 

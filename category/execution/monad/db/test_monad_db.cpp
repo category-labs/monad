@@ -13,11 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/storage_page.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/monad/db/monad_page_storage_cache.hpp>
 
 #include <gtest/gtest.h>
 
+#include <test_resource_data.h>
+
 using namespace monad;
+using namespace monad::mpt;
+using namespace monad::test;
 
 namespace
 {
@@ -95,4 +102,76 @@ TEST(MonadDb, monad_key_grouping)
         uint8_t const off = compute_slot_offset<MONAD_SLOT_MASK>(slot_key);
         EXPECT_EQ(compute_slot_key<MONAD_SLOT_BITS>(pk, off), slot_key);
     }
+}
+
+// Slots on the same page are merged into a single page on commit.
+// Block 0 writes slots 0 and 1. Block 1 updates slot 0 only.
+// After block 1 commit, both the updated slot 0 and the untouched slot 1
+// must be present in the same page.
+TEST(MonadDb, page_write_merges_slots)
+{
+    using MonadCache = MonadPageStorageCache<MONAD_SLOT_BITS, MONAD_SLOT_MASK>;
+
+    constexpr auto slot_key_0 = bytes32_t{0x00};
+    constexpr auto slot_key_1 = bytes32_t{0x01};
+    constexpr auto val_0 =
+        0x000000000000000000000000000000000000000000000000000000000000aaaa_bytes32;
+    constexpr auto val_1 =
+        0x000000000000000000000000000000000000000000000000000000000000bbbb_bytes32;
+    constexpr auto val_0_updated =
+        0x000000000000000000000000000000000000000000000000000000000000dddd_bytes32;
+
+    Account const acct{.nonce = 1};
+    InMemoryMachine machine;
+    mpt::Db mpt_db{machine};
+    TrieDb tdb{mpt_db};
+
+    // Block 0: seed two slots on the same page.
+    {
+        MonadCache cache{tdb};
+        CommitBuilder builder(0);
+        builder.add_state_deltas(
+            StateDeltas{
+                {ADDR_A,
+                 StateDelta{
+                     .account = {std::nullopt, acct},
+                     .storage =
+                         {{slot_key_0, {bytes32_t{}, val_0}},
+                          {slot_key_1, {bytes32_t{}, val_1}}}}}},
+            cache);
+        auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
+        tdb.reset_root(std::move(root), 0);
+    }
+
+    // Block 1: update slot 0, leave slot 1 untouched.
+    // The cache reads the existing page (both slots), the commit builder
+    // merges the delta on top, so the resulting page keeps both values.
+    {
+        MonadCache cache{tdb};
+
+        // Populate cache by reading through it.
+        ASSERT_EQ(
+            cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), val_0);
+        ASSERT_EQ(
+            cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
+
+        CommitBuilder builder(1);
+        builder.add_state_deltas(
+            StateDeltas{
+                {ADDR_A,
+                 StateDelta{
+                     .account = {acct, acct},
+                     .storage = {{slot_key_0, {val_0, val_0_updated}}}}}},
+            cache);
+        auto root =
+            mpt_db.upsert(tdb.get_root(), builder.build(finalized_nibbles), 1);
+        tdb.reset_root(std::move(root), 1);
+    }
+
+    // Verify: fresh cache reads back both values from the committed page.
+    MonadCache cache{tdb};
+    EXPECT_EQ(
+        cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0),
+        val_0_updated);
+    EXPECT_EQ(cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
 }

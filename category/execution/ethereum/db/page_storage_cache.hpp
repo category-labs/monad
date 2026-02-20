@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -29,6 +30,9 @@ struct PageStorageCache
 
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
+
+    virtual storage_page_t read_storage_page(
+        Address const &, Incarnation, bytes32_t const &page_key) = 0;
 
     virtual ~PageStorageCache() = default;
 };
@@ -49,10 +53,18 @@ public:
     }
 
     bytes32_t read_storage(
-        Address const &addr, Incarnation inc,
-        bytes32_t const &key) override
+        Address const &addr, Incarnation inc, bytes32_t const &key) override
     {
         return db_.read_storage(addr, inc, key);
+    }
+
+    storage_page_t read_storage_page(
+        Address const &addr, Incarnation inc,
+        bytes32_t const &page_key) override
+    {
+        storage_page_t page{};
+        page[0] = db_.read_storage(addr, inc, page_key);
+        return page;
     }
 };
 

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -23,6 +24,7 @@
 #include <test_resource_data.h>
 
 using namespace monad;
+using namespace monad::mpt;
 using namespace monad::test;
 
 namespace
@@ -31,114 +33,109 @@ namespace
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
     constexpr auto value1 =
         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
-    constexpr auto key2 =
-        0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
-    constexpr auto value2 =
-        0x0000000000000000000000000000000000000000000000000000000000000007_bytes32;
-
     constexpr size_t MONAD_SLOT_BITS = 6;
     constexpr uint8_t MONAD_SLOT_MASK = 0x3F;
 
     using MonadCache = MonadPageStorageCache<MONAD_SLOT_BITS, MONAD_SLOT_MASK>;
 }
 
-// With SLOT_BITS=0 (eth default), MonadPageStorageCache behaves identically
-// to EthPageStorageCache — every key is its own page with slot_offset 0.
-TEST(PageStorageCache, eth_compatibility)
+// MonadPageStorageCache reads full pages from DB and caches them.
+// Keys that share a page (same upper 250 bits) are all populated on first miss.
+TEST(PageStorageCache, monad_page_read_and_cache)
 {
-    Account const acct{.nonce = 1};
-    InMemoryMachine machine;
-    mpt::Db db{machine};
-    TrieDb tdb{db};
-
-    commit_sequential(
-        tdb,
-        StateDeltas{
-            {ADDR_A,
-             StateDelta{
-                 .account = {std::nullopt, acct},
-                 .storage = {{key1, {bytes32_t{}, value1}},
-                             {key2, {bytes32_t{}, value2}}}}}},
-        Code{},
-        BlockHeader{});
-
-    MonadPageStorageCache<> cache{tdb};
-
-    EXPECT_EQ(cache.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(cache.read_storage(ADDR_A, Incarnation{0, 0}, key2), value2);
-    EXPECT_EQ(
-        cache.read_storage(ADDR_A, Incarnation{0, 0}, bytes32_t{}), bytes32_t{});
-
-    // Each key occupies its own page — 3 reads, 3 pages.
-    EXPECT_EQ(cache.pages().size(), 3);
-}
-
-// With SLOT_BITS=6, keys whose upper 250 bits match share a page.
-// Keys 0x00 and 0x01 differ only in the low 6 bits, so they group together.
-// After reading key 0x00, key 0x01's page is already cached.
-TEST(PageStorageCache, monad_page_grouping)
-{
-    // Keys 0x00 and 0x01 share a page with SLOT_BITS=6.
     constexpr auto slot_key_0 = bytes32_t{0x00};
     constexpr auto slot_key_1 = bytes32_t{0x01};
     constexpr auto slot_val_0 =
         0x000000000000000000000000000000000000000000000000000000000000aaaa_bytes32;
     constexpr auto slot_val_1 =
         0x000000000000000000000000000000000000000000000000000000000000bbbb_bytes32;
-    // Key 0x40 is on a different page.
     constexpr auto slot_key_far = bytes32_t{0x40};
     constexpr auto slot_val_far =
         0x000000000000000000000000000000000000000000000000000000000000cccc_bytes32;
 
     Account const acct{.nonce = 1};
     InMemoryMachine machine;
-    mpt::Db db{machine};
-    TrieDb tdb{db};
+    mpt::Db mpt_db{machine};
+    TrieDb tdb{mpt_db};
 
-    commit_sequential(
-        tdb,
-        StateDeltas{
-            {ADDR_A,
-             StateDelta{
-                 .account = {std::nullopt, acct},
-                 .storage = {{slot_key_0, {bytes32_t{}, slot_val_0}},
-                             {slot_key_1, {bytes32_t{}, slot_val_1}},
-                             {slot_key_far, {bytes32_t{}, slot_val_far}}}}}},
-        Code{},
-        BlockHeader{});
+    {
+        MonadCache commit_cache{tdb};
+        CommitBuilder builder(0);
+        builder.add_state_deltas(
+            StateDeltas{
+                {ADDR_A,
+                 StateDelta{
+                     .account = {std::nullopt, acct},
+                     .storage =
+                         {{slot_key_0, {bytes32_t{}, slot_val_0}},
+                          {slot_key_1, {bytes32_t{}, slot_val_1}},
+                          {slot_key_far, {bytes32_t{}, slot_val_far}}}}}},
+            commit_cache);
+        auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
+        tdb.reset_root(std::move(root), 0);
+    }
 
     MonadCache cache{tdb};
 
-    // First read — cache miss, creates a page.
+    // First read — cache miss, fetches and decodes the full page.
     EXPECT_EQ(
         cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), slot_val_0);
     EXPECT_EQ(cache.pages().size(), 1);
 
-    // Second read — same page (cache hit), slot 1 was not populated by the
-    // first read so it returns the zero value from the cached page.
+    // Second read — cache hit, slot 1 was populated when the page was decoded.
     auto const hit_result =
         cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1);
     EXPECT_EQ(cache.pages().size(), 1);
-    // The page was hit, but only slot 0 has been populated from DB.
-    // Slot 1 returns zero because the page is partially populated.
-    EXPECT_EQ(hit_result, bytes32_t{});
+    EXPECT_EQ(hit_result, slot_val_1);
 
-    // Key 0x40 maps to a different page — this is a cache miss.
+    // Key 0x40 maps to a different page — cache miss.
     EXPECT_EQ(
         cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_far),
         slot_val_far);
     EXPECT_EQ(cache.pages().size(), 2);
 
-    // Verify the page structure: slot 0 has the value, slot 1 is empty.
-    bytes32_t const page_key =
-        compute_page_key<MONAD_SLOT_BITS>(slot_key_0);
+    // Verify the cached page structure.
+    bytes32_t const page_key = compute_page_key<MONAD_SLOT_BITS>(slot_key_0);
     MonadCache::PageKey pk{ADDR_A, Incarnation{0, 0}, page_key};
     MonadCache::PageMap::const_accessor acc;
     ASSERT_TRUE(cache.pages().find(acc, pk));
     EXPECT_EQ(acc->second[0], slot_val_0);
-    EXPECT_EQ(acc->second[1], bytes32_t{});
+    EXPECT_EQ(acc->second[1], slot_val_1);
 }
 
+// Missing key returns zero from a cached page.
+TEST(PageStorageCache, monad_cache_miss_returns_zero)
+{
+    Account const acct{.nonce = 1};
+    InMemoryMachine machine;
+    mpt::Db mpt_db{machine};
+    TrieDb tdb{mpt_db};
+
+    {
+        MonadCache commit_cache{tdb};
+        CommitBuilder builder(0);
+        builder.add_state_deltas(
+            StateDeltas{
+                {ADDR_A,
+                 StateDelta{
+                     .account = {std::nullopt, acct},
+                     .storage = {{key1, {bytes32_t{}, value1}}}}}},
+            commit_cache);
+        auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
+        tdb.reset_root(std::move(root), 0);
+    }
+
+    MonadCache cache{tdb};
+
+    EXPECT_EQ(cache.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
+
+    // Key with no data in the trie — empty page, returns zero.
+    EXPECT_EQ(
+        cache.read_storage(ADDR_A, Incarnation{0, 0}, bytes32_t{}),
+        bytes32_t{});
+}
+
+// EthPageStorageCache with per-slot encoding (the ethereum path).
 TEST(PageStorageCache, block_state_with_cache)
 {
     Account const acct{.nonce = 1};

@@ -31,6 +31,7 @@ struct Transaction;
 struct BlockHeader;
 struct Receipt;
 struct Withdrawal;
+struct PageStorageCache;
 
 class CommitBuilder
 {
@@ -44,6 +45,8 @@ public:
     explicit CommitBuilder(uint64_t block_number);
 
     CommitBuilder &add_state_deltas(StateDeltas const &);
+    CommitBuilder &
+    add_state_deltas(StateDeltas const &, PageStorageCache &cache);
 
     CommitBuilder &add_code(Code const &);
 

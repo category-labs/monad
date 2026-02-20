@@ -269,6 +269,8 @@ add_library(
   "monad/staking/util/staking_error.hpp"
   "monad/staking/util/val_execution.cpp"
   "monad/staking/util/val_execution.hpp"
+  # monad/db
+  "monad/db/commit_builder.cpp"
   # monad/state2
   "monad/state2/proposal_state.hpp")
 

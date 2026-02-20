@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/runtime.hpp>
@@ -130,7 +131,8 @@ namespace monad::vm::compiler::native
 
     class Emitter;
 
-    using EmitterHook = std::function<void(Emitter &)>;
+    using PreEmitterHook = std::function<void(Emitter &, Instruction const &)>;
+    using PostEmitterHook = std::function<void(Emitter &, Instruction const &)>;
 
     struct CompilerConfig
     {
@@ -138,6 +140,7 @@ namespace monad::vm::compiler::native
         bool runtime_debug_trace{};
         interpreter::code_size_t max_code_size_offset =
             monad::vm::runtime::bin<10 * 1024>;
-        EmitterHook post_instruction_emit_hook{};
+        PreEmitterHook pre_instruction_emit_hook{};
+        PostEmitterHook post_instruction_emit_hook{};
     };
 }

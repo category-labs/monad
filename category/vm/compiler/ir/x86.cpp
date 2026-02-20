@@ -315,14 +315,29 @@ namespace
     }
 
     [[gnu::always_inline]]
-    inline void
-    post_instruction_emit(Emitter &emit, CompilerConfig const &config)
+    inline void pre_instruction_emit(
+        Emitter &emit, Instruction const &instr, CompilerConfig const &config)
     {
         (void)emit;
+        (void)instr;
+        (void)config;
+#ifdef MONAD_COMPILER_TESTING
+        if (config.pre_instruction_emit_hook) {
+            config.pre_instruction_emit_hook(emit, instr);
+        }
+#endif
+    }
+
+    [[gnu::always_inline]]
+    inline void post_instruction_emit(
+        Emitter &emit, Instruction const &instr, CompilerConfig const &config)
+    {
+        (void)emit;
+        (void)instr;
         (void)config;
 #ifdef MONAD_COMPILER_TESTING
         if (config.post_instruction_emit_hook) {
-            config.post_instruction_emit_hook(emit);
+            config.post_instruction_emit_hook(emit, instr);
         }
 #endif
     }
@@ -336,10 +351,11 @@ namespace
         for (auto const &instr : block.instrs) {
             MONAD_VM_DEBUG_ASSERT(
                 remaining_base_gas >= instr.static_gas_cost());
+            pre_instruction_emit(emit, instr, config);
             remaining_base_gas -= instr.static_gas_cost();
             emit_instr<traits>(emit, instr, remaining_base_gas);
             require_code_size_in_bound(emit, max_native_size);
-            post_instruction_emit(emit, config);
+            post_instruction_emit(emit, instr, config);
         }
     }
 

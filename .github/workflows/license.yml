@@ -2,7 +2,6 @@ name: License
 
 on:
   merge_group:
-    branches: ["main"]
     paths-ignore:
       - 'third_party/**'
   push:
@@ -10,7 +9,6 @@ on:
     paths-ignore:
       - 'third_party/**'
   pull_request:
-    branches: ["main"]
     types: [ opened, synchronize, reopened, edited ]
     paths-ignore:
       - 'third_party/**'

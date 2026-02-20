@@ -42,19 +42,22 @@ public:
 private:
     chunk_offset_t offset_;
     buffer_type buffer_;
+    bool defer_submit_;
 
 public:
     constexpr read_single_buffer_sender(
-        chunk_offset_t offset, size_t bytes_to_read)
+        chunk_offset_t offset, size_t bytes_to_read, bool defer_submit = false)
         : offset_(offset)
         , buffer_(bytes_to_read)
+        , defer_submit_(defer_submit)
     {
     }
 
     constexpr read_single_buffer_sender(
-        chunk_offset_t offset, buffer_type buffer)
+        chunk_offset_t offset, buffer_type buffer, bool defer_submit = false)
         : offset_(offset)
         , buffer_(std::move(buffer))
+        , defer_submit_(defer_submit)
     {
     }
 
@@ -73,16 +76,20 @@ public:
         return std::move(buffer_);
     }
 
-    void reset(chunk_offset_t offset, size_t bytes_to_read)
+    void reset(
+        chunk_offset_t offset, size_t bytes_to_read, bool defer_submit = false)
     {
         offset_ = offset;
         buffer_ = buffer_type(bytes_to_read);
+        defer_submit_ = defer_submit;
     }
 
-    void reset(chunk_offset_t offset, buffer_type buffer)
+    void
+    reset(chunk_offset_t offset, buffer_type buffer, bool defer_submit = false)
     {
         offset_ = offset;
         buffer_ = std::move(buffer);
+        defer_submit_ = defer_submit;
     }
 
     result<void> operator()(erased_connected_operation *io_state)
@@ -93,7 +100,7 @@ public:
         }
         size_t const bytes_transferred =
             io_state->executor()->submit_read_request(
-                buffer_.to_mutable_span(), offset_, io_state);
+                buffer_.to_mutable_span(), offset_, io_state, defer_submit_);
         if (bytes_transferred != size_t(-1)) {
             // It completed early
             return make_status_code(
@@ -123,7 +130,7 @@ public:
     }
 };
 
-static_assert(sizeof(read_single_buffer_sender) == 40);
+static_assert(sizeof(read_single_buffer_sender) == 48);
 static_assert(alignof(read_single_buffer_sender) == 8);
 static_assert(sender<read_single_buffer_sender>);
 

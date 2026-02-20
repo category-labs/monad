@@ -95,6 +95,13 @@ private:
     // concurrent reads was reached. Each entry is a fully prepared SQE.
     std::deque<struct io_uring_sqe> concurrent_read_ios_pending_;
 
+    size_t pending_sqes_since_submit_{0};
+
+    // Number of SQEs to accumulate before auto-flushing in deferred submission.
+    // Balances syscall overhead (larger batch = fewer syscalls) against latency
+    // (smaller batch = faster submission).
+    static constexpr size_t BATCH_SIZE = 64;
+
     void submit_request_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
@@ -107,6 +114,16 @@ private:
 
     // Submit request, guaranteed to have sqe available
     void submit_request_sqe_(
+        std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+        void *uring_data, enum erased_connected_operation::io_priority prio);
+
+    // Submit request deferred (prepare SQE but don't call io_uring_submit)
+    void submit_request_deferred_(
+        std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
+        void *uring_data, enum erased_connected_operation::io_priority prio);
+
+    // Helper to prepare SQE without submitting
+    void prepare_read_sqe_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
 
@@ -321,7 +338,7 @@ public:
 
     size_t submit_read_request(
         std::span<std::byte> buffer, chunk_offset_t offset,
-        erased_connected_operation *uring_data)
+        erased_connected_operation *uring_data, bool defer_submit = false)
     {
         if (capture_io_latencies_) {
             uring_data->initiated = std::chrono::steady_clock::now();
@@ -335,11 +352,23 @@ public:
             return size_t(-1); // we never complete immediately
         }
 
+        poll_uring_while_submission_queue_full_();
+
         auto const size = buffer.size();
-        submit_request_(buffer, offset, uring_data, uring_data->io_priority());
+        if (defer_submit) {
+            submit_request_deferred_(
+                buffer, offset, uring_data, uring_data->io_priority());
+        }
+        else {
+            submit_request_(
+                buffer, offset, uring_data, uring_data->io_priority());
+        }
         account_read_(size);
         return size_t(-1); // we never complete immediately
     }
+
+    // Flush any pending deferred read submissions
+    void flush_pending_reads();
 
     size_t submit_read_request(
         std::span<const struct iovec> buffers, chunk_offset_t offset,
@@ -646,7 +675,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 272);
+static_assert(sizeof(AsyncIO) == 280);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

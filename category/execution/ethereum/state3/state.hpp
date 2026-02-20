@@ -196,7 +196,7 @@ public:
 
     immer::vector<Receipt::Log> const &logs();
 
-    void store_log(Receipt::Log const &);
+    [[nodiscard]] size_t store_log(Receipt::Log const &);
 
     ////////////////////////////////////////
 

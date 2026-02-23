@@ -327,7 +327,7 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
     BlockHeader const header0{.number = 10};
     bytes32_t const block_id0{header0.number};
     block_ids.emplace(block_id0);
-    tdb.commit(StateDeltas{}, Code{}, block_id0, header0);
+    commit_simple(tdb, StateDeltas{}, Code{}, block_id0, header0);
     {
         auto const proposals = get_proposal_block_ids(db, 10);
         EXPECT_EQ(std::set(proposals.begin(), proposals.end()), block_ids);
@@ -336,7 +336,7 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
     BlockHeader const header1{.number = 10};
     bytes32_t const block_id1{header1.number};
     block_ids.emplace(block_id1);
-    tdb.commit(StateDeltas{}, Code{}, block_id1, header1);
+    commit_simple(tdb, StateDeltas{}, Code{}, block_id1, header1);
     {
         auto const proposals = get_proposal_block_ids(db, 10);
         EXPECT_EQ(std::set(proposals.begin(), proposals.end()), block_ids);
@@ -346,7 +346,7 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
     BlockHeader const header2{.number = 10};
     bytes32_t const block_id2{header2.number};
     block_ids.emplace(block_id2);
-    tdb.commit(StateDeltas{}, Code{}, block_id2, header2);
+    commit_simple(tdb, StateDeltas{}, Code{}, block_id2, header2);
 
     tdb.finalize(10, block_id0);
     EXPECT_EQ(db.get_latest_finalized_version(), 10);

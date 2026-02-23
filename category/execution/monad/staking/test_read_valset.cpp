@@ -109,8 +109,9 @@ protected:
 
             MONAD_ASSERT(bs.can_merge(state));
             bs.merge(state);
-            auto [state_deltas, code] = bs.release();
-            tdb.commit(
+            auto [state_deltas, code] = std::move(bs).release();
+            test::commit_simple(
+                tdb,
                 *state_deltas,
                 code,
                 NULL_HASH_BLAKE3,

@@ -384,7 +384,10 @@ Result<BlockExecOutput> execute(
             chain_context));
 
     block_state.log_debug();
-    block_state.commit(
+    auto [state, code] = block_state.release();
+    db.commit(
+        *state,
+        code,
         bytes32_t{block.header.number},
         block.header,
         receipts,
@@ -493,7 +496,10 @@ void process_test(
         State state{bs, Incarnation{0, 0}};
         j_contents.at("pre").get_to(state);
         bs.merge(state);
-        bs.commit(
+        auto [released_state, released_code] = bs.release();
+        tdb.commit(
+            *released_state,
+            released_code,
             NULL_HASH_BLAKE3,
             header,
             {} /* receipts */,

@@ -152,7 +152,10 @@ Result<void> process_ethereum_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    block_state.commit(
+    auto [state, code] = block_state.release();
+    db.commit(
+        *state,
+        code,
         bytes32_t{block.header.number},
         block.header,
         receipts,
@@ -161,6 +164,11 @@ Result<void> process_ethereum_block(
         block.transactions,
         block.ommers,
         block.withdrawals);
+    // Transfer state ownership to DbCache for proposal tracking. This must
+    // come after commit since it takes ownership of the state. Safe to
+    // reorder: DbCache is only read on the next block, not during commit.
+    db.update_proposal_state(
+        std::move(state), block.header.number, bytes32_t{block.header.number});
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);

@@ -58,14 +58,13 @@ public:
 
     void merge(State const &);
 
-    void commit(
-        bytes32_t const &block_id, BlockHeader const &,
-        std::vector<Receipt> const & = {},
-        std::vector<std::vector<CallFrame>> const & = {},
-        std::vector<Address> const & = {},
-        std::vector<Transaction> const & = {},
-        std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const & = {});
+    struct ReleasedState
+    {
+        std::unique_ptr<StateDeltas> state;
+        Code code;
+    };
+
+    ReleasedState release();
 
     void log_debug();
 };

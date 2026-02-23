@@ -23,9 +23,11 @@
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
-#include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -110,7 +112,7 @@ void get_block_with_retry(
 template <Traits traits>
     requires is_monad_trait_v<traits>
 Result<void> process_monad_block(
-    MonadChain const &chain, Db &db, vm::VM &vm,
+    MonadChain const &chain, DbCache &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing,
@@ -204,21 +206,28 @@ Result<void> process_monad_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code] = block_state.release();
-    db.commit(
-        *state,
-        code,
-        block_id,
-        block.header,
-        receipts,
-        call_frames,
-        senders,
-        block.transactions,
-        block.ommers,
-        block.withdrawals);
-    // Transfer state ownership to DbCache for proposal tracking. This must
-    // come after commit since it takes ownership of the state. Safe to
-    // reorder: DbCache is only read on the next block, not during commit.
+    auto [state, code] = std::move(block_state).release();
+
+    CommitBuilder builder(block.header.number);
+    builder.add_state_deltas(*state)
+        .add_code(code)
+        .add_receipts(receipts)
+        .add_transactions(block.transactions, senders)
+        .add_call_frames(call_frames)
+        .add_ommers(block.ommers);
+    if (block.withdrawals.has_value()) {
+        builder.add_withdrawals(block.withdrawals.value());
+    }
+    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
+        // second stage: populate block header
+        h.receipts_root = db.receipts_root();
+        h.state_root = db.state_root();
+        h.withdrawals_root = db.withdrawals_root();
+        h.transactions_root = db.transactions_root();
+        h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
+        h.logs_bloom = compute_bloom(receipts);
+        h.ommers_hash = compute_ommers_hash(block.ommers);
+    });
     db.update_proposal_state(std::move(state), block.header.number, block_id);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -282,8 +291,8 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
-    MonadChain const &chain, std::filesystem::path const &ledger_dir, Db &db,
-    vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
+    MonadChain const &chain, std::filesystem::path const &ledger_dir,
+    DbCache &db, vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, std::chrono::seconds const block_db_timeout)

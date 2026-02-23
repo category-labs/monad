@@ -19,6 +19,7 @@
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/statesync/statesync_client.h>
@@ -309,7 +310,8 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
 
     // write the genesis block
     {
-        sctx->commit(StateDeltas{}, Code{}, NULL_HASH_BLAKE3, hdr);
+        monad::test::commit_simple(
+            *sctx, StateDeltas{}, Code{}, NULL_HASH_BLAKE3, hdr);
         sctx->finalize(0, NULL_HASH_BLAKE3);
         auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
         parent_hash = to_bytes(keccak256(rlp));
@@ -351,7 +353,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         hdr.parent_hash = parent_hash;
         bytes32_t const curr_block_id = bytes32_t{hdr.number};
         sctx->set_block_and_prefix(hdr.number - 1);
-        sctx->commit(deltas, {}, curr_block_id, hdr);
+        monad::test::commit_simple(*sctx, deltas, {}, curr_block_id, hdr);
         sctx->finalize(hdr.number, curr_block_id);
         auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
         parent_hash = to_bytes(keccak256(rlp));

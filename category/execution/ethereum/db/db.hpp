@@ -29,10 +29,13 @@
 #include <category/vm/vm.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
+
+class CommitBuilder;
 
 struct Db
 {
@@ -61,19 +64,11 @@ struct Db
 
     virtual uint64_t get_block_number() const = 0;
 
+    // two-stage commit
     virtual void commit(
-        StateDeltas const &, Code const &, bytes32_t const &block_id,
-        BlockHeader const &, std::vector<Receipt> const & = {},
-        std::vector<std::vector<CallFrame>> const & = {},
-        std::vector<Address> const & = {},
-        std::vector<Transaction> const & = {},
-        std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const & = std::nullopt) = 0;
-
-    virtual void update_proposal_state(
-        std::unique_ptr<StateDeltas>, uint64_t, bytes32_t const &)
-    {
-    }
+        bytes32_t const &block_id, CommitBuilder &builder,
+        BlockHeader const &header, StateDeltas const &state_deltas,
+        std::function<void(BlockHeader &)> populate_header_fn) = 0;
 
     virtual std::string print_stats()
     {

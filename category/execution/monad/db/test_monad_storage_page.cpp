@@ -173,8 +173,7 @@ TEST(MonadDb, page_write_merges_slots)
         0x000000000000000000000000000000000000000000000000000000000000dddd_bytes32;
 
     Account const acct{.nonce = 1};
-    MonadInMemoryMachine machine;
-    mpt::Db mpt_db{machine};
+    mpt::Db mpt_db{std::make_unique<MonadInMemoryMachine>()};
     TrieDb tdb{mpt_db};
 
     // Block 0: seed two slots on the same page.

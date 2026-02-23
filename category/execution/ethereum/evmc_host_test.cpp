@@ -132,8 +132,7 @@ TYPED_TEST(TraitsTest, emit_log)
     static constexpr evmc::bytes32 topics[] = {topic0, topic1};
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -167,8 +166,7 @@ TYPED_TEST(TraitsTest, emit_log)
 
 TYPED_TEST(TraitsTest, access_precompile)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};

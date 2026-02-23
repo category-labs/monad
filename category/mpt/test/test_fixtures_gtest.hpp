@@ -68,20 +68,18 @@ namespace monad::test
     struct OnDiskDbWithFileFixtureBase : public ::testing::Test
     {
         std::filesystem::path const dbname;
-        StateMachineType machine;
         monad::mpt::OnDiskDbConfig config;
         monad::mpt::Db db;
         Node::SharedPtr root;
 
         OnDiskDbWithFileFixtureBase()
             : dbname{create_temp_file(8)}
-            , machine{StateMachineType{}}
             , config{OnDiskDbConfig{
                   .compaction = true,
                   .sq_thread_cpu = std::nullopt,
                   .dbname_paths = {dbname},
                   .fixed_history_length = MPT_TEST_HISTORY_LENGTH}}
-            , db{machine, config}
+            , db{std::make_unique<StateMachineType>(), config}
             , root{}
         {
         }

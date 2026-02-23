@@ -46,14 +46,12 @@ struct monad_statesync_client_context
 
     using StateDelta = std::pair<monad::Account, StorageDeltas>;
 
-    monad::OnDiskMachine machine;
     monad::mpt::Db db;
     monad::TrieDb tdb;
 
     // Optional secondary (page-encoded) db populated in lockstep with the
     // primary during the slot-to-page storage migration. Uses
     // MonadOnDiskMachine so its state table is hashed at page granularity.
-    std::optional<monad::MonadOnDiskMachine> secondary_machine;
     std::optional<monad::mpt::Db> secondary_db;
     std::optional<monad::TrieDb> secondary_tdb;
 

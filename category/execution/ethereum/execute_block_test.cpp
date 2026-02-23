@@ -135,8 +135,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     static constexpr auto ca{
         0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
 
     vm::VM vm;
@@ -306,8 +305,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
     static constexpr auto to{
         0xbbbf5374fce5edbc8e2a8697c15331677e6ebf0b_address};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
 
     vm::VM vm;
@@ -448,8 +446,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     static constexpr auto ca{
         0x095e7baea6a6c7c4c2dfeb977efac326af552d87_address};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
 
     vm::VM vm;

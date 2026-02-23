@@ -50,7 +50,6 @@ namespace
 
     struct BlockHistoryFixture : public ::testing::Test
     {
-        InMemoryMachine machine;
         mpt::Db db;
         TrieDb tdb;
         vm::VM vm;
@@ -61,7 +60,7 @@ namespace
             0x00000000000000000000000000000000000123_address;
 
         BlockHistoryFixture()
-            : db{machine}
+            : db{std::make_unique<InMemoryMachine>()}
             , tdb{db}
             , block_state{tdb, vm}
             , state{block_state, Incarnation{0, 0}}

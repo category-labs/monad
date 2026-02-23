@@ -161,12 +161,10 @@ TEST(MigrationFork, dual_write_state_root_handoff)
     ASSERT_EQ(compute_page_key(slot_0), compute_page_key(slot_1));
     ASSERT_NE(compute_page_key(slot_0), compute_page_key(slot_far));
 
-    OnDiskMachine machine1;
-    mpt::Db db1{machine1, mpt::OnDiskDbConfig{}};
+    mpt::Db db1{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
     TrieDb tdb1{db1};
 
-    MonadOnDiskMachine machine2;
-    mpt::Db db2{machine2, mpt::OnDiskDbConfig{}};
+    mpt::Db db2{std::make_unique<MonadOnDiskMachine>(), mpt::OnDiskDbConfig{}};
     TrieDb tdb2{db2};
 
     auto const make_block_id = [](uint64_t const n) {
@@ -271,10 +269,8 @@ TEST(MigrationFork, dual_write_state_root_handoff)
     {
         auto next = acct;
         next.nonce = 4;
-        auto deltas = make_deltas(
-            acct,
-            next,
-            {{slot_1, make_val(0xb1), make_val(0xb4)}});
+        auto deltas =
+            make_deltas(acct, next, {{slot_1, make_val(0xb1), make_val(0xb4)}});
         drive_commit(
             tdb1, tdb2, true, 4, make_block_id(4), prev_id, false, deltas);
         acct = next;
@@ -298,9 +294,7 @@ TEST(MigrationFork, dual_write_state_root_handoff)
         auto next = acct;
         next.nonce = 5;
         auto deltas = make_deltas(
-            acct,
-            next,
-            {{slot_far, make_val(0xfa), make_val(0xf5)}});
+            acct, next, {{slot_far, make_val(0xfa), make_val(0xf5)}});
         drive_commit(
             tdb1, tdb2, true, 5, make_block_id(5), prev_id, false, deltas);
         acct = next;

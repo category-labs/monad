@@ -250,9 +250,8 @@ namespace
             ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
         ::close(fd);
         char const *const path = dbname.c_str();
-        OnDiskMachine machine;
         mpt::Db const db{
-            machine,
+            std::make_unique<OnDiskMachine>(),
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
         return dbname;
     }
@@ -281,9 +280,9 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
             &client,
             &statesync_send_request);
     std::filesystem::path sdbname{tmp_dbname()};
-    OnDiskMachine machine;
     mpt::Db sdb{
-        machine, OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
+        std::make_unique<OnDiskMachine>(),
+        OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
     TrieDb stdb{sdb};
     std::unique_ptr<monad_statesync_server_context> sctx =
         std::make_unique<monad_statesync_server_context>(stdb);

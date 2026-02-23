@@ -115,8 +115,7 @@ TEST(CallTrace, enter_and_exit)
 
 TYPED_TEST(TraitsTest, execute_success)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -192,8 +191,7 @@ TYPED_TEST(TraitsTest, execute_success)
 
 TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -269,8 +267,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
 
 TYPED_TEST(TraitsTest, create_call_trace)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -362,8 +359,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
 
 TYPED_TEST(TraitsTest, selfdestruct_logs)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -464,8 +460,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
 
 TYPED_TEST(TraitsTest, selfdestruct_logs_value)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -556,8 +551,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
 //
 TYPED_TEST(TraitsTest, selfdestruct_depth)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -636,8 +630,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
 
 TYPED_TEST(TraitsTest, simulate_v1_trace)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -733,8 +726,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -836,8 +828,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -923,8 +914,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1140,8 +1130,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
 // contract.
 TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1302,8 +1291,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
     // be a self-transfer)
     // * DELEGATECALL: no event emission
     // * STATICCALL: no event emission
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 

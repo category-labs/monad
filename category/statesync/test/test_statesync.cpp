@@ -79,9 +79,8 @@ namespace
             ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
         ::close(fd);
         char const *const path = dbname.c_str();
-        OnDiskMachine machine;
         mpt::Db const db{
-            machine,
+            std::make_unique<OnDiskMachine>(),
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
         return dbname;
     }
@@ -148,7 +147,6 @@ namespace
         monad_statesync_client client;
         monad_statesync_client_context *cctx;
         std::filesystem::path sdbname;
-        OnDiskMachine machine;
         mpt::Db sdb;
         TrieDb stdb;
         monad_statesync_server_context sctx;
@@ -161,7 +159,7 @@ namespace
             : cdbname{tmp_dbname()}
             , cctx{nullptr}
             , sdbname{tmp_dbname()}
-            , sdb{machine,
+            , sdb{std::make_unique<OnDiskMachine>(),
                   OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}}
             , stdb{sdb}
             , sctx{stdb}
@@ -214,9 +212,9 @@ TEST_F(StateSyncFixture, sync_from_latest)
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
     {
-        OnDiskMachine machine;
         mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
         uint64_t const block_number = N - 257;
         load_header(
@@ -281,9 +279,8 @@ TEST_F(StateSyncFixture, sync_from_empty)
     EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 
-    OnDiskMachine machine;
     mpt::Db cdb{
-        machine,
+        std::make_unique<OnDiskMachine>(),
         mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
     TrieDb ctdb{cdb};
     ctdb.set_block_and_prefix(cdb.get_latest_finalized_version());
@@ -316,9 +313,9 @@ TEST_F(StateSyncFixture, sync_from_empty)
 TEST_F(StateSyncFixture, sync_from_some)
 {
     {
-        OnDiskMachine machine;
         mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
         load_genesis_state(GENESIS_STATE, tdb);
         // commit some proposal to client db
@@ -513,9 +510,9 @@ TEST_F(StateSyncFixture, sync_from_some)
 TEST_F(StateSyncFixture, deletion_proposal)
 {
     {
-        OnDiskMachine machine;
         mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
         load_genesis_state(GENESIS_STATE, tdb);
         load_genesis_state(GENESIS_STATE, stdb);
@@ -645,24 +642,22 @@ TEST_F(StateSyncFixture, sync_with_page_storage_secondary)
         {ADDR_A,
          StateDelta{
              .account = {std::nullopt, Account{.balance = 100}},
-             .storage =
-                 {{slot_a, {bytes32_t{}, val_a}},
-                  {slot_b, {bytes32_t{}, val_b}},
-                  {slot_c, {bytes32_t{}, val_c}},
-                  {slot_d, {bytes32_t{}, val_d}},
-                  {slot_e, {bytes32_t{}, val_e}}}}}};
+             .storage = {
+                 {slot_a, {bytes32_t{}, val_a}},
+                 {slot_b, {bytes32_t{}, val_b}},
+                 {slot_c, {bytes32_t{}, val_c}},
+                 {slot_d, {bytes32_t{}, val_d}},
+                 {slot_e, {bytes32_t{}, val_e}}}}}};
 
     // Server commits the slot-encoded view to its primary db.
-    commit_sequential(
-        stdb, storage_deltas, Code{}, BlockHeader{.number = N});
+    commit_sequential(stdb, storage_deltas, Code{}, BlockHeader{.number = N});
 
     // Server-side page-encoded mirror: a separate db that the test populates
     // with the same state via MonadCommitBuilder, so the resulting state
     // trie is canonical page encoding.
     auto const sdbname_secondary_server = tmp_dbname();
-    MonadOnDiskMachine server_secondary_machine;
     mpt::Db server_secondary_db{
-        server_secondary_machine,
+        std::make_unique<MonadOnDiskMachine>(),
         mpt::OnDiskDbConfig{
             .append = true, .dbname_paths = {sdbname_secondary_server}}};
     TrieDb server_secondary_tdb{server_secondary_db};
@@ -712,8 +707,7 @@ TEST_F(StateSyncFixture, sync_with_page_storage_secondary)
 
     ASSERT_TRUE(cctx->secondary_tdb.has_value());
     EXPECT_EQ(
-        server_secondary_tdb.state_root(),
-        cctx->secondary_tdb->state_root());
+        server_secondary_tdb.state_root(), cctx->secondary_tdb->state_root());
 
     std::filesystem::remove(sdbname_secondary_server);
     std::filesystem::remove(sdbname_secondary);
@@ -746,9 +740,9 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
 {
     {
         // init client DB
-        OnDiskMachine machine;
         mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
         tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
         for (uint64_t n = 1; n <= 249; ++n) {

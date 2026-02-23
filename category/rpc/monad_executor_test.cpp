@@ -127,7 +127,6 @@ namespace
     struct EthCallFixture : public ::testing::Test
     {
         std::filesystem::path dbname;
-        OnDiskMachine machine;
         mpt::Db db;
         TrieDb tdb;
         vm::VM vm;
@@ -146,7 +145,7 @@ namespace
                 ::close(fd);
                 return dbname;
             }()}
-            , db{machine,
+            , db{std::make_unique<OnDiskMachine>(),
                  mpt::OnDiskDbConfig{.append = false, .dbname_paths = {dbname}}}
             , tdb{db}
         {

@@ -275,12 +275,10 @@ try {
     if (!statesync.empty()) {
         net.emplace(statesync.c_str());
     }
-    std::unique_ptr<mpt::StateMachine> machine;
     mpt::Db db = [&] {
         if (!db_in_memory) {
-            machine = std::make_unique<OnDiskMachine>();
             return mpt::Db{
-                *machine,
+                std::make_unique<OnDiskMachine>(),
                 mpt::OnDiskDbConfig{
                     .append = true,
                     .compaction = !no_compaction,
@@ -291,8 +289,7 @@ try {
                     .sq_thread_cpu = sq_thread_cpu,
                     .dbname_paths = dbname_paths}};
         }
-        machine = std::make_unique<InMemoryMachine>();
-        return mpt::Db{*machine};
+        return mpt::Db{std::make_unique<InMemoryMachine>()};
     }();
 
     auto chain = [chain_config] -> std::unique_ptr<Chain> {
@@ -420,13 +417,11 @@ try {
     // TODO: eventually this would not require a separate OnDiskDbConfig, but
     // you can construct secondary db from the primary db, e.g.
     // mpt::Db secondary_db(db, secondary_machine);
-    std::unique_ptr<MonadOnDiskMachine> secondary_machine;
     std::optional<mpt::Db> secondary_raw_db;
     std::optional<TrieDb> secondary_triedb;
     if (!secondary_db_path.empty()) {
-        secondary_machine = std::make_unique<MonadOnDiskMachine>();
         secondary_raw_db.emplace(
-            *secondary_machine,
+            std::make_unique<MonadOnDiskMachine>(),
             mpt::OnDiskDbConfig{
                 .append = true,
                 .compaction = !no_compaction,

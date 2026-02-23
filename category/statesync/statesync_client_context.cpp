@@ -41,7 +41,7 @@ monad_statesync_client_context::monad_statesync_client_context(
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request),
     std::optional<std::filesystem::path> const secondary_db_path)
-    : db{machine,
+    : db{std::make_unique<OnDiskMachine>(),
          mpt::OnDiskDbConfig{
              .append = true,
              .compaction = false,
@@ -65,9 +65,8 @@ monad_statesync_client_context::monad_statesync_client_context(
     MONAD_ASSERT(db.get_latest_version() == db.get_latest_finalized_version());
 
     if (secondary_db_path.has_value()) {
-        secondary_machine.emplace();
         secondary_db.emplace(
-            *secondary_machine,
+            std::make_unique<MonadOnDiskMachine>(),
             mpt::OnDiskDbConfig{
                 .append = true,
                 .compaction = false,
@@ -93,56 +92,55 @@ void monad_statesync_client_context::prepare_current_state()
     // Roll forward `target_db`: upsert an empty finalized marker for the
     // `current` version and carry the state + code subtries over from
     // `latest_version`.
-    auto const roll_forward =
-        [&](mpt::Db &target_db, TrieDb &target_tdb) {
-            auto const latest_version = target_db.get_latest_version();
-            UpdateList finalized_empty;
-            Update finalized{
-                .key = finalized_nibbles,
-                .value = byte_string_view{},
-                .incarnation = true,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(current)};
-            finalized_empty.push_front(finalized);
-            auto const src_root = target_db.load_root_for_version(latest_version);
-            bool write_root = false;
-            auto dest_root = target_db.upsert(
-                src_root,
-                std::move(finalized_empty),
-                current,
-                false,
-                false,
-                write_root);
-            MONAD_ASSERT(
-                target_db.find(dest_root, finalized_nibbles, current).has_value());
+    auto const roll_forward = [&](mpt::Db &target_db, TrieDb &target_tdb) {
+        auto const latest_version = target_db.get_latest_version();
+        UpdateList finalized_empty;
+        Update finalized{
+            .key = finalized_nibbles,
+            .value = byte_string_view{},
+            .incarnation = true,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(current)};
+        finalized_empty.push_front(finalized);
+        auto const src_root = target_db.load_root_for_version(latest_version);
+        bool write_root = false;
+        auto dest_root = target_db.upsert(
+            src_root,
+            std::move(finalized_empty),
+            current,
+            false,
+            false,
+            write_root);
+        MONAD_ASSERT(
+            target_db.find(dest_root, finalized_nibbles, current).has_value());
 
-            auto const state_key = concat(FINALIZED_NIBBLE, STATE_NIBBLE);
-            auto const code_key = concat(FINALIZED_NIBBLE, CODE_NIBBLE);
-            dest_root = target_db.copy_trie(
-                src_root,
-                state_key,
-                std::move(dest_root),
-                state_key,
-                current,
-                write_root);
-            write_root = true;
-            dest_root = target_db.copy_trie(
-                src_root,
-                code_key,
-                std::move(dest_root),
-                code_key,
-                current,
-                write_root);
-            auto const finalized_res =
-                target_db.find(dest_root, finalized_nibbles, current);
-            MONAD_ASSERT(finalized_res.has_value());
-            MONAD_ASSERT(finalized_res.value().node->number_of_children() == 2);
-            MONAD_ASSERT(target_db.find(dest_root, state_key, current).has_value());
-            MONAD_ASSERT(target_db.find(dest_root, code_key, current).has_value());
-            MONAD_ASSERT(dest_root->value() == src_root->value());
-            target_tdb.reset_root(dest_root, current);
-            MONAD_ASSERT(target_db.get_latest_version() == current);
-        };
+        auto const state_key = concat(FINALIZED_NIBBLE, STATE_NIBBLE);
+        auto const code_key = concat(FINALIZED_NIBBLE, CODE_NIBBLE);
+        dest_root = target_db.copy_trie(
+            src_root,
+            state_key,
+            std::move(dest_root),
+            state_key,
+            current,
+            write_root);
+        write_root = true;
+        dest_root = target_db.copy_trie(
+            src_root,
+            code_key,
+            std::move(dest_root),
+            code_key,
+            current,
+            write_root);
+        auto const finalized_res =
+            target_db.find(dest_root, finalized_nibbles, current);
+        MONAD_ASSERT(finalized_res.has_value());
+        MONAD_ASSERT(finalized_res.value().node->number_of_children() == 2);
+        MONAD_ASSERT(target_db.find(dest_root, state_key, current).has_value());
+        MONAD_ASSERT(target_db.find(dest_root, code_key, current).has_value());
+        MONAD_ASSERT(dest_root->value() == src_root->value());
+        target_tdb.reset_root(dest_root, current);
+        MONAD_ASSERT(target_db.get_latest_version() == current);
+    };
 
     roll_forward(db, tdb);
     if (secondary_db.has_value()) {
@@ -237,89 +235,90 @@ void monad_statesync_client_context::commit()
 
     // Assemble the full finalized/state/code/block_header UpdateList for one
     // db and upsert it. Storage encoding is delegated via `build_storage`.
-    auto build_and_upsert =
-        [this, &header_rlp](
-            mpt::Db &target_db, TrieDb &target_tdb, auto build_storage) {
-            std::deque<mpt::Update> alloc;
-            std::deque<byte_string> bytes_alloc;
-            std::deque<hash256> hash_alloc;
+    auto build_and_upsert = [this, &header_rlp](
+                                mpt::Db &target_db,
+                                TrieDb &target_tdb,
+                                auto build_storage) {
+        std::deque<mpt::Update> alloc;
+        std::deque<byte_string> bytes_alloc;
+        std::deque<hash256> hash_alloc;
 
-            UpdateList accounts;
-            for (auto const &[addr, delta] : deltas) {
-                UpdateList storage;
-                std::optional<byte_string_view> value;
-                if (delta.has_value()) {
-                    auto const &[acct, slot_deltas] = delta.value();
-                    value =
-                        bytes_alloc.emplace_back(encode_account_db(addr, acct));
-                    storage = build_storage(
-                        addr, slot_deltas, alloc, bytes_alloc, hash_alloc);
-                }
-                accounts.push_front(alloc.emplace_back(Update{
-                    .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
-                    .value = value,
-                    .incarnation = false,
-                    .next = std::move(storage),
-                    .version = static_cast<int64_t>(current)}));
+        UpdateList accounts;
+        for (auto const &[addr, delta] : deltas) {
+            UpdateList storage;
+            std::optional<byte_string_view> value;
+            if (delta.has_value()) {
+                auto const &[acct, slot_deltas] = delta.value();
+                value = bytes_alloc.emplace_back(encode_account_db(addr, acct));
+                storage = build_storage(
+                    addr, slot_deltas, alloc, bytes_alloc, hash_alloc);
             }
-
-            UpdateList code_updates;
-            for (auto const &[hash, bytes] : code) {
-                code_updates.push_front(alloc.emplace_back(Update{
-                    .key = NibblesView{hash},
-                    .value = bytes,
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(current)}));
-            }
-
-            auto state_update = Update{
-                .key = state_nibbles,
-                .value = byte_string_view{},
+            accounts.push_front(alloc.emplace_back(Update{
+                .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
+                .value = value,
                 .incarnation = false,
-                .next = std::move(accounts),
-                .version = static_cast<int64_t>(current)};
-            auto code_update = Update{
-                .key = code_nibbles,
-                .value = byte_string_view{},
+                .next = std::move(storage),
+                .version = static_cast<int64_t>(current)}));
+        }
+
+        UpdateList code_updates;
+        for (auto const &[hash, bytes] : code) {
+            code_updates.push_front(alloc.emplace_back(Update{
+                .key = NibblesView{hash},
+                .value = bytes,
                 .incarnation = false,
-                .next = std::move(code_updates),
-                .version = static_cast<int64_t>(current)};
-            auto block_header_update = Update{
-                .key = block_header_nibbles,
-                .value = header_rlp,
-                .incarnation = true,
                 .next = UpdateList{},
-                .version = static_cast<int64_t>(current)};
-            UpdateList updates;
-            updates.push_front(state_update);
-            updates.push_front(code_update);
-            updates.push_front(block_header_update);
+                .version = static_cast<int64_t>(current)}));
+        }
 
-            UpdateList finalized_updates;
-            Update finalized{
-                .key = finalized_nibbles,
-                .value = byte_string_view{},
-                .incarnation = false,
-                .next = std::move(updates),
-                .version = static_cast<int64_t>(current)};
-            finalized_updates.push_front(finalized);
+        auto state_update = Update{
+            .key = state_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(accounts),
+            .version = static_cast<int64_t>(current)};
+        auto code_update = Update{
+            .key = code_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(code_updates),
+            .version = static_cast<int64_t>(current)};
+        auto block_header_update = Update{
+            .key = block_header_nibbles,
+            .value = header_rlp,
+            .incarnation = true,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(current)};
+        UpdateList updates;
+        updates.push_front(state_update);
+        updates.push_front(code_update);
+        updates.push_front(block_header_update);
 
-            target_tdb.reset_root(
-                target_db.upsert(
-                    target_tdb.get_root(),
-                    std::move(finalized_updates),
-                    current,
-                    false,
-                    false),
-                current);
-        };
+        UpdateList finalized_updates;
+        Update finalized{
+            .key = finalized_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(updates),
+            .version = static_cast<int64_t>(current)};
+        finalized_updates.push_front(finalized);
+
+        target_tdb.reset_root(
+            target_db.upsert(
+                target_tdb.get_root(),
+                std::move(finalized_updates),
+                current,
+                false,
+                false),
+            current);
+    };
 
     // Primary: slot-encoded storage.
     build_and_upsert(
         db,
         tdb,
-        [&](Address const &, StorageDeltas const &slot_deltas,
+        [&](Address const &,
+            StorageDeltas const &slot_deltas,
             std::deque<mpt::Update> &alloc,
             std::deque<byte_string> &bytes_alloc,
             std::deque<hash256> &hash_alloc) {
@@ -335,7 +334,8 @@ void monad_statesync_client_context::commit()
         build_and_upsert(
             *secondary_db,
             *secondary_tdb,
-            [&](Address const &addr, StorageDeltas const &slot_deltas,
+            [&](Address const &addr,
+                StorageDeltas const &slot_deltas,
                 std::deque<mpt::Update> &alloc,
                 std::deque<byte_string> &bytes_alloc,
                 std::deque<hash256> &hash_alloc) {

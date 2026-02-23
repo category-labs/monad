@@ -100,8 +100,9 @@ TEST(DbBinarySnapshot, Basic)
     Code code_delta;
     BlockHeader last_header;
     {
-        OnDiskMachine machine;
-        mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
         Node::SharedPtr root{};
         for (uint64_t i = 0; i < 100; ++i) {
             root = load_header(std::move(root), db, BlockHeader{.number = i});
@@ -164,9 +165,9 @@ TEST(DbBinarySnapshot, Basic)
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
 
         {
-            OnDiskMachine machine;
             mpt::Db dest_init{
-                machine, OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+                std::make_unique<OnDiskMachine>(),
+                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
         }
         char const *dbname_paths_new[] = {dest_db.path.c_str()};
         monad_db_snapshot_load_filesystem(
@@ -214,8 +215,9 @@ TEST(DbBinarySnapshot, MultipleShards)
     Code code_delta;
     BlockHeader last_header;
     {
-        OnDiskMachine machine;
-        mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
         Node::SharedPtr root{};
         for (uint64_t i = 0; i < 100; ++i) {
             root = load_header(std::move(root), db, BlockHeader{.number = i});
@@ -316,9 +318,9 @@ TEST(DbBinarySnapshot, MultipleShards)
 
         EXPECT_EQ(total_shards_copied, 256u);
         {
-            OnDiskMachine machine;
             mpt::Db dest_init{
-                machine, OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+                std::make_unique<OnDiskMachine>(),
+                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
         }
         char const *dbname_paths_new[] = {dest_db.path.c_str()};
         monad_db_snapshot_load_filesystem(
@@ -367,28 +369,26 @@ namespace
         size_t count{0};
         uint8_t depth{0};
 
-        bool down(
-            unsigned char const branch, monad::mpt::Node const &node) override
+        bool
+        down(unsigned char const branch, monad::mpt::Node const &node) override
         {
             if (branch == monad::mpt::INVALID_BRANCH) {
                 return true;
             }
-            depth = static_cast<uint8_t>(
-                depth + 1 + node.path_nibbles_len());
+            depth = static_cast<uint8_t>(depth + 1 + node.path_nibbles_len());
             if (depth == STORAGE_LEAF_DEPTH && node.has_value()) {
                 ++count;
             }
             return true;
         }
 
-        void up(
-            unsigned char const branch, monad::mpt::Node const &node) override
+        void
+        up(unsigned char const branch, monad::mpt::Node const &node) override
         {
             if (branch == monad::mpt::INVALID_BRANCH) {
                 return;
             }
-            depth = static_cast<uint8_t>(
-                depth - 1 - node.path_nibbles_len());
+            depth = static_cast<uint8_t>(depth - 1 - node.path_nibbles_len());
         }
 
         std::unique_ptr<TraverseMachine> clone() const override
@@ -434,8 +434,9 @@ TEST(DbBinarySnapshot, LoadPageMode)
 
     // Build slot-encoded source db with two accounts.
     {
-        OnDiskMachine machine;
-        mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
         load_header({}, db, BlockHeader{.number = 0});
         db.update_finalized_version(0);
         StateDeltas deltas;
@@ -443,8 +444,7 @@ TEST(DbBinarySnapshot, LoadPageMode)
             StorageDeltas storage;
             for (auto const b : SLOT_BYTES) {
                 storage.emplace(
-                    make_slot(b),
-                    StorageDelta{bytes32_t{}, make_val(addr, b)});
+                    make_slot(b), StorageDelta{bytes32_t{}, make_val(addr, b)});
             }
             deltas.emplace(
                 addr,
@@ -482,9 +482,9 @@ TEST(DbBinarySnapshot, LoadPageMode)
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
 
         {
-            MonadOnDiskMachine machine;
             mpt::Db dest_init{
-                machine, OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+                std::make_unique<MonadOnDiskMachine>(),
+                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
         }
         char const *dest_paths[] = {dest_db.path.c_str()};
         monad_db_snapshot_load_filesystem(
@@ -512,12 +512,11 @@ TEST(DbBinarySnapshot, LoadPageMode)
                 EXPECT_EQ(
                     broker.read_storage_slot(addr, inc, make_slot(b)),
                     make_val(addr, b))
-                    << "addr=" << static_cast<int>(addr.bytes[19])
-                    << " slot=0x" << std::hex << static_cast<int>(b);
+                    << "addr=" << static_cast<int>(addr.bytes[19]) << " slot=0x"
+                    << std::hex << static_cast<int>(b);
             }
 
-            auto const page0 =
-                broker.read_storage_page(addr, inc, bytes32_t{});
+            auto const page0 = broker.read_storage_page(addr, inc, bytes32_t{});
             EXPECT_EQ(page0[0], make_val(addr, 0x00));
             EXPECT_EQ(page0[1], make_val(addr, 0x01));
             EXPECT_EQ(page0[0x7f], make_val(addr, 0x7f));
@@ -555,7 +554,6 @@ TEST(DbBinarySnapshot, LoadPageMode)
                     decoded.value(),
                     broker.read_storage_page(addr, inc, page_key));
             }
-
         }
 
         // Confirm slot grouping happened during load: each account holds
@@ -567,8 +565,7 @@ TEST(DbBinarySnapshot, LoadPageMode)
         ASSERT_TRUE(state_cursor.has_value());
         ASSERT_TRUE(state_cursor.value().is_valid());
         LeafCounter counter;
-        ASSERT_TRUE(
-            db.traverse_blocking(state_cursor.value(), counter, BLOCK));
+        ASSERT_TRUE(db.traverse_blocking(state_cursor.value(), counter, BLOCK));
         EXPECT_EQ(counter.count, ADDRS.size() * 2);
     }
 }

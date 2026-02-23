@@ -37,7 +37,6 @@ struct monad_db_snapshot_loader
 {
     uint64_t block;
     bool page_mode;
-    std::unique_ptr<monad::mpt::StateMachine> machine;
     monad::mpt::Db db;
     monad::mpt::Node::SharedPtr root;
     std::array<monad::byte_string, 256> eth_headers;
@@ -65,13 +64,8 @@ struct monad_db_snapshot_loader
         size_t const len, unsigned const sq_thread_cpu, bool const page_mode)
         : block{block}
         , page_mode{page_mode}
-        , machine{[page_mode]() -> std::unique_ptr<monad::mpt::StateMachine> {
-            if (page_mode) {
-                return std::make_unique<monad::MonadOnDiskMachine>();
-            }
-            return std::make_unique<monad::OnDiskMachine>();
-        }()}
-        , db{*machine,
+        , db{page_mode ? std::make_unique<monad::MonadOnDiskMachine>()
+                       : std::make_unique<monad::OnDiskMachine>(),
              monad::mpt::OnDiskDbConfig{
                  .append = true,
                  .compaction = false,

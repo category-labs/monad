@@ -31,8 +31,7 @@ class MonadBlockHashHistoryFixture : public MonadTraitsTest<MonadRevisionT>
 protected:
     using Trait = MonadTraitsTest<MonadRevisionT>::Trait;
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState block_state{tdb, vm};

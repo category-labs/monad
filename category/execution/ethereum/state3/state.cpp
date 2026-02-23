@@ -239,6 +239,21 @@ bytes32_t State::get_code_hash(Address const &address)
     return NULL_HASH;
 }
 
+bool State::is_destructed(Address const &address)
+{
+    auto const &account_state = recent_account_state(address);
+    return account_state.is_destructed();
+}
+
+bool State::is_current_incarnation(Address const &address)
+{
+    auto const &account = recent_account(address);
+    if (MONAD_LIKELY(account.has_value())) {
+        return account.value().incarnation == incarnation_;
+    }
+    return false;
+}
+
 bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
 {
     auto const it = current_.find(address);
@@ -439,7 +454,10 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
         }
     }
 
-    return {account_state.destruct(), initial_balance};
+    bool const inserted = account_state.destruct();
+    // Recompute reserve-balance status after setting the destructed flag.
+    rb_.on_debit(address);
+    return {inserted, initial_balance};
 }
 
 EXPLICIT_TRAITS_MEMBER(State::selfdestruct);

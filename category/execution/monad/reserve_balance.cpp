@@ -61,6 +61,9 @@ bool dipped_into_reserve(
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
 
+    static constexpr bool allow_init_selfdestruct_exemption =
+        traits::monad_rev() >= MONAD_NEXT;
+
     uint256_t const gas_fees =
         uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
     auto const &orig = state.original();
@@ -89,6 +92,11 @@ bool dipped_into_reserve(
             if (!effective_is_delegated) {
                 continue;
             }
+        }
+        else if (
+            allow_init_selfdestruct_exemption && state.is_destructed(addr) &&
+            state.is_current_incarnation(addr)) {
+            continue;
         }
 
         // Check if dipped into reserve
@@ -214,6 +222,14 @@ void ReserveBalance::update_violation_status(Address const &address)
     }
 
     auto &violation_threshold = violation_thresholds_[address];
+    if (allow_init_selfdestruct_exemption_ && state_->is_destructed(address) &&
+        state_->is_current_incarnation(address)) {
+        // Contracts that selfdestruct during init never get a code hash.
+        violation_threshold = uint256_t{0};
+        failed_.erase(address);
+        return;
+    }
+
     if (!violation_threshold.has_value()) {
         if (!subject_account(address)) {
             violation_threshold = uint256_t{0};
@@ -312,6 +328,7 @@ void ReserveBalance::init_from_tx(
     if constexpr (tracking_disabled) {
         tracking_enabled_ = false;
         use_recent_code_hash_ = false;
+        allow_init_selfdestruct_exemption_ = false;
         sender_ = {};
         sender_gas_fees_ = 0;
         sender_can_dip_ = false;
@@ -324,6 +341,7 @@ void ReserveBalance::init_from_tx(
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
     use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
+    allow_init_selfdestruct_exemption_ = traits::monad_rev() >= MONAD_NEXT;
     bytes32_t const sender_code_hash =
         use_recent_code_hash_
             ? state_->get_code_hash(sender)

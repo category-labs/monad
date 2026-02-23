@@ -98,8 +98,8 @@ private:
     std::unique_ptr<Impl> impl_;
 
 public:
-    explicit Db(StateMachine &); // In-memory mode
-    Db(StateMachine &, OnDiskDbConfig const &);
+    explicit Db(std::unique_ptr<StateMachine>); // In-memory mode
+    Db(std::unique_ptr<StateMachine>, OnDiskDbConfig const &);
     explicit Db(AsyncIOContext &);
 
     Db(Db const &) = delete;
@@ -166,6 +166,8 @@ public:
 
     bool is_on_disk() const;
     bool is_read_only() const;
+
+    void reset_state_machine(std::unique_ptr<StateMachine>);
 
 private:
     friend struct test::DbAccessor;

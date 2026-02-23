@@ -34,7 +34,7 @@ monad_statesync_client_context::monad_statesync_client_context(
     monad_statesync_client *const sync,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request))
-    : db{machine,
+    : db{std::make_unique<OnDiskMachine>(),
          mpt::OnDiskDbConfig{
              .append = true,
              .compaction = false,

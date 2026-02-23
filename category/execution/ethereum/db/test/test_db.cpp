@@ -71,8 +71,7 @@ namespace
     {
         static constexpr bool on_disk = false;
 
-        InMemoryMachine machine;
-        mpt::Db db{machine};
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
         vm::VM vm;
     };
 
@@ -80,8 +79,7 @@ namespace
     {
         static constexpr bool on_disk = true;
 
-        OnDiskMachine machine;
-        mpt::Db db{machine, mpt::OnDiskDbConfig{}};
+        mpt::Db db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
         vm::VM vm;
     };
 
@@ -191,8 +189,9 @@ TEST(DBTest, read_only)
         (::testing::UnitTest::GetInstance()->current_test_info()->name() +
          std::to_string(rand()));
     {
-        OnDiskMachine machine;
-        mpt::Db db{machine, mpt::OnDiskDbConfig{.dbname_paths = {name}}};
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            mpt::OnDiskDbConfig{.dbname_paths = {name}}};
         TrieDb rw(db);
 
         Account const acct1{.nonce = 1};
@@ -734,9 +733,10 @@ TYPED_TEST(DBTest, to_json)
     auto db = [&] {
         if (this->on_disk) {
             return mpt::Db{
-                this->machine, mpt::OnDiskDbConfig{.dbname_paths = {dbname}}};
+                std::make_unique<OnDiskMachine>(),
+                mpt::OnDiskDbConfig{.dbname_paths = {dbname}}};
         }
-        return mpt::Db{this->machine};
+        return mpt::Db{std::make_unique<InMemoryMachine>()};
     }();
     TrieDb tdb{db};
     load_db(tdb, 0);

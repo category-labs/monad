@@ -134,16 +134,14 @@ namespace
 
     struct InMemoryDbFixture : public ::testing::Test
     {
-        StateMachineAlwaysMerkle machine;
-        Db db{machine};
+        Db db{std::make_unique<StateMachineAlwaysMerkle>()};
         Node::SharedPtr root;
     };
 
     struct OnDiskDbFixture : public ::testing::Test
     {
-        StateMachineAlwaysMerkle machine;
         Db db{
-            machine,
+            std::make_unique<StateMachineAlwaysMerkle>(),
             OnDiskDbConfig{.fixed_history_length = MPT_TEST_HISTORY_LENGTH}};
         Node::SharedPtr root;
     };
@@ -839,12 +837,11 @@ TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
 TEST(DbTest, history_length_adjustment_never_under_min)
 {
     auto const dbname = create_temp_file(4);
-    StateMachineAlwaysEmpty machine{};
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname}};
-    Db db{machine, config};
+    Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
     Node::SharedPtr root{};
 
     constexpr unsigned nkeys = 100;
@@ -1171,13 +1168,12 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
     auto const dbname = create_temp_file(2); // 2Gb db
     auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
-    StateMachineAlwaysEmpty machine{};
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
         .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
-    Db db{machine, config};
+    Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
 
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db rodb{io_ctx};
@@ -1233,13 +1229,12 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
     auto const dbname = create_temp_file(3); // 3Gb db
     auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
-    StateMachineAlwaysMerkle machine{};
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
         .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
-    Db db{machine, config};
+    Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
     Db rodb{io_ctx};
 
@@ -1677,8 +1672,7 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
 
 TEST(RangedGetTest, path_exceeds_min_prefix)
 {
-    StateMachineAlwaysVarLen machine;
-    Db db{machine};
+    Db db{std::make_unique<StateMachineAlwaysVarLen>()};
     Node::SharedPtr root;
 
     Nibbles const min{0x0124_bytes};
@@ -1730,8 +1724,7 @@ TEST(RangedGetTest, path_exceeds_min_prefix)
 
 TEST(RangedGetTest, path_longer_than_min_and_max)
 {
-    StateMachineAlwaysVarLen machine;
-    Db db{machine};
+    Db db{std::make_unique<StateMachineAlwaysVarLen>()};
     Node::SharedPtr root;
 
     // Very short bounds: all keys will have paths longer than both min and max.
@@ -1834,17 +1827,16 @@ TEST(DbTest, auto_expire_large_set)
     auto const dbname = create_temp_file(8);
     auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
-    StateMachineAlways<
+    using ExpireMachine = StateMachineAlways<
         EmptyCompute,
-        StateMachineConfig{.expire = true, .cache_depth = 3}>
-        machine{};
+        StateMachineConfig{.expire = true, .cache_depth = 3}>;
     constexpr auto history_len = 20;
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
         .fixed_history_length = history_len};
-    Db db{machine, config};
+    Db db{std::make_unique<ExpireMachine>(), config};
     Node::SharedPtr root;
 
     auto const prefix = 0x00_bytes;
@@ -1900,16 +1892,15 @@ TEST(DbTest, auto_expire)
     auto const dbname = create_temp_file(8);
     auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
-    StateMachineAlways<
+    using ExpireMachine = StateMachineAlways<
         EmptyCompute,
-        StateMachineConfig{.expire = true, .cache_depth = 3}>
-        machine{};
+        StateMachineConfig{.expire = true, .cache_depth = 3}>;
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname},
         .fixed_history_length = 5};
-    Db db{machine, config};
+    Db db{std::make_unique<ExpireMachine>(), config};
     Node::SharedPtr root;
 
     auto const prefix = 0x00_bytes;
@@ -2227,12 +2218,11 @@ TEST(DbTest, move_trie_version_forward_history_ring_wrap_around)
     auto const dbname = create_temp_file(2);
     auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
-    StateMachineAlwaysEmpty machine{};
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname}};
-    Db db{machine, config};
+    Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
     Node::SharedPtr root;
 
     uint64_t const root_offsets_ring_capacity =
@@ -2554,7 +2544,7 @@ TEST_F(
     auto new_config = this->config;
     new_config.fixed_history_length = 65536;
     new_config.append = true;
-    new (&db) Db(machine, new_config);
+    new (&db) Db(std::make_unique<StateMachineAlwaysMerkle>(), new_config);
     EXPECT_EQ(ro_db.get_latest_version(), dest_block_id);
     EXPECT_EQ(ro_db.get_earliest_version(), earliest_block_id);
 }
@@ -2623,7 +2613,7 @@ TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
     config.append = true;
     while (config.fixed_history_length > end_history_length) {
         config.fixed_history_length = *config.fixed_history_length - 1;
-        Db const new_db{machine, config};
+        Db const new_db{std::make_unique<StateMachineAlwaysMerkle>(), config};
         EXPECT_EQ(new_db.get_history_length(), config.fixed_history_length);
         EXPECT_EQ(new_db.get_latest_version(), MPT_TEST_HISTORY_LENGTH - 1);
     }
@@ -2680,7 +2670,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     config.fixed_history_length = MPT_TEST_HISTORY_LENGTH / 2;
     config.append = true;
     {
-        Db const new_rw{machine, config};
+        Db const new_rw{std::make_unique<StateMachineAlwaysMerkle>(), config};
         EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
         EXPECT_EQ(new_rw.get_latest_version(), max_block_id);
     }
@@ -2699,7 +2689,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
 
     // Reopen rwdb with a longer history length
     config.fixed_history_length = MPT_TEST_HISTORY_LENGTH;
-    Db const new_rw{machine, config};
+    Db const new_rw{std::make_unique<StateMachineAlwaysMerkle>(), config};
     EXPECT_EQ(new_rw.get_history_length(), config.fixed_history_length);
     EXPECT_EQ(new_rw.get_earliest_version(), min_block_num_after);
     EXPECT_EQ(ro_db.get_history_length(), config.fixed_history_length);
@@ -2887,4 +2877,40 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_updates_auto_expire)
         start_version)
         << "auto_expire_version_metadata should be moved forward with "
            "move_trie_version_forward";
+}
+
+TYPED_TEST(DbTest, reset_state_machine)
+{
+    this->db.reset_state_machine(std::make_unique<StateMachineAlwaysEmpty>());
+
+    auto const k1 =
+        0x1234567812345678123456781234567812345678123456781234567812345678_bytes;
+    auto const v1 = 0xdeadbeef_bytes;
+    auto u1 = make_update(k1, v1);
+    UpdateList ls;
+    ls.push_front(u1);
+    this->root = this->db.upsert(std::move(this->root), std::move(ls), 0);
+    ASSERT_NE(this->root, nullptr);
+
+    // With EmptyCompute, the root node should have no data.
+    EXPECT_EQ(this->root->data().size(), 0u);
+
+    // Reset to a merkle state machine and upsert another key.
+    this->db.reset_state_machine(std::make_unique<StateMachineAlwaysMerkle>());
+
+    auto const k2 =
+        0x2234567812345678123456781234567812345678123456781234567812345678_bytes;
+    auto const v2 = 0xcafebabe_bytes;
+    auto u2 = make_update(k2, v2);
+    UpdateList ls2;
+    ls2.push_front(u2);
+    this->root = this->db.upsert(std::move(this->root), std::move(ls2), 1);
+    ASSERT_NE(this->root, nullptr);
+
+    // With MerkleCompute, the root node should now have data (hash).
+    EXPECT_EQ(this->root->data().size(), 32);
+
+    // Verify both keys are still accessible.
+    EXPECT_EQ(db_get(this->db, this->root, k1, 1).value(), v1);
+    EXPECT_EQ(db_get(this->db, this->root, k2, 1).value(), v2);
 }

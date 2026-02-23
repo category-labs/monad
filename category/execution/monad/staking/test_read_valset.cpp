@@ -78,10 +78,10 @@ protected:
     void SetUp() override
     {
         {
-            OnDiskMachine machine;
             vm::VM vm;
             mpt::Db db{
-                machine, mpt::OnDiskDbConfig{.dbname_paths = {db_file.path}}};
+                std::make_unique<OnDiskMachine>(),
+                mpt::OnDiskDbConfig{.dbname_paths = {db_file.path}}};
             TrieDb tdb{db};
             BlockState bs{tdb, vm};
             State state{bs, Incarnation{0, 0}};

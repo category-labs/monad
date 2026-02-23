@@ -75,9 +75,8 @@ namespace
             ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
         ::close(fd);
         char const *const path = dbname.c_str();
-        OnDiskMachine machine;
         mpt::Db const db{
-            machine,
+            std::make_unique<OnDiskMachine>(),
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
         return dbname;
     }
@@ -144,7 +143,6 @@ namespace
         monad_statesync_client client;
         monad_statesync_client_context *cctx;
         std::filesystem::path sdbname;
-        OnDiskMachine machine;
         mpt::Db sdb;
         TrieDb stdb;
         monad_statesync_server_context sctx;
@@ -157,7 +155,7 @@ namespace
             : cdbname{tmp_dbname()}
             , cctx{nullptr}
             , sdbname{tmp_dbname()}
-            , sdb{machine,
+            , sdb{std::make_unique<OnDiskMachine>(),
                   OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}}
             , stdb{sdb}
             , sctx{stdb}
@@ -210,9 +208,9 @@ TEST_F(StateSyncFixture, sync_from_latest)
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
     {
-        OnDiskMachine machine;
         mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
         uint64_t const block_number = N - 257;
         load_header(
@@ -277,9 +275,8 @@ TEST_F(StateSyncFixture, sync_from_empty)
     EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 
-    OnDiskMachine machine;
     mpt::Db cdb{
-        machine,
+        std::make_unique<OnDiskMachine>(),
         mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
     TrieDb ctdb{cdb};
     ctdb.set_block_and_prefix(cdb.get_latest_finalized_version());
@@ -312,9 +309,9 @@ TEST_F(StateSyncFixture, sync_from_empty)
 TEST_F(StateSyncFixture, sync_from_some)
 {
     {
-        OnDiskMachine machine;
         mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
         load_genesis_state(GENESIS_STATE, tdb);
         // commit some proposal to client db
@@ -509,9 +506,9 @@ TEST_F(StateSyncFixture, sync_from_some)
 TEST_F(StateSyncFixture, deletion_proposal)
 {
     {
-        OnDiskMachine machine;
         mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
         load_genesis_state(GENESIS_STATE, tdb);
         load_genesis_state(GENESIS_STATE, stdb);
@@ -620,9 +617,9 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
 {
     {
         // init client DB
-        OnDiskMachine machine;
         mpt::Db db{
-            machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
         tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
         for (uint64_t n = 1; n <= 249; ++n) {

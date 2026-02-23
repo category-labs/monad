@@ -95,8 +95,9 @@ TEST(DbBinarySnapshot, Basic)
     Code code_delta;
     BlockHeader last_header;
     {
-        OnDiskMachine machine;
-        mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
         Node::SharedPtr root{};
         for (uint64_t i = 0; i < 100; ++i) {
             root = load_header(std::move(root), db, BlockHeader{.number = i});
@@ -159,9 +160,9 @@ TEST(DbBinarySnapshot, Basic)
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
 
         {
-            OnDiskMachine machine;
             mpt::Db dest_init{
-                machine, OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+                std::make_unique<OnDiskMachine>(),
+                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
         }
         char const *dbname_paths_new[] = {dest_db.path.c_str()};
         monad_db_snapshot_load_filesystem(
@@ -208,8 +209,9 @@ TEST(DbBinarySnapshot, MultipleShards)
     Code code_delta;
     BlockHeader last_header;
     {
-        OnDiskMachine machine;
-        mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
         Node::SharedPtr root{};
         for (uint64_t i = 0; i < 100; ++i) {
             root = load_header(std::move(root), db, BlockHeader{.number = i});
@@ -310,9 +312,9 @@ TEST(DbBinarySnapshot, MultipleShards)
 
         EXPECT_EQ(total_shards_copied, 256u);
         {
-            OnDiskMachine machine;
             mpt::Db dest_init{
-                machine, OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+                std::make_unique<OnDiskMachine>(),
+                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
         }
         char const *dbname_paths_new[] = {dest_db.path.c_str()};
         monad_db_snapshot_load_filesystem(

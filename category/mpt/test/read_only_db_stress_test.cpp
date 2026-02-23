@@ -173,15 +173,13 @@ int main(int const argc, char *const argv[])
             }
 
             // construct RWDb
-            StateMachineAlwaysMerkle machine{};
-
             auto const config =
                 overwrite_keys_mode
                     ? OnDiskDbConfig{.compaction = true, .dbname_paths = {dbname_paths}, .file_size_db = 4, .fixed_history_length = 40}
                     : OnDiskDbConfig{
                           .compaction = enable_compaction,
                           .dbname_paths = {dbname_paths}};
-            Db rw_db{machine, config};
+            Db rw_db{std::make_unique<StateMachineAlwaysMerkle>(), config};
             Node::SharedPtr rw_root = nullptr;
 
             auto upsert_new_version_overwrite_keys =

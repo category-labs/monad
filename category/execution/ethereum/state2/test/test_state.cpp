@@ -95,16 +95,14 @@ namespace
 
     struct InMemoryStateTestBase
     {
-        InMemoryMachine machine;
-        mpt::Db db{machine};
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
         TrieDb tdb{db};
         vm::VM vm;
     };
 
     struct OnDiskStateTest : public ::testing::Test
     {
-        OnDiskMachine machine;
-        mpt::Db db{machine, mpt::OnDiskDbConfig{}};
+        mpt::Db db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
         TrieDb tdb{db};
         vm::VM vm;
     };
@@ -124,9 +122,12 @@ namespace
 
     struct TwoOnDisk : public ::testing::Test
     {
-        OnDiskMachine machine;
-        mpt::Db db1{machine, mpt::OnDiskDbConfig{.file_size_db = 8}};
-        mpt::Db db2{machine, mpt::OnDiskDbConfig{.file_size_db = 8}};
+        mpt::Db db1{
+            std::make_unique<OnDiskMachine>(),
+            mpt::OnDiskDbConfig{.file_size_db = 8}};
+        mpt::Db db2{
+            std::make_unique<OnDiskMachine>(),
+            mpt::OnDiskDbConfig{.file_size_db = 8}};
         TrieDb tdb1{db1};
         TrieDb tdb2{db2};
         vm::VM vm;

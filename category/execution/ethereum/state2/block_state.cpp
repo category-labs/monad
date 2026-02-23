@@ -236,7 +236,7 @@ void BlockState::merge(State const &state)
     }
 }
 
-BlockState::ReleasedState BlockState::release()
+BlockState::ReleasedState BlockState::release() &&
 {
     return {std::move(state_), std::move(code_)};
 }

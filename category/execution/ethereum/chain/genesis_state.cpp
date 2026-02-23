@@ -22,8 +22,10 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/validate_block.hpp>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
@@ -47,19 +49,26 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
             intx::from_string<uint256_t>(item.value()["wei_balance"]);
         deltas.emplace(addr, StateDelta{.account = {std::nullopt, account}});
     }
+
+    CommitBuilder builder(genesis.header.number);
+    builder.add_state_deltas(deltas)
+        .add_code(Code{})
+        .add_receipts(std::vector<Receipt>{})
+        .add_transactions(std::vector<Transaction>{}, std::vector<Address>{})
+        .add_call_frames(std::vector<std::vector<CallFrame>>{})
+        .add_ommers(std::vector<BlockHeader>{});
+    if (genesis.header.withdrawals_root == NULL_ROOT) {
+        builder.add_withdrawals({});
+    }
     db.commit(
-        deltas,
-        Code{},
-        NULL_HASH_BLAKE3,
-        genesis.header,
-        std::vector<Receipt>{},
-        std::vector<std::vector<CallFrame>>{},
-        std::vector<Address>{},
-        std::vector<Transaction>{},
-        std::vector<BlockHeader>{},
-        genesis.header.withdrawals_root == NULL_ROOT
-            ? std::make_optional<std::vector<Withdrawal>>()
-            : std::nullopt);
+        NULL_HASH_BLAKE3, builder, genesis.header, deltas, [&](BlockHeader &h) {
+            h.receipts_root = db.receipts_root();
+            h.state_root = db.state_root();
+            h.withdrawals_root = db.withdrawals_root();
+            h.transactions_root = db.transactions_root();
+            h.ommers_hash = compute_ommers_hash({});
+        });
+
     db.finalize(0, NULL_HASH_BLAKE3);
 }
 

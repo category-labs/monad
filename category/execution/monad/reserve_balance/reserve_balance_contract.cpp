@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
+#include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -27,9 +28,23 @@
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
+////////////////////////
+// Function Selectors //
+////////////////////////
+
+struct PrecompileSelector
+{
+    static constexpr uint32_t DIPPED_INTO_RESERVE =
+        abi_encode_selector("dippedIntoReserve()");
+};
+
+static_assert(PrecompileSelector::DIPPED_INTO_RESERVE == 0x3a61584e);
+
 //
 // Gas Costs
 //
+
+constexpr uint64_t DIPPED_INTO_RESERVE_OP_COST = 100; // warm sload coast
 
 constexpr uint64_t FALLBACK_COST = 40'000;
 
@@ -49,6 +64,19 @@ ReserveBalanceContract::ReserveBalanceContract(
     state_.add_to_balance(RESERVE_BALANCE_CA, 0);
 }
 
+Result<void> function_not_payable(evmc_uint256be const &value)
+{
+    bool const all_zero = std::all_of(
+        value.bytes,
+        value.bytes + sizeof(evmc_uint256be),
+        [](uint8_t const byte) { return byte == 0; });
+
+    if (MONAD_UNLIKELY(!all_zero)) {
+        return ReserveBalanceError::ValueNonZero;
+    }
+    return outcome::success();
+}
+
 template <Traits traits>
 std::pair<ReserveBalanceContract::PrecompileFunc, uint64_t>
 ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
@@ -62,12 +90,29 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
     input.remove_prefix(4);
 
     switch (signature) {
+    case PrecompileSelector::DIPPED_INTO_RESERVE:
+        return {
+            &ReserveBalanceContract::precompile_dipped_into_reserve<traits>,
+            DIPPED_INTO_RESERVE_OP_COST};
     default:
         return {&ReserveBalanceContract::precompile_fallback, FALLBACK_COST};
     }
 }
 
 EXPLICIT_MONAD_TRAITS(ReserveBalanceContract::precompile_dispatch);
+
+template <Traits traits>
+Result<byte_string> ReserveBalanceContract::precompile_dipped_into_reserve(
+    byte_string_view, evmc_address const &, evmc_uint256be const &msg_value)
+{
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
+    return byte_string{
+        abi_encode_bool(revert_transaction_cached<traits>(state_))};
+}
+
+EXPLICIT_MONAD_TRAITS_MEMBER(
+    ReserveBalanceContract::precompile_dipped_into_reserve);
 
 Result<byte_string> ReserveBalanceContract::precompile_fallback(
     byte_string_view, evmc_address const &, evmc_uint256be const &)

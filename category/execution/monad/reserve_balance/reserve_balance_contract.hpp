@@ -48,6 +48,10 @@ public:
     static std::pair<PrecompileFunc, uint64_t>
     precompile_dispatch(byte_string_view &);
 
+    template <Traits traits>
+    Result<byte_string> precompile_dipped_into_reserve(
+        byte_string_view, evmc_address const &, evmc_uint256be const &);
+
     Result<byte_string> precompile_fallback(
         byte_string_view, evmc_address const &, evmc_uint256be const &);
 };

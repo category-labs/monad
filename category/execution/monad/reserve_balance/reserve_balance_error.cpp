@@ -38,6 +38,7 @@ quick_status_code_from_enum<monad::ReserveBalanceError>::value_mappings()
     static std::initializer_list<mapping> const v = {
         {ReserveBalanceError::Success, "success", {errc::success}},
         {ReserveBalanceError::MethodNotSupported, "method not supported", {}},
+        {ReserveBalanceError::ValueNonZero, "value is nonzero", {}},
     };
 
     return v;

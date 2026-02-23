@@ -34,6 +34,7 @@ enum class ReserveBalanceError
 {
     Success = 0,
     MethodNotSupported,
+    ValueNonZero,
 };
 
 MONAD_NAMESPACE_END

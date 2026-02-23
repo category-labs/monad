@@ -296,8 +296,7 @@ namespace
         char const *suite_name, std::span<test_case const> test_cases,
         monad::Address const &code_address)
     {
-        InMemoryMachine machine;
-        mpt::Db db{machine};
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
         TrieDb tdb{db};
         vm::VM vm;
         BlockState bs{tdb, vm};

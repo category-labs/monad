@@ -97,8 +97,7 @@ TEST(PrestateTracer, pre_state_to_json)
     prestate.emplace(ADDR_A, as);
 
     // The State setup is only used to get code
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -137,8 +136,7 @@ TEST(PrestateTracer, zero_nonce)
     prestate.emplace(ADDR_A, as);
 
     // The State setup is only used to get code
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -164,8 +162,7 @@ TEST(PrestateTracer, state_deltas_to_json)
 {
     Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -211,8 +208,7 @@ TEST(PrestateTracer, statediff_account_creation)
 {
     Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -251,8 +247,7 @@ TEST(PrestateTracer, statediff_balance_nonce_update)
     b.nonce += 1;
     b.balance -= 100;
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -296,8 +291,7 @@ TEST(PrestateTracer, statediff_delete_storage)
     b.nonce += 1;
     b.balance -= 100;
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -352,8 +346,7 @@ TEST(PrestateTracer, statediff_multiple_fields_update)
     Account a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
     Account b{.balance = 42, .code_hash = B_CODE_HASH, .nonce = 2};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -411,8 +404,7 @@ TEST(PrestateTracer, statediff_account_deletion)
 {
     Account a{.balance = 32, .code_hash = NULL_HASH, .nonce = 1};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -478,8 +470,7 @@ TEST(PrestateTracer, geth_example_prestate)
     prestate.emplace(addr4, as);
 
     // The State setup is only used to get code
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -531,8 +522,7 @@ TEST(PrestateTracer, geth_example_statediff)
     };
 
     // The State setup is only used to get code
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -565,8 +555,7 @@ TEST(PrestateTracer, prestate_empty)
     trace::Map<Address, OriginalAccountState> prestate{};
 
     // The State setup is only used to get code
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -586,8 +575,7 @@ TEST(PrestateTracer, statediff_empty)
     StateDeltas state_deltas{};
 
     // The State setup is only used to get code
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -612,8 +600,7 @@ TYPED_TEST(TraitsTest, access_list_empty)
 {
     StateDeltas state_deltas{};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -632,8 +619,7 @@ TYPED_TEST(TraitsTest, access_list_empty)
 
 TYPED_TEST(TraitsTest, access_list_state_view_excludes_rejected_frame)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -658,8 +644,7 @@ TYPED_TEST(TraitsTest, access_list_state_view_excludes_rejected_frame)
 
 TYPED_TEST(TraitsTest, access_list_records_rejected_frame_storage)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -696,8 +681,7 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_storage)
 
 TYPED_TEST(TraitsTest, access_list_records_rejected_frame_regular_account)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -734,8 +718,7 @@ TYPED_TEST(TraitsTest, access_list_write)
 {
     StateDeltas state_deltas{};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -781,8 +764,7 @@ TYPED_TEST(TraitsTest, access_list_write)
 
 TYPED_TEST(TraitsTest, access_list_regular_account)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -851,8 +833,7 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
 
 TYPED_TEST(TraitsTest, access_list_sender)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -910,8 +891,7 @@ TYPED_TEST(TraitsTest, access_list_sender)
 
 TYPED_TEST(TraitsTest, access_list_beneficiary)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -969,8 +949,7 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
 
 TYPED_TEST(TraitsTest, access_list_recipient)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1028,8 +1007,7 @@ TYPED_TEST(TraitsTest, access_list_recipient)
 
 TYPED_TEST(TraitsTest, access_list_authorities)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1100,8 +1078,7 @@ TYPED_TEST(TraitsTest, access_list_authorities)
 
 TYPED_TEST(TraitsTest, access_list_precompiles)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1153,8 +1130,7 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
 TEST(PrestateTracer, prestate_access_storage)
 {
     // Setup matter
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1225,8 +1201,7 @@ TEST(PrestateTracer, prestate_access_storage)
 TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
 {
     // Setup matter
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1294,8 +1269,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
 TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
 {
     // Setup matter
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1372,8 +1346,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
 TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
 {
     // Setup matter
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1443,8 +1416,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
 TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
 {
     // Setup matter
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1510,8 +1482,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
 TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
 {
     // Setup matter
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1580,8 +1551,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
 TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
 {
     // Setup matter
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1652,8 +1622,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
 TEST(PrestateTracer, prestate_omit_beneficiary)
 {
     // Setup matter
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -1706,8 +1675,7 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
 TEST(PrestateTracer, prestate_empty_block_no_reward)
 {
     // Setup matter
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 

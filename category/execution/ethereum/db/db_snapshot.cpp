@@ -34,7 +34,6 @@
 struct monad_db_snapshot_loader
 {
     uint64_t block;
-    monad::OnDiskMachine machine;
     monad::mpt::Db db;
     monad::mpt::Node::SharedPtr root;
     std::array<monad::byte_string, 256> eth_headers;
@@ -52,7 +51,7 @@ struct monad_db_snapshot_loader
         uint64_t const block, char const *const *const dbname_paths,
         size_t const len, unsigned const sq_thread_cpu)
         : block{block}
-        , db{machine,
+        , db{std::make_unique<monad::OnDiskMachine>(),
              monad::mpt::OnDiskDbConfig{
                  .append = true,
                  .compaction = false,

@@ -66,11 +66,10 @@ namespace
             MONAD_ASSERT(
                 -1 !=
                 ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
-            monad::OnDiskMachine machine;
             // Initialize the on-disk DB format; the Db object is not needed
             // after this point.
             (void)monad::mpt::Db{
-                machine,
+                std::make_unique<monad::OnDiskMachine>(),
                 monad::mpt::OnDiskDbConfig{
                     .append = false, .dbname_paths = {path}}};
         }

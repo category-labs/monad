@@ -86,8 +86,7 @@ namespace
 
 TYPED_TEST(TraitsTest, create_with_insufficient)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -146,8 +145,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
 // do not bump nonce prior to MONAD_FIVE but do bump it after
 TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -230,8 +228,7 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
         GTEST_SKIP() << "access-list tracing requires EIP-2929 access tracking";
     }
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -315,8 +312,7 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
 
 TYPED_TEST(TraitsTest, eip684_existing_code)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -379,8 +375,7 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
 
 TYPED_TEST(TraitsTest, create_nonce_out_of_range)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -444,8 +439,7 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
 
 TYPED_TEST(TraitsTest, static_precompile_execution)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -514,8 +508,7 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
 
 TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -591,8 +584,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
 
@@ -712,8 +704,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
 
@@ -830,8 +821,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
 
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     commit_sequential(
@@ -876,8 +866,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
 
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     commit_sequential(
@@ -910,8 +899,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
 {
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     commit_sequential(
@@ -944,8 +932,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
 
 TYPED_TEST(TraitsTest, create_inside_delegated_call)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -1049,8 +1036,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
 
 TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -1180,8 +1166,7 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
 
 TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -1290,8 +1275,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
 {
     static_assert(TestFixture::Trait::evm_rev() > EVMC_HOMESTEAD);
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -1393,8 +1377,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
 
 TYPED_TEST(TraitsTest, defensive_delegation_check)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};

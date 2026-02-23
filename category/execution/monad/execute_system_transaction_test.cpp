@@ -48,8 +48,7 @@ using namespace monad::test;
 
 TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -162,8 +161,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
 TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -288,8 +286,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
 TEST(SystemTransaction, static_validate_system_transaction_failure)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 
@@ -327,8 +324,7 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
 
 TEST(SystemTransaction, static_validate_transaction_failure)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
 

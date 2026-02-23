@@ -25,12 +25,11 @@ MONAD_TEST_NAMESPACE_BEGIN
 
 struct TestState
 {
-    monad::InMemoryMachine machine;
     monad::mpt::Db db;
     monad::TrieDb trie_db;
 
     TestState()
-        : db{machine}
+        : db{std::make_unique<monad::InMemoryMachine>()}
         , trie_db{db}
     {
     }

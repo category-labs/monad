@@ -248,13 +248,14 @@ public:
 class Db::InMemory final : public Db::Impl
 {
     UpdateAux aux_;
-    StateMachine &machine_;
+    std::unique_ptr<StateMachine> machine_;
 
 public:
-    explicit InMemory(StateMachine &machine)
+    explicit InMemory(std::unique_ptr<StateMachine> machine)
         : aux_{}
-        , machine_{machine}
+        , machine_{std::move(machine)}
     {
+        MONAD_ASSERT(machine_);
     }
 
     virtual UpdateAux &aux() override
@@ -267,7 +268,7 @@ public:
         bool, bool) override
     {
         return aux_.do_update(
-            std::move(root), machine_, std::move(list), version, false);
+            std::move(root), *machine_, std::move(list), version, false);
     }
 
     virtual Node::SharedPtr copy_trie_fiber_blocking(
@@ -675,21 +676,23 @@ public:
 class Db::RWOnDisk final : public Impl
 {
     std::shared_ptr<OnDiskDbServiceThread> worker_thread_;
-    StateMachine &machine_;
+    // instantiated at construction and never changed, so safe to read without
+    // synchronization after constructor finishes
+    std::unique_ptr<StateMachine> machine_;
     bool const compaction_;
-
     uint64_t unflushed_version_{INVALID_BLOCK_NUM};
 
 public:
     RWOnDisk(
         std::shared_ptr<OnDiskDbServiceThread> worker_thread,
-        StateMachine &machine, bool compaction)
+        std::unique_ptr<StateMachine> machine, bool compaction)
         : worker_thread_(std::move(worker_thread))
-        , machine_{machine}
-        , compaction_(compaction)
+        , machine_{std::move(machine)}
+        , compaction_{compaction}
         , unflushed_version_{INVALID_BLOCK_NUM}
     {
         MONAD_ASSERT(worker_thread_ != nullptr);
+        MONAD_ASSERT(machine_);
     }
 
     virtual UpdateAux &aux() override
@@ -737,7 +740,7 @@ public:
         worker_thread_->submit(OnDiskDbServiceThread::FiberUpsertRequest{
             .promise = std::move(promise),
             .prev_root = std::move(root),
-            .sm = machine_,
+            .sm = *machine_,
             .updates = std::move(updates),
             .version = version,
             .enable_compaction = enable_compaction && compaction_,
@@ -765,7 +768,7 @@ public:
             OnDiskDbServiceThread::FiberLoadAllFromBlockRequest{
                 .promise = std::move(promise),
                 .root = NodeCursor{root},
-                .sm = machine_});
+                .sm = *machine_});
         return fut.get();
     }
 
@@ -972,14 +975,14 @@ bool RODb::traverse(
         cursor.node, machine, block_id, concurrency_limit);
 }
 
-Db::Db(StateMachine &machine)
-    : impl_{std::make_unique<InMemory>(machine)}
+Db::Db(std::unique_ptr<StateMachine> machine)
+    : impl_{std::make_unique<InMemory>(std::move(machine))}
 {
 }
 
-Db::Db(StateMachine &machine, OnDiskDbConfig const &config)
+Db::Db(std::unique_ptr<StateMachine> machine, OnDiskDbConfig const &config)
     : impl_{std::make_unique<RWOnDisk>(
-          std::make_shared<OnDiskDbServiceThread>(config), machine,
+          std::make_shared<OnDiskDbServiceThread>(config), std::move(machine),
           config.compaction)}
 {
     MONAD_ASSERT(impl_->aux().is_on_disk());

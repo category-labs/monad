@@ -98,8 +98,8 @@ private:
     std::unique_ptr<Impl> impl_;
 
 public:
-    explicit Db(StateMachine &); // In-memory mode
-    Db(StateMachine &, OnDiskDbConfig const &);
+    explicit Db(std::unique_ptr<StateMachine>); // In-memory mode
+    Db(std::unique_ptr<StateMachine>, OnDiskDbConfig const &);
     explicit Db(AsyncIOContext &);
 
     Db(Db const &) = delete;

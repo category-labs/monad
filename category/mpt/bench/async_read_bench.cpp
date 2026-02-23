@@ -234,12 +234,11 @@ int main(int const argc, char *const argv[])
                 << std::endl;
 
             // construct RWDb
-            StateMachineAlwaysMerkle machine{};
             auto const config = OnDiskDbConfig{
                 .append = true,
                 .compaction = true,
                 .dbname_paths = {dbname_paths}};
-            Db rw_db{machine, config};
+            Db rw_db{std::make_unique<StateMachineAlwaysMerkle>(), config};
             auto rw_root =
                 rw_db.load_root_for_version(rw_db.get_latest_version());
 

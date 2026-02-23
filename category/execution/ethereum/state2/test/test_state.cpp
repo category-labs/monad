@@ -93,17 +93,15 @@ namespace
 
     struct InMemoryStateTestBase
     {
-        InMemoryMachine machine;
-        mpt::Db db{machine};
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
         TrieDb tdb{db};
         vm::VM vm;
     };
 
     struct OnDiskStateTest : public ::testing::Test
     {
-        OnDiskMachine machine;
-        mpt::Db db{machine, mpt::OnDiskDbConfig{}};
-        TrieDb tdb;
+        mpt::Db db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
+        TrieDb tdb{db};
         vm::VM vm;
 
         explicit OnDiskStateTest(bool const cache = false)
@@ -135,9 +133,12 @@ namespace
 
     struct TwoOnDisk : public ::testing::Test
     {
-        OnDiskMachine machine;
-        mpt::Db db1{machine, mpt::OnDiskDbConfig{.file_size_db = 8}};
-        mpt::Db db2{machine, mpt::OnDiskDbConfig{.file_size_db = 8}};
+        mpt::Db db1{
+            std::make_unique<OnDiskMachine>(),
+            mpt::OnDiskDbConfig{.file_size_db = 8}};
+        mpt::Db db2{
+            std::make_unique<OnDiskMachine>(),
+            mpt::OnDiskDbConfig{.file_size_db = 8}};
         // baseline noncaching db for tdb1
         TrieDb tdb1{db1};
         TrieDb tdb2{db2, /*enable_multiblock_cache=*/true};

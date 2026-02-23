@@ -85,9 +85,8 @@ struct ReserveBalanceTest : public ::testing::Test
     static constexpr auto account_b = Address{0xcafebabe};
     static constexpr auto account_c = Address{0xabbaabba};
 
-    OnDiskMachine machine;
     vm::VM vm;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<OnDiskMachine>()};
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
@@ -253,8 +252,7 @@ void run_dipped_into_reserve_test(
     static constexpr Address EOA{0xaaaaaaaa};
     static constexpr Address SCW{0xcccccccc};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -588,9 +586,8 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
 {
     static constexpr auto account_a = Address{0xdeadbeef};
 
-    OnDiskMachine machine;
     vm::VM vm;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<OnDiskMachine>()};
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};

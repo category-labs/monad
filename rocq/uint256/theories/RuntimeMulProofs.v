@@ -19,11 +19,10 @@ Open Scope Z_scope.
 (** * General Modular Arithmetic Helper *)
 
 Lemma Z_mod_divide_diff : forall a b n,
-  n <> 0 ->
   (exists k, a - b = k * n) ->
   a mod n = b mod n.
 Proof.
-  intros a b n Hn [k Hk].
+  intros a b n [k Hk].
   replace a with (b + k * n) by lia.
   apply Z_mod_plus_full.
 Qed.
@@ -60,17 +59,13 @@ Qed.
 
 (** adc_2_full computes 128-bit sum modulo 2^128 *)
 Lemma adc_2_full_correct : forall x_1 x_0 y_1 y_0,
-  0 <= x_1 < modulus64 ->
-  0 <= x_0 < modulus64 ->
-  0 <= y_1 < modulus64 ->
-  0 <= y_0 < modulus64 ->
   let '(r_1, r_0) := adc_2_full x_1 x_0 y_1 y_0 in
   r_1 * modulus64 + r_0
   = (x_1 * modulus64 + x_0 + y_1 * modulus64 + y_0) mod (modulus64 * modulus64) /\
   0 <= r_0 < modulus64 /\
   0 <= r_1 < modulus64.
 Proof.
-  intros x_1 x_0 y_1 y_0 Hx1 Hx0 Hy1 Hy0.
+  intros x_1 x_0 y_1 y_0.
   unfold adc_2_full. cbn [fst snd].
   set (sum := x_1 * modulus64 + x_0 + y_1 * modulus64 + y_0).
   set (M := modulus64).
@@ -91,7 +86,6 @@ Qed.
 
 (** adc_3 computes exact 192-bit sum (when x_2 is small enough) *)
 Lemma adc_3_correct : forall x_2 x_1 x_0 y_1 y_0,
-  0 <= x_2 ->
   0 <= x_1 < modulus64 ->
   0 <= x_0 < modulus64 ->
   0 <= y_1 < modulus64 ->
@@ -102,7 +96,7 @@ Lemma adc_3_correct : forall x_2 x_1 x_0 y_1 y_0,
   0 <= r_0 < modulus64 /\
   0 <= r_1 < modulus64.
 Proof.
-  intros x_2 x_1 x_0 y_1 y_0 Hx2 Hx1 Hx0 Hy1 Hy0.
+  intros x_2 x_1 x_0 y_1 y_0 Hx1 Hx0 Hy1 Hy0.
   unfold adc_3. cbn [fst snd].
   set (sum := x_2 * modulus64 * modulus64
             + x_1 * modulus64 + x_0
@@ -110,7 +104,6 @@ Proof.
   set (M := modulus64).
   assert (HM: 0 < M) by (unfold M, modulus64; lia).
   assert (HMM: 0 < M * M) by lia.
-  assert (Hsum_nn: 0 <= sum) by (unfold sum; nia).
   pose proof (Z_div_mod_eq_full sum (M * M)) as Hdm1.
   pose proof (Z.mod_pos_bound sum (M * M) HMM) as Hmod1.
   pose proof (Z_div_mod_eq_full (sum mod (M * M)) M) as Hdm2.
@@ -408,7 +401,7 @@ Proof.
         pose proof (get_word_bounded result (I + J) Hresult ltac:(lia)) as Hgw.
         pose proof (adc_3_correct (hi (mulx64 x y_i)) (lo (mulx64 x y_i))
           (get_word result (I + J)) c_hi c_lo
-          ltac:(lia) Hlo Hgw Hchi Hclo) as Hadc3.
+          Hlo Hgw Hchi Hclo) as Hadc3.
         pose proof (adc_3_r2_bounded (hi (mulx64 x y_i)) (lo (mulx64 x y_i))
           (get_word result (I + J)) c_hi c_lo
           ltac:(lia) Hlo Hgw Hchi Hclo) as Hr2.
@@ -426,11 +419,7 @@ Proof.
       * destruct (I + J + 1 <? length result)%nat eqn:H3.
         -- (* Second-to-last: mulx low + adc_2_full *)
            pose proof (adc_2_full_correct (normalize64 (x * y_i))
-             (get_word result (I + J)) c_hi c_lo
-             ltac:(unfold normalize64; split;
-               [apply Z.mod_pos_bound; unfold modulus64; lia |
-                apply Z.mod_pos_bound; unfold modulus64; lia])
-             ltac:(apply get_word_bounded; [assumption | lia]) Hchi Hclo) as Hadc2.
+             (get_word result (I + J)) c_hi c_lo) as Hadc2.
            destruct (adc_2_full (normalize64 (x * y_i))
              (get_word result (I + J)) c_hi c_lo) as [c_lo' res_IJ].
            destruct Hadc2 as [_ [Hres_IJ Hclo']].
@@ -495,8 +484,7 @@ Proof.
         assert (HMP: modulus64 * P = M_R).
         { unfold M_R, modulus_words, words_bits, P, modulus64.
           rewrite <- Z.pow_add_r by lia. f_equal. subst pos. lia. }
-        apply Z_mod_divide_diff;
-          [unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia | ].
+        apply Z_mod_divide_diff.
         pose proof (Z_div_mod_eq_full (r_pos + c_lo) modulus64) as Hdm.
         exists (-((r_pos + c_lo) / modulus64 + to_Z64 c_hi)).
         unfold to_Z64. rewrite <- HMP. nia.
@@ -530,7 +518,7 @@ Proof.
         pose proof (get_word_bounded result (I + J) Hresult ltac:(lia)) as Hgw.
         unfold to_Z64 in Hhi, Hlo, Hhile.
         pose proof (adc_3_correct (hi r) (lo r) (get_word result (I + J))
-          c_hi c_lo ltac:(lia) Hlo Hgw Hchi Hclo) as Hadc3.
+          c_hi c_lo Hlo Hgw Hchi Hclo) as Hadc3.
         pose proof (adc_3_r2_bounded (hi r) (lo r) (get_word result (I + J))
           c_hi c_lo ltac:(lia) Hlo Hgw Hchi Hclo) as Hr2.
         destruct (adc_3 (hi r) (lo r) (get_word result (I + J)) c_hi c_lo)
@@ -563,12 +551,7 @@ Proof.
            assert (HIJ_eq: (I + J + 2 = R)%nat) by lia.
            set (lo_val := normalize64 (x * y_i)).
            pose proof (adc_2_full_correct lo_val (get_word result (I + J))
-             c_hi c_lo
-             ltac:(unfold lo_val, normalize64; split;
-               [apply Z.mod_pos_bound; unfold modulus64; lia |
-                apply Z.mod_pos_bound; unfold modulus64; lia])
-             ltac:(apply get_word_bounded; [assumption | lia])
-             Hchi Hclo) as Hadc2.
+             c_hi c_lo) as Hadc2.
            destruct (adc_2_full lo_val (get_word result (I + J)) c_hi c_lo)
              as [c_lo' res_IJ] eqn:Hadc2_eq.
            destruct Hadc2 as [Hadc2_main [Hres_IJ Hclo']].
@@ -596,8 +579,7 @@ Proof.
            unfold lo_val, normalize64, S_, M in Hmod_eq, HdmS, Hdmx |- *.
            fold M in Hmod_eq, HdmS, Hdmx. fold S_ in Hmod_eq, HdmS.
            change (2^64) with M. fold M in HM2P.
-           apply Z_mod_divide_diff;
-             [unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia | ].
+           apply Z_mod_divide_diff.
            exists (-(x * y_i / M + S_ / (M * M) - c_hi)).
            assert (Hlo_eq: lo_val = (x * y_i) mod M) by reflexivity.
            rewrite <- HM2P. nia.
@@ -633,8 +615,7 @@ Proof.
            cbn [to_Z_words]. change (2^64) with M. unfold to_Z64.
            fold M.
            pose proof (Z_div_mod_eq_full (r_pos + c_lo) M) as Hdm.
-           apply Z_mod_divide_diff;
-             [unfold M_R, modulus_words, words_bits; apply Z.pow_nonzero; lia | ].
+           apply Z_mod_divide_diff.
            exists (-((r_pos + c_lo) / M + (x + M * to_Z_words rest) * y_i + c_hi)).
            rewrite <- HMP. nia.
     + (* I + J >= R: result unchanged *)
@@ -677,10 +658,9 @@ Qed.
 
 (** mul_line preserves result length *)
 Lemma mul_line_length : forall R xs y,
-  (0 < R)%nat ->
   length (mul_line R xs y) = R.
 Proof.
-  intros R xs y HR.
+  intros R xs y.
   unfold mul_line. destruct xs as [|x0 rest].
   - apply extend_words_length.
   - apply mul_line_recur_length. rewrite set_word_length. apply extend_words_length.
@@ -690,10 +670,9 @@ Qed.
 Lemma mul_line_valid : forall R xs y,
   words_valid xs ->
   0 <= y < modulus64 ->
-  (0 < R)%nat ->
   words_valid (mul_line R xs y).
 Proof.
-  intros R xs y Hxs Hy HR.
+  intros R xs y Hxs Hy.
   unfold mul_line. destruct xs as [|x0 rest].
   - apply extend_words_valid.
   - inversion Hxs as [|x0' rest' Hx0 Hrest]; subst.
@@ -790,13 +769,12 @@ Lemma mul_add_line_correct : forall I R xs y_i result,
   0 <= y_i < modulus64 ->
   words_valid result ->
   length result = R ->
-  (0 < R)%nat ->
   (R <= I + length xs)%nat ->
   to_Z_words (mul_add_line I R xs y_i result) mod modulus_words R
   = (to_Z_words result + to_Z64 y_i * to_Z_words xs * 2^(64 * Z.of_nat I))
     mod modulus_words R.
 Proof.
-  intros I R xs y_i result Hxs Hy Hresult Hlen HR HRI.
+  intros I R xs y_i result Hxs Hy Hresult Hlen HRI.
   unfold mul_add_line. destruct xs as [|x0 rest].
   - cbn [to_Z_words]. rewrite Z.mul_0_r, Z.mul_0_l, Z.add_0_r. reflexivity.
   - inversion Hxs as [|x0' rest' Hx0 Hrest]; subst x0' rest'.
@@ -821,7 +799,6 @@ Proof.
       * (* rest*y_i*M + (x0*y_i) mod M ≡ (x0 + M*rest)*y_i (mod M_R)
              because (x0*y_i - (x0*y_i) mod M) * P is a multiple of M_R *)
         apply Z_mod_divide_diff.
-        { unfold modulus_words, words_bits; apply Z.pow_nonzero; lia. }
         set (P := 2^(64 * Z.of_nat I)).
         assert (HMP: modulus64 * P = modulus_words R * 2^(64 * Z.of_nat (I + 1 - R))).
         { unfold modulus_words, words_bits, P, modulus64.
@@ -895,7 +872,7 @@ Proof.
   intros xs ys R HR. unfold truncating_mul_runtime.
   destruct ys.
   - apply extend_words_length.
-  - apply truncating_mul_runtime_recur_length. apply mul_line_length. exact HR.
+  - apply truncating_mul_runtime_recur_length. apply mul_line_length.
 Qed.
 
 (** Helper: truncating_mul_runtime produces valid words *)
@@ -912,7 +889,7 @@ Proof.
   - inversion Hys as [|y0' rest' Hy0 Hrest]; subst.
     apply truncating_mul_runtime_recur_valid; try assumption.
     + apply mul_line_valid; assumption.
-    + apply mul_line_length; exact HR.
+    + apply mul_line_length.
 Qed.
 
 (** Correctness of the recursive accumulation loop *)
@@ -945,7 +922,7 @@ Proof.
     2: unfold result'; rewrite mul_add_line_length; reflexivity.
     2: exact HR. 2: exact HlenR. 2: lia.
     pose proof (mul_add_line_correct I R xs y result Hxs Hy Hresult
-          ltac:(reflexivity) HR HRI) as Hmal.
+          ltac:(reflexivity) HRI) as Hmal.
     fold result' in Hmal.
     assert (HMR_nz: modulus_words R <> 0)
       by (unfold modulus_words, words_bits; apply Z.pow_nonzero; lia).
@@ -987,7 +964,7 @@ Proof.
       f_equal.
       cbn [to_Z_words]. lia.
     + apply mul_line_valid; assumption.
-    + apply mul_line_length; assumption.
+    + apply mul_line_length.
 Qed.
 
 (** * Level 1: Main 256-bit Theorem *)

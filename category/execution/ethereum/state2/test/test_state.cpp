@@ -584,8 +584,9 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code] = bs.release();
-        this->tdb.commit(
+        auto [released_state, released_code] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
             *released_state,
             released_code,
             bytes32_t{1},
@@ -638,8 +639,9 @@ TYPED_TEST(
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code] = bs.release();
-        this->tdb.commit(
+        auto [released_state, released_code] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
             *released_state,
             released_code,
             bytes32_t{1},
@@ -697,8 +699,9 @@ TYPED_TEST(
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code] = bs.release();
-        this->tdb.commit(
+        auto [released_state, released_code] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
             *released_state,
             released_code,
             NULL_HASH_BLAKE3,
@@ -1268,8 +1271,9 @@ TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
     as.set_storage(a, key1, value1);
 
     bs.merge(as);
-    auto [released_state, released_code] = bs.release();
-    this->tdb.commit(
+    auto [released_state, released_code] = std::move(bs).release();
+    commit_simple(
+        this->tdb,
         *released_state,
         released_code,
         NULL_HASH_BLAKE3,
@@ -1298,8 +1302,9 @@ TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
     bs.merge(as);
-    auto [released_state, released_code] = bs.release();
-    this->tdb.commit(
+    auto [released_state, released_code] = std::move(bs).release();
+    commit_simple(
+        this->tdb,
         *released_state,
         released_code,
         NULL_HASH_BLAKE3,
@@ -1322,7 +1327,8 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
 
     // commit to Block 9 Finalized
     this->tdb.set_block_and_prefix(8);
-    this->tdb.commit(
+    commit_simple(
+        this->tdb,
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
@@ -1356,8 +1362,9 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
-        auto [released_state, released_code] = bs.release();
-        this->tdb.commit(
+        auto [released_state, released_code] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
             *released_state,
             released_code,
             bytes32_t{10},
@@ -1382,8 +1389,9 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         cs.destruct_suicides<typename TestFixture::Trait>();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
-        auto [released_state, released_code] = bs.release();
-        this->tdb.commit(
+        auto [released_state, released_code] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
             *released_state,
             released_code,
             bytes32_t{11},
@@ -1425,7 +1433,8 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
 
     // commit to block 10, round 5
     this->tdb.set_block_and_prefix(9);
-    this->tdb.commit(
+    commit_simple(
+        this->tdb,
         StateDeltas{
             {a,
              StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
@@ -1462,8 +1471,9 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 8 on top of block 10 round 5
-        auto [released_state, released_code] = bs.release();
-        this->tdb.commit(
+        auto [released_state, released_code] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
             *released_state,
             released_code,
             bytes32_t{118},
@@ -1489,8 +1499,9 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 6 on top of block 10 round 5
-        auto [released_state, released_code] = bs.release();
-        this->tdb.commit(
+        auto [released_state, released_code] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
             *released_state,
             released_code,
             bytes32_t{116},
@@ -1518,8 +1529,9 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 7 on top of block 10 round 5
-        auto [released_state, released_code] = bs.release();
-        this->tdb.commit(
+        auto [released_state, released_code] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
             *released_state,
             released_code,
             bytes32_t{117},
@@ -1547,7 +1559,8 @@ TEST_F(OnDiskStateTest, proposal_basics)
     this->tdb.reset_root(
         load_header({}, this->db, BlockHeader{.number = 9}), 9);
     Db &db = this->tdb;
-    db.commit(
+    commit_simple(
+        db,
         StateDeltas{
             {a,
              StateDelta{
@@ -1562,8 +1575,9 @@ TEST_F(OnDiskStateTest, proposal_basics)
     db_cache.set_block_and_prefix(10, bytes32_t{10});
     BlockState bs1(db_cache, this->vm);
     EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
-    auto [released_state1, released_code1] = bs1.release();
-    db_cache.commit(
+    auto [released_state1, released_code1] = std::move(bs1).release();
+    commit_simple(
+        db_cache,
         *released_state1,
         released_code1,
         bytes32_t{11},
@@ -1580,8 +1594,9 @@ TEST_F(OnDiskStateTest, proposal_basics)
     EXPECT_TRUE(bs2.can_merge(as));
     bs2.merge(as);
     EXPECT_EQ(db_cache.read_account(a).value().balance, 30'000);
-    auto [released_state2, released_code2] = bs2.release();
-    db_cache.commit(
+    auto [released_state2, released_code2] = std::move(bs2).release();
+    commit_simple(
+        db_cache,
         *released_state2,
         released_code2,
         bytes32_t{12},
@@ -1625,8 +1640,12 @@ TEST_F(OnDiskStateTest, undecided_proposals)
                  {key1, {bytes32_t{}, value1}},
                  {key2, {bytes32_t{}, value2}}}}}}};
     db_cache.set_block_and_prefix(9);
-    db_cache.commit(
-        *state_deltas, Code{}, bytes32_t{10}, BlockHeader{.number = 10});
+    commit_simple(
+        db_cache,
+        *state_deltas,
+        Code{},
+        bytes32_t{10},
+        BlockHeader{.number = 10});
     db_cache.update_proposal_state(std::move(state_deltas), 10, bytes32_t{10});
     db_cache.finalize(10, bytes32_t{10});
     EXPECT_TRUE(db_cache.read_account(a).has_value());
@@ -1652,8 +1671,9 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         EXPECT_TRUE(bs_111.can_merge(as));
         bs_111.merge(as);
     }
-    auto [released_state_111, released_code_111] = bs_111.release();
-    db_cache.commit(
+    auto [released_state_111, released_code_111] = std::move(bs_111).release();
+    commit_simple(
+        db_cache,
         *released_state_111,
         released_code_111,
         bytes32_t{111},
@@ -1684,8 +1704,9 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         EXPECT_TRUE(bs_121.can_merge(as));
         bs_121.merge(as);
     }
-    auto [released_state_121, released_code_121] = bs_121.release();
-    db_cache.commit(
+    auto [released_state_121, released_code_121] = std::move(bs_121).release();
+    commit_simple(
+        db_cache,
         *released_state_121,
         released_code_121,
         bytes32_t{121},
@@ -1716,8 +1737,9 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         EXPECT_TRUE(bs_112.can_merge(as));
         bs_112.merge(as);
     }
-    auto [released_state_112, released_code_112] = bs_112.release();
-    db_cache.commit(
+    auto [released_state_112, released_code_112] = std::move(bs_112).release();
+    commit_simple(
+        db_cache,
         *released_state_112,
         released_code_112,
         bytes32_t{112},
@@ -1736,8 +1758,9 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         EXPECT_TRUE(bs_122.can_merge(as));
         bs_122.merge(as);
     }
-    auto [released_state_122, released_code_122] = bs_122.release();
-    db_cache.commit(
+    auto [released_state_122, released_code_122] = std::move(bs_122).release();
+    commit_simple(
+        db_cache,
         *released_state_122,
         released_code_122,
         bytes32_t{122},
@@ -1759,8 +1782,9 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         EXPECT_TRUE(bs_131.can_merge(as));
         bs_131.merge(as);
     }
-    auto [released_state_131, released_code_131] = bs_131.release();
-    db_cache.commit(
+    auto [released_state_131, released_code_131] = std::move(bs_131).release();
+    commit_simple(
+        db_cache,
         *released_state_131,
         released_code_131,
         bytes32_t{131},
@@ -1780,8 +1804,9 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         EXPECT_TRUE(bs_132.can_merge(as));
         bs_132.merge(as);
     }
-    auto [released_state_132, released_code_132] = bs_132.release();
-    db_cache.commit(
+    auto [released_state_132, released_code_132] = std::move(bs_132).release();
+    commit_simple(
+        db_cache,
         *released_state_132,
         released_code_132,
         bytes32_t{132},
@@ -1835,7 +1860,7 @@ namespace
 
         std::mt19937_64 rng_;
         Db &db1_;
-        Db &db2_;
+        DbCache &db2_;
         vm::VM &vm_;
         uint64_t finalized_block_{0};
         uint64_t finalized_proposal_seed_{0};
@@ -1857,7 +1882,7 @@ namespace
 
     public:
         RandomProposalGenerator(
-            uint64_t const seed, Db &db1, Db &db2, vm::VM &vm)
+            uint64_t const seed, Db &db1, DbCache &db2, vm::VM &vm)
             : rng_(seed)
             , db1_(db1)
             , db2_(db2)
@@ -2070,20 +2095,18 @@ namespace
             bs1.merge(st1);
             bs2.merge(st2);
             {
-                auto [state1, code1] = bs1.release();
-                db1_.commit(
+                auto [state1, code1] = std::move(bs1).release();
+                commit_simple(
+                    db1_,
                     *state1,
                     code1,
                     get_dummy_block_id(proposal_seed),
                     BlockHeader{.number = block});
-                db1_.update_proposal_state(
-                    std::move(state1),
-                    block,
-                    get_dummy_block_id(proposal_seed));
             }
             {
-                auto [state2, code2] = bs2.release();
-                db2_.commit(
+                auto [state2, code2] = std::move(bs2).release();
+                commit_simple(
+                    db2_,
                     *state2,
                     code2,
                     get_dummy_block_id(proposal_seed),

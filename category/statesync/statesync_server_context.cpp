@@ -24,6 +24,9 @@
 #include <category/mpt/db.hpp>
 #include <category/statesync/statesync_server_context.hpp>
 
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/validate_block.hpp>
+
 #include <quill/Quill.h>
 
 #include <algorithm>
@@ -295,27 +298,13 @@ void monad_statesync_server_context::update_proposed_metadata(
 }
 
 void monad_statesync_server_context::commit(
-    StateDeltas const &state_deltas, Code const &code,
-    bytes32_t const &block_id, BlockHeader const &header,
-    std::vector<Receipt> const &receipts,
-    std::vector<std::vector<CallFrame>> const &call_frames,
-    std::vector<Address> const &senders,
-    std::vector<Transaction> const &transactions,
-    std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals)
+    bytes32_t const &block_id, CommitBuilder &builder,
+    BlockHeader const &header, StateDeltas const &state_deltas,
+    std::function<void(BlockHeader &)> populate_header_fn)
 {
     on_commit(*this, state_deltas, header.number, block_id);
     rw.commit(
-        state_deltas,
-        code,
-        block_id,
-        header,
-        receipts,
-        call_frames,
-        senders,
-        transactions,
-        ommers,
-        withdrawals);
+        block_id, builder, header, state_deltas, std::move(populate_header_fn));
 }
 
 uint64_t monad_statesync_server_context::get_block_number() const

@@ -157,45 +157,30 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 }
 
 void TrieDb::commit(
-    StateDeltas const &state_deltas, Code const &code,
-    bytes32_t const &block_id, BlockHeader const &header,
-    std::vector<Receipt> const &receipts,
-    std::vector<std::vector<CallFrame>> const &call_frames,
-    std::vector<Address> const &senders,
-    std::vector<Transaction> const &transactions,
-    std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals)
+    bytes32_t const &block_id, CommitBuilder &builder,
+    BlockHeader const &header, StateDeltas const &,
+    std::function<void(BlockHeader &)> populate_header_fn)
 {
-    MONAD_ASSERT(header.number <= std::numeric_limits<int64_t>::max());
+    auto const block_number = header.number;
+    MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
 
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk() && block_id != proposal_block_id_) {
         auto const dest_prefix = proposal_prefix(block_id);
         if (db_.get_latest_version() != INVALID_BLOCK_NUM) {
-            MONAD_ASSERT(header.number != block_number_);
+            MONAD_ASSERT(block_number != block_number_);
             curr_root_ = db_.copy_trie(
                 curr_root_,
                 prefix_,
-                db_.load_root_for_version(header.number),
+                db_.load_root_for_version(block_number),
                 dest_prefix,
-                header.number,
+                block_number,
                 false);
         }
         proposal_block_id_ = block_id;
         prefix_ = dest_prefix;
     }
-    block_number_ = header.number;
-
-    CommitBuilder builder(block_number_);
-    builder.add_state_deltas(state_deltas)
-        .add_code(code)
-        .add_receipts(receipts)
-        .add_transactions(transactions, senders)
-        .add_call_frames(call_frames)
-        .add_ommers(ommers);
-    if (withdrawals.has_value()) {
-        builder.add_withdrawals(withdrawals.value());
-    }
+    block_number_ = block_number;
 
     curr_root_ = db_.upsert(
         std::move(curr_root_),
@@ -206,30 +191,11 @@ void TrieDb::commit(
         false);
 
     BlockHeader complete_header = header;
-    if (MONAD_LIKELY(header.receipts_root == NULL_ROOT)) {
-        // TODO: TrieDb does not calculate receipts root correctly before the
-        // BYZANTIUM fork. However, for empty receipts our receipts root
-        // calculation is correct.
-        //
-        // On monad, the receipts root input is always null. On replay, we set
-        // our receipts root to any non-null header input so our eth header is
-        // correct in the Db.
-        complete_header.receipts_root = receipts_root();
-    }
-    complete_header.state_root = state_root();
-    complete_header.withdrawals_root = withdrawals_root();
-    complete_header.transactions_root = transactions_root();
-    complete_header.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
-    complete_header.logs_bloom = compute_bloom(receipts);
-    complete_header.ommers_hash = compute_ommers_hash(ommers);
+    populate_header_fn(complete_header);
 
     builder.add_block_header(complete_header);
-    bool const enable_compaction = false;
     curr_root_ = db_.upsert(
-        std::move(curr_root_),
-        builder.build(prefix_),
-        block_number_,
-        enable_compaction);
+        std::move(curr_root_), builder.build(prefix_), block_number_, false);
 }
 
 void TrieDb::set_block_and_prefix(

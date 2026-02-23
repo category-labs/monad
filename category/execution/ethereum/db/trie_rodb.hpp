@@ -133,13 +133,8 @@ public:
     }
 
     virtual void commit(
-        StateDeltas const &, Code const &, bytes32_t const &,
-        BlockHeader const &, std::vector<Receipt> const & = {},
-        std::vector<std::vector<CallFrame>> const & = {},
-        std::vector<Address> const & = {},
-        std::vector<Transaction> const & = {},
-        std::vector<BlockHeader> const & = {},
-        std::optional<std::vector<Withdrawal>> const & = std::nullopt) override
+        bytes32_t const &, CommitBuilder &, BlockHeader const &,
+        StateDeltas const &, std::function<void(BlockHeader &)>) override
     {
         MONAD_ABORT();
     }

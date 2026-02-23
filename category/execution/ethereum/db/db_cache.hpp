@@ -159,33 +159,23 @@ public:
     }
 
     virtual void commit(
-        StateDeltas const &state_deltas, Code const &code,
-        bytes32_t const &block_id, BlockHeader const &header,
-        std::vector<Receipt> const &receipts = {},
-        std::vector<std::vector<CallFrame>> const &call_frames = {},
-        std::vector<Address> const &senders = {},
-        std::vector<Transaction> const &transactions = {},
-        std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const &withdrawals =
-            std::nullopt) override
+        bytes32_t const &block_id, CommitBuilder &builder,
+        BlockHeader const &header, StateDeltas const &state_deltas,
+        std::function<void(BlockHeader &)> populate_header_fn) override
     {
         db_.commit(
-            state_deltas,
-            code,
             block_id,
+            builder,
             header,
-            receipts,
-            call_frames,
-            senders,
-            transactions,
-            ommers,
-            withdrawals);
+            state_deltas,
+            std::move(populate_header_fn));
     }
 
-    virtual void update_proposal_state(
+    void update_proposal_state(
         std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
-        bytes32_t const &block_id) override
+        bytes32_t const &block_id)
     {
+        MONAD_ASSERT(state_deltas);
         proposals_.commit(std::move(state_deltas), block_number, block_id);
     }
 

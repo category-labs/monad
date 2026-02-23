@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -214,22 +215,29 @@ Result<void> process_monad_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code] = block_state.release();
+    auto [state, code] = std::move(block_state).release();
+
+    CommitBuilder builder(block.header.number);
+    builder.add_state_deltas(*state)
+        .add_code(code)
+        .add_receipts(receipts)
+        .add_transactions(block.transactions, senders)
+        .add_call_frames(call_frames)
+        .add_ommers(block.ommers);
+    if (block.withdrawals.has_value()) {
+        builder.add_withdrawals(block.withdrawals.value());
+    }
     db.commit(
-        *state,
-        code,
-        block_id,
-        block.header,
-        receipts,
-        call_frames,
-        senders,
-        block.transactions,
-        block.ommers,
-        block.withdrawals);
-    // Transfer state ownership to DbCache for proposal tracking. This must
-    // come after commit since it takes ownership of the state. Safe to
-    // reorder: DbCache is only read on the next block, not during commit.
-    db.update_proposal_state(std::move(state), block.header.number, block_id);
+        block_id, builder, block.header, std::move(state), [&](BlockHeader &h) {
+            // second stage: populate block header
+            h.receipts_root = db.receipts_root();
+            h.state_root = db.state_root();
+            h.withdrawals_root = db.withdrawals_root();
+            h.transactions_root = db.transactions_root();
+            h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
+            h.logs_bloom = compute_bloom(receipts);
+            h.ommers_hash = compute_ommers_hash(block.ommers);
+        });
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);

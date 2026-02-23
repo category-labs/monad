@@ -60,6 +60,9 @@ public:
 
     CommitBuilder &add_block_header(BlockHeader const &);
 
+    // Consumes updates_ but preserves the backing deque storage. New updates
+    // can be added after a build() call (e.g. add_block_header between the
+    // two commit stages), but previously built updates are not retained.
     mpt::UpdateList build(mpt::NibblesView);
 };
 

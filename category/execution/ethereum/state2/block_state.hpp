@@ -64,7 +64,7 @@ public:
         Code code;
     };
 
-    ReleasedState release();
+    ReleasedState release() &&;
 
     void log_debug();
 };

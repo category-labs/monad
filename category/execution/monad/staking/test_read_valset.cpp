@@ -105,15 +105,12 @@ protected:
 
         MONAD_ASSERT(bs.can_merge(state));
         bs.merge(state);
-        bs.commit(
+        auto [state_deltas, code] = bs.release();
+        tdb.commit(
+            *state_deltas,
+            code,
             NULL_HASH_BLAKE3,
-            BlockHeader{.number = TEST_BLOCK_NUM},
-            {},
-            {},
-            {},
-            {},
-            {},
-            {});
+            BlockHeader{.number = TEST_BLOCK_NUM});
         tdb.finalize(TEST_BLOCK_NUM, NULL_HASH_BLAKE3);
     }
 

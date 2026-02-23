@@ -159,34 +159,17 @@ public:
     }
 
     virtual void commit(
-        StateDeltas const &state_deltas, Code const &code,
-        bytes32_t const &block_id, BlockHeader const &header,
-        std::vector<Receipt> const &receipts = {},
-        std::vector<std::vector<CallFrame>> const &call_frames = {},
-        std::vector<Address> const &senders = {},
-        std::vector<Transaction> const &transactions = {},
-        std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const &withdrawals =
-            std::nullopt) override
+        bytes32_t const &block_id, CommitBuilder &builder,
+        BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
+        std::function<void(BlockHeader &)> populate_header_fn) override
     {
+        pre_commit_hook(header.number, block_id, std::move(state_deltas));
         db_.commit(
-            state_deltas,
-            code,
             block_id,
+            builder,
             header,
-            receipts,
-            call_frames,
-            senders,
-            transactions,
-            ommers,
-            withdrawals);
-    }
-
-    virtual void update_proposal_state(
-        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
-        bytes32_t const &block_id) override
-    {
-        proposals_.commit(std::move(state_deltas), block_number, block_id);
+            {}, // deltas moved into the hook
+            std::move(populate_header_fn));
     }
 
     virtual BlockHeader read_eth_header() override
@@ -226,6 +209,15 @@ public:
     }
 
 private:
+    void pre_commit_hook(
+        uint64_t const block_number, bytes32_t const &block_id,
+        std::unique_ptr<StateDeltas> state_deltas)
+    {
+        MONAD_ASSERT_PRINTF(
+            state_deltas, "Ownership of StateDeltas taken by above caller");
+        proposals_.commit(std::move(state_deltas), block_number, block_id);
+    }
+
     void insert_in_lru_caches(StateDeltas const &state_deltas)
     {
         for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {

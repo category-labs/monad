@@ -130,15 +130,9 @@ struct monad_statesync_server_context final : public monad::Db
         uint64_t block_number, monad::bytes32_t const &block_id) override;
 
     virtual void commit(
-        monad::StateDeltas const &state_deltas, monad::Code const &code,
-        monad::bytes32_t const &block_id, monad::BlockHeader const &,
-        std::vector<monad::Receipt> const &receipts = {},
-        std::vector<std::vector<monad::CallFrame>> const & = {},
-        std::vector<monad::Address> const & = {},
-        std::vector<monad::Transaction> const &transactions = {},
-        std::vector<monad::BlockHeader> const &ommers = {},
-        std::optional<std::vector<monad::Withdrawal>> const & =
-            std::nullopt) override;
+        monad::bytes32_t const &, monad::CommitBuilder &,
+        monad::BlockHeader const &, std::unique_ptr<monad::StateDeltas>,
+        std::function<void(monad::BlockHeader &)>) override;
 
     virtual uint64_t get_block_number() const override;
 };

@@ -25,6 +25,8 @@
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 
+#include <test_resource_data.h>
+
 #include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 
@@ -98,8 +100,12 @@ TEST(DbBinarySnapshot, Basic)
         }
         TrieDb tdb{db};
         ASSERT_EQ(tdb.get_block_number(), db.get_latest_version());
-        tdb.commit(
-            deltas, code_delta, bytes32_t{100}, BlockHeader{.number = 100});
+        test::commit_simple(
+            tdb,
+            deltas,
+            code_delta,
+            bytes32_t{100},
+            BlockHeader{.number = 100});
         tdb.finalize(100, bytes32_t{100});
         last_header = tdb.read_eth_header();
         root_hash = tdb.state_root();
@@ -202,8 +208,12 @@ TEST(DbBinarySnapshot, MultipleShards)
         }
         TrieDb tdb{db};
         ASSERT_EQ(tdb.get_block_number(), db.get_latest_version());
-        tdb.commit(
-            deltas, code_delta, bytes32_t{100}, BlockHeader{.number = 100});
+        test::commit_simple(
+            tdb,
+            deltas,
+            code_delta,
+            bytes32_t{100},
+            BlockHeader{.number = 100});
         tdb.finalize(100, bytes32_t{100});
         last_header = tdb.read_eth_header();
         root_hash = tdb.state_root();

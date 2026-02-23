@@ -227,7 +227,8 @@ TEST_F(StateSyncFixture, sync_from_latest)
         load_db(tdb, N);
         // commit some proposal to client db
         tdb.set_block_and_prefix(N);
-        tdb.commit({}, {}, bytes32_t{N + 1}, BlockHeader{.number = N + 1});
+        commit_simple(
+            tdb, {}, {}, bytes32_t{N + 1}, BlockHeader{.number = N + 1});
         init();
     }
     handle_target(
@@ -315,7 +316,7 @@ TEST_F(StateSyncFixture, sync_from_some)
         TrieDb tdb{db};
         load_genesis_state(GENESIS_STATE, tdb);
         // commit some proposal to client db
-        tdb.commit({}, {}, NULL_HASH_BLAKE3, BlockHeader{.number = 1});
+        commit_simple(tdb, {}, {}, NULL_HASH_BLAKE3, BlockHeader{.number = 1});
         load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
@@ -525,12 +526,10 @@ TEST_F(StateSyncFixture, deletion_proposal)
             0x000d836201318ec6899a67540690382780743280_address;
         auto const acct = sctx.read_account(ADDR1);
         ASSERT_TRUE(acct.has_value());
+        StateDeltas deltas{{ADDR1, {.account = {acct, std::nullopt}}}};
         sctx.set_block_and_prefix(0);
-        sctx.commit(
-            StateDeltas{{ADDR1, {.account = {acct, std::nullopt}}}},
-            Code{},
-            bytes32_t{1},
-            BlockHeader{.number = 1});
+        commit_simple(
+            sctx, deltas, Code{}, bytes32_t{1}, BlockHeader{.number = 1});
     }
     // delete ADDR2 on another
     {
@@ -538,12 +537,10 @@ TEST_F(StateSyncFixture, deletion_proposal)
             0x001762430ea9c3a26e5749afdb70da5f78ddbb8c_address;
         auto const acct = sctx.read_account(ADDR2);
         ASSERT_TRUE(acct.has_value());
+        StateDeltas deltas{{ADDR2, {.account = {acct, std::nullopt}}}};
         sctx.set_block_and_prefix(0);
-        sctx.commit(
-            StateDeltas{{ADDR2, {.account = {acct, std::nullopt}}}},
-            Code{},
-            bytes32_t{2},
-            BlockHeader{.number = 1});
+        commit_simple(
+            sctx, deltas, Code{}, bytes32_t{2}, BlockHeader{.number = 1});
     }
     sctx.finalize(1, bytes32_t{2});
 
@@ -628,7 +625,7 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
         TrieDb tdb{db};
         tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
         for (uint64_t n = 1; n <= 249; ++n) {
-            tdb.commit({}, {}, bytes32_t{n}, BlockHeader{.number = n});
+            commit_simple(tdb, {}, {}, bytes32_t{n}, BlockHeader{.number = n});
         }
     }
 

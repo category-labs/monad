@@ -5,18 +5,16 @@
     This is the interpreter's runtime multiplication path, used for
     MULMOD, EXP, and decimal string parsing.
 
-    This file contains only definitions. Proofs will be in RuntimeMulProofs.v.
+    This file contains:
 
-    The runtime multiplication differs from the constexpr version:
-    - Uses mul_line for the first row (no accumulation)
-    - Uses mul_add_line for subsequent rows (multiply-accumulate)
-    - mul_add_line uses a 2-word carry (c_hi, c_lo) for efficiency
-    - All loop unrolling is done at compile time via template recursion
+    - mul_line for the first row (no accumulation)
+    - mul_add_line for subsequent rows (multiply-accumulate)
+    - template recursive helpers for compile-time loop unrolling
+
+    Proofs are in RuntimeMulProofs.v.
 
     We axiomatize three inline assembly primitives (mulx, adc_2, adc_3)
     and model everything else structurally.
-
-    C++ reference: uint256.hpp, lines 750-985
 *)
 
 From Stdlib Require Import ZArith Lia List.

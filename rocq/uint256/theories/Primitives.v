@@ -685,5 +685,6 @@ Definition add128_spec (x_hi x_lo y_hi y_lo : uint64) : mulx_result :=
 
    Multi-word definitions and proofs have been extracted to separate files:
    - Words.v: word-list representation and helper lemmas
+   - Division.v / DivisionProofs.v: multi-word division
    - RuntimeMul.v: runtime multiplication model (adc_2, adc_3, mul_line, etc.)
 *)

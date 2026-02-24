@@ -154,7 +154,7 @@ struct EvmcHost final : public EvmcHostBase
             // Skip emitting native transfer events when the beneficiary and
             // destructed contract are the same account (i.e. no net transfer of
             // funds).
-            if (result && address != beneficiary) {
+            if (address != beneficiary) {
                 emit_native_transfer_event(
                     address, beneficiary, transferred_balance);
             }

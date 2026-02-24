@@ -152,8 +152,6 @@ public:
 
     void subtract_from_balance(Address const &, uint256_t const &delta);
 
-    void set_balance(Address const &, uint256_t const &balance);
-
     evmc_storage_status
     set_storage(Address const &, bytes32_t const &key, bytes32_t const &value);
 

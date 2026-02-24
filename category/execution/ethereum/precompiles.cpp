@@ -74,8 +74,8 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 
     // Ethereum precompiles
     CASE(0x01, ecrecover_gas_cost<traits>, ecrecover_execute);
-    CASE(0x02, sha256_gas_cost<traits>, sha256_execute);
-    CASE(0x03, ripemd160_gas_cost<traits>, ripemd160_execute);
+    CASE(0x02, sha256_gas_cost, sha256_execute);
+    CASE(0x03, ripemd160_gas_cost, ripemd160_execute);
     CASE(0x04, identity_gas_cost, identity_execute);
 
     if constexpr (traits::evm_rev() >= EVMC_BYZANTIUM) {
@@ -155,10 +155,9 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
     byte_string_view const input{msg.input_data, msg.input_size};
     std::optional<uint64_t> const cost = gas_cost_func(input);
 
-    // If cost is std::nullopt, the gas function got an invalid input. This is
-    // currently only possible for EXPMOD with EIP-7823.
+    // If cost is std::nullopt, the gas function got an invalid input.
     if (!cost.has_value()) {
-        return evmc::Result{evmc_status_code::EVMC_FAILURE};
+        return evmc::Result{evmc_status_code::EVMC_PRECOMPILE_FAILURE};
     }
 
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost.value()))) {

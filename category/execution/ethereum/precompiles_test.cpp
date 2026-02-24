@@ -701,7 +701,7 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
         // modulus size in this example fails to validate.
         static constexpr auto expected_failure =
             TestFixture::Trait::eip_7823_active()
-                ? evmc_status_code::EVMC_FAILURE
+                ? evmc_status_code::EVMC_PRECOMPILE_FAILURE
                 : evmc_status_code::EVMC_OUT_OF_GAS;
 
         static constexpr auto min_gas = [] {

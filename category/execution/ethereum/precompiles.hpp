@@ -25,6 +25,8 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <bit>
+#include <cstring>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -51,10 +53,8 @@ using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 template <Traits traits>
 uint64_t ecrecover_gas_cost(byte_string_view);
 
-template <Traits traits>
 uint64_t sha256_gas_cost(byte_string_view);
 
-template <Traits traits>
 uint64_t ripemd160_gas_cost(byte_string_view);
 
 uint64_t identity_gas_cost(byte_string_view);
@@ -68,11 +68,38 @@ uint64_t ecadd_gas_cost(byte_string_view);
 template <Traits traits>
 uint64_t ecmul_gas_cost(byte_string_view);
 
+template <evmc_revision Rev>
+[[gnu::always_inline]] inline uint64_t
+snarkv_gas_cost_ethereum(byte_string_view const input)
+{
+    uint64_t const k{input.size() / 192};
+    if constexpr (Rev >= EVMC_ISTANBUL) {
+        return 34'000 * k + 45'000; // EIP-1108
+    }
+    else {
+        return 80'000 * k + 100'000; // EIP-197
+    }
+}
+
 template <Traits traits>
 uint64_t snarkv_gas_cost(byte_string_view);
 
+[[gnu::always_inline]] inline std::optional<uint64_t>
+blake2bf_gas_cost_ethereum(byte_string_view const input)
+{
+    if (input.size() < 4) {
+        return std::nullopt;
+    }
+    uint32_t rounds{0};
+    std::memcpy(&rounds, input.data(), sizeof(uint32_t));
+    static_assert(
+        std::endian::native == std::endian::little,
+        "blake2bf_gas_cost_ethereum only works on little-endian platforms");
+    return std::byteswap(rounds);
+}
+
 template <Traits traits>
-uint64_t blake2bf_gas_cost(byte_string_view);
+std::optional<uint64_t> blake2bf_gas_cost(byte_string_view);
 
 template <Traits traits>
 uint64_t point_evaluation_gas_cost(byte_string_view);

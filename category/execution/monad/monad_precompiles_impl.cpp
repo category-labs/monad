@@ -19,48 +19,44 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <silkpre/precompile.h>
-
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-uint64_t ecrecover_gas_cost(byte_string_view const input)
+uint64_t ecrecover_gas_cost(byte_string_view const)
 {
     // Monad specification §4.3: Precompiles
     static constexpr auto pricing_factor =
         traits::monad_pricing_version() >= 1 ? 2 : 1;
 
-    return pricing_factor *
-           silkpre_ecrec_gas(
-               input.data(), input.size(), static_cast<int>(traits::evm_rev()));
+    return pricing_factor * 3'000;
 }
 
 EXPLICIT_MONAD_TRAITS(ecrecover_gas_cost);
 
 template <Traits traits>
-uint64_t ecadd_gas_cost(byte_string_view const input)
+uint64_t ecadd_gas_cost(byte_string_view const)
 {
     // Monad specification §4.3: Precompiles
     static constexpr auto pricing_factor =
         traits::monad_pricing_version() >= 1 ? 2 : 1;
 
-    return pricing_factor *
-           silkpre_bn_add_gas(
-               input.data(), input.size(), static_cast<int>(traits::evm_rev()));
+    static_assert(traits::evm_rev() >= EVMC_ISTANBUL);
+
+    return pricing_factor * 150;
 }
 
 EXPLICIT_MONAD_TRAITS(ecadd_gas_cost);
 
 template <Traits traits>
-uint64_t ecmul_gas_cost(byte_string_view const input)
+uint64_t ecmul_gas_cost(byte_string_view const)
 {
     // Monad specification §4.3: Precompiles
     static constexpr auto pricing_factor =
         traits::monad_pricing_version() >= 1 ? 5 : 1;
 
-    return pricing_factor *
-           silkpre_bn_mul_gas(
-               input.data(), input.size(), static_cast<int>(traits::evm_rev()));
+    static_assert(traits::evm_rev() >= EVMC_ISTANBUL);
+
+    return pricing_factor * 6'000;
 }
 
 EXPLICIT_MONAD_TRAITS(ecmul_gas_cost);
@@ -72,9 +68,7 @@ uint64_t snarkv_gas_cost(byte_string_view const input)
     static constexpr auto pricing_factor =
         traits::monad_pricing_version() >= 1 ? 5 : 1;
 
-    return pricing_factor *
-           silkpre_snarkv_gas(
-               input.data(), input.size(), static_cast<int>(traits::evm_rev()));
+    return pricing_factor * snarkv_gas_cost_ethereum<traits::evm_rev()>(input);
 }
 
 EXPLICIT_MONAD_TRAITS(snarkv_gas_cost);
@@ -86,9 +80,7 @@ uint64_t blake2bf_gas_cost(byte_string_view const input)
     static constexpr auto pricing_factor =
         traits::monad_pricing_version() >= 1 ? 2 : 1;
 
-    return pricing_factor *
-           silkpre_blake2_f_gas(
-               input.data(), input.size(), static_cast<int>(traits::evm_rev()));
+    return pricing_factor * blake2bf_gas_cost_ethereum(input);
 }
 
 EXPLICIT_MONAD_TRAITS(blake2bf_gas_cost);

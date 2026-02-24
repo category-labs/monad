@@ -43,7 +43,7 @@ Result<void> validate_monad_transaction(
 
         uint256_t const gas_fee =
             uint256_t{tx.gas_limit} * gas_price(rev, tx, base_fee_per_gas);
-        if (MONAD_UNLIKELY(state.get_balance(sender) < gas_fee)) {
+        if (MONAD_UNLIKELY(!state.check_min_balance(sender, gas_fee))) {
             return MonadTransactionError::InsufficientBalanceForFee;
         }
 

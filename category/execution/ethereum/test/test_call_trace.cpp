@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -26,6 +27,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/vm/utils/evm-as.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
@@ -915,4 +917,379 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     // No Transfer event emitted when balance is zero
     ASSERT_TRUE(call_frames[0].logs.has_value());
     EXPECT_TRUE(call_frames[0].logs->empty());
+}
+
+TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    static constexpr Address TX_SENDER_ADDR =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+    static constexpr Address INTERMEDIARY_CONTRACT_ADDR =
+        0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_address;
+    static constexpr Address SELFDESTRUCT_CONTRACT_ADDR =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    // The idea here is to check that when multiple selfdestruct happen during
+    // the same transaction, then multiple corresponding Transfer events are
+    // emitted. The setup is as follows:
+    // 1. We have a SELFDESTRUCT CONTRACT, which has code that simply
+    // selfdestructs itself, sending all its balance to the caller.
+    // 2. We have an INTERMEDIARY CONTRACT, which calls the SELFDESTRUCT
+    // CONTRACT twice. First time it calls with zero value, and the second time
+    // it calls with value 1'000'000, effectively resurrecting the SELFDESTRUCT
+    // CONTRACT.
+    // 3. We have TX SENDER, which initially sends a transaction to the
+    // INTERMEDIARY CONTRACT.
+
+    using traits = typename TestFixture::Trait;
+    using namespace monad::vm::utils;
+
+    auto const [selfdestruct_contract, selfdestruct_code_hash] =
+        [&]() -> std::pair<monad::vm::SharedIntercode, bytes32_t> {
+        auto eb = evm_as::EvmBuilder<traits>();
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb.caller().selfdestruct(), bytecode);
+        return {
+            vm::make_shared_intercode(bytecode),
+            to_bytes(
+                keccak256(byte_string_view{bytecode.data(), bytecode.size()}))};
+    }();
+
+    auto const [intermediary_contract, intermediary_code_hash] =
+        [&]() -> std::pair<monad::vm::SharedIntercode, bytes32_t> {
+        using namespace monad::vm::utils::evm_as::sugar;
+        auto eb = evm_as::EvmBuilder<traits>();
+        std::vector<uint8_t> bytecode;
+        evm_as::compile(
+            eb.call({.gas = 1'000'000, .address = SELFDESTRUCT_CONTRACT_ADDR})
+                .pop()
+                .call(
+                    {.gas = 1'000'000,
+                     .address = SELFDESTRUCT_CONTRACT_ADDR,
+                     .value = 1'000'000})
+                .pop()
+                .stop(),
+            bytecode);
+        return {
+            vm::make_shared_intercode(bytecode),
+            to_bytes(
+                keccak256(byte_string_view{bytecode.data(), bytecode.size()}))};
+    }();
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {TX_SENDER_ADDR,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 1'000'000'000'000u}}}},
+            {INTERMEDIARY_CONTRACT_ADDR,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 1'000'000'000u,
+                          .code_hash = intermediary_code_hash}}}},
+            {SELFDESTRUCT_CONTRACT_ADDR,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 1'000'000,
+                          .code_hash = selfdestruct_code_hash}}}}}
+
+        ,
+        Code{
+            {intermediary_code_hash, intermediary_contract},
+            {selfdestruct_code_hash, selfdestruct_contract},
+        },
+        BlockHeader{});
+
+    BlockState bs{tdb, vm};
+    Incarnation const incarnation{0, 0};
+    State s{bs, incarnation};
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 10'000'000,
+        .value = 0,
+        .to = INTERMEDIARY_CONTRACT_ADDR,
+    };
+
+    evmc_tx_context const tx_context{};
+    BlockHashBufferFinalized buffer{};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    uint256_t base_fee{0};
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+    constexpr std::span<std::optional<Address> const> authorities_empty{};
+
+    EvmcHost<typename TestFixture::Trait> host{
+        call_tracer,
+        tx_context,
+        buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx,
+        true, // log_native_transfers
+    };
+
+    auto const result =
+        ExecuteTransactionNoValidation<typename TestFixture::Trait>(
+            EthereumMainnet{},
+            tx,
+            TX_SENDER_ADDR,
+            authorities_empty,
+            BlockHeader{})(s, host);
+
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+
+    ASSERT_EQ(call_frames.size(), 5);
+    ASSERT_TRUE(call_frames[0].logs.has_value());
+    ASSERT_EQ(call_frames[0].logs->size(), 0);
+    EXPECT_EQ(call_frames[0].type, CallType::CALL);
+
+    ASSERT_TRUE(call_frames[1].logs.has_value());
+    ASSERT_EQ(call_frames[1].logs->size(), 1);
+    EXPECT_EQ(call_frames[1].type, CallType::CALL);
+
+    ASSERT_TRUE(call_frames[2].logs.has_value());
+    ASSERT_EQ(call_frames[2].logs->size(), 0);
+    EXPECT_EQ(call_frames[2].type, CallType::SELFDESTRUCT);
+
+    ASSERT_TRUE(call_frames[3].logs.has_value());
+    ASSERT_EQ(call_frames[3].logs->size(), 2);
+    EXPECT_EQ(call_frames[3].type, CallType::CALL);
+
+    ASSERT_TRUE(call_frames[4].logs.has_value());
+    ASSERT_EQ(call_frames[4].logs->size(), 0);
+    EXPECT_EQ(call_frames[4].type, CallType::SELFDESTRUCT);
+
+    static constexpr auto transfer_signature =
+        abi_encode_event_signature("Transfer(address,address,uint256)");
+
+    // call_frames[1].logs[0] should contain a Transfer event from
+    // `SELFDESTRUCT_ADDR` to `INTERMEDIARY_CONTRACT_ADDR` with value 1'000'000
+    // due to the selfdestruct.
+    {
+        std::vector<bytes32_t> expected_topics{
+            transfer_signature,
+            abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR),
+            abi_encode_address(INTERMEDIARY_CONTRACT_ADDR),
+        };
+
+        byte_string const expected_data =
+            evmc::from_hex(
+                "0x00000000000000000000000000000000000000000000000000000"
+                "000000F4240")
+                .value(); // 1'000'000 in hex (left padded)
+
+        EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
+        EXPECT_EQ(call_frames[1].logs->at(0).log.data, expected_data);
+    }
+
+    std::vector<CallFrame::Log> const &logs = *call_frames[3].logs;
+
+    // call_frames[3].logs[0] should contain a Transfer event from
+    // `INTERMEDIARY_CONTRACT_ADDR` to `SELFDESTRUCT_CONTRACT_ADDR` with value
+    // 1'000'000 due to the call, which revives the selfdestruct contract.
+    {
+        std::vector<bytes32_t> expected_topics{
+            transfer_signature,
+            abi_encode_address(INTERMEDIARY_CONTRACT_ADDR),
+            abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR)};
+
+        byte_string const expected_data =
+            evmc::from_hex(
+                "0x00000000000000000000000000000000000000000000000000000"
+                "000000F4240")
+                .value(); // 1'000'000 in hex (left padded)
+
+        EXPECT_EQ(logs[0].log.topics, expected_topics);
+        EXPECT_EQ(logs[0].log.data, expected_data);
+    }
+    // call_frames[3].logs[1] should contain a Transfer event from
+    // `SELFDESTRUCT_CONTRACT_ADDR` to `INTERMEDIARY_CONTRACT_ADDR` with value
+    // 1'000'000 due to the selfdestruct.
+    {
+        std::vector<bytes32_t> expected_topics{
+            transfer_signature,
+            abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR),
+            abi_encode_address(INTERMEDIARY_CONTRACT_ADDR),
+        };
+
+        byte_string const expected_data =
+            evmc::from_hex(
+                "0x00000000000000000000000000000000000000000000000000000"
+                "000000F4240")
+                .value(); // 1'000'000 in hex (left padded)
+
+        EXPECT_EQ(logs[1].log.topics, expected_topics);
+        EXPECT_EQ(logs[1].log.data, expected_data);
+    }
+}
+
+// Like `simulate_v1_trace_multiple_selfdestructs`, but with no intermediary
+// contract.
+TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    static constexpr Address TX_SENDER_ADDR =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+    static constexpr Address SELFDESTRUCT_CONTRACT_ADDR =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    // The idea here is to check that when multiple recursive selfdestructs
+    // happen during the same transaction, *no* Transfer events are
+    // emitted. The setup is as follows:
+    // 1. We have a SELFDESTRUCT CONTRACT, when invoked with calldata != 0x00
+    // self-destructs, transferring its balance to its caller (itself).
+    // 2. We have TX SENDER, which initially sends a transaction to the
+    // SELFDESTRUCT CONTRACT.
+
+    using traits = typename TestFixture::Trait;
+    using namespace monad::vm::utils;
+
+    auto const [selfdestruct_contract, selfdestruct_code_hash] =
+        [&]() -> std::pair<monad::vm::SharedIntercode, bytes32_t> {
+        using namespace monad::vm::utils::evm_as::sugar;
+        auto eb = evm_as::EvmBuilder<traits>();
+        std::vector<uint8_t> bytecode{};
+        // In pseudocode:
+        // clang-format off
+        // if calldataload(0) == 0x00:
+        //     call(address(), 0)
+        //     call(address(), 1'000'000)
+        // else:
+        //     selfdestruct(caller())
+        // clang-format on
+        evm_as::compile(
+            eb.mstore(
+                  0,
+                  // non-zero value such that subsequent calls
+                  // go-to the selfdestruct branch
+                  std::numeric_limits<monad::vm::runtime::uint256_t>::max())
+                .push(0)
+                .calldataload()
+                .iszero()
+                .jumpi(".CALL_SEQUENCE")
+                .caller()
+                .selfdestruct()
+                .jumpdest(".CALL_SEQUENCE")
+                .call(
+                    {.gas = 1'000'000,
+                     .address = SELFDESTRUCT_CONTRACT_ADDR,
+                     .args_size = sizeof(monad::vm::runtime::uint256_t)})
+                .pop()
+                .call(
+                    {.gas = 1'000'000,
+                     .address = SELFDESTRUCT_CONTRACT_ADDR,
+                     .args_size = sizeof(monad::vm::runtime::uint256_t)})
+                .pop()
+                .stop(),
+            bytecode);
+        return {
+            vm::make_shared_intercode(bytecode),
+            to_bytes(
+                keccak256(byte_string_view{bytecode.data(), bytecode.size()}))};
+    }();
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {TX_SENDER_ADDR,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 1'000'000'000'000UL}}}},
+            {SELFDESTRUCT_CONTRACT_ADDR,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 1'000'000UL,
+                          .code_hash = selfdestruct_code_hash}}}}}
+
+        ,
+        Code{
+            {selfdestruct_code_hash, selfdestruct_contract},
+        },
+        BlockHeader{});
+
+    BlockState bs{tdb, vm};
+    Incarnation const incarnation{0, 0};
+    State s{bs, incarnation};
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 10'000'000,
+        .value = 0,
+        .to = SELFDESTRUCT_CONTRACT_ADDR};
+
+    evmc_tx_context const tx_context{};
+    BlockHashBufferFinalized buffer{};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    uint256_t base_fee{0};
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+    constexpr std::span<std::optional<Address> const> authorities_empty{};
+
+    EvmcHost<typename TestFixture::Trait> host{
+        call_tracer,
+        tx_context,
+        buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx,
+        true, // log_native_transfers
+    };
+
+    auto const result =
+        ExecuteTransactionNoValidation<typename TestFixture::Trait>(
+            EthereumMainnet{},
+            tx,
+            TX_SENDER_ADDR,
+            authorities_empty,
+            BlockHeader{})(s, host);
+
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+
+    // As in `simulate_v1_trace_multiple_selfdestructs`, there are 5 call
+    // frames, but in this case no logs should be emitted because the sender and
+    // the beneficiary are the same.
+    ASSERT_EQ(call_frames.size(), 5);
+    ASSERT_TRUE(call_frames[0].logs.has_value());
+    ASSERT_EQ(call_frames[0].logs->size(), 0);
+    EXPECT_EQ(call_frames[0].type, CallType::CALL);
+
+    ASSERT_TRUE(call_frames[1].logs.has_value());
+    ASSERT_EQ(call_frames[1].logs->size(), 0);
+    EXPECT_EQ(call_frames[1].type, CallType::CALL);
+
+    ASSERT_TRUE(call_frames[2].logs.has_value());
+    ASSERT_EQ(call_frames[2].logs->size(), 0);
+    EXPECT_EQ(call_frames[2].type, CallType::SELFDESTRUCT);
+
+    ASSERT_TRUE(call_frames[3].logs.has_value());
+    ASSERT_EQ(call_frames[3].logs->size(), 0);
+    EXPECT_EQ(call_frames[3].type, CallType::CALL);
+
+    ASSERT_TRUE(call_frames[4].logs.has_value());
+    ASSERT_EQ(call_frames[4].logs->size(), 0);
+    EXPECT_EQ(call_frames[4].type, CallType::SELFDESTRUCT);
 }

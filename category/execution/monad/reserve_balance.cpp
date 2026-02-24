@@ -238,6 +238,21 @@ void ReserveBalance::update_violation_status(Address const &address)
                 failed_.erase(address);
                 return;
             }
+            if (sender_gas_fees_ > reserve) {
+                // This currently only happens in the RPC path.
+                // If we later use a more permissive reserve-balance design that
+                // accounts for credits to non-delegated accounts, this could
+                // also occur during speculative execution with stale pre-tx
+                // data. In that case, a retry is guaranteed, so what we do here
+                // will not matter in such cases.
+                //
+                // For RPC, treat this as a transaction revert: keep the
+                // threshold unset and the sender marked failed for this
+                // transaction. This avoids underflow in the subtraction below.
+                violation_threshold.reset();
+                failed_.insert(address);
+                return;
+            }
             reserve = reserve - sender_gas_fees_;
         }
         violation_threshold = reserve;

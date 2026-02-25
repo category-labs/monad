@@ -28,10 +28,10 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -188,7 +188,7 @@ Result<void> process_monad_block(
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
-    EthPageStorageCache cache{db};
+    NoopStorageCache cache{db};
     BlockState block_state(db, cache, vm);
     BOOST_OUTCOME_TRY(
         auto const receipts,

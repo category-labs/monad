@@ -163,7 +163,7 @@ void run_revert_transaction_test(
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()), 10);
@@ -444,7 +444,7 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     {
@@ -571,7 +571,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     {
@@ -651,7 +651,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     {
@@ -723,7 +723,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     {
@@ -799,7 +799,7 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
     State state{bs, Incarnation{0, 0}};
     std::vector<std::optional<Address>> const authorities = {SYSTEM_SENDER};

@@ -32,11 +32,11 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
@@ -1557,7 +1557,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         Code{},
         header);
 
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, this->vm};
     State s{bs, Incarnation{0, 0}};
 
@@ -2492,7 +2492,7 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
             .senders = senders,
             .authorities = authorities};
 
-        EthPageStorageCache cache{tdb};
+        NoopStorageCache cache{tdb};
         BlockState block_state{tdb, cache, vm};
         State state{
             block_state, Incarnation{header.number - 1, Incarnation::LAST_TX}};

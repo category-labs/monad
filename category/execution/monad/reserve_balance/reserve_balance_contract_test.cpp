@@ -80,7 +80,7 @@ struct ReserveBalanceTest : public ::testing::Test
     vm::VM vm;
     mpt::Db db{machine};
     TrieDb tdb{db};
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer;
@@ -247,7 +247,7 @@ void run_dipped_into_reserve_test(
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
     NoopCallTracer call_tracer;
     evmc_tx_context const tx_context{};

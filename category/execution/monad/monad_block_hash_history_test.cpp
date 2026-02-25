@@ -14,8 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/block_hash_history.hpp>
-#include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/utils/evm-as.hpp>
@@ -36,7 +36,7 @@ protected:
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState block_state{tdb, cache, vm};
     State state{block_state, Incarnation{0, 0}};
 };

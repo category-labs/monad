@@ -22,10 +22,10 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -140,7 +140,7 @@ TYPED_TEST(TraitsTest, execute_success)
         Code{},
         BlockHeader{});
 
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
@@ -218,7 +218,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
         Code{},
         BlockHeader{});
 
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
@@ -301,7 +301,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
         },
         BlockHeader{});
 
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
@@ -417,7 +417,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
         },
         BlockHeader{});
 
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
@@ -499,7 +499,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
         },
         BlockHeader{});
 
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
@@ -588,7 +588,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
         Code{},
         BlockHeader{});
 
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};

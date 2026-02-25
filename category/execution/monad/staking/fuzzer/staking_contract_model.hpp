@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
@@ -30,7 +30,7 @@ namespace monad::staking::test
         OnDiskMachine mpt_machine_;
         mpt::Db mpt_db_{mpt_machine_};
         TrieDb trie_db_{mpt_db_};
-        EthPageStorageCache cache_{trie_db_};
+        NoopStorageCache cache_{trie_db_};
         BlockState block_state_{trie_db_, cache_, vm_};
         State state_{block_state_, Incarnation{0, 0}};
         NoopCallTracer call_tracer_{};

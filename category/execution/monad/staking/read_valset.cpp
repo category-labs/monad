@@ -14,9 +14,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -35,7 +35,7 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
     vm::VM vm;
     TrieDb tdb{db};
     tdb.set_block_and_prefix(block_num);
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState block_state{tdb, cache, vm};
     Incarnation const incarnation{block_num, Incarnation::LAST_TX - 1u};
     State state{block_state, incarnation};

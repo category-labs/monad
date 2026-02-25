@@ -37,12 +37,12 @@ struct PageStorageCache
     virtual ~PageStorageCache() = default;
 };
 
-class EthPageStorageCache final : public PageStorageCache
+class NoopStorageCache final : public PageStorageCache
 {
     Db &db_;
 
 public:
-    explicit EthPageStorageCache(Db &db)
+    explicit NoopStorageCache(Db &db)
         : db_{db}
     {
     }

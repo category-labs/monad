@@ -135,7 +135,7 @@ TEST(PageStorageCache, monad_cache_miss_returns_zero)
         bytes32_t{});
 }
 
-// EthPageStorageCache with per-slot encoding (the ethereum path).
+// NoopStorageCache with per-slot encoding (the ethereum path).
 TEST(PageStorageCache, block_state_with_cache)
 {
     Account const acct{.nonce = 1};
@@ -154,7 +154,7 @@ TEST(PageStorageCache, block_state_with_cache)
         Code{},
         BlockHeader{});
 
-    EthPageStorageCache cache{tdb};
+    NoopStorageCache cache{tdb};
     BlockState block_state{tdb, cache, vm};
 
     auto const account = block_state.read_account(ADDR_A);

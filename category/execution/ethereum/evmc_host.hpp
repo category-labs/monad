@@ -211,15 +211,22 @@ struct EvmcHost final : public EvmcHostBase
 
     void transfer_balances(evmc_message const &msg, Address const &to)
     {
-        uint256_t const value = intx::be::load<uint256_t>(msg.value);
-        state_.subtract_from_balance(msg.sender, value);
-        state_.add_to_balance(to, value);
+        try {
+            uint256_t const value = intx::be::load<uint256_t>(msg.value);
+            state_.subtract_from_balance(msg.sender, value);
+            state_.add_to_balance(to, value);
 
-        // Skip self-transfers when emitting native transfer events (those where
-        // the sender is also the destination).
-        if (msg.sender != to) {
-            emit_native_transfer_event(msg.sender, to, value);
+            // Skip self-transfers when emitting native transfer events (those
+            // where the sender is also the destination).
+            if (msg.sender != to) {
+                emit_native_transfer_event(msg.sender, to, value);
+            }
+            return;
         }
+        catch (...) {
+            capture_current_exception();
+        }
+        stack_unwind();
     }
 
     CallTracerBase &get_call_tracer() noexcept
@@ -232,7 +239,7 @@ private:
         Address const &from, Address const &to, uint256_t const &value)
     {
         if (log_native_transfers_ && value > 0) {
-            static constexpr Address sender =
+            static constexpr Address native_token_address =
                 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
             static constexpr bytes32_t signature =
                 abi_encode_event_signature("Transfer(address,address,uint256)");
@@ -240,7 +247,7 @@ private:
                 signature ==
                 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32);
 
-            auto event = EventBuilder(sender, signature)
+            auto event = EventBuilder(native_token_address, signature)
                              .add_topic(abi_encode_address(from))
                              .add_topic(abi_encode_address(to))
                              .add_data(abi_encode_uint(u256_be{value}))

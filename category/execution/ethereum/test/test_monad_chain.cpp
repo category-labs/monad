@@ -156,8 +156,8 @@ void run_revert_transaction_test(
     uint8_t const prevent_dip_bitset, uint64_t const initial_balance_mon,
     uint64_t const gas_fee_mon, uint64_t const value_mon, bool const expected)
 {
-    constexpr uint256_t BASE_FEE_PER_GAS = 10;
-    constexpr Address SENDER{1};
+    static constexpr uint256_t BASE_FEE_PER_GAS = 10;
+    static constexpr Address SENDER{1};
     InMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
@@ -557,9 +557,9 @@ TYPED_TEST(MonadTraitsTest, can_sender_dip_into_reserve)
 TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
 {
     using traits = typename TestFixture::Trait;
-    constexpr Address SENDER{1};
-    constexpr Address NEW_CONTRACT{2};
-    constexpr uint64_t BASE_FEE_PER_GAS = 10;
+    static constexpr Address SENDER{1};
+    static constexpr Address NEW_CONTRACT{2};
+    static constexpr uint64_t BASE_FEE_PER_GAS = 10;
     auto const to_wei = [](uint64_t mon) {
         return uint256_t{mon} * 1000000000000000000ULL;
     };
@@ -636,9 +636,9 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
 TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
 {
     using traits = typename TestFixture::Trait;
-    constexpr Address SENDER{1};
-    constexpr Address NEW_CONTRACT{2};
-    constexpr uint64_t BASE_FEE_PER_GAS = 10;
+    static constexpr Address SENDER{1};
+    static constexpr Address NEW_CONTRACT{2};
+    static constexpr uint64_t BASE_FEE_PER_GAS = 10;
     auto const to_wei = [](uint64_t mon) {
         return uint256_t{mon} * 1000000000000000000ULL;
     };

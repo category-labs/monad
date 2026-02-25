@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
 
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/page_storage_cache.hpp>
@@ -36,9 +36,21 @@ namespace
     constexpr uint8_t MONAD_SLOT_MASK = 0x3F;
 }
 
-CommitBuilder &CommitBuilder::add_state_deltas(
-    StateDeltas const &state_deltas, PageStorageCache &cache)
+MonadCommitBuilder::MonadCommitBuilder(
+    uint64_t const block_number, PageStorageCache &cache,
+    monad_revision const rev)
+    : CommitBuilder{block_number}
+    , cache_{cache}
+    , revision_{rev}
 {
+}
+
+CommitBuilder &
+MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
+{
+    if (revision_ < MONAD_NEXT)
+        return CommitBuilder::add_state_deltas(state_deltas);
+
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
@@ -68,7 +80,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(
                     if (it == pages.end()) {
                         pages.push_back(
                             {pg_key,
-                             cache.read_storage_page(addr, inc, pg_key)});
+                             cache_.read_storage_page(addr, inc, pg_key)});
                         it = std::prev(pages.end());
                     }
                     it->page[slot_off] = slot_delta.second;

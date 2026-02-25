@@ -16,6 +16,7 @@
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
 #include <category/execution/monad/db/monad_page_storage_cache.hpp>
 
 #include <gtest/gtest.h>
@@ -129,16 +130,14 @@ TEST(MonadDb, page_write_merges_slots)
     // Block 0: seed two slots on the same page.
     {
         MonadCache cache{tdb};
-        CommitBuilder builder(0);
-        builder.add_state_deltas(
-            StateDeltas{
-                {ADDR_A,
-                 StateDelta{
-                     .account = {std::nullopt, acct},
-                     .storage =
-                         {{slot_key_0, {bytes32_t{}, val_0}},
-                          {slot_key_1, {bytes32_t{}, val_1}}}}}},
-            cache);
+        MonadCommitBuilder builder(0, cache, MONAD_NEXT);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {
+                     {slot_key_0, {bytes32_t{}, val_0}},
+                     {slot_key_1, {bytes32_t{}, val_1}}}}}});
         auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
         tdb.reset_root(std::move(root), 0);
     }
@@ -155,14 +154,12 @@ TEST(MonadDb, page_write_merges_slots)
         ASSERT_EQ(
             cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
 
-        CommitBuilder builder(1);
-        builder.add_state_deltas(
-            StateDeltas{
-                {ADDR_A,
-                 StateDelta{
-                     .account = {acct, acct},
-                     .storage = {{slot_key_0, {val_0, val_0_updated}}}}}},
-            cache);
+        MonadCommitBuilder builder(1, cache, MONAD_NEXT);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {acct, acct},
+                 .storage = {{slot_key_0, {val_0, val_0_updated}}}}}});
         auto root =
             mpt_db.upsert(tdb.get_root(), builder.build(finalized_nibbles), 1);
         tdb.reset_root(std::move(root), 1);

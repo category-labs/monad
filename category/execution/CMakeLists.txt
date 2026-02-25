@@ -270,7 +270,7 @@ add_library(
   "monad/staking/util/val_execution.cpp"
   "monad/staking/util/val_execution.hpp"
   # monad/db
-  "monad/db/commit_builder.cpp"
+  "monad/db/monad_commit_builder.cpp"
   # monad/state2
   "monad/state2/proposal_state.hpp")
 

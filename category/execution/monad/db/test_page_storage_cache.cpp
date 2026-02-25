@@ -17,6 +17,7 @@
 #include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
 #include <category/execution/monad/db/monad_page_storage_cache.hpp>
 
 #include <gtest/gtest.h>
@@ -60,17 +61,15 @@ TEST(PageStorageCache, monad_page_read_and_cache)
 
     {
         MonadCache commit_cache{tdb};
-        CommitBuilder builder(0);
-        builder.add_state_deltas(
-            StateDeltas{
-                {ADDR_A,
-                 StateDelta{
-                     .account = {std::nullopt, acct},
-                     .storage =
-                         {{slot_key_0, {bytes32_t{}, slot_val_0}},
-                          {slot_key_1, {bytes32_t{}, slot_val_1}},
-                          {slot_key_far, {bytes32_t{}, slot_val_far}}}}}},
-            commit_cache);
+        MonadCommitBuilder builder(0, commit_cache, MONAD_NEXT);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {
+                     {slot_key_0, {bytes32_t{}, slot_val_0}},
+                     {slot_key_1, {bytes32_t{}, slot_val_1}},
+                     {slot_key_far, {bytes32_t{}, slot_val_far}}}}}});
         auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
         tdb.reset_root(std::move(root), 0);
     }
@@ -113,14 +112,12 @@ TEST(PageStorageCache, monad_cache_miss_returns_zero)
 
     {
         MonadCache commit_cache{tdb};
-        CommitBuilder builder(0);
-        builder.add_state_deltas(
-            StateDeltas{
-                {ADDR_A,
-                 StateDelta{
-                     .account = {std::nullopt, acct},
-                     .storage = {{key1, {bytes32_t{}, value1}}}}}},
-            commit_cache);
+        MonadCommitBuilder builder(0, commit_cache, MONAD_NEXT);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}});
         auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
         tdb.reset_root(std::move(root), 0);
     }

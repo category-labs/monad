@@ -36,6 +36,8 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/monad_page_storage_cache.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -197,7 +199,11 @@ Result<void> process_monad_block(
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
-    NoopStorageCache cache{db};
+    using Cache = std::conditional_t<
+        (traits::monad_rev() >= MONAD_NEXT),
+        MonadPageStorageCache<>,
+        NoopStorageCache>;
+    Cache cache{db};
     BlockState block_state(db, cache, vm);
     BOOST_OUTCOME_TRY(
         auto const receipts,
@@ -219,7 +225,7 @@ Result<void> process_monad_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
+    MonadCommitBuilder builder(block.header.number, cache, traits::monad_rev());
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)

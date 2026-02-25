@@ -394,6 +394,69 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
     EXPECT_EQ(message, "method not supported");
 }
 
+TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_present)
+{
+    u32_be selector = abi_encode_selector("dippedIntoReserve()");
+    auto const *s = selector.bytes;
+    auto input = std::array<uint8_t, 4>{s[0], s[1], s[2], s[3]};
+
+    auto const m = evmc_message{
+        .gas = 100,
+        .recipient = RESERVE_BALANCE_CA,
+        .sender = account_a,
+        .input_data = input.data(),
+        .input_size = input.size(),
+        .code_address = RESERVE_BALANCE_CA,
+    };
+
+    init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
+        state,
+        Address{m.sender},
+        empty_tx,
+        h.base_fee_per_gas_,
+        h.i_,
+        h.chain_ctx_);
+
+    auto const result = h.call(m);
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(result.gas_left, 0);
+    EXPECT_EQ(result.gas_refund, 0);
+    EXPECT_EQ(result.output_size, 32);
+}
+
+TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
+{
+    u32_be selector = abi_encode_selector("dippedIntoReserve()");
+    auto const *s = selector.bytes;
+    auto input = std::array<uint8_t, 4 + 1>{s[0], s[1], s[2], s[3], 0};
+
+    auto const m = evmc_message{
+        .gas = 100,
+        .recipient = RESERVE_BALANCE_CA,
+        .sender = account_a,
+        .input_data = input.data(),
+        .input_size = input.size(),
+        .code_address = RESERVE_BALANCE_CA,
+    };
+
+    init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
+        state,
+        Address{m.sender},
+        empty_tx,
+        h.base_fee_per_gas_,
+        h.i_,
+        h.chain_ctx_);
+
+    auto const result = h.call(m);
+    EXPECT_EQ(result.status_code, EVMC_REVERT);
+    EXPECT_EQ(result.gas_left, 0);
+    EXPECT_EQ(result.gas_refund, 0);
+    EXPECT_EQ(result.output_size, 16);
+    auto const message = std::string_view{
+        reinterpret_cast<char const *>(result.output_data), 16};
+    EXPECT_EQ(message, "input is invalid");
+}
+
 TYPED_TEST(MonadTraitsTest, reverttransaction_no_dip)
 {
     constexpr Outcome outcome = [] {

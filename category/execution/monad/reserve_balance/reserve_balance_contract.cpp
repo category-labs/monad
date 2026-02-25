@@ -103,9 +103,14 @@ EXPLICIT_MONAD_TRAITS(ReserveBalanceContract::precompile_dispatch);
 
 template <Traits traits>
 Result<byte_string> ReserveBalanceContract::precompile_dipped_into_reserve(
-    byte_string_view, evmc_address const &, evmc_uint256be const &msg_value)
+    byte_string_view input, evmc_address const &,
+    evmc_uint256be const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
+    if (MONAD_UNLIKELY(!input.empty())) {
+        return ReserveBalanceError::InvalidInput;
+    }
 
     return byte_string{
         abi_encode_bool(revert_transaction_cached<traits>(state_))};

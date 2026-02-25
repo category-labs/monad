@@ -239,77 +239,106 @@ inline constexpr void write_base10_jeaiii(uint64_t x, std::string &buffer)
 // SSE: convert 16 decimal digits to ASCII in a single 128-bit register
 // ============================================================================
 
-// Takes two 8-digit uint32 values packed into 64-bit lanes: [0|lo|0|hi]
-// Returns 16 ASCII digit bytes: hi digits (MSB first) in bytes 0-7,
-//                                lo digits (MSB first) in bytes 8-15.
+[[gnu::always_inline]]
+static inline __m128i sse_divmod_10000(__m128i x)
+{
+    constexpr uint32_t div_multiplier = 0xd1b71759;
+    constexpr size_t div_shift = 45;
+    __m128i quot =
+        _mm_srli_epi64(_mm_mul_epu32(x, _mm_set1_epi32(static_cast<int32_t>(div_multiplier))), div_shift);
+    __m128i rem = _mm_sub_epi32(x, _mm_mul_epu32(quot, _mm_set1_epi32(10000)));
+    return _mm_or_si128(quot, _mm_slli_epi64(rem, 32));
+}
+
+[[gnu::always_inline]]
+static inline __m128i sse_divmod_100(__m128i x)
+{
+    constexpr uint16_t div_multiplier = 0x147b;
+    constexpr size_t div_shift = 3;
+    __m128i quot = _mm_srli_epi16(_mm_mulhi_epu16(x, _mm_set1_epi16(div_multiplier)), div_shift);
+    __m128i rem = _mm_sub_epi16(x, _mm_mullo_epi16(quot, _mm_set1_epi16(100)));
+    return _mm_or_si128(quot, _mm_slli_epi32(rem, 16));
+}
+
+[[gnu::always_inline]]
+static inline __m128i sse_divmod_10(__m128i x)
+{
+    constexpr uint16_t div_multiplier = 0x199a;
+    __m128i quot = _mm_mulhi_epu16(x, _mm_set1_epi16(div_multiplier));
+    __m128i rem = _mm_sub_epi16(x, _mm_mullo_epi16(quot, _mm_set1_epi16(10)));
+    return _mm_or_si128(quot, _mm_slli_epi16(rem, 8));
+}
+
 [[gnu::always_inline]]
 static inline __m128i digits16_to_ascii(uint32_t hi, uint32_t lo)
 {
-    __m128i v = _mm_set_epi64x(lo, hi);
+    __m128i x = _mm_set_epi64x(lo, hi);
 
-    // 2 x 8 digits -> 4 x 4 digits
-    __m128i q = _mm_srli_epi64(_mm_mul_epu32(v, _mm_set1_epi32(0xd1b71759)), 45);
-    __m128i r = _mm_sub_epi32(v, _mm_mul_epu32(q, _mm_set1_epi32(10000)));
-    v = _mm_or_si128(q, _mm_slli_epi64(r, 32));
+    // 2 base 100'000'000 digits -> 4 base 10'000 digits
+    __m128i digits_10000 = sse_divmod_10000(x);
 
-    // 4 x 4 digits -> 8 x 2 digits
-    q = _mm_srli_epi16(_mm_mulhi_epu16(v, _mm_set1_epi16(0x147b)), 3);
-    r = _mm_sub_epi16(v, _mm_mullo_epi16(q, _mm_set1_epi16(100)));
-    v = _mm_or_si128(q, _mm_slli_epi32(r, 16));
+    // 4 base 10'000 digits -> 8 base 100 digits
+    __m128i digits_100 = sse_divmod_100(digits_10000);
 
-    // 8 x 2 digits -> 16 x 1 digit
-    q = _mm_mulhi_epu16(v, _mm_set1_epi16(0x199a));
-    r = _mm_sub_epi16(v, _mm_mullo_epi16(q, _mm_set1_epi16(10)));
-    v = _mm_or_si128(q, _mm_slli_epi16(r, 8));
+    // 8 base 100 digits -> 16 base 10 digits
+    __m128i digits_10 = sse_divmod_10(digits_100);
 
-    return _mm_add_epi8(v, _mm_set1_epi8('0'));
+    return _mm_add_epi8(digits_10, _mm_set1_epi8('0'));
 }
 
 template <bool print_leading_zeros>
-inline void write_base10_sse(uint64_t v, std::string &buffer)
+inline void write_base10_sse(uint64_t x, std::string &buffer)
 {
     size_t digits_base10;
     if constexpr (print_leading_zeros) {
         digits_base10 = 19;
     }
     else {
-        digits_base10 = num_digits_base10_countlz(v);
+        digits_base10 = num_digits_base10_countlz(x);
     }
     size_t I = buffer.length();
     buffer.resize(I + digits_base10);
 
-    // Split into head (up to 3 digits, scalar) + tail (16 digits, SSE)
-    uint64_t head = v / 10'000'000'000'000'000ULL;
-    uint64_t tail = v % 10'000'000'000'000'000ULL;
-    auto tail_hi = uint32_t(tail / 100'000'000);
-    auto tail_lo = uint32_t(v % 100'000'000);
-    __m128i ascii16 = digits16_to_ascii(tail_hi, tail_lo);
+    if constexpr (!print_leading_zeros) {
+        if (x < 1000) {
+            // Number takes at most 3 digits; print those and return.
+            if (x >= 10) {
+                // At least two-digit tail
+                if (x >= 100) {
+                    // Three-digit tail
+                    buffer[I + digits_base10 - 3] = digits_0_9[x / 100];
+                    x = x % 100;
+                }
+                std::memcpy(
+                    &buffer[I + digits_base10 - 2], &digits_0_99[x * 2], 2);
+            }
+            else if (x) {
+                // One-digit tail
+                buffer[I + digits_base10 - 1] = digits_0_9[x];
+            }
+            return;
+        }
+    }
+    uint64_t head = x / 1000;
+    uint64_t tail = x % 1000;
+
+    // Print tail unconditionally
+    buffer[I + digits_base10 - 3] = digits_0_9[tail / 100];
+    tail = tail % 100;
+    std::memcpy(&buffer[I + digits_base10 - 2], &digits_0_99[tail * 2], 2);
+
+    auto head_hi = uint32_t(head / 100'000'000);
+    auto head_lo = uint32_t(head % 100'000'000);
+    __m128i head_digits = digits16_to_ascii(head_hi, head_lo);
 
     if constexpr (print_leading_zeros) {
-        buffer[I] = digits_0_9[head / 100];
-        std::memcpy(&buffer[I + 1], &digits_0_99[(head % 100) * 2], 2);
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(&buffer[I + 3]), ascii16);
-    }
-    else if (head) {
-        if (head >= 100) {
-            buffer[I] = digits_0_9[head / 100];
-            std::memcpy(&buffer[I + 1], &digits_0_99[(head % 100) * 2], 2);
-            I += 3;
-        }
-        else if (head >= 10) {
-            std::memcpy(&buffer[I], &digits_0_99[head * 2], 2);
-            I += 2;
-        }
-        else {
-            buffer[I] = digits_0_9[head];
-            I += 1;
-        }
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(&buffer[I]), ascii16);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(&buffer[I]), head_digits);
     }
     else {
         alignas(16) char scratch[16];
-        _mm_store_si128(reinterpret_cast<__m128i *>(scratch), ascii16);
-        std::memcpy(&buffer[I], &scratch[16 - digits_base10], digits_base10);
+        _mm_store_si128(reinterpret_cast<__m128i *>(scratch), head_digits);
+        std::memcpy(
+            &buffer[I], &scratch[16 - (digits_base10 - 3)], digits_base10 - 3);
     }
 }
 
@@ -422,7 +451,8 @@ inline constexpr void write_base10_alvarez(uint64_t x, std::string &buffer)
         if (remaining_digits == 0) {
             return;
         }
-        // Remaining digits is at most 16. We need fast division by 10^8, 10^6, 10^4, or 10^2.
+        // Remaining digits is at most 16. We need fast division by 10^8, 10^6,
+        // 10^4, or 10^2.
         switch (remaining_digits) {
         case 16:
             hi = lo / 100'000'000;
@@ -453,8 +483,14 @@ inline constexpr void write_base10_alvarez(uint64_t x, std::string &buffer)
         hi /= 100;
         uint64_t digit_lo = lo % 100;
         lo /= 100;
-        std::memcpy(&buffer[I + digits_base10 - remaining_digits_base100 - 2 - 2 * i], &digits_0_99[digit_hi * 2], 2);
-        std::memcpy(&buffer[I + digits_base10 - 2 - 2 * i], &digits_0_99[digit_lo * 2], 2);
+        std::memcpy(
+            &buffer[I + digits_base10 - remaining_digits_base100 - 2 - 2 * i],
+            &digits_0_99[digit_hi * 2],
+            2);
+        std::memcpy(
+            &buffer[I + digits_base10 - 2 - 2 * i],
+            &digits_0_99[digit_lo * 2],
+            2);
     }
 }
 

@@ -46,6 +46,8 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/monad_page_storage_cache.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
@@ -286,7 +288,11 @@ Result<BlockExecOutput> propose_block(
 
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
-    NoopStorageCache cache{db};
+    using Cache = std::conditional_t<
+        (traits::monad_rev() >= MONAD_NEXT),
+        MonadPageStorageCache<>,
+        NoopStorageCache>;
+    Cache cache{db};
     BlockState block_state(db, cache, vm);
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
@@ -310,7 +316,7 @@ Result<BlockExecOutput> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
+    MonadCommitBuilder builder(block.header.number, cache, traits::monad_rev());
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(results)

@@ -1166,6 +1166,11 @@ struct monad_executor
                     1, std::memory_order_relaxed);
                 fiber_group->executing_count.fetch_add(
                     1, std::memory_order_relaxed);
+                BOOST_SCOPE_EXIT_ALL(&fiber_group)
+                {
+                    fiber_group->executing_count.fetch_sub(
+                        1, std::memory_order_relaxed);
+                };
                 try {
                     auto const chain =
                         [chain_config] -> std::unique_ptr<Chain> {

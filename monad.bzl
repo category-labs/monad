@@ -4,8 +4,10 @@ load("@rules_nixpkgs_cc//:cc.bzl", "nixpkgs_cc_configure")
 
 # Compile options
 
-MONAD_COPTS = [
-    "-march=haswell",
+MONAD_COPTS = select({
+    "//:zkvm": ["-Icategory/zkvm/include", "-Wno-template-body"],
+    "//conditions:default": ["-march=haswell"],
+}) + [
     "-Wall",
     "-Wextra",
     "-Wconversion",
@@ -25,7 +27,11 @@ MONAD_DEFINES = [
     "_GNU_SOURCE",
     "QUILL_ROOT_LOGGER_ONLY",
     "JSON_HAS_RANGES=0",
-]
+] + select({
+    "//:zkvm_zisk": ["MONAD_ZKVM", "MONAD_ZKVM_ZISK", "NDEBUG"],
+    "//:zkvm_sp1": ["MONAD_ZKVM", "MONAD_ZKVM_SP1", "NDEBUG"],
+    "//conditions:default": [],
+})
 
 def _monad_copts(copts):
     return MONAD_COPTS + select({
@@ -36,13 +42,18 @@ def _monad_copts(copts):
 MONAD_CONLYOPTS = ["-std=c23"]
 MONAD_CXXOPTS = ["-std=c++23"]
 
+_ZKVM_HDRS_DEP = select({
+    "//:zkvm": ["//category/zkvm:zkvm_hdrs"],
+    "//conditions:default": [],
+})
+
 def monad_cc_library(name, srcs = [], hdrs = [], deps = [], copts = [], defines = [], includes = [], **kwargs):
     """cc_library with monad standard compile options."""
     native.cc_library(
         name = name,
         srcs = srcs,
         hdrs = hdrs,
-        deps = deps,
+        deps = deps + _ZKVM_HDRS_DEP,
         copts = _monad_copts(copts),
         conlyopts = MONAD_CONLYOPTS,
         cxxopts = MONAD_CXXOPTS,
@@ -90,6 +101,17 @@ def _cc_configure_impl(module_ctx):
         name = "nixpkgs_config_cc_clang",
         repository = "@nixpkgs",
         nix_file_content = "let pkgs = import <nixpkgs> {}; in pkgs.llvmPackages_19.stdenv.cc.override { gccForLibs = pkgs.gcc15.cc; }",
+        register = False,
+    )
+    nixpkgs_cc_configure(
+        name = "nixpkgs_config_cc_riscv64",
+        repository = "@nixpkgs",
+        nix_file = "//:riscv64-embedded-custom-newlib.nix",
+        nix_file_deps = ["//:nixpkgs.nix", "//:flake.lock"],
+        cross_cpu = "riscv64",
+        exec_constraints = ["@platforms//cpu:x86_64", "@platforms//os:linux"],
+        target_constraints = ["@platforms//cpu:riscv64", "@platforms//os:none"],
+        cc_lang = "c++",
         register = False,
     )
 

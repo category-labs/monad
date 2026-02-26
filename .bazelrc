@@ -7,3 +7,13 @@ build:gcc --define compiler=gcc
 
 build:clang --extra_toolchains=@nixpkgs_config_cc_clang_toolchains//:all
 build:clang --define compiler=clang
+
+build:zkvm --extra_toolchains=@nixpkgs_config_cc_riscv64_toolchains//:all
+build:zkvm --define compiler=gcc
+build:zkvm --platforms=//:riscv64_none
+
+build:zkvm-zisk --config=zkvm
+build:zkvm-zisk --define zkvm_backend=zisk
+
+build:zkvm-sp1 --config=zkvm
+build:zkvm-sp1 --define zkvm_backend=sp1

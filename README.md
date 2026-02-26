@@ -148,6 +148,23 @@ With Clang 19:
 bazel test --config=clang //test/vm/unit:vm_unit_tests
 ```
 
+### Building for zkVM (RISC-V cross-compilation)
+
+Build the monolithic `libmonad-zkvm.a` static library for bare-metal RISC-V
+targets, using GCC 15 as a cross-compiler via nix:
+
+For ZisK:
+
+```shell
+bazel build --config=zkvm-zisk //category/zkvm:libmonad-zkvm
+```
+
+For SP1:
+
+```shell
+bazel build --config=zkvm-sp1 //category/zkvm:libmonad-zkvm
+```
+
 ## A tour of execution
 
 To understand how the source code is organized, you should start by reading

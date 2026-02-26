@@ -231,6 +231,7 @@ cc_library(
     ],
 )
 
+
 # c-kzg-4844 — KZG commitments for EIP-4844 (blob transactions)
 # Generate trusted_setup.cpp with binary data from trusted_setup.txt
 genrule(

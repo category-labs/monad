@@ -140,7 +140,7 @@
   "moduleExtensions": {
     "//:monad.bzl%cc_configure": {
       "general": {
-        "bzlTransitiveDigest": "pk5wOpZCl5CSpYdmg0AjHdfN6ubcJZlRS6mQ5QV5nyA=",
+        "bzlTransitiveDigest": "ZWe0LqFH6oe0+nJ3ONMIano6JAgE0MfAWN8ECVEjJ3Q=",
         "usagesDigest": "LTcC8+yAEcu87bzKDj+n0pbW6P7Q6OS9YoP3u8I5E+w=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -236,6 +236,62 @@
               "exec_constraints": [],
               "target_constraints": [],
               "cross_cpu": ""
+            }
+          },
+          "nixpkgs_config_cc_riscv64_info": {
+            "repoRuleId": "@@rules_nixpkgs_core+//:nixpkgs.bzl%_nixpkgs_package",
+            "attributes": {
+              "unmangled_name": "nixpkgs_config_cc_riscv64_info",
+              "attribute_path": "",
+              "nix_file": "@@rules_nixpkgs_cc+//:cc.nix",
+              "nix_file_deps": {
+                "@@//:nixpkgs.nix": "//:nixpkgs.nix",
+                "@@//:flake.lock": "//:flake.lock",
+                "@@//:riscv64-embedded-custom-newlib.nix": "//:riscv64-embedded-custom-newlib.nix"
+              },
+              "nix_file_content": "",
+              "repository": "@@rules_nixpkgs_core++nix_repo+nixpkgs//:nixpkgs",
+              "repositories": {},
+              "build_file_content": "exports_files(['CC_TOOLCHAIN_INFO'])",
+              "nixopts": [
+                "--argstr",
+                "ccType",
+                "ccTypeExpression",
+                "--arg",
+                "ccExpr",
+                "import $(location //:riscv64-embedded-custom-newlib.nix)",
+                "--argstr",
+                "ccLang",
+                "c++",
+                "--argstr",
+                "ccStd",
+                "c++0x"
+              ],
+              "quiet": false,
+              "fail_not_supported": true
+            }
+          },
+          "nixpkgs_config_cc_riscv64": {
+            "repoRuleId": "@@rules_nixpkgs_cc+//:cc.bzl%_nixpkgs_cc_toolchain_config",
+            "attributes": {
+              "cc_toolchain_info": "@@+cc_configure+nixpkgs_config_cc_riscv64_info//:CC_TOOLCHAIN_INFO",
+              "fail_not_supported": true,
+              "cross_cpu": "riscv64"
+            }
+          },
+          "nixpkgs_config_cc_riscv64_toolchains": {
+            "repoRuleId": "@@rules_nixpkgs_cc+//:cc.bzl%_nixpkgs_cc_toolchain",
+            "attributes": {
+              "cc_toolchain_config": "nixpkgs_config_cc_riscv64",
+              "exec_constraints": [
+                "@platforms//cpu:x86_64",
+                "@platforms//os:linux"
+              ],
+              "target_constraints": [
+                "@platforms//cpu:riscv64",
+                "@platforms//os:none"
+              ],
+              "cross_cpu": "riscv64"
             }
           }
         },

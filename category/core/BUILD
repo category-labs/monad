@@ -1,5 +1,20 @@
 load("//:monad.bzl", "monad_cc_library")
 
+# Header-only subset for zkVM builds (no compiled sources or heavy deps).
+monad_cc_library(
+    name = "core_hdrs",
+    hdrs = glob([
+        "*.h",
+        "*.hpp",
+        "runtime/*.hpp",
+        "synchronization/*.hpp",
+    ]),
+    deps = [
+        "//third_party:intx",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 monad_cc_library(
     name = "core",
     srcs = [

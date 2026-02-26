@@ -3,11 +3,13 @@ load("//:monad.bzl", "monad_cc_library")
 monad_cc_library(
     name = "interpreter",
     srcs = [
-        "entry.S",
         "execute.cpp",
         "instruction_stats.cpp",
         "intercode.cpp",
-    ],
+    ] + select({
+        "//:zkvm": [],
+        "//conditions:default": ["entry.S"],
+    }),
     hdrs = [
         "call_runtime.hpp",
         "debug.hpp",

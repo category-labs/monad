@@ -4,14 +4,18 @@ monad_cc_library(
     name = "runtime",
     srcs = [
         "allocator.cpp",
-        "context.S",
         "context.cpp",
-        "exit.S",
         "exit.cpp",
-        "math.S",
         "storage.cpp",
-        "transmute.S",
-    ],
+    ] + select({
+        "//:zkvm": [],
+        "//conditions:default": [
+            "context.S",
+            "exit.S",
+            "math.S",
+            "transmute.S",
+        ],
+    }),
     hdrs = [
         "allocator.hpp",
         "bin.hpp",
@@ -33,12 +37,14 @@ monad_cc_library(
         "types.hpp",
     ],
     deps = [
-        "//category/core",
         "//third_party:evmc",
         "//third_party:ethash_keccak",
         "//third_party:intx",
         "//category/vm/core",
         "//category/vm/evm",
-    ],
+    ] + select({
+        "//:zkvm": ["//category/core:core_hdrs"],
+        "//conditions:default": ["//category/core"],
+    }),
     visibility = ["//visibility:public"],
 )

@@ -34,9 +34,13 @@ use_repo(cc_configure, "nixpkgs_config_cc_gcc_info")
 use_repo(cc_configure, "nixpkgs_config_cc_clang")
 use_repo(cc_configure, "nixpkgs_config_cc_clang_toolchains")
 use_repo(cc_configure, "nixpkgs_config_cc_clang_info")
+use_repo(cc_configure, "nixpkgs_config_cc_riscv64")
+use_repo(cc_configure, "nixpkgs_config_cc_riscv64_toolchains")
+use_repo(cc_configure, "nixpkgs_config_cc_riscv64_info")
 
 register_toolchains("@nixpkgs_config_cc_gcc_toolchains//:all")
 register_toolchains("@nixpkgs_config_cc_clang_toolchains//:all")
+register_toolchains("@nixpkgs_config_cc_riscv64_toolchains//:all")
 
 nix_pkg = use_extension("@rules_nixpkgs_core//extensions:package.bzl", "nix_pkg")
 nix_pkg.attr(

@@ -32,3 +32,13 @@ jobs:
           ulimit: "memlock=-1:-1"
           target: base
           cache-to: type=gha,scope=base
+
+      - name: Build and cache `base_rust` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          ulimit: "memlock=-1:-1"
+          target: base_rust
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,scope=base_rust

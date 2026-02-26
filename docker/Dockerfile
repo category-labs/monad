@@ -13,6 +13,18 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
     rm -rf /opt
 
+FROM base AS base_rust
+
+RUN apt-get update && \
+    apt-get install -y gcc rustup && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    rm -rf /opt
+
+RUN rustup toolchain install 1.91.1 --profile minimal --component clippy
+RUN rustup toolchain install nightly-2025-12-09 --profile minimal --component rustfmt
+RUN RUSTFLAGS="-C linker=gcc-15" cargo install cargo-shear@1.9.1
+
 FROM base AS build_and_test
 
 COPY . src
@@ -46,6 +58,19 @@ RUN cd src && cmake build -DMONAD_COMPILER_TESTING=On -DMONAD_COMPILER_LLVM=Off
 RUN cd src && ./scripts/vm/build-tests.sh
 RUN cd src && ./scripts/vm/test.sh
 
+FROM base_rust AS build_and_test_rust
+
+COPY . src
+
+ARG CC
+ARG CXX
+ENV TRIEDB_TARGET="triedb_driver"
+
+RUN cd src/rust && cargo update --workspace --locked
+RUN cd src/rust && cargo +nightly-2025-12-09 fmt --all --check
+RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cargo build --release --all-targets --all-features
+RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cargo test  --release --all-targets --all-features
+
 FROM base AS code_quality
 
 COPY . src
@@ -61,6 +86,39 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
 
 RUN cd src && cmake --build build -t ConstCorrectnessChecks
 RUN cd src && ./scripts/check-clang-tidy.sh
+
+FROM base_rust AS code_quality_rust
+
+COPY . src
+
+RUN cd src/rust && cargo shear
+RUN cd src/rust && cargo clippy --all-targets --all-features -- \
+    -D clippy::suspicious \
+    -D clippy::style \
+    -D clippy::clone_on_copy \
+    -D clippy::redundant_clone \
+    -D clippy::iter_kv_map \
+    -D clippy::iter_nth \
+    -D clippy::unnecessary_cast \
+    -D clippy::filter_next \
+    -D clippy::needless_lifetimes \
+    -D clippy::useless_conversion \
+    -D clippy::useless_vec \
+    -D clippy::needless_question_mark \
+    -D clippy::bool_comparison \
+    -D unused_imports \
+    -D unused_parens \
+    -D deprecated \
+    -A clippy::type_complexity \
+    -A clippy::int_plus_one \
+    -A clippy::uninlined-format-args \
+    -A clippy::enum-variant-names \
+    -A clippy::mutable_key_type \
+    -A clippy::large_enum_variant \
+    -A clippy::doc-overindented-list-items
+RUN cd src/rust && cargo check --all-targets --all-features
+RUN cd src/rust && cargo doc
+RUN cd src/rust && cargo test --release --doc --all-features
 
 FROM base AS vm_fuzz
 

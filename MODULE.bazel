@@ -1,0 +1,324 @@
+module(
+    name = "monad",
+)
+
+bazel_dep(name = "rules_nixpkgs_core", version = "0.13.0")
+bazel_dep(name = "rules_nixpkgs_cc")
+bazel_dep(name = "rules_cc", version = "0.1.1")
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "platforms", version = "0.0.11")
+
+archive_override(
+    module_name = "rules_nixpkgs_cc",
+    urls = ["https://github.com/tweag/rules_nixpkgs/releases/download/v0.13.0/rules_nixpkgs-0.13.0.tar.gz"],
+    integrity = "sha256-MCcfe9OA5OIOTXEywySUbE/bwx6+C7tmOKD2GjfnQ5c=",
+    strip_prefix = "rules_nixpkgs-0.13.0/toolchains/cc",
+)
+
+#
+# Nixpkgs
+#
+
+nix_repo = use_extension("@rules_nixpkgs_core//extensions:repository.bzl", "nix_repo")
+nix_repo.file(
+    name = "nixpkgs",
+    file = "//:nixpkgs.nix",
+    file_deps = ["//:flake.lock"],
+)
+use_repo(nix_repo, "nixpkgs")
+
+cc_configure = use_extension("//:monad.bzl", "cc_configure")
+use_repo(cc_configure, "nixpkgs_config_cc_gcc")
+use_repo(cc_configure, "nixpkgs_config_cc_gcc_toolchains")
+use_repo(cc_configure, "nixpkgs_config_cc_gcc_info")
+use_repo(cc_configure, "nixpkgs_config_cc_clang")
+use_repo(cc_configure, "nixpkgs_config_cc_clang_toolchains")
+use_repo(cc_configure, "nixpkgs_config_cc_clang_info")
+
+register_toolchains("@nixpkgs_config_cc_gcc_toolchains//:all")
+register_toolchains("@nixpkgs_config_cc_clang_toolchains//:all")
+
+nix_pkg = use_extension("@rules_nixpkgs_core//extensions:package.bzl", "nix_pkg")
+nix_pkg.attr(
+    name = "onetbb",
+    attr = "onetbb",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "onetbb.dev",
+    attr = "onetbb.dev",
+    build_file_content = """\
+cc_library(
+    name = "onetbb",
+    srcs = ["@onetbb//:lib"],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "gtest",
+    attr = "gtest",
+    build_file_content = """\
+filegroup(
+    name = "lib",
+    srcs = glob(["lib/*.so*"]),
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "gtest.dev",
+    attr = "gtest.dev",
+    build_file_content = """\
+cc_library(
+    name = "gtest",
+    hdrs = glob(["include/gtest/**/*.h"]),
+    includes = ["include"],
+    srcs = ["@gtest//:lib"],
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "gtest_main",
+    deps = [":gtest"],
+    srcs = ["@gtest//:lib"],
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "gmock",
+    hdrs = glob(["include/gmock/**/*.h"]),
+    includes = ["include"],
+    deps = [":gtest"],
+    srcs = ["@gtest//:lib"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "boost",
+    attr = "boost",
+    build_file_content = """\
+filegroup(
+    name = "lib",
+    srcs = glob(["lib/*.so*"]),
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "boost.dev",
+    attr = "boost.dev",
+    build_file_content = """\
+filegroup(
+    name = "include",
+    srcs = glob(["include/**/*.h", "include/**/*.hpp"], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "boost",
+    srcs = ["@boost//:lib"],
+    hdrs = [":include"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "zstd",
+    attr = "zstd.out",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "zstd.dev",
+    attr = "zstd.dev",
+    build_file_content = """\
+filegroup(
+    name = "include",
+    srcs = glob(["include/**/*.h", "include/**/*.hpp"], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "zstd",
+    srcs = ["@zstd//:lib"],
+    hdrs = [":include"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "liburing",
+    attr = "liburing",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "liburing.dev",
+    attr = "liburing.dev",
+    build_file_content = """\
+filegroup(
+    name = "include",
+    srcs = glob(["include/**/*.h", "include/**/*.hpp"], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "liburing",
+    srcs = ["@liburing//:lib"],
+    hdrs = [":include"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "libhugetlbfs",
+    attr = "libhugetlbfs.lib",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "libhugetlbfs.dev",
+    attr = "libhugetlbfs.dev",
+    build_file_content = """\
+filegroup(
+    name = "include",
+    srcs = glob(["include/**/*.h", "include/**/*.hpp"], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "libhugetlbfs",
+    srcs = ["@libhugetlbfs//:lib"],
+    hdrs = [":include"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "brotli",
+    attr = "brotli.lib",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "brotli.dev",
+    attr = "brotli.dev",
+    build_file_content = """\
+filegroup(
+    name = "include",
+    srcs = glob(["include/**/*.h", "include/**/*.hpp"], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "brotli",
+    srcs = ["@brotli//:lib"],
+    hdrs = [":include"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "cryptopp",
+    attr = "cryptopp",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "cryptopp.dev",
+    attr = "cryptopp.dev",
+    build_file_content = """\
+filegroup(
+    name = "include",
+    srcs = glob(["include/**/*.h", "include/**/*.hpp"], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "cryptopp",
+    srcs = ["@cryptopp//:lib"],
+    hdrs = [":include"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "gmp",
+    attr = "gmp",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "gmp.dev",
+    attr = "gmp.dev",
+    build_file_content = """\
+filegroup(
+    name = "include",
+    srcs = glob(["include/**/*.h", "include/**/*.hpp"], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "gmp",
+    srcs = ["@gmp//:lib"],
+    hdrs = [":include"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "cli11",
+    attr = "cli11",
+    build_file_content = """\
+cc_library(
+    name = "cli11",
+    hdrs = glob(["include/**/*.hpp"]),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+nix_pkg.attr(
+    name = "immer",
+    attr = "immer",
+    build_file_content = """\
+cc_library(
+    name = "immer",
+    hdrs = glob(["include/**/*.hpp"]),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    repo = "@nixpkgs",
+)
+use_repo(
+    nix_pkg,
+    "boost",
+    "boost.dev",
+    "brotli",
+    "brotli.dev",
+    "cli11",
+    "cryptopp",
+    "cryptopp.dev",
+    "gmp",
+    "gmp.dev",
+    "gtest",
+    "gtest.dev",
+    "immer",
+    "libhugetlbfs",
+    "libhugetlbfs.dev",
+    "liburing",
+    "liburing.dev",
+    "onetbb",
+    "onetbb.dev",
+    "zstd",
+    "zstd.dev",
+)

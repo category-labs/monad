@@ -1,0 +1,138 @@
+diff -ruN a/cmake/modules/AddLLVM.cmake b/cmake/modules/AddLLVM.cmake
+--- a/cmake/modules/AddLLVM.cmake
++++ b/cmake/modules/AddLLVM.cmake
+@@ -4,6 +4,13 @@
+ include(LLVM-Config)
+ include(DetermineGCCCompatible)
+ 
++# Allow installing static libraries (.a) to a separate directory from shared
++# libraries (.so).  Defaults to CMAKE_INSTALL_LIBDIR for backward compat.
++if(NOT DEFINED CMAKE_INSTALL_STATIC_LIBDIR)
++  set(CMAKE_INSTALL_STATIC_LIBDIR "${CMAKE_INSTALL_LIBDIR}" CACHE PATH
++    "Directory for installing static libraries (default: CMAKE_INSTALL_LIBDIR)")
++endif()
++
+ # get_subproject_title(titlevar)
+ #   Set ${outvar} to the title of the current LLVM subproject (Clang, MLIR ...)
+ # 
+@@ -936,7 +943,7 @@
+       install(TARGETS ${name}
+               ${export_to_llvmexports}
+               LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}${LLVM_LIBDIR_SUFFIX}" COMPONENT ${name}
+-              ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}${LLVM_LIBDIR_SUFFIX}" COMPONENT ${name}
++              ARCHIVE DESTINATION "${CMAKE_INSTALL_STATIC_LIBDIR}${LLVM_LIBDIR_SUFFIX}" COMPONENT ${name}
+               RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT ${name})
+ 
+       if (NOT LLVM_ENABLE_IDE)
+diff -ruN a/cmake/modules/CMakeLists.txt b/cmake/modules/CMakeLists.txt
+--- a/cmake/modules/CMakeLists.txt
++++ b/cmake/modules/CMakeLists.txt
+@@ -128,9 +128,10 @@
+ list(REMOVE_DUPLICATES LLVM_CONFIG_INCLUDE_DIRS)
+ 
+ extend_path(LLVM_CONFIG_LIBRARY_DIR "\${LLVM_INSTALL_PREFIX}" "${CMAKE_INSTALL_LIBDIR}\${LLVM_LIBDIR_SUFFIX}")
++extend_path(LLVM_CONFIG_STATIC_LIBRARY_DIR "\${LLVM_INSTALL_PREFIX}" "${CMAKE_INSTALL_STATIC_LIBDIR}\${LLVM_LIBDIR_SUFFIX}")
+ set(LLVM_CONFIG_LIBRARY_DIRS
+   "${LLVM_CONFIG_LIBRARY_DIR}"
+-  # FIXME: Should there be other entries here?
++  "${LLVM_CONFIG_STATIC_LIBRARY_DIR}"
+   )
+ list(REMOVE_DUPLICATES LLVM_CONFIG_LIBRARY_DIRS)
+ 
+diff -ruN a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1102,7 +1102,7 @@
+   add_subdirectory(${TENSORFLOW_AOT_PATH}/xla_aot_runtime_src
+     ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/tf_runtime)
+   install(TARGETS tf_xla_runtime EXPORT LLVMExports
+-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}${LLVM_LIBDIR_SUFFIX} COMPONENT tf_xla_runtime)
++    ARCHIVE DESTINATION ${CMAKE_INSTALL_STATIC_LIBDIR}${LLVM_LIBDIR_SUFFIX} COMPONENT tf_xla_runtime)
+   set_property(GLOBAL APPEND PROPERTY LLVM_EXPORTS tf_xla_runtime)
+   # Once we add more modules, we should handle this more automatically.
+   if (DEFINED LLVM_OVERRIDE_MODEL_HEADER_INLINERSIZEMODEL)
+diff -ruN a/tools/llvm-config/BuildVariables.inc.in b/tools/llvm-config/BuildVariables.inc.in
+--- a/tools/llvm-config/BuildVariables.inc.in
++++ b/tools/llvm-config/BuildVariables.inc.in
+@@ -24,6 +24,7 @@
+ #define LLVM_BUILDMODE "@LLVM_BUILDMODE@"
+ #define LLVM_LIBDIR_SUFFIX "@LLVM_LIBDIR_SUFFIX@"
+ #define LLVM_INSTALL_LIBDIR "@CMAKE_INSTALL_LIBDIR@"
++#define LLVM_INSTALL_STATIC_LIBDIR "@CMAKE_INSTALL_STATIC_LIBDIR@"
+ #define LLVM_INSTALL_INCLUDEDIR "@CMAKE_INSTALL_INCLUDEDIR@"
+ #define LLVM_INSTALL_PACKAGE_DIR "@LLVM_INSTALL_PACKAGE_DIR@"
+ #define LLVM_TARGETS_BUILT "@LLVM_TARGETS_BUILT@"
+diff -ruN a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.cpp
+--- a/tools/llvm-config/llvm-config.cpp
++++ b/tools/llvm-config/llvm-config.cpp
+@@ -325,7 +325,7 @@
+   // Compute various directory locations based on the derived location
+   // information.
+   std::string ActivePrefix, ActiveBinDir, ActiveIncludeDir, ActiveLibDir,
+-              ActiveCMakeDir;
++              ActiveStaticLibDir, ActiveCMakeDir;
+   std::string ActiveIncludeOption;
+   if (IsInDevelopmentTree) {
+     ActiveIncludeDir = std::string(LLVM_SRC_ROOT) + "/include";
+@@ -351,6 +351,9 @@
+       break;
+     }
+ 
++    // In development trees, static and shared libraries are co-located.
++    ActiveStaticLibDir = ActiveLibDir;
++
+     // We need to include files from both the source and object trees.
+     ActiveIncludeOption =
+         ("-I" + ActiveIncludeDir + " " + "-I" + ActiveObjRoot + "/include");
+@@ -372,6 +375,11 @@
+       ActiveLibDir = std::string(Path.str());
+     }
+     {
++      SmallString<256> Path(LLVM_INSTALL_STATIC_LIBDIR LLVM_LIBDIR_SUFFIX);
++      sys::fs::make_absolute(ActivePrefix, Path);
++      ActiveStaticLibDir = std::string(Path.str());
++    }
++    {
+       SmallString<256> Path(LLVM_INSTALL_PACKAGE_DIR);
+       sys::fs::make_absolute(ActivePrefix, Path);
+       ActiveCMakeDir = std::string(Path);
+@@ -409,19 +417,21 @@
+                    '\\');
+     }
+     SharedDir = ActiveBinDir;
+-    StaticDir = ActiveLibDir;
++    StaticDir = ActiveStaticLibDir;
+   } else if (HostTriple.isOSDarwin()) {
+     SharedExt = "dylib";
+     SharedVersionedExt = LLVM_DYLIB_VERSION ".dylib";
+     StaticExt = "a";
+-    StaticDir = SharedDir = ActiveLibDir;
++    SharedDir = ActiveLibDir;
++    StaticDir = ActiveStaticLibDir;
+     StaticPrefix = SharedPrefix = "lib";
+   } else {
+     // default to the unix values:
+     SharedExt = "so";
+     SharedVersionedExt = LLVM_DYLIB_VERSION ".so";
+     StaticExt = "a";
+-    StaticDir = SharedDir = ActiveLibDir;
++    SharedDir = ActiveLibDir;
++    StaticDir = ActiveStaticLibDir;
+     StaticPrefix = SharedPrefix = "lib";
+   }
+ 
+@@ -532,8 +542,12 @@
+       } else if (Arg == "--cxxflags") {
+         OS << ActiveIncludeOption << ' ' << LLVM_CXXFLAGS << '\n';
+       } else if (Arg == "--ldflags") {
+-        OS << ((HostTriple.isWindowsMSVCEnvironment()) ? "-LIBPATH:" : "-L")
+-           << ActiveLibDir << ' ' << LLVM_LDFLAGS << '\n';
++        auto FlagPrefix =
++            (HostTriple.isWindowsMSVCEnvironment()) ? "-LIBPATH:" : "-L";
++        OS << FlagPrefix << ActiveLibDir;
++        if (ActiveStaticLibDir != ActiveLibDir)
++          OS << ' ' << FlagPrefix << ActiveStaticLibDir;
++        OS << ' ' << LLVM_LDFLAGS << '\n';
+       } else if (Arg == "--system-libs") {
+         PrintSystemLibs = true;
+       } else if (Arg == "--libs") {

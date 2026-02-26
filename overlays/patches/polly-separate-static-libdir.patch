@@ -1,0 +1,12 @@
+--- a/tools/polly/cmake/polly_macros.cmake
++++ b/tools/polly/cmake/polly_macros.cmake
+@@ -45,7 +45,7 @@
+     install(TARGETS ${name}
+       COMPONENT ${name}
+       EXPORT LLVMExports
+       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}${LLVM_LIBDIR_SUFFIX}
+-      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}${LLVM_LIBDIR_SUFFIX})
++      ARCHIVE DESTINATION ${CMAKE_INSTALL_STATIC_LIBDIR}${LLVM_LIBDIR_SUFFIX})
+     add_llvm_install_targets(install-${name}
+       COMPONENT ${name})
+   endif()

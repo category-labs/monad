@@ -110,6 +110,44 @@ You can also run the full test suite in parallel with:
 CTEST_PARALLEL_LEVEL=$(nproc) ctest
 ```
 
+## Building with Bazel
+
+### Requirements
+
+- [Nix](https://nixos.org/download/) package manager (provides all toolchains and dependencies)
+- Bazel 8
+
+No other system dependencies are needed — nix supplies GCC 15, Clang 19, and
+all third-party libraries automatically.
+
+### Building cmd/
+
+With GCC 15:
+
+```shell
+bazel build --config=gcc //cmd/monad //cmd/monad-cli
+```
+
+With Clang 19:
+
+```shell
+bazel build --config=clang //cmd/monad //cmd/monad-cli
+```
+
+### Running VM unit tests
+
+With GCC 15:
+
+```shell
+bazel test --config=gcc //test/vm/unit:vm_unit_tests
+```
+
+With Clang 19:
+
+```shell
+bazel test --config=clang //test/vm/unit:vm_unit_tests
+```
+
 ## A tour of execution
 
 To understand how the source code is organized, you should start by reading

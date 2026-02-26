@@ -1,0 +1,9 @@
+common --enable_bzlmod
+
+build --host_platform=@rules_nixpkgs_core//platforms:host
+
+build:gcc --extra_toolchains=@nixpkgs_config_cc_gcc_toolchains//:all
+build:gcc --define compiler=gcc
+
+build:clang --extra_toolchains=@nixpkgs_config_cc_clang_toolchains//:all
+build:clang --define compiler=clang

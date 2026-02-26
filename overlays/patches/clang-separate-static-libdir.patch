@@ -1,0 +1,11 @@
+--- a/cmake/modules/AddClang.cmake
++++ b/cmake/modules/AddClang.cmake
+@@ -123,7 +123,7 @@
+           COMPONENT ${lib}
+           ${export_to_clangtargets}
+           LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}${LLVM_LIBDIR_SUFFIX}"
+-          ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}${LLVM_LIBDIR_SUFFIX}"
++          ARCHIVE DESTINATION "${CMAKE_INSTALL_STATIC_LIBDIR}${LLVM_LIBDIR_SUFFIX}"
+           RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+ 
+         if (NOT LLVM_ENABLE_IDE)

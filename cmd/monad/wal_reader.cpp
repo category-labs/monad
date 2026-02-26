@@ -92,7 +92,7 @@ std::optional<WalReader::Result> WalReader::next()
         byte_string_view body_view{body_data};
         auto const body_res = rlp::decode_consensus_block_body(body_view);
         MONAD_ASSERT_PRINTF(
-            !header_res.has_error(),
+            !body_res.has_error(),
             "Could not rlp decode file %s",
             body_filename.c_str());
 

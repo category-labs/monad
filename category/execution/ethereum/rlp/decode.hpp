@@ -94,7 +94,7 @@ constexpr Result<byte_string_view> parse_string_metadata(byte_string_view &enc)
         end = i + length;
     }
 
-    if (MONAD_UNLIKELY(end > enc.size())) {
+    if (MONAD_UNLIKELY(end > enc.size() || end < i)) {
         return DecodeError::InputTooShort;
     }
 
@@ -133,7 +133,7 @@ constexpr Result<byte_string_view> parse_list_metadata(byte_string_view &enc)
     }
     auto const end = i + length;
 
-    if (MONAD_UNLIKELY(end > enc.size())) {
+    if (MONAD_UNLIKELY(end > enc.size() || end < i)) {
         return DecodeError::InputTooShort;
     }
 

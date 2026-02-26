@@ -15,6 +15,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -38,9 +39,14 @@ void SignatureAndChain::from_v(uint256_t const &v)
     }
 }
 
-uint256_t get_v(SignatureAndChain const &sc) noexcept
+uint256_t get_v(SignatureAndChain const &sc)
 {
     if (sc.chain_id.has_value()) {
+        // Max chain id to prevent overflow:
+        static constexpr uint256_t max_chain_id =
+            (std::numeric_limits<uint256_t>::max() - 36) / 2;
+        MONAD_ASSERT_THROW(
+            *sc.chain_id <= max_chain_id, "get_v: chain_id out of bounds");
         return (*sc.chain_id * 2u) + 35u + sc.y_parity;
     }
     return sc.y_parity ? 28u : 27u;

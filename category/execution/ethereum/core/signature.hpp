@@ -49,6 +49,6 @@ struct SignatureAndChain
 static_assert(sizeof(SignatureAndChain) == 112);
 static_assert(alignof(SignatureAndChain) == 8);
 
-uint256_t get_v(SignatureAndChain const &) noexcept;
+uint256_t get_v(SignatureAndChain const &);
 
 MONAD_NAMESPACE_END

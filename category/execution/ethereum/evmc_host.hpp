@@ -156,7 +156,8 @@ struct EvmcHost final : public EvmcHostBase
     {
         try {
             if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-                auto result = ::monad::create<traits>(this, state_, msg);
+                auto result =
+                    ::monad::execute_create_message<traits>(this, state_, msg);
 
                 // EIP-211
                 if (result.status_code != EVMC_REVERT) {
@@ -169,7 +170,7 @@ struct EvmcHost final : public EvmcHostBase
                 return result;
             }
             else {
-                return ::monad::call<traits>(this, state_, msg);
+                return ::monad::execute_call_message<traits>(this, state_, msg);
             }
         }
         catch (...) {

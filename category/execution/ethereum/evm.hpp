@@ -36,9 +36,11 @@ evmc::Result
 deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
 
 template <Traits traits>
-evmc::Result create(EvmcHost<traits> *, State &, evmc_message const &);
+evmc::Result
+execute_create_message(EvmcHost<traits> *, State &, evmc_message const &);
 
 template <Traits traits>
-evmc::Result call(EvmcHost<traits> *, State &, evmc_message const &);
+evmc::Result
+execute_call_message(EvmcHost<traits> *, State &, evmc_message const &);
 
 MONAD_NAMESPACE_END

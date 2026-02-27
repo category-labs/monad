@@ -121,7 +121,8 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
         0,
         chain_ctx};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
-    auto const result = create<typename TestFixture::Trait>(&h, s, m);
+    auto const result =
+        execute_create_message<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 }
@@ -184,7 +185,8 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
         chain_ctx};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
-    auto const result = create<typename TestFixture::Trait>(&h, s, m);
+    auto const result =
+        execute_create_message<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_INSUFFICIENT_BALANCE);
 
@@ -263,7 +265,8 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
         0,
         chain_ctx};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
-    auto const result = create<typename TestFixture::Trait>(&h, s, m);
+    auto const result =
+        execute_create_message<typename TestFixture::Trait>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
 }
 
@@ -323,7 +326,8 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
     intx::be::store(m.value.bytes, v);
 
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
-    auto const result = create<typename TestFixture::Trait>(&h, s, m);
+    auto const result =
+        execute_create_message<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_FALSE(s.account_exists(new_addr));
     EXPECT_EQ(result.status_code, EVMC_ARGUMENT_OUT_OF_RANGE);
@@ -388,7 +392,8 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
         .memory = msg_memory.get(),
         .memory_capacity = vm.message_memory_capacity()};
 
-    auto const result = call<typename TestFixture::Trait>(&h, s, m);
+    auto const result =
+        execute_call_message<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
     EXPECT_EQ(result.gas_left, 382);
@@ -456,7 +461,8 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
         .memory = msg_memory.get(),
         .memory_capacity = vm.message_memory_capacity()};
 
-    evmc::Result const result = call<typename TestFixture::Trait>(&h, s, m);
+    evmc::Result const result =
+        execute_call_message<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }
@@ -554,7 +560,8 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
             .memory = msg_memory.get(),
             .memory_capacity = vm.message_memory_capacity()};
 
-        auto const result = call<typename TestFixture::Trait>(&h, s, m);
+        auto const result =
+            execute_call_message<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     }
 
@@ -573,7 +580,8 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
             .memory = msg_memory.get(),
             .memory_capacity = vm.message_memory_capacity()};
 
-        auto const result = call<typename TestFixture::Trait>(&h, s, m);
+        auto const result =
+            execute_call_message<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
     }
 }
@@ -675,7 +683,8 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
             .memory = msg_memory.get(),
             .memory_capacity = vm.message_memory_capacity()};
 
-        auto const result = call<typename TestFixture::Trait>(&h, s, m);
+        auto const result =
+            execute_call_message<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     }
 
@@ -694,7 +703,8 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
             .memory = msg_memory.get(),
             .memory_capacity = vm.message_memory_capacity()};
 
-        auto const result = call<typename TestFixture::Trait>(&h, s, m);
+        auto const result =
+            execute_call_message<typename TestFixture::Trait>(&h, s, m);
         ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
     }
 }

@@ -16,11 +16,9 @@
 #pragma once
 
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/types.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <ethash/keccak.hpp>
 

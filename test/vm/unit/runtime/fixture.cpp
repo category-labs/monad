@@ -15,12 +15,11 @@
 
 #include "fixture.hpp"
 
+#include <algorithm>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/runtime/allocator.hpp>
-#include <category/vm/runtime/keccak.hpp>
 #include <category/vm/runtime/transmute.hpp>
-#include <category/vm/runtime/types.hpp>
 
+#include <ethash/keccak.hpp>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 #include <evmc/mocked_host.hpp>
@@ -31,6 +30,7 @@
 #include <cstring>
 #include <limits>
 #include <numeric>
+#include <span>
 #include <string_view>
 
 using namespace monad::vm::runtime;

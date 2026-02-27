@@ -364,34 +364,64 @@ EXPLICIT_MONAD_TRAITS(run_dipped_into_reserve_test);
 
 TEST_F(ReserveBalanceEvm, precompile_fallback)
 {
-    auto input = std::array<uint8_t, 4>{};
+    {
+        auto input = std::array<uint8_t, 4>{};
 
-    auto const m = evmc_message{
-        .gas = 40'000,
-        .recipient = RESERVE_BALANCE_CA,
-        .sender = account_a,
-        .input_data = input.data(),
-        .input_size = input.size(),
-        .code_address = RESERVE_BALANCE_CA,
-    };
+        auto const m = evmc_message{
+            .gas = 100,
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_a,
+            .input_data = input.data(),
+            .input_size = input.size(),
+            .code_address = RESERVE_BALANCE_CA,
+        };
 
-    init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
-        state,
-        Address{m.sender},
-        empty_tx,
-        h.base_fee_per_gas_,
-        h.i_,
-        h.chain_ctx_);
+        init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
+            state,
+            Address{m.sender},
+            empty_tx,
+            h.base_fee_per_gas_,
+            h.i_,
+            h.chain_ctx_);
 
-    auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_REVERT);
-    EXPECT_EQ(result.gas_left, 0);
-    EXPECT_EQ(result.gas_refund, 0);
-    EXPECT_EQ(result.output_size, 20);
+        auto const result = h.call(m);
+        EXPECT_EQ(result.status_code, EVMC_REVERT);
+        EXPECT_EQ(result.gas_left, 0);
+        EXPECT_EQ(result.gas_refund, 0);
+        EXPECT_EQ(result.output_size, 20);
 
-    auto const message = std::string_view{
-        reinterpret_cast<char const *>(result.output_data), 20};
-    EXPECT_EQ(message, "method not supported");
+        auto const message = std::string_view{
+            reinterpret_cast<char const *>(result.output_data), 20};
+        EXPECT_EQ(message, "method not supported");
+    }
+
+    // Not enough gas to execute fallback, should fail with OOG and not REVERT
+    {
+        auto input = std::array<uint8_t, 4>{};
+
+        auto const m = evmc_message{
+            .gas = 99,
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_a,
+            .input_data = input.data(),
+            .input_size = input.size(),
+            .code_address = RESERVE_BALANCE_CA,
+        };
+
+        init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
+            state,
+            Address{m.sender},
+            empty_tx,
+            h.base_fee_per_gas_,
+            h.i_,
+            h.chain_ctx_);
+
+        auto const result = h.call(m);
+        EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(result.gas_left, 0);
+        EXPECT_EQ(result.gas_refund, 0);
+        EXPECT_EQ(result.output_size, 0);
+    }
 }
 
 TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_present)
@@ -422,6 +452,36 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_present)
     EXPECT_EQ(result.gas_left, 0);
     EXPECT_EQ(result.gas_refund, 0);
     EXPECT_EQ(result.output_size, 32);
+}
+
+TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_oog)
+{
+    u32_be selector = abi_encode_selector("dippedIntoReserve()");
+    auto const *s = selector.bytes;
+    auto input = std::array<uint8_t, 4>{s[0], s[1], s[2], s[3]};
+
+    auto const m = evmc_message{
+        .gas = 99,
+        .recipient = RESERVE_BALANCE_CA,
+        .sender = account_a,
+        .input_data = input.data(),
+        .input_size = input.size(),
+        .code_address = RESERVE_BALANCE_CA,
+    };
+
+    init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
+        state,
+        Address{m.sender},
+        empty_tx,
+        h.base_fee_per_gas_,
+        h.i_,
+        h.chain_ctx_);
+
+    auto const result = h.call(m);
+    EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+    EXPECT_EQ(result.gas_left, 0);
+    EXPECT_EQ(result.gas_refund, 0);
+    EXPECT_EQ(result.output_size, 0);
 }
 
 TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)

@@ -46,7 +46,7 @@ static_assert(PrecompileSelector::DIPPED_INTO_RESERVE == 0x3a61584e);
 
 constexpr uint64_t DIPPED_INTO_RESERVE_OP_COST = 100; // warm sload coast
 
-constexpr uint64_t FALLBACK_COST = 40'000;
+constexpr uint64_t FALLBACK_COST = 100;
 
 MONAD_ANONYMOUS_NAMESPACE_END
 

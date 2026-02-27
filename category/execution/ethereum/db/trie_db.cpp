@@ -118,43 +118,22 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     return acct.value();
 }
 
-bytes32_t
+byte_string
 TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
-    auto const page_key = compute_page_key(key);
     auto const res = db_.find(
         curr_root_,
         concat(
             prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
         block_number_);
     if (res.has_error()) {
         stats_storage_no_value();
         return {};
     }
     stats_storage_value();
-    auto encoded_storage = res.value().node->value();
-    auto const storage = decode_storage_db_ignore_slot(encoded_storage);
-    MONAD_ASSERT(!storage.has_error());
-    return to_bytes(storage.value());
-};
-
-byte_string TrieDb::read_storage_page(
-    Address const &addr, Incarnation, bytes32_t const &page_key)
-{
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
-        block_number_);
-    if (res.has_error()) {
-        return {};
-    }
     return byte_string{res.value().node->value()};
 }
 

@@ -59,10 +59,8 @@ public:
     ::monad::mpt::Node::SharedPtr const &get_root() const;
 
     virtual std::optional<Account> read_account(Address const &) override;
-    virtual bytes32_t
+    virtual byte_string
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
-    virtual byte_string read_storage_page(
-        Address const &, Incarnation, bytes32_t const &page_key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
     virtual void set_block_and_prefix(
         uint64_t block_number,

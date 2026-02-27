@@ -30,12 +30,6 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-namespace
-{
-    constexpr size_t MONAD_SLOT_BITS = 6;
-    constexpr uint8_t MONAD_SLOT_MASK = 0x3F;
-}
-
 MonadCommitBuilder::MonadCommitBuilder(
     uint64_t const block_number, PageStorageCache &cache,
     monad_revision const rev)
@@ -48,8 +42,9 @@ MonadCommitBuilder::MonadCommitBuilder(
 CommitBuilder &
 MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
-    if (revision_ < MONAD_NEXT)
+    if (revision_ < MONAD_NEXT) {
         return CommitBuilder::add_state_deltas(state_deltas);
+    }
 
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
@@ -69,9 +64,11 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 
             for (auto const &[key, slot_delta] : delta.storage) {
                 if (slot_delta.first != slot_delta.second) {
-                    auto const pg_key = compute_page_key<MONAD_SLOT_BITS>(key);
+                    auto const pg_key =
+                        compute_page_key<storage_page_t::MONAD_SLOT_BITS>(key);
                     auto const slot_off =
-                        compute_slot_offset<MONAD_SLOT_MASK>(key);
+                        compute_slot_offset<storage_page_t::MONAD_SLOT_MASK>(
+                            key);
 
                     auto it = std::find_if(
                         pages.begin(), pages.end(), [&](PageEntry const &e) {
@@ -91,12 +88,11 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = hash_alloc_.emplace_back(
                         keccak256({page_key.bytes, sizeof(page_key.bytes)})),
-                    .value =
-                        page.is_empty()
-                            ? std::nullopt
-                            : std::make_optional<byte_string_view>(
-                                  bytes_alloc_.emplace_back(
-                                      encode_storage_page_db(page_key, page))),
+                    .value = page.is_empty()
+                                 ? std::nullopt
+                                 : std::make_optional<byte_string_view>(
+                                       bytes_alloc_.emplace_back(
+                                           encode_storage_db(page_key, page))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_number_)}));

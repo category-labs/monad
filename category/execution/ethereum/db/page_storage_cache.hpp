@@ -15,11 +15,13 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_page.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -55,16 +57,16 @@ public:
     bytes32_t read_storage(
         Address const &addr, Incarnation inc, bytes32_t const &key) override
     {
-        return db_.read_storage(addr, inc, key);
+        return decode_storage_value<bytes32_t>(
+            db_.read_storage(addr, inc, key));
     }
 
     storage_page_t read_storage_page(
         Address const &addr, Incarnation inc,
         bytes32_t const &page_key) override
     {
-        storage_page_t page{};
-        page[0] = db_.read_storage(addr, inc, page_key);
-        return page;
+        return decode_storage_value<storage_page_t>(
+            db_.read_storage(addr, inc, page_key));
     }
 };
 

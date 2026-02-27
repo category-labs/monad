@@ -13,8 +13,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <cstdlib>
-#include <print>
+#ifdef MONAD_ZKVM
+
+    #include <category/zkvm/zkvm_exit.h>
+
+extern "C" void __attribute__((noreturn))
+monad_vm_assertion_failed(char const *, char const *, char const *, long)
+{
+    zkvm_exit(1);
+}
+
+extern "C" void __attribute__((noreturn)) monad_assertion_failed(
+    char const *, char const *, char const *, long, char const *)
+{
+    zkvm_exit(1);
+}
+
+#else
+
+    #include <cstdlib>
+    #include <print>
 
 extern char const *__progname; // NOLINT(bugprone-reserved-identifier)
 
@@ -32,3 +50,5 @@ extern "C" void __attribute__((noreturn)) monad_vm_assertion_failed(
 
     std::abort();
 }
+
+#endif

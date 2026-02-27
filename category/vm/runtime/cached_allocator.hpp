@@ -19,6 +19,10 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 
+#ifdef MONAD_ZKVM
+    #include <category/zkvm/zkvm_allocator.h>
+#endif
+
 #include <algorithm>
 #include <cstdlib>
 #include <functional>
@@ -70,6 +74,11 @@ namespace monad::vm::runtime
             return ptr;
         }
 
+#ifdef MONAD_ZKVM
+        // Trivial destructor avoids __cxa_atexit for the global cache_list
+        // (no meaningful program exit in bare-metal zkVM).
+        ~CachedAllocatorList() = default;
+#else
         ~CachedAllocatorList()
         {
             auto *e = elements;
@@ -79,6 +88,7 @@ namespace monad::vm::runtime
                 e = next;
             }
         }
+#endif
     };
 
     template <typename T>
@@ -115,7 +125,11 @@ namespace monad::vm::runtime
         {
             if (T::cache_list.empty()) {
                 auto *const p = reinterpret_cast<uint8_t *>(
+#ifdef MONAD_ZKVM
+                    zkvm_aligned_alloc(T::alignment, alloc_size));
+#else
                     std::aligned_alloc(T::alignment, alloc_size));
+#endif
                 return p;
             }
             else {

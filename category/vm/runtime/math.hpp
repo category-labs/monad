@@ -22,6 +22,7 @@
 
 #include <evmc/evmc.hpp>
 
+#ifndef MONAD_ZKVM
 // It is assumed that if the `result` pointer overlaps with `left` and/or
 // `right`, then `result` pointer is equal to `left` and/or `right`.
 extern "C" void monad_vm_runtime_mul(
@@ -35,12 +36,22 @@ extern "C" void monad_vm_runtime_mul_192(
     monad::vm::runtime::uint256_t *result,
     monad::vm::runtime::uint256_t const *left,
     monad::vm::runtime::uint256_t const *right) noexcept;
+#endif
 
 namespace monad::vm::runtime
 {
+#ifdef MONAD_ZKVM
+    inline void
+    mul(uint256_t *result_ptr, uint256_t const *a_ptr,
+        uint256_t const *b_ptr) noexcept
+    {
+        *result_ptr = *a_ptr * *b_ptr;
+    }
+#else
     constexpr void (*mul)(
         uint256_t *, uint256_t const *,
         uint256_t const *) noexcept = monad_vm_runtime_mul;
+#endif
 
     constexpr void udiv(
         uint256_t *result_ptr, uint256_t const *a_ptr,

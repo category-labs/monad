@@ -13,7 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-enable_language(ASM)
+if(NOT MONAD_ZKVM)
+  enable_language(ASM)
+endif()
 
 option(MONAD_VM_INTERPRETER_DEBUG "Trace instructions executed by interpreter" OFF)
 
@@ -28,7 +30,6 @@ add_library(monad-vm-interpreter OBJECT)
 target_sources(monad-vm-interpreter PRIVATE
   "call_runtime.hpp"
   "debug.hpp"
-  "entry.S"
   "execute.cpp"
   "execute.hpp"
   "instruction_stats.cpp"
@@ -41,6 +42,10 @@ target_sources(monad-vm-interpreter PRIVATE
   "stack.hpp"
   "types.hpp"
 )
+
+if(NOT MONAD_ZKVM)
+    target_sources(monad-vm-interpreter PRIVATE "entry.S")
+endif()
 
 monad_compile_options(monad-vm-interpreter)
 
@@ -80,8 +85,11 @@ target_link_libraries(monad-vm-interpreter
     PUBLIC evmc::evmc
     PUBLIC monad-vm::monad-vm-evm
     PUBLIC monad-vm::monad-vm-runtime
-    PUBLIC monad-vm::monad-vm-utils
     PRIVATE monad-vm::monad-vm-core
 )
+
+if(NOT MONAD_ZKVM)
+    target_link_libraries(monad-vm-interpreter PUBLIC monad-vm::monad-vm-utils)
+endif()
 
 add_library(monad-vm::monad-vm-interpreter ALIAS monad-vm-interpreter)

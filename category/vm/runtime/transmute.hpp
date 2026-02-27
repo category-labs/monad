@@ -21,7 +21,8 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <immintrin.h>
+#ifndef MONAD_ZKVM
+    #include <immintrin.h>
 
 // Load `load_size` bytes from `src_buffer` and clear the remaining upper bytes
 // of the result. It is required that `load_size <= 32`. If `load_size <= 0`
@@ -34,6 +35,7 @@ monad_vm_runtime_load_bounded_le(uint8_t const *src_buffer, int64_t load_size);
 // monad_vm_runtime_load_bounded_le function for a version
 // using standard calling convention.
 extern "C" __m256i monad_vm_runtime_load_bounded_le_raw();
+#endif
 
 namespace monad::vm::runtime
 {
@@ -48,7 +50,13 @@ namespace monad::vm::runtime
         if (MONAD_VM_LIKELY(max_len >= 32)) {
             return uint256_t::load_le_unsafe(bytes);
         }
+#ifdef MONAD_ZKVM
+        uint256_t v{0};
+        std::memcpy(v.as_bytes(), bytes, max_len);
+        return v;
+#else
         return uint256_t{monad_vm_runtime_load_bounded_le(bytes, max_len)};
+#endif
     }
 
     [[gnu::always_inline]]

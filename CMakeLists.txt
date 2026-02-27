@@ -103,8 +103,18 @@ endfunction()
 find_package(Boost REQUIRED COMPONENTS fiber json CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
-pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
+pkg_check_modules(crypto++ IMPORTED_TARGET libcrypto++)
 pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
+
+# In some Linux distributions, the pkgconfig file is called libcryptopp.pc
+# instead of libcrypto++.pc
+if(NOT crypto++_FOUND)
+  pkg_check_modules(cryptopp IMPORTED_TARGET libcryptopp)
+  if(NOT cryptopp_FOUND)
+    message(FATAL_ERROR "libcrypto++ not found (as libcrypto++ or libcryptopp)")
+  endif()
+  add_library(PkgConfig::crypto++ ALIAS PkgConfig::cryptopp)
+endif()
 
 # ankerl
 add_library(ankerl_hash INTERFACE)

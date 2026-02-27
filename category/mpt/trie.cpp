@@ -1552,12 +1552,12 @@ retry:
             // serialization will not cross chunk boundary
             ret.offset_written_to =
                 sender->offset().add_to_offset(sender->written_buffer_bytes());
-            auto bytes_to_append = std::min(
-                (unsigned)remaining_bytes, size - offset_in_on_disk_node);
+            MONAD_ASSERT(size > remaining_bytes);
+            auto const bytes_to_append = static_cast<unsigned>(remaining_bytes);
             auto *where_to_serialize =
                 (unsigned char *)node_writer->sender().advance_buffer_append(
                     bytes_to_append);
-            MONAD_DEBUG_ASSERT(where_to_serialize != nullptr);
+            MONAD_ASSERT(where_to_serialize != nullptr);
             serialize_node_to_buffer(
                 where_to_serialize,
                 bytes_to_append,
@@ -1573,26 +1573,23 @@ retry:
                 new_node_writer->sender().offset().id ==
                 node_writer->sender().offset().id);
         }
-        // initiate current node writer
-        if (node_writer->sender().written_buffer_bytes() !=
-            node_writer->sender().buffer().size()) {
-            LOG_INFO_CFORMAT(
-                "async_write_node %zu != %zu",
-                node_writer->sender().written_buffer_bytes(),
-                node_writer->sender().buffer().size());
-        }
-        MONAD_ASSERT(
+        MONAD_ASSERT_PRINTF(
             node_writer->sender().written_buffer_bytes() ==
+                node_writer->sender().buffer().size(),
+            "async_write_node write buffer written bytes %zu,"
+            "buffer size %zu",
+            node_writer->sender().written_buffer_bytes(),
             node_writer->sender().buffer().size());
+        // initiate current node writer
         node_writer->initiate();
         // shall be recycled by the i/o receiver
         node_writer.release();
         node_writer = std::move(new_node_writer);
         // serialize the rest of the node to buffer
         while (offset_in_on_disk_node < size) {
-            auto *where_to_serialize =
+            auto *const where_to_serialize =
                 (unsigned char *)node_writer->sender().buffer().data();
-            auto bytes_to_append = std::min(
+            auto const bytes_to_append = std::min(
                 (unsigned)node_writer->sender().remaining_buffer_bytes(),
                 size - offset_in_on_disk_node);
             serialize_node_to_buffer(

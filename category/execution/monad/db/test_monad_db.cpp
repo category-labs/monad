@@ -32,8 +32,8 @@ namespace
     constexpr size_t ETH_SLOT_BITS = storage_page_t::SLOT_BITS; // 0
     constexpr uint8_t ETH_SLOT_MASK = storage_page_t::SLOT_MASK; // 0
 
-    constexpr size_t MONAD_SLOT_BITS = 6;
-    constexpr uint8_t MONAD_SLOT_MASK = 0x3F;
+    constexpr size_t MONAD_SLOT_BITS = storage_page_t::MONAD_SLOT_BITS;
+    constexpr uint8_t MONAD_SLOT_MASK = storage_page_t::MONAD_SLOT_MASK;
 }
 
 TEST(MonadDb, eth_key_grouping)

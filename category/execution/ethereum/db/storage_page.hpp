@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
@@ -36,10 +37,12 @@ struct storage_page_t
     static constexpr size_t SLOTS = 64;
     static constexpr size_t SLOT_SIZE = 32;
     // Key-to-page mapping parameters. Decoupled from SLOTS.
-    // Eth mode: SLOT_BITS=0, SLOT_MASK=0 (one key per page, slot[0] only)
-    // Monad mode (future): SLOT_BITS=6, SLOT_MASK=0x3F (64 keys per page)
+    // Eth: identity mapping (one key per page, slot[0] only)
     static constexpr size_t SLOT_BITS = 0;
     static constexpr uint8_t SLOT_MASK = 0;
+    // Monad: 64 keys collapse into one page
+    static constexpr size_t MONAD_SLOT_BITS = 6;
+    static constexpr uint8_t MONAD_SLOT_MASK = 0x3F;
 
     bytes32_t slots[SLOTS];
 
@@ -52,11 +55,13 @@ struct storage_page_t
 
     bytes32_t &operator[](uint8_t const offset)
     {
+        MONAD_DEBUG_ASSERT(offset < SLOTS);
         return slots[offset];
     }
 
     bytes32_t const &operator[](uint8_t const offset) const
     {
+        MONAD_DEBUG_ASSERT(offset < SLOTS);
         return slots[offset];
     }
 
@@ -73,12 +78,6 @@ static_assert(
     sizeof(storage_page_t) ==
     storage_page_t::SLOTS * storage_page_t::SLOT_SIZE);
 static_assert(alignof(storage_page_t) == 1);
-
-enum class StorageEncoding
-{
-    PerSlot,
-    PerPage
-};
 
 template <size_t SlotBits = storage_page_t::SLOT_BITS>
 inline bytes32_t compute_page_key(bytes32_t const &storage_key)

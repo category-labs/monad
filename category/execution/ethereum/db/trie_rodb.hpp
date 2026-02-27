@@ -89,41 +89,15 @@ public:
         return acct.value();
     }
 
-    virtual bytes32_t read_storage(
+    virtual byte_string read_storage(
         Address const &addr, Incarnation, bytes32_t const &key) override
     {
-        auto const page_key = compute_page_key(key);
         auto storage_leaf_res = db_.find(
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{
-                    keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
-            block_number_);
-        if (!storage_leaf_res.has_value()) {
-            MONAD_ASSERT_THROW(
-                storage_leaf_res.assume_error() !=
-                    ::monad::mpt::DbError::version_no_longer_exist,
-                "Block was invalidated in db while execution was in progress");
-            return {};
-        }
-        auto encoded_storage = storage_leaf_res.value().node->value();
-        auto const storage = decode_storage_db_ignore_slot(encoded_storage);
-        MONAD_ASSERT(!storage.has_error());
-        return to_bytes(storage.value());
-    }
-
-    virtual byte_string read_storage_page(
-        Address const &addr, Incarnation, bytes32_t const &page_key) override
-    {
-        auto storage_leaf_res = db_.find(
-            prefix_cursor_,
-            mpt::concat(
-                STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{
-                    keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+                mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(

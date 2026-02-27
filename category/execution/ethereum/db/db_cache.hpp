@@ -38,35 +38,11 @@ class DbCache final : public Db
 {
     Db &db_;
 
-    struct StorageKey
-    {
-        static constexpr size_t k_bytes =
-            sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
-
-        uint8_t bytes[k_bytes];
-
-        StorageKey() = default;
-
-        StorageKey(
-            Address const &addr, Incarnation incarnation, bytes32_t const &key)
-        {
-            memcpy(bytes, addr.bytes, sizeof(Address));
-            memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
-            memcpy(
-                &bytes[sizeof(Address) + sizeof(Incarnation)],
-                key.bytes,
-                sizeof(bytes32_t));
-        }
-    };
-
     using AddressHashCompare = BytesHashCompare<Address>;
-    using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
-    using StorageCache = LruCache<StorageKey, bytes32_t, StorageKeyHashCompare>;
 
     AccountsCache accounts_{10'000'000};
-    StorageCache storage_{10'000'000};
     Proposals proposals_;
 
 public:
@@ -91,31 +67,12 @@ public:
         return db_.read_account(address);
     }
 
-    virtual bytes32_t read_storage(
+    virtual byte_string read_storage(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
-        bool truncated = false;
-        bytes32_t result;
-        if (proposals_.try_read_storage(
-                address, incarnation, key, result, truncated)) {
-            return result;
-        }
-        if (!truncated) {
-            StorageKey const skey{address, incarnation, key};
-            StorageCache::ConstAccessor acc{};
-            if (storage_.find(acc, skey)) {
-                return acc->second.value_;
-            }
-        }
+        // TODO: reintegrate proposal/LRU caching for page-level storage
         return db_.read_storage(address, incarnation, key);
-    }
-
-    virtual byte_string read_storage_page(
-        Address const &address, Incarnation const incarnation,
-        bytes32_t const &page_key) override
-    {
-        return db_.read_storage_page(address, incarnation, page_key);
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
@@ -142,7 +99,6 @@ public:
         else {
             // Finalizing a truncated proposal. Clear LRU caches.
             accounts_.clear();
-            storage_.clear();
         }
         db_.finalize(block_number, block_id);
         proposals_.set_block_and_prefix(block_number, block_id);
@@ -213,8 +169,7 @@ public:
 
     virtual std::string print_stats() override
     {
-        return db_.print_stats() + ",ac=" + accounts_.print_stats() +
-               ",sc=" + storage_.print_stats();
+        return db_.print_stats() + ",ac=" + accounts_.print_stats();
     }
 
     virtual uint64_t get_block_number() const override
@@ -229,19 +184,6 @@ private:
             auto const &address = it->first;
             auto const &account_delta = it->second.account;
             accounts_.insert(address, account_delta.second);
-            auto const &storage = it->second.storage;
-            auto const &account = account_delta.second;
-            if (account.has_value()) {
-                for (auto it2 = storage.cbegin(); it2 != storage.cend();
-                     ++it2) {
-                    auto const &key = it2->first;
-                    auto const &storage_delta = it2->second;
-                    auto const incarnation = account->incarnation;
-                    storage_.insert(
-                        StorageKey(address, incarnation, key),
-                        storage_delta.second);
-                }
-            }
         }
     }
 };

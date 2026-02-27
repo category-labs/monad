@@ -34,8 +34,8 @@ namespace
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
     constexpr auto value1 =
         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
-    constexpr size_t MONAD_SLOT_BITS = 6;
-    constexpr uint8_t MONAD_SLOT_MASK = 0x3F;
+    constexpr size_t MONAD_SLOT_BITS = storage_page_t::MONAD_SLOT_BITS;
+    constexpr uint8_t MONAD_SLOT_MASK = storage_page_t::MONAD_SLOT_MASK;
 
     using MonadCache = MonadPageStorageCache<MONAD_SLOT_BITS, MONAD_SLOT_MASK>;
 }

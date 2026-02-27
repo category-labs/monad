@@ -131,6 +131,7 @@ namespace
         OnDiskMachine machine;
         mpt::Db db;
         TrieDb tdb;
+        NoopStorageCache cache{tdb};
         vm::VM vm;
 
         EthCallFixture()
@@ -3289,7 +3290,7 @@ TEST_F(EthCallFixture, prestate_override_state)
     commit_sequential(
         tdb, deltas, {{code_hash, compiled_code}}, BlockHeader{.number = 0});
 
-    auto const storage = tdb.read_storage(
+    auto const storage = cache.read_storage(
         CONTRACT_ADDR,
         Incarnation{0, 0},
         to_bytes(to_big_endian(uint256_t{0})));

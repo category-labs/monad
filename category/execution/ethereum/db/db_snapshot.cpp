@@ -485,13 +485,14 @@ void monad_db_snapshot_loader_load(
             }
             storage_view.remove_prefix(sizeof(account_offset));
             byte_string_view const before{storage_view};
-            auto const res = decode_storage_db_raw(storage_view);
+            auto const res = decode_storage_db(storage_view);
             MONAD_ASSERT(res.has_value());
             auto &update = account_offset_to_update.at(account_offset);
             uint64_t const consumed = before.size() - storage_view.size();
             update.next.push_front(loader->update_alloc.emplace_back(Update{
-                .key = loader->hash_alloc.emplace_back(
-                    keccak256(to_bytes(res.value().first))),
+                .key = loader->hash_alloc.emplace_back(keccak256(
+                    {res.value().first.bytes,
+                     sizeof(res.value().first.bytes)})),
                 .value = before.substr(0, consumed),
                 .next = UpdateList{},
                 .version = static_cast<int64_t>(loader->block)}));

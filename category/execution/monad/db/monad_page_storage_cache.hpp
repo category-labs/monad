@@ -33,8 +33,8 @@
 MONAD_NAMESPACE_BEGIN
 
 template <
-    size_t SlotBits = storage_page_t::SLOT_BITS,
-    uint8_t SlotMask = storage_page_t::SLOT_MASK>
+    size_t SlotBits = storage_page_t::MONAD_SLOT_BITS,
+    uint8_t SlotMask = storage_page_t::MONAD_SLOT_MASK>
 class MonadPageStorageCache final : public PageStorageCache
 {
 public:
@@ -89,7 +89,22 @@ public:
     {
         bytes32_t const page_key = compute_page_key<SlotBits>(key);
         uint8_t const slot_offset = compute_slot_offset<SlotMask>(key);
-        return read_storage_page(addr, inc, page_key)[slot_offset];
+
+        PageKey const pk{addr, inc, page_key};
+
+        {
+            typename PageMap::const_accessor acc;
+            if (pages_.find(acc, pk)) {
+                return acc->second[slot_offset];
+            }
+        }
+
+        typename PageMap::accessor acc;
+        if (pages_.insert(acc, pk)) {
+            acc->second = decode_storage_value<storage_page_t>(
+                db_.read_storage(addr, inc, page_key));
+        }
+        return acc->second[slot_offset];
     }
 
     storage_page_t read_storage_page(
@@ -107,13 +122,8 @@ public:
 
         typename PageMap::accessor acc;
         if (pages_.insert(acc, pk)) {
-            auto const encoded = db_.read_storage_page(addr, inc, page_key);
-            if (!encoded.empty()) {
-                byte_string_view view{encoded};
-                auto decoded = decode_storage_page_db(view);
-                MONAD_ASSERT(!decoded.has_error());
-                acc->second = std::move(decoded.value());
-            }
+            acc->second = decode_storage_value<storage_page_t>(
+                db_.read_storage(addr, inc, page_key));
         }
         return acc->second;
     }

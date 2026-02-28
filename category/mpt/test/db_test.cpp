@@ -34,6 +34,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
+#include <category/mpt/traverse_util.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
@@ -1656,6 +1657,101 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
         ASSERT_EQ(traverse.curr_level, 0);
         EXPECT_EQ(num_leaves, 2);
     }
+}
+
+TEST(RangedGetTest, path_exceeds_min_prefix)
+{
+    StateMachineAlwaysVarLen machine;
+    Db db{machine};
+    Node::SharedPtr root;
+
+    Nibbles const min{0x0124_bytes};
+    Nibbles const max{0x1234_bytes};
+
+    // in range: longer than min
+    Nibbles const k_in_long{0x10000000_bytes};
+    Nibbles const k_in_long_2{0x02000000_bytes};
+    // in range: shorter than min (0x02 > 0x0124)
+    Nibbles const k_in_short{0x02_bytes};
+    // in range: equals min (inclusive)
+    Nibbles const k_in_at_min{0x0124_bytes};
+    // out of range: above max (long)
+    Nibbles const k_out_long{0x20000000_bytes};
+    // out of range: above max (short)
+    Nibbles const k_out_short{0x13_bytes};
+    // out of range: equals max (exclusive)
+    Nibbles const k_out_at_max{0x1234_bytes};
+    auto const val = 0xdeadbeef_bytes;
+
+    uint64_t const block_id = 0;
+    auto u1 = make_update(k_in_long, val);
+    auto u2 = make_update(k_in_long_2, val);
+    auto u3 = make_update(k_in_short, val);
+    auto u4 = make_update(k_in_at_min, val);
+    auto u5 = make_update(k_out_long, val);
+    auto u6 = make_update(k_out_at_max, val);
+    auto u7 = make_update(k_out_short, val);
+    UpdateList ul;
+    ul.push_front(u1);
+    ul.push_front(u2);
+    ul.push_front(u3);
+    ul.push_front(u4);
+    ul.push_front(u5);
+    ul.push_front(u6);
+    ul.push_front(u7);
+    root = db.upsert(std::move(root), std::move(ul), block_id);
+
+    size_t num_results = 0;
+    RangedGetMachine range_machine{
+        min,
+        max,
+        [&num_results](NibblesView const, monad::byte_string_view const) {
+            ++num_results;
+        }};
+    ASSERT_TRUE(db.traverse(root, range_machine, block_id));
+    EXPECT_EQ(num_results, 4);
+}
+
+TEST(RangedGetTest, path_longer_than_min_and_max)
+{
+    StateMachineAlwaysVarLen machine;
+    Db db{machine};
+    Node::SharedPtr root;
+
+    // Very short bounds: all keys will have paths longer than both min and max.
+    Nibbles const min{0x03_bytes};
+    Nibbles const max{0x05_bytes};
+
+    Nibbles const k_in_1{0x03000000_bytes};
+    Nibbles const k_in_2{0x04ffffff_bytes};
+    Nibbles const k_out_below{0x02ffffff_bytes};
+    Nibbles const k_out_at_max{0x05000000_bytes};
+    Nibbles const k_out_above{0x06000000_bytes};
+    auto const val = 0xdeadbeef_bytes;
+
+    uint64_t const block_id = 0;
+    UpdateList ul;
+    auto u1 = make_update(k_in_1, val);
+    auto u2 = make_update(k_in_2, val);
+    auto u3 = make_update(k_out_below, val);
+    auto u4 = make_update(k_out_at_max, val);
+    auto u5 = make_update(k_out_above, val);
+    ul.push_front(u1);
+    ul.push_front(u2);
+    ul.push_front(u3);
+    ul.push_front(u4);
+    ul.push_front(u5);
+    root = db.upsert(std::move(root), std::move(ul), block_id);
+
+    size_t num_results = 0;
+    RangedGetMachine range_machine{
+        min,
+        max,
+        [&num_results](NibblesView const, monad::byte_string_view const) {
+            ++num_results;
+        }};
+    ASSERT_TRUE(db.traverse(root, range_machine, block_id));
+    EXPECT_EQ(num_results, 2);
 }
 
 TEST_F(OnDiskDbFixture, rw_query_old_version)

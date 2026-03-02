@@ -161,7 +161,7 @@ namespace monad
     {
         static consteval evmc_revision evm_rev() noexcept
         {
-            if constexpr (Rev >= MONAD_NEXT) {
+            if constexpr (Rev >= MONAD_NINE) {
                 return EVMC_OSAKA;
             }
             if constexpr (Rev >= MONAD_FOUR) {
@@ -211,7 +211,7 @@ namespace monad
 
         static consteval bool mip_3_active() noexcept
         {
-            if constexpr (Rev >= MONAD_NEXT) {
+            if constexpr (Rev >= MONAD_NINE) {
                 return true;
             }
             return false;

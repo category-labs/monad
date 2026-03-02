@@ -76,8 +76,7 @@ bool is_precompile(Address const &address)
     // in.
     return is_eth_precompile<traits>(address) ||
            (address == staking::STAKING_CA) ||
-           (traits::monad_rev() >= MONAD_NEXT &&
-            address == RESERVE_BALANCE_CA); // TODO(dhil): FIXME revision
+           (traits::monad_rev() >= MONAD_NINE && address == RESERVE_BALANCE_CA);
 }
 
 EXPLICIT_MONAD_TRAITS(is_precompile);
@@ -108,7 +107,7 @@ std::optional<evmc::Result> check_call_precompile(
         staking::STAKING_CA);
 
     CASE(
-        traits::monad_rev() >= MONAD_NEXT, // TODO(dhil): FIXME revision
+        traits::monad_rev() >= MONAD_NINE,
         ReserveBalanceContract,
         RESERVE_BALANCE_CA);
 

@@ -460,7 +460,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
 TYPED_TEST(MonadTraitsTest, reverttransaction_no_dip)
 {
     constexpr Outcome outcome = [] {
-        if (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+        if (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
             return Outcome::WontRevert;
         }
         else {
@@ -474,7 +474,7 @@ TYPED_TEST(MonadTraitsTest, reverttransaction_no_dip)
 TYPED_TEST(MonadTraitsTest, reverttransaction_revert)
 {
     constexpr Outcome outcome = [] {
-        if (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+        if (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
             return Outcome::WillRevert;
         }
         else {

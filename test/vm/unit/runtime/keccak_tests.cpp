@@ -38,7 +38,7 @@ TYPED_TEST(RuntimeTraitsTest, KeccakNoExpand)
 
     auto memory_version = [] {
         if constexpr (is_monad_trait_v<traits>) {
-            if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+            if constexpr (traits::monad_rev() >= MONAD_NINE) {
                 return Memory::Version::MIP3;
             }
         }
@@ -72,7 +72,7 @@ TYPED_TEST(RuntimeTraitsTest, KeccakExpand)
 
     auto memory_version = [] {
         if constexpr (is_monad_trait_v<traits>) {
-            if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+            if constexpr (traits::monad_rev() >= MONAD_NINE) {
                 return Memory::Version::MIP3;
             }
         }

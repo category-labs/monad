@@ -606,7 +606,7 @@ TEST_F(RuntimeTest, MemoryTestMachineV1)
 
 TEST_F(RuntimeTest, MemoryTestMachineMIP3)
 {
-    using traits = MonadTraits<MONAD_NEXT>;
+    using traits = MonadTraits<MONAD_NINE>;
     for (auto const &config : memory_test_machine_configs()) {
         run_memory_test_machine<traits>(RuntimeTestBase::host_, config);
     }

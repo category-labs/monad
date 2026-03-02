@@ -700,7 +700,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
-    else if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+    else if constexpr (traits::monad_rev() >= MONAD_NINE) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }

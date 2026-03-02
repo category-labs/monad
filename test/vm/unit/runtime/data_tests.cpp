@@ -117,7 +117,7 @@ TYPED_TEST(RuntimeTraitsTest, CallDataCopyAll)
 
     constexpr auto initial_gas = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 14;
             }
         }
@@ -141,7 +141,7 @@ TYPED_TEST(RuntimeTraitsTest, CallDataCopyPartial)
 
     constexpr auto initial_gas = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 4;
             }
         }
@@ -174,7 +174,7 @@ TYPED_TEST(RuntimeTraitsTest, CallDataCopyOutOfBounds)
 
     constexpr auto initial_gas = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 28;
             }
         }
@@ -207,7 +207,7 @@ TYPED_TEST(RuntimeTraitsTest, CodeCopyAll)
 
     constexpr auto initial_gas = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 14;
             }
         }
@@ -231,7 +231,7 @@ TYPED_TEST(RuntimeTraitsTest, CodeCopyPartial)
 
     constexpr auto initial_gas = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 4;
             }
         }
@@ -264,7 +264,7 @@ TYPED_TEST(RuntimeTraitsTest, CodeCopyOutOfBounds)
 
     constexpr auto initial_gas = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 28;
             }
         }
@@ -300,7 +300,7 @@ TYPED_TEST(RuntimeTraitsTest, ExtCodeCopy)
 
     constexpr auto initial_gas = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 10'003;
             }
         }
@@ -328,7 +328,7 @@ TYPED_TEST(RuntimeTraitsTest, ExtCodeCopyOutOfBounds)
 
     constexpr auto initial_gas = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 10'003;
             }
         }
@@ -397,7 +397,7 @@ TYPED_TEST(RuntimeTraitsTest, ReturnDataCopyAll)
 
     constexpr auto initial_gas = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 14;
             }
         }

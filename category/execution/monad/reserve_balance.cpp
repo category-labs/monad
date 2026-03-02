@@ -62,7 +62,7 @@ bool dipped_into_reserve(
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
 
     static constexpr bool allow_init_selfdestruct_exemption =
-        traits::monad_rev() >= MONAD_NEXT;
+        traits::monad_rev() >= MONAD_NINE;
 
     uint256_t const gas_fees =
         uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
@@ -341,7 +341,7 @@ void ReserveBalance::init_from_tx(
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
     use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
-    allow_init_selfdestruct_exemption_ = traits::monad_rev() >= MONAD_NEXT;
+    allow_init_selfdestruct_exemption_ = traits::monad_rev() >= MONAD_NINE;
     bytes32_t const sender_code_hash =
         use_recent_code_hash_
             ? state_->get_code_hash(sender)

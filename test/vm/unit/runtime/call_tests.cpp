@@ -51,7 +51,7 @@ TYPED_TEST(RuntimeTraitsTest, CallBasic)
 
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 92000;
             }
         }
@@ -217,7 +217,7 @@ TYPED_TEST(RuntimeTraitsTest, CallCode)
     ASSERT_EQ(this->ctx_.memory.size, 128);
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 72'998;
             }
             if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
@@ -249,7 +249,7 @@ TYPED_TEST(RuntimeTraitsTest, StaticCall)
         ASSERT_EQ(this->ctx_.memory.size, 960);
         constexpr auto gas_remaining = [] {
             if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-                if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NEXT) {
+                if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                     return 81'985;
                 }
                 if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {

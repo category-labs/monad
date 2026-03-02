@@ -139,20 +139,33 @@ inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &value);
-byte_string encode_storage_db(bytes32_t const &key, storage_page_t const &page);
+byte_string
+encode_storage_db(bytes32_t const &key, storage_page_t const &slots);
 
-Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
+Result<std::pair<bytes32_t, byte_string_view>>
+decode_storage_db(byte_string_view &);
 
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_account_db_raw(byte_string_view &);
 Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
 Result<Account> decode_account_db_ignore_address(byte_string_view &);
 
-Result<storage_page_t> decode_storage_page_db(byte_string_view &);
+template <typename T>
+inline T decode_storage_value(byte_string_view enc)
+{
+    if (enc.empty()) {
+        return {};
+    }
+    auto slots = decode_storage_page(enc);
+    MONAD_ASSERT(!slots.has_error());
+    if constexpr (std::is_same_v<T, bytes32_t>) {
+        return slots.value()[0];
+    }
+    else {
+        return std::move(slots.value());
+    }
+}
 
-// Decode raw Db::read_storage() bytes into T.
-// T = bytes32_t: extracts slot[0] value.
-// T = storage_page_t: returns full page.
 template <typename T>
 inline T decode_storage_value(byte_string const &raw)
 {
@@ -160,14 +173,9 @@ inline T decode_storage_value(byte_string const &raw)
         return {};
     }
     byte_string_view view{raw};
-    auto decoded = decode_storage_page_db(view);
+    auto decoded = decode_storage_db(view);
     MONAD_ASSERT(!decoded.has_error());
-    if constexpr (std::is_same_v<T, bytes32_t>) {
-        return decoded.value()[0];
-    }
-    else {
-        return std::move(decoded.value());
-    }
+    return decode_storage_value<T>(decoded.value().second);
 }
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);

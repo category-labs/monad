@@ -71,7 +71,7 @@ public:
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
-        // TODO: reintegrate proposal/LRU caching for page-level storage
+        // TODO: reintegrate proposal/LRU caching for storage
         return db_.read_storage(address, incarnation, key);
     }
 

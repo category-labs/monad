@@ -159,7 +159,9 @@ namespace
         auto encoded_storage = find_res.value().node->value();
         auto const storage = decode_storage_db(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
-        return storage.value();
+        return std::make_pair(
+            storage.value().first,
+            decode_storage_value<bytes32_t>(storage.value().second));
     }
 
     std::vector<Address>

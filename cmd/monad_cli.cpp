@@ -534,6 +534,7 @@ void do_get_account(
             return;
         }
         auto storage_encoded = storage_query_res.value().node->value();
+        // TODO: multi-slot storage needs slot-aware CLI display
         auto const storage_res = decode_storage_db(storage_encoded);
         if (!storage_res) {
             fmt::println(
@@ -541,8 +542,9 @@ void do_get_account(
                 storage_res.error().message().c_str());
             return;
         }
-
-        print_storage(storage_res.value().first, storage_res.value().second);
+        print_storage(
+            storage_res.value().first,
+            decode_storage_value<bytes32_t>(storage_res.value().second));
     }
 }
 

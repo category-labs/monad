@@ -208,8 +208,14 @@ bool StatesyncProtocolV1::handle_upsert(
         if (res.has_error()) {
             return false;
         }
-        auto const &[k, v] = res.value();
-        storage_update(*ctx, unaligned_load<Address>(val), k, v);
+        auto const &[k, value_enc] = res.value();
+        // TODO: decode as storage_page_t, read-merge-write like
+        // MonadCommitBuilder::add_state_deltas
+        storage_update(
+            *ctx,
+            unaligned_load<Address>(val),
+            k,
+            decode_storage_value<bytes32_t>(value_enc));
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE) {
         if (size != sizeof(Address)) {

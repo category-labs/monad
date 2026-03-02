@@ -373,10 +373,13 @@ namespace
         {
             MONAD_ASSERT(node.has_value());
             auto encoded_storage = node.value();
+            // TODO: multi-slot storage needs a slot-aware leaf processor
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
-            return rlp::encode_string2(rlp::zeroless_view(
-                to_byte_string_view(storage.value().second.bytes)));
+            auto const value =
+                decode_storage_value<bytes32_t>(storage.value().second);
+            return rlp::encode_string2(
+                rlp::zeroless_view(to_byte_string_view(value.bytes)));
         }
     };
 
@@ -704,38 +707,28 @@ Result<Account> decode_account_db_ignore_address(byte_string_view &enc)
     return decode_account_db_helper(res.second);
 }
 
-byte_string encode_storage_db(bytes32_t const &key, storage_page_t const &page)
+byte_string encode_storage_db(bytes32_t const &key, storage_page_t const &slots)
 {
     byte_string encoded;
     encoded += rlp::encode_bytes32_compact(key);
-    encoded += encode_storage_page(page);
+    encoded += encode_storage_page(slots);
     return rlp::encode_list2(encoded);
 }
 
 byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &value)
 {
-    storage_page_t page{};
-    page[0] = value;
-    return encode_storage_db(key, page);
+    storage_page_t slots{};
+    slots[0] = value;
+    return encode_storage_db(key, slots);
 }
 
-Result<storage_page_t> decode_storage_page_db(byte_string_view &enc)
-{
-    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
-    BOOST_OUTCOME_TRY(
-        auto const key_unused, rlp::decode_string(payload)); // skip key
-    (void)key_unused;
-    BOOST_OUTCOME_TRY(auto page, decode_storage_page(payload));
-    return page;
-}
-
-Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
+Result<std::pair<bytes32_t, byte_string_view>>
+decode_storage_db(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(auto const key_view, rlp::decode_string(payload));
     bytes32_t const key = to_bytes(key_view);
-    BOOST_OUTCOME_TRY(auto page, decode_storage_page(payload));
-    return std::make_pair(key, page[0]);
+    return std::make_pair(key, payload);
 }
 
 void write_to_file(

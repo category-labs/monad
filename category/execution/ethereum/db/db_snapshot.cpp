@@ -485,6 +485,7 @@ void monad_db_snapshot_loader_load(
             }
             storage_view.remove_prefix(sizeof(account_offset));
             byte_string_view const before{storage_view};
+            // TODO: multi-slot storage needs slot-aware snapshot loading
             auto const res = decode_storage_db(storage_view);
             MONAD_ASSERT(res.has_value());
             auto &update = account_offset_to_update.at(account_offset);

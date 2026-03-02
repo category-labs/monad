@@ -424,8 +424,11 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
 
             auto encoded_storage = node.value();
 
+            // TODO: multi-slot storage needs to iterate all slots
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_DEBUG_ASSERT(!storage.has_error());
+            auto const value =
+                decode_storage_value<bytes32_t>(storage.value().second);
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
@@ -442,9 +445,7 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
                     std::as_bytes(std::span(storage.value().first.bytes)), ""));
             storage_data_json["value"] = fmt::format(
                 "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(storage.value().second.bytes)),
-                    ""));
+                fmt::join(std::as_bytes(std::span(value.bytes)), ""));
             json[acct_key]["storage"][key] = storage_data_json;
         }
 

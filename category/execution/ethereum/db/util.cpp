@@ -373,7 +373,6 @@ namespace
         {
             MONAD_ASSERT(node.has_value());
             auto encoded_storage = node.value();
-            // TODO: multi-slot storage needs a slot-aware leaf processor
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
             auto const value =

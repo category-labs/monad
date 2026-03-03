@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/update.hpp>
 
@@ -48,6 +49,27 @@ public:
     virtual CommitBuilder &add_state_deltas(StateDeltas const &);
 
     CommitBuilder &add_code(Code const &);
+
+    template <typename Range>
+    CommitBuilder &add_raw_code(Range const &code_entries)
+    {
+        mpt::UpdateList code_updates;
+        for (auto const &[hash, bytes] : code_entries) {
+            code_updates.push_front(update_alloc_.emplace_back(mpt::Update{
+                .key = mpt::NibblesView{to_byte_string_view(hash.bytes)},
+                .value = byte_string_view{bytes},
+                .incarnation = false,
+                .next = mpt::UpdateList{},
+                .version = static_cast<int64_t>(block_number_)}));
+        }
+        updates_.push_front(update_alloc_.emplace_back(mpt::Update{
+            .key = code_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(code_updates),
+            .version = static_cast<int64_t>(block_number_)}));
+        return *this;
+    }
 
     CommitBuilder &add_receipts(std::vector<Receipt> const &);
 

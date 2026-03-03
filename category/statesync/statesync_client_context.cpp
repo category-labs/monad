@@ -15,14 +15,15 @@
 
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
-#include <category/mpt/update.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
 
-#include <deque>
 #include <sys/sysinfo.h>
 
 using namespace monad;
@@ -109,79 +110,48 @@ void monad_statesync_client_context::commit()
         db.get_latest_version() != current) {
         prepare_current_state();
     }
-    std::deque<mpt::Update> alloc;
-    std::deque<byte_string> bytes_alloc;
-    std::deque<hash256> hash_alloc;
-    UpdateList accounts;
+
+    monad::StateDeltas state_deltas;
     for (auto const &[addr, delta] : deltas) {
-        UpdateList storage;
-        std::optional<byte_string_view> value;
         if (delta.has_value()) {
-            auto const &[acct, deltas] = delta.value();
-            value = bytes_alloc.emplace_back(encode_account_db(addr, acct));
-            for (auto const &[key, val] : deltas) {
-                storage.push_front(alloc.emplace_back(Update{
-                    .key = hash_alloc.emplace_back(keccak256(key.bytes)),
-                    .value = val == bytes32_t{}
-                                 ? std::nullopt
-                                 : std::make_optional<byte_string_view>(
-                                       bytes_alloc.emplace_back(
-                                           encode_storage_db(key, val))),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(current)}));
+            auto const &[acct, storage] = delta.value();
+            monad::StateDelta sd{
+                .account = AccountDelta{std::nullopt, acct}, .storage = {}};
+            for (auto const &[key, val] : storage) {
+                if (val != bytes32_t{}) {
+                    sd.storage.emplace(
+                        key, monad::StorageDelta{bytes32_t{}, val});
+                }
+                else {
+                    sd.storage.emplace(
+                        key, monad::StorageDelta{bytes32_t{1}, bytes32_t{}});
+                }
             }
+            state_deltas.emplace(addr, std::move(sd));
         }
-        accounts.push_front(alloc.emplace_back(Update{
-            .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
-            .value = value,
-            .incarnation = false,
-            .next = std::move(storage),
-            .version = static_cast<int64_t>(current)}));
-    }
-    UpdateList code_updates;
-
-    for (auto const &[hash, bytes] : code) {
-        code_updates.push_front(alloc.emplace_back(Update{
-            .key = NibblesView{hash},
-            .value = bytes,
-            .incarnation = false,
-            .next = UpdateList{},
-            .version = static_cast<int64_t>(current)}));
+        else {
+            state_deltas.emplace(
+                addr,
+                monad::StateDelta{
+                    .account = AccountDelta{Account{}, std::nullopt},
+                    .storage = {}});
+        }
     }
 
-    auto state_update = Update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(accounts),
-        .version = static_cast<int64_t>(current)};
-    auto code_update = Update{
-        .key = code_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(code_updates),
-        .version = static_cast<int64_t>(current)};
-    auto const rlp = rlp::encode_block_header(tgrt);
-    auto block_header_update = Update{
+    NoopStorageCache cache{tdb};
+    MonadCommitBuilder builder{current, cache, machine.revision};
+    builder.add_state_deltas(state_deltas);
+    builder.add_raw_code(code);
+
+    auto finalized_updates = builder.build(finalized_nibbles);
+    auto const header_rlp = rlp::encode_block_header(tgrt);
+    Update block_header_update{
         .key = block_header_nibbles,
-        .value = rlp,
+        .value = header_rlp,
         .incarnation = true,
         .next = UpdateList{},
         .version = static_cast<int64_t>(current)};
-    UpdateList updates;
-    updates.push_front(state_update);
-    updates.push_front(code_update);
-    updates.push_front(block_header_update);
-
-    UpdateList finalized_updates;
-    Update finalized{
-        .key = finalized_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(updates),
-        .version = static_cast<int64_t>(current)};
-    finalized_updates.push_front(finalized);
+    finalized_updates.front().next.push_front(block_header_update);
 
     tdb.reset_root(
         db.upsert(

@@ -44,6 +44,7 @@
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -78,7 +79,6 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <span>
@@ -535,10 +535,10 @@ namespace
                 std::vector<std::unique_ptr<trace::StateTracer>>{};
             state_tracers.reserve(calls[block_idx].size());
 
-            for (auto tx_idx = 0u; tx_idx < calls[block_idx].size(); ++tx_idx) {
+            for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
-                call_tracers.emplace_back(std::make_unique<CallTracer>(
-                    calls[block_idx][tx_idx], call_frames.back()));
+                call_tracers.emplace_back(
+                    std::make_unique<CallTracer>(tx, call_frames.back()));
                 state_tracers.emplace_back(
                     std::make_unique<trace::StateTracer>());
             }
@@ -1613,8 +1613,15 @@ struct monad_executor
              complete = complete,
              result = result,
              user = user]() {
-                // TODO(BSC): fiber group
-                (void)fiber_group;
+                fiber_group->queued_count.fetch_sub(
+                    1, std::memory_order_relaxed);
+                fiber_group->executing_count.fetch_add(
+                    1, std::memory_order_relaxed);
+                BOOST_SCOPE_EXIT_ALL(&fiber_group)
+                {
+                    fiber_group->executing_count.fetch_sub(
+                        1, std::memory_order_relaxed);
+                };
 
                 auto const res = [&]() -> Result<nlohmann::json> {
                     auto authorities = std::vector<
@@ -1658,7 +1665,7 @@ struct monad_executor
                         MONAD_ASSERT(false);
                     }();
 
-                    LazyBlockHash block_hash_buffer{db, block_number};
+                    LazyBlockHash const block_hash_buffer{db, block_number};
                     TrieRODb tdb{db};
 
                     if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
@@ -1938,13 +1945,13 @@ void monad_executor_eth_simulate_submit(
     auto const maybe_senders =
         decode_nested_items<rlp::decode_address, false>(rlp_senders_view);
     MONAD_ASSERT(maybe_senders.has_value());
-    auto const senders = maybe_senders.assume_value();
+    auto const &senders = maybe_senders.assume_value();
 
     byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
     auto const maybe_txns =
         decode_nested_items<rlp::decode_transaction, true>(rlp_calls_view);
     MONAD_ASSERT(maybe_txns.has_value());
-    auto const txns = maybe_txns.assume_value();
+    auto const &txns = maybe_txns.assume_value();
 
     MONAD_ASSERT(senders.size() == txns.size());
     MONAD_ASSERT(n_state_overrides == txns.size());
@@ -1963,8 +1970,8 @@ void monad_executor_eth_simulate_submit(
 
     executor->submit_eth_simulate_to_pool(
         chain_config,
-        std::move(txns),
-        std::move(senders),
+        txns,
+        senders,
         std::span{state_overrides, n_state_overrides},
         block_header,
         block_number,

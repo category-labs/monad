@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -52,7 +53,7 @@ namespace
             ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
         ::close(fd);
         char const *const path = dbname.c_str();
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         mpt::Db const db{
             machine,
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
@@ -77,7 +78,7 @@ protected:
 
     void SetUp() override
     {
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         vm::VM vm;
         mpt::Db db{machine, mpt::OnDiskDbConfig{.dbname_paths = {dbname}}};
         TrieDb tdb{db};

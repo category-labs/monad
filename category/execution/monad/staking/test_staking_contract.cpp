@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
@@ -71,7 +72,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
 {
     using Trait = MonadTraitsTest<MonadRevisionT>::Trait;
 
-    OnDiskMachine machine;
+    MonadOnDiskMachine machine;
     vm::VM vm;
     mpt::Db db{machine};
     TrieDb tdb{db};

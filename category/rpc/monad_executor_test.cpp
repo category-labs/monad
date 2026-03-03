@@ -46,6 +46,7 @@
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -128,7 +129,7 @@ namespace
     struct EthCallFixture : public ::testing::Test
     {
         std::filesystem::path dbname;
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         mpt::Db db;
         TrieDb tdb;
         NoopStorageCache cache{tdb};

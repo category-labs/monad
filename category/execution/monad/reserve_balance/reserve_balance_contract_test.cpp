@@ -32,6 +32,7 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
@@ -75,7 +76,7 @@ struct ReserveBalanceTest : public ::testing::Test
     static constexpr auto account_b = Address{0xcafebabe};
     static constexpr auto account_c = Address{0xabbaabba};
 
-    OnDiskMachine machine;
+    MonadOnDiskMachine machine;
     vm::VM vm;
     mpt::Db db{machine};
     TrieDb tdb{db};
@@ -242,7 +243,7 @@ void run_dipped_into_reserve_test(
     static constexpr Address EOA{0xaaaaaaaa};
     static constexpr Address SCW{0xcccccccc};
 
-    InMemoryMachine machine;
+    MonadInMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;

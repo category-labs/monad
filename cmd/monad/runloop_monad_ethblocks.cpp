@@ -303,7 +303,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing, std::chrono::seconds const block_db_timeout)
+    bool const enable_tracing, std::chrono::seconds const block_db_timeout,
+    monad_revision &machine_revision)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -391,6 +392,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         bytes32_t const block_id = bytes32_t{block.header.number};
         monad_revision const rev =
             chain.get_monad_revision(block.header.timestamp);
+        machine_revision = rev;
 
         ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
         BOOST_OUTCOME_TRY([&] {

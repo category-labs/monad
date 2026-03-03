@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_server.h>
@@ -72,7 +73,7 @@ namespace
             ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
         ::close(fd);
         char const *const path = dbname.c_str();
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         mpt::Db const db{
             machine,
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
@@ -141,7 +142,7 @@ namespace
         monad_statesync_client client;
         monad_statesync_client_context *cctx;
         std::filesystem::path sdbname;
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         mpt::Db sdb;
         TrieDb stdb;
         monad_statesync_server_context sctx;
@@ -208,7 +209,7 @@ TEST_F(StateSyncFixture, sync_from_latest)
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
     {
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
@@ -275,7 +276,7 @@ TEST_F(StateSyncFixture, sync_from_empty)
     EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 
-    OnDiskMachine machine;
+    MonadOnDiskMachine machine;
     mpt::Db cdb{
         machine,
         mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
@@ -310,7 +311,7 @@ TEST_F(StateSyncFixture, sync_from_empty)
 TEST_F(StateSyncFixture, sync_from_some)
 {
     {
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
@@ -508,7 +509,7 @@ TEST_F(StateSyncFixture, sync_from_some)
 TEST_F(StateSyncFixture, deletion_proposal)
 {
     {
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
@@ -619,7 +620,7 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
 {
     {
         // init client DB
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         mpt::Db db{
             machine, OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};

@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
@@ -46,7 +47,7 @@ using namespace monad::test;
 
 TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 {
-    InMemoryMachine machine;
+    MonadInMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
@@ -161,7 +162,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
 TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 {
-    InMemoryMachine machine;
+    MonadInMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;

@@ -17,6 +17,7 @@
 #include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/execution/monad/db/monad_page_storage_cache.hpp>
 
 #include <gtest/gtest.h>
@@ -123,7 +124,7 @@ TEST(MonadDb, page_write_merges_slots)
         0x000000000000000000000000000000000000000000000000000000000000dddd_bytes32;
 
     Account const acct{.nonce = 1};
-    InMemoryMachine machine;
+    MonadInMemoryMachine machine;
     mpt::Db mpt_db{machine};
     TrieDb tdb{mpt_db};
 

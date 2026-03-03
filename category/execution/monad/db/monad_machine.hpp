@@ -15,34 +15,35 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
-#include <category/core/result.hpp>
-#include <category/execution/ethereum/chain/chain_config.h>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/vm.hpp>
-
-#include <chrono>
-#include <cstdint>
-#include <filesystem>
-#include <utility>
-
-#include <signal.h>
 
 MONAD_NAMESPACE_BEGIN
 
-struct MonadChain;
-struct Db;
-class BlockHashBufferFinalized;
-
-namespace fiber
+struct MonadInMemoryMachine : public InMemoryMachine
 {
-    class PriorityPool;
-}
+    monad_revision revision{MONAD_ZERO};
 
-Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
-    MonadChain const &, std::filesystem::path const &, Db &, vm::VM &,
-    BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
-    sig_atomic_t const volatile &, bool enable_tracing,
-    std::chrono::seconds block_db_timeout, monad_revision &machine_revision);
+    void set_revision(monad_revision rev)
+    {
+        revision = rev;
+    }
+
+    virtual mpt::Compute &get_compute() const override;
+    virtual std::unique_ptr<mpt::StateMachine> clone() const override;
+};
+
+struct MonadOnDiskMachine : public OnDiskMachine
+{
+    monad_revision revision{MONAD_ZERO};
+
+    void set_revision(monad_revision rev)
+    {
+        revision = rev;
+    }
+
+    virtual mpt::Compute &get_compute() const override;
+    virtual std::unique_ptr<mpt::StateMachine> clone() const override;
+};
 
 MONAD_NAMESPACE_END

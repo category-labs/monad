@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/vm.hpp>
 
 #include <cstdint>
@@ -44,6 +45,7 @@ namespace fiber
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &, std::filesystem::path const &, mpt::Db &, Db &,
     vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &,
-    uint64_t, sig_atomic_t const volatile &, bool enable_tracing);
+    uint64_t, sig_atomic_t const volatile &, bool enable_tracing,
+    monad_revision &machine_revision);
 
 MONAD_NAMESPACE_END

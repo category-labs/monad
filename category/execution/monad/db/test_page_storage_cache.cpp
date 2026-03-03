@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/execution/monad/db/monad_page_storage_cache.hpp>
 
 #include <gtest/gtest.h>
@@ -55,7 +56,7 @@ TEST(PageStorageCache, monad_page_read_and_cache)
         0x000000000000000000000000000000000000000000000000000000000000cccc_bytes32;
 
     Account const acct{.nonce = 1};
-    InMemoryMachine machine;
+    MonadInMemoryMachine machine;
     mpt::Db mpt_db{machine};
     TrieDb tdb{mpt_db};
 
@@ -106,7 +107,7 @@ TEST(PageStorageCache, monad_page_read_and_cache)
 TEST(PageStorageCache, monad_cache_miss_returns_zero)
 {
     Account const acct{.nonce = 1};
-    InMemoryMachine machine;
+    MonadInMemoryMachine machine;
     mpt::Db mpt_db{machine};
     TrieDb tdb{mpt_db};
 

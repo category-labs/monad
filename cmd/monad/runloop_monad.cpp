@@ -485,7 +485,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing)
+    bool const enable_tracing, monad_revision &machine_revision)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     uint64_t const start_block_num = block_num;
@@ -633,6 +633,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &vm,
              &priority_pool,
              &last_finalized_block_number,
+             &machine_revision,
              chain_id,
              start_block_num,
              enable_tracing,
@@ -675,6 +676,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto propose_dispatch = [&]() -> Result<BlockExecOutput> {
                 auto const rev =
                     chain.get_monad_revision(header.execution_inputs.timestamp);
+                machine_revision = rev;
                 SWITCH_MONAD_TRAITS(
                     propose_block,
                     block_id,

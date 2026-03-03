@@ -16,26 +16,27 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 
-#include <intx/intx.hpp>
-
+#include <bit>
 #include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
 void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
 {
+    // hash.bytes is big-endian; byteswap converts to host order for bit ops
+    static_assert(
+        std::endian::native == std::endian::little,
+        "set_3_bits requires little-endian for byteswap");
+
     // YP Eqn 29
     auto const hash = keccak256(bytes);
     for (unsigned i = 0; i < 3; ++i) {
-        // Poorly named intx function, this really is taking from our hash,
-        // which is returned as big endian, to host order so we can do calcs on
-        // `bit`
-        uint16_t const bit =
-            intx::to_big_endian(
-                reinterpret_cast<uint16_t const *>(hash.bytes)[i]) &
-            2047u;
+        uint16_t const bit = std::byteswap(unaligned_load<uint16_t>(
+                                 hash.bytes + i * sizeof(uint16_t))) &
+                             2047u;
         unsigned int const byte = 255u - bit / 8u;
         bloom[byte] |= static_cast<unsigned char>(1u << (bit & 7u));
     }

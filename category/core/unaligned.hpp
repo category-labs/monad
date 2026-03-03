@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <category/core/config.hpp>
+
 #include <algorithm>
 #include <array>
 #include <bit>

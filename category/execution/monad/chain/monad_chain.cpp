@@ -87,4 +87,25 @@ ChainContext<T> ChainContext<T>::debug_empty()
 
 EXPLICIT_MONAD_TRAITS_STRUCT(ChainContext);
 
+ankerl::unordered_dense::segmented_set<Address> combine_senders_and_authorities(
+    std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities)
+{
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+
+    for (Address const &sender : senders) {
+        senders_and_authorities.insert(sender);
+    }
+
+    for (auto const &authorities_ : authorities) {
+        for (std::optional<Address> const &authority : authorities_) {
+            if (authority.has_value()) {
+                senders_and_authorities.insert(authority.value());
+            }
+        }
+    }
+
+    return senders_and_authorities;
+}
+
 MONAD_NAMESPACE_END

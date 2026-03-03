@@ -208,18 +208,10 @@ Result<BlockExecOutput> propose_block(
             return TransactionError::MissingSender;
         }
     }
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    for (Address const &sender : senders) {
-        senders_and_authorities.insert(sender);
-    }
-    for (std::vector<std::optional<Address>> const &authorities :
-         recovered_authorities) {
-        for (std::optional<Address> const &authority : authorities) {
-            if (authority.has_value()) {
-                senders_and_authorities.insert(authority.value());
-            }
-        }
-    }
+
+    auto senders_and_authorities =
+        combine_senders_and_authorities(senders, recovered_authorities);
+
     MONAD_ASSERT(block_cache
                      .emplace(
                          block_id,
@@ -506,19 +498,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 MONAD_ASSERT(addr.has_value());
                 senders.emplace_back(addr.value());
             }
-            ankerl::unordered_dense::segmented_set<Address>
-                senders_and_authorities;
-            for (Address const &sender : senders) {
-                senders_and_authorities.insert(sender);
-            }
-            for (std::vector<std::optional<Address>> const &authorities :
-                 recover_authorities(body.transactions, priority_pool)) {
-                for (std::optional<Address> const &authority : authorities) {
-                    if (authority.has_value()) {
-                        senders_and_authorities.insert(authority.value());
-                    }
-                }
-            }
+            std::vector<std::vector<std::optional<Address>>> const
+                recovered_authorities =
+                    recover_authorities(body.transactions, priority_pool);
+
+            auto senders_and_authorities =
+                combine_senders_and_authorities(senders, recovered_authorities);
+
             MONAD_ASSERT(block_cache
                              .emplace(
                                  id,

@@ -355,21 +355,9 @@ Result<BlockExecOutput> execute(
     }
 
     senders_and_authorities_map[block.header.number] =
-        ankerl::unordered_dense::segmented_set<Address>{};
+        combine_senders_and_authorities(senders, recovered_authorities);
     auto &senders_and_authorities =
         senders_and_authorities_map[block.header.number];
-
-    for (Address const &sender : senders) {
-        senders_and_authorities.insert(sender);
-    }
-    for (std::vector<std::optional<Address>> const &authorities :
-         recovered_authorities) {
-        for (std::optional<Address> const &authority : authorities) {
-            if (authority.has_value()) {
-                senders_and_authorities.insert(authority.value());
-            }
-        }
-    }
 
     ChainContext<traits> chain_context = [&] {
         if constexpr (is_monad_trait_v<traits>) {

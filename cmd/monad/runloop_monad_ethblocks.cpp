@@ -146,18 +146,9 @@ Result<void> process_monad_block(
             return TransactionError::MissingSender;
         }
     }
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    for (Address const &sender : senders) {
-        senders_and_authorities.insert(sender);
-    }
-    for (std::vector<std::optional<Address>> const &authorities :
-         recovered_authorities) {
-        for (std::optional<Address> const &authority : authorities) {
-            if (authority.has_value()) {
-                senders_and_authorities.insert(authority.value());
-            }
-        }
-    }
+    auto const senders_and_authorities =
+        combine_senders_and_authorities(senders, recovered_authorities);
+
     BOOST_OUTCOME_TRY(
         static_validate_monad_body<traits>(senders, block.transactions));
 

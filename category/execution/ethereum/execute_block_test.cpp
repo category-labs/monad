@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/mpt/traverse_util.hpp>
 #include <monad/test/traits_test.hpp>
@@ -185,34 +186,25 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    for (Address const &sender : senders) {
-        senders_and_authorities.insert(sender);
-    }
-    for (std::vector<std::optional<Address>> const &authorities :
-         recovered_authorities) {
-        for (std::optional<Address> const &authority : authorities) {
-            if (authority.has_value()) {
-                senders_and_authorities.insert(authority.value());
-            }
-        }
-    }
+    auto const senders_and_authorities =
+        combine_senders_and_authorities(senders, recovered_authorities);
 
     ChainContext<typename TestFixture::Trait> chain_ctx = [&] {
+        auto const empty =
+            ChainContext<typename TestFixture::Trait>::debug_empty();
+
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
             return ChainContext<typename TestFixture::Trait>{
                 .grandparent_senders_and_authorities =
-                    empty_senders_and_authorities,
-                .parent_senders_and_authorities = empty_senders_and_authorities,
+                    empty.grandparent_senders_and_authorities,
+                .parent_senders_and_authorities =
+                    empty.parent_senders_and_authorities,
                 .senders_and_authorities = senders_and_authorities,
                 .senders = senders,
-                .authorities = recovered_authorities,
-            };
+                .authorities = recovered_authorities};
         }
         else {
-            return ChainContext<typename TestFixture::Trait>{};
+            return empty;
         }
     }();
 
@@ -337,34 +329,25 @@ TYPED_TEST(TraitsTest, assertion_exception)
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    for (Address const &sender : senders) {
-        senders_and_authorities.insert(sender);
-    }
-    for (std::vector<std::optional<Address>> const &authorities :
-         recovered_authorities) {
-        for (std::optional<Address> const &authority : authorities) {
-            if (authority.has_value()) {
-                senders_and_authorities.insert(authority.value());
-            }
-        }
-    }
+    auto const senders_and_authorities =
+        combine_senders_and_authorities(senders, recovered_authorities);
 
     ChainContext<typename TestFixture::Trait> chain_ctx = [&] {
+        auto const empty =
+            ChainContext<typename TestFixture::Trait>::debug_empty();
+
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
             return ChainContext<typename TestFixture::Trait>{
                 .grandparent_senders_and_authorities =
-                    empty_senders_and_authorities,
-                .parent_senders_and_authorities = empty_senders_and_authorities,
+                    empty.grandparent_senders_and_authorities,
+                .parent_senders_and_authorities =
+                    empty.parent_senders_and_authorities,
                 .senders_and_authorities = senders_and_authorities,
                 .senders = senders,
-                .authorities = recovered_authorities,
-            };
+                .authorities = recovered_authorities};
         }
         else {
-            return ChainContext<typename TestFixture::Trait>{};
+            return empty;
         }
     }();
 
@@ -482,34 +465,25 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    for (Address const &sender : senders) {
-        senders_and_authorities.insert(sender);
-    }
-    for (std::vector<std::optional<Address>> const &authorities :
-         recovered_authorities) {
-        for (std::optional<Address> const &authority : authorities) {
-            if (authority.has_value()) {
-                senders_and_authorities.insert(authority.value());
-            }
-        }
-    }
+    auto const senders_and_authorities =
+        combine_senders_and_authorities(senders, recovered_authorities);
 
     ChainContext<typename TestFixture::Trait> chain_ctx = [&] {
+        auto const empty =
+            ChainContext<typename TestFixture::Trait>::debug_empty();
+
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
             return ChainContext<typename TestFixture::Trait>{
                 .grandparent_senders_and_authorities =
-                    empty_senders_and_authorities,
-                .parent_senders_and_authorities = empty_senders_and_authorities,
+                    empty.grandparent_senders_and_authorities,
+                .parent_senders_and_authorities =
+                    empty.parent_senders_and_authorities,
                 .senders_and_authorities = senders_and_authorities,
                 .senders = senders,
-                .authorities = recovered_authorities,
-            };
+                .authorities = recovered_authorities};
         }
         else {
-            return ChainContext<typename TestFixture::Trait>{};
+            return empty;
         }
     }();
 

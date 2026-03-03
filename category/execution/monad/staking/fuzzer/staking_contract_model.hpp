@@ -17,6 +17,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -27,7 +28,7 @@ namespace monad::staking::test
     class StakingContractModel
     {
         vm::VM vm_;
-        OnDiskMachine mpt_machine_;
+        MonadOnDiskMachine mpt_machine_;
         mpt::Db mpt_db_{mpt_machine_};
         TrieDb trie_db_{mpt_db_};
         NoopStorageCache cache_{trie_db_};

@@ -465,12 +465,6 @@ namespace
     }
 }
 
-constexpr uint8_t MachineBase::prefix_len() const
-{
-    return trie_section == TrieType::Proposal ? PROPOSAL_PREFIX_LEN
-                                              : FINALIZED_PREFIX_LEN;
-}
-
 mpt::Compute &MachineBase::get_compute() const
 {
     static EmptyCompute empty_compute;

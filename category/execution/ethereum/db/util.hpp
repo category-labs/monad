@@ -77,7 +77,12 @@ struct MachineBase : public mpt::StateMachine
     virtual void down(unsigned char const nibble) override;
     virtual void up(size_t const n) override;
     virtual bool is_variable_length() const override;
-    constexpr uint8_t prefix_len() const;
+
+    constexpr uint8_t prefix_len() const
+    {
+        return trie_section == TrieType::Proposal ? PROPOSAL_PREFIX_LEN
+                                                  : FINALIZED_PREFIX_LEN;
+    }
 
     constexpr uint8_t max_depth(uint8_t const prefix_length) const
     {
@@ -88,7 +93,7 @@ struct MachineBase : public mpt::StateMachine
 static_assert(sizeof(MachineBase) == 16);
 static_assert(alignof(MachineBase) == 8);
 
-struct InMemoryMachine final : public MachineBase
+struct InMemoryMachine : public MachineBase
 {
     virtual bool cache() const override;
     virtual bool compact() const override;

@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/mpt/db.hpp>
 #include <category/statesync/statesync_protocol.hpp>
 
@@ -45,7 +46,7 @@ struct monad_statesync_client_context
 
     using StateDelta = std::pair<monad::Account, StorageDeltas>;
 
-    monad::OnDiskMachine machine;
+    monad::MonadOnDiskMachine machine;
     monad::mpt::Db db;
     monad::TrieDb tdb;
     std::vector<std::pair<uint64_t, uint64_t>> progress;

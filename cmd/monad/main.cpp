@@ -43,6 +43,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>
@@ -282,9 +283,12 @@ try {
         net.emplace(statesync.c_str());
     }
     std::unique_ptr<mpt::StateMachine> machine;
+    monad_revision *machine_revision_ptr = nullptr;
     mpt::Db db = [&] {
         if (!db_in_memory) {
-            machine = std::make_unique<OnDiskMachine>();
+            auto m = std::make_unique<MonadOnDiskMachine>();
+            machine_revision_ptr = &m->revision;
+            machine = std::move(m);
             return mpt::Db{
                 *machine,
                 mpt::OnDiskDbConfig{
@@ -297,7 +301,9 @@ try {
                     .sq_thread_cpu = sq_thread_cpu,
                     .dbname_paths = dbname_paths}};
         }
-        machine = std::make_unique<InMemoryMachine>();
+        auto m = std::make_unique<MonadInMemoryMachine>();
+        machine_revision_ptr = &m->revision;
+        machine = std::move(m);
         return mpt::Db{*machine};
     }();
 
@@ -444,7 +450,8 @@ try {
                     end_block_num,
                     stop,
                     trace_calls,
-                    block_db_timeout);
+                    block_db_timeout,
+                    *machine_revision_ptr);
             }
             else {
                 return runloop_monad(
@@ -458,7 +465,8 @@ try {
                     block_num,
                     end_block_num,
                     stop,
-                    trace_calls);
+                    trace_calls,
+                    *machine_revision_ptr);
             }
         }
         MONAD_ABORT_PRINTF("Unsupported chain");

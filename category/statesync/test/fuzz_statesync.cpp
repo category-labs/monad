@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/monad_machine.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_messages.h>
@@ -251,7 +252,7 @@ namespace
             ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
         ::close(fd);
         char const *const path = dbname.c_str();
-        OnDiskMachine machine;
+        MonadOnDiskMachine machine;
         mpt::Db const db{
             machine,
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
@@ -282,7 +283,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
             &client,
             &statesync_send_request);
     std::filesystem::path sdbname{tmp_dbname()};
-    OnDiskMachine machine;
+    MonadOnDiskMachine machine;
     mpt::Db sdb{
         machine, OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
     TrieDb stdb{sdb};

@@ -19,10 +19,12 @@
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
+#include <category/vm/evm/monad/revision.h>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -33,6 +35,13 @@ bytes32_t read_storage(
     monad_statesync_client_context &ctx, Address const &addr,
     bytes32_t const &key)
 {
+    if (ctx.machine.revision >= MONAD_NEXT) {
+        auto const page_key =
+            compute_page_key<storage_page_t::MONAD_SLOT_BITS>(key);
+        auto const page = decode_storage_value<storage_page_t>(
+            ctx.tdb.read_storage(addr, Incarnation{0, 0}, page_key));
+        return page[compute_slot_offset<storage_page_t::MONAD_SLOT_MASK>(key)];
+    }
     return decode_storage_value<bytes32_t>(
         ctx.tdb.read_storage(addr, Incarnation{0, 0}, key));
 }
@@ -209,13 +218,21 @@ bool StatesyncProtocolV1::handle_upsert(
             return false;
         }
         auto const &[k, value_enc] = res.value();
-        // TODO: decode as storage_page_t, read-merge-write like
-        // MonadCommitBuilder::add_state_deltas
-        storage_update(
-            *ctx,
-            unaligned_load<Address>(val),
-            k,
-            decode_storage_value<bytes32_t>(value_enc));
+        auto const addr = unaligned_load<Address>(val);
+        if (ctx->machine.revision >= MONAD_NEXT) {
+            auto const page = decode_storage_value<storage_page_t>(value_enc);
+            for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
+                storage_update(
+                    *ctx,
+                    addr,
+                    compute_slot_key<storage_page_t::MONAD_SLOT_BITS>(k, i),
+                    page[i]);
+            }
+        }
+        else {
+            storage_update(
+                *ctx, addr, k, decode_storage_value<bytes32_t>(value_enc));
+        }
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE) {
         if (size != sizeof(Address)) {
@@ -232,7 +249,21 @@ bool StatesyncProtocolV1::handle_upsert(
         if (res.has_error()) {
             return false;
         }
-        storage_update(*ctx, unaligned_load<Address>(val), res.value(), {});
+        auto const addr = unaligned_load<Address>(val);
+        auto const &page_key = res.value();
+        if (ctx->machine.revision >= MONAD_NEXT) {
+            for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
+                storage_update(
+                    *ctx,
+                    addr,
+                    compute_slot_key<storage_page_t::MONAD_SLOT_BITS>(
+                        page_key, i),
+                    {});
+            }
+        }
+        else {
+            storage_update(*ctx, addr, page_key, {});
+        }
     }
     else {
         MONAD_ASSERT(type == SYNC_TYPE_UPSERT_HEADER);

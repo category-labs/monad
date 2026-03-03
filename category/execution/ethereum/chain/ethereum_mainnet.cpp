@@ -50,6 +50,8 @@ uint256_t EthereumMainnet::get_chain_id() const
 evmc_revision EthereumMainnet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
+    MONAD_ASSERT(
+        block_number >= constants::EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER);
     // TODO: update to include Prague once we can replay those blocks
 
     if (MONAD_LIKELY(timestamp >= 1710338135)) {
@@ -82,10 +84,7 @@ evmc_revision EthereumMainnet::get_revision(
     else if (block_number >= 2463000) {
         return EVMC_TANGERINE_WHISTLE;
     }
-    else if (block_number >= 1150000) {
-        return EVMC_HOMESTEAD;
-    }
-    return EVMC_FRONTIER;
+    return constants::EARLIEST_SUPPORTED_EVM_FORK;
 }
 
 Result<void>
@@ -97,6 +96,10 @@ EthereumMainnet::static_validate_header(BlockHeader const &header) const
             header.number <= dao::dao_block_number + 9 &&
             header.extra_data != dao::extra_data)) {
         return BlockError::WrongDaoExtraData;
+    }
+    if (MONAD_UNLIKELY(
+            header.number < constants::EARLIEST_SUPPORTED_EVM_FORK)) {
+        return BlockError::UnsupportedFork;
     }
     return success();
 }

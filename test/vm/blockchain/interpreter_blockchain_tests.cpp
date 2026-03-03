@@ -45,5 +45,6 @@ int main(int argc, char **argv)
     // Skip slow and broken tests:
     testing::FLAGS_gtest_filter += base_gtest_filter;
 
-    return blockchain_test_main({root}, false, vm);
+    return blockchain_test_main(
+        {root}, false, vm, constants::EARLIEST_SUPPORTED_EVM_FORK);
 }

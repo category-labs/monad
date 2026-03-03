@@ -80,14 +80,8 @@ TYPED_TEST(TraitsTest, validate_enough_gas)
         static_validate_transaction<typename TestFixture::Trait>(
             t, 0, std::nullopt, 1);
 
-    if constexpr (TestFixture::Trait::evm_rev() == EVMC_FRONTIER) {
-        EXPECT_TRUE(result.has_value());
-    }
-    else {
-        ASSERT_TRUE(result.has_error());
-        EXPECT_EQ(
-            result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
-    }
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
 }
 
 TYPED_TEST(TraitsTest, validate_floor_gas)

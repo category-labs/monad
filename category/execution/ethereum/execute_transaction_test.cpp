@@ -57,14 +57,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         0x5353535353535353535353535353535353535353_address};
 
     static constexpr auto initial_balance = 56'000'000'000'000'000;
-    static constexpr auto actual_gas_cost = [] {
-        if constexpr (TestFixture::Trait::evm_rev() == EVMC_FRONTIER) {
-            return 21'000;
-        }
-        else {
-            return 53'000;
-        }
-    }();
+    static constexpr auto actual_gas_cost = 53'000;
     static constexpr auto gas_limit = actual_gas_cost + 2'000;
     static constexpr auto max_fee_per_gas = 10;
 
@@ -93,7 +86,9 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         .gas_limit = gas_limit,
     };
 
-    BlockHeader const header{.beneficiary = bene};
+    BlockHeader const header{
+        .number = constants::EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER,
+        .beneficiary = bene};
     BlockHashBufferFinalized const block_hash_buffer;
 
     boost::fibers::promise<void> prev{};

@@ -86,6 +86,26 @@ TrieDb::TrieDb(mpt::Db &db)
 
 TrieDb::~TrieDb() = default;
 
+Node::SharedPtr TrieDb::load_root(uint64_t const block_number)
+{
+    // Only use cache for on-disk mode
+    if (!db_.is_on_disk()) {
+        return db_.load_root_for_version(block_number);
+    }
+
+    // Check cache first
+    if (auto cached = root_cache_.find(block_number)) {
+        return cached;
+    }
+
+    // Cache miss: load from DB and populate the cache before returning.
+    auto root = db_.load_root_for_version(block_number);
+    if (root) {
+        root_cache_.insert(block_number, root);
+    }
+    return root;
+}
+
 void TrieDb::reset_root(Node::SharedPtr root, uint64_t const block_number)
 {
     curr_root_ = std::move(root);
@@ -176,7 +196,7 @@ void TrieDb::commit(
             curr_root_ = db_.copy_trie(
                 curr_root_,
                 prefix_,
-                db_.load_root_for_version(header.number),
+                load_root(header.number),
                 dest_prefix,
                 header.number,
                 false);
@@ -230,6 +250,11 @@ void TrieDb::commit(
         builder.build(prefix_),
         block_number_,
         enable_compaction);
+
+    // Cache the updated root (on-disk mode only)
+    if (db_.is_on_disk()) {
+        root_cache_.insert(block_number_, curr_root_);
+    }
 }
 
 void TrieDb::set_block_and_prefix(
@@ -244,7 +269,7 @@ void TrieDb::set_block_and_prefix(
     prefix_ =
         block_id == bytes32_t{} ? finalized_nibbles : proposal_prefix(block_id);
     if (block_number_ != block_number) {
-        curr_root_ = db_.load_root_for_version(block_number);
+        curr_root_ = load_root(block_number);
         block_number_ = block_number;
     }
     MONAD_ASSERT_PRINTF(
@@ -269,13 +294,13 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk()) {
         auto const src_prefix = proposal_prefix(block_id);
-        auto root = (block_number_ == block_number)
-                        ? curr_root_
-                        : db_.load_root_for_version(block_number);
+        auto root = (block_number_ == block_number) ? curr_root_
+                                                    : load_root(block_number);
         MONAD_ASSERT(db_.find(root, src_prefix, block_number).has_value());
         curr_root_ = db_.copy_trie(
             root, src_prefix, root, finalized_nibbles, block_number, true);
         prefix_ = finalized_nibbles;
+        root_cache_.insert(block_number, curr_root_);
     }
     block_number_ = block_number;
     db_.update_finalized_version(block_number);

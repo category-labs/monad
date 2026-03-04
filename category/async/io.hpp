@@ -298,16 +298,11 @@ public:
         return poll_nonblocking(count);
     }
 
-    void wait_until_done()
+    void flush()
     {
         while (io_in_flight() > 0) {
             poll_blocking(size_t(-1));
         }
-    }
-
-    void flush()
-    {
-        wait_until_done();
     }
 
     void reset_records()

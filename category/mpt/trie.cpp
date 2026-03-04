@@ -1610,16 +1610,20 @@ retry:
                 node_writer->sender().remaining_buffer_bytes() == 0) {
                 // replace node writer
                 new_node_writer = replace_node_writer(aux, node_writer);
-                if (new_node_writer) {
-                    // initiate current node writer
-                    MONAD_DEBUG_ASSERT(
-                        node_writer->sender().written_buffer_bytes() ==
-                        node_writer->sender().buffer().size());
-                    node_writer->initiate();
-                    // shall be recycled by the i/o receiver
-                    node_writer.release();
-                    node_writer = std::move(new_node_writer);
+                if (!new_node_writer) {
+                    // Reentrance: the reentrant call may have interleaved
+                    // data into the writer, so continuing would make this
+                    // node non-contiguous on disk. Retry the entire write.
+                    goto retry;
                 }
+                // initiate current node writer
+                MONAD_DEBUG_ASSERT(
+                    node_writer->sender().written_buffer_bytes() ==
+                    node_writer->sender().buffer().size());
+                node_writer->initiate();
+                // shall be recycled by the i/o receiver
+                node_writer.release();
+                node_writer = std::move(new_node_writer);
             }
         }
     }

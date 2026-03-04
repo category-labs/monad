@@ -70,7 +70,7 @@ struct MonadChain : Chain
 };
 
 ankerl::unordered_dense::segmented_set<Address> combine_senders_and_authorities(
-    std::vector<Address> const &,
-    std::vector<std::vector<std::optional<Address>>> const &);
+    std::span<Address const> const,
+    std::span<std::vector<std::optional<Address>> const> const);
 
 MONAD_NAMESPACE_END

@@ -59,6 +59,13 @@ struct BigEndian
         unaligned_store(bytes, be);
         return *this;
     }
+
+    [[gnu::always_inline]] static inline BigEndian<T> unsafe_from(const uint8_t* src) noexcept
+    {
+        BigEndian<T> be;
+        std::memcpy(&be.bytes, src, sizeof(T));
+        return be;
+    }
 };
 
 using u8_be = BigEndian<uint8_t>;

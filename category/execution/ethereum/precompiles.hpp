@@ -31,6 +31,9 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class State;
+struct CallTracerBase;
+
 bool init_trusted_setup();
 
 inline constexpr Address ripemd_address{3};

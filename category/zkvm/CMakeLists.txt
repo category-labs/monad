@@ -156,6 +156,33 @@ add_library(monad-zkvm-libstdcxx OBJECT
 )
 monad_zkvm_compile_options(monad-zkvm-libstdcxx)
 
+# -------------------------------------------------------------------
+# Precompile execution layer (resolution + gas costs + zkvm shim)
+# -------------------------------------------------------------------
+
+set(MONAD_EXEC_DIR "${MONAD_ROOT}/category/execution/ethereum")
+
+add_library(monad-zkvm-precompiles OBJECT
+    "${MONAD_EXEC_DIR}/precompiles.cpp"
+    "${MONAD_EXEC_DIR}/precompiles_gas_cost_impl.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/precompiles_impl.cpp"
+)
+monad_zkvm_compile_options(monad-zkvm-precompiles)
+
+target_include_directories(monad-zkvm-precompiles PRIVATE
+    "${THIRD_PARTY_DIR}/unordered_dense/include"
+)
+
+target_link_libraries(monad-zkvm-precompiles
+    PUBLIC evmc::evmc_cpp
+    PUBLIC intx::intx
+    PUBLIC ethash::keccak
+)
+
+# -------------------------------------------------------------------
+# Assemble all objects into a single static library
+# -------------------------------------------------------------------
+
 add_library(monad-zkvm STATIC
     $<TARGET_OBJECTS:monad-vm-core>
     $<TARGET_OBJECTS:monad-vm-evm>
@@ -163,5 +190,6 @@ add_library(monad-zkvm STATIC
     $<TARGET_OBJECTS:monad-vm-interpreter>
     $<TARGET_OBJECTS:monad-zkvm-libc>
     $<TARGET_OBJECTS:monad-zkvm-libstdcxx>
+    $<TARGET_OBJECTS:monad-zkvm-precompiles>
     ${_libc_objs}
 )

@@ -55,8 +55,7 @@ constexpr void irrevocable_change(
     uint256_t const &base_fee_per_gas, uint64_t const excess_blob_gas)
 {
     if (tx.to) { // EVM will increment if new contract
-        auto const nonce = state.get_nonce(sender);
-        state.set_nonce(sender, nonce + 1);
+        state.inc_nonce(sender);
     }
 
     uint256_t blob_gas = 0;
@@ -324,6 +323,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
             // if `validate_transaction` fails using current values, require
             // exact match during merge as a precaution
             state.original_account_state(sender_).set_validate_exact_balance();
+            state.original_account_state(sender_).set_validate_exact_nonce();
         }
         return result;
     };
@@ -418,7 +418,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{block_state_, Incarnation{header_.number, i_ + 1}, true};
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();

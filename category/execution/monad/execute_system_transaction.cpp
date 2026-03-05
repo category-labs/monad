@@ -169,8 +169,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
 {
     BOOST_OUTCOME_TRY(validate_system_transaction(tx_, sender_, state));
 
-    auto const nonce = state.get_nonce(sender_);
-    state.set_nonce(sender_, nonce + 1);
+    state.inc_nonce(sender_);
 
     state.push();
     call_tracer_.on_enter(to_message());

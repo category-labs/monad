@@ -162,6 +162,7 @@ static_assert(sizeof(AccountState) == 144);
 // original and current balances can be adjusted
 class OriginalAccountState final : public AccountState
 {
+    bool validate_exact_nonce_{false};
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
 
@@ -176,6 +177,11 @@ public:
     {
     }
 
+    [[nodiscard]] bool validate_exact_nonce() const
+    {
+        return validate_exact_nonce_;
+    }
+
     [[nodiscard]] bool validate_exact_balance() const
     {
         return validate_exact_balance_;
@@ -184,6 +190,11 @@ public:
     [[nodiscard]] uint256_t const &min_balance() const
     {
         return min_balance_;
+    }
+
+    void set_validate_exact_nonce()
+    {
+        validate_exact_nonce_ = true;
     }
 
     void set_validate_exact_balance()

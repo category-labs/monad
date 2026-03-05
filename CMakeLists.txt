@@ -138,6 +138,11 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fiber/test/
     target_compile_definitions(${_t} PRIVATE BOOST_BIND_GLOBAL_PLACEHOLDERS)
   endforeach()
 endif()
+# Enables the thread-safety machinery required for algorithms that
+# implement algorithm::awakened_from_remote(): a spinlock on the
+# worker-queue, so ctx->detach() from a remote thread doesn't race
+# with the owning thread's attach of another fiber.
+target_compile_definitions(boost_fiber PUBLIC BOOST_FIBERS_AWAKENED_FROM_REMOTE)
 
 # immer
 option(immer_BUILD_TESTS OFF)

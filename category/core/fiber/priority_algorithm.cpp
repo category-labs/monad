@@ -15,6 +15,7 @@
 
 #include <category/core/fiber/priority_algorithm.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/fiber/config.hpp>
 #include <category/core/fiber/priority_properties.hpp>
 #include <category/core/fiber/priority_queue.hpp>
@@ -48,6 +49,16 @@ void PriorityAlgorithm::awakened(
         rqueue_.push(ctx);
         recent_ = true;
     }
+}
+
+bool PriorityAlgorithm::awakened_from_remote(context *ctx) noexcept
+{
+    MONAD_ASSERT(!ctx->is_context(boost::fibers::type::pinned_context));
+    MONAD_ASSERT(!ctx->sleep_is_linked());
+    MONAD_ASSERT(!ctx->sleep_is_linked());
+    ctx->detach();
+    rqueue_.push(ctx);
+    return true;
 }
 
 context *PriorityAlgorithm::pick_next() noexcept

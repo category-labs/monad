@@ -152,6 +152,7 @@ endforeach()
 add_subdirectory("third_party/fiber" SYSTEM)
 # Boost.Fiber triggers warnings under C++23 strict flags.
 target_compile_options(boost_fiber PRIVATE -Wno-deprecated-declarations -Wno-conversion)
+target_compile_definitions(boost_fiber PUBLIC BOOST_FIBERS_WORKER_QUEUE_LOCK BOOST_FIBERS_NO_SLEEP_QUEUE)
 
 # immer
 option(immer_BUILD_TESTS OFF)

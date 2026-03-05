@@ -22,6 +22,8 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
+#include <evmc/evmc.hpp>
+
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits, typename Contract, Address contract_address>
@@ -33,6 +35,10 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return std::nullopt;
     }
 
+    static_assert(
+        EVMC_FLAGS_SENTINEL == 4,
+        "Update this function to implement the specified behavior "
+        "of the new `evmc_flags` with monad precompiles.");
     if (MONAD_UNLIKELY(msg.kind != EVMC_CALL) || (msg.flags != 0)) {
         return evmc::Result{evmc_status_code::EVMC_REJECTED};
     }

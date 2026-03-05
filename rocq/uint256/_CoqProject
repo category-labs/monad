@@ -8,5 +8,6 @@ theories/Words.v
 theories/WordsLemmas.v
 theories/ConstexprMul.v
 theories/Division.v
+theories/DivisionProofs.v
 theories/RuntimeMul.v
 theories/RuntimeMulProofs.v

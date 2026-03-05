@@ -52,20 +52,23 @@ void PriorityAlgorithm::awakened(
 
 context *PriorityAlgorithm::pick_next() noexcept
 {
-    context *ctx = rqueue_.pop();
+    context *ctx = nullptr;
+    if (!lqueue_.empty()) {
+        ctx = &lqueue_.front();
+        lqueue_.pop_front();
+    }
+    else {
+        ctx = rqueue_.pop();
+        if (MONAD_LIKELY(ctx)) {
+            recent_ = true;
+            context::active()->attach(ctx);
+        }
+    }
     if (prevent_spin_ && !ctx) {
         if (!recent_) {
             std::this_thread::sleep_for(std::chrono::microseconds(10));
         }
         recent_ = false;
-    }
-    if (MONAD_LIKELY(ctx)) {
-        recent_ = true;
-        context::active()->attach(ctx);
-    }
-    else if (!lqueue_.empty()) {
-        ctx = &lqueue_.front();
-        lqueue_.pop_front();
     }
     return ctx;
 }

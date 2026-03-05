@@ -37,7 +37,7 @@ struct BigEndian
 
     BigEndian() = default;
 
-    constexpr BigEndian(T const &x) noexcept
+    constexpr explicit(false) BigEndian(T const &x) noexcept
     {
         auto const be = intx::bswap(x);
         unaligned_store(bytes, be);
@@ -58,6 +58,20 @@ struct BigEndian
         auto const be = intx::bswap(x);
         unaligned_store(bytes, be);
         return *this;
+    }
+
+    bool is_zero() const
+    {
+        return std::ranges::all_of(bytes, [](auto b) { return b == 0; });
+    }
+
+    template <typename BytesWrapper>
+        requires(sizeof(BytesWrapper) == sizeof(BigEndian<T>))
+    static BigEndian<T> from_bytes(BytesWrapper const &b) noexcept
+    {
+        BigEndian<T> result;
+        std::memcpy(result.bytes, b.bytes, sizeof(BigEndian<T>));
+        return result;
     }
 };
 

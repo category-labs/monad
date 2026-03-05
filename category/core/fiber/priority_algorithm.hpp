@@ -23,8 +23,6 @@
 #include <boost/fiber/context.hpp>
 #include <boost/fiber/scheduler.hpp>
 
-#include <chrono>
-
 MONAD_FIBER_NAMESPACE_BEGIN
 
 using boost::fibers::context;
@@ -53,14 +51,13 @@ public:
 
     void awakened(context *, PriorityProperties &) noexcept override;
 
+    bool awakened_from_remote(context *ctx) noexcept override;
+
     context *pick_next() noexcept override;
 
     bool has_ready_fibers() const noexcept override;
 
-    void suspend_until(
-        std::chrono::steady_clock::time_point const &) noexcept override
-    {
-    }
+    void suspend() noexcept override {}
 
     void notify() noexcept override {}
 };

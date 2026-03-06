@@ -18,6 +18,7 @@
 #include <category/async/config.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/lru/static_lru_cache.hpp>
+#include <category/core/util/stopwatch.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
@@ -61,35 +62,30 @@ class Node;
 
 struct write_operation_io_receiver
 {
-    size_t should_be_written;
+private:
+    size_t should_be_written_;
+    UpdateAuxImpl &aux_;
+    bool track_flush_completion_{false};
 
-    // Node *parent{nullptr};
-
+public:
     explicit constexpr write_operation_io_receiver(
-        size_t const should_be_written_)
-        : should_be_written(should_be_written_)
+        size_t const should_be_written, UpdateAuxImpl &aux)
+        : should_be_written_(should_be_written)
+        , aux_(aux)
     {
     }
+
+    // Defined in trie.cpp (UpdateAuxImpl is incomplete here).
+    void set_track_flush_completion(bool v) noexcept;
 
     void set_value(
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
-        MONAD_ASYNC_NAMESPACE::write_single_buffer_sender::result_type res)
-    {
-        MONAD_ASSERT(res);
-        MONAD_ASSERT(res.assume_value().get().size() == should_be_written);
-        res.assume_value()
-            .get()
-            .reset(); // release i/o buffer before initiating other work
-        // TODO: when adding upsert_sender
-        // if (parent->current_process_updates_sender_ != nullptr) {
-        //     parent->current_process_updates_sender_
-        //         ->notify_write_operation_completed_(rawstate);
-        // }
-    }
+        MONAD_ASYNC_NAMESPACE::write_single_buffer_sender::result_type res);
 
-    void reset(size_t const should_be_written_)
+    void reset(size_t const should_be_written)
     {
-        should_be_written = should_be_written_;
+        should_be_written_ = should_be_written;
+        track_flush_completion_ = false;
     }
 };
 
@@ -164,11 +160,11 @@ public:
     }
 };
 
-chunk_offset_t
-async_write_node_set_spare(UpdateAuxImpl &, Node &, bool is_fast);
+chunk_offset_t async_write_node_set_spare(
+    UpdateAuxImpl &, Node &, bool is_fast, bool track_flush_completion = false);
 
 chunk_offset_t
-write_new_root_node(UpdateAuxImpl &, Node &root, uint64_t version);
+commit_root_blocking(UpdateAuxImpl &, Node &root, uint64_t version);
 
 node_writer_unique_ptr_type
 replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
@@ -250,6 +246,13 @@ public:
 
     // On disk stuff
     MONAD_ASYNC_NAMESPACE::AsyncIO *io{nullptr};
+    // Set by OnDiskUpsertSender. Used by upward_update() (phase_upsert)
+    // and write_operation_io_receiver (phase_flush_writes) to trigger
+    // completion of the same connected_operation.
+    MONAD_ASYNC_NAMESPACE::erased_connected_operation
+        *pending_upsert_connected_state{nullptr};
+    unsigned flush_writes_pending{0};
+
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
 
@@ -278,6 +281,17 @@ public:
         Node::SharedPtr prev_root, StateMachine &, UpdateList &&,
         uint64_t version, bool compaction = false,
         bool can_write_to_fast = true, bool write_root = true);
+
+    // On-disk upsert helpers, used by OnDiskUpsertSender for async upsert.
+    // do_update_prepare_ondisk: sets up compact offsets, history length,
+    // auto_expire version. Returns serialized compact offsets for root update.
+    // NOTE: caller must create root Update + UpdateList in their own scope
+    // (UpdateList is intrusive — elements must outlive the list).
+    byte_string do_update_prepare_ondisk(
+        Node::SharedPtr const &prev_root, uint64_t version, bool compaction,
+        bool can_write_to_fast);
+    // do_update_finalize_ondisk: metadata updates and stats after upsert.
+    void do_update_finalize_ondisk(uint64_t version, bool compaction);
 
     void adjust_history_length_based_on_disk_usage();
     void move_trie_version_forward(uint64_t src, uint64_t dest);
@@ -584,7 +598,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 144 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 160 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 class UpdateAux final : public UpdateAuxImpl
@@ -639,8 +653,77 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
     }
 }
 
+// Async upsert sender for on disk upsert.
+// Phase 1 (phase_upsert): recursive trie upsert with async reads. Completed by
+//   upward_update() when sentinel->npending reaches 0.
+// Phase 2 (phase_flush_writes): initiate buffered writes, use sentinel count
+//   tracks pending I/O. The last write_operation_io_receiver to complete
+//   triggers the sender via pending_upsert_connected_state.
+struct OnDiskUpsertSender
+{
+    using result_type = MONAD_ASYNC_NAMESPACE::result<Node::SharedPtr>;
+
+private:
+    enum phase_t : uint8_t
+    {
+        phase_upsert,
+        phase_flush_writes
+    };
+
+    UpdateAuxImpl &aux_;
+    std::reference_wrapper<StateMachine> sm_;
+    Node::SharedPtr prev_root_;
+    UpdateList updates_;
+    uint64_t version_;
+    bool enable_compaction_;
+    bool can_write_to_fast_;
+    bool write_root_;
+
+    phase_t phase_{phase_upsert};
+    tnode_unique_ptr sentinel_{};
+    byte_string compact_offsets_{};
+    Update root_update_{};
+    UpdateList root_updates_{}; // passed to upsert_begin
+    Node::SharedPtr root_{}; // result after tree traversal
+    chunk_offset_t root_offset_{INVALID_OFFSET};
+    Stopwatch<std::chrono::microseconds> upsert_timer_{};
+
+public:
+    OnDiskUpsertSender(
+        UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr prev_root,
+        UpdateList &&updates, uint64_t version, bool enable_compaction,
+        bool can_write_to_fast, bool write_root)
+        : aux_(aux)
+        , sm_(sm)
+        , prev_root_(std::move(prev_root))
+        , updates_(std::move(updates))
+        , version_(version)
+        , enable_compaction_(enable_compaction)
+        , can_write_to_fast_(can_write_to_fast)
+        , write_root_(write_root)
+    {
+        MONAD_ASSERT(aux.is_on_disk());
+    }
+
+    MONAD_ASYNC_NAMESPACE::result<void> operator()(
+        MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state) noexcept;
+
+    result_type completed(
+        MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state,
+        MONAD_ASYNC_NAMESPACE::result<void> res) noexcept;
+};
+
+struct OnDiskUpsertReceiver
+{
+    threadsafe_boost_fibers_promise<Node::SharedPtr> &promise;
+
+    void set_value(
+        async::erased_connected_operation *state,
+        MONAD_ASYNC_NAMESPACE::result<Node::SharedPtr> res);
+};
+
 // batch upsert, updates can be nested
-Node::SharedPtr upsert(
+Node::SharedPtr upsert_blocking(
     UpdateAuxImpl &, uint64_t version, StateMachine &, Node::SharedPtr old,
     UpdateList &&, bool write_root = true);
 

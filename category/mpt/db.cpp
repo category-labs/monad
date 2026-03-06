@@ -569,14 +569,19 @@ struct OnDiskWithWorkerThreadImpl
                         // Ditto to above
                         upsert_promises.emplace_back(std::move(*req->promise));
                         req->promise = &upsert_promises.back();
-                        req->promise->set_value(aux.do_update(
-                            std::move(req->prev_root),
-                            req->sm,
-                            std::move(req->updates),
-                            req->version,
-                            req->enable_compaction,
-                            req->can_write_to_fast,
-                            req->write_root));
+
+                        auto *state = new auto(async::connect(
+                            OnDiskUpsertSender{
+                                aux,
+                                req->sm,
+                                std::move(req->prev_root),
+                                std::move(req->updates),
+                                req->version,
+                                req->enable_compaction,
+                                req->can_write_to_fast,
+                                req->write_root},
+                            OnDiskUpsertReceiver{*req->promise}));
+                        state->initiate();
                     }
                     else if (auto *req = std::get_if<3>(&request);
                              req != nullptr) {

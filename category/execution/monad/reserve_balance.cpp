@@ -119,12 +119,6 @@ bool dipped_into_reserve(
             if (addr == sender) {
                 if (!can_sender_dip_into_reserve(
                         sender, i, effective_is_delegated, ctx)) {
-                    // Safety: this assertion is recoverable because it can be
-                    // triggered via RPC parameter setting.
-                    MONAD_ASSERT_THROW(
-                        violation_threshold.has_value(),
-                        "gas fee greater than reserve for non-dipping "
-                        "transaction");
                     return true;
                 }
                 // Skip if allowed to dip into reserve
@@ -244,9 +238,21 @@ void ReserveBalance::update_violation_status(Address const &address)
                 failed_.erase(address);
                 return;
             }
-            MONAD_ASSERT_THROW(
-                sender_gas_fees_ <= reserve,
-                "gas fee greater than reserve for non-dipping transaction");
+            if (sender_gas_fees_ > reserve) {
+                // This currently only happens in the RPC path.
+                // If we later use a more permissive reserve-balance design that
+                // accounts for credits to non-delegated accounts, this could
+                // also occur during speculative execution with stale pre-tx
+                // data. In that case, a retry is guaranteed, so what we do here
+                // will not matter in such cases.
+                //
+                // For RPC, treat this as a transaction revert: keep the
+                // threshold unset and the sender marked failed for this
+                // transaction. This avoids underflow in the subtraction below.
+                violation_threshold.reset();
+                failed_.insert(address);
+                return;
+            }
             reserve = reserve - sender_gas_fees_;
         }
         violation_threshold = reserve;

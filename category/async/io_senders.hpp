@@ -392,9 +392,11 @@ public:
 
     constexpr std::byte *advance_buffer_append(size_t bytes) noexcept
     {
-        if (bytes > remaining_buffer_bytes()) {
-            return nullptr;
-        }
+        MONAD_ASSERT_PRINTF(
+            bytes <= remaining_buffer_bytes(),
+            "advance_buffer_append: requested %zu bytes but only %zu remaining",
+            bytes,
+            remaining_buffer_bytes());
         auto *ret = append_;
         append_ += bytes;
         return ret;

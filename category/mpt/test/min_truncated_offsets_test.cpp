@@ -87,10 +87,10 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                  count_slow++, ci = ci->next(aux.db_metadata())) {
             }
             if (count_fast >= fast_chunks &&
-                aux.node_writer_fast->sender().offset().offset >=
+                aux.writer_fast.node_writer->sender().offset().offset >=
                     chunk_inner_offset_fast &&
                 count_slow >= slow_chunks &&
-                aux.node_writer_slow->sender().offset().offset >=
+                aux.writer_slow.node_writer->sender().offset().offset >=
                     chunk_inner_offset_slow) {
                 break;
             }

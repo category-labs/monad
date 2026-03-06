@@ -66,6 +66,7 @@ namespace detail
                               result_type>) {
             auto &buffer = std::move(buffer_).assume_value().get();
             MONAD_ASSERT(buffer.size() > buffer_off);
+
             node = deserialize_node_from_buffer(
                 (unsigned char *)buffer.data() + buffer_off,
                 buffer.size() - buffer_off);

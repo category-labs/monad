@@ -1036,8 +1036,10 @@ void UpdateAuxImpl::set_io(
 
 void UpdateAuxImpl::unset_io()
 {
-    node_writer_fast.reset();
-    node_writer_slow.reset();
+    MONAD_ASSERT(writer_fast.delayed_writes.empty());
+    MONAD_ASSERT(writer_slow.delayed_writes.empty());
+    writer_fast.node_writer.reset();
+    writer_slow.node_writer.reset();
     if (db_metadata_[0].root_offsets.data() != nullptr) {
         (void)::munmap(
             db_metadata_[0].root_offsets.data(),
@@ -1063,8 +1065,8 @@ void UpdateAuxImpl::unset_io()
 
 void UpdateAuxImpl::reset_node_writers()
 {
-    auto init_node_writer = [&](chunk_offset_t const node_writer_offset)
-        -> node_writer_unique_ptr_type {
+    auto init_node_writer = [&](chunk_offset_t const node_writer_offset,
+                                bool is_fast) -> node_writer_unique_ptr_type {
         auto &chunk =
             io->storage_pool().chunk(storage_pool::seq, node_writer_offset.id);
         MONAD_ASSERT(chunk.size() >= node_writer_offset.offset);
@@ -1074,18 +1076,28 @@ void UpdateAuxImpl::reset_node_writers()
         return io ? io->make_connected(
                         write_single_buffer_sender{
                             node_writer_offset, bytes_to_write},
-                        write_operation_io_receiver{bytes_to_write})
+                        write_operation_io_receiver{
+                            bytes_to_write, this, is_fast})
                   : node_writer_unique_ptr_type{};
     };
-    node_writer_fast =
-        init_node_writer(db_metadata()->db_offsets.start_of_wip_offset_fast);
-    node_writer_slow =
-        init_node_writer(db_metadata()->db_offsets.start_of_wip_offset_slow);
+    auto const &fast_offset =
+        db_metadata()->db_offsets.start_of_wip_offset_fast;
+    auto const &slow_offset =
+        db_metadata()->db_offsets.start_of_wip_offset_slow;
+
+    writer_fast.node_writer = init_node_writer(fast_offset, true);
+    writer_slow.node_writer = init_node_writer(slow_offset, false);
+
+    // Initialize write positions to track logical offsets independently
+    writer_fast.write_position.current_chunk_id = fast_offset.id;
+    writer_fast.write_position.current_offset = fast_offset.offset;
+    writer_slow.write_position.current_chunk_id = slow_offset.id;
+    writer_slow.write_position.current_offset = slow_offset.offset;
 
     last_block_end_offset_fast_ = compact_virtual_chunk_offset_t{
-        physical_to_virtual(node_writer_fast->sender().offset())};
+        physical_to_virtual(writer_fast.node_writer->sender().offset())};
     last_block_end_offset_slow_ = compact_virtual_chunk_offset_t{
-        physical_to_virtual(node_writer_slow->sender().offset())};
+        physical_to_virtual(writer_slow.node_writer->sender().offset())};
 }
 
 /* upsert() supports both on disk and in memory db updates. User should
@@ -1162,14 +1174,14 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         print_update_stats(version);
     }
     [[maybe_unused]] auto const curr_fast_writer_offset =
-        physical_to_virtual(node_writer_fast->sender().offset());
+        physical_to_virtual(writer_fast.write_position.to_chunk_offset());
     [[maybe_unused]] auto const curr_slow_writer_offset =
-        physical_to_virtual(node_writer_slow->sender().offset());
+        physical_to_virtual(writer_slow.write_position.to_chunk_offset());
     LOG_INFO_CFORMAT(
         "Finish upserting version %lu. Min valid version %lu. Time elapsed: "
         "%ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
         "offsets: fast={%u,%u}, slow={%u,%u}. Compaction head offset fast=%u, "
-        "slow=%u",
+        "slow=%u. Buffer alloc failures: fast=%lu, slow=%lu",
         version,
         db_history_min_valid_version(),
         upsert_duration.count(),
@@ -1182,7 +1194,9 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         curr_slow_writer_offset.count,
         curr_slow_writer_offset.offset,
         (uint32_t)compact_offset_fast,
-        (uint32_t)compact_offset_slow);
+        (uint32_t)compact_offset_slow,
+        (unsigned long)writer_fast.buffer_alloc_failures,
+        (unsigned long)writer_slow.buffer_alloc_failures);
     return root;
 }
 
@@ -1357,9 +1371,9 @@ void UpdateAuxImpl::move_trie_version_forward(
 void UpdateAuxImpl::update_disk_growth_data()
 {
     compact_virtual_chunk_offset_t const curr_fast_writer_offset{
-        physical_to_virtual(node_writer_fast->sender().offset())};
+        physical_to_virtual(writer_fast.write_position.to_chunk_offset())};
     compact_virtual_chunk_offset_t const curr_slow_writer_offset{
-        physical_to_virtual(node_writer_slow->sender().offset())};
+        physical_to_virtual(writer_slow.write_position.to_chunk_offset())};
     last_block_disk_growth_fast_ = // unused for speed control for now
         curr_fast_writer_offset - last_block_end_offset_fast_;
     last_block_disk_growth_slow_ =

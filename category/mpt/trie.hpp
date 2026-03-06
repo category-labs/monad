@@ -23,11 +23,13 @@
 #include <category/mpt/detail/collected_stats.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/node.hpp>
+
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/upward_tnode.hpp>
 #include <category/mpt/util.hpp>
+#include <deque>
 
 #include <category/async/io.hpp>
 #include <category/async/io_senders.hpp>
@@ -58,16 +60,29 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 class Node;
+class UpdateAuxImpl;
+
+// Non-blocking drain of delayed writes into available I/O buffers.
+// Called from I/O completion callbacks and at explicit flush points.
+void process_delayed_writes(UpdateAuxImpl &, bool is_fast);
 
 struct write_operation_io_receiver
 {
     size_t should_be_written;
-
-    // Node *parent{nullptr};
+    UpdateAuxImpl *aux{nullptr};
+    bool is_fast{false};
 
     explicit constexpr write_operation_io_receiver(
         size_t const should_be_written_)
         : should_be_written(should_be_written_)
+    {
+    }
+
+    explicit constexpr write_operation_io_receiver(
+        size_t const should_be_written_, UpdateAuxImpl *aux_, bool is_fast_)
+        : should_be_written(should_be_written_)
+        , aux(aux_)
+        , is_fast(is_fast_)
     {
     }
 
@@ -80,11 +95,12 @@ struct write_operation_io_receiver
         res.assume_value()
             .get()
             .reset(); // release i/o buffer before initiating other work
-        // TODO: when adding upsert_sender
-        // if (parent->current_process_updates_sender_ != nullptr) {
-        //     parent->current_process_updates_sender_
-        //         ->notify_write_operation_completed_(rawstate);
-        // }
+
+        // On I/O completion, trigger the delayed write drain loop.
+        // Queued writes are progressively flushed as buffers become available.
+        if (aux != nullptr) {
+            process_delayed_writes(*aux, is_fast);
+        }
     }
 
     void reset(size_t const should_be_written_)
@@ -164,14 +180,22 @@ public:
     }
 };
 
-chunk_offset_t
-async_write_node_set_spare(UpdateAuxImpl &, Node &, bool is_fast);
+chunk_offset_t async_write_node_set_spare(
+    UpdateAuxImpl &, Node::SharedPtr const &node, bool is_fast);
 
-chunk_offset_t
-write_new_root_node(UpdateAuxImpl &, Node &root, uint64_t version);
+chunk_offset_t write_new_root_node(
+    UpdateAuxImpl &, Node::SharedPtr const &root, uint64_t version);
 
-node_writer_unique_ptr_type
-replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
+struct DelayedNodeWrite
+{
+    Node::SharedPtr node;
+    unsigned disk_size; // Cached result of node->get_disk_size()
+    chunk_offset_t allocated_offset;
+    unsigned offset_in_data{0}; // How many bytes already written
+};
+
+node_writer_unique_ptr_type replace_node_writer(
+    UpdateAuxImpl &, chunk_offset_t target_offset, bool is_fast);
 
 // \class Auxiliaries for triedb update
 class UpdateAuxImpl
@@ -250,8 +274,34 @@ public:
 
     // On disk stuff
     MONAD_ASYNC_NAMESPACE::AsyncIO *io{nullptr};
-    node_writer_unique_ptr_type node_writer_fast{};
-    node_writer_unique_ptr_type node_writer_slow{};
+
+    // Tracks current chunk and offset for logical writes (buffer-independent)
+    struct write_position_t
+    {
+        uint32_t current_chunk_id{0};
+        file_offset_t current_offset{0}; // Within current chunk
+
+        MONAD_ASYNC_NAMESPACE::chunk_offset_t to_chunk_offset() const noexcept
+        {
+            return MONAD_ASYNC_NAMESPACE::chunk_offset_t{
+                current_chunk_id, current_offset};
+        }
+    };
+
+    // Per-writer state for fast and slow storage rings
+    struct WriterState
+    {
+        node_writer_unique_ptr_type node_writer{};
+        write_position_t write_position;
+        std::deque<DelayedNodeWrite> delayed_writes;
+        bool processing_delayed_writes{false};
+        uint64_t buffer_alloc_failures{0};
+    } writer_fast, writer_slow;
+
+    WriterState &writer(bool is_fast) noexcept
+    {
+        return is_fast ? writer_fast : writer_slow;
+    }
 
     detail::TrieUpdateCollectedStats stats;
 
@@ -584,7 +634,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 144 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 368 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 class UpdateAux final : public UpdateAuxImpl

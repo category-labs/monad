@@ -31,7 +31,6 @@ add_library(
   monad_execution_ethereum OBJECT
   # ethereum/chain
   "ethereum/chain/chain_config.h"
-  "ethereum/chain/chain.cpp"
   "ethereum/chain/chain.hpp"
   "ethereum/chain/ethereum_mainnet.cpp"
   "ethereum/chain/ethereum_mainnet.hpp"
@@ -163,6 +162,8 @@ add_library(
   "ethereum/validate_block.hpp"
   "ethereum/validate_transaction.cpp"
   "ethereum/validate_transaction.hpp"
+  "ethereum/validate_transaction_error.cpp"
+  "ethereum/validate_transaction_error.hpp"
   # ethereum/metrics
   "ethereum/metrics/block_metrics.hpp"
   # ethereum/rlp

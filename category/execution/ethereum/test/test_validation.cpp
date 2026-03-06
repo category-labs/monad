@@ -130,8 +130,9 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code)
     this->state.set_code(sender, 0x00_bytes);
     Transaction const tx{.gas_limit = 60'500};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender, this->state);
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
 }
@@ -144,8 +145,9 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code_delegated)
         sender, 0xEF01001122334455112233445511223344551122334455_bytes);
     Transaction const tx{.gas_limit = 60'500};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender, this->state);
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state);
     if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
         EXPECT_TRUE(result.has_value());
     }
@@ -165,8 +167,9 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce)
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender, this->state);
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
@@ -181,8 +184,9 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_optimistically)
         .gas_limit = 60'500,
         .value = 55'939'568'773'815'811};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender, this->state);
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
@@ -198,8 +202,9 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_enough_balance)
         .max_priority_fee_per_gas = 100'000'000,
     };
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender, this->state);
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
@@ -221,8 +226,9 @@ TYPED_TEST(InMemoryStateTraitsTest, successful_validation)
             tx, 0, std::nullopt, 1);
     EXPECT_TRUE(result1.has_value());
 
-    auto const result2 = validate_transaction<typename TestFixture::Trait>(
-        tx, sender, this->state);
+    auto const result2 =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state);
     EXPECT_TRUE(result2.has_value());
 }
 
@@ -269,8 +275,9 @@ TYPED_TEST(InMemoryStateTraitsTest, insufficent_balance_overflow)
         .value = 0,
         .to = to};
 
-    auto const result = validate_transaction<typename TestFixture::Trait>(
-        tx, sender, this->state);
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }
@@ -322,14 +329,15 @@ TYPED_TEST(TraitsTest, invalid_gas_limit)
     EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
 }
 
-TEST(Validation, wrong_dao_extra_data)
+TYPED_TEST(EvmTraitsTest, wrong_dao_extra_data)
 {
     static BlockHeader const header{
         .number = dao::dao_block_number + 5,
         .gas_limit = 10000,
         .extra_data = {0x00, 0x01, 0x02}};
 
-    auto const result = EthereumMainnet{}.static_validate_header(header);
+    auto const result =
+        static_validate_header<typename TestFixture::Trait>(header);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), BlockError::WrongDaoExtraData);
 }

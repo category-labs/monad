@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,14 +15,9 @@
 
 #pragma once
 
-#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/result.hpp>
-#include <category/execution/ethereum/core/receipt.hpp>
-#include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
+#include <boost/outcome/config.hpp>
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
     #include <boost/outcome/experimental/status-code/status-code/config.hpp>
@@ -33,59 +28,41 @@
 #endif
 
 #include <initializer_list>
-#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
-enum class BlockError
+enum class TransactionError
 {
     Success = 0,
-    GasAboveLimit,
-    InvalidGasLimit,
-    ExtraDataTooLong,
-    WrongOmmersHash,
-    WrongParentHash,
-    FieldBeforeFork,
-    MissingField,
-    PowBlockAfterMerge,
-    InvalidNonce,
-    TooManyOmmers,
-    DuplicateOmmers,
-    InvalidOmmerHeader,
-    WrongDaoExtraData,
-    WrongLogsBloom,
-    InvalidGasUsed,
-    WrongMerkleRoot
+    InsufficientBalance,
+    IntrinsicGasGreaterThanLimit,
+    BadNonce,
+    SenderNotEoa,
+    TypeNotSupported,
+    MaxFeeLessThanBase,
+    PriorityFeeGreaterThanMax,
+    NonceExceedsMax,
+    InitCodeLimitExceeded,
+    GasLimitReached,
+    WrongChainId,
+    MissingSender,
+    GasLimitOverflow,
+    InvalidSignature,
+    InvalidBlobHash,
+    EmptyAuthorizationList,
 };
-
-struct Chain;
-struct Block;
-struct BlockHeader;
-
-Receipt::Bloom compute_bloom(std::vector<Receipt> const &);
-
-bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &);
-
-template <Traits traits>
-Result<void> static_validate_header(BlockHeader const &);
-
-template <Traits traits>
-Result<void> static_validate_block(Chain const &chain, Block const &);
-
-Result<void>
-validate_output_header(BlockHeader const &input, BlockHeader const &output);
 
 MONAD_NAMESPACE_END
 
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
 
 template <>
-struct quick_status_code_from_enum<monad::BlockError>
-    : quick_status_code_from_enum_defaults<monad::BlockError>
+struct quick_status_code_from_enum<monad::TransactionError>
+    : quick_status_code_from_enum_defaults<monad::TransactionError>
 {
-    static constexpr auto const domain_name = "Block Error";
+    static constexpr auto const domain_name = "Transaction Error";
     static constexpr auto const domain_uuid =
-        "6eb636da00ddd479646eeb39b8168c814cb4";
+        "2f22309f9d7d3e03fbb1eb1ff328da12d290";
 
     static std::initializer_list<mapping> const &value_mappings();
 };

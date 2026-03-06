@@ -64,11 +64,8 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 
             for (auto const &[key, slot_delta] : delta.storage) {
                 if (slot_delta.first != slot_delta.second) {
-                    auto const pg_key =
-                        compute_page_key<storage_page_t::MONAD_SLOT_BITS>(key);
-                    auto const slot_off =
-                        compute_slot_offset<storage_page_t::MONAD_SLOT_MASK>(
-                            key);
+                    auto const pg_key = compute_page_key(key);
+                    auto const slot_off = compute_slot_offset(key);
 
                     auto it = std::find_if(
                         pages.begin(), pages.end(), [&](PageEntry const &e) {

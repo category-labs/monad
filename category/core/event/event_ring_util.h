@@ -62,8 +62,8 @@ struct monad_event_flock_info
 
 /// "All in one" convenience event ring file init for simple cases: given an
 /// event ring fd and the required options, calculate the required size of the
-/// event ring, call fallocate(2) to ensure the storage is available, then call
-/// monad_event_ring_init_file
+/// event ring, call posix_fallocate(2) to ensure the storage is available, then
+/// call monad_event_ring_init_file
 int monad_event_ring_init_simple(
     struct monad_event_ring_simple_config const *, int ring_fd,
     off_t ring_offset, char const *error_name);

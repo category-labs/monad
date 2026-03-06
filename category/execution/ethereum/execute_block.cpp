@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/core/cpu_relax.h>
 #include <category/core/event/event_recorder.h>
@@ -49,6 +50,7 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
+#include <ankerl/unordered_dense.h>
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 #include <evmc/evmc.h>
@@ -312,6 +314,103 @@ Result<std::vector<Receipt>> execute_block_transactions(
     return retvals;
 }
 
+struct AddressKey
+{
+    static constexpr size_t k_bytes = sizeof(Address) + sizeof(bytes32_t);
+
+    uint8_t bytes[k_bytes];
+
+    AddressKey() = default;
+
+    AddressKey(Address const &addr, bytes32_t const &key)
+    {
+        memcpy(bytes, addr.bytes, sizeof(Address));
+        memcpy(&bytes[sizeof(Address)], key.bytes, sizeof(bytes32_t));
+    }
+
+    bool operator==(AddressKey const &other) const
+    {
+        return memcmp(bytes, other.bytes, k_bytes) == 0;
+    }
+};
+
+void prefetch_access_lists(
+    std::span<Transaction const> transactions, BlockState &block_state,
+    fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics)
+{
+    auto const access_list_begin = std::chrono::steady_clock::now();
+    ankerl::unordered_dense::map<Address, Incarnation> access_list_accounts;
+    {
+        for (Transaction const &tx : transactions) {
+            for (auto const &ae : tx.access_list) {
+                access_list_accounts.try_emplace(ae.a, Incarnation{0, 0});
+            }
+        }
+        size_t const count = access_list_accounts.size();
+        MONAD_ASSERT(count <= std::numeric_limits<std::ptrdiff_t>::max());
+        std::shared_ptr<boost::fibers::promise<void>[]> promises{
+            new boost::fibers::promise<void>[count]};
+        size_t i = 0;
+        for (auto const &[addr, _] : access_list_accounts) {
+            MONAD_ASSERT(i < count);
+            priority_pool.submit(i, [promises, i, addr, &block_state]() {
+                block_state.read_account(addr);
+                promises[static_cast<std::ptrdiff_t>(i)].set_value();
+            });
+            ++i;
+        }
+        MONAD_ASSERT(i == count);
+        block_metrics.num_access_list_addrs = count;
+        for (size_t j = 0; j < count; ++j) {
+            promises[static_cast<std::ptrdiff_t>(j)].get_future().wait();
+        }
+        for (auto &[addr, incarnation] : access_list_accounts) {
+            auto const account = block_state.read_account(addr);
+            incarnation = account ? account->incarnation : Incarnation{0, 0};
+        }
+    }
+    {
+        using AddressKeyHash = BytesHashCompare<AddressKey>;
+        ankerl::unordered_dense::
+            map<AddressKey, std::pair<Address, bytes32_t>, AddressKeyHash>
+                storage_keys;
+        for (Transaction const &tx : transactions) {
+            for (auto const &ae : tx.access_list) {
+                for (bytes32_t const &key : ae.keys) {
+                    storage_keys.try_emplace(
+                        AddressKey{ae.a, key}, std::make_pair(ae.a, key));
+                }
+            }
+        }
+        size_t const count = storage_keys.size();
+        MONAD_ASSERT(count <= std::numeric_limits<std::ptrdiff_t>::max());
+        std::shared_ptr<boost::fibers::promise<void>[]> promises{
+            new boost::fibers::promise<void>[count]};
+        size_t i = 0;
+        for (auto const &[_, addr_key] : storage_keys) {
+            auto const &[addr, key] = addr_key;
+            auto const it = access_list_accounts.find(addr);
+            MONAD_ASSERT(it != access_list_accounts.end());
+            Incarnation const incarnation = it->second;
+            MONAD_ASSERT(i < count);
+            priority_pool.submit(
+                i, [promises, i, addr, incarnation, key, &block_state]() {
+                    block_state.read_storage(addr, incarnation, key);
+                    promises[static_cast<std::ptrdiff_t>(i)].set_value();
+                });
+            ++i;
+        }
+        MONAD_ASSERT(i == count);
+        block_metrics.num_access_list_keys = count;
+        for (size_t j = 0; j < count; ++j) {
+            promises[static_cast<std::ptrdiff_t>(j)].get_future().wait();
+        }
+    }
+    block_metrics.access_list_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - access_list_begin);
+}
+
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &chain, Block const &block,
@@ -330,6 +429,9 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == state_tracers.size());
 
     execute_block_header<traits>(chain, block_state, block.header);
+
+    prefetch_access_lists(
+        block.transactions, block_state, priority_pool, block_metrics);
 
     BOOST_OUTCOME_TRY(
         auto const retvals,

@@ -14,14 +14,32 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/core/event/event_ring.h>
 #include <category/core/event/owned_event_ring.hpp>
-#include <category/execution/ethereum/event/exec_event_recorder.hpp>
 
-#include <memory>
+#include <string_view>
+
+#include <unistd.h>
 
 MONAD_NAMESPACE_BEGIN
 
-std::unique_ptr<OwnedEventRing> g_exec_event_ring;
-std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
+OwnedEventRing::OwnedEventRing(
+    int ring_fd, std::string_view ring_path, monad_event_ring const &event_ring)
+    : event_ring_{event_ring}
+    , ring_path_{ring_path}
+    , ring_fd_{ring_fd}
+{
+}
+
+OwnedEventRing::~OwnedEventRing()
+{
+    // Check if we have a path before trying to unlink it; the path will be
+    // empty in the memfd_create(2) case
+    if (!ring_path_.empty()) {
+        (void)unlink(ring_path_.c_str());
+    }
+    (void)close(ring_fd_);
+    monad_event_ring_unmap(&event_ring_);
+}
 
 MONAD_NAMESPACE_END

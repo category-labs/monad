@@ -117,7 +117,7 @@ RUN cd src/rust && cargo clippy --all-targets --all-features -- \
     -A clippy::large_enum_variant \
     -A clippy::doc-overindented-list-items
 RUN cd src/rust && cargo check --all-targets --all-features
-RUN cd src/rust && cargo doc
+RUN cd src/rust && cargo doc --all-features --no-deps
 RUN cd src/rust && cargo test --release --doc --all-features
 
 FROM base AS vm_fuzz

@@ -117,6 +117,14 @@ add_subdirectory(third_party/asmjit)
 # BLAKE3
 add_subdirectory(third_party/BLAKE3/c)
 
+# TurboRLE
+add_library(turborle STATIC
+  third_party/TurboRLE/trlec.c
+  third_party/TurboRLE/trled.c)
+target_include_directories(turborle PUBLIC third_party/TurboRLE/include)
+target_compile_options(turborle PRIVATE -mavx2 -w)
+target_compile_definitions(turborle PRIVATE NDEBUG)
+
 # blst
 set(DOWNLOAD_BLST OFF)
 include(cmake/blst.cmake)

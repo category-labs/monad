@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/address.hpp>
@@ -162,7 +163,7 @@ void add_revert_check(std::vector<uint8_t> &code)
 {
     u32_be selector = abi_encode_selector("dippedIntoReserve()");
     auto const *s = selector.bytes;
-    auto const *a = intx::as_bytes(RESERVE_BALANCE_CA);
+    auto const *a = RESERVE_BALANCE_CA.bytes;
     code.append_range(std::initializer_list<uint8_t>{
         PUSH32, s[0],  s[1],  s[2],  s[3],  0,     0,     0,     0,
         0,      0,     0,     0,     0,     0,     0,     0,     0,
@@ -202,27 +203,29 @@ void add_revert_check(std::vector<uint8_t> &code)
 void add_spend_code(uint64_t const value_mon, std::vector<uint8_t> &code)
 {
     uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
-    auto const *v = intx::as_bytes(value);
+    auto const value_be = to_bytes(monad::to_big_endian(value));
+    auto const *v = value_be.bytes;
     code.append_range(std::initializer_list<uint8_t>{
-        PUSH0, PUSH0, PUSH0, PUSH0, PUSH32, v[31], v[30], v[29], v[28], v[27],
-        v[26], v[25], v[24], v[23], v[22],  v[21], v[20], v[19], v[18], v[17],
-        v[16], v[15], v[14], v[13], v[12],  v[11], v[10], v[9],  v[8],  v[7],
-        v[6],  v[5],  v[4],  v[3],  v[2],   v[1],  v[0],  PUSH0, PUSH0, CALL,
+        PUSH0, PUSH0, PUSH0, PUSH0, PUSH32, v[0],  v[1],  v[2],  v[3],  v[4],
+        v[5],  v[6],  v[7],  v[8],  v[9],   v[10], v[11], v[12], v[13], v[14],
+        v[15], v[16], v[17], v[18], v[19],  v[20], v[21], v[22], v[23], v[24],
+        v[25], v[26], v[27], v[28], v[29],  v[30], v[31], PUSH0, PUSH0, CALL,
     });
 }
 
 void add_call_code(
     uint256_t const &gas_fee, Address target, std::vector<uint8_t> &code)
 {
-    auto const *v = intx::as_bytes(target);
-    auto const *g = intx::as_bytes(gas_fee);
+    auto const *v = target.bytes;
+    auto const gas_fee_be = to_bytes(monad::to_big_endian(gas_fee));
+    auto const *g = gas_fee_be.bytes;
     code.append_range(std::initializer_list<uint8_t>{
         PUSH0, PUSH0, PUSH0, PUSH0, PUSH0, PUSH20, v[0],   v[1],  v[2],  v[3],
         v[4],  v[5],  v[6],  v[7],  v[8],  v[9],   v[10],  v[11], v[12], v[13],
-        v[14], v[15], v[16], v[17], v[18], v[19],  PUSH32, g[31], g[30], g[29],
-        g[28], g[27], g[26], g[25], g[24], g[23],  g[22],  g[21], g[20], g[19],
-        g[18], g[17], g[16], g[15], g[14], g[13],  g[12],  g[11], g[10], g[9],
-        g[8],  g[7],  g[6],  g[5],  g[4],  g[3],   g[2],   g[1],  g[0],  CALL,
+        v[14], v[15], v[16], v[17], v[18], v[19],  PUSH32, g[0],  g[1],  g[2],
+        g[3],  g[4],  g[5],  g[6],  g[7],  g[8],   g[9],   g[10], g[11], g[12],
+        g[13], g[14], g[15], g[16], g[17], g[18],  g[19],  g[20], g[21], g[22],
+        g[23], g[24], g[25], g[26], g[27], g[28],  g[29],  g[30], g[31], CALL,
     });
 }
 

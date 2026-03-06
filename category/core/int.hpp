@@ -19,6 +19,7 @@
 
 #include <intx/intx.hpp>
 
+#include <bit>
 #include <concepts>
 #include <limits>
 
@@ -50,6 +51,27 @@ inline constexpr uint256_t UINT256_MAX = std::numeric_limits<uint256_t>::max();
 
 inline constexpr uint512_t UINT512_MAX = std::numeric_limits<uint512_t>::max();
 
-using ::intx::to_big_endian;
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr T to_big_endian(T const x) noexcept
+{
+    static_assert(
+        std::endian::native == std::endian::little,
+        "to_big_endian assumes little-endian platform");
+    return std::byteswap(x);
+}
+
+template <unsigned_integral T>
+    requires(!std::unsigned_integral<T>)
+[[nodiscard]] constexpr T to_big_endian(T const x) noexcept
+{
+    static_assert(
+        std::endian::native == std::endian::little,
+        "to_big_endian assumes little-endian platform");
+    T result{};
+    for (size_t i = 0; i < T::num_words; ++i) {
+        result[i] = std::byteswap(x[T::num_words - 1 - i]);
+    }
+    return result;
+}
 
 MONAD_NAMESPACE_END

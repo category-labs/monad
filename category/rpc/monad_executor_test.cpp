@@ -3256,17 +3256,19 @@ TEST_F(EthCallFixture, prestate_override_state)
     auto const code_hash = to_bytes(keccak256(bytecode_view));
     auto const compiled_code = vm::make_shared_intercode(bytecode_view);
 
-    bytes32_t const storage_key = to_bytes(to_big_endian(uint256_t{0}));
-    bytes32_t const storage_value = to_bytes(to_big_endian(uint256_t{64}));
+    bytes32_t const storage_key = to_bytes(monad::to_big_endian(uint256_t{0}));
+    bytes32_t const storage_value =
+        to_bytes(monad::to_big_endian(uint256_t{64}));
 
-    bytes32_t const other_storage_key = to_bytes(to_big_endian(uint256_t{1}));
+    bytes32_t const other_storage_key =
+        to_bytes(monad::to_big_endian(uint256_t{1}));
     bytes32_t const other_storage_value =
-        to_bytes(to_big_endian(uint256_t{128}));
+        to_bytes(monad::to_big_endian(uint256_t{128}));
 
     bytes32_t const untouched_storage_key =
-        to_bytes(to_big_endian(uint256_t{2}));
+        to_bytes(monad::to_big_endian(uint256_t{2}));
     bytes32_t const untouched_storage_value =
-        to_bytes(to_big_endian(uint256_t{256}));
+        to_bytes(monad::to_big_endian(uint256_t{256}));
 
     StateDeltas const deltas{
         {CONTRACT_ADDR,
@@ -3288,8 +3290,8 @@ TEST_F(EthCallFixture, prestate_override_state)
     auto const storage = tdb.read_storage(
         CONTRACT_ADDR,
         Incarnation{0, 0},
-        to_bytes(to_big_endian(uint256_t{0})));
-    ASSERT_EQ(storage, to_bytes(to_big_endian(uint256_t{uint64_t{64}})));
+        to_bytes(monad::to_big_endian(uint256_t{0})));
+    ASSERT_EQ(storage, to_bytes(monad::to_big_endian(uint256_t{uint64_t{64}})));
 
     for (uint64_t i = 1; i < 256; ++i) {
         commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
@@ -3362,7 +3364,7 @@ TEST_F(EthCallFixture, prestate_override_state)
             result.bytes, ctx_state.result->output_data, sizeof(bytes32_t));
 
         bytes32_t const expected =
-            to_bytes(to_big_endian(uint256_t{uint64_t{128}}));
+            to_bytes(monad::to_big_endian(uint256_t{uint64_t{128}}));
 
         EXPECT_EQ(result, expected);
 
@@ -3444,7 +3446,7 @@ TEST_F(EthCallFixture, prestate_override_state)
             result.bytes, ctx_statediff.result->output_data, sizeof(bytes32_t));
 
         bytes32_t const expected =
-            to_bytes(to_big_endian(uint256_t{uint64_t{192}}));
+            to_bytes(monad::to_big_endian(uint256_t{uint64_t{192}}));
 
         EXPECT_EQ(result, expected);
 

@@ -45,7 +45,7 @@ namespace
     // Byte encode 64 bit integers in 256 bit big endian format.
     bytes32_t enc(uint64_t const x)
     {
-        return to_bytes(to_big_endian(uint256_t{x}));
+        return to_bytes(monad::to_big_endian(uint256_t{x}));
     }
 
     struct BlockHistoryFixture : public ::testing::Test

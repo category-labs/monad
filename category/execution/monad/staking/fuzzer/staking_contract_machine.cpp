@@ -731,7 +731,7 @@ namespace monad::staking::test
     {
         auto const x = gen_uint256();
         Address a;
-        std::memcpy(a.bytes, intx::as_bytes(x), sizeof(a.bytes));
+        std::memcpy(a.bytes, &x, sizeof(a.bytes));
         all_addresses_.push_back(a);
         return a;
     }

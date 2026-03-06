@@ -97,7 +97,7 @@ void set_block_hash_history(State &state, BlockHeader const &header)
     if (MONAD_LIKELY(state.account_exists(BLOCK_HISTORY_ADDRESS))) {
         uint64_t const parent_number = header.number - 1;
         uint256_t const index{parent_number % BLOCK_HISTORY_LENGTH};
-        bytes32_t const key{to_bytes(to_big_endian(index))};
+        bytes32_t const key{to_bytes(monad::to_big_endian(index))};
         state.set_storage(BLOCK_HISTORY_ADDRESS, key, header.parent_hash);
     }
 }
@@ -115,7 +115,7 @@ bytes32_t get_block_hash_history(State &state, uint64_t const block_number)
 
     uint256_t const index{block_number % BLOCK_HISTORY_LENGTH};
     return state.get_storage(
-        BLOCK_HISTORY_ADDRESS, to_bytes(to_big_endian(index)));
+        BLOCK_HISTORY_ADDRESS, to_bytes(monad::to_big_endian(index)));
 }
 
 MONAD_NAMESPACE_END

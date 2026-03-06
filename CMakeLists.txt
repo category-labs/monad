@@ -100,7 +100,35 @@ function(monad_compile_options target)
   target_compile_definitions(${target} PUBLIC "JSON_HAS_RANGES=0")
 endfunction()
 
-find_package(Boost REQUIRED COMPONENTS fiber json CONFIG)
+# boost
+find_package(Boost REQUIRED COMPONENTS context json CONFIG)
+
+# Build Boost.Fiber from submodule source (instead of system shared library)
+# so we can modify the scheduler implementation for priority-aware scheduling.
+add_library(boost_fiber STATIC
+  third_party/boost/fiber/src/algo/algorithm.cpp
+  third_party/boost/fiber/src/algo/round_robin.cpp
+  third_party/boost/fiber/src/algo/shared_work.cpp
+  third_party/boost/fiber/src/algo/work_stealing.cpp
+  third_party/boost/fiber/src/barrier.cpp
+  third_party/boost/fiber/src/condition_variable.cpp
+  third_party/boost/fiber/src/context.cpp
+  third_party/boost/fiber/src/fiber.cpp
+  third_party/boost/fiber/src/future.cpp
+  third_party/boost/fiber/src/mutex.cpp
+  third_party/boost/fiber/src/properties.cpp
+  third_party/boost/fiber/src/recursive_mutex.cpp
+  third_party/boost/fiber/src/recursive_timed_mutex.cpp
+  third_party/boost/fiber/src/scheduler.cpp
+  third_party/boost/fiber/src/timed_mutex.cpp
+  third_party/boost/fiber/src/waker.cpp)
+add_library(Boost::fiber ALIAS boost_fiber)
+target_include_directories(boost_fiber SYSTEM PUBLIC "third_party/boost/fiber/include")
+target_link_libraries(boost_fiber PUBLIC Boost::context)
+target_compile_definitions(boost_fiber
+  PUBLIC BOOST_FIBER_NO_LIB BOOST_FIBER_STATIC_LINK
+  PRIVATE BOOST_FIBER_SOURCE BOOST_FIBERS_SOURCE QUILL_ROOT_LOGGER_ONLY)
+target_compile_options(boost_fiber PRIVATE -Wno-error)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
@@ -190,6 +218,7 @@ target_compile_options(
     $<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Release>>:-Wno-stringop-overflow>)
 target_compile_options(
   quill PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-tautological-compare>)
+target_link_libraries(boost_fiber PRIVATE quill)
 
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)

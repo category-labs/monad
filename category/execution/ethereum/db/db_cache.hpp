@@ -159,39 +159,24 @@ public:
     }
 
     virtual void commit(
-        StateDeltas const &, Code const &, bytes32_t const &,
-        BlockHeader const &, std::vector<Receipt> const &,
-        std::vector<std::vector<CallFrame>> const &,
-        std::vector<Address> const &, std::vector<Transaction> const &,
-        std::vector<BlockHeader> const &,
-        std::optional<std::vector<Withdrawal>> const &) override
-    {
-        MONAD_ABORT("Use DbCache commit with unique_ptr arg.");
-    }
-
-    virtual void commit(
-        std::unique_ptr<StateDeltas> state_deltas, Code const &code,
-        bytes32_t const &block_id, BlockHeader const &header,
-        std::vector<Receipt> const &receipts = {},
-        std::vector<std::vector<CallFrame>> const &call_frames = {},
-        std::vector<Address> const &senders = {},
-        std::vector<Transaction> const &transactions = {},
-        std::vector<BlockHeader> const &ommers = {},
-        std::optional<std::vector<Withdrawal>> const &withdrawals = {}) override
+        bytes32_t const &block_id, CommitBuilder &builder,
+        BlockHeader const &header, StateDeltas const &state_deltas,
+        std::function<void(BlockHeader &)> populate_header_fn) override
     {
         db_.commit(
-            *state_deltas,
-            code,
             block_id,
+            builder,
             header,
-            receipts,
-            call_frames,
-            senders,
-            transactions,
-            ommers,
-            withdrawals);
+            state_deltas,
+            std::move(populate_header_fn));
+    }
 
-        proposals_.commit(std::move(state_deltas), header.number, block_id);
+    void update_proposal_state(
+        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
+        bytes32_t const &block_id)
+    {
+        MONAD_ASSERT(state_deltas);
+        proposals_.commit(std::move(state_deltas), block_number, block_id);
     }
 
     virtual BlockHeader read_eth_header() override

@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
@@ -393,15 +394,41 @@ Result<BlockExecOutput> execute(
             chain_context));
 
     block_state.log_debug();
-    block_state.commit(
+    auto [state, code] = std::move(block_state).release();
+
+    CommitBuilder builder(block.header.number);
+    builder.add_state_deltas(*state)
+        .add_code(code)
+        .add_receipts(receipts)
+        .add_transactions(block.transactions, senders)
+        .add_call_frames(
+            std::vector<std::vector<CallFrame>>(block.transactions.size()))
+        .add_ommers(block.ommers);
+    if (block.withdrawals.has_value()) {
+        builder.add_withdrawals(block.withdrawals.value());
+    }
+    db.commit(
         bytes32_t{block.header.number},
+        builder,
         block.header,
-        receipts,
-        std::vector<std::vector<CallFrame>>{block.transactions.size()},
-        senders,
-        block.transactions,
-        block.ommers,
-        block.withdrawals);
+        *state,
+        [&](BlockHeader &h) {
+            if constexpr (traits::evm_rev() <= EVMC_BYZANTIUM) {
+                // TrieDb receipts root is not valid pre-Byzantium; use the
+                // block's original receipts root.
+                h.receipts_root = block.header.receipts_root;
+            }
+            else {
+                h.receipts_root = db.receipts_root();
+            }
+            h.state_root = db.state_root();
+            h.withdrawals_root = db.withdrawals_root();
+            h.transactions_root = db.transactions_root();
+            h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
+            h.logs_bloom = compute_bloom(receipts);
+            h.ommers_hash = compute_ommers_hash(block.ommers);
+        });
+
     db.finalize(block.header.number, bytes32_t{block.header.number});
 
     BlockExecOutput exec_output;
@@ -504,7 +531,11 @@ void process_test(
         State state{bs, Incarnation{0, 0}};
         j_contents.at("pre").get_to(state);
         bs.merge(state);
-        bs.commit(
+        auto [released_state, released_code] = std::move(bs).release();
+        commit_simple(
+            tdb,
+            std::move(released_state),
+            released_code,
             NULL_HASH_BLAKE3,
             header,
             {} /* receipts */,

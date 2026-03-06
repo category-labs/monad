@@ -3,6 +3,7 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/vm/vm.hpp>
 
@@ -95,6 +96,8 @@ inline auto const H_CODE =
 inline auto const H_CODE_HASH = to_bytes(keccak256(H_CODE));
 inline auto const H_ICODE = vm::make_shared_intercode(H_CODE);
 
+using monad::test::commit_simple;
+
 inline bytes32_t commit_sequential(
     monad::Db &db, StateDeltas const &deltas, Code const &code,
     BlockHeader const &eth_header, std::vector<Receipt> const &receipts = {},
@@ -106,17 +109,10 @@ inline bytes32_t commit_sequential(
 {
     bytes32_t const block_id =
         eth_header.number ? bytes32_t{eth_header.number} : NULL_HASH_BLAKE3;
-    db.commit(
-        deltas,
-        code,
-        block_id,
-        eth_header,
-        receipts,
-        call_frames,
-        senders,
-        txns,
-        ommers,
-        withdrawals);
+
+    commit_simple(db, deltas, code, block_id, eth_header, receipts, call_frames,
+        senders, txns, ommers, withdrawals);
+
     db.finalize(eth_header.number, block_id);
     db.set_block_and_prefix(eth_header.number); // set to finalized
 

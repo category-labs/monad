@@ -34,15 +34,10 @@ using bytes32_t = ::evmc::bytes32;
 
 struct storage_page_t
 {
-    static constexpr size_t SLOTS = 64;
+    static constexpr size_t SLOTS = 128;
     static constexpr size_t SLOT_SIZE = 32;
-    // Key-to-page mapping parameters. Decoupled from SLOTS.
-    // Eth: identity mapping (one key per page, slot[0] only)
-    static constexpr size_t SLOT_BITS = 0;
-    static constexpr uint8_t SLOT_MASK = 0;
-    // Monad: 64 keys collapse into one page
-    static constexpr size_t MONAD_SLOT_BITS = 6;
-    static constexpr uint8_t MONAD_SLOT_MASK = 0x3F;
+    static constexpr size_t PAGE_KEY_SHIFT = 7;
+    static constexpr uint8_t SLOT_OFFSET_MASK = (1 << PAGE_KEY_SHIFT) - 1;
 
     bytes32_t slots[SLOTS];
 
@@ -79,26 +74,24 @@ static_assert(
     storage_page_t::SLOTS * storage_page_t::SLOT_SIZE);
 static_assert(alignof(storage_page_t) == 1);
 
-template <size_t SlotBits = storage_page_t::SLOT_BITS>
 inline bytes32_t compute_page_key(bytes32_t const &storage_key)
 {
     uint256_t const key_int = intx::be::load<uint256_t>(storage_key);
-    uint256_t const shifted = key_int >> SlotBits;
+    uint256_t const shifted = key_int >> storage_page_t::PAGE_KEY_SHIFT;
     return intx::be::store<bytes32_t>(shifted);
 }
 
-template <uint8_t SlotMask = storage_page_t::SLOT_MASK>
 inline uint8_t compute_slot_offset(bytes32_t const &storage_key)
 {
-    return storage_key.bytes[31] & SlotMask;
+    return storage_key.bytes[31] & storage_page_t::SLOT_OFFSET_MASK;
 }
 
-template <size_t SlotBits = storage_page_t::SLOT_BITS>
 inline bytes32_t
 compute_slot_key(bytes32_t const &page_key, uint8_t slot_offset)
 {
     uint256_t const page_int = intx::be::load<uint256_t>(page_key);
-    uint256_t const slot_int = (page_int << SlotBits) | slot_offset;
+    uint256_t const slot_int =
+        (page_int << storage_page_t::PAGE_KEY_SHIFT) | slot_offset;
     return intx::be::store<bytes32_t>(slot_int);
 }
 
@@ -108,5 +101,7 @@ compute_slot_key(bytes32_t const &page_key, uint8_t slot_offset)
 byte_string encode_storage_page(storage_page_t const &);
 
 Result<storage_page_t> decode_storage_page(byte_string_view &);
+
+bytes32_t page_commit(storage_page_t const &page);
 
 MONAD_NAMESPACE_END

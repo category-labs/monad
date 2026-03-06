@@ -16,6 +16,8 @@
 #include <category/execution/monad/db/monad_machine.hpp>
 
 #include <category/core/assert.h>
+#include <category/execution/ethereum/db/storage_page.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/node.hpp>
 
@@ -27,13 +29,17 @@ namespace
 {
     struct MonadStorageLeafProcessor
     {
-        static byte_string_view process(Node const &node)
+        static byte_string process(Node const &node)
         {
             MONAD_ASSERT(node.has_value());
             auto encoded_storage = node.value();
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
-            return storage.value().second;
+            auto const page =
+                decode_storage_value<storage_page_t>(storage.value().second);
+            auto const commitment = page_commit(page);
+            return rlp::encode_string2(
+                {commitment.bytes, sizeof(commitment.bytes)});
         }
     };
 

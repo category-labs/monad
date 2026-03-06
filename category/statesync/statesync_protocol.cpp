@@ -36,11 +36,10 @@ bytes32_t read_storage(
     bytes32_t const &key)
 {
     if (ctx.machine.revision >= MONAD_NEXT) {
-        auto const page_key =
-            compute_page_key<storage_page_t::MONAD_SLOT_BITS>(key);
+        auto const page_key = compute_page_key(key);
         auto const page = decode_storage_value<storage_page_t>(
             ctx.tdb.read_storage(addr, Incarnation{0, 0}, page_key));
-        return page[compute_slot_offset<storage_page_t::MONAD_SLOT_MASK>(key)];
+        return page[compute_slot_offset(key)];
     }
     return decode_storage_value<bytes32_t>(
         ctx.tdb.read_storage(addr, Incarnation{0, 0}, key));
@@ -222,11 +221,7 @@ bool StatesyncProtocolV1::handle_upsert(
         if (ctx->machine.revision >= MONAD_NEXT) {
             auto const page = decode_storage_value<storage_page_t>(value_enc);
             for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
-                storage_update(
-                    *ctx,
-                    addr,
-                    compute_slot_key<storage_page_t::MONAD_SLOT_BITS>(k, i),
-                    page[i]);
+                storage_update(*ctx, addr, compute_slot_key(k, i), page[i]);
             }
         }
         else {
@@ -253,12 +248,7 @@ bool StatesyncProtocolV1::handle_upsert(
         auto const &page_key = res.value();
         if (ctx->machine.revision >= MONAD_NEXT) {
             for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
-                storage_update(
-                    *ctx,
-                    addr,
-                    compute_slot_key<storage_page_t::MONAD_SLOT_BITS>(
-                        page_key, i),
-                    {});
+                storage_update(*ctx, addr, compute_slot_key(page_key, i), {});
             }
         }
         else {

@@ -580,7 +580,8 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
     vm::VM vm;
     mpt::Db db{machine};
     TrieDb tdb{db};
-    BlockState bs{tdb, vm};
+    NoopStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer;
 

@@ -32,7 +32,7 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/db/storage_page.hpp>
+#include <category/execution/ethereum/db/rle.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
@@ -330,9 +330,10 @@ namespace
                     .value = bytes_alloc_.emplace_back(encode_storage_db(
                         bytes32_t{}, // TODO: update this when binary checkpoint
                                      // includes unhashed storage slot
-                        unaligned_load<bytes32_t>(
+                        rle_encode(
                             in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
-                                .data()))),
+                                .data(),
+                            sizeof(bytes32_t)))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_id_)}));
@@ -707,19 +708,10 @@ Result<Account> decode_account_db_ignore_address(byte_string_view &enc)
     return decode_account_db_helper(res.second);
 }
 
-byte_string encode_storage_db(bytes32_t const &key, storage_page_t const &slots)
+byte_string encode_storage_db(bytes32_t const &key, byte_string_view const data)
 {
-    byte_string encoded;
-    encoded += rlp::encode_bytes32_compact(key);
-    encoded += encode_storage_page(slots);
-    return rlp::encode_list2(encoded);
-}
-
-byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &value)
-{
-    storage_page_t slots{};
-    slots[0] = value;
-    return encode_storage_db(key, slots);
+    return rlp::encode_list2(
+        rlp::encode_bytes32_compact(key), rlp::encode_string2(data));
 }
 
 Result<std::pair<bytes32_t, byte_string_view>>
@@ -727,8 +719,9 @@ decode_storage_db(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(auto const key_view, rlp::decode_string(payload));
+    BOOST_OUTCOME_TRY(auto const storage_view, rlp::decode_string(payload));
     bytes32_t const key = to_bytes(key_view);
-    return std::make_pair(key, payload);
+    return std::make_pair(key, storage_view);
 }
 
 void write_to_file(

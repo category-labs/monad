@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/monad/staking/fuzzer/staking_contract_model.hpp>
@@ -390,7 +391,7 @@ namespace monad::staking::test
             val_id.native(),
             addr,
             epoch,
-            intx::be::load<uint256_t>(value.bytes));
+            monad::be_load<uint256_t>(value.bytes));
 
         val_id_to_historic_delegators_[val_id.native()].insert(addr);
 
@@ -419,7 +420,7 @@ namespace monad::staking::test
             val_id.native(),
             sender,
             epoch,
-            intx::be::load<uint256_t>(value.bytes));
+            monad::be_load<uint256_t>(value.bytes));
 
         val_id_to_historic_delegators_[val_id.native()].insert(sender);
 
@@ -580,7 +581,7 @@ namespace monad::staking::test
         auto const input = encoder.encode_final();
         auto res = dispatch<traits>(input, sender, value);
         if (res.has_value()) {
-            auto const rew = intx::be::load<uint256_t>(value.bytes);
+            auto const rew = monad::be_load<uint256_t>(value.bytes);
             distribute_reward(val_id, u256_be{rew});
             error_bound_ += 1;
         }
@@ -675,7 +676,7 @@ namespace monad::staking::test
     {
         state_.push();
         state_.add_to_balance(
-            STAKING_CA, intx::be::load<uint256_t>(value.bytes));
+            STAKING_CA, monad::be_load<uint256_t>(value.bytes));
     }
 
     template <typename T>

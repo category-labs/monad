@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/address.hpp>
@@ -71,7 +72,7 @@ evmc_storage_status EvmcHostBase::set_storage(
 evmc::uint256be EvmcHostBase::get_balance(Address const &address) const noexcept
 {
     try {
-        return intx::be::store<evmc::uint256be>(state_.get_balance(address));
+        return monad::be_store<evmc::uint256be>(state_.get_balance(address));
     }
     catch (...) {
         capture_current_exception();

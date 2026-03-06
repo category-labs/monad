@@ -52,6 +52,7 @@
 #include <utility>
 #include <vector>
 
+#include <category/core/int.hpp>
 #include <gtest/gtest.h>
 #include <intx/intx.hpp>
 
@@ -217,7 +218,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     {
         auto const [input, sign_address] =
             craft_add_validator_input(auth_address, stake, commission, secret);
-        auto const msg_value = intx::be::store<evmc_uint256be>(stake);
+        auto const msg_value = monad::be_store<evmc_uint256be>(stake);
         state.push();
         auto res = contract.precompile_add_validator<Trait>(
             input, auth_address, msg_value);
@@ -233,7 +234,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         u64_be const val_id, Address const &del_address, uint256_t const &stake)
     {
         auto const input = abi_encode_uint<u64_be>(val_id);
-        auto const msg_value = intx::be::store<evmc_uint256be>(stake);
+        auto const msg_value = monad::be_store<evmc_uint256be>(stake);
         state.push();
         auto res =
             contract.precompile_delegate<Trait>(input, del_address, msg_value);
@@ -302,7 +303,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         u64_be const val_id, Address const &sender, uint256_t const &reward)
     {
         auto const input = abi_encode_uint<u64_be>(val_id);
-        auto const msg_value = intx::be::store<evmc_uint256be>(reward);
+        auto const msg_value = monad::be_store<evmc_uint256be>(reward);
         state.push();
         auto res =
             contract.precompile_external_reward(input, sender, msg_value);
@@ -347,7 +348,7 @@ DEFINE_MONAD_TRAITS_FIXTURE(StakeAllRevisions);
 TEST_F(StakeLatest, invoke_fallback)
 {
     auto const sender = 0xdeadbeef_address;
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
+    auto const value = monad::be_store<evmc_uint256be>(MIN_VALIDATE_STAKE);
 
     byte_string_fixed<8> const signature_bytes = {0xff, 0xff, 0xff, 0xff};
     auto signature = to_byte_string_view(signature_bytes);
@@ -583,7 +584,7 @@ TEST_F(StakeLatest, validator_changes_commission)
 TEST_F(StakeLatest, add_validator_revert_invalid_input_size)
 {
     auto const sender = 0xdeadbeef_address;
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
+    auto const value = monad::be_store<evmc_uint256be>(MIN_VALIDATE_STAKE);
 
     byte_string_view too_short{};
     auto res =
@@ -601,7 +602,7 @@ TEST_F(StakeLatest, add_validator_revert_bad_signature)
 {
     auto const [message, good_secp_sig, good_bls_sig, _] =
         craft_add_validator_input_raw(0xababab_address, MIN_VALIDATE_STAKE);
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
+    auto const value = monad::be_store<evmc_uint256be>(MIN_VALIDATE_STAKE);
 
     // bad secp signature
     {
@@ -636,7 +637,7 @@ TEST_F(StakeLatest, add_validator_revert_bad_signature)
 
 TEST_F(StakeLatest, add_validator_revert_msg_value_not_signed)
 {
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
+    auto const value = monad::be_store<evmc_uint256be>(MIN_VALIDATE_STAKE);
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, 2 * MIN_VALIDATE_STAKE);
     auto const res =
@@ -646,7 +647,7 @@ TEST_F(StakeLatest, add_validator_revert_msg_value_not_signed)
 
 TEST_F(StakeLatest, add_validator_revert_already_exists)
 {
-    auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
+    auto const value = monad::be_store<evmc_uint256be>(MIN_VALIDATE_STAKE);
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, MIN_VALIDATE_STAKE);
     EXPECT_FALSE(contract.precompile_add_validator<Trait>(input, address, value)
@@ -659,7 +660,7 @@ TEST_F(StakeLatest, add_validator_revert_already_exists)
 
 TEST_F(StakeLatest, add_validator_revert_minimum_stake_not_met)
 {
-    auto const value = intx::be::store<evmc_uint256be>(uint256_t{1});
+    auto const value = monad::be_store<evmc_uint256be>(uint256_t{1});
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, uint256_t{1});
     auto const res =
@@ -678,7 +679,7 @@ TEST_F(StakeLatest, nonpayable_functions_revert)
         StakingError::ValueNonZero);
 
     // precompiles
-    evmc_uint256be value = intx::be::store<evmc_uint256be>(5 * MON);
+    evmc_uint256be value = monad::be_store<evmc_uint256be>(5 * MON);
     EXPECT_EQ(
         contract.precompile_undelegate<Trait>({}, {}, value).assume_error(),
         StakingError::ValueNonZero);

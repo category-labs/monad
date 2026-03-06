@@ -480,7 +480,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
     static constexpr auto max_fee_per_gas = 100'000'000'000;
 
     static constexpr auto slot = bytes32_t{};
-    auto const initial_value = intx::be::store<bytes32_t>(uint256_t{1});
+    auto const initial_value = monad::be_store<bytes32_t>(uint256_t{1});
 
     InMemoryMachine machine;
     mpt::Db db{machine};

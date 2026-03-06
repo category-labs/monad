@@ -15,6 +15,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 
 #include <array>
@@ -76,7 +77,7 @@ namespace bls12
         static_assert(sizeof(blst_fp) == 48);
         static constexpr std::size_t fp_encoded_offset = 16;
 
-        auto const integer_value = intx::be::unsafe::load<intx::uint512>(in);
+        auto const integer_value = monad::be_load<uint512_t>(in);
 
         if (MONAD_UNLIKELY(integer_value >= BASE_FIELD_MODULUS)) {
             return std::nullopt;

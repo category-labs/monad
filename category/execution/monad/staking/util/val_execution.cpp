@@ -16,7 +16,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/staking/util/val_execution.hpp>
 
-#include <intx/intx.hpp>
+#include <category/core/int.hpp>
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
@@ -24,7 +24,7 @@ ValExecution::ValExecution(
     State &state, Address const &address, bytes32_t const key)
     : state_{state}
     , address_{address}
-    , key_{intx::be::load<uint256_t>(key)}
+    , key_{monad::be_load<uint256_t>(key)}
 {
 }
 

@@ -26,7 +26,6 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 
 #include <evmc/evmc.hpp>
-#include <intx/intx.hpp>
 #include <nlohmann/json.hpp>
 
 #include <fstream>
@@ -138,7 +137,7 @@ void CallTracer::on_enter(evmc_message const &msg)
         .flags = msg.flags,
         .from = from,
         .to = to,
-        .value = intx::be::load<uint256_t>(msg.value),
+        .value = monad::be_load<uint256_t>(msg.value),
         .gas = depth == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
         .gas_used = 0,
         .input = msg.input_data == nullptr

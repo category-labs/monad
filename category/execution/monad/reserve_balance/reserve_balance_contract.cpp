@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
@@ -85,8 +86,7 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
         return {&ReserveBalanceContract::precompile_fallback, FALLBACK_COST};
     }
 
-    auto const signature =
-        intx::be::unsafe::load<uint32_t>(input.substr(0, 4).data());
+    auto const signature = monad::be_load<uint32_t>(input.substr(0, 4).data());
     input.remove_prefix(4);
 
     switch (signature) {

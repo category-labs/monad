@@ -34,8 +34,6 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <intx/intx.hpp>
-
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -47,7 +45,7 @@ namespace
 
     bool sender_has_balance(State &state, evmc_message const &msg) noexcept
     {
-        uint256_t const value = intx::be::load<uint256_t>(msg.value);
+        uint256_t const value = monad::be_load<uint256_t>(msg.value);
         // for optimistic execution, we do NOT require the original balance to
         // match exactly, just add a lower bound constraint to suffice for this
         // debit
@@ -57,7 +55,7 @@ namespace
     void
     transfer_balances(State &state, evmc_message const &msg, Address const &to)
     {
-        uint256_t const value = intx::be::load<uint256_t>(msg.value);
+        uint256_t const value = monad::be_load<uint256_t>(msg.value);
         state.subtract_from_balance(msg.sender, value);
         state.add_to_balance(to, value);
     }

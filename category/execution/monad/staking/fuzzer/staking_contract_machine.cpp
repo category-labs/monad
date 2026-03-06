@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/execution/monad/staking/fuzzer/staking_contract_machine.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
@@ -731,7 +732,7 @@ namespace monad::staking::test
     {
         auto const x = gen_uint256();
         Address a;
-        std::memcpy(a.bytes, intx::as_bytes(x), sizeof(a.bytes));
+        std::memcpy(a.bytes, &x, sizeof(a.bytes));
         all_addresses_.push_back(a);
         return a;
     }
@@ -1133,10 +1134,10 @@ namespace monad::staking::test
 
         Address const sender = gen_new_or_old_address();
         uint256_t const stake = gen_stake(min_stake, max_stake);
-        auto const value = intx::be::store<evmc_uint256be>(stake);
+        auto const value = monad::be_store<evmc_uint256be>(stake);
         Address const auth_address = gen_new_or_old_address();
         auto const commission = gen_bound_biased_uint256(0, MAX_COMMISSION);
-        auto const secret = intx::be::store<evmc::bytes32>(gen_uint256());
+        auto const secret = monad::be_store<evmc::bytes32>(gen_uint256());
 
         auto [msg, secp, bls, signer] = craft_add_validator_input_raw(
             auth_address, stake, commission, secret);
@@ -1157,7 +1158,7 @@ namespace monad::staking::test
         auto const val_id = result.value();
 
         all_val_ids_.push_back(val_id);
-        if (intx::be::load<uint256_t>(value.bytes) <= MAX_DELEGABLE_STAKE) {
+        if (monad::be_load<uint256_t>(value.bytes) <= MAX_DELEGABLE_STAKE) {
             MONAD_ASSERT(model_.val_execution(val_id).exists());
             auto const ins = delegable_val_ids_.insert(val_id.native());
             MONAD_ASSERT(ins);
@@ -1190,7 +1191,7 @@ namespace monad::staking::test
 
         auto const balance_after = model_.balance_of(STAKING_CA);
 
-        auto const stake = intx::be::load<uint256_t>(value);
+        auto const stake = monad::be_load<uint256_t>(value);
 
         MONAD_ASSERT(balance_after - balance_before == stake);
 
@@ -1271,7 +1272,7 @@ namespace monad::staking::test
                 MONAD_ASSERT(val_stake <= MAX_DELEGABLE_STAKE);
                 auto const del_stake =
                     gen_stake(MIN_DELEGATE_STAKE, MAX_STAKE - val_stake);
-                auto const value = intx::be::store<evmc_uint256be>(del_stake);
+                auto const value = monad::be_store<evmc_uint256be>(del_stake);
                 return {val_id, sender, value};
             },
             Choice(0.01, [&, this](auto &) -> R {
@@ -1286,7 +1287,7 @@ namespace monad::staking::test
         auto result = model_.precompile_delegate<traits>(val_id, sender, value);
         MONAD_ASSERT(result.has_value());
 
-        if (intx::be::load<uint256_t>(value) == 0) {
+        if (monad::be_load<uint256_t>(value) == 0) {
             return;
         }
 
@@ -1330,7 +1331,7 @@ namespace monad::staking::test
 
         auto const balance_after = model_.balance_of(STAKING_CA);
 
-        auto const stake = intx::be::load<uint256_t>(value);
+        auto const stake = monad::be_load<uint256_t>(value);
 
         if (!stake) {
             return;
@@ -1920,7 +1921,7 @@ namespace monad::staking::test
             auto const sender = gen_new_or_old_address();
             auto const reward = gen_bound_biased_uint256(
                 MIN_EXTERNAL_REWARD, MAX_EXTERNAL_REWARD);
-            auto const value = intx::be::store<evmc_uint256be>(reward);
+            auto const value = monad::be_store<evmc_uint256be>(reward);
             return {{*val_id, sender, value}};
         }
         return std::nullopt;
@@ -1944,7 +1945,7 @@ namespace monad::staking::test
         }
         auto const [val_id, sender, value] = *input;
 
-        auto const reward = intx::be::load<uint256_t>(value);
+        auto const reward = monad::be_load<uint256_t>(value);
 
         auto const error_bound_before = model_.error_bound();
 

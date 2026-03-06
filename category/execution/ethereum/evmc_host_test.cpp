@@ -32,8 +32,6 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <intx/intx.hpp>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -106,9 +104,9 @@ TYPED_TEST(TraitsTest, get_tx_context)
         .block_gas_limit = 50'000,
         .block_prev_randao = evmc::uint256be{10'000'000u},
     };
-    intx::be::store(ctx.chain_id.bytes, uint256_t{chain_id});
-    intx::be::store(ctx.tx_gas_price.bytes, gas_cost);
-    intx::be::store(ctx.block_base_fee.bytes, base_fee_per_gas);
+    monad::be_store(ctx.chain_id.bytes, uint256_t{chain_id});
+    monad::be_store(ctx.tx_gas_price.bytes, gas_cost);
+    monad::be_store(ctx.block_base_fee.bytes, base_fee_per_gas);
     EXPECT_EQ(result, ctx);
 
     hdr.difficulty = 0;

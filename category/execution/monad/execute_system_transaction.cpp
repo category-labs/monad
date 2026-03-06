@@ -16,6 +16,7 @@
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 #include <category/core/assert.h>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -160,7 +161,7 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
         .memory = nullptr,
         .memory_capacity = 0,
     };
-    intx::be::store(msg.value.bytes, tx_.value);
+    monad::be_store(msg.value.bytes, tx_.value);
     return msg;
 }
 
@@ -212,7 +213,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     }
 
     auto const signature =
-        intx::be::unsafe::load<uint32_t>(calldata.substr(0, 4).data());
+        monad::be_load<uint32_t>(calldata.substr(0, 4).data());
     calldata.remove_prefix(4);
 
     switch (signature) {

@@ -105,7 +105,7 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         // 1. Verify the chain ID is 0 or the ID of the current chain.
         auto const &chain_id = *auth_entry.sc.chain_id;
         auto const host_chain_id =
-            intx::be::load<uint256_t>(host.get_tx_context()->chain_id);
+            monad::be_load<uint256_t>(host.get_tx_context()->chain_id);
 
         if (!(chain_id == 0 || chain_id == host_chain_id)) {
             continue;
@@ -211,7 +211,7 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
         .memory = msg_memory.get(),
         .memory_capacity = msg_memory_capacity,
     };
-    intx::be::store(msg.value.bytes, tx_.value);
+    monad::be_store(msg.value.bytes, tx_.value);
     return msg;
 }
 

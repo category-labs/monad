@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
@@ -42,12 +43,16 @@ constexpr Result<T> decode_raw_num(byte_string_view const enc)
         return DecodeError::LeadingZero;
     }
 
+    static_assert(
+        std::has_unique_object_representations_v<T>,
+        "decode_raw_num requires T to have no padding and stable byte "
+        "representation");
     T result{};
     std::memcpy(
-        &intx::as_bytes(result)[sizeof(T) - enc.size()],
+        reinterpret_cast<unsigned char *>(&result) + (sizeof(T) - enc.size()),
         enc.data(),
         enc.size());
-    result = intx::to_big_endian(result);
+    result = monad::to_big_endian(result);
     return result;
 }
 

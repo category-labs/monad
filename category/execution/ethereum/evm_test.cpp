@@ -36,8 +36,6 @@
 #include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>
 
-#include <intx/intx.hpp>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -103,7 +101,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000'000'000'000}; // too much
-    intx::be::store(m.value.bytes, v);
+    monad::be_store(m.value.bytes, v);
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -166,7 +164,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000'000'000'000}; // too much balance required
-    intx::be::store(m.value.bytes, v);
+    monad::be_store(m.value.bytes, v);
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -247,7 +245,7 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000};
-    intx::be::store(m.value.bytes, v);
+    monad::be_store(m.value.bytes, v);
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -323,7 +321,7 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000};
-    intx::be::store(m.value.bytes, v);
+    monad::be_store(m.value.bytes, v);
 
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
     auto const result =

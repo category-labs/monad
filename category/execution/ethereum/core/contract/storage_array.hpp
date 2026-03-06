@@ -17,7 +17,7 @@
 
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
 
-#include <intx/intx.hpp>
+#include <category/core/int.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -39,7 +39,7 @@ public:
         : state_{state}
         , address_{address}
         , length_{StorageVariable<u64_be>(state, address, slot)}
-        , start_index_{intx::be::load<uint256_t>(slot) + 1}
+        , start_index_{monad::be_load<uint256_t>(slot) + 1}
     {
     }
 
@@ -57,7 +57,7 @@ public:
     {
         uint256_t const offset = start_index_ + index * SLOT_PER_ELEM;
         return StorageVariable<T>{
-            state_, address_, intx::be::store<bytes32_t>(offset)};
+            state_, address_, monad::be_store<bytes32_t>(offset)};
     }
 
     void push(T const &value) noexcept
@@ -65,7 +65,7 @@ public:
         auto const len = length();
         uint256_t const offset = start_index_ + len * SLOT_PER_ELEM;
         StorageVariable<T> var{
-            state_, address_, intx::be::store<bytes32_t>(offset)};
+            state_, address_, monad::be_store<bytes32_t>(offset)};
         var.store(value);
         length_.store(len + 1);
     }

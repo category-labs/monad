@@ -20,6 +20,7 @@
 #include <category/execution/monad/db/monad_commit_builder.hpp>
 #include <category/execution/monad/db/monad_machine.hpp>
 #include <category/execution/monad/db/monad_page_storage_cache.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 
 #include <gtest/gtest.h>
 

@@ -80,12 +80,16 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                         update_alloc_.emplace_back(Update{
                             .key = hash_alloc_.emplace_back(
                                 keccak256({key.bytes, sizeof(key.bytes)})),
-                            .value = delta.second == bytes32_t{}
-                                         ? std::nullopt
-                                         : std::make_optional<byte_string_view>(
-                                               bytes_alloc_.emplace_back(
-                                                   encode_storage_db(
-                                                       key, delta.second))),
+                            .value =
+                                delta.second == bytes32_t{}
+                                    ? std::nullopt
+                                    : std::make_optional<byte_string_view>(
+                                          bytes_alloc_.emplace_back(
+                                              encode_storage_db(
+                                                  key,
+                                                  rle_encode(
+                                                      delta.second.bytes,
+                                                      sizeof(bytes32_t))))),
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));

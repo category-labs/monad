@@ -201,7 +201,7 @@ Result<void> process_monad_block(
     BlockMetrics block_metrics;
     using Cache = std::conditional_t<
         (traits::monad_rev() >= MONAD_NEXT),
-        MonadPageStorageCache<>,
+        MonadPageStorageCache,
         NoopStorageCache>;
     Cache cache{db};
     BlockState block_state(db, cache, vm);

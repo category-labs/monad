@@ -21,7 +21,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/db/storage_page.hpp>
+#include <category/execution/ethereum/db/rle.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/state_machine.hpp>
 
@@ -143,9 +143,7 @@ inline mpt::Nibbles const proposal_nibbles = mpt::concat(PROPOSAL_NIBBLE);
 inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
-byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &value);
-byte_string
-encode_storage_db(bytes32_t const &key, storage_page_t const &slots);
+byte_string encode_storage_db(bytes32_t const &key, byte_string_view data);
 
 Result<std::pair<bytes32_t, byte_string_view>>
 decode_storage_db(byte_string_view &);
@@ -161,14 +159,7 @@ inline T decode_storage_value(byte_string_view enc)
     if (enc.empty()) {
         return {};
     }
-    auto slots = decode_storage_page(enc);
-    MONAD_ASSERT(!slots.has_error());
-    if constexpr (std::is_same_v<T, bytes32_t>) {
-        return slots.value()[0];
-    }
-    else {
-        return std::move(slots.value());
-    }
+    return rle_decode<T>(enc.data(), enc.size());
 }
 
 template <typename T>

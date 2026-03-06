@@ -17,9 +17,9 @@
 
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/page_storage_cache.hpp>
-#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
@@ -85,11 +85,15 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = hash_alloc_.emplace_back(
                         keccak256({page_key.bytes, sizeof(page_key.bytes)})),
-                    .value = page.is_empty()
-                                 ? std::nullopt
-                                 : std::make_optional<byte_string_view>(
-                                       bytes_alloc_.emplace_back(
-                                           encode_storage_db(page_key, page))),
+                    .value =
+                        page.is_empty()
+                            ? std::nullopt
+                            : std::make_optional<byte_string_view>(
+                                  bytes_alloc_.emplace_back(encode_storage_db(
+                                      page_key,
+                                      rle_encode(
+                                          page.slots[0].bytes,
+                                          sizeof(storage_page_t))))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_number_)}));

@@ -34,7 +34,11 @@ namespace mpt
 class BlockHashBuffer
 {
 public:
+#if SUPERBLOCK_MODE
+    static constexpr unsigned N = 512;
+#else
     static constexpr unsigned N = 256;
+#endif
 
     virtual uint64_t n() const = 0;
     virtual bytes32_t const &get(uint64_t) const = 0;

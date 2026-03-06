@@ -40,3 +40,5 @@ static_assert(CHAR_BIT == 8);
 static_assert(
     std::endian::native == std::endian::big ||
     std::endian::native == std::endian::little);
+
+#define SUPERBLOCK_MODE 1

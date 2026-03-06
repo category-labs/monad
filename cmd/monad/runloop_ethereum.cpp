@@ -29,8 +29,11 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/dispatch_transaction.hpp>
+#include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -40,8 +43,12 @@
 #include <boost/outcome/try.hpp>
 #include <quill/Quill.h>
 
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
+
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -228,9 +235,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing)
+    [[maybe_unused]] bool const enable_tracing)
 {
-    uint64_t const batch_size =
+    [[maybe_unused]] uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
     uint64_t batch_num_blocks = 0;
     uint64_t batch_num_txs = 0;
@@ -241,6 +248,324 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
     BlockDb block_db(ledger_dir);
     bytes32_t parent_block_id{};
+
+#if SUPERBLOCK_MODE
+    constexpr uint64_t BUNDLE = 50;
+    LOG_INFO("Running in superblock mode with BUNDLE = {}", BUNDLE);
+
+    while (block_num <= end_block_num && stop == 0) {
+        std::vector<Block> blocks;
+        blocks.reserve(BUNDLE);
+        for (uint64_t j = 0; j < BUNDLE; ++j) {
+            blocks.emplace_back();
+            MONAD_ASSERT_PRINTF(
+                block_db.get(block_num + j, blocks.back()),
+                "Could not query %lu from blockdb",
+                block_num + j);
+        }
+        for (uint64_t j = 0; j < BUNDLE; ++j) {
+            auto const eth_block_hash = to_bytes(keccak256(rlp::encode_block_header(blocks[j].header)));
+            block_hash_buffer.set(blocks[j].header.number, eth_block_hash);
+        }
+
+        [[maybe_unused]] auto const superblock_start = std::chrono::system_clock::now();
+        auto const superblock_begin = std::chrono::steady_clock::now();
+        auto const sender_recovery_begin = std::chrono::steady_clock::now();
+        std::vector<std::vector<Address>> all_senders(BUNDLE);
+        std::vector<std::vector<std::vector<std::optional<Address>>>> all_authorities(BUNDLE);
+        for (uint64_t j = 0; j < BUNDLE; ++j) {
+            auto const recovered_senders = recover_senders(blocks[j].transactions, priority_pool);
+            auto const recovered_authorities = recover_authorities(blocks[j].transactions, priority_pool);
+            all_senders[j].resize(blocks[j].transactions.size());
+            for (unsigned i = 0; i < recovered_senders.size(); ++i) {
+                if (recovered_senders[i].has_value()) {
+                    all_senders[j][i] = recovered_senders[i].value();
+                } else {
+                    LOG_ERROR("Failed to recover sender for tx {} in block {}", i, blocks[j].header.number);
+                    return TransactionError::MissingSender;
+                }
+            }
+            all_authorities[j] = recovered_authorities;
+        }
+        auto const sender_recovery_time =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - sender_recovery_begin);
+        db.set_block_and_prefix(blocks[0].header.number - 1, parent_block_id);
+        BlockState block_state(db, vm);
+        uint64_t total_txs = 0;
+        uint64_t total_retries = 0;
+        std::chrono::microseconds total_tx_exec_time{0};
+        uint64_t total_gas_used = 0;
+        std::vector<Receipt> all_receipts;
+        std::vector<std::vector<std::optional<Result<Receipt>>>> all_results(BUNDLE);
+        std::vector<std::vector<boost::fibers::promise<void>>> promises(BUNDLE + 1);
+        std::vector<BlockMetrics> all_block_metrics(BUNDLE);
+        std::vector<std::vector<std::vector<CallFrame>>> all_call_frames(BUNDLE);
+        std::vector<std::vector<std::unique_ptr<CallTracerBase>>> all_call_tracers(BUNDLE);
+        std::vector<std::vector<std::unique_ptr<trace::StateTracer>>> all_state_tracers(BUNDLE);
+
+        for (uint64_t j = 0; j < BUNDLE; ++j) {
+            Block const &block = blocks[j];
+            uint64_t const n_txns = block.transactions.size();
+            promises[j].resize(n_txns + 1);
+            all_results[j].resize(n_txns);
+            all_call_frames[j].resize(n_txns);
+            all_call_tracers[j].resize(n_txns);
+            all_state_tracers[j].resize(n_txns);
+            for (unsigned i = 0; i < n_txns; ++i) {
+                all_call_tracers[j][i] = std::make_unique<NoopCallTracer>();
+                all_state_tracers[j][i] = std::make_unique<trace::StateTracer>(std::monostate{});
+            }
+        }
+        promises[0][0].set_value();
+        promises[BUNDLE].resize(1);
+        auto const tx_exec_begin = std::chrono::steady_clock::now();
+        uint64_t tx_offset = 0;
+        for (uint64_t j = 0; j < BUNDLE; ++j) {
+            Block const &block = blocks[j];
+            uint64_t const n_txns = block.transactions.size();
+            evmc_revision const rev = chain.get_revision(block.header.number, block.header.timestamp);
+            // Submit each transaction to the pool
+            for (unsigned i = 0; i < n_txns; ++i) {
+                priority_pool.submit(
+                    tx_offset + i,
+                    [&chain,
+                     rev,
+                     i,
+                     j,
+                     &result = all_results[j][i],
+                     &promise = promises[j][i],
+                     &next_promise = promises[j][i + 1],
+                     &tx = blocks[j].transactions[i],
+                     &sender = all_senders[j][i],
+                     &authorities = all_authorities[j][i],
+                     &hdr = blocks[j].header,
+                     &buf = block_hash_buffer,
+                     &block_state,
+                     &block_metrics = all_block_metrics[j],
+                     &call_tracer = all_call_tracers[j][i],
+                     &state_tracer = all_state_tracers[j][i]] {
+                        // Execute transaction with promise-based ordering
+                        result = ([&]() -> Result<Receipt> {
+                            switch (rev) {
+                            case EVMC_OSAKA: {
+                                ChainContext<EvmTraits<EVMC_OSAKA>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_OSAKA>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_PRAGUE: {
+                                ChainContext<EvmTraits<EVMC_PRAGUE>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_PRAGUE>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_CANCUN: {
+                                ChainContext<EvmTraits<EVMC_CANCUN>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_CANCUN>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_SHANGHAI: {
+                                ChainContext<EvmTraits<EVMC_SHANGHAI>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_SHANGHAI>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_PARIS: {
+                                ChainContext<EvmTraits<EVMC_PARIS>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_PARIS>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_LONDON: {
+                                ChainContext<EvmTraits<EVMC_LONDON>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_LONDON>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_BERLIN: {
+                                ChainContext<EvmTraits<EVMC_BERLIN>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_BERLIN>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_ISTANBUL: {
+                                ChainContext<EvmTraits<EVMC_ISTANBUL>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_ISTANBUL>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_PETERSBURG: {
+                                ChainContext<EvmTraits<EVMC_PETERSBURG>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_PETERSBURG>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_CONSTANTINOPLE: {
+                                ChainContext<EvmTraits<EVMC_CONSTANTINOPLE>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_CONSTANTINOPLE>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_BYZANTIUM: {
+                                ChainContext<EvmTraits<EVMC_BYZANTIUM>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_BYZANTIUM>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_SPURIOUS_DRAGON: {
+                                ChainContext<EvmTraits<EVMC_SPURIOUS_DRAGON>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_SPURIOUS_DRAGON>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_TANGERINE_WHISTLE: {
+                                ChainContext<EvmTraits<EVMC_TANGERINE_WHISTLE>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_TANGERINE_WHISTLE>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_HOMESTEAD: {
+                                ChainContext<EvmTraits<EVMC_HOMESTEAD>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_HOMESTEAD>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            case EVMC_FRONTIER: {
+                                ChainContext<EvmTraits<EVMC_FRONTIER>> const chain_ctx{};
+                                return dispatch_transaction<EvmTraits<EVMC_FRONTIER>>(
+                                    chain, i, tx, sender, authorities, hdr, buf,
+                                    block_state, block_metrics, promise, *call_tracer, *state_tracer, chain_ctx);
+                            }
+                            default:
+                                MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
+                            }
+                        }());
+                        next_promise.set_value();
+                    });
+            }
+
+            // Submit wrap-up task for this block
+            priority_pool.submit(
+                tx_offset + n_txns,
+                [j,
+                 n_txns,
+                 &blocks,
+                 &chain,
+                 &block_state,
+                 &promises,
+                 &all_results,
+                 &all_block_metrics,
+                 &all_receipts,
+                 &total_txs,
+                 &total_retries,
+                 &total_gas_used] {
+                    Block const &block = blocks[j];
+                    evmc_revision const rev = chain.get_revision(block.header.number, block.header.timestamp);
+
+                    // Wait for all transactions in this block to complete
+                    promises[j][n_txns].get_future().wait();
+
+                    // Collect receipts and validate results
+                    std::vector<Receipt> block_receipts;
+                    block_receipts.reserve(n_txns);
+                    for (unsigned i = 0; i < n_txns; ++i) {
+                        MONAD_ASSERT(all_results[j][i].has_value());
+                        auto receipt_result = std::move(all_results[j][i].value());
+                        if (receipt_result.has_error()) {
+                            LOG_ERROR("Wrap-up task for block {} failed: receipt {} has error", block.header.number, i);
+                            return;
+                        }
+                        block_receipts.push_back(std::move(receipt_result.value()));
+                    }
+
+                    // Calculate cumulative gas used (YP eq. 22)
+                    uint64_t cumulative_gas_used = 0;
+                    for (auto &receipt : block_receipts) {
+                        cumulative_gas_used += receipt.gas_used;
+                        receipt.gas_used = cumulative_gas_used;
+                    }
+
+                    // Process block-level operations (withdrawals, block reward)
+                    State state{block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
+
+                    // Apply withdrawals (Shanghai+)
+                    if (rev >= EVMC_SHANGHAI && block.withdrawals.has_value()) {
+                        for (auto const &withdrawal : block.withdrawals.value()) {
+                            state.add_to_balance(
+                                withdrawal.recipient,
+                                uint256_t{withdrawal.amount} * uint256_t{1'000'000'000u});
+                        }
+                    }
+
+                    // Apply block reward
+                    ([&] {
+                        SWITCH_EVM_TRAITS(apply_block_reward, state, block);
+                        MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
+                    }());
+                    if (rev >= EVMC_SPURIOUS_DRAGON) {
+                        state.destruct_touched_dead();
+                    }
+                    MONAD_ASSERT(block_state.can_merge(state));
+                    block_state.merge(state);
+                    all_receipts.insert(all_receipts.end(), block_receipts.begin(), block_receipts.end());
+                    total_txs += n_txns;
+                    total_retries += all_block_metrics[j].num_retries;
+                    total_gas_used += cumulative_gas_used;
+                    promises[j + 1][0].set_value();
+                });
+
+            tx_offset += n_txns + 1;
+        }
+        promises[BUNDLE][0].get_future().wait();
+        total_tx_exec_time =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - tx_exec_begin);
+        Block const &last_block = blocks.back();
+        bytes32_t const block_id = bytes32_t{last_block.header.number};
+        auto const commit_begin = std::chrono::steady_clock::now();
+        block_state.commit(block_id, last_block.header, all_receipts);
+        [[maybe_unused]] auto const commit_time =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - commit_begin);
+        db.finalize(last_block.header.number, block_id);
+        db.update_verified_block(last_block.header.number);
+        [[maybe_unused]] auto const superblock_time =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - superblock_begin);
+        LOG_INFO(
+            "__exec_block,bl={:8},ts={}"
+            ",tx={:5},rt={:4},rtp={:5.2f}%"
+            ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
+            ",gas={:9},gpse={:4},gps={:3}{}{}{}",
+            last_block.header.number,
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                superblock_start.time_since_epoch())
+                .count(),
+            total_txs,
+            total_retries,
+            100.0 * (double)total_retries /
+                std::max(1.0, (double)total_txs),
+            sender_recovery_time,
+            total_tx_exec_time,
+            commit_time,
+            superblock_time,
+            total_txs * 1'000'000 /
+                (uint64_t)std::max(1L, total_tx_exec_time.count()),
+            total_txs * 1'000'000 /
+                (uint64_t)std::max(1L, superblock_time.count()),
+            total_gas_used,
+            total_gas_used /
+                (uint64_t)std::max(1L, total_tx_exec_time.count()),
+            total_gas_used / (uint64_t)std::max(1L, superblock_time.count()),
+            db.print_stats(),
+            vm.print_and_reset_block_counts(),
+            vm.print_compiler_stats());
+        parent_block_id = block_id;
+        block_num += BUNDLE;
+    }
+#else  // SUPERBLOCK_MODE == 0
     while (block_num <= end_block_num && stop == 0) {
         Block block;
         MONAD_ASSERT_PRINTF(
@@ -288,6 +613,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         parent_block_id = block_id;
         ++block_num;
     }
+#endif
     if (batch_num_blocks > 0) {
         log_tps(
             block_num, batch_num_blocks, batch_num_txs, batch_gas, batch_begin);

@@ -176,7 +176,7 @@ int monad_event_ring_init_file(
         return FORMAT_ERRC(
             errno, "unable to fstat event ring file `%s`", error_name);
     }
-    if (ring_offset + (off_t)sizeof header > ring_stat.st_size) {
+    if (ring_offset + (off_t)ring_bytes > ring_stat.st_size) {
         return FORMAT_ERRC(
             ENOSPC,
             "event ring file `%s` cannot hold total event ring size %lu",

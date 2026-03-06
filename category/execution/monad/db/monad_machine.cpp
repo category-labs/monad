@@ -16,8 +16,8 @@
 #include <category/execution/monad/db/monad_machine.hpp>
 
 #include <category/core/assert.h>
-#include <category/execution/ethereum/db/storage_page.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/node.hpp>
 
@@ -52,7 +52,7 @@ mpt::Compute &MonadInMemoryMachine::get_compute() const
     static MonadStorageMerkleCompute monad_storage_compute;
     auto const prefix_length = prefix_len();
     if (revision >= MONAD_NEXT && table == TableType::State &&
-        depth > prefix_length + 2 * sizeof(bytes32_t)) {
+        depth >= prefix_length + 2 * sizeof(bytes32_t)) {
         return monad_storage_compute;
     }
     return InMemoryMachine::get_compute();
@@ -68,7 +68,7 @@ mpt::Compute &MonadOnDiskMachine::get_compute() const
     static MonadStorageMerkleCompute monad_storage_compute;
     auto const prefix_length = prefix_len();
     if (revision >= MONAD_NEXT && table == TableType::State &&
-        depth > prefix_length + 2 * sizeof(bytes32_t)) {
+        depth >= prefix_length + 2 * sizeof(bytes32_t)) {
         return monad_storage_compute;
     }
     return OnDiskMachine::get_compute();

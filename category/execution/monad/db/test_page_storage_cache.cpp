@@ -20,6 +20,7 @@
 #include <category/execution/monad/db/monad_commit_builder.hpp>
 #include <category/execution/monad/db/monad_machine.hpp>
 #include <category/execution/monad/db/monad_page_storage_cache.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 
 #include <gtest/gtest.h>
 
@@ -54,6 +55,7 @@ TEST(PageStorageCache, monad_page_read_and_cache)
 
     Account const acct{.nonce = 1};
     MonadInMemoryMachine machine;
+    machine.set_revision(MONAD_NEXT);
     mpt::Db mpt_db{machine};
     TrieDb tdb{mpt_db};
 
@@ -105,6 +107,7 @@ TEST(PageStorageCache, monad_cache_miss_returns_zero)
 {
     Account const acct{.nonce = 1};
     MonadInMemoryMachine machine;
+    machine.set_revision(MONAD_NEXT);
     mpt::Db mpt_db{machine};
     TrieDb tdb{mpt_db};
 

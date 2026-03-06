@@ -32,9 +32,6 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <
-    size_t SlotBits = storage_page_t::MONAD_SLOT_BITS,
-    uint8_t SlotMask = storage_page_t::MONAD_SLOT_MASK>
 class MonadPageStorageCache final : public PageStorageCache
 {
 public:
@@ -87,19 +84,19 @@ public:
     bytes32_t read_storage(
         Address const &addr, Incarnation inc, bytes32_t const &key) override
     {
-        bytes32_t const page_key = compute_page_key<SlotBits>(key);
-        uint8_t const slot_offset = compute_slot_offset<SlotMask>(key);
+        bytes32_t const page_key = compute_page_key(key);
+        uint8_t const slot_offset = compute_slot_offset(key);
 
         PageKey const pk{addr, inc, page_key};
 
         {
-            typename PageMap::const_accessor acc;
+            PageMap::const_accessor acc;
             if (pages_.find(acc, pk)) {
                 return acc->second[slot_offset];
             }
         }
 
-        typename PageMap::accessor acc;
+        PageMap::accessor acc;
         if (pages_.insert(acc, pk)) {
             acc->second = decode_storage_value<storage_page_t>(
                 db_.read_storage(addr, inc, page_key));
@@ -114,13 +111,13 @@ public:
         PageKey const pk{addr, inc, page_key};
 
         {
-            typename PageMap::const_accessor acc;
+            PageMap::const_accessor acc;
             if (pages_.find(acc, pk)) {
                 return acc->second;
             }
         }
 
-        typename PageMap::accessor acc;
+        PageMap::accessor acc;
         if (pages_.insert(acc, pk)) {
             acc->second = decode_storage_value<storage_page_t>(
                 db_.read_storage(addr, inc, page_key));

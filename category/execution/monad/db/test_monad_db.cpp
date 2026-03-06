@@ -23,85 +23,48 @@
 
 #include <test_resource_data.h>
 
+#include <cstring>
+
 using namespace monad;
 using namespace monad::mpt;
 using namespace monad::test;
 
-namespace
+TEST(MonadDb, key_grouping)
 {
-    constexpr size_t ETH_SLOT_BITS = storage_page_t::SLOT_BITS; // 0
-    constexpr uint8_t ETH_SLOT_MASK = storage_page_t::SLOT_MASK; // 0
+    // Keys 0x00..0x7F should all map to the same page (page_key = 0)
+    bytes32_t const page_key_0 = compute_page_key(bytes32_t{0});
 
-    constexpr size_t MONAD_SLOT_BITS = storage_page_t::MONAD_SLOT_BITS;
-    constexpr uint8_t MONAD_SLOT_MASK = storage_page_t::MONAD_SLOT_MASK;
-}
-
-TEST(MonadDb, eth_key_grouping)
-{
-    // With SLOT_BITS=0 every key maps to its own page (identity)
-    constexpr auto slot0 = bytes32_t{0x00};
-    constexpr auto slot1 = bytes32_t{0x01};
-    constexpr auto slot2 = bytes32_t{0xFF};
-
-    // Each key is its own page key
-    EXPECT_EQ(compute_page_key<ETH_SLOT_BITS>(slot0), slot0);
-    EXPECT_EQ(compute_page_key<ETH_SLOT_BITS>(slot1), slot1);
-    EXPECT_EQ(compute_page_key<ETH_SLOT_BITS>(slot2), slot2);
-
-    // Offset is always 0
-    EXPECT_EQ(compute_slot_offset<ETH_SLOT_MASK>(slot0), 0);
-    EXPECT_EQ(compute_slot_offset<ETH_SLOT_MASK>(slot1), 0);
-    EXPECT_EQ(compute_slot_offset<ETH_SLOT_MASK>(slot2), 0);
-
-    // Round-trip: slot_key == compute_slot_key(page_key, 0)
-    for (uint16_t i = 0; i < 256; ++i) {
+    for (uint8_t i = 0; i < 128; ++i) {
         bytes32_t const slot_key = bytes32_t{i};
-        bytes32_t const pk = compute_page_key<ETH_SLOT_BITS>(slot_key);
-        uint8_t const off = compute_slot_offset<ETH_SLOT_MASK>(slot_key);
-        EXPECT_EQ(pk, slot_key);
-        EXPECT_EQ(off, 0);
-        EXPECT_EQ(compute_slot_key<ETH_SLOT_BITS>(pk, off), slot_key);
-    }
-}
-
-TEST(MonadDb, monad_key_grouping)
-{
-    // Keys 0x00..0x3F should all map to the same page (page_key = 0)
-    bytes32_t const page_key_0 =
-        compute_page_key<MONAD_SLOT_BITS>(bytes32_t{0});
-
-    for (uint8_t i = 0; i < 64; ++i) {
-        bytes32_t const slot_key = bytes32_t{i};
-        EXPECT_EQ(compute_page_key<MONAD_SLOT_BITS>(slot_key), page_key_0)
+        EXPECT_EQ(compute_page_key(slot_key), page_key_0)
             << "slot " << static_cast<int>(i)
             << " should map to same page as slot 0";
-        EXPECT_EQ(compute_slot_offset<MONAD_SLOT_MASK>(slot_key), i)
+        EXPECT_EQ(compute_slot_offset(slot_key), i)
             << "slot " << static_cast<int>(i)
             << " should have offset equal to its low bits";
     }
 
-    // Key 0x40 should map to a different page
-    bytes32_t const slot_64 = bytes32_t{0x40};
-    EXPECT_NE(compute_page_key<MONAD_SLOT_BITS>(slot_64), page_key_0);
-    EXPECT_EQ(compute_slot_offset<MONAD_SLOT_MASK>(slot_64), 0);
+    // Key 0x80 should map to a different page
+    bytes32_t const slot_128 = bytes32_t{0x80};
+    EXPECT_NE(compute_page_key(slot_128), page_key_0);
+    EXPECT_EQ(compute_slot_offset(slot_128), 0);
 
-    // Keys 0x40..0x7F should share a second page
-    bytes32_t const page_key_1 =
-        compute_page_key<MONAD_SLOT_BITS>(bytes32_t{0x40});
-    for (uint8_t i = 0x40; i < 0x80; ++i) {
-        bytes32_t const slot_key = bytes32_t{i};
-        EXPECT_EQ(compute_page_key<MONAD_SLOT_BITS>(slot_key), page_key_1);
+    // Keys 0x80..0xFF should share a second page
+    bytes32_t const page_key_1 = compute_page_key(bytes32_t{0x80});
+    for (uint16_t i = 0x80; i < 0x100; ++i) {
+        bytes32_t const slot_key = bytes32_t{static_cast<uint8_t>(i)};
+        EXPECT_EQ(compute_page_key(slot_key), page_key_1);
         EXPECT_EQ(
-            compute_slot_offset<MONAD_SLOT_MASK>(slot_key),
-            static_cast<uint8_t>(i & MONAD_SLOT_MASK));
+            compute_slot_offset(slot_key),
+            static_cast<uint8_t>(i & storage_page_t::SLOT_OFFSET_MASK));
     }
 
     // Round-trip for all keys 0..0xFF
     for (uint16_t i = 0; i < 256; ++i) {
         bytes32_t const slot_key = bytes32_t{static_cast<uint8_t>(i)};
-        bytes32_t const pk = compute_page_key<MONAD_SLOT_BITS>(slot_key);
-        uint8_t const off = compute_slot_offset<MONAD_SLOT_MASK>(slot_key);
-        EXPECT_EQ(compute_slot_key<MONAD_SLOT_BITS>(pk, off), slot_key);
+        bytes32_t const pk = compute_page_key(slot_key);
+        uint8_t const off = compute_slot_offset(slot_key);
+        EXPECT_EQ(compute_slot_key(pk, off), slot_key);
     }
 }
 
@@ -111,7 +74,7 @@ TEST(MonadDb, monad_key_grouping)
 // must be present in the same page.
 TEST(MonadDb, page_write_merges_slots)
 {
-    using MonadCache = MonadPageStorageCache<MONAD_SLOT_BITS, MONAD_SLOT_MASK>;
+    using MonadCache = MonadPageStorageCache;
 
     constexpr auto slot_key_0 = bytes32_t{0x00};
     constexpr auto slot_key_1 = bytes32_t{0x01};
@@ -171,4 +134,96 @@ TEST(MonadDb, page_write_merges_slots)
         cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0),
         val_0_updated);
     EXPECT_EQ(cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
+}
+
+TEST(MonadDb, page_commit_deterministic)
+{
+    storage_page_t page{};
+    auto const c1 = page_commit(page);
+    auto const c2 = page_commit(page);
+    EXPECT_EQ(c1, c2);
+    EXPECT_NE(c1, bytes32_t{});
+}
+
+TEST(MonadDb, page_commit_differs_for_different_pages)
+{
+    storage_page_t page_a{};
+    storage_page_t page_b{};
+    page_b[0] = bytes32_t{0x01};
+
+    EXPECT_NE(page_commit(page_a), page_commit(page_b));
+}
+
+TEST(MonadDb, page_commit_sensitive_to_slot_position)
+{
+    storage_page_t page_a{};
+    page_a[0] = bytes32_t{0x01};
+
+    storage_page_t page_b{};
+    page_b[1] = bytes32_t{0x01};
+
+    EXPECT_NE(page_commit(page_a), page_commit(page_b));
+}
+
+TEST(MonadDb, page_commit_sensitive_to_distant_slots)
+{
+    storage_page_t page_a{};
+    page_a[0] = bytes32_t{0x01};
+
+    storage_page_t page_b{};
+    page_b[127] = bytes32_t{0x01};
+
+    EXPECT_NE(page_commit(page_a), page_commit(page_b));
+}
+
+TEST(MonadDb, page_commit_sparse_nonzero)
+{
+    storage_page_t page{};
+    std::memset(&page[0], 0x11, sizeof(bytes32_t));
+    std::memset(&page[2], 0x22, sizeof(bytes32_t));
+    std::memset(&page[4], 0x33, sizeof(bytes32_t));
+
+    storage_page_t zero_page{};
+    EXPECT_NE(page_commit(page), page_commit(zero_page));
+    EXPECT_EQ(page_commit(page), page_commit(page));
+}
+
+TEST(MonadDb, page_commit_uniform_fill_differs)
+{
+    storage_page_t page_a{};
+    std::memset(&page_a, 0x11, sizeof(page_a));
+
+    storage_page_t page_b{};
+    std::memset(&page_b, 0x22, sizeof(page_b));
+
+    EXPECT_NE(page_commit(page_a), page_commit(page_b));
+}
+
+TEST(MonadDb, page_commit_cross_check_with_reference)
+{
+    constexpr auto ZERO_PAGE_COMMIT =
+        0x89c59adeeea5e67e3cbccae4e6098c6afbdad96c396a7b86804f949345fded3d_bytes32;
+    constexpr auto SLOT0_ONE_COMMIT =
+        0x1abb7bae420b1a04f507458dbc01829d1f906351147452883e4d1c8133f75474_bytes32;
+    constexpr auto SLOT127_ONE_COMMIT =
+        0x935ebada7ce100f6d5eb7dc709909747f302e900be73f0a8c13146de3f480e14_bytes32;
+    constexpr auto FULL_PAGE_COMMIT =
+        0x36b8719c5b7ba4ad58227e4c768e9d45384ab92dddab881a7cbe81a46a7b1d2a_bytes32;
+
+    storage_page_t zero_page{};
+    EXPECT_EQ(page_commit(zero_page), ZERO_PAGE_COMMIT);
+
+    storage_page_t page_slot0{};
+    page_slot0[0] = bytes32_t{0x01};
+    EXPECT_EQ(page_commit(page_slot0), SLOT0_ONE_COMMIT);
+
+    storage_page_t page_slot127{};
+    page_slot127[127] = bytes32_t{0x01};
+    EXPECT_EQ(page_commit(page_slot127), SLOT127_ONE_COMMIT);
+
+    storage_page_t full_page{};
+    for (uint8_t i = 0; i < 128; ++i) {
+        full_page[i] = bytes32_t{static_cast<uint8_t>(i + 1)};
+    }
+    EXPECT_EQ(page_commit(full_page), FULL_PAGE_COMMIT);
 }

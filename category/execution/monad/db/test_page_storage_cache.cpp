@@ -34,10 +34,7 @@ namespace
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
     constexpr auto value1 =
         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
-    constexpr size_t MONAD_SLOT_BITS = storage_page_t::MONAD_SLOT_BITS;
-    constexpr uint8_t MONAD_SLOT_MASK = storage_page_t::MONAD_SLOT_MASK;
-
-    using MonadCache = MonadPageStorageCache<MONAD_SLOT_BITS, MONAD_SLOT_MASK>;
+    using MonadCache = MonadPageStorageCache;
 }
 
 // MonadPageStorageCache reads full pages from DB and caches them.
@@ -50,7 +47,7 @@ TEST(PageStorageCache, monad_page_read_and_cache)
         0x000000000000000000000000000000000000000000000000000000000000aaaa_bytes32;
     constexpr auto slot_val_1 =
         0x000000000000000000000000000000000000000000000000000000000000bbbb_bytes32;
-    constexpr auto slot_key_far = bytes32_t{0x40};
+    constexpr auto slot_key_far = bytes32_t{0x80};
     constexpr auto slot_val_far =
         0x000000000000000000000000000000000000000000000000000000000000cccc_bytes32;
 
@@ -94,7 +91,7 @@ TEST(PageStorageCache, monad_page_read_and_cache)
     EXPECT_EQ(cache.pages().size(), 2);
 
     // Verify the cached page structure.
-    bytes32_t const page_key = compute_page_key<MONAD_SLOT_BITS>(slot_key_0);
+    bytes32_t const page_key = compute_page_key(slot_key_0);
     MonadCache::PageKey pk{ADDR_A, Incarnation{0, 0}, page_key};
     MonadCache::PageMap::const_accessor acc;
     ASSERT_TRUE(cache.pages().find(acc, pk));

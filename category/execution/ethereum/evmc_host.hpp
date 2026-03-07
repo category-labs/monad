@@ -209,32 +209,11 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    void transfer_balances(evmc_message const &msg, Address const &to)
-    {
-        try {
-            uint256_t const value = intx::be::load<uint256_t>(msg.value);
-            state_.subtract_from_balance(msg.sender, value);
-            state_.add_to_balance(to, value);
-
-            // Skip self-transfers when emitting native transfer events (those
-            // where the sender is also the destination).
-            if (msg.sender != to) {
-                emit_native_transfer_event(msg.sender, to, value);
-            }
-            return;
-        }
-        catch (...) {
-            capture_current_exception();
-        }
-        stack_unwind();
-    }
-
     CallTracerBase &get_call_tracer() noexcept
     {
         return call_tracer_;
     }
 
-private:
     void emit_native_transfer_event(
         Address const &from, Address const &to, uint256_t const &value)
     {

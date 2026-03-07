@@ -15,34 +15,23 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
-#include <category/execution/ethereum/db/file_db.hpp>
-
-#include <cstdint>
-#include <filesystem>
-#include <vector>
+#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
-struct Block;
-
-class BlockDb
+struct HiveNet : EthereumMainnet
 {
-    FileDb db_;
-    std::vector<Block> rlp_blocks_;
+    virtual uint256_t get_chain_id() const override;
 
-    void import_rlp(std::filesystem::path const &rlp_path);
+    virtual bool should_process_eip_requests() const override
+    {
+        return true;
+    }
 
-public:
-    BlockDb() = delete;
-    BlockDb(Block const &) = delete;
-    BlockDb(BlockDb &&) = default;
-    explicit BlockDb(
-        std::filesystem::path const &dir,
-        std::filesystem::path const &rlp_path = {});
-    ~BlockDb() = default;
+    virtual evmc_revision
+    get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
-    bool get(uint64_t, Block &) const;
+    virtual GenesisState get_genesis_state() const override;
 };
 
 MONAD_NAMESPACE_END

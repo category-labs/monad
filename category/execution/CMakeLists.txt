@@ -38,6 +38,9 @@ add_library(
   "ethereum/chain/ethereum_mainnet_alloc.hpp"
   "ethereum/chain/genesis_state.cpp"
   "ethereum/chain/genesis_state.hpp"
+  "ethereum/chain/hive_net.cpp"
+  "ethereum/chain/hive_net.hpp"
+  "ethereum/chain/hive_net_alloc.hpp"
   # ethereum/core
   "ethereum/core/account.hpp"
   "ethereum/core/address.hpp"
@@ -137,6 +140,8 @@ add_library(
   "ethereum/execute_transaction.cpp"
   "ethereum/execute_transaction.hpp"
   "ethereum/fmt/event_trace_fmt.hpp"
+  "ethereum/process_requests.cpp"
+  "ethereum/process_requests.hpp"
   "ethereum/precompiles.cpp"
   "ethereum/precompiles.hpp"
   "ethereum/precompiles_bls12.cpp"

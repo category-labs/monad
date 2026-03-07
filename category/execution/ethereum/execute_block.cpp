@@ -36,13 +36,18 @@
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
+#include <category/execution/ethereum/evm.hpp>
+#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
+#include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -352,6 +357,20 @@ Result<std::vector<Receipt>> execute_block(
 
     if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         process_withdrawal(state, block.withdrawals);
+    }
+
+    if constexpr (
+        traits::evm_rev() >= EVMC_PRAGUE && !is_monad_trait_v<traits>) {
+        // NOTE: Currently enabled only for the hive net
+        if (chain.should_process_eip_requests()) {
+            process_requests<traits>(
+                chain,
+                state,
+                block_state,
+                block_hash_buffer,
+                block.header,
+                chain_ctx);
+        }
     }
 
     apply_block_reward<traits>(state, block);

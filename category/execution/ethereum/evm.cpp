@@ -54,31 +54,15 @@ namespace
         return state.record_balance_constraint_for_debit(msg.sender, value);
     }
 
-    struct TransferRequest
+    template <Traits traits>
+    void transfer_balances(
+        State &state, EvmcHost<traits> &host, evmc_message const &msg,
+        Address const &to)
     {
-        // TODO(dhil): This is a "local" type, so we could consider making
-        // `from` and `to` references rather than plain values.
-        Address const from;
-        Address const to;
-        uint256_t const value;
-
-        TransferRequest(TransferRequest const &) = delete;
-        TransferRequest &operator=(TransferRequest const &) = delete;
-        TransferRequest(TransferRequest &&) = delete;
-        TransferRequest &operator=(TransferRequest &&) = delete;
-
-        TransferRequest(evmc_message const &msg, Address const &to) noexcept
-            : from{msg.sender}
-            , to{to}
-            , value{intx::be::load<uint256_t>(msg.value)}
-        {
-        }
-    };
-
-    void transfer_balances(State &state, TransferRequest const &request)
-    {
-        state.subtract_from_balance(request.from, request.value);
-        state.add_to_balance(request.to, request.value);
+        uint256_t const value = intx::be::load<uint256_t>(msg.value);
+        state.subtract_from_balance(msg.sender, value);
+        state.add_to_balance(to, value);
+        host.emit_native_transfer_event(msg.sender, to, value);
     }
 
 } // anonymous namespace
@@ -145,10 +129,7 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
             return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         }
         else if (!static_call) {
-            TransferRequest const request{msg, msg.recipient};
-            transfer_balances(state, request);
-            host.emit_native_transfer_event(
-                request.from, request.to, request.value);
+            transfer_balances<traits>(state, host, msg, msg.recipient);
         }
     }
 
@@ -259,12 +240,7 @@ evmc::Result execute_create_message(
     constexpr auto starting_nonce =
         traits::evm_rev() >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
     state.set_nonce(contract_address, starting_nonce);
-    {
-        TransferRequest const request{msg, contract_address};
-        transfer_balances(state, request);
-        host->emit_native_transfer_event(
-            request.from, request.to, request.value);
-    }
+    transfer_balances<traits>(state, *host, msg, contract_address);
 
     evmc_message const m_call{
         .kind = EVMC_CALL,

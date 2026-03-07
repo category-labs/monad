@@ -13,10 +13,12 @@ alloy-primitives = { workspace = true, optional = true }
 alloy-rpc-types = { workspace = true, optional = true }
 itertools = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+strum = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 
 [build-dependencies]
 bindgen = { workspace = true }
+cc = { workspace = true }
 
 [dev-dependencies]
 alloy-primitives = { workspace = true }

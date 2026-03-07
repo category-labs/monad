@@ -84,12 +84,13 @@
 
 use monad_event_ring::{EventRing, SnapshotEventRing};
 
-pub use self::{block::*, block_builder::*, events::*};
+pub use self::{block::*, block_builder::*, events::*, reader::*};
 
 mod block;
 mod block_builder;
 mod events;
 pub mod ffi;
+mod reader;
 
 /// A type alias for an event ring that produces monad execution events.
 pub type ExecEventRing = EventRing<ExecEventDecoder>;

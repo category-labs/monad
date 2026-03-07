@@ -20,8 +20,8 @@ use crate::{
 
 #[derive(Debug)]
 pub(crate) struct RawEventDescriptor<'ring> {
-    inner: monad_event_descriptor,
-    ring: &'ring RawEventRing,
+    pub(super) inner: monad_event_descriptor,
+    pub(super) ring: &'ring RawEventRing,
 }
 
 impl<'ring> RawEventDescriptor<'ring> {
@@ -35,7 +35,7 @@ impl<'ring> RawEventDescriptor<'ring> {
         }
     }
 
-    pub(crate) fn try_filter_map<T>(
+    pub(super) fn try_filter_map<T>(
         &self,
         f: impl FnOnce(RawEventDescriptorInfo, &[u8]) -> T,
     ) -> EventPayloadResult<T> {
@@ -60,7 +60,7 @@ impl<'ring> RawEventDescriptor<'ring> {
     }
 }
 
-pub(crate) struct RawEventDescriptorInfo {
+pub(super) struct RawEventDescriptorInfo {
     pub seqno: u64,
 
     pub event_type: u16,

@@ -409,11 +409,17 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
 
-    BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
-        tx_,
-        header_.base_fee_per_gas,
-        header_.excess_blob_gas,
-        chain_.get_chain_id()));
+    {
+        auto validation_result = static_validate_transaction<traits>(
+            tx_,
+            header_.base_fee_per_gas,
+            header_.excess_blob_gas,
+            chain_.get_chain_id());
+        if (validation_result.has_error()) {
+            prev_.get_future().wait();
+            return std::move(validation_result).as_failure();
+        }
+    }
 
     {
         TRACE_TXN_EVENT(StartExecution);

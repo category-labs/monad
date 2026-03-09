@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
+#include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <monad/test/traits_test.hpp>
@@ -626,5 +627,56 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                 initial_balance - (gas_charged * max_fee_per_gas) +
                     (storage_refund * max_fee_per_gas));
         }
+    }
+}
+
+TYPED_TEST(TraitsTest, static_validate_transaction_failure)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    BlockMetrics metrics;
+
+    boost::fibers::promise<void> prev{};
+    prev.set_value();
+
+    NoopCallTracer noop_call_tracer;
+    trace::StateTracer noop_state_tracer = std::monostate{};
+
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+
+    Transaction const tx{.sc = {.chain_id = 1 /* invalid chain id */}};
+
+    BlockHeader const header{};
+    BlockHashBufferFinalized const block_hash_buffer;
+
+    auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
+        MonadDevnet{},
+        0,
+        tx,
+        from,
+        {},
+        header,
+        block_hash_buffer,
+        bs,
+        metrics,
+        prev,
+        noop_call_tracer,
+        noop_state_tracer,
+        chain_ctx)();
+
+    ASSERT_TRUE(receipt.has_error());
+
+    if constexpr (TestFixture::Trait::evm_rev() < EVMC_SPURIOUS_DRAGON) {
+        ASSERT_EQ(receipt.error(), TransactionError::TypeNotSupported);
+    }
+    else {
+        ASSERT_EQ(receipt.error(), TransactionError::WrongChainId);
     }
 }

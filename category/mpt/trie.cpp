@@ -100,8 +100,8 @@ void try_fillin_parent_after_expiration(
     UpdateAuxImpl &, StateMachine &, ExpireTNode::unique_ptr_type);
 
 void fillin_parent_after_expiration(
-    UpdateAuxImpl &, Node::SharedPtr, ExpireTNode *const, uint8_t const index,
-    uint8_t const branch, bool const cache_node);
+    UpdateAuxImpl &, Node::SharedPtr, UpdateExpireBase *const,
+    uint8_t const index, uint8_t const branch, bool const cache_node);
 
 struct async_write_node_result
 {
@@ -279,9 +279,9 @@ size_t load_all(UpdateAuxImpl &aux, StateMachine &sm, NodeCursor const &root)
 // trie Node when all its children are created
 void upward_update(UpdateAuxImpl &aux, StateMachine &sm, UpdateTNode *tnode)
 {
-    while (!tnode->npending && tnode->parent) {
+    while (!tnode->npending && tnode->parent()) {
         MONAD_DEBUG_ASSERT(tnode->children.size()); // not a leaf
-        auto *parent = tnode->parent;
+        auto *parent = tnode->parent();
         auto &entry = parent->children[tnode->child_index()];
         // put created node and compute to entry in parent
         size_t const level_up =
@@ -366,21 +366,26 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
                     fillin_parent_after_expiration(
                         *aux,
                         std::move(new_node),
-                        tnode->parent,
+                        tnode->parent(),
                         tnode->index,
                         tnode->branch,
                         tnode->cache_node);
                     // upward update
-                    auto *parent = tnode->parent;
+                    TNodeBase *parent = tnode->parent();
                     while (!parent->npending) {
                         if (parent->type == tnode_type::update) {
-                            upward_update(*aux, *sm, (UpdateTNode *)parent);
+                            upward_update(
+                                *aux, *sm, static_cast<UpdateTNode *>(parent));
                             return;
                         }
-                        auto *next_parent = parent->parent;
+                        auto *next_parent = parent->parent();
                         MONAD_ASSERT(next_parent);
+                        MONAD_ASSERT(parent->type == tnode_type::expire);
                         try_fillin_parent_after_expiration(
-                            *aux, *sm, ExpireTNode::unique_ptr_type{parent});
+                            *aux,
+                            *sm,
+                            ExpireTNode::unique_ptr_type{
+                                static_cast<ExpireTNode *>(parent)});
                         // go one level up
                         parent = next_parent;
                     }
@@ -548,7 +553,7 @@ void create_node_compute_data_possibly_async(
             node_receiver_t recv{
                 [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
                     Node::SharedPtr read_node) mutable {
-                    auto *parent = tnode->parent;
+                    auto *parent = tnode->parent();
                     MONAD_DEBUG_ASSERT(parent);
                     auto &entry = parent->children[tnode->child_index()];
                     MONAD_DEBUG_ASSERT(entry.branch < 16);
@@ -1087,19 +1092,23 @@ void expire_(
             [aux = &aux, sm = sm.clone(), tnode = std::move(tnode)](
                 Node::SharedPtr read_node) mutable {
                 tnode->update_after_async_read(std::move(read_node));
-                auto *parent = tnode->parent;
+                TNodeBase *parent = tnode->parent();
                 MONAD_ASSERT(parent);
                 expire_(*aux, *sm, std::move(tnode), INVALID_OFFSET);
                 while (!parent->npending) {
                     if (parent->type == tnode_type::update) {
-                        upward_update(*aux, *sm, (UpdateTNode *)parent);
+                        upward_update(
+                            *aux, *sm, static_cast<UpdateTNode *>(parent));
                         return;
                     }
                     MONAD_DEBUG_ASSERT(parent->type == tnode_type::expire);
-                    auto *next_parent = parent->parent;
+                    auto *next_parent = parent->parent();
                     MONAD_ASSERT(next_parent);
                     try_fillin_parent_after_expiration(
-                        *aux, *sm, ExpireTNode::unique_ptr_type{parent});
+                        *aux,
+                        *sm,
+                        ExpireTNode::unique_ptr_type{
+                            static_cast<ExpireTNode *>(parent)});
                     // go one level up
                     parent = next_parent;
                 }
@@ -1109,7 +1118,7 @@ void expire_(
         async_read(aux, std::move(recv));
         return;
     }
-    auto *const parent = tnode->parent;
+    auto *const parent = tnode->parent();
     // expire subtries whose subtrie_min_version(branch) <
     // curr_upsert_auto_expire_version, check for compaction on the rest of the
     // subtries
@@ -1119,7 +1128,7 @@ void expire_(
         // this branch is expired, erase it from parent
         parent->mask &= static_cast<uint16_t>(~(1u << tnode->branch));
         if (parent->type == tnode_type::update) {
-            ((UpdateTNode *)parent)->children[tnode->index].erase();
+            static_cast<UpdateTNode *>(parent)->children[tnode->index].erase();
         }
         --parent->npending;
         return;
@@ -1155,14 +1164,15 @@ void expire_(
 }
 
 void fillin_parent_after_expiration(
-    UpdateAuxImpl &aux, Node::SharedPtr new_node, ExpireTNode *const parent,
-    uint8_t const index, uint8_t const branch, bool const cache_node)
+    UpdateAuxImpl &aux, Node::SharedPtr new_node,
+    UpdateExpireBase *const parent, uint8_t const index, uint8_t const branch,
+    bool const cache_node)
 {
     if (new_node == nullptr) {
         // expire this branch from parent
         parent->mask &= static_cast<uint16_t>(~(1u << branch));
         if (parent->type == tnode_type::update) {
-            ((UpdateTNode *)parent)->children[index].erase();
+            static_cast<UpdateTNode *>(parent)->children[index].erase();
         }
     }
     else {
@@ -1179,7 +1189,7 @@ void fillin_parent_after_expiration(
         auto const min_version = calc_min_version(*new_node);
         MONAD_ASSERT(min_version >= aux.curr_upsert_auto_expire_version);
         if (parent->type == tnode_type::update) {
-            auto &child = ((UpdateTNode *)parent)->children[index];
+            auto &child = static_cast<UpdateTNode *>(parent)->children[index];
             MONAD_ASSERT(!child.ptr); // been transferred to tnode
             child.offset = new_offset;
             MONAD_DEBUG_ASSERT(cache_node);
@@ -1190,14 +1200,15 @@ void fillin_parent_after_expiration(
         }
         else {
             MONAD_ASSERT(parent->type == tnode_type::expire);
+            auto *const expire_parent = static_cast<ExpireTNode *>(parent);
             if (cache_node) {
-                parent->cache_mask |= static_cast<uint16_t>(1u << index);
+                expire_parent->cache_mask |= static_cast<uint16_t>(1u << index);
             }
-            parent->node->set_next(index, std::move(new_node));
-            parent->node->set_subtrie_min_version(index, min_version);
-            parent->node->set_min_offset_fast(index, min_offset_fast);
-            parent->node->set_min_offset_slow(index, min_offset_slow);
-            parent->node->set_fnext(index, new_offset);
+            expire_parent->node->set_next(index, std::move(new_node));
+            expire_parent->node->set_subtrie_min_version(index, min_version);
+            expire_parent->node->set_min_offset_fast(index, min_offset_fast);
+            expire_parent->node->set_min_offset_slow(index, min_offset_slow);
+            expire_parent->node->set_fnext(index, new_offset);
         }
     }
     --parent->npending;
@@ -1212,7 +1223,7 @@ void try_fillin_parent_after_expiration(
     }
     auto const index = tnode->index;
     auto const branch = tnode->branch;
-    auto *const parent = tnode->parent;
+    auto *const parent = tnode->parent();
     auto const cache_node = tnode->cache_node;
     aux.collect_expire_stats(false);
     auto [done, new_node] =
@@ -1237,7 +1248,7 @@ void compact_(
              sm = sm.clone(),
              tnode = std::move(tnode)](Node::SharedPtr read_node) mutable {
                 tnode->update_after_async_read(std::move(read_node));
-                auto *parent = tnode->parent;
+                TNodeBase *parent = tnode->parent();
                 compact_(
                     *aux,
                     *sm,
@@ -1246,21 +1257,25 @@ void compact_(
                     copy_node_for_fast_or_slow);
                 while (!parent->npending) {
                     if (parent->type == tnode_type::update) {
-                        upward_update(*aux, *sm, (UpdateTNode *)parent);
+                        upward_update(
+                            *aux, *sm, static_cast<UpdateTNode *>(parent));
                         return;
                     }
-                    auto *next_parent = parent->parent;
+                    auto *next_parent = parent->parent();
                     MONAD_ASSERT(next_parent);
                     if (parent->type == tnode_type::compact) {
                         try_fillin_parent_with_rewritten_node(
-                            *aux, CompactTNode::unique_ptr_type{parent});
+                            *aux,
+                            CompactTNode::unique_ptr_type{
+                                static_cast<CompactTNode *>(parent)});
                     }
                     else {
+                        MONAD_ASSERT(parent->type == tnode_type::expire);
                         try_fillin_parent_after_expiration(
                             *aux,
                             *sm,
                             ExpireTNode::unique_ptr_type{
-                                (ExpireTNode *)parent});
+                                static_cast<ExpireTNode *>(parent)});
                     }
                     // go one level up
                     parent = next_parent;
@@ -1347,10 +1362,10 @@ void try_fillin_parent_with_rewritten_node(
     }
     MONAD_DEBUG_ASSERT(min_offset_fast >= aux.compact_offset_fast);
     MONAD_DEBUG_ASSERT(min_offset_slow >= aux.compact_offset_slow);
-    auto *parent = tnode->parent;
+    TNodeBase *parent = tnode->parent();
     auto const index = tnode->index;
     if (parent->type == tnode_type::update) {
-        auto *const p = reinterpret_cast<UpdateTNode *>(parent);
+        auto *const p = static_cast<UpdateTNode *>(parent);
         MONAD_DEBUG_ASSERT(tnode->cache_node);
         auto &child = p->children[index];
         child.ptr = std::move(tnode->node);
@@ -1358,24 +1373,27 @@ void try_fillin_parent_with_rewritten_node(
         child.min_offset_fast = min_offset_fast;
         child.min_offset_slow = min_offset_slow;
     }
+    else if (parent->type == tnode_type::compact) {
+        auto *const p = static_cast<CompactTNode *>(parent);
+        MONAD_ASSERT(p->node);
+        p->node->set_fnext(index, new_offset);
+        p->node->set_min_offset_fast(index, min_offset_fast);
+        p->node->set_min_offset_slow(index, min_offset_slow);
+        if (tnode->cache_node) {
+            p->node->set_next(index, std::move(tnode->node));
+        }
+    }
     else {
-        MONAD_DEBUG_ASSERT(
-            parent->type == tnode_type::compact ||
-            parent->type == tnode_type::expire);
-        auto &node = (parent->type == tnode_type::compact)
-                         ? parent->node
-                         : ((ExpireTNode *)parent)->node;
-        MONAD_ASSERT(node);
-        node->set_fnext(index, new_offset);
-        node->set_min_offset_fast(index, min_offset_fast);
-        node->set_min_offset_slow(index, min_offset_slow);
-        if (tnode->cache_node || parent->type == tnode_type::expire) {
-            // Delay tnode->node deallocation to parent ExpireTNode
-            node->set_next(index, std::move(tnode->node));
-            if (tnode->cache_node && parent->type == tnode_type::expire) {
-                ((ExpireTNode *)parent)->cache_mask |=
-                    static_cast<uint16_t>(1u << tnode->index);
-            }
+        MONAD_ASSERT(parent->type == tnode_type::expire);
+        auto *const p = static_cast<ExpireTNode *>(parent);
+        MONAD_ASSERT(p->node);
+        p->node->set_fnext(index, new_offset);
+        p->node->set_min_offset_fast(index, min_offset_fast);
+        p->node->set_min_offset_slow(index, min_offset_slow);
+        // Delay tnode->node deallocation to parent ExpireTNode
+        p->node->set_next(index, std::move(tnode->node));
+        if (tnode->cache_node) {
+            p->cache_mask |= static_cast<uint16_t>(1u << tnode->index);
         }
     }
     --parent->npending;

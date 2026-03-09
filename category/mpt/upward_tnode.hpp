@@ -48,47 +48,56 @@ template <class T>
 concept update_or_expire_tnode =
     std::same_as<T, ExpireTNode> || std::same_as<T, UpdateTNode>;
 
-// NOLINTBEGIN(bugprone-crtp-constructor-accessibility)
-// the use of the UpdateExpireCommonStorage subclass requires
-// this constructor to be non-private
-template <any_tnode Derived>
-struct UpwardTreeNodeBase
+struct TNodeBase
 {
-    Derived *const parent{nullptr};
+protected:
+    TNodeBase *const parent_{nullptr};
+
+public:
     tnode_type const type{tnode_type::invalid};
     uint8_t npending{0};
 
     bool is_sentinel() const noexcept
     {
-        return !parent;
+        return !parent_;
+    }
+
+    TNodeBase *parent() const noexcept
+    {
+        return parent_;
+    }
+
+protected:
+    TNodeBase() = default;
+
+    TNodeBase(
+        TNodeBase *const parent, tnode_type const type, uint8_t const npending)
+        : parent_(parent)
+        , type(type)
+        , npending(npending)
+    {
     }
 };
 
-// NOLINTEND(bugprone-crtp-constructor-accessibility)
-
-template <update_or_expire_tnode Derived>
-struct UpdateExpireCommonStorage : public UpwardTreeNodeBase<Derived>
+struct UpdateExpireBase : public TNodeBase
 {
-    using Base = UpwardTreeNodeBase<Derived>;
     uint8_t const branch{INVALID_BRANCH};
     uint16_t mask{0};
 
-private:
-    UpdateExpireCommonStorage(
-        Derived *const parent, tnode_type const type, uint8_t const npending,
+protected:
+    UpdateExpireBase(
+        TNodeBase *const parent, tnode_type const type, uint8_t const npending,
         uint8_t branch, uint16_t const mask)
-        : Base(parent, type, npending)
+        : TNodeBase(parent, type, npending)
         , branch(branch)
         , mask(mask)
     {
     }
-
-    friend Derived;
 };
 
-struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
+struct UpdateTNode : public UpdateExpireBase
 {
-    using Base = UpdateExpireCommonStorage<UpdateTNode>;
+    using Base = UpdateExpireBase;
     uint16_t orig_mask{0};
     // UpdateTNode owns old node's lifetime only when old is leaf node, as
     // opt_leaf_data has to be valid in memory when it works the way back to
@@ -117,6 +126,14 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
     {
     }
 
+    UpdateTNode *parent() const noexcept
+    {
+        MONAD_ASSERT(
+            !TNodeBase::parent() ||
+            TNodeBase::parent()->type == tnode_type::update);
+        return static_cast<UpdateTNode *>(TNodeBase::parent());
+    }
+
     [[nodiscard]] unsigned number_of_children() const
     {
         return static_cast<unsigned>(std::popcount(mask));
@@ -124,8 +141,8 @@ struct UpdateTNode : public UpdateExpireCommonStorage<UpdateTNode>
 
     constexpr uint8_t child_index() const noexcept
     {
-        MONAD_ASSERT(parent != nullptr);
-        return static_cast<uint8_t>(bitmask_index(parent->orig_mask, branch));
+        MONAD_ASSERT(parent() != nullptr);
+        return static_cast<uint8_t>(bitmask_index(parent()->orig_mask, branch));
     }
 
     using allocator_type = allocators::malloc_free_allocator<UpdateTNode>;
@@ -169,9 +186,9 @@ inline tnode_unique_ptr make_tnode(
 static_assert(sizeof(UpdateTNode) == 104);
 static_assert(alignof(UpdateTNode) == 8);
 
-struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
+struct CompactTNode : public TNodeBase
 {
-    using Base = UpwardTreeNodeBase<CompactTNode>;
+    using Base = TNodeBase;
     uint8_t const index{INVALID_BRANCH}; // of parent
     bool rewrite_to_fast{false};
     /* Cache the owned node after the CompactTNode is destroyed. The rule here
@@ -189,8 +206,8 @@ struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
     CompactTNode(
         Parent *const parent, unsigned const index, Node::SharedPtr ptr)
         : Base(
-              (CompactTNode *)parent, tnode_type::compact,
-              ptr ? static_cast<uint8_t>(ptr->number_of_children()) : 0)
+              parent, tnode_type::compact,
+              static_cast<uint8_t>(ptr ? ptr->number_of_children() : 0))
         , index(static_cast<uint8_t>(index))
         , cache_node(parent->type == tnode_type::update || ptr != nullptr)
         , node(std::move(ptr))
@@ -235,9 +252,18 @@ struct CompactTNode : public UpwardTreeNodeBase<CompactTNode>
 static_assert(sizeof(CompactTNode) == 32);
 static_assert(alignof(CompactTNode) == 8);
 
-struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
+struct ExpireTNode : public UpdateExpireBase
 {
-    using Base = UpdateExpireCommonStorage<ExpireTNode>;
+    using Base = UpdateExpireBase;
+
+    UpdateExpireBase *parent() const noexcept
+    {
+        MONAD_ASSERT(
+            !TNodeBase::parent() ||
+            TNodeBase::parent()->type == tnode_type::update ||
+            TNodeBase::parent()->type == tnode_type::expire);
+        return static_cast<UpdateExpireBase *>(TNodeBase::parent());
+    }
 
     uint8_t const index{INVALID_BRANCH};
     /* Cache the recreated node after this struct is destroyed.
@@ -254,7 +280,7 @@ struct ExpireTNode : public UpdateExpireCommonStorage<ExpireTNode>
         Parent *const parent, unsigned const branch, unsigned const index,
         Node::SharedPtr ptr)
         : Base(
-              (ExpireTNode *)parent, tnode_type::expire,
+              parent, tnode_type::expire,
               ptr ? static_cast<uint8_t>(ptr->number_of_children()) : 0,
               static_cast<uint8_t>(branch), ptr ? ptr->mask : 0)
         , index(static_cast<uint8_t>(index))

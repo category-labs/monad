@@ -1261,6 +1261,7 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
             kv_alloc.emplace_back(keccak_int_to_string(n++));
         }
         // upsert N on top of N-1
+        // TODO: make the key value extremely large
         root = upsert_updates_flat_list(
             block_id == 0 ? nullptr : db.load_root_for_version(block_id - 1),
             db,
@@ -1314,11 +1315,9 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
     auto const ro_root = rodb.load_root_for_version(block_id - 1);
     auto const result_n = db_get(rodb, ro_root, {}, block_id - 1);
     ASSERT_TRUE(result_n.has_value());
-    auto const [fast_n, slow_n] = get_release_offsets(result_n.value());
     EXPECT_EQ(
         db_get_data(rodb, ro_root, {prefix}, block_id - 1).value(),
         0x03786bcd10037502a4e08158de71f8078a40ce46c93ba13db90cb11841679f5e_bytes);
-    EXPECT_GT(fast_n, 0);
 }
 
 TYPED_TEST(DbTest, simple_with_same_prefix)

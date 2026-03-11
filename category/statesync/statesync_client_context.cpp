@@ -61,22 +61,29 @@ monad_statesync_client_context::monad_statesync_client_context(
 void monad_statesync_client_context::prepare_current_state()
 {
     auto const latest_version = db.get_latest_version();
-    // commit empty finalized state to current first
+    // First commit an empty finalized state to the current one.
+    // This requires incarnation=true so the compaction process in latest root
+    // value (`src_root->value()`) is correctly preserved.
     UpdateList finalized_empty;
     Update finalized{
         .key = finalized_nibbles,
         .value = byte_string_view{},
-        .incarnation = false,
+        .incarnation = true,
         .next = UpdateList{},
         .version = static_cast<int64_t>(current)};
     finalized_empty.push_front(finalized);
+    auto const src_root = db.load_root_for_version(latest_version);
     bool write_root = false;
     auto dest_root = db.upsert(
-        nullptr, std::move(finalized_empty), current, false, false, write_root);
+        src_root,
+        std::move(finalized_empty),
+        current,
+        false,
+        false,
+        write_root);
     MONAD_ASSERT(db.find(dest_root, finalized_nibbles, current).has_value());
 
     // move state and code from latest finalized to current
-    auto const src_root = db.load_root_for_version(latest_version);
     auto const state_key = concat(FINALIZED_NIBBLE, STATE_NIBBLE);
     auto const code_key = concat(FINALIZED_NIBBLE, CODE_NIBBLE);
     dest_root = db.copy_trie(
@@ -99,6 +106,7 @@ void monad_statesync_client_context::prepare_current_state()
     MONAD_ASSERT(finalized_res.value().node->number_of_children() == 2);
     MONAD_ASSERT(db.find(dest_root, state_key, current).has_value());
     MONAD_ASSERT(db.find(dest_root, code_key, current).has_value());
+    MONAD_ASSERT(dest_root->value() == src_root->value());
     tdb.reset_root(dest_root, current);
     MONAD_ASSERT(db.get_latest_version() == current);
 }

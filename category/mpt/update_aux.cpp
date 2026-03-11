@@ -1153,11 +1153,13 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         physical_to_virtual(node_writer_fast->sender().offset());
     [[maybe_unused]] auto const curr_slow_writer_offset =
         physical_to_virtual(node_writer_slow->sender().offset());
+    [[maybe_unused]] auto const [min_offset_fast, min_offset_slow] =
+        calc_min_offsets(*root);
     LOG_INFO_CFORMAT(
         "Finish upserting version %lu. Min valid version %lu. Time elapsed: "
         "%ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
         "offsets: fast={%u,%u}, slow={%u,%u}. Compaction head offset fast=%u, "
-        "slow=%u",
+        "slow=%u, min offset fast =%u, slow=%u.",
         version,
         db_history_min_valid_version(),
         upsert_duration.count(),
@@ -1170,7 +1172,9 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         curr_slow_writer_offset.count,
         curr_slow_writer_offset.offset,
         (uint32_t)compact_offsets.fast,
-        (uint32_t)compact_offsets.slow);
+        (uint32_t)compact_offsets.slow,
+        (uint32_t)min_offset_fast,
+        (uint32_t)min_offset_slow);
     return root;
 }
 

@@ -203,7 +203,11 @@ void TrieDb::commit(
         block_number_,
         true,
         true,
+#if SUPERBLOCK_MODE
+        true);
+#else
         false);
+#endif
 
     BlockHeader complete_header = header;
     if (MONAD_LIKELY(header.receipts_root == NULL_ROOT)) {
@@ -260,19 +264,44 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
 {
     // no re-finalization
     auto const latest_finalized = db_.get_latest_finalized_version();
+#if SUPERBLOCK_MODE
+    MONAD_ASSERT_PRINTF(
+        latest_finalized == INVALID_BLOCK_NUM ||
+            block_number >= latest_finalized + 1,
+        "block_number %lu is not the next finalized block after %lu",
+        block_number,
+        latest_finalized);
+#else
     MONAD_ASSERT_PRINTF(
         latest_finalized == INVALID_BLOCK_NUM ||
             block_number == latest_finalized + 1,
         "block_number %lu is not the next finalized block after %lu",
         block_number,
         latest_finalized);
+#endif
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk()) {
         auto const src_prefix = proposal_prefix(block_id);
         auto root = (block_number_ == block_number)
                         ? curr_root_
                         : db_.load_root_for_version(block_number);
+#if SUPERBLOCK_MODE
+        auto find_result = db_.find(root, src_prefix, block_number);
+        if (!find_result.has_value()) {
+            LOG_ERROR("finalize: failed to find node at proposal prefix");
+            if (NibblesView{prefix_} == src_prefix) {
+                curr_root_ = db_.copy_trie(
+                    root, prefix_, root, finalized_nibbles, block_number, false);
+                prefix_ = finalized_nibbles;
+                block_number_ = block_number;
+                db_.update_finalized_version(block_number);
+                return;
+            }
+        }
+        MONAD_ASSERT(find_result.has_value());
+#else
         MONAD_ASSERT(db_.find(root, src_prefix, block_number).has_value());
+#endif
         curr_root_ = db_.copy_trie(
             root, src_prefix, root, finalized_nibbles, block_number, true);
         prefix_ = finalized_nibbles;

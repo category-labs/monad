@@ -732,9 +732,16 @@ void create_new_trie_from_requests_(
     std::optional<byte_string_view> const opt_leaf_data, int64_t version)
 {
     // version will be updated bottom up
+#if SUPERBLOCK_MODE
+    uint16_t const orig_mask = requests.mask;
+    uint16_t actual_mask = orig_mask;
+    std::vector<ChildData> children(size_t(std::popcount(orig_mask)));
+    for (auto const [index, branch] : NodeChildrenRange(orig_mask)) {
+#else
     uint16_t const mask = requests.mask;
     std::vector<ChildData> children(size_t(std::popcount(mask)));
     for (auto const [index, branch] : NodeChildrenRange(mask)) {
+#endif
         children[index].branch = branch;
         sm.down(branch);
         create_new_trie_(
@@ -745,7 +752,30 @@ void create_new_trie_from_requests_(
             std::move(requests)[branch],
             prefix_index + 1);
         sm.up(1);
+#if SUPERBLOCK_MODE
+        if (!children[index].ptr) {
+            children[index].erase();
+            actual_mask &= static_cast<uint16_t>(~(1u << branch));
+        }
+#endif
     }
+#if SUPERBLOCK_MODE
+    // can have empty children after deletions in superblock mode
+    auto node = create_node_from_children_if_any(
+        aux, sm, orig_mask, actual_mask, children, path, opt_leaf_data, version);
+    if (node) {
+        parent_version = std::max(parent_version, node->version);
+        entry.finalize(std::move(node), sm.get_compute(), sm.cache());
+        if (sm.auto_expire()) {
+            MONAD_ASSERT(
+                entry.subtrie_min_version >= aux.curr_upsert_auto_expire_version);
+        }
+    }
+    else {
+        // Entire subtrie is empty (all deletions), mark entry as erased
+        entry.erase();
+    }
+#else
     // can have empty children
     auto node = create_node_from_children_if_any(
         aux, sm, mask, mask, children, path, opt_leaf_data, version);
@@ -756,6 +786,7 @@ void create_new_trie_from_requests_(
         MONAD_ASSERT(
             entry.subtrie_min_version >= aux.curr_upsert_auto_expire_version);
     }
+#endif
 }
 
 /////////////////////////////////////////////////////
@@ -1730,7 +1761,11 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
             std::min(version, prev_lower_bound));
     }
     else {
+#if SUPERBLOCK_MODE
+        MONAD_ASSERT(version >= max_version_in_db + 1);
+#else
         MONAD_ASSERT(version == max_version_in_db + 1);
+#endif
         // Erase the earliest valid version if it is going to be outdated after
         // writing a new version, must happen before appending new root offset
         if (version - aux.db_history_min_valid_version() >=
@@ -1741,6 +1776,11 @@ write_new_root_node(UpdateAuxImpl &aux, Node &root, uint64_t const version)
                 version - aux.db_history_min_valid_version() <
                 aux.version_history_length());
         }
+#if SUPERBLOCK_MODE
+        if (version > max_version_in_db + 1) {
+            aux.fast_forward_next_version(version);
+        }
+#endif
         aux.append_root_offset(offset_written_to);
     }
     return offset_written_to;

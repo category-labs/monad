@@ -1165,6 +1165,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         physical_to_virtual(node_writer_fast->sender().offset());
     [[maybe_unused]] auto const curr_slow_writer_offset =
         physical_to_virtual(node_writer_slow->sender().offset());
+#if 0
     LOG_INFO_CFORMAT(
         "Finish upserting version %lu. Min valid version %lu. Time elapsed: "
         "%ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
@@ -1183,6 +1184,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         curr_slow_writer_offset.offset,
         (uint32_t)compact_offset_fast,
         (uint32_t)compact_offset_slow);
+#endif
     return root;
 }
 
@@ -1201,6 +1203,7 @@ void UpdateAuxImpl::release_unreferenced_chunks()
     MONAD_ASSERT(
         min_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
         min_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
+#if 0
     chunks_to_remove_before_count_fast_ = min_offset_fast.get_count();
     chunks_to_remove_before_count_slow_ = min_offset_slow.get_count();
     LOG_INFO_CFORMAT(
@@ -1211,6 +1214,7 @@ void UpdateAuxImpl::release_unreferenced_chunks()
         (uint32_t)min_offset_slow,
         chunks_to_remove_before_count_fast_,
         chunks_to_remove_before_count_slow_);
+#endif
     MONAD_ASSERT(
         db_metadata()->root_offsets.version_lower_bound_ >= min_valid_version);
     free_compacted_chunks();
@@ -1218,7 +1222,9 @@ void UpdateAuxImpl::release_unreferenced_chunks()
 
 void UpdateAuxImpl::erase_versions_up_to_and_including(uint64_t const version)
 {
+#if 0
     LOG_INFO_CFORMAT("Erase versions up to and including %lu", version);
+#endif
     clear_root_offsets_up_to_and_including(version);
     release_unreferenced_chunks();
 }
@@ -1620,7 +1626,8 @@ uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
 
 void UpdateAuxImpl::print_update_stats(uint64_t const version)
 {
-#if MONAD_MPT_COLLECT_STATS
+//#if MONAD_MPT_COLLECT_STATS
+#if 0
     if (stats.nodes_updated_expire > 50'000) {
         LOG_WARNING_CFORMAT(
             "The number of nodes updated for expire (%u) is excessively large",

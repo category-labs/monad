@@ -13,9 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/statesync/statesync_version.h>
 
-// Modify when there are changes to the protocol
+// Modify when there are changes to the protocol.
+// When bumping, update monad_statesync_version_to_revision accordingly.
 
 constexpr uint32_t MONAD_STATESYNC_VERSION = 1;
 
@@ -26,5 +28,17 @@ uint32_t monad_statesync_version()
 
 bool monad_statesync_client_compatible(uint32_t const version)
 {
-    return version <= MONAD_STATESYNC_VERSION && version >= 1;
+    return version >= 1 && version <= 2;
+}
+
+enum monad_revision monad_statesync_version_to_revision(uint32_t const version)
+{
+    switch (version) {
+    case 1:
+        return MONAD_NINE;
+    case 2:
+        return MONAD_NEXT;
+    default:
+        MONAD_ASSERT(false, "unsupported statesync version");
+    }
 }

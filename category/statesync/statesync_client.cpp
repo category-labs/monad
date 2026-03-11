@@ -20,8 +20,10 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/monad_page_storage_cache.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
@@ -85,11 +87,27 @@ void monad_statesync_client_handle_new_peer(
     uint32_t const version)
 {
     MONAD_ASSERT(monad_statesync_client_compatible(version));
+    auto const rev = monad_statesync_version_to_revision(version);
+    if (ctx->cache) {
+        MONAD_ASSERT(
+            ctx->machine.revision == rev,
+            "all statesync peers must use the same version");
+    }
+    else {
+        ctx->machine.set_revision(rev);
+        if (rev >= MONAD_NEXT) {
+            ctx->cache = std::make_unique<MonadPageStorageCache>(ctx->tdb);
+        }
+        else {
+            ctx->cache = std::make_unique<NoopStorageCache>(ctx->tdb);
+        }
+    }
     auto &ptr = ctx->protocol.at(prefix);
     // TODO: handle switching peers
     MONAD_ASSERT(!ptr);
     switch (version) {
     case 1:
+    case 2:
         ptr = std::make_unique<StatesyncProtocolV1>();
         break;
     default:

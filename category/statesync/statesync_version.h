@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <category/vm/evm/monad/revision.h>
+
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -25,6 +27,8 @@ extern "C"
 uint32_t monad_statesync_version();
 
 bool monad_statesync_client_compatible(uint32_t version);
+
+enum monad_revision monad_statesync_version_to_revision(uint32_t version);
 
 #ifdef __cplusplus
 }

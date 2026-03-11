@@ -661,7 +661,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
         Code{},
         BlockHeader{});
 
-    BlockState bs{tdb, vm};
+    NoopStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -769,7 +770,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
         },
         BlockHeader{});
 
-    BlockState bs{tdb, vm};
+    NoopStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -872,7 +874,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
         },
         BlockHeader{});
 
-    BlockState bs{tdb, vm};
+    NoopStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -1017,7 +1020,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
         },
         BlockHeader{});
 
-    BlockState bs{tdb, vm};
+    NoopStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -1235,7 +1239,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
         },
         BlockHeader{});
 
-    BlockState bs{tdb, vm};
+    NoopStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -1393,7 +1398,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             // so skip.
             continue;
         }
-        BlockState bs{tdb, vm};
+        NoopStorageCache cache{tdb};
+        BlockState bs{tdb, cache, vm};
         Incarnation const incarnation{0, 0};
         State s{bs, incarnation};
 

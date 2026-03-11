@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/db/monad_commit_builder.hpp>
@@ -138,8 +138,8 @@ void monad_statesync_client_context::commit()
         }
     }
 
-    NoopStorageCache cache{tdb};
-    MonadCommitBuilder builder{current, cache, machine.revision};
+    MONAD_ASSERT(cache);
+    MonadCommitBuilder builder{current, *cache, machine.revision};
     builder.add_state_deltas(state_deltas);
     builder.add_raw_code(code);
 

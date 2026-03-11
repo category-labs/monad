@@ -145,15 +145,16 @@ TEST(update_aux_test, root_offsets_fast_slow)
 
         // Root offset at 0, fast list offset at 50. This is correct
         auto const start_offset =
-            aux_writer.node_writer_fast->sender().offset();
+            aux_writer.writer_fast.node_writer->sender().offset();
         (void)pool
             .chunk(monad::async::storage_pool::chunk_type::seq, start_offset.id)
             .write_fd(50);
         auto const end_offset =
-            aux_writer.node_writer_fast->sender().offset().add_to_offset(50);
+            aux_writer.writer_fast.node_writer->sender().offset().add_to_offset(
+                50);
         aux_writer.append_root_offset(start_offset);
         aux_writer.advance_db_offsets_to(
-            end_offset, aux_writer.node_writer_slow->sender().offset());
+            end_offset, aux_writer.writer_slow.node_writer->sender().offset());
     }
     {
         // verify set_io() succeeds
@@ -164,12 +165,13 @@ TEST(update_aux_test, root_offsets_fast_slow)
         // Write version 1. However, append the new root offset without
         // advancing fast list
         auto const start_offset =
-            aux_writer.node_writer_fast->sender().offset();
+            aux_writer.writer_fast.node_writer->sender().offset();
         (void)pool
             .chunk(monad::async::storage_pool::chunk_type::seq, start_offset.id)
             .write_fd(100);
         auto const end_offset =
-            aux_writer.node_writer_fast->sender().offset().add_to_offset(100);
+            aux_writer.writer_fast.node_writer->sender().offset().add_to_offset(
+                100);
         aux_writer.append_root_offset(end_offset);
     }
 

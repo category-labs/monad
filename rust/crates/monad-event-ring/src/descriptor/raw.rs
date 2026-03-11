@@ -35,6 +35,15 @@ impl<'ring> RawEventDescriptor<'ring> {
         }
     }
 
+    pub(super) fn info(&self) -> RawEventDescriptorInfo {
+        RawEventDescriptorInfo {
+            seqno: self.inner.seqno,
+            event_type: self.inner.event_type,
+            record_epoch_nanos: self.inner.record_epoch_nanos,
+            content_ext: self.inner.content_ext,
+        }
+    }
+
     pub(super) fn try_filter_map<T>(
         &self,
         f: impl FnOnce(RawEventDescriptorInfo, &[u8]) -> T,
@@ -43,14 +52,8 @@ impl<'ring> RawEventDescriptor<'ring> {
             return EventPayloadResult::Expired;
         };
 
-        let value = f(
-            RawEventDescriptorInfo {
-                seqno: self.inner.seqno,
-                event_type: self.inner.event_type,
-                content_ext: self.inner.content_ext,
-            },
-            bytes,
-        );
+        let info = self.info();
+        let value = f(info, bytes);
 
         if monad_event_ring_payload_check(&self.ring.inner, &self.inner) {
             EventPayloadResult::Ready(value)
@@ -64,6 +67,8 @@ pub(super) struct RawEventDescriptorInfo {
     pub seqno: u64,
 
     pub event_type: u16,
+
+    pub record_epoch_nanos: u64,
 
     pub content_ext: [u64; 4],
 }

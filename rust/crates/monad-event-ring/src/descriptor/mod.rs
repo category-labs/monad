@@ -45,6 +45,11 @@ where
         }
     }
 
+    /// Produces the [`EventDescriptorInfo`] associated with this descriptor.
+    pub fn info(&self) -> EventDescriptorInfo<D> {
+        EventDescriptorInfo::new(self.raw.info())
+    }
+
     /// Attempts to read the payload associated with this event descriptor as the associated
     /// [`T::Event`](EventDecoder::Event) type.
     pub fn try_read(&self) -> EventPayloadResult<D::Event> {
@@ -134,6 +139,9 @@ where
     /// See [`EventDecoder`] for more details.
     pub event_type: u16,
 
+    /// The time at which the event was recorded.
+    pub record_epoch_nanos: u64,
+
     /// The flow information associated with this event descriptor,
     ///
     /// See [`EventDecoder::FlowInfo`] for more details.
@@ -148,6 +156,7 @@ where
         Self {
             seqno: raw.seqno,
             event_type: raw.event_type,
+            record_epoch_nanos: raw.record_epoch_nanos,
             flow_info: D::transmute_flow_info(raw.content_ext),
         }
     }

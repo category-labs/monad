@@ -481,7 +481,8 @@ mod test {
 
     fn run_block_builder(snapshot_name: &'static str, snapshot_zstd_bytes: &'static [u8]) {
         let snapshot =
-            ExecSnapshotEventRing::new_from_zstd_bytes(snapshot_zstd_bytes, snapshot_name).unwrap();
+            ExecSnapshotEventRing::new_from_zstd_bytes(snapshot_name, snapshot_zstd_bytes, None)
+                .unwrap();
 
         let mut event_reader = snapshot.create_reader();
 

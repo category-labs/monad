@@ -519,8 +519,9 @@ mod test {
             include_bytes!("../../test/data/exec-events-emn-30b-15m/snapshot.zst");
 
         let snapshot = SnapshotEventRing::<ExecEventDecoder>::new_from_zstd_bytes(
-            SNAPSHOT_ZSTD_BYTES,
             SNAPSHOT_NAME,
+            SNAPSHOT_ZSTD_BYTES,
+            None,
         )
         .unwrap();
 

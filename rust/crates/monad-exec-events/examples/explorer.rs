@@ -24,7 +24,7 @@ use alloy_primitives::{Address, U256};
 use chrono::DateTime;
 use clap::Parser;
 use itertools::Itertools;
-use monad_event_ring::{DecodedEventRing, EventNextResult};
+use monad_event_ring::{DecodedEventRing, EventNextResult, EventRingPath};
 use monad_exec_events::{
     ffi::{monad_exec_block_end, monad_exec_block_start, monad_exec_block_tag},
     BlockBuilderError, BlockBuilderResult, BlockCommitState, CommitStateBlockBuilder,
@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 struct App {
-    event_ring_path: PathBuf,
+    event_ring_path: EventRingPath,
 
     rounds: BTreeMap<u64, (Option<BlockCommitState>, Arc<ExecutedBlock>)>,
 
@@ -97,6 +97,8 @@ enum BlockTab {
 impl App {
     fn new(cli: Cli) -> Self {
         let Cli { event_ring_path } = cli;
+
+        let event_ring_path = EventRingPath::resolve(event_ring_path).unwrap();
 
         Self {
             event_ring_path,
@@ -260,7 +262,7 @@ impl App {
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<(), Box<dyn std::error::Error>> {
-        let event_ring = ExecEventRing::new_from_path(&self.event_ring_path).unwrap();
+        let event_ring = ExecEventRing::new(&self.event_ring_path).unwrap();
 
         let mut event_reader = event_ring.create_reader();
 

@@ -30,8 +30,9 @@ fn bench_snapshot(c: &mut Criterion) {
     let mut g = c.benchmark_group("snapshot_exec");
 
     let snapshot = SnapshotEventRing::<ExecEventDecoder>::new_from_zstd_bytes(
-        SNAPSHOT_ZSTD_BYTES,
         SNAPSHOT_NAME,
+        SNAPSHOT_ZSTD_BYTES,
+        None,
     )
     .unwrap();
 
@@ -56,8 +57,9 @@ fn bench_snapshot(c: &mut Criterion) {
     g.throughput(criterion::Throughput::Elements(items));
     g.bench_function("iter_read", |b| {
         let snapshot = SnapshotEventRing::<ExecEventDecoder>::new_from_zstd_bytes(
-            SNAPSHOT_ZSTD_BYTES,
             SNAPSHOT_NAME,
+            SNAPSHOT_ZSTD_BYTES,
+            None,
         )
         .unwrap();
 

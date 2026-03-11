@@ -30,12 +30,16 @@
 //! Next, create an event ring and start consuming events!
 //!
 //! ```no_run
-//! # use monad_event_ring::{DecodedEventRing, EventDescriptor, EventPayloadResult, EventNextResult};
+//! # use monad_event_ring::{
+//! #     DecodedEventRing, EventDescriptor, EventNextResult, EventPayloadResult, EventRingPath,
+//! # };
 //! # use monad_exec_events::{ExecEventRing};
 //! #
-//! # let event_ring_path: &'static str = unimplemented!();
+//! # let unresolved_event_ring_path: &'static str = unimplemented!();
 //! #
-//! let event_ring = ExecEventRing::new_from_path(event_ring_path).unwrap();
+//! let event_ring_path = EventRingPath::resolve(unresolved_event_ring_path).unwrap();
+//!
+//! let event_ring = ExecEventRing::new(event_ring_path).unwrap();
 //!
 //! let mut event_reader = event_ring.create_reader();
 //!

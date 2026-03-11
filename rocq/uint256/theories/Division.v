@@ -16,7 +16,7 @@
 *)
 
 From Stdlib Require Import ZArith Lia List.
-From Uint256 Require Import Primitives Words.
+From Uint256 Require Import Uint Primitives Words.
 Import ListNotations.
 Open Scope Z_scope.
 

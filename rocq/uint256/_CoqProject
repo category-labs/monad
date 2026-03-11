@@ -3,6 +3,7 @@
 -arg -w -arg -redundant-canonical-projection
 
 theories/Spec.v
+theories/Uint.v
 theories/Primitives.v
 theories/Words.v
 theories/WordsLemmas.v

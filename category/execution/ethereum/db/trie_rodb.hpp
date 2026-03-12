@@ -98,6 +98,7 @@ public:
             mpt::concat(
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                STORAGE_PREFIX_NIBBLE,
                 mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {

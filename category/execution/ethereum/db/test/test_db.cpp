@@ -150,6 +150,7 @@ namespace
                 FINALIZED_NIBBLE,
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                STORAGE_PREFIX_NIBBLE,
                 mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
             block_number);
         if (!find_res.has_value()) {
@@ -461,10 +462,32 @@ TYPED_TEST(DBTest, storage_deletion)
                  .storage = {{key1, {value1, bytes32_t{}}}}}}},
         Code{},
         BlockHeader{.number = 1});
-
     EXPECT_EQ(
         tdb.state_root(),
         0x1f54a52a44ffa5b8298f7ed596dea62455816e784dce02d79ea583f3a4146598_bytes32);
+    // delete all storages
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {acct, acct},
+                 .storage = {{key2, {value2, bytes32_t{}}}}}}},
+        Code{},
+        BlockHeader{.number = 2});
+    EXPECT_EQ(tdb.read_account(ADDR_A), acct);
+    auto const acc_leaf = this->db.find(
+        tdb.get_root(),
+        mpt::concat(
+            FINALIZED_NIBBLE,
+            STATE_NIBBLE,
+            mpt::NibblesView{keccak256({ADDR_A.bytes, sizeof(ADDR_A.bytes)})}),
+        tdb.get_block_number());
+    ASSERT_TRUE(acc_leaf.has_value());
+    EXPECT_EQ(acc_leaf.value().node->child_data_len(STORAGE_PREFIX_NIBBLE), 0);
+    EXPECT_EQ(
+        tdb.state_root(),
+        0xec33eb4c12b303e0650e4db73b12412260eda4082fb17449b9a0531a2c7c3250_bytes32);
 }
 
 TYPED_TEST(DBTest, commit_receipts_transactions)

@@ -33,6 +33,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <array>
 #include <deque>
 #include <istream>
 #include <memory>
@@ -42,6 +43,52 @@
 
 MONAD_NAMESPACE_BEGIN
 
+/// Forward moving only fixed-size ring buffer
+template <size_t N>
+class RootRingBuffer
+{
+    static_assert(N > 0, "RootRingBuffer size must be at least 1");
+    static constexpr uint64_t MIN_N = N - 1;
+
+    std::array<std::shared_ptr<mpt::Node>, N> data_{};
+    uint64_t n_{MIN_N}; // Latest block number in the buffer, increment only
+
+public:
+    void insert(uint64_t block_number, std::shared_ptr<mpt::Node> value)
+    {
+        MONAD_ASSERT(n_ >= MIN_N);
+        if (block_number > n_ + 1) {
+            // Gap detected, clear the slots that are being skipped
+            if (block_number - n_ >= N) {
+                data_ = {};
+            }
+            else {
+                for (uint64_t i = n_ + 1; i < block_number; ++i) {
+                    data_[i % N] = nullptr;
+                }
+            }
+        }
+        else if (block_number < n_ - MIN_N) {
+            return; // out of range, ignore
+        }
+
+        data_[block_number % N] = std::move(value);
+        if (block_number > n_) {
+            n_ = block_number;
+        }
+    }
+
+    std::shared_ptr<mpt::Node> find(uint64_t block_number) const
+    {
+        // Check if block_number is within the cached range
+        if (block_number == mpt::INVALID_BLOCK_NUM || block_number > n_ ||
+            n_ - block_number >= N) {
+            return nullptr;
+        }
+        return data_[block_number % N];
+    }
+};
+
 class TrieDb final : public ::monad::Db
 {
     ::monad::mpt::Db &db_;
@@ -50,6 +97,9 @@ class TrieDb final : public ::monad::Db
     bytes32_t proposal_block_id_;
     ::monad::mpt::Nibbles prefix_;
     ::monad::mpt::Node::SharedPtr curr_root_;
+
+    // Ring buffer for caching recent roots (on-disk mode only)
+    RootRingBuffer<5> root_cache_;
 
 public:
     explicit TrieDb(mpt::Db &);
@@ -95,6 +145,9 @@ public:
     uint64_t get_history_length() const;
 
 private:
+    /// Load root with caching (on-disk mode only)
+    ::monad::mpt::Node::SharedPtr load_root(uint64_t block_number);
+
     /// STATS
     std::atomic<uint64_t> n_account_no_value_{0};
     std::atomic<uint64_t> n_account_value_{0};

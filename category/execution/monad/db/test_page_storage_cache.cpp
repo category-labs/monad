@@ -14,12 +14,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/db/commit_builder.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/monad/db/monad_commit_builder.hpp>
 #include <category/execution/monad/db/monad_machine.hpp>
-#include <category/execution/monad/db/monad_page_storage_cache.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <gtest/gtest.h>
@@ -36,12 +36,12 @@ namespace
         0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
     constexpr auto value1 =
         0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
-    using MonadCache = MonadPageStorageCache;
+    using MonadCache = PageStorageBroker;
 }
 
-// MonadPageStorageCache reads full pages from DB and caches them.
+// PageStorageBroker reads full pages from DB and caches them.
 // Keys that share a page (same upper 250 bits) are all populated on first miss.
-TEST(PageStorageCache, monad_page_read_and_cache)
+TEST(StorageBroker, monad_page_read_and_cache)
 {
     constexpr auto slot_key_0 = bytes32_t{0x00};
     constexpr auto slot_key_1 = bytes32_t{0x01};
@@ -103,7 +103,7 @@ TEST(PageStorageCache, monad_page_read_and_cache)
 }
 
 // Missing key returns zero from a cached page.
-TEST(PageStorageCache, monad_cache_miss_returns_zero)
+TEST(StorageBroker, monad_cache_miss_returns_zero)
 {
     Account const acct{.nonce = 1};
     MonadInMemoryMachine machine;
@@ -133,8 +133,8 @@ TEST(PageStorageCache, monad_cache_miss_returns_zero)
         bytes32_t{});
 }
 
-// NoopStorageCache with per-slot encoding (the ethereum path).
-TEST(PageStorageCache, block_state_with_cache)
+// SlotStorageBroker with per-slot encoding (the ethereum path).
+TEST(StorageBroker, block_state_with_cache)
 {
     Account const acct{.nonce = 1};
     InMemoryMachine machine;
@@ -152,7 +152,7 @@ TEST(PageStorageCache, block_state_with_cache)
         Code{},
         BlockHeader{});
 
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState block_state{tdb, cache, vm};
 
     auto const account = block_state.read_account(ADDR_A);

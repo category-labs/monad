@@ -26,7 +26,7 @@
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -100,7 +100,7 @@ namespace
         InMemoryMachine machine;
         mpt::Db db{machine};
         TrieDb tdb{db};
-        NoopStorageCache cache{tdb};
+        SlotStorageBroker cache{tdb};
         vm::VM vm;
     };
 
@@ -109,7 +109,7 @@ namespace
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{}};
         TrieDb tdb{db};
-        NoopStorageCache cache{tdb};
+        SlotStorageBroker cache{tdb};
         vm::VM vm;
     };
 
@@ -1578,7 +1578,7 @@ TEST_F(OnDiskStateTest, proposal_basics)
 
     DbCache db_cache(db);
     db_cache.set_block_and_prefix(10, bytes32_t{10});
-    NoopStorageCache cache1{db_cache};
+    SlotStorageBroker cache1{db_cache};
     BlockState bs1(db_cache, cache1, this->vm);
     EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
     auto [released_state1, released_code1] = std::move(bs1).release();
@@ -1591,7 +1591,7 @@ TEST_F(OnDiskStateTest, proposal_basics)
     db_cache.finalize(11, bytes32_t{11});
 
     db_cache.set_block_and_prefix(11, bytes32_t{11});
-    NoopStorageCache cache2{db_cache};
+    SlotStorageBroker cache2{db_cache};
     BlockState bs2(db_cache, cache2, this->vm);
     State as{bs2, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(a));
@@ -1615,7 +1615,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 {
     load_header({}, this->db, BlockHeader{.number = 9});
     DbCache db_cache(this->tdb);
-    NoopStorageCache db_cache_storage{db_cache};
+    SlotStorageBroker db_cache_storage{db_cache};
 
     // b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
     // b11 r111 r100           +40 v2 --
@@ -1668,7 +1668,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 11 round 111 on block 10 round 100");
     db_cache.set_block_and_prefix(10, bytes32_t{10});
-    NoopStorageCache cache_111{db_cache};
+    SlotStorageBroker cache_111{db_cache};
     BlockState bs_111(db_cache, cache_111, this->vm);
     // b11 r111 r100           +40 v2 --
     {
@@ -1705,7 +1705,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 12 round 121 on block 11 round 111");
     db_cache.set_block_and_prefix(11, bytes32_t{111});
-    NoopStorageCache cache_121{db_cache};
+    SlotStorageBroker cache_121{db_cache};
     BlockState bs_121(db_cache, cache_121, this->vm);
     // b12 r121 r111                        +10    v1
     {
@@ -1740,7 +1740,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 11 round 112 on block 10 round 100");
     db_cache.set_block_and_prefix(10, bytes32_t{10});
-    NoopStorageCache cache_112{db_cache};
+    SlotStorageBroker cache_112{db_cache};
     BlockState bs_112(db_cache, cache_112, this->vm);
     // b11 r112 r100    +20        --           --
     {
@@ -1761,7 +1761,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 12 round 122 on block 11 round 112");
     db_cache.set_block_and_prefix(11, bytes32_t{112});
-    NoopStorageCache cache_122{db_cache};
+    SlotStorageBroker cache_122{db_cache};
     BlockState bs_122(db_cache, cache_122, this->vm);
     //  b12 r122 r112           +20 v3              v1
     {
@@ -1781,7 +1781,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 13 round 131 on block 12 round 121");
     db_cache.set_block_and_prefix(12, bytes32_t{121});
-    NoopStorageCache cache_131{db_cache};
+    SlotStorageBroker cache_131{db_cache};
     BlockState bs_131(db_cache, cache_131, this->vm);
     //  b13 r131 r121    +30    +20    v1        v2 __
     {
@@ -1805,7 +1805,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 13 round 132 on block 12 round 122");
     db_cache.set_block_and_prefix(12, bytes32_t{122});
-    NoopStorageCache cache_132{db_cache};
+    SlotStorageBroker cache_132{db_cache};
     BlockState bs_132(db_cache, cache_132, this->vm);
     // b13 r132 r122                  --        v3
     {
@@ -1874,8 +1874,8 @@ namespace
         std::mt19937_64 rng_;
         Db &db1_;
         Db &db2_;
-        NoopStorageCache cache1_;
-        NoopStorageCache cache2_;
+        SlotStorageBroker cache1_;
+        SlotStorageBroker cache2_;
         vm::VM &vm_;
         uint64_t finalized_block_{0};
         uint64_t finalized_proposal_seed_{0};
@@ -2055,8 +2055,8 @@ namespace
             db2_.set_block_and_prefix(
                 block - 1,
                 parent.has_value() ? get_dummy_block_id(*parent) : bytes32_t{});
-            NoopStorageCache cache1{db1_};
-            NoopStorageCache cache2{db2_};
+            SlotStorageBroker cache1{db1_};
+            SlotStorageBroker cache2{db2_};
             BlockState bs1(db1_, cache1, vm_);
             BlockState bs2(db2_, cache2, vm_);
             Incarnation const inc{block, 1};

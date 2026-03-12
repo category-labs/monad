@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -32,7 +32,7 @@ struct InMemoryStateTestBase
     InMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     vm::VM vm;
     BlockState block_state{tdb, cache, vm};
     State state{block_state, Incarnation{0, 0}};

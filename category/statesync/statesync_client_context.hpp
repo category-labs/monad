@@ -19,7 +19,7 @@
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/monad_machine.hpp>
@@ -50,7 +50,7 @@ struct monad_statesync_client_context
     monad::MonadOnDiskMachine machine;
     monad::mpt::Db db;
     monad::TrieDb tdb;
-    std::unique_ptr<monad::PageStorageCache> cache;
+    std::unique_ptr<monad::StorageBroker> cache;
     std::vector<std::pair<uint64_t, uint64_t>> progress;
     std::vector<std::unique_ptr<monad::StatesyncProtocol>> protocol;
     std::array<monad::BlockHeader, 256> hdrs;

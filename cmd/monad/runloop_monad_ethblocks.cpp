@@ -27,7 +27,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -37,7 +37,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/db/monad_commit_builder.hpp>
-#include <category/execution/monad/db/monad_page_storage_cache.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -192,8 +192,8 @@ Result<void> process_monad_block(
     BlockMetrics block_metrics;
     using Cache = std::conditional_t<
         (traits::monad_rev() >= MONAD_NEXT),
-        MonadPageStorageCache,
-        NoopStorageCache>;
+        PageStorageBroker,
+        SlotStorageBroker>;
     Cache cache{db};
     BlockState block_state(db, cache, vm);
     BOOST_OUTCOME_TRY(

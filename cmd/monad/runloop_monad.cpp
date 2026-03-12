@@ -29,7 +29,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
@@ -46,7 +46,7 @@
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 #include <category/execution/monad/db/monad_commit_builder.hpp>
-#include <category/execution/monad/db/monad_page_storage_cache.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
@@ -290,8 +290,8 @@ Result<BlockExecOutput> propose_block(
     BlockMetrics block_metrics;
     using Cache = std::conditional_t<
         (traits::monad_rev() >= MONAD_NEXT),
-        MonadPageStorageCache,
-        NoopStorageCache>;
+        PageStorageBroker,
+        SlotStorageBroker>;
     Cache cache{db};
     BlockState block_state(db, cache, vm);
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);

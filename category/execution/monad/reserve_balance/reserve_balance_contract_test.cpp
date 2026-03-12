@@ -18,7 +18,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -80,7 +80,7 @@ struct ReserveBalanceTest : public ::testing::Test
     vm::VM vm;
     mpt::Db db{machine};
     TrieDb tdb{db};
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer;
@@ -247,7 +247,7 @@ void run_dipped_into_reserve_test(
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
     NoopCallTracer call_tracer;
     evmc_tx_context const tx_context{};
@@ -581,7 +581,7 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
     vm::VM vm;
     mpt::Db db{machine};
     TrieDb tdb{db};
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer;

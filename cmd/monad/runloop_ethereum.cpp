@@ -28,7 +28,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -134,7 +134,7 @@ Result<void> process_ethereum_block(
     // changes but does not commit them
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
-    NoopStorageCache cache{db};
+    SlotStorageBroker cache{db};
     BlockState block_state(db, cache, vm);
 
     ChainContext<traits> const chain_ctx{};

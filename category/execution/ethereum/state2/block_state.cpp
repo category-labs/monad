@@ -47,7 +47,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(Db &db, PageStorageCache &cache, vm::VM &monad_vm)
+BlockState::BlockState(Db &db, StorageBroker &cache, vm::VM &monad_vm)
     : db_{db}
     , cache_{cache}
     , vm_{monad_vm}

@@ -38,7 +38,7 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
@@ -325,7 +325,7 @@ Result<BlockExecOutput> execute(
     TraitsMainnet<traits> const chain{};
     BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
 
-    NoopStorageCache cache{db};
+    SlotStorageBroker cache{db};
     BlockState block_state(db, cache, vm);
     BlockMetrics metrics;
     auto const recovered_senders = recover_senders(block.transactions, *pool_);
@@ -529,7 +529,7 @@ void process_test(
             withdrawals.emplace(std::vector<Withdrawal>{});
         }
 
-        NoopStorageCache cache{tdb};
+        SlotStorageBroker cache{tdb};
         BlockState bs{tdb, cache, vm};
         State state{bs, Incarnation{0, 0}};
         j_contents.at("pre").get_to(state);

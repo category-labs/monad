@@ -20,10 +20,10 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/monad/db/monad_page_storage_cache.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
@@ -96,10 +96,10 @@ void monad_statesync_client_handle_new_peer(
     else {
         ctx->machine.set_revision(rev);
         if (rev >= MONAD_NEXT) {
-            ctx->cache = std::make_unique<MonadPageStorageCache>(ctx->tdb);
+            ctx->cache = std::make_unique<PageStorageBroker>(ctx->tdb);
         }
         else {
-            ctx->cache = std::make_unique<NoopStorageCache>(ctx->tdb);
+            ctx->cache = std::make_unique<SlotStorageBroker>(ctx->tdb);
         }
     }
     auto &ptr = ctx->protocol.at(prefix);

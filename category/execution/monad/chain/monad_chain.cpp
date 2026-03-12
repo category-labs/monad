@@ -27,22 +27,21 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
-#include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 
-namespace
-{
-    using namespace monad;
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-    static ankerl::unordered_dense::segmented_set<Address> const
-        empty_senders_and_authorities{};
-    static std::vector<Address> const empty_senders{Address{0}};
-    static std::vector<std::vector<std::optional<Address>>> const
-        empty_authorities{{}};
-}
+static ankerl::unordered_dense::segmented_set<monad::Address> const
+    empty_senders_and_authorities{};
+static std::vector<monad::Address> const empty_senders{monad::Address{0}};
+static std::vector<std::vector<std::optional<monad::Address>>> const
+    empty_authorities{{}};
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
@@ -60,17 +59,56 @@ evmc_revision MonadChain::get_revision(
     return EVMC_CANCUN;
 }
 
+template <Traits traits>
+Result<void> monad_validate_transaction(
+    Transaction const &tx, Address const &sender, State &state,
+    uint256_t const &base_fee_per_gas,
+    std::span<std::optional<Address> const> const authorities)
+{
+
+    auto res = ::monad::validate_transaction<traits>(tx, sender, state);
+    if constexpr (MONAD_LIKELY(traits::monad_rev() >= MONAD_FOUR)) {
+        if (res.has_error() &&
+            res.error() != TransactionError::InsufficientBalance) {
+            return res;
+        }
+        uint256_t const balance = state.get_balance(sender);
+        uint256_t const gas_fee =
+            uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
+        if (MONAD_UNLIKELY(balance < gas_fee)) {
+            return MonadTransactionError::InsufficientBalanceForFee;
+        }
+
+        if (MONAD_UNLIKELY(std::ranges::contains(authorities, SYSTEM_SENDER))) {
+            return MonadTransactionError::SystemTransactionSenderIsAuthority;
+        }
+    }
+    else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
+        return res;
+    }
+    else {
+        MONAD_ABORT("invalid revision");
+    }
+    return success();
+}
+
+EXPLICIT_MONAD_TRAITS(monad_validate_transaction);
+
 Result<void> MonadChain::validate_transaction(
-    uint64_t const block_number, uint64_t const timestamp,
+    [[maybe_unused]] uint64_t const block_number, uint64_t const timestamp,
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities) const
 {
-
-    monad_revision const monad_rev = get_monad_revision(timestamp);
-    evmc_revision const rev = get_revision(block_number, timestamp);
-    return validate_monad_transaction(
-        monad_rev, rev, tx, sender, state, base_fee_per_gas, authorities);
+    monad_revision const rev = get_monad_revision(timestamp);
+    SWITCH_MONAD_TRAITS(
+        monad_validate_transaction,
+        tx,
+        sender,
+        state,
+        base_fee_per_gas,
+        authorities);
+    MONAD_ASSERT(false);
 }
 
 template <typename T>

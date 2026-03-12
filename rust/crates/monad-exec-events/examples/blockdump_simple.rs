@@ -16,7 +16,7 @@
 use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
-use monad_event_ring::{DecodedEventRing, EventNextResult};
+use monad_event_ring::{DecodedEventRing, EventNextResult, EventRingPath};
 use monad_exec_events::{BlockBuilderError, ExecEventRing, ExecutedBlockBuilder};
 
 #[derive(Debug, Parser)]
@@ -29,7 +29,9 @@ pub struct Cli {
 fn main() {
     let Cli { event_ring_path } = Cli::parse();
 
-    let event_ring = ExecEventRing::new_from_path(event_ring_path).unwrap();
+    let event_ring_path = EventRingPath::resolve(event_ring_path).unwrap();
+
+    let event_ring = ExecEventRing::new(event_ring_path).unwrap();
 
     let mut event_reader = event_ring.create_reader();
 

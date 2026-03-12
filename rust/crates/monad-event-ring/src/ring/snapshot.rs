@@ -13,10 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::ffi::CString;
-
 use super::{raw::RawEventRing, DecodedEventRing, EventRing, RawEventReader};
-use crate::{EventDecoder, EventReader};
+use crate::{ffi, EventDecoder, EventReader, EventRingPath};
 
 /// A special kind of event ring mapped to a static file for replaying events.
 ///
@@ -35,44 +33,68 @@ impl<D> SnapshotEventRing<D>
 where
     D: EventDecoder,
 {
-    /// Produces an event ring by [`zstd`] decoding the provided `zstd_bytes` input.
+    /// Produces an event ring by decoding the file at the provided input path, which is expected to
+    /// be a snapshot file (a single zstd-compressed frame containing an event ring).
     ///
     /// Internally, this function writes the decoded bytes to an anonymous file which is destroyed
     /// when the [`SnapshotEventRing`] is dropped.
-    pub fn new_from_zstd_bytes(zstd_bytes: &[u8], name: impl AsRef<str>) -> Result<Self, String> {
-        let error_name_cstr = CString::new(name.as_ref()).unwrap();
+    pub fn new_from_zstd_path(
+        path: impl AsRef<EventRingPath>,
+        max_size: Option<usize>,
+    ) -> Result<Self, String> {
+        let file = path.as_ref().open().map_err(|err| err.to_string())?;
 
-        let snapshot_fd: libc::c_int =
-            unsafe { libc::memfd_create(error_name_cstr.as_ptr(), libc::MFD_CLOEXEC) };
-        assert_ne!(snapshot_fd, -1);
+        let error_name = path.as_ref().as_error_name();
+
+        let Some(decompressed_file) =
+            ffi::monad_event_decompress_snapshot_fd(&file, max_size, &error_name)?
+        else {
+            return Err(format!("{error_name} is not an event ring snapshot"));
+        };
+
+        Self::new_from_decompressed_file(decompressed_file, &error_name)
+    }
+
+    /// Produces an event ring by decoding the provided `bytes` input, which is expected to contain
+    /// a snapshot file (a single zstd-compressed frame containing an event ring).
+    ///
+    /// Internally, this function writes the decoded bytes to an anonymous file which is destroyed
+    /// when the [`SnapshotEventRing`] is dropped.
+    pub fn new_from_zstd_bytes(
+        name: impl AsRef<str>,
+        zstd_bytes: &[u8],
+        max_size: Option<usize>,
+    ) -> Result<Self, String> {
+        let name = name.as_ref();
+
+        let Some(decompressed_file) =
+            ffi::monad_event_decompress_snapshot_mem(zstd_bytes, max_size, name)?
+        else {
+            return Err(format!("{name} is not an event ring snapshot"));
+        };
+
+        Self::new_from_decompressed_file(decompressed_file, name)
+    }
+
+    fn new_from_decompressed_file(
+        file: std::fs::File,
+        name: impl AsRef<str>,
+    ) -> Result<Self, String> {
+        use std::os::fd::{AsRawFd, IntoRawFd};
 
         let snapshot_off: libc::off_t = 0;
-
-        let mut decompressed = Vec::new();
-
-        zstd::stream::copy_decode(zstd_bytes, &mut decompressed)
-            .expect(format!("could not decompress `{}`", name.as_ref()).as_str());
-
-        let n_write = unsafe {
-            libc::write(
-                snapshot_fd,
-                decompressed.as_ptr() as *const libc::c_void,
-                decompressed.len() as libc::size_t,
-            )
-        };
-        assert_eq!(n_write as usize, decompressed.len());
 
         let raw = RawEventRing::mmap_from_fd(
             libc::PROT_READ,
             0,
-            snapshot_fd,
+            file.as_raw_fd(),
             snapshot_off,
             name.as_ref(),
         )?;
 
         Ok(Self {
-            ring: EventRing::new(raw)?,
-            snapshot_fd,
+            ring: EventRing::new_from_raw(raw)?,
+            snapshot_fd: file.into_raw_fd(),
         })
     }
 }

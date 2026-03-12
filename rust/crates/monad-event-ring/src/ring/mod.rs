@@ -13,13 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::{fs::File, marker::PhantomData, os::fd::AsRawFd, path::Path};
+use std::marker::PhantomData;
 
 pub(crate) use self::raw::RawEventRing;
 pub use self::snapshot::SnapshotEventRing;
-use crate::{
-    ffi::monad_check_path_supports_map_hugetlb, EventDecoder, EventReader, RawEventReader,
-};
+use crate::{EventDecoder, EventReader, EventRingPath, RawEventReader};
 
 mod raw;
 mod snapshot;
@@ -59,46 +57,23 @@ where
     D: EventDecoder,
 {
     /// Synchronously creates a new event ring from the provided path.
-    pub fn new_from_path(path: impl AsRef<Path>) -> Result<Self, String> {
-        Self::new_from_path_with_offset(path, 0)
-    }
+    pub fn new(path: impl AsRef<EventRingPath>) -> Result<Self, String> {
+        use std::os::fd::AsRawFd;
 
-    /// Synchronously creates a new event ring from the provided path and offset.
-    ///
-    /// This method should only be used if the event ring starts at an offset within the file at the
-    /// provided path. In most cases, you should use [`new_from_path()`](Self::new_from_path)
-    /// instead.
-    pub fn new_from_path_with_offset(
-        path: impl AsRef<Path>,
-        ring_offset: libc::off_t,
-    ) -> Result<Self, String> {
-        let mmap_prot = libc::PROT_READ;
-
-        let supports_hugetlb = monad_check_path_supports_map_hugetlb(&path)
-            .expect("failed to determine if event ring file supports MAP_HUGETLB");
-
-        let mmap_extra_flags = if supports_hugetlb {
-            libc::MAP_POPULATE | libc::MAP_HUGETLB
-        } else {
-            libc::MAP_POPULATE
-        };
-
-        let ring_file = File::open(&path).map_err(|e| e.to_string())?;
-
-        let ring_fd = ring_file.as_raw_fd();
+        let file = path.as_ref().open().map_err(|err| err.to_string())?;
 
         let raw = RawEventRing::mmap_from_fd(
-            mmap_prot,
-            mmap_extra_flags,
-            ring_fd,
-            ring_offset,
-            path.as_ref().to_str().unwrap(),
+            libc::PROT_READ,
+            libc::MAP_POPULATE,
+            file.as_raw_fd(),
+            0,
+            &path.as_ref().as_error_name(),
         )?;
 
-        Self::new(raw)
+        Self::new_from_raw(raw)
     }
 
-    pub(crate) fn new(raw: RawEventRing) -> Result<Self, String> {
+    pub(crate) fn new_from_raw(raw: RawEventRing) -> Result<Self, String> {
         raw.check_type::<D>()?;
 
         Ok(Self {

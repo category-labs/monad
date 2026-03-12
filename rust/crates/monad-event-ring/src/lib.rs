@@ -84,12 +84,13 @@
 //! ring which iterate independent of each other. In other words, all event readers produce every
 //! event exactly once.
 
-pub use self::{decoder::*, descriptor::*, reader::*, result::*, ring::*};
+pub use self::{decoder::*, descriptor::*, path::*, reader::*, result::*, ring::*};
 
 pub mod ffi;
 
 mod decoder;
 mod descriptor;
+mod path;
 mod reader;
 mod result;
 mod ring;

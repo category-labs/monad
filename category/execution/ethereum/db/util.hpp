@@ -162,18 +162,6 @@ inline T decode_storage_value(byte_string_view enc)
     return rle_decode<T>(enc.data(), enc.size());
 }
 
-template <typename T>
-inline T decode_storage_value(byte_string const &raw)
-{
-    if (raw.empty()) {
-        return {};
-    }
-    byte_string_view view{raw};
-    auto decoded = decode_storage_db(view);
-    MONAD_ASSERT(!decoded.has_error());
-    return decode_storage_value<T>(decoded.value().second);
-}
-
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);
 Result<std::pair<Transaction, Address>>
 decode_transaction_db(byte_string_view &);

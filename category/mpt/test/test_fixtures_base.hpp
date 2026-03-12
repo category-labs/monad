@@ -244,7 +244,8 @@ namespace monad::test
         for (auto &it : update_vec) {
             update_ls.push_front(it);
         }
-        return upsert(aux, version, sm, std::move(old), std::move(update_ls));
+        return upsert_blocking(
+            aux, version, sm, std::move(old), std::move(update_ls));
     }
 
     template <class... Updates>
@@ -254,7 +255,8 @@ namespace monad::test
     {
         UpdateList update_ls;
         (update_ls.push_front(updates), ...);
-        return upsert(aux, version, sm, std::move(old), std::move(update_ls));
+        return upsert_blocking(
+            aux, version, sm, std::move(old), std::move(update_ls));
     }
 
     template <class... Updates>

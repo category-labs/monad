@@ -298,7 +298,7 @@ Node::SharedPtr copy_trie_to_dest(
         dest_prefix,
         dest_version);
     if (aux.is_on_disk() && write_root) {
-        write_new_root_node(aux, *dest_root, dest_version);
+        commit_root_blocking(aux, *dest_root, dest_version);
         MONAD_ASSERT(aux.db_history_max_version() >= dest_version);
     }
     if (aux.is_on_disk()) {

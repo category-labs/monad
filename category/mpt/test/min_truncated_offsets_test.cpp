@@ -74,7 +74,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                     make_update(keys.back().first, keys.back().first));
                 update_ls.push_front(updates.back());
             }
-            root = upsert(
+            root = upsert_blocking(
                 aux, block_id, *sm, std::move(root), std::move(update_ls));
             size_t count_fast = 0;
             for (auto const *ci = aux.db_metadata()->fast_list_begin();

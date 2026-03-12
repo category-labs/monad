@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/async/config.hpp>
+#include <category/async/connected_operation.hpp>
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/detail/start_lifetime_as_polyfill.hpp>
 #include <category/async/storage_pool.hpp>
@@ -1074,7 +1075,7 @@ void UpdateAuxImpl::reset_node_writers()
         return io ? io->make_connected(
                         write_single_buffer_sender{
                             node_writer_offset, bytes_to_write},
-                        write_operation_io_receiver{bytes_to_write})
+                        write_operation_io_receiver{bytes_to_write, *this})
                   : node_writer_unique_ptr_type{};
     };
     node_writer_fast =
@@ -1088,34 +1089,10 @@ void UpdateAuxImpl::reset_node_writers()
         physical_to_virtual(node_writer_slow->sender().offset())};
 }
 
-/* upsert() supports both on disk and in memory db updates. User should
-always use this interface to upsert updates to db. Here are what it does:
-- if `compaction`, erase outdated history block if any, and update
-compaction offsets;
-- copy state from last version to new version if new version not yet exist;
-- upsert `updates` should include everything nested under
-version number;
-- if it's on disk, update db_metadata min max versions.
-
-Note that `version` on each call of upsert() is either the max version or max
-version + 1. However, we do not assume that the version history is continuous
-because user can move_trie_version_forward(), which can invalidate versions in
-the middle of a continuous history.
-*/
-Node::SharedPtr UpdateAuxImpl::do_update(
-    Node::SharedPtr prev_root, StateMachine &sm, UpdateList &&updates,
-    uint64_t const version, bool const compaction, bool const can_write_to_fast,
-    bool const write_root)
+byte_string UpdateAuxImpl::do_update_prepare_ondisk(
+    Node::SharedPtr const &prev_root, uint64_t const version,
+    bool const compaction, bool const can_write_to_fast)
 {
-
-    if (is_in_memory()) {
-        UpdateList root_updates;
-        auto root_update =
-            make_update({}, {}, false, std::move(updates), version);
-        root_updates.push_front(root_update);
-        return upsert(
-            *this, version, sm, std::move(prev_root), std::move(root_updates));
-    }
     MONAD_ASSERT(is_on_disk());
     set_can_write_to_fast(can_write_to_fast);
 
@@ -1137,52 +1114,64 @@ Node::SharedPtr UpdateAuxImpl::do_update(
     }
 
     curr_upsert_auto_expire_version = calc_auto_expire_version(version);
-    UpdateList root_updates;
-    byte_string const compact_offsets_bytes =
-        serialize((uint32_t)compact_offset_fast) +
-        serialize((uint32_t)compact_offset_slow);
-    auto root_update = make_update(
-        {}, compact_offsets_bytes, false, std::move(updates), version);
-    root_updates.push_front(root_update);
+    return serialize((uint32_t)compact_offset_fast) +
+           serialize((uint32_t)compact_offset_slow);
+}
 
-    Stopwatch<std::chrono::microseconds> upsert_timer;
-    auto root = upsert(
+void UpdateAuxImpl::do_update_finalize_ondisk(
+    uint64_t const version, bool const compaction)
+{
+    MONAD_ASSERT(is_on_disk());
+    set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
+    if (compaction) {
+        update_disk_growth_data();
+        // log stats
+        print_update_stats(version);
+    }
+}
+
+/* upsert() supports both on disk and in memory db updates. User should
+always use this interface to upsert updates to db. Here are what it does:
+- if `compaction`, erase outdated history block if any, and update
+compaction offsets;
+- copy state from last version to new version if new version not yet exist;
+- upsert `updates` should include everything nested under
+version number;
+- if it's on disk, update db_metadata min max versions.
+
+Note that `version` on each call of upsert() is either the max version or max
+version + 1. However, we do not assume that the version history is continuous
+because user can move_trie_version_forward(), which can invalidate versions in
+the middle of a continuous history.
+*/
+Node::SharedPtr UpdateAuxImpl::do_update(
+    Node::SharedPtr prev_root, StateMachine &sm, UpdateList &&updates,
+    uint64_t const version, bool const compaction, bool const can_write_to_fast,
+    bool const write_root)
+{
+    if (is_in_memory()) {
+        UpdateList root_updates;
+        auto root_update =
+            make_update({}, {}, false, std::move(updates), version);
+        root_updates.push_front(root_update);
+        return upsert_blocking(
+            *this, version, sm, std::move(prev_root), std::move(root_updates));
+    }
+
+    auto compact_offsets = do_update_prepare_ondisk(
+        prev_root, version, compaction, can_write_to_fast);
+    auto root_update =
+        make_update({}, compact_offsets, false, std::move(updates), version);
+    UpdateList root_updates;
+    root_updates.push_front(root_update);
+    auto root = upsert_blocking(
         *this,
         version,
         sm,
         std::move(prev_root),
         std::move(root_updates),
         write_root);
-    set_auto_expire_version_metadata(curr_upsert_auto_expire_version);
-
-    auto const upsert_duration = upsert_timer.elapsed();
-    if (compaction) {
-        update_disk_growth_data();
-        // log stats
-        print_update_stats(version);
-    }
-    [[maybe_unused]] auto const curr_fast_writer_offset =
-        physical_to_virtual(node_writer_fast->sender().offset());
-    [[maybe_unused]] auto const curr_slow_writer_offset =
-        physical_to_virtual(node_writer_slow->sender().offset());
-    LOG_INFO_CFORMAT(
-        "Finish upserting version %lu. Min valid version %lu. Time elapsed: "
-        "%ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
-        "offsets: fast={%u,%u}, slow={%u,%u}. Compaction head offset fast=%u, "
-        "slow=%u",
-        version,
-        db_history_min_valid_version(),
-        upsert_duration.count(),
-        disk_usage(),
-        num_chunks(chunk_list::fast),
-        num_chunks(chunk_list::slow),
-        num_chunks(chunk_list::free),
-        curr_fast_writer_offset.count,
-        curr_fast_writer_offset.offset,
-        curr_slow_writer_offset.count,
-        curr_slow_writer_offset.offset,
-        (uint32_t)compact_offset_fast,
-        (uint32_t)compact_offset_slow);
+    do_update_finalize_ondisk(version, compaction);
     return root;
 }
 

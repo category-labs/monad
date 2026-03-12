@@ -15,12 +15,12 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 
-#include <intx/intx.hpp>
-
 #include <cstdint>
+#include <cstring>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -29,13 +29,11 @@ void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
     // YP Eqn 29
     auto const hash = keccak256(bytes);
     for (unsigned i = 0; i < 3; ++i) {
-        // Poorly named intx function, this really is taking from our hash,
-        // which is returned as big endian, to host order so we can do calcs on
-        // `bit`
-        uint16_t const bit =
-            intx::to_big_endian(
-                reinterpret_cast<uint16_t const *>(hash.bytes)[i]) &
-            2047u;
+        // Read two bytes from the hash as a big-endian uint16_t and convert
+        // to host order for arithmetic. memcpy avoids strict aliasing UB.
+        uint16_t word;
+        std::memcpy(&word, &hash.bytes[i * 2], sizeof(word));
+        uint16_t const bit = to_big_endian(word) & 2047u;
         unsigned int const byte = 255u - bit / 8u;
         bloom[byte] |= static_cast<unsigned char>(1u << (bit & 7u));
     }

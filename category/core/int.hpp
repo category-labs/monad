@@ -19,8 +19,11 @@
 
 #include <intx/intx.hpp>
 
+#include <bit>
 #include <concepts>
+#include <cstddef>
 #include <limits>
+#include <type_traits>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -50,6 +53,61 @@ inline constexpr uint256_t UINT256_MAX = std::numeric_limits<uint256_t>::max();
 
 inline constexpr uint512_t UINT512_MAX = std::numeric_limits<uint512_t>::max();
 
-using ::intx::to_big_endian;
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr T to_big_endian(T const x) noexcept
+{
+    static_assert(
+        std::endian::native == std::endian::little,
+        "to_big_endian assumes little-endian platform");
+    return std::byteswap(x);
+}
+
+namespace detail
+{
+    template <unsigned_integral T>
+        requires(!std::unsigned_integral<T>)
+    [[nodiscard]] constexpr T to_big_endian_intx(T const x) noexcept
+    {
+        static_assert(
+            std::endian::native == std::endian::little,
+            "to_big_endian assumes little-endian platform");
+        T result{};
+        for (size_t i = 0; i < T::num_words; ++i) {
+            result[i] = std::byteswap(x[T::num_words - 1 - i]);
+        }
+        return result;
+    }
+} // namespace detail
+
+// Non-template overloads so these are preferred over intx::to_big_endian
+// found via ADL, which would otherwise create an ambiguous overload set.
+[[nodiscard]] constexpr uint128_t to_big_endian(uint128_t const x) noexcept
+{
+    return detail::to_big_endian_intx(x);
+}
+
+[[nodiscard]] constexpr uint256_t to_big_endian(uint256_t const x) noexcept
+{
+    return detail::to_big_endian_intx(x);
+}
+
+[[nodiscard]] constexpr uint512_t to_big_endian(uint512_t const x) noexcept
+{
+    return detail::to_big_endian_intx(x);
+}
+
+template <unsigned_integral T>
+[[nodiscard]] unsigned char *as_bytes(T &x) noexcept
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+    return reinterpret_cast<unsigned char *>(&x);
+}
+
+template <unsigned_integral T>
+[[nodiscard]] unsigned char const *as_bytes(T const &x) noexcept
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+    return reinterpret_cast<unsigned char const *>(&x);
+}
 
 MONAD_NAMESPACE_END

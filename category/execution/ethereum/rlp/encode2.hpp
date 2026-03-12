@@ -36,11 +36,10 @@ inline byte_string_view zeroless_view(byte_string_view const string_view)
     return {b, e};
 }
 
-inline byte_string to_big_compact(unsigned_integral auto n)
+inline byte_string to_big_compact(unsigned_integral auto const n)
 {
-    n = intx::to_big_endian(n);
-    return byte_string(
-        zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
+    auto const be = to_big_endian(n);
+    return byte_string(zeroless_view({as_bytes(be), sizeof(be)}));
 }
 
 inline byte_string encode_string2(byte_string_view const string_view)

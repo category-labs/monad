@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -268,10 +269,10 @@ uint256_load_partial_be(byte_string_view const input, size_t const len)
     uint256_t result{};
     MONAD_VM_ASSERT(32 >= len);
     std::memcpy(
-        intx::as_bytes(result) + (32 - len),
+        as_bytes(result) + (32 - len),
         input.data(),
         std::min(len, input.size()));
-    return intx::to_big_endian(result);
+    return to_big_endian(result);
 }
 
 template <Traits traits>

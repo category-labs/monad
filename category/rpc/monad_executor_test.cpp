@@ -32,7 +32,7 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -131,7 +131,7 @@ namespace
         OnDiskMachine machine;
         mpt::Db db;
         TrieDb tdb;
-        NoopStorageCache cache{tdb};
+        SlotStorageBroker cache{tdb};
         vm::VM vm;
 
         EthCallFixture()
@@ -1558,7 +1558,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         Code{},
         header);
 
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, this->vm};
     State s{bs, Incarnation{0, 0}};
 
@@ -2493,7 +2493,7 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
             .senders = senders,
             .authorities = authorities};
 
-        NoopStorageCache cache{tdb};
+        SlotStorageBroker cache{tdb};
         BlockState block_state{tdb, cache, vm};
         State state{
             block_state, Incarnation{header.number - 1, Incarnation::LAST_TX}};

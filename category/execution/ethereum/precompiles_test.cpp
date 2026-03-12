@@ -15,7 +15,7 @@
 
 #include <category/core/hex.hpp>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -301,7 +301,7 @@ namespace
         mpt::Db db{machine};
         TrieDb tdb{db};
         vm::VM vm;
-        NoopStorageCache cache{tdb};
+        SlotStorageBroker cache{tdb};
         BlockState bs{tdb, cache, vm};
         State s{bs, Incarnation{0, 0}};
 

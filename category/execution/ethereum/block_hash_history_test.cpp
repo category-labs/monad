@@ -19,7 +19,7 @@
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -54,7 +54,7 @@ namespace
         InMemoryMachine machine;
         mpt::Db db;
         TrieDb tdb;
-        NoopStorageCache cache;
+        SlotStorageBroker cache;
         vm::VM vm;
         BlockState block_state;
         State state;

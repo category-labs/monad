@@ -26,7 +26,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct PageStorageCache
+struct StorageBroker
 {
     virtual Db &db() = 0;
 
@@ -36,15 +36,15 @@ struct PageStorageCache
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key) = 0;
 
-    virtual ~PageStorageCache() = default;
+    virtual ~StorageBroker() = default;
 };
 
-class NoopStorageCache final : public PageStorageCache
+class SlotStorageBroker final : public StorageBroker
 {
     Db &db_;
 
 public:
-    explicit NoopStorageCache(Db &db)
+    explicit SlotStorageBroker(Db &db)
         : db_{db}
     {
     }

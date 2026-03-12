@@ -21,7 +21,7 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -32,7 +32,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class MonadPageStorageCache final : public PageStorageCache
+class PageStorageBroker final : public StorageBroker
 {
 public:
     struct PageKey
@@ -71,7 +71,7 @@ private:
     PageMap pages_;
 
 public:
-    explicit MonadPageStorageCache(Db &db)
+    explicit PageStorageBroker(Db &db)
         : db_{db}
     {
     }

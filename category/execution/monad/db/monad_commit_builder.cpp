@@ -16,7 +16,7 @@
 #include <category/execution/monad/db/monad_commit_builder.hpp>
 
 #include <category/core/keccak.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -31,8 +31,7 @@ MONAD_NAMESPACE_BEGIN
 using namespace monad::mpt;
 
 MonadCommitBuilder::MonadCommitBuilder(
-    uint64_t const block_number, PageStorageCache &cache,
-    monad_revision const rev)
+    uint64_t const block_number, StorageBroker &cache, monad_revision const rev)
     : CommitBuilder{block_number}
     , cache_{cache}
     , revision_{rev}

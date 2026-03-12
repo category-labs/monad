@@ -18,7 +18,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -57,7 +57,7 @@ TYPED_TEST(TraitsTest, apply_block_reward)
         Code{},
         BlockHeader{});
 
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
     State as{bs, Incarnation{0, 0}};
 

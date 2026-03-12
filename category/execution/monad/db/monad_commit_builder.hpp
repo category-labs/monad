@@ -20,16 +20,16 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct PageStorageCache;
+struct StorageBroker;
 
 class MonadCommitBuilder : public CommitBuilder
 {
-    PageStorageCache &cache_;
+    StorageBroker &cache_;
     monad_revision revision_;
 
 public:
     MonadCommitBuilder(
-        uint64_t block_number, PageStorageCache &cache, monad_revision rev);
+        uint64_t block_number, StorageBroker &cache, monad_revision rev);
 
     CommitBuilder &add_state_deltas(StateDeltas const &) override;
 };

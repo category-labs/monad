@@ -16,7 +16,7 @@
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/monad/db/monad_commit_builder.hpp>
-#include <category/execution/monad/db/monad_page_storage_cache.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <gtest/gtest.h>
@@ -74,7 +74,7 @@ TEST(MonadDb, key_grouping)
 // must be present in the same page.
 TEST(MonadDb, page_write_merges_slots)
 {
-    using MonadCache = MonadPageStorageCache;
+    using MonadCache = PageStorageBroker;
 
     constexpr auto slot_key_0 = bytes32_t{0x00};
     constexpr auto slot_key_1 = bytes32_t{0x01};

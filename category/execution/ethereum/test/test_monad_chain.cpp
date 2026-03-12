@@ -20,7 +20,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -163,7 +163,7 @@ void run_revert_transaction_test(
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()), 10);
@@ -444,7 +444,7 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     {
@@ -571,7 +571,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     {
@@ -651,7 +651,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     {
@@ -723,7 +723,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
 
     {
@@ -799,7 +799,7 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState bs{tdb, cache, vm};
     State state{bs, Incarnation{0, 0}};
     std::vector<std::optional<Address>> const authorities = {SYSTEM_SENDER};

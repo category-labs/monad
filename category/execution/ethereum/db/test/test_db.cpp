@@ -20,7 +20,7 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -248,7 +248,7 @@ TYPED_TEST(DBTest, read_storage)
 {
     Account acct{.nonce = 1};
     TrieDb tdb{this->db};
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     commit_sequential(
         tdb,
         StateDeltas{
@@ -410,7 +410,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 {
     Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
     TrieDb tdb{this->db};
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     commit_sequential(
         tdb,
         StateDeltas{

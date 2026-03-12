@@ -18,7 +18,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
-#include <category/execution/ethereum/db/page_storage_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -56,7 +56,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
     MonadDevnet chain;
 
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState block_state{tdb, cache, vm};
     BlockMetrics block_metrics;
 
@@ -171,7 +171,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
     MonadDevnet chain;
 
-    NoopStorageCache cache{tdb};
+    SlotStorageBroker cache{tdb};
     BlockState block_state{tdb, cache, vm};
     BlockMetrics block_metrics;
 

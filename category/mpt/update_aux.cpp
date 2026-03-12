@@ -59,7 +59,7 @@ using namespace MONAD_ASYNC_NAMESPACE;
 
 namespace
 {
-    uint32_t divide_and_round(uint32_t const dividend, uint64_t const divisor)
+    uint32_t divide_and_round(auto const dividend, uint64_t const divisor)
     {
         double const result = dividend / static_cast<double>(divisor);
         auto const result_floor = static_cast<uint32_t>(std::floor(result));
@@ -1157,7 +1157,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
 
     auto const upsert_duration = upsert_timer.elapsed();
     if (compaction) {
-        update_disk_growth_data();
+        update_compaction_state();
         // log stats
         print_update_stats(version);
     }
@@ -1354,18 +1354,30 @@ void UpdateAuxImpl::move_trie_version_forward(
     MONAD_ASSERT(version_is_valid_ondisk(dest));
 }
 
-void UpdateAuxImpl::update_disk_growth_data()
+void UpdateAuxImpl::update_compaction_state()
 {
     compact_virtual_chunk_offset_t const curr_fast_writer_offset{
         physical_to_virtual(node_writer_fast->sender().offset())};
     compact_virtual_chunk_offset_t const curr_slow_writer_offset{
         physical_to_virtual(node_writer_slow->sender().offset())};
-    last_block_disk_growth_fast_ = // unused for speed control for now
+    last_block_disk_growth_fast_ =
         curr_fast_writer_offset - last_block_end_offset_fast_;
     last_block_disk_growth_slow_ =
         curr_slow_writer_offset - last_block_end_offset_slow_;
     last_block_end_offset_fast_ = curr_fast_writer_offset;
     last_block_end_offset_slow_ = curr_slow_writer_offset;
+
+    if (compact_offset_range_slow_ == 0) {
+        last_block_slow_list_gc_efficiency_ = 0;
+    }
+    else if (stats.compacted_bytes_in_slow == 0) {
+        last_block_slow_list_gc_efficiency_ = 50; // max
+    }
+    else {
+        last_block_slow_list_gc_efficiency_ = static_cast<uint32_t>(std::round(
+            double(compact_offset_range_slow_ << 16) /
+            stats.compacted_bytes_in_slow));
+    }
 }
 
 void UpdateAuxImpl::advance_compact_offsets()
@@ -1381,12 +1393,19 @@ void UpdateAuxImpl::advance_compact_offsets()
     when block execution starts we don’t need to waste disk bandwidth to copy
     them from fast to slow.
 
-    Compaction offset update algo:
-    The fast ring is compacted at a steady pace based on the average disk growth
-    across the history window (or the last block's growth if the oldest root is
-    not on the fast list). Compaction head only advances when the uncompacted
-    range exceeds min_versions_of_growth_before_compact_fast_list versions'
-    worth of growth, to prevent over-compaction when the history window shrinks.
+    The fast list compaction targets an uncompacted range of avg_disk_growth *
+    history_length.
+
+    On busy blocks (last block growth >= average) we just compact at the average
+    rate, so we don't pile compaction I/O on top of heavy workload and feed the
+    recirculation loop (more compaction -> more fast writes -> higher average ->
+    more compaction).
+
+    On quiet blocks we apply a proportional correction weighted by spare
+    capacity (2 * avg / last_block_growth) to catch up. The correction is capped
+    at avg_disk_growth so a single quiet block never compacts more than 2x the
+    average.
+
     Slow ring compaction begins when overall disk usage reaches
     `usage_limit_start_compact_slow` and slow list disk usage reaches
     `slow_usage_limit_start_compact_slow`. The slow list compaction range is
@@ -1403,8 +1422,6 @@ void UpdateAuxImpl::advance_compact_offsets()
     // Only advance fast compaction when the fast list contains at least this
     // many versions' worth of average disk growth (prevents over-compaction)
     constexpr uint32_t min_versions_of_growth_before_compact_fast_list = 5000;
-    // Small constant added to avg_disk_growth to ensure minimum progress
-    constexpr uint32_t min_compaction_progress_buffer = 8;
 
     auto const fast_disk_usage =
         num_chunks(chunk_list::fast) / (double)io->chunk_count();
@@ -1420,10 +1437,6 @@ void UpdateAuxImpl::advance_compact_offsets()
     MONAD_ASSERT(
         compact_offset_fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
         compact_offset_slow != INVALID_COMPACT_VIRTUAL_OFFSET);
-    /* The fast list compaction offset range is determined both by the
-    average disk growth over historical blocks, and the fast list offset
-    range of the latest version, so that fast-list usage adapts appropriately to
-    changes in history length. */
     compact_offset_range_fast_ = MIN_COMPACT_VIRTUAL_OFFSET;
 
     uint64_t const min_version = db_history_min_valid_version();
@@ -1444,24 +1457,44 @@ void UpdateAuxImpl::advance_compact_offsets()
                 compact_virtual_chunk_offset_t{min_version_root_virtual_offset},
             max_version - min_version);
     }
-    // Only advance the fast-list compaction offset if the uncompacted range
-    // exceeds min_versions_of_growth_before_compact_fast_list (5000) versions'
-    // worth of growth, to prevent over-compaction when the history window
-    // shrinks.
+    bool const skip_compaction = (rand() % 20) == 0;
     uint32_t const latest_block_fast_uncompacted_range =
         curr_fast_writer_offset - compact_offset_fast;
     if (latest_block_fast_uncompacted_range >
         static_cast<uint64_t>(avg_disk_growth_fast) *
             min_versions_of_growth_before_compact_fast_list) {
-        // Stride that would evenly spread the uncompacted range across the
-        // history window, keeping fast-list disk usage steady over time.
-        uint32_t const target_fast_compaction_stride = divide_and_round(
-            latest_block_fast_uncompacted_range, max_version - min_version + 1);
-        uint32_t to_advance = std::min(
-            target_fast_compaction_stride,
-            avg_disk_growth_fast + min_compaction_progress_buffer);
-        to_advance =
-            std::min(to_advance, max_compact_offset_range); // Cap at 32MB
+        uint64_t const valid_history_length = max_version - min_version + 1;
+        uint64_t const target_uncompacted_range =
+            static_cast<uint64_t>(avg_disk_growth_fast) * valid_history_length;
+        int64_t const tracking_error =
+            static_cast<int64_t>(latest_block_fast_uncompacted_range) -
+            static_cast<int64_t>(target_uncompacted_range);
+
+        // When at or ahead of target, or randomly ~5% of the time, skip
+        // compaction entirely so there's no recirculation from compaction
+        // parents and the average can come down.
+        uint32_t to_advance = 0;
+        if (tracking_error > 0 && !skip_compaction) {
+            if (last_block_disk_growth_fast_ < avg_disk_growth_fast) {
+                // Quiet block: catch up with weighted proportional
+                // correction. Weight scales up with spare I/O capacity.
+                double const quiet_weight =
+                    2.0 * avg_disk_growth_fast / last_block_disk_growth_fast_;
+                uint32_t const correction = std::min(
+                    divide_and_round(
+                        quiet_weight * static_cast<double>(tracking_error),
+                        valid_history_length),
+                    avg_disk_growth_fast);
+                to_advance = std::min(
+                    avg_disk_growth_fast + correction,
+                    max_compact_offset_range);
+            }
+            else {
+                // Busy block: compact at average to keep up
+                to_advance = avg_disk_growth_fast;
+            }
+        }
+        to_advance = std::min(to_advance, max_compact_offset_range);
         compact_offset_range_fast_.set_value(to_advance);
         compact_offset_fast += compact_offset_range_fast_;
     }
@@ -1472,20 +1505,16 @@ void UpdateAuxImpl::advance_compact_offsets()
     double const total_disk_usage = fast_disk_usage + slow_disk_usage;
     // Do not compact slow list until slow list usage and total usage are both
     // above the thresholds
-    if (total_disk_usage > usage_limit_start_compact_slow &&
+    if (!skip_compaction && total_disk_usage > usage_limit_start_compact_slow &&
         slow_disk_usage > slow_usage_limit_start_compact_slow) {
         // Compact slow ring: the offset is based on slow list garbage
         // collection ratio of the last block. We use the ratio of compacted
         // bytes to determine how aggressively to advance the compaction head.
-        if (stats.compacted_bytes_in_slow != 0 &&
-            compact_offset_range_slow_ != 0) {
-            uint32_t const gc_efficiency = static_cast<uint32_t>(std::round(
-                double(compact_offset_range_slow_ << 16) /
-                stats.compacted_bytes_in_slow));
+        if (last_block_slow_list_gc_efficiency_ > 0) {
             // Cap at last block's growth + 1 to avoid advancing too fast
             uint32_t const new_range = std::min(
                 static_cast<uint32_t>(last_block_disk_growth_slow_ + 1),
-                gc_efficiency);
+                last_block_slow_list_gc_efficiency_);
             compact_offset_range_slow_.set_value(new_range);
         }
         else {
@@ -1637,7 +1666,6 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
         stats.nodes_created_or_updated,
         stats.nodes_updated_expire,
         stats.nreads_expire);
-
     if (compact_offset_range_fast_) {
         std::format_to(
             std::back_inserter(buf),
@@ -1648,78 +1676,31 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
             stats.compacted_bytes_in_fast / 1024.0,
             100.0 * stats.compacted_bytes_in_fast /
                 (compact_offset_range_fast_ << 16));
-        if (compact_offset_range_slow_) {
-            // slow list compaction range vs growth
-            auto const total_bytes_written_to_slow =
-                stats.compacted_bytes_in_fast + stats.compacted_bytes_in_slow;
-            std::format_to(
-                std::back_inserter(buf),
-                "   Slow: total growth {:.2f} KB, compact range {} "
-                "KB, bytes copied slow to slow {:.2f} KB, active data ratio "
-                "{:.2f}%. other bytes copied slow to fast {:.2f} KB.\n",
-                total_bytes_written_to_slow / 1024.0,
-                compact_offset_range_slow_ << 6,
-                stats.compacted_bytes_in_slow / 1024.0,
-                100.0 * stats.compacted_bytes_in_slow /
-                    (compact_offset_range_slow_ << 16),
-                stats.bytes_copied_slow_to_fast_for_slow / 1024.0);
-        }
-        else {
-            std::format_to(
-                std::back_inserter(buf),
-                "   Slow: no advance of compaction offset\n");
-        }
 
-        // num nodes copied:
-        auto const nodes_copied_for_slow =
+        auto const nodes_copied_for_fast =
             stats.compacted_nodes_in_fast +
             stats.nodes_copied_fast_to_fast_for_fast;
         std::format_to(
             std::back_inserter(buf),
-            "[Nodes Copied]\n"
-            "   Fast: fast to slow {} ({:.2f}%), fast to fast {} ({:.2f}%)\n",
+            "   Fast [Nodes Copied]: fast to slow {} ({:.2f}%), "
+            "fast to fast {} ({:.2f}%)\n",
             stats.compacted_nodes_in_fast,
-            nodes_copied_for_slow ? (100.0 * stats.compacted_nodes_in_fast /
-                                     (nodes_copied_for_slow))
+            nodes_copied_for_fast ? (100.0 * stats.compacted_nodes_in_fast /
+                                     nodes_copied_for_fast)
                                   : 0,
             stats.nodes_copied_fast_to_fast_for_fast,
-            nodes_copied_for_slow
+            nodes_copied_for_fast
                 ? (100.0 * stats.nodes_copied_fast_to_fast_for_fast /
-                   nodes_copied_for_slow)
+                   nodes_copied_for_fast)
                 : 0);
-        if (compact_offset_slow) {
-            auto const nodes_copied_for_slow =
-                stats.compacted_nodes_in_slow +
-                stats.nodes_copied_fast_to_fast_for_slow +
-                stats.nodes_copied_slow_to_fast_for_slow;
-            std::format_to(
-                std::back_inserter(buf),
-                "   Slow: active slow to slow {} ({:.2f}%), fast to fast {} "
-                "({:.2f}%), other slow to fast {} ({:.2f}%)\n",
-                stats.compacted_nodes_in_slow,
-                nodes_copied_for_slow ? (100.0 * stats.compacted_nodes_in_slow /
-                                         nodes_copied_for_slow)
-                                      : 0,
-                stats.nodes_copied_fast_to_fast_for_slow,
-                nodes_copied_for_slow
-                    ? (100.0 * stats.nodes_copied_fast_to_fast_for_slow /
-                       nodes_copied_for_slow)
-                    : 0,
-                stats.nodes_copied_slow_to_fast_for_slow,
-                nodes_copied_for_slow
-                    ? (100.0 * stats.nodes_copied_slow_to_fast_for_slow /
-                       nodes_copied_for_slow)
-                    : 0);
-        }
 
         std::format_to(
             std::back_inserter(buf),
-            "[Reads]\n"
-            "   Fast: compact reads within compaction range {} / "
+            "   Fast [Reads]: within compaction range {} / "
             "total compact reads {} = {:.2f}%\n"
-            "   Fast: bytes read within compaction range {:.2f} KB / "
-            "compaction range {} KB = {:.2f}%, bytes read out of "
-            "compaction range {:.2f} KB\n",
+            "   Fast [Reads]: bytes within range {:.2f} KB / "
+            "compaction range {} KB = {:.2f}%, bytes out of "
+            "range {:.2f} KB\n",
             stats.nreads_before_compact_offset[0],
             stats.nreads_before_compact_offset[0] +
                 stats.nreads_after_compact_offset[0],
@@ -1735,30 +1716,77 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
                    compact_offset_range_fast_ / 1024 / 64)
                 : 0,
             (double)stats.bytes_read_after_compact_offset[0] / 1024);
-        if (compact_offset_range_slow_) {
-            std::format_to(
-                std::back_inserter(buf),
-                "   Slow: reads within compaction range {} / "
-                "total compact reads {} = {:.2f}%\n"
-                "   Slow: bytes read within compaction range {:.2f} KB / "
-                "compaction range {} KB = {:.2f}%, bytes read out of "
-                "compaction range {:.2f} KB\n",
-                stats.nreads_before_compact_offset[1],
-                stats.nreads_before_compact_offset[1] +
-                    stats.nreads_after_compact_offset[1],
-                stats.nreads_before_compact_offset[1]
-                    ? (100.0 * stats.nreads_before_compact_offset[1] /
-                       (stats.nreads_before_compact_offset[1] +
-                        stats.nreads_after_compact_offset[1]))
-                    : 0,
-                (double)stats.bytes_read_before_compact_offset[1] / 1024,
-                compact_offset_range_slow_ << 6,
-                stats.bytes_read_before_compact_offset[1]
-                    ? (100.0 * stats.bytes_read_before_compact_offset[1] /
-                       compact_offset_range_slow_ / 1024 / 64)
-                    : 0,
-                (double)stats.bytes_read_after_compact_offset[1] / 1024);
-        }
+    }
+    else {
+        std::format_to(
+            std::back_inserter(buf),
+            "   Fast: no advance of compaction offset\n");
+    }
+    if (compact_offset_range_slow_) {
+        auto const total_bytes_written_to_slow =
+            stats.compacted_bytes_in_fast + stats.compacted_bytes_in_slow;
+        std::format_to(
+            std::back_inserter(buf),
+            "   Slow: total growth {:.2f} KB, compact range {} "
+            "KB, bytes copied slow to slow {:.2f} KB, active data ratio "
+            "{:.2f}%. other bytes copied slow to fast {:.2f} KB.\n",
+            total_bytes_written_to_slow / 1024.0,
+            compact_offset_range_slow_ << 6,
+            stats.compacted_bytes_in_slow / 1024.0,
+            100.0 * stats.compacted_bytes_in_slow /
+                (compact_offset_range_slow_ << 16),
+            stats.bytes_copied_slow_to_fast_for_slow / 1024.0);
+
+        auto const nodes_copied_for_slow =
+            stats.compacted_nodes_in_slow +
+            stats.nodes_copied_fast_to_fast_for_slow +
+            stats.nodes_copied_slow_to_fast_for_slow;
+        std::format_to(
+            std::back_inserter(buf),
+            "   Slow [Nodes Copied]: slow to slow {} ({:.2f}%), "
+            "fast to fast {} ({:.2f}%), slow to fast {} ({:.2f}%)\n",
+            stats.compacted_nodes_in_slow,
+            nodes_copied_for_slow ? (100.0 * stats.compacted_nodes_in_slow /
+                                     nodes_copied_for_slow)
+                                  : 0,
+            stats.nodes_copied_fast_to_fast_for_slow,
+            nodes_copied_for_slow
+                ? (100.0 * stats.nodes_copied_fast_to_fast_for_slow /
+                   nodes_copied_for_slow)
+                : 0,
+            stats.nodes_copied_slow_to_fast_for_slow,
+            nodes_copied_for_slow
+                ? (100.0 * stats.nodes_copied_slow_to_fast_for_slow /
+                   nodes_copied_for_slow)
+                : 0);
+
+        std::format_to(
+            std::back_inserter(buf),
+            "   Slow [Reads]: within compaction range {} / "
+            "total compact reads {} = {:.2f}%\n"
+            "   Slow [Reads]: bytes within range {:.2f} KB / "
+            "compaction range {} KB = {:.2f}%, bytes out of "
+            "range {:.2f} KB\n",
+            stats.nreads_before_compact_offset[1],
+            stats.nreads_before_compact_offset[1] +
+                stats.nreads_after_compact_offset[1],
+            stats.nreads_before_compact_offset[1]
+                ? (100.0 * stats.nreads_before_compact_offset[1] /
+                   (stats.nreads_before_compact_offset[1] +
+                    stats.nreads_after_compact_offset[1]))
+                : 0,
+            (double)stats.bytes_read_before_compact_offset[1] / 1024,
+            compact_offset_range_slow_ << 6,
+            stats.bytes_read_before_compact_offset[1]
+                ? (100.0 * stats.bytes_read_before_compact_offset[1] /
+                   compact_offset_range_slow_ / 1024 / 64)
+                : 0,
+            (double)stats.bytes_read_after_compact_offset[1] / 1024);
+    }
+    else {
+        std::format_to(
+            std::back_inserter(buf),
+            "   Slow: no advance of compaction offset\n");
     }
     LOG_INFO("{}", buf);
 #else

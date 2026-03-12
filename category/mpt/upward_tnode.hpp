@@ -18,6 +18,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/mem/allocators.hpp>
 
+#include <utility>
+
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/util.hpp>
@@ -43,10 +45,6 @@ template <class T>
 concept any_tnode =
     std::same_as<T, ExpireTNode> || std::same_as<T, UpdateTNode> ||
     std::same_as<T, CompactTNode>;
-
-template <class T>
-concept update_or_expire_tnode =
-    std::same_as<T, ExpireTNode> || std::same_as<T, UpdateTNode>;
 
 struct TNodeBase
 {
@@ -77,6 +75,25 @@ protected:
         , npending(npending)
     {
     }
+
+    TNodeBase(TNodeBase &&other) noexcept
+        : parent_(other.parent_)
+        , type(other.type)
+        , npending(std::exchange(other.npending, uint8_t{0}))
+    {
+    }
+
+    ~TNodeBase()
+    {
+        MONAD_ASSERT(npending == 0);
+    }
+
+public:
+    void child_done() noexcept
+    {
+        MONAD_ASSERT(npending > 0);
+        --npending;
+    }
 };
 
 struct UpdateExpireBase : public TNodeBase
@@ -99,7 +116,7 @@ struct UpdateTNode : public UpdateExpireBase
 {
     using Base = UpdateExpireBase;
     uint16_t orig_mask{0};
-    // UpdateTNode owns old node's lifetime only when old is leaf node, as
+    // UpdateTNode keeps old node alive only when old is leaf node, as
     // opt_leaf_data has to be valid in memory when it works the way back to
     // recompute leaf data
     Node::SharedPtr old{};
@@ -275,26 +292,19 @@ struct ExpireTNode : public UpdateExpireBase
     uint16_t cache_mask{0};
     Node::SharedPtr node{nullptr};
 
-    template <update_or_expire_tnode Parent>
     ExpireTNode(
-        Parent *const parent, unsigned const branch, unsigned const index,
-        Node::SharedPtr ptr)
+        UpdateExpireBase *const parent, unsigned const branch,
+        unsigned const index, bool const cache_node, Node::SharedPtr ptr)
         : Base(
               parent, tnode_type::expire,
-              ptr ? static_cast<uint8_t>(ptr->number_of_children()) : 0,
-              static_cast<uint8_t>(branch), ptr ? ptr->mask : 0)
+              static_cast<uint8_t>(ptr->number_of_children()),
+              static_cast<uint8_t>(branch), ptr->mask)
         , index(static_cast<uint8_t>(index))
-        , cache_node(parent->type == tnode_type::update || ptr != nullptr)
+        , cache_node(cache_node)
         , node(std::move(ptr))
     {
         MONAD_ASSERT(parent != nullptr);
-    }
-
-    void update_after_async_read(Node::SharedPtr ptr)
-    {
-        npending = static_cast<uint8_t>(ptr->number_of_children());
-        mask = ptr->mask;
-        node = std::move(ptr);
+        MONAD_ASSERT(node != nullptr);
     }
 
     using allocator_type = allocators::malloc_free_allocator<ExpireTNode>;
@@ -309,20 +319,13 @@ struct ExpireTNode : public UpdateExpireBase
         ExpireTNode, allocators::unique_ptr_allocator_deleter<
                          allocator_type, &ExpireTNode::pool>>;
 
-    static unique_ptr_type make(ExpireTNode v)
-    {
-        return allocators::allocate_unique<allocator_type, &ExpireTNode::pool>(
-            std::move(v));
-    }
-
-    template <update_or_expire_tnode Parent>
     static unique_ptr_type make(
-        Parent *const parent, unsigned const branch, unsigned index,
-        Node::SharedPtr node)
+        UpdateExpireBase *const parent, unsigned const branch, unsigned index,
+        bool const cache_node, Node::SharedPtr node)
     {
         MONAD_ASSERT(parent);
         return allocators::allocate_unique<allocator_type, &ExpireTNode::pool>(
-            parent, branch, index, std::move(node));
+            parent, branch, index, cache_node, std::move(node));
     }
 };
 

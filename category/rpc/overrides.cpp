@@ -20,8 +20,6 @@
 #include <category/rpc/overrides.h>
 #include <category/rpc/overrides.hpp>
 
-#include <intx/intx.hpp>
-
 #include <cstdint>
 #include <cstring>
 
@@ -71,8 +69,7 @@ void set_override_balance(
 
     MONAD_ASSERT(balance);
     MONAD_ASSERT(balance_len == sizeof(uint256_t));
-    m->override_sets[address].balance =
-        intx::be::unsafe::load<uint256_t>(balance);
+    m->override_sets[address].balance = monad::be_load<uint256_t>(balance);
 }
 
 void set_override_nonce(
@@ -230,7 +227,7 @@ void set_block_override_base_fee_per_gas(
     MONAD_ASSERT(fee);
     MONAD_ASSERT(fee_len == sizeof(uint256_t));
     MONAD_ASSERT(!m->base_fee_per_gas.has_value());
-    m->base_fee_per_gas = intx::be::unsafe::load<uint256_t>(fee);
+    m->base_fee_per_gas = monad::be_load<uint256_t>(fee);
 }
 
 void set_block_override_blob_base_fee(
@@ -241,5 +238,5 @@ void set_block_override_blob_base_fee(
     MONAD_ASSERT(fee);
     MONAD_ASSERT(fee_len == sizeof(uint256_t));
     MONAD_ASSERT(!m->blob_base_fee.has_value());
-    m->blob_base_fee = intx::be::unsafe::load<uint256_t>(fee);
+    m->blob_base_fee = monad::be_load<uint256_t>(fee);
 }

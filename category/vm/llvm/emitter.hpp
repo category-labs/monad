@@ -30,6 +30,7 @@
 #include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/storage.hpp>
 
+#include <category/core/int.hpp>
 #include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
 
@@ -49,8 +50,8 @@ namespace monad::vm::runtime
         std::cerr << std::format("gas {}\n", *gas_p);
         std::cerr << std::format(
             "gas price {}\n",
-            intx::hex(intx::be::load<intx::uint256>(
-                ctx->env.tx_context->tx_gas_price)));
+            intx::hex(
+                monad::be_load<uint256_t>(ctx->env.tx_context->tx_gas_price)));
         std::cerr << std::format("stack:\n", *stack_begin);
         int i = 0;
         while (stack_begin < stack_top) {

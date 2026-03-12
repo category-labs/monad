@@ -774,8 +774,7 @@ StakingContract::precompile_dispatch(byte_string_view &input)
         return make_pair(&StakingContract::precompile_fallback, 40000);
     }
 
-    auto const signature =
-        intx::be::unsafe::load<uint32_t>(input.substr(0, 4).data());
+    auto const signature = monad::be_load<uint32_t>(input.substr(0, 4).data());
     input.remove_prefix(4);
 
     switch (signature) {
@@ -1173,7 +1172,7 @@ Result<byte_string> StakingContract::precompile_add_validator(
         return StakingError::InvalidInput;
     }
 
-    auto const stake = intx::be::load<uint256_t>(msg_value);
+    auto const stake = monad::be_load<uint256_t>(msg_value);
     if (MONAD_UNLIKELY(stake < limits::min_auth_address_stake())) {
         return StakingError::InsufficientStake;
     }
@@ -1341,7 +1340,7 @@ Result<byte_string> StakingContract::precompile_delegate(
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
     }
-    auto const stake = intx::be::load<uint256_t>(msg_value);
+    auto const stake = monad::be_load<uint256_t>(msg_value);
 
     if (MONAD_LIKELY(stake != 0)) {
         BOOST_OUTCOME_TRY(delegate<traits>(val_id, stake, msg_sender));
@@ -1589,7 +1588,7 @@ Result<byte_string> StakingContract::precompile_external_reward(
     byte_string_view input, evmc_address const &sender,
     evmc_uint256be const &msg_value)
 {
-    auto const external_reward = intx::be::load<uint256_t>(msg_value);
+    auto const external_reward = monad::be_load<uint256_t>(msg_value);
     BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;

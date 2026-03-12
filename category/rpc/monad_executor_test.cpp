@@ -1343,8 +1343,8 @@ TEST_F(EthCallFixture, call_trace_with_logs)
                         {.data = {},
                          .topics =
                              {
-                                 intx::be::store<bytes32_t, uint256_t>(2),
-                                 intx::be::store<bytes32_t, uint256_t>(1),
+                                 monad::be_store<bytes32_t>(uint256_t{2}),
+                                 monad::be_store<bytes32_t>(uint256_t{1}),
                              },
                          .address = a_address},
                     .position = 0,
@@ -1354,7 +1354,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
                         {.data = {},
                          .topics =
                              {
-                                 intx::be::store<bytes32_t, uint256_t>(3),
+                                 monad::be_store<bytes32_t>(uint256_t{3}),
                              },
                          .address = a_address},
                     .position = 2,
@@ -1410,9 +1410,9 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .depth = 1,
         .logs = std::vector{CallFrame::Log{
             .log =
-                {.data = byte_string{intx::be::store<bytes32_t>(
+                {.data = byte_string{monad::be_store<bytes32_t>(
                      std::numeric_limits<uint256_t>::max() - 1)},
-                 .topics = {intx::be::store<bytes32_t, uint256_t>(1)},
+                 .topics = {monad::be_store<bytes32_t>(uint256_t{1})},
                  .address = c_address},
             .position = 0,
         }},
@@ -3256,17 +3256,19 @@ TEST_F(EthCallFixture, prestate_override_state)
     auto const code_hash = to_bytes(keccak256(bytecode_view));
     auto const compiled_code = vm::make_shared_intercode(bytecode_view);
 
-    bytes32_t const storage_key = to_bytes(to_big_endian(uint256_t{0}));
-    bytes32_t const storage_value = to_bytes(to_big_endian(uint256_t{64}));
+    bytes32_t const storage_key = to_bytes(monad::to_big_endian(uint256_t{0}));
+    bytes32_t const storage_value =
+        to_bytes(monad::to_big_endian(uint256_t{64}));
 
-    bytes32_t const other_storage_key = to_bytes(to_big_endian(uint256_t{1}));
+    bytes32_t const other_storage_key =
+        to_bytes(monad::to_big_endian(uint256_t{1}));
     bytes32_t const other_storage_value =
-        to_bytes(to_big_endian(uint256_t{128}));
+        to_bytes(monad::to_big_endian(uint256_t{128}));
 
     bytes32_t const untouched_storage_key =
-        to_bytes(to_big_endian(uint256_t{2}));
+        to_bytes(monad::to_big_endian(uint256_t{2}));
     bytes32_t const untouched_storage_value =
-        to_bytes(to_big_endian(uint256_t{256}));
+        to_bytes(monad::to_big_endian(uint256_t{256}));
 
     StateDeltas const deltas{
         {CONTRACT_ADDR,
@@ -3288,8 +3290,8 @@ TEST_F(EthCallFixture, prestate_override_state)
     auto const storage = tdb.read_storage(
         CONTRACT_ADDR,
         Incarnation{0, 0},
-        to_bytes(to_big_endian(uint256_t{0})));
-    ASSERT_EQ(storage, to_bytes(to_big_endian(uint256_t{uint64_t{64}})));
+        to_bytes(monad::to_big_endian(uint256_t{0})));
+    ASSERT_EQ(storage, to_bytes(monad::to_big_endian(uint256_t{uint64_t{64}})));
 
     for (uint64_t i = 1; i < 256; ++i) {
         commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
@@ -3362,7 +3364,7 @@ TEST_F(EthCallFixture, prestate_override_state)
             result.bytes, ctx_state.result->output_data, sizeof(bytes32_t));
 
         bytes32_t const expected =
-            to_bytes(to_big_endian(uint256_t{uint64_t{128}}));
+            to_bytes(monad::to_big_endian(uint256_t{uint64_t{128}}));
 
         EXPECT_EQ(result, expected);
 
@@ -3444,7 +3446,7 @@ TEST_F(EthCallFixture, prestate_override_state)
             result.bytes, ctx_statediff.result->output_data, sizeof(bytes32_t));
 
         bytes32_t const expected =
-            to_bytes(to_big_endian(uint256_t{uint64_t{192}}));
+            to_bytes(monad::to_big_endian(uint256_t{uint64_t{192}}));
 
         EXPECT_EQ(result, expected);
 

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
@@ -149,7 +150,7 @@ namespace monad::staking::test
         message += to_byte_string_view(secp_pubkey_serialized);
         message += to_byte_string_view(bls_pubkey_serialized);
         message += to_byte_string_view(auth_address.bytes);
-        message += to_byte_string_view(intx::be::store<bytes32_t>(stake).bytes);
+        message += to_byte_string_view(monad::be_store<bytes32_t>(stake).bytes);
         message += to_byte_string_view(u256_be{commission}.bytes);
 
         // sign with both keys

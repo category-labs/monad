@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/staking/util/consensus_view.hpp>
 
@@ -22,7 +23,7 @@ ConsensusView::ConsensusView(
     State &state, Address const &address, bytes32_t const &key)
     : state_{state}
     , address_{address}
-    , key_{intx::be::load<uint256_t>(key)}
+    , key_{monad::be_load<uint256_t>(key)}
 {
 }
 

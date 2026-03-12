@@ -22,7 +22,7 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 
-#include <intx/intx.hpp>
+#include <category/core/int.hpp>
 
 #include <array>
 #include <cstring>
@@ -58,7 +58,7 @@ private:
     {
         for (size_t i = 0; i < N; ++i) {
             state_.set_storage(
-                address_, intx::be::store<bytes32_t>(offset_ + i), slots[i]);
+                address_, monad::be_store<bytes32_t>(offset_ + i), slots[i]);
         }
     }
 
@@ -71,7 +71,7 @@ public:
     StorageVariable(State &state, Address const &address, bytes32_t const &key)
         : state_{state}
         , address_{address}
-        , offset_{intx::be::load<uint256_t>(key)}
+        , offset_{monad::be_load<uint256_t>(key)}
     {
     }
 
@@ -87,7 +87,7 @@ public:
         Slots slots;
         for (size_t i = 0; i < N; ++i) {
             slots[i] = state_.get_storage(
-                address_, intx::be::store<bytes32_t>(offset_ + i));
+                address_, monad::be_store<bytes32_t>(offset_ + i));
         }
         return from_slots(slots);
     }
@@ -98,7 +98,7 @@ public:
         bool has_data = false;
         for (size_t i = 0; i < N; ++i) {
             slots[i] = state_.get_storage(
-                address_, intx::be::store<bytes32_t>(offset_ + i));
+                address_, monad::be_store<bytes32_t>(offset_ + i));
             has_data |= (slots[i] != bytes32_t{});
         }
         return has_data ? from_slots(slots) : std::optional<T>{};

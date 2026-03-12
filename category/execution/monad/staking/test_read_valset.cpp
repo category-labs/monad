@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -134,7 +135,7 @@ TEST_F(ReadValsetBeforeBoundary, get_this_epoch_valset)
     ASSERT_TRUE(set.has_value());
     EXPECT_EQ(set.value().size(), CONSENSUS_VALSET_LENGTH);
     for (auto const &validator : set.value()) {
-        EXPECT_EQ(intx::be::load<uint256_t>(validator.stake), CONSENSUS_STAKE);
+        EXPECT_EQ(monad::be_load<uint256_t>(validator.stake), CONSENSUS_STAKE);
     }
 }
 
@@ -172,7 +173,7 @@ TEST_F(ReadValsetAfterBoundary, get_this_epoch_valset)
     ASSERT_TRUE(set.has_value());
     EXPECT_EQ(set.value().size(), SNAPSHOT_VALSET_LENGTH);
     for (auto const &validator : set.value()) {
-        EXPECT_EQ(intx::be::load<uint256_t>(validator.stake), SNAPSHOT_STAKE);
+        EXPECT_EQ(monad::be_load<uint256_t>(validator.stake), SNAPSHOT_STAKE);
     }
 }
 
@@ -184,7 +185,7 @@ TEST_F(ReadValsetAfterBoundary, get_next_epoch_valset)
     ASSERT_TRUE(set.has_value());
     EXPECT_EQ(set.value().size(), CONSENSUS_VALSET_LENGTH);
     for (auto const &validator : set.value()) {
-        EXPECT_EQ(intx::be::load<uint256_t>(validator.stake), CONSENSUS_STAKE);
+        EXPECT_EQ(monad::be_load<uint256_t>(validator.stake), CONSENSUS_STAKE);
     }
 }
 

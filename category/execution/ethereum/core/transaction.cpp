@@ -25,7 +25,7 @@
 
 #include <ethash/hash_types.hpp>
 
-#include <intx/intx.hpp>
+#include <category/core/int.hpp>
 
 #include <secp256k1.h>
 
@@ -66,8 +66,8 @@ std::optional<Address> ecrecover(
     auto const encoding_hash = keccak256(encoding);
 
     uint8_t signature[sizeof(sc.r) * 2];
-    intx::be::unsafe::store(signature, sc.r);
-    intx::be::unsafe::store(signature + sizeof(sc.r), sc.s);
+    monad::be_store(signature, sc.r);
+    monad::be_store(signature + sizeof(sc.r), sc.s);
 
     thread_local std::unique_ptr<
         secp256k1_context,

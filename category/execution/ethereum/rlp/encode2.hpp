@@ -38,9 +38,9 @@ inline byte_string_view zeroless_view(byte_string_view const string_view)
 
 inline byte_string to_big_compact(unsigned_integral auto n)
 {
-    n = intx::to_big_endian(n);
-    return byte_string(
-        zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
+    n = monad::to_big_endian(n);
+    return byte_string(zeroless_view(
+        {reinterpret_cast<unsigned char const *>(&n), sizeof(n)}));
 }
 
 inline byte_string encode_string2(byte_string_view const string_view)

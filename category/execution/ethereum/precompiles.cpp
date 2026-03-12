@@ -74,8 +74,8 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 
     // Ethereum precompiles
     CASE(0x01, ecrecover_gas_cost<traits>, ecrecover_execute);
-    CASE(0x02, sha256_gas_cost<traits>, sha256_execute);
-    CASE(0x03, ripemd160_gas_cost<traits>, ripemd160_execute);
+    CASE(0x02, sha256_gas_cost, sha256_execute);
+    CASE(0x03, ripemd160_gas_cost, ripemd160_execute);
     CASE(0x04, identity_gas_cost, identity_execute);
 
     if constexpr (traits::evm_rev() >= EVMC_BYZANTIUM) {

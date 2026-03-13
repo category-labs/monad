@@ -299,8 +299,7 @@ evmc::Result BlockchainTestVM::execute_llvm(
 {
     auto code_hash = host->get_code_hash(context, &msg->code_address);
 
-    return llvm_vm_.execute_llvm(
-        rev, code_hash, host, context, msg, code, code_size);
+    return llvm_vm_.execute_llvm(rev, code_hash, *rt_ctx_, code, code_size);
 }
 #endif
 

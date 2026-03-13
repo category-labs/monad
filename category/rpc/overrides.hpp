@@ -17,6 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 
 #include <ankerl/unordered_dense.h>
 
@@ -50,6 +51,7 @@ struct monad_block_override
     std::optional<uint64_t> gas_limit{std::nullopt};
     std::optional<monad::Address> fee_recipient{std::nullopt};
     std::optional<monad::bytes32_t> prev_randao{std::nullopt};
+    std::optional<std::vector<monad::Withdrawal>> withdrawals{std::nullopt};
     std::optional<monad::uint256_t> base_fee_per_gas{std::nullopt};
     std::optional<monad::uint256_t> blob_base_fee{std::nullopt};
 };

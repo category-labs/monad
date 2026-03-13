@@ -469,14 +469,69 @@ namespace
         std::span<monad_state_override const *const> state_overrides,
         std::span<monad_block_override const *const> block_overrides)
     {
-        // TODO(BSC): block overrides
-        (void)block_overrides;
-
+        // TODO(dhil): Other providers allow a maximum of 16 blocks to be
+        // simulated (c.f.
+        // https://docs.metamask.io/services/reference/ethereum/json-rpc-methods/eth_simulatev1).
         MONAD_ASSERT(calls.size() == senders.size());
         MONAD_ASSERT(calls.size() == authorities.size());
         MONAD_ASSERT(calls.size() == state_overrides.size());
+        MONAD_ASSERT(calls.size() == block_overrides.size());
 
         tdb.set_block_and_prefix(block_number, block_id);
+
+        std::vector<BlockHeader> headers = [&block_overrides, &header]() {
+            std::vector<BlockHeader> headers;
+            headers.reserve(block_overrides.size());
+            BlockHeader previous = header;
+            for (auto const *bo : block_overrides) {
+                MONAD_ASSERT_THROW(bo, "block override cannot be null");
+                // always inherit from the original header.
+                BlockHeader current_header = header;
+                // TODO(dhil): Block override validation.
+                // From the specification
+                // (https://geth.ethereum.org/docs/interacting-with-geth/rpc/ns-eth):
+                // > When overriding multiple blocks, block numbers must
+                // > increment. Skipping numbers is allowed and skipped
+                // > blocks are included in the response. When overriding
+                // > time across multiple blocks, time need to be increasing.
+                // > If time is not specified, it's incremented by one for each
+                // > block.
+                if (bo->number.has_value()) {
+                    MONAD_ASSERT_THROW(
+                        previous.number < *bo->number,
+                        "non-monotonic block numbering");
+                    current_header.number = *bo->number;
+                }
+                else {
+                    // > When overriding block numbers across multiple blocks,
+                    // > block number need to be increasing. Skipping over
+                    // > blocks numbers is possible. If block number is not
+                    // > specified, it's incremented by one for each block.
+                    current_header.number = previous.number + 1;
+                }
+                if (bo->time.has_value()) {
+                    current_header.timestamp = *bo->time;
+                }
+                if (bo->gas_limit.has_value()) {
+                    // > Time must either increase or remain constant relative
+                    // > to the previous block. If time is not specified, it's
+                    // > incremented by one for each block.
+                    current_header.gas_limit = *bo->gas_limit;
+                }
+                if (bo->fee_recipient.has_value()) {
+                    current_header.beneficiary = *bo->fee_recipient;
+                }
+                if (bo->prev_randao.has_value()) {
+                    current_header.prev_randao = *bo->prev_randao;
+                }
+                if (bo->base_fee_per_gas.has_value()) {
+                    current_header.base_fee_per_gas = *bo->base_fee_per_gas;
+                }
+                headers.emplace_back(std::move(current_header));
+                previous = headers.back();
+            }
+            return headers;
+        }();
 
         auto current_header = header;
         auto result = nlohmann::json::array();
@@ -511,6 +566,12 @@ namespace
             current_header.number += 1;
             // TODO(BSC): better simulation of 0.4s block times
             current_header.timestamp += 1;
+
+            // Apply block overrides that go into the header for this block.
+            // Withdrawals are applied below during the construction of the
+            // `Block` object.
+            if (auto const *bo = block_overrides[block_idx]; bo != nullptr) {
+            }
 
             for (auto tx_idx = 0u; tx_idx < calls[block_idx].size(); ++tx_idx) {
                 auto &tx = calls[block_idx][tx_idx];
@@ -551,6 +612,14 @@ namespace
             auto const block = Block{
                 .header = current_header,
                 .transactions = std::move(calls[block_idx]),
+                .withdrawals =
+                    // Apply the final block override for withdrawals, if it is
+                    // present.
+                block_overrides[block_idx] != nullptr &&
+                        block_overrides[block_idx]->withdrawals.has_value()
+                    ? std::move(*block_overrides[block_idx]->withdrawals)
+                    : std::optional<
+                          std::vector<monad::Withdrawal>>{std::nullopt},
             };
 
             BOOST_OUTCOME_TRY(

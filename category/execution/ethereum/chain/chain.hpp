@@ -46,6 +46,11 @@ struct Chain
 
     virtual Result<void> static_validate_header(BlockHeader const &) const;
 
+    virtual bool should_process_eip_requests() const
+    {
+        return false;
+    }
+
     virtual GenesisState get_genesis_state() const = 0;
 
     virtual Result<void> validate_transaction(

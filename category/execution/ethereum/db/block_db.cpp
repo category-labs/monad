@@ -23,22 +23,67 @@
 #include <brotli/decode.h>
 #include <brotli/types.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 
 MONAD_NAMESPACE_BEGIN
 
-BlockDb::BlockDb(std::filesystem::path const &dir)
+BlockDb::BlockDb(
+    std::filesystem::path const &dir, std::filesystem::path const &rlp_path)
     : db_{dir.c_str()}
 {
+    if (!rlp_path.empty()) {
+        import_rlp(rlp_path);
+    }
+}
+
+void BlockDb::import_rlp(std::filesystem::path const &rlp_path)
+{
+    std::ifstream file(rlp_path, std::ios::binary);
+    MONAD_ASSERT_PRINTF(
+        file.is_open(), "Failed to open RLP file: %s", rlp_path.c_str());
+    std::vector<uint8_t> data(
+        (std::istreambuf_iterator<char>(file)),
+        std::istreambuf_iterator<char>());
+
+    byte_string_view view{data.data(), data.size()};
+    while (!view.empty()) {
+        auto result = rlp::decode_block(view);
+        MONAD_ASSERT_PRINTF(
+            !result.has_error(),
+            "Failed to decode RLP block at offset %zu in %s",
+            data.size() - view.size(),
+            rlp_path.c_str());
+        rlp_blocks_.emplace_back(std::move(result.value()));
+    }
 }
 
 bool BlockDb::get(uint64_t const num, Block &block) const
 {
+    // Check in-memory RLP blocks first
+    if (!rlp_blocks_.empty()) {
+        auto const first_block_num = rlp_blocks_.front().header.number;
+
+        if (num >= first_block_num) {
+            uint64_t const idx = num - first_block_num;
+
+            if (idx < rlp_blocks_.size()) {
+                MONAD_ASSERT_PRINTF(
+                    rlp_blocks_[idx].header.number == num,
+                    "RLP block number mismatch: expected %lu, got %lu "
+                    "(non-contiguous blocks?)",
+                    num,
+                    rlp_blocks_[idx].header.number);
+                block = rlp_blocks_[idx];
+                return true;
+            }
+        }
+    }
+
     auto const key = std::to_string(num);
     auto result = db_.get(key.c_str());
     if (!result.has_value()) {

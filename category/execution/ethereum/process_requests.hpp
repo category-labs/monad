@@ -16,33 +16,20 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/db/file_db.hpp>
-
-#include <cstdint>
-#include <filesystem>
-#include <vector>
+#include <category/execution/ethereum/chain/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
-struct Block;
+class BlockHashBuffer;
+class BlockState;
+class State;
+struct BlockHeader;
 
-class BlockDb
-{
-    FileDb db_;
-    std::vector<Block> rlp_blocks_;
-
-    void import_rlp(std::filesystem::path const &rlp_path);
-
-public:
-    BlockDb() = delete;
-    BlockDb(Block const &) = delete;
-    BlockDb(BlockDb &&) = default;
-    explicit BlockDb(
-        std::filesystem::path const &dir,
-        std::filesystem::path const &rlp_path = {});
-    ~BlockDb() = default;
-
-    bool get(uint64_t, Block &) const;
-};
+template <Traits traits>
+void process_requests(
+    Chain const &, State &, BlockState &, BlockHashBuffer const &,
+    BlockHeader const &, ChainContext<traits> const &);
 
 MONAD_NAMESPACE_END
+

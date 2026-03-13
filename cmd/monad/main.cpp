@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
+#include <category/execution/ethereum/chain/hive_net.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -136,13 +137,15 @@ try {
     fs::path snapshot;
     fs::path dump_snapshot;
     std::string statesync;
+    fs::path chain_rlp_path;
     auto log_level = quill::LogLevel::Info;
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
         {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
          {"monad_devnet", CHAIN_CONFIG_MONAD_DEVNET},
          {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET},
-         {"monad_mainnet", CHAIN_CONFIG_MONAD_MAINNET}};
+         {"monad_mainnet", CHAIN_CONFIG_MONAD_MAINNET},
+         {"hive_net", CHAIN_CONFIG_HIVE_NET}};
 
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
@@ -186,6 +189,7 @@ try {
            block_db_timeout,
            "timeout in seconds for reading blocks from blockdb (0 = no retry)")
         ->needs(as_eth_blocks_flag);
+    cli.add_option("--chain-rlp", chain_rlp_path, "path to chain rlp file");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group
@@ -311,6 +315,8 @@ try {
             return std::make_unique<MonadTestnet>();
         case CHAIN_CONFIG_MONAD_MAINNET:
             return std::make_unique<MonadMainnet>();
+        case CHAIN_CONFIG_HIVE_NET:
+            return std::make_unique<HiveNet>();
         }
         MONAD_ASSERT(false);
     }();
@@ -429,6 +435,19 @@ try {
                 end_block_num,
                 stop,
                 trace_calls);
+        case CHAIN_CONFIG_HIVE_NET:
+            return runloop_ethereum(
+                *chain,
+                block_db_path,
+                db_cache,
+                vm,
+                block_hash_buffer,
+                priority_pool,
+                block_num,
+                end_block_num,
+                stop,
+                trace_calls,
+                chain_rlp_path);
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
         case CHAIN_CONFIG_MONAD_MAINNET:

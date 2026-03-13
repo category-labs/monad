@@ -3694,8 +3694,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
     monad_state_override_destroy(state_override);
 }
 
-// Check that gas < reserve assertion in reserve balance implementation doesn't
-// crash the RPC process
+// Check reserve-balance failure in eth_call returns explicit violation status.
 TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
 {
     for (uint64_t i = 0; i < 256; ++i) {
@@ -3800,10 +3799,8 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
-    EXPECT_EQ(
-        std::string_view{ctx.result->message},
-        "gas fee greater than reserve for non-dipping transaction");
+    EXPECT_EQ(ctx.result->status_code, EVMC_MONAD_RESERVE_BALANCE_VIOLATION);
+    EXPECT_EQ(ctx.result->message, nullptr);
 
     monad_executor_destroy(executor);
     monad_state_override_destroy(state_override);

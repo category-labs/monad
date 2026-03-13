@@ -15,10 +15,12 @@
 
 #pragma once
 
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/core/lru/lru_cache.hpp>
+#include <category/core/lru/memory_bound_lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
@@ -42,7 +44,35 @@ class DbCache final : public Db
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
 
+    struct StorageKey
+    {
+        static constexpr size_t k_bytes =
+            sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
+        uint8_t bytes[k_bytes];
+
+        StorageKey() = default;
+
+        StorageKey(
+            Address const &addr, Incarnation incarnation, bytes32_t const &key)
+        {
+            memcpy(bytes, addr.bytes, sizeof(Address));
+            memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
+            memcpy(
+                &bytes[sizeof(Address) + sizeof(Incarnation)],
+                key.bytes,
+                sizeof(bytes32_t));
+        }
+    };
+
+    using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
+    using StorageCache = MemoryBoundLruCache<StorageKey, StorageKeyHashCompare>;
+
+    static constexpr size_t STORAGE_CACHE_BYTES = 128 * 1024 * 1024;
+    static constexpr size_t STORAGE_SLAB_SIZES[] = {
+        32, 64, 128, 512, 2048, 8192};
+
     AccountsCache accounts_{10'000'000};
+    StorageCache storage_{STORAGE_CACHE_BYTES, STORAGE_SLAB_SIZES};
     Proposals proposals_;
 
 public:
@@ -71,8 +101,18 @@ public:
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
-        // TODO: reintegrate proposal/LRU caching for storage
-        return db_.read_storage(address, incarnation, key);
+        StorageKey const sk{address, incarnation, key};
+        StorageCache::ConstAccessor acc{};
+        if (storage_.find(acc, sk)) {
+            auto const &val = acc->second.value_;
+            return byte_string{val.begin(), val.end()};
+        }
+
+        auto result = db_.read_storage(address, incarnation, key);
+        if (!result.empty()) {
+            storage_.insert(sk, result);
+        }
+        return result;
     }
 
     virtual byte_string read_storage_page(
@@ -105,8 +145,8 @@ public:
             insert_in_lru_caches(ps->state());
         }
         else {
-            // Finalizing a truncated proposal. Clear LRU caches.
             accounts_.clear();
+            storage_.clear();
         }
         db_.finalize(block_number, block_id);
         proposals_.set_block_and_prefix(block_number, block_id);
@@ -182,7 +222,8 @@ public:
 
     virtual std::string print_stats() override
     {
-        return db_.print_stats() + ",ac=" + accounts_.print_stats();
+        return db_.print_stats() + ",ac=" + accounts_.print_stats() +
+               ",sc=" + storage_.print_stats();
     }
 
     virtual uint64_t get_block_number() const override

@@ -25,6 +25,7 @@
 #include <chrono>
 #include <mutex>
 #include <string>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -32,13 +33,18 @@ template <
     class Key, class Value, class KeyHashCompare = tbb::tbb_hash_compare<Key>>
 class LruCache
 {
+protected:
     /// TYPES
     struct ListNode;
     struct HashMapValue;
     struct LruList;
+
+public:
     using HashMap = tbb::concurrent_hash_map<Key, HashMapValue, KeyHashCompare>;
+
+protected:
     using HashMapKeyValue = std::pair<Key, HashMapValue>;
-    using Accessor = HashMap::accessor;
+    using Accessor = typename HashMap::accessor;
     using Mutex = SpinLock;
     using Pool = BatchMemPool<ListNode>;
 
@@ -119,6 +125,24 @@ public:
         return true;
     }
 
+    bool insert(Key const &key, Value &&value)
+    {
+        Accessor acc;
+        HashMapKeyValue hmkv(key, HashMapValue(std::move(value), nullptr));
+        if (!hmap_.insert(acc, hmkv)) {
+            STATS_EVENT_INSERT_FOUND();
+            acc->second.value_ = std::move(hmkv.second.value_);
+            ListNode *const node = acc->second.node_;
+            try_update_lru(node);
+            return false;
+        }
+        ListNode *const node = pool_.new_obj(key);
+        acc->second.node_ = node;
+        acc.release();
+        finish_insert(node);
+        return true;
+    }
+
     void clear() // Not thread-safe with other cache operations
     {
         hmap_.clear();
@@ -131,7 +155,7 @@ public:
         return size_.load(std::memory_order_acquire);
     }
 
-private:
+protected:
     void try_update_lru(ListNode *node)
     {
         if (node->check_lru_time()) {
@@ -144,7 +168,7 @@ private:
     void finish_insert(ListNode *node)
     {
         size_t sz = size();
-        bool const evicted = (sz >= max_size_) && evict();
+        bool evicted = (sz >= max_size_) ? evict() : false;
         {
             std::unique_lock const l(mutex_);
             STATS_EVENT_INSERT_NEW();
@@ -301,6 +325,12 @@ private:
 
         HashMapValue(Value const &value, ListNode *const node)
             : value_(value)
+            , node_(node)
+        {
+        }
+
+        HashMapValue(Value &&value, ListNode *const node)
+            : value_(std::move(value))
             , node_(node)
         {
         }

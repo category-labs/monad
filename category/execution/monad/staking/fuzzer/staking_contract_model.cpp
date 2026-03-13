@@ -15,12 +15,14 @@
 
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/monad/staking/fuzzer/staking_contract_model.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 namespace
 {
     using namespace monad;
+    using namespace monad::test;
 
     Result<u64_be> decode_u64_be_result(Result<byte_string> &&res)
     {
@@ -44,7 +46,8 @@ namespace monad::staking::test
 {
     StakingContractModel::StakingContractModel()
     {
-        trie_db_.commit(
+        commit_simple(
+            trie_db_,
             StateDeltas{
                 {STAKING_CA,
                  StateDelta{

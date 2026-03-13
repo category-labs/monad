@@ -201,7 +201,9 @@ fn _monad_event_resolve_ring_path(
 
     let r = unsafe {
         self::bindings::monad_event_resolve_ring_file(
-            opt_default_path_cstring.map_or(std::ptr::null(), |c| c.as_ptr()),
+            opt_default_path_cstring
+                .as_ref()
+                .map_or(std::ptr::null(), |c| c.as_ptr()),
             input_cstring.as_ptr(),
             pathbuf_cstr_bytes.as_mut_ptr() as *mut libc::c_char,
             pathbuf_cstr_bytes.len(),

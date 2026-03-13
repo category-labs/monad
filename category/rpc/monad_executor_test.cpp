@@ -4318,6 +4318,12 @@ TEST_F(EthCallFixture, eth_simulate_v1)
         state_overrides.push_back(monad_state_override_create());
     }
 
+    std::vector<monad_block_override *> block_overrides{};
+    block_overrides.reserve(2);
+    for (size_t i = 0; i < 2; i++) {
+        block_overrides.push_back(monad_block_override_create());
+    }
+
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
@@ -4335,9 +4341,15 @@ TEST_F(EthCallFixture, eth_simulate_v1)
         rlp_block_id.size(),
         state_overrides.data(),
         state_overrides.size(),
+        block_overrides.data(),
+        block_overrides.size(),
         complete_callback,
         (void *)&ctx);
     f.get();
+
+    for (auto *override : block_overrides) {
+        monad_block_override_destroy(override);
+    }
 
     for (auto *override : state_overrides) {
         monad_state_override_destroy(override);

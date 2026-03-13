@@ -128,6 +128,8 @@ void monad_executor_eth_simulate_submit(
     uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     struct monad_state_override const *const *state_overrides,
     size_t n_state_overrides,
+    struct monad_block_override const *const *block_overrides,
+    size_t n_block_overrides,
     void (*complete)(monad_executor_result *, void *user), void *user);
 
 #ifdef __cplusplus

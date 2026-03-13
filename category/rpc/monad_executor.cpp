@@ -466,9 +466,11 @@ namespace
             authorities,
         TrieRODb &tdb, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
         fiber::FiberGroup &tx_exec_pool,
-        std::span<monad_state_override const *const> state_overrides)
+        std::span<monad_state_override const *const> state_overrides,
+        std::span<monad_block_override const *const> block_overrides)
     {
         // TODO(BSC): block overrides
+        (void)block_overrides;
 
         MONAD_ASSERT(calls.size() == senders.size());
         MONAD_ASSERT(calls.size() == authorities.size());
@@ -1588,12 +1590,12 @@ struct monad_executor
         std::vector<std::vector<Transaction>> calls,
         std::vector<std::vector<Address>> senders,
         std::span<monad_state_override const *const> state_overrides,
+        std::span<monad_block_override const *const> block_overrides,
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
-        (void)block_id;
 
         auto const priority =
             call_seq_no_.fetch_add(1, std::memory_order_relaxed);
@@ -1602,6 +1604,7 @@ struct monad_executor
             [calls = std::move(calls),
              senders = std::move(senders),
              state_overrides = state_overrides,
+             block_overrides = block_overrides,
              block_header = block_header,
              block_number = block_number,
              block_id = block_id,
@@ -1684,7 +1687,8 @@ struct monad_executor
                             vm,
                             block_hash_buffer,
                             *tx_exec_group->group,
-                            state_overrides);
+                            state_overrides,
+                            block_overrides);
                         MONAD_ASSERT(false);
                     }
                     else {
@@ -1704,7 +1708,8 @@ struct monad_executor
                             vm,
                             block_hash_buffer,
                             *tx_exec_group->group,
-                            state_overrides);
+                            state_overrides,
+                            block_overrides);
                         MONAD_ASSERT(false);
                     }
                 }();
@@ -1939,6 +1944,8 @@ void monad_executor_eth_simulate_submit(
     uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     struct monad_state_override const *const *state_overrides,
     size_t n_state_overrides,
+    struct monad_block_override const *const *block_overrides,
+    size_t n_block_overrides,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
     byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
@@ -1973,6 +1980,7 @@ void monad_executor_eth_simulate_submit(
         txns,
         senders,
         std::span{state_overrides, n_state_overrides},
+        std::span{block_overrides, n_block_overrides},
         block_header,
         block_number,
         block_id,

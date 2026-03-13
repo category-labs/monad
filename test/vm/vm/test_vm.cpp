@@ -124,6 +124,7 @@ evmc::Result BlockchainTestVM::execute(
     evmc_revision rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
 {
+    MONAD_VM_ASSERT(rev >= constants::EARLIEST_SUPPORTED_EVM_FORK);
     auto *const prev_rt_ctx = rt_ctx_;
     auto new_rt_ctx =
         runtime::Context::from(host, context, msg, {code, code_size});

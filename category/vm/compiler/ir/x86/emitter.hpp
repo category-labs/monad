@@ -233,6 +233,7 @@ namespace monad::vm::compiler::native
         void checked_debug_comment(std::string const &msg);
         void swap_general_regs(StackElem &, StackElem &);
         void swap_general_reg_indices(GeneralReg, uint8_t, uint8_t);
+        void assert_runtime_result_bound();
 
         uint32_t exponential_constant_fold_counter() const
         {
@@ -358,6 +359,8 @@ namespace monad::vm::compiler::native
         template <typename T, size_t N>
         void array_leading_zeros(std::array<T, N> const &);
         template <typename T, size_t N>
+        void array_bit_width(std::array<T, N> const &);
+        template <typename T, size_t N>
         void array_byte_width(std::array<T, N> const &);
 
         bool exp_optimized(int64_t, uint32_t);
@@ -414,6 +417,7 @@ namespace monad::vm::compiler::native
         {
             call_runtime(
                 remaining_base_gas, true, runtime::extcodesize<traits>);
+            stack_.top()->set_bit_upper_bound(32);
         }
 
         template <Traits traits>
@@ -519,18 +523,21 @@ namespace monad::vm::compiler::native
         void create(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::create<traits>);
+            stack_.top()->set_bit_upper_bound(160);
         }
 
         template <Traits traits>
         void call(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::call<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
         void callcode(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::callcode<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
@@ -538,18 +545,21 @@ namespace monad::vm::compiler::native
         {
             call_runtime(
                 remaining_base_gas, true, runtime::delegatecall<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
         void create2(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::create2<traits>);
+            stack_.top()->set_bit_upper_bound(160);
         }
 
         template <Traits traits>
         void staticcall(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::staticcall<traits>);
+            stack_.top()->set_bit_upper_bound(1);
         }
 
         template <Traits traits>
@@ -739,6 +749,9 @@ namespace monad::vm::compiler::native
 
         StackElemRef negate_by_sub(StackElemRef);
         void negate_gpq256(Gpq256 const &);
+
+        template <typename T, size_t N>
+        void array_or(asmjit::x86::Gpq, std::array<T, N> const &, size_t count);
 
         template <typename... LiveSet>
         void test_high_bits192(StackElemRef, std::tuple<LiveSet...> const &);
@@ -970,7 +983,8 @@ namespace monad::vm::compiler::native
         void general_bin_instr(
             StackElemRef dst, LocationType dst_loc, StackElemRef src,
             LocationType src_loc,
-            std::function<bool(size_t, uint64_t)> is_no_operation);
+            std::function<bool(size_t, uint64_t)> is_no_operation,
+            unsigned bit_bound);
 
         template <typename... LiveSet>
         std::tuple<StackElemRef, StackElemRef, LocationType> get_una_arguments(
@@ -999,7 +1013,8 @@ namespace monad::vm::compiler::native
         void avx_or_general_bin_instr(
             StackElemRef dst, StackElemRef left, LocationType left_loc,
             StackElemRef right, LocationType right_loc,
-            std::function<bool(size_t, uint64_t)> is_no_operation);
+            std::function<bool(size_t, uint64_t)> is_no_operation,
+            unsigned bit_bound);
 
         template <typename... LiveSet>
         std::tuple<

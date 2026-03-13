@@ -52,7 +52,6 @@
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 #include <evmc/evmc.h>
-#include <intx/intx.hpp>
 
 #include <atomic>
 #include <chrono>

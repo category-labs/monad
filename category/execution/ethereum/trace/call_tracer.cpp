@@ -69,7 +69,7 @@ void NoopCallTracer::on_enter(evmc_message const &) {}
 
 void NoopCallTracer::on_exit(evmc::Result const &) {}
 
-void NoopCallTracer::on_log(Receipt::Log) {}
+void NoopCallTracer::on_log(size_t, Receipt::Log) {}
 
 void NoopCallTracer::on_self_destruct(
     Address const &, Address const &, uint256_t const &)
@@ -181,16 +181,16 @@ void CallTracer::on_exit(evmc::Result const &res)
     positions_.pop();
 }
 
-void CallTracer::on_log(Receipt::Log log)
+void CallTracer::on_log(size_t receipt_index, Receipt::Log log)
 {
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!last_.empty());
     MONAD_ASSERT(!positions_.empty());
 
-    auto &frame = frames_.at(last_.top());
+    CallFrame &frame = frames_.at(last_.top());
     MONAD_ASSERT(frame.logs.has_value());
 
-    frame.logs->emplace_back(std::move(log), positions_.top());
+    frame.logs->emplace_back(receipt_index, std::move(log), positions_.top());
 }
 
 void CallTracer::on_self_destruct(

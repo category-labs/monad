@@ -61,6 +61,7 @@ Module Type UintOps.
   Parameter eqb : t -> t -> bool.
   Parameter ltb : t -> t -> bool.
   Parameter leb : t -> t -> bool.
+  Parameter gtb : t -> t -> bool.
 
   (** *** Bool injection *)
   Parameter of_bool : bool -> t.
@@ -155,6 +156,7 @@ Module Type Uint <: UintOps.
   Axiom spec_eqb : forall x y, eqb x y = (to_Z x =? to_Z y).
   Axiom spec_ltb : forall x y, ltb x y = (to_Z x <? to_Z y).
   Axiom spec_leb : forall x y, leb x y = (to_Z x <=? to_Z y).
+  Axiom spec_gtb : forall x y, gtb x y = (to_Z x >? to_Z y).
 
   (** Bool injection specification *)
   Axiom spec_of_bool : forall b, to_Z (of_bool b) = if b then 1 else 0.
@@ -200,4 +202,5 @@ Module UintNotations (U : UintOps).
   Infix "<?" := U.ltb : uint_scope.
   Infix "=?" := U.eqb : uint_scope.
   Infix "<=?" := U.leb : uint_scope.
+  Infix ">?" := U.gtb : uint_scope.
 End UintNotations.

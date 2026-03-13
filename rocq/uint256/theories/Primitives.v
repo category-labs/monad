@@ -13,8 +13,7 @@
 
 From Stdlib Require Import ZArith.
 From Stdlib Require Import Lia.
-Require Import Spec.
-Open Scope Z_scope.
+From Uint256 Require Import Uint Spec.
 
 (** ** Constants for 64-bit arithmetic *)
 
@@ -59,16 +58,16 @@ Definition from_Z256 (z : Z) : uint256 :=
     (from_Z64 (z' mod 2^192))
     (from_Z64 (z' / 2^192)).
 
-(** 64-bit result with carry/borrow *)
-Record result64_with_carry := {
-  value64 : uint64;
-  carry64 : bool
-}.
-
 (* 256-bit result with carry/borrow *)
 Record result256_with_carry := {
     value256 : uint256;
     carry256 : bool
+}.
+
+(** 64-bit result with carry/borrow (legacy, for concrete Z code) *)
+Record result64_with_carry := {
+  value64 : uint64;
+  carry64 : bool
 }.
 
 (** Result type for extended multiplication (64x64 -> 128) *)
@@ -81,6 +80,17 @@ Record mulx_result := {
 Record div64_result := {
   quot64 : uint64;
   rem64 : uint64
+}.
+
+Module Primitives (Import U64 : Uint64Ops).
+Module MN := UintNotations(U64).
+Import MN.
+Open Scope uint_scope.
+
+(** 64-bit result with carry/borrow *)
+Record result64 := {
+  value64 : U64.t;
+  carry64 : bool
 }.
 
 (** ** Addition with Carry *)
@@ -96,79 +106,14 @@ Record div64_result := {
       uint64_t const sum_carry = sum + carry_in;
       carry_out |= sum_carry < sum;
 *)
-Definition addc64 (lhs rhs : uint64) (carry_in : bool) : result64_with_carry :=
-  let lhs_z := to_Z64 lhs in
-  let rhs_z := to_Z64 rhs in
-  let cin := if carry_in then 1 else 0 in
-  let sum := normalize64 (lhs_z + rhs_z) in
-  let cout := sum <? lhs_z in
-  let sum_carry := normalize64 (sum + cin) in
+Definition addc64 (lhs rhs : U64.t) (carry_in : bool) : result64 :=
+  let sum := lhs + rhs in
+  let cout := sum <? lhs in
+  let sum_carry := sum + of_bool carry_in in
   {|
-    value64 := from_Z64 sum_carry;
+    value64 := sum_carry;
     carry64 := (cout || (sum_carry <? sum))%bool
   |}.
-
-(* Matches addc in uint256.hpp *)
-(** Add two uint256 values, return result and carry *)
-Definition add256_c (x y : uint256) : result256_with_carry :=
-  let w0 := addc64 x.(v0) y.(v0) false in
-  let w1 := addc64 x.(v1) y.(v1) w0.(carry64) in
-  let w2 := addc64 x.(v2) y.(v2) w1.(carry64) in
-  let w3 := addc64 x.(v3) y.(v3) w2.(carry64) in
-  {|
-    value256 := (mk_uint256 w0.(value64) w1.(value64)
-                            w2.(value64) w3.(value64));
-    carry256 := w3.(carry64)
-  |}.
-
-(** ** Correctness Properties *)
-
-
-(* Claude Code-inspired Proof *)
-Lemma mod_overflow_iff : forall a b M,
-    0 <= a < M -> 0 <= b < M -> M > 0 ->
-    ((a + b) mod M < a <-> a + b >= M).
-Proof.
-  intros a b M Ha Hb HM.
-  split; intro H.
-  - (* -> direction: (a + b) mod M < a implies a + b >= M *)
-    destruct (Z_lt_ge_dec (a + b) M) as [Hno_ov | Hov].
-    + (* a + b < M case: derive contradiction *)
-      rewrite Z.mod_small in H; lia.
-    + assumption.
-  - (* <- direction: a + b >= M implies (a + b) mod M < a *)
-    rewrite Z.mod_eq by lia.
-    assert (Hdiv: 1 = (a + b) / M) by
-      (apply Z.div_unique with (r := a + b - M); lia).
-    rewrite <- Hdiv, Z.mul_1_r; clear Hdiv.
-    lia.
-Qed.
-
-Lemma le_add_nonneg_r : forall n m p : Z,
-  m <= n -> 0 <= p -> m <= n + p.
-Proof.
-  intros n m p Hmn Hp.
-  rewrite <- (Z.add_0_r m).
-  apply Z.add_le_mono; assumption.
-Qed.
-
-(* Underflow detection: (a - b) mod M > a iff a < b (when 0 <= a, b < M) *)
-Lemma mod_underflow_iff : forall a b M,
-    0 <= a < M -> 0 <= b < M -> M > 0 ->
-    ((a - b) mod M > a <-> a < b).
-Proof.
-  intros a b M Ha Hb HM.
-  split; intro H.
-  - (* -> direction: (a - b) mod M > a implies a < b *)
-    destruct (Z_lt_ge_dec a b) as [Hlt | Hge].
-    + assumption.
-    + (* a >= b, so a - b >= 0, mod is identity, contradiction *)
-      rewrite Z.mod_small in H; lia.
-  - (* <- direction: a < b implies (a - b) mod M > a *)
-    rewrite Z.mod_eq by lia.
-    replace ((a - b) / M) with (-1) by (apply Z.div_unique with (a - b + M); lia).
-    lia.
-Qed.
 
 (** ** Subtraction with Borrow *)
 
@@ -184,30 +129,91 @@ Qed.
       borrow_out |= borrow_in > sub;
 *)
 
-Definition subb64 (lhs rhs : uint64) (borrow_in : bool) : result64_with_carry :=
-  let lhs_z := to_Z64 lhs in
-  let rhs_z := to_Z64 rhs in
-  let bin := if borrow_in then 1 else 0 in
-  let sub := normalize64 (lhs_z - rhs_z) in
-  let bout := rhs_z >? lhs_z in
-  let sub_borrow := normalize64 (sub - bin) in
+Definition subb64 (lhs rhs : U64.t) (borrow_in : bool) : result64 :=
+  let bin := of_bool borrow_in in
+  let sub := lhs - rhs in
+  let bout := rhs >? lhs in
+  let sub_borrow := sub - bin in
   {|
-    value64 := from_Z64 sub_borrow;
+    value64 := sub_borrow;
     carry64 := (bout || (bin >? sub))%bool  (* borrow if result would be negative *)
   |}.
 
-(** ** Extended Multiplication *)
+(** ** Double-Precision Shifts *)
 
-(** Specification for mulx (64-bit × 64-bit → 128-bit)
+(** Left shift with double precision (shld instruction)
 
-    Computes: product = x * y
-    Returns: (high 64 bits, low 64 bits)
+    Computes: high bits of [(high || low) << shift]
 
-    This matches mulx_constexpr:
-      uint128_t const prod = static_cast<uint128_t>(x) * static_cast<uint128_t>(y);
-      r_hi = static_cast<uint64_t>(prod >> uint128_t{64});
-      r_lo = static_cast<uint64_t>(prod);
-*)
+    This matches shld_constexpr in uint256.hpp:
+      return (high << shift) | ((low >> 1) >> (63 - shift));
+
+    The formulation [(low >> 1) >> (63 - shift)] instead of
+    [low >> (64 - shift)] avoids undefined behavior when
+    [shift = 0] (x86 masks the shift count to 6 bits). *)
+Definition shld64 (high low : U64.t) (shift : nat) : U64.t :=
+  orw (shl high shift) (shr (shr low 1) (63 - shift)).
+
+(** Right shift with double precision (shrd instruction)
+
+    Computes: low bits of [(high || low) >> shift]
+
+    This matches shrd_constexpr in uint256.hpp:
+      return (low >> shift) | ((high << 1) << (63 - shift)); *)
+Definition shrd64 (high low : U64.t) (shift : nat) : U64.t :=
+  orw (shr low shift) (shl (shl high 1) (63 - shift)).
+
+(** Note: [mulx] and [div] are part of the [UintOps] interface
+    and do not need separate definitions here. *)
+
+End Primitives.
+
+(** ** Pure Z utility lemmas *)
+
+Lemma mod_overflow_iff : forall a b M,
+    0 <= a < M -> 0 <= b < M -> M > 0 ->
+    ((a + b) mod M < a <-> a + b >= M).
+Proof.
+  intros a b M Ha Hb HM.
+  split; intro H.
+  - destruct (Z_lt_ge_dec (a + b) M) as [Hno_ov | Hov].
+    + rewrite Z.mod_small in H; lia.
+    + assumption.
+  - rewrite Z.mod_eq by lia.
+    assert (Hdiv: 1 = (a + b) / M) by
+      (apply Z.div_unique with (r := a + b - M); lia).
+    rewrite <- Hdiv, Z.mul_1_r; clear Hdiv.
+    lia.
+Qed.
+
+Lemma le_add_nonneg_r : forall n m p : Z,
+  m <= n -> 0 <= p -> m <= n + p.
+Proof.
+  intros n m p Hmn Hp.
+  rewrite <- (Z.add_0_r m).
+  apply Z.add_le_mono; assumption.
+Qed.
+
+Lemma mod_underflow_iff : forall a b M,
+    0 <= a < M -> 0 <= b < M -> M > 0 ->
+    ((a - b) mod M > a <-> a < b).
+Proof.
+  intros a b M Ha Hb HM.
+  split; intro H.
+  - destruct (Z_lt_ge_dec a b) as [Hlt | Hge].
+    + assumption.
+    + rewrite Z.mod_small in H; lia.
+  - rewrite Z.mod_eq by lia.
+    replace ((a - b) / M) with (-1) by (apply Z.div_unique with (a - b + M); lia).
+    lia.
+Qed.
+
+(** ** Legacy concrete definitions
+
+    The following definitions use a direct Z representation for uint64
+    and are still used by RuntimeMul.v, Words.v, Division.v, etc.
+    They will be migrated to the module interface incrementally. *)
+
 Definition mulx64 (x y : uint64) : mulx_result :=
   let prod := to_Z64 x * to_Z64 y in
   {|
@@ -215,20 +221,6 @@ Definition mulx64 (x y : uint64) : mulx_result :=
     lo := from_Z64 (normalize64 prod)
   |}.
 
-(** ** Extended Division *)
-
-(** Specification for div (128-bit / 64-bit → 64-bit with remainder)
-
-    Computes: (u_hi * 2^64 + u_lo) / v = quotient remainder rem
-    Returns: (quotient, remainder)
-
-    Precondition: u_hi < v (to ensure quotient fits in 64 bits)
-
-    This matches div_constexpr:
-      auto const u = (static_cast<uint128_t>(u_hi) << 64) | u_lo;
-      auto const quot = static_cast<uint64_t>(u / v);
-      auto const rem = static_cast<uint64_t>(u % v);
-*)
 Definition div64 (u_hi u_lo v : uint64) : div64_result :=
   let u := Z.shiftl (to_Z64 u_hi) 64 + to_Z64 u_lo in
   let v_z := to_Z64 v in
@@ -237,23 +229,9 @@ Definition div64 (u_hi u_lo v : uint64) : div64_result :=
     rem64 := from_Z64 (u mod v_z)
   |}.
 
-(** Precondition for div64: high word must be less than divisor *)
 Definition div64_precondition (u_hi v : uint64) : Prop :=
   to_Z64 u_hi < to_Z64 v.
 
-(** ** Double-Precision Shifts *)
-
-(** Left shift with double precision (shld instruction)
-
-    Specification: (high || low) << shift, return high part
-
-    This matches shld_constexpr:
-      return (high << shift) | ((low >> 1) >> (63 - shift));
-
-    The peculiar formulation (low >> 1) >> (63 - shift) instead of low
-    >> (64 - shift) is to avoid undefined behavior when shift = 0 (x86
-    masks the shift count to 6 bits).
-*)
 Definition shld64 (high low : uint64) (shift : nat) : uint64 :=
   if Nat.leb 64 shift then from_Z64 0
   else
@@ -263,16 +241,6 @@ Definition shld64 (high low : uint64) (shift : nat) : uint64 :=
     let shifted_low := Z.shiftr (Z.shiftr l 1) (Z.of_nat (63 - shift)) in
     normalize64 (Z.lor shifted_high shifted_low).
 
-(** Right shift with double precision (shrd instruction)
-
-    Specification: (high || low) >> shift, return low part
-
-    This matches shrd_constexpr:
-      return (low >> shift) | ((high << 1) << (63 - shift));
-
-    Note: We use normalize64 on shifted_high to simulate C++ uint64_t
-    overflow behavior (shifting left by 64 or more gives 0).
-*)
 Definition shrd64 (high low : uint64) (shift : nat) : uint64 :=
   if Nat.leb 64 shift then from_Z64 0
   else
@@ -282,101 +250,29 @@ Definition shrd64 (high low : uint64) (shift : nat) : uint64 :=
     let shifted_high := Z.shiftl (Z.shiftl h 1) (Z.of_nat (63 - shift)) in
     normalize64 (Z.lor shifted_low shifted_high).
 
-(** ** Correctness Properties *)
+(** Legacy concrete addc64/subb64 used by other files *)
+Definition addc64 (lhs rhs : uint64) (carry_in : bool) : result64_with_carry :=
+  let sum := normalize64 (to_Z64 lhs + to_Z64 rhs) in
+  let cout := sum <? to_Z64 lhs in
+  let cin_z := if carry_in then 1 else 0 in
+  let sum_carry := normalize64 (sum + cin_z) in
+  {|
+    value64 := sum_carry;
+    carry64 := (cout || (sum_carry <? sum))%bool
+  |}.
 
-(** addc64 produces correct mathematical result *)
-Lemma addc64_value_correct : forall lhs rhs cin,
-  let result := addc64 lhs rhs cin in
-  let cin_z := if cin then 1 else 0 in
-  to_Z64 (value64 result) = (to_Z64 lhs + to_Z64 rhs + cin_z) mod modulus64.
-Proof.
-  intros; simpl.
-  unfold normalize64, from_Z64, to_Z64, modulus64, cin_z.
-  rewrite Zplus_mod_idemp_l.
-  reflexivity.
-Qed.
+Definition subb64 (lhs rhs : uint64) (borrow_in : bool) : result64_with_carry :=
+  let sub := normalize64 (to_Z64 lhs - to_Z64 rhs) in
+  let bout := to_Z64 rhs >? to_Z64 lhs in
+  let bin_z := if borrow_in then 1 else 0 in
+  let sub_borrow := normalize64 (sub - bin_z) in
+  {|
+    value64 := sub_borrow;
+    carry64 := (bout || (bin_z >? sub))%bool
+  |}.
 
-(** addc64 carry is correct *)
-Lemma addc64_carry_correct : forall lhs rhs cin,
-  0 <= lhs < modulus64 ->
-  0 <= rhs < modulus64 ->
-  let result := addc64 lhs rhs cin in
-  let cin_z := if cin then 1 else 0 in
-  carry64 result = true <-> to_Z64 lhs + to_Z64 rhs + cin_z >= modulus64.
-Proof.
-  intros lhs rhs cin Hlhs Hrhs.
-  simpl. unfold normalize64, to_Z64, modulus64 in *.
-  set (M := 2^64) in *.
-  set (sum := (lhs + rhs) mod M).
-  set (cin_z := if cin then 1 else 0).
-  set (sum_carry := (sum + cin_z) mod M).
-  assert (Hcin_bound: 0 <= cin_z <= 1) by (unfold cin_z; destruct cin; lia).
-  assert (Hsum_bound: 0 <= sum < M) by (unfold sum; apply Z.mod_pos_bound; lia).
-  assert (Hsum_le: sum <= lhs + rhs) by (unfold sum; apply Z.mod_le; lia).
-  rewrite Bool.orb_true_iff, 2!Z.ltb_lt.
-  split.
-  - intros [Hov1 | Hov2].
-    + enough (lhs + rhs >= M) by lia. apply mod_overflow_iff; lia.
-    + apply -> mod_overflow_iff in Hov2; lia.
-  - intro Hoverflow.
-    destruct (Z_lt_ge_dec (lhs + rhs) M) as [Hno_ov1 | Hov1].
-    + right. apply <- mod_overflow_iff; [|lia | lia | lia].
-      unfold sum; rewrite Z.mod_small by lia. lia.
-    + left. apply <- mod_overflow_iff; lia.
-Qed.
+(** ** Legacy correctness lemmas *)
 
-(** subb64 produces correct mathematical result *)
-Lemma subb64_correct : forall lhs rhs bin,
-  let result := subb64 lhs rhs bin in
-  let bin_z := if bin then 1 else 0 in
-  to_Z64 (value64 result) = (to_Z64 lhs - to_Z64 rhs - bin_z) mod modulus64.
-Proof.
-  intros; simpl. unfold normalize64, from_Z64, to_Z64, modulus64, bin_z.
-  rewrite Zminus_mod_idemp_l.
-  reflexivity.
-Qed.
-
-(** subb64 borrow is correct *)
-Lemma subb64_carry_correct : forall lhs rhs bin,
-  0 <= lhs < modulus64 ->
-  0 <= rhs < modulus64 ->
-  let result := subb64 lhs rhs bin in
-  let bin_z := if bin then 1 else 0 in
-  carry64 result = true <-> to_Z64 lhs - to_Z64 rhs - bin_z < 0.
-Proof.
-  intros lhs rhs bin Hlhs Hrhs.
-  simpl. unfold normalize64, to_Z64, modulus64 in *.
-  set (M := 2^64) in *.
-  set (sub := (lhs - rhs) mod M).
-  set (bin_z := if bin then 1 else 0).
-  set (sub_borrow := (sub - bin_z) mod M).
-  assert (Hbin_bound: 0 <= bin_z <= 1) by (unfold bin_z; destruct bin; lia).
-  assert (Hsub_bound: 0 <= sub < M) by (unfold sub; apply Z.mod_pos_bound; lia).
-  assert (Hsub_ge: sub >= lhs - rhs).
-  { unfold sub.
-    destruct (Z_lt_ge_dec (lhs - rhs) 0) as [Hneg | Hpos].
-    - (* Negative case: lhs - rhs < 0 *)
-      pose proof (Z.mod_pos_bound (lhs - rhs) M ltac:(lia)) as Hmod_bound.
-      lia.
-    - (* Positive case: lhs - rhs >= 0 *)
-      rewrite Z.mod_small; lia. }
-  rewrite Bool.orb_true_iff, Z.gtb_lt, Z.gtb_lt.
-  split.
-  - (* Forward: borrow detected -> mathematical underflow *)
-    intros [Huf1 | Huf2].
-    + lia.
-    + lia.
-  - (* Backward: mathematical underflow -> borrow detected *)
-    intro Hunderflow.
-    destruct (Z_lt_ge_dec (lhs - rhs) 0) as [Huf1 | Hno_uf1].
-    + left. lia.
-    + right.
-      (* lhs >= rhs but lhs - rhs - bin_z < 0, so bin_z = 1 and lhs = rhs *)
-      assert (Hsub_eq: sub = lhs - rhs) by (unfold sub; rewrite Z.mod_small; lia).
-      lia.
-Qed.
-
-(** mulx64 produces correct 128-bit product *)
 Lemma mulx64_correct : forall x y,
   0 <= x -> 0 <= y ->
   let result := mulx64 x y in
@@ -394,10 +290,6 @@ Proof.
   ring.
 Qed.
 
-
-(** ** mulx64 Bounds Lemmas *)
-
-(** mulx64 high result is bounded *)
 Lemma mulx64_hi_bounded : forall x y,
   0 <= x < modulus64 ->
   0 <= y < modulus64 ->
@@ -412,7 +304,6 @@ Proof.
     rewrite <- Z.pow_add_r by lia. simpl. lia.
 Qed.
 
-(** mulx64 low result is bounded *)
 Lemma mulx64_lo_bounded : forall x y,
   0 <= x < modulus64 ->
   0 <= y < modulus64 ->
@@ -423,7 +314,6 @@ Proof.
   apply Z.mod_pos_bound. lia.
 Qed.
 
-(** div64 produces correct quotient and remainder *)
 Lemma div64_correct : forall u_hi u_lo v,
   0 < v ->
   div64_precondition u_hi v ->
@@ -440,9 +330,6 @@ Proof.
   - apply Z.mod_pos_bound. lia.
 Qed.
 
-(** ** Double-Precision Shift Correctness *)
-
-(** shld64 returns high when shift is 0 *)
 Lemma shld64_shift_0 : forall high low,
   0 <= high < modulus64 ->
   0 <= low < modulus64 ->
@@ -458,7 +345,6 @@ Proof.
   reflexivity.
 Qed.
 
-(** shld64 returns 0 when shift >= 64 *)
 Lemma shld64_shift_ge_64 : forall high low shift,
   (64 <= shift)%nat ->
   shld64 high low shift = from_Z64 0.
@@ -470,7 +356,6 @@ Proof.
   - apply Nat.leb_gt in Hle. lia.
 Qed.
 
-(** shld64 computes high bits of 128-bit left shift *)
 Lemma shld64_correct : forall high low shift,
   0 <= high < modulus64 ->
   0 <= low < modulus64 ->
@@ -505,13 +390,11 @@ Proof.
   apply Z.bits_inj'. intros n Hn.
   rewrite Z.land_spec. rewrite Z.bits_0.
   destruct (Z.lt_ge_cases n (Z.of_nat shift)) as [Hlt | Hge].
-  - (* n < shift: high * 2^shift has no bits below shift *)
-    rewrite Bool.andb_false_iff. left.
+  - rewrite Bool.andb_false_iff. left.
     rewrite <- Z.shiftl_mul_pow2 by lia.
     rewrite Z.shiftl_spec_low by lia.
     reflexivity.
-  - (* n >= shift: low / 2^(64-shift) has no bits at or above shift *)
-    rewrite Bool.andb_false_iff. right.
+  - rewrite Bool.andb_false_iff. right.
     rewrite <- Z.shiftr_div_pow2 by lia.
     rewrite Z.shiftr_spec by lia.
     apply Z.bits_above_log2; [lia|].
@@ -521,7 +404,6 @@ Proof.
     + apply Z.log2_lt_pow2; unfold modulus64 in Hlow; lia.
 Qed.
 
-(** shrd64 returns low when shift is 0 *)
 Lemma shrd64_shift_0 : forall high low,
   0 <= high < modulus64 ->
   0 <= low < modulus64 ->
@@ -543,16 +425,13 @@ Proof.
   apply Z.bits_inj'. intros n Hn.
   rewrite Z.land_spec, Z.bits_0.
   destruct (Z.lt_ge_cases n 64) as [Hlt | Hge].
-  - (* n < 64: high * 2^64 has no bits below 64 *)
-    rewrite Bool.andb_false_iff. left.
+  - rewrite Bool.andb_false_iff. left.
     rewrite <- Z.shiftl_mul_pow2 by lia.
     apply Z.shiftl_spec_low; lia.
-  - (* n >= 64: Z.ones 64 has no bits at or above 64 *)
-    rewrite Bool.andb_false_iff. right.
+  - rewrite Bool.andb_false_iff. right.
     apply Z.ones_spec_high; lia.
 Qed.
 
-(** shrd64 returns 0 when shift >= 64 *)
 Lemma shrd64_shift_ge_64 : forall high low shift,
   (64 <= shift)%nat ->
   shrd64 high low shift = from_Z64 0.
@@ -564,7 +443,6 @@ Proof.
   - apply Nat.leb_gt in Hle. lia.
 Qed.
 
-(** shrd64 computes low bits of 128-bit right shift *)
 Lemma shrd64_correct : forall high low shift,
   0 <= high < modulus64 ->
   0 <= low < modulus64 ->
@@ -598,13 +476,11 @@ Proof.
   apply Z.bits_inj'. intros n Hn.
   rewrite Z.land_spec. rewrite Z.bits_0.
   destruct (Z.lt_ge_cases n (64 - Z.of_nat shift)) as [Hlt | Hge].
-  - (* n < 64 - shift: high * 2^(64-shift) has no bits below 64-shift *)
-    rewrite Bool.andb_false_iff. right.
+  - rewrite Bool.andb_false_iff. right.
     rewrite <- Z.shiftl_mul_pow2 by lia.
     rewrite Z.shiftl_spec_low by lia.
     reflexivity.
-  - (* n >= 64 - shift: low / 2^shift has no bits at or above 64-shift *)
-    rewrite Bool.andb_false_iff. left.
+  - rewrite Bool.andb_false_iff. left.
     rewrite <- Z.shiftr_div_pow2 by lia.
     rewrite Z.shiftr_spec by lia.
     apply Z.bits_above_log2; [lia|].
@@ -614,9 +490,6 @@ Proof.
     + apply Z.log2_lt_pow2; unfold modulus64 in Hlow; lia.
 Qed.
 
-(** ** Double-Precision Shift Bounds Lemmas *)
-
-(** shld64 result is always in uint64 range *)
 Lemma shld64_bounded : forall high low shift,
   0 <= to_Z64 (shld64 high low shift) < modulus64.
 Proof.
@@ -628,16 +501,6 @@ Proof.
     apply Z.mod_pos_bound. lia.
 Qed.
 
-(** shld64 with valid inputs produces valid output *)
-Lemma shld64_valid : forall high low shift,
-  0 <= high < modulus64 ->
-  0 <= low < modulus64 ->
-  0 <= to_Z64 (shld64 high low shift) < modulus64.
-Proof.
-  intros. apply shld64_bounded.
-Qed.
-
-(** shrd64 result is always in uint64 range *)
 Lemma shrd64_bounded : forall high low shift,
   0 <= to_Z64 (shrd64 high low shift) < modulus64.
 Proof.
@@ -648,43 +511,3 @@ Proof.
   - unfold normalize64, from_Z64, to_Z64, modulus64.
     apply Z.mod_pos_bound. lia.
 Qed.
-
-(** shrd64 with valid inputs produces valid output *)
-Lemma shrd64_valid : forall high low shift,
-  0 <= high < modulus64 ->
-  0 <= low < modulus64 ->
-  0 <= to_Z64 (shrd64 high low shift) < modulus64.
-Proof.
-  intros. apply shrd64_bounded.
-Qed.
-
-(** ** Multi-word Addition Helper *)
-
-(** Add two 2-word numbers with carry propagation *)
-Definition add128_spec (x_hi x_lo y_hi y_lo : uint64) : mulx_result :=
-  let r0 := addc64 x_lo y_lo false in
-  let r1 := addc64 x_hi y_hi (carry64 r0) in
-  {|
-    hi := value64 r1;
-    lo := value64 r0
-  |}.
-
-(** ** Notes on Implementation *)
-
-(**
-   The specifications in this file directly mirror the _constexpr versions
-   from uint256.hpp. The _intrinsic versions using compiler built-ins or
-   inline assembly should produce identical results, which would be verified
-   by testing or assumed as a compiler correctness property.
-
-   Key verification strategy:
-   1. Prove these specifications are correct mathematical operations
-   2. Prove the multi-word operations (like 256-bit add) correctly chain
-      these primitives together
-   3. Test or assume that the actual C++ intrinsics match these specs
-
-   Multi-word definitions and proofs have been extracted to separate files:
-   - Words.v: word-list representation and helper lemmas
-   - Division.v / DivisionProofs.v: multi-word division
-   - RuntimeMul.v: runtime multiplication model (adc_2, adc_3, mul_line, etc.)
-*)

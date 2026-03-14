@@ -33,7 +33,7 @@ include("cmake/find_our_dependency.cmake")
 
 find_package(
   Boost CONFIG REQUIRED
-  COMPONENTS context fiber stacktrace_basic
+  COMPONENTS context stacktrace_basic
   OPTIONAL_COMPONENTS stacktrace_backtrace)
 
 function(check_if_boost_fiber_needs_ucontext_macro)

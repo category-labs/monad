@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/rle.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
@@ -101,25 +102,50 @@ public:
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
-        StorageKey const sk{address, incarnation, key};
-        StorageCache::ConstAccessor acc{};
-        if (storage_.find(acc, sk)) {
-            auto const &val = acc->second.value_;
-            return byte_string{val.begin(), val.end()};
+        bool truncated = false;
+        bytes32_t proposal_result;
+        if (proposals_.try_read_storage(
+                address, incarnation, key, proposal_result, truncated)) {
+            if (proposal_result == bytes32_t{}) {
+                return {};
+            }
+            return rle_encode(proposal_result.bytes, sizeof(bytes32_t));
         }
 
-        auto result = db_.read_storage(address, incarnation, key);
-        if (!result.empty()) {
-            storage_.insert(sk, result);
+        if (!truncated) {
+            StorageKey const sk{address, incarnation, key};
+            StorageCache::ConstAccessor acc{};
+            if (storage_.find(acc, sk)) {
+                auto const &val = acc->second.value_;
+                return byte_string{val.begin(), val.end()};
+            }
         }
-        return result;
+
+        return db_.read_storage(address, incarnation, key);
     }
 
     virtual byte_string read_storage_page(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
-        // TODO: reintegrate proposal/LRU caching for storage
+        bool truncated = false;
+        bytes32_t proposal_result;
+        if (proposals_.try_read_storage(
+                address, incarnation, key, proposal_result, truncated)) {
+            if (proposal_result == bytes32_t{}) {
+                return {};
+            }
+            return rle_encode(proposal_result.bytes, sizeof(bytes32_t));
+        }
+
+        if (!truncated) {
+            StorageKey const sk{address, incarnation, key};
+            StorageCache::ConstAccessor acc{};
+            if (storage_.find(acc, sk)) {
+                auto const &val = acc->second.value_;
+                return byte_string{val.begin(), val.end()};
+            }
+        }
         return db_.read_storage_page(address, incarnation, key);
     }
 
@@ -240,6 +266,26 @@ private:
             auto const &address = it->first;
             auto const &account_delta = it->second.account;
             accounts_.insert(address, account_delta.second);
+            auto const &storage = it->second.storage;
+            auto const &account = account_delta.second;
+            if (account.has_value()) {
+                for (auto it2 = storage.cbegin(); it2 != storage.cend();
+                     ++it2) {
+                    auto const &key = it2->first;
+                    auto const &storage_delta = it2->second;
+                    auto const incarnation = account->incarnation;
+                    auto const &val = storage_delta.second;
+                    StorageKey const sk{address, incarnation, key};
+                    if (val == bytes32_t{}) {
+                        storage_.insert(sk, std::span<uint8_t const>{});
+                    }
+                    else {
+                        byte_string rle =
+                            rle_encode(val.bytes, sizeof(bytes32_t));
+                        storage_.insert(sk, rle);
+                    }
+                }
+            }
         }
     }
 };

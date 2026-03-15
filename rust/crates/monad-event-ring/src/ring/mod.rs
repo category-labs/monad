@@ -64,7 +64,10 @@ where
 
         let raw = RawEventRing::mmap_from_fd(
             libc::PROT_READ,
+            #[cfg(target_os = "linux")]
             libc::MAP_POPULATE,
+            #[cfg(not(target_os = "linux"))]
+            0,
             file.as_raw_fd(),
             0,
             &path.as_ref().as_error_name(),

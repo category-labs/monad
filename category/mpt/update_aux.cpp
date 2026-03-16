@@ -20,7 +20,6 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/runtime/unaligned.hpp>
 #include <category/core/util/stopwatch.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
@@ -70,19 +69,6 @@ namespace
         double const fractional = result - result_floor;
         auto const r = static_cast<double>(rand()) / RAND_MAX;
         return result_floor + static_cast<uint32_t>(r <= fractional);
-    }
-
-    compact_offset_pair
-    deserialize_compaction_offsets(byte_string_view const bytes)
-    {
-        MONAD_ASSERT(bytes.size() == 2 * sizeof(uint32_t));
-        compact_offset_pair offsets;
-        // copy size is implicitly part of the `unaligned_load` call
-        // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
-        offsets.fast.set_value(unaligned_load<uint32_t>(bytes.data()));
-        offsets.slow.set_value(
-            unaligned_load<uint32_t>(bytes.data() + sizeof(uint32_t)));
-        return offsets;
     }
 }
 
@@ -1126,7 +1112,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
 
     if (prev_root) {
         // previous compaction offset
-        compact_offsets = deserialize_compaction_offsets(prev_root->value());
+        compact_offsets = compact_offset_pair::deserialize(prev_root->value());
     }
     if (compaction) {
         if (enable_dynamic_history_length_) {
@@ -1199,7 +1185,7 @@ void UpdateAuxImpl::release_unreferenced_chunks()
         get_root_offset_at_version(min_valid_version),
         min_valid_version);
     auto const min_offsets =
-        deserialize_compaction_offsets(min_valid_root->value());
+        compact_offset_pair::deserialize(min_valid_root->value());
     MONAD_ASSERT(
         min_offsets.fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
         min_offsets.slow != INVALID_COMPACT_VIRTUAL_OFFSET);
@@ -1242,7 +1228,7 @@ double UpdateAuxImpl::calculate_disk_usage_if_erased_up_to_and_including(
         get_root_offset_at_version(min_version_post_erase),
         min_version_post_erase);
     auto const min_offsets =
-        deserialize_compaction_offsets(min_valid_root_post_erase->value());
+        compact_offset_pair::deserialize(min_valid_root_post_erase->value());
     MONAD_ASSERT(
         min_offsets.fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
         min_offsets.slow != INVALID_COMPACT_VIRTUAL_OFFSET);

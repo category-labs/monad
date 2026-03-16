@@ -19,6 +19,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
@@ -254,6 +255,8 @@ struct compact_offset_pair
 
     byte_string serialize() const;
 
+    static compact_offset_pair deserialize(byte_string_view bytes);
+
     constexpr bool
     operator==(compact_offset_pair const &) const noexcept = default;
 };
@@ -328,6 +331,19 @@ inline byte_string compact_offset_pair::serialize() const
 {
     return ::monad::mpt::serialize((uint32_t)fast) +
            ::monad::mpt::serialize((uint32_t)slow);
+}
+
+inline compact_offset_pair
+compact_offset_pair::deserialize(byte_string_view const bytes)
+{
+    MONAD_ASSERT(bytes.size() == 2 * sizeof(uint32_t));
+    compact_offset_pair offsets;
+    // copy size is implicitly part of the `unaligned_load` call
+    // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
+    offsets.fast.set_value(unaligned_load<uint32_t>(bytes.data()));
+    offsets.slow.set_value(
+        unaligned_load<uint32_t>(bytes.data() + sizeof(uint32_t)));
+    return offsets;
 }
 
 MONAD_MPT_NAMESPACE_END

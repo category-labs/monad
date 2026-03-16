@@ -1426,76 +1426,85 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
         }
     }
 
-    auto const fast_disk_usage =
-        num_chunks(chunk_list::fast) / (double)io->chunk_count();
-    uint64_t const max_version = db_history_max_version();
-    if ((fast_disk_usage < fast_usage_limit_start_compaction &&
-         num_chunks(chunk_list::fast) <
-             fast_chunk_count_limit_start_compaction) ||
-        max_version == INVALID_BLOCK_NUM) {
-        return;
-    }
-
     MONAD_ASSERT(
         compact_offsets.fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
         compact_offsets.slow != INVALID_COMPACT_VIRTUAL_OFFSET);
     compact_offset_range_fast_ = MIN_COMPACT_VIRTUAL_OFFSET;
+    compact_offset_range_slow_ = MIN_COMPACT_VIRTUAL_OFFSET;
 
-    uint64_t const min_version = db_history_min_valid_version();
-    MONAD_ASSERT(min_version != INVALID_BLOCK_NUM);
-    compact_virtual_chunk_offset_t const curr_fast_writer_offset{
-        physical_to_virtual(node_writer_fast->sender().offset())};
-    // Estimate average fast-list disk growth per version. If the oldest root
-    // is on the fast list, compute from the full history range. Otherwise fall
-    // back to the last block's growth (e.g. roots from statesync may be on the
-    // slow list).
-    uint32_t avg_disk_growth_fast = last_block_disk_growth_fast_;
-    auto const min_version_root_virtual_offset =
-        physical_to_virtual(get_root_offset_at_version(min_version));
-    if (min_version_root_virtual_offset.in_fast_list() &&
-        max_version > min_version) {
-        avg_disk_growth_fast = divide_and_round(
-            curr_fast_writer_offset -
-                compact_virtual_chunk_offset_t{min_version_root_virtual_offset},
-            max_version - min_version);
-        LOG_INFO(
-            "avg disk growth fast list per version: {} KB",
-            avg_disk_growth_fast << 6);
+    uint64_t const max_version = db_history_max_version();
+    if (max_version == INVALID_BLOCK_NUM ||
+        compact_offsets.fast >= last_block_end_offset_fast_) {
+        return;
     }
+
     bool const skip_compaction = (rand() % 20) == 0;
-    uint32_t const latest_block_fast_uncompacted_range =
-        curr_fast_writer_offset - compact_offsets.fast;
-    if (latest_block_fast_uncompacted_range >
-        static_cast<uint64_t>(avg_disk_growth_fast) *
-            min_versions_of_growth_before_compact_fast_list) {
-        uint64_t const valid_history_length = max_version - min_version + 1;
-        uint64_t const target_uncompacted_range =
-            static_cast<uint64_t>(avg_disk_growth_fast) * valid_history_length;
-        int64_t const tracking_error =
-            static_cast<int64_t>(latest_block_fast_uncompacted_range) -
-            static_cast<int64_t>(target_uncompacted_range);
 
-        // When at or ahead of target, or randomly ~5% of the time, skip
-        // compaction entirely so there's no recirculation from compaction
-        // parents and the average can come down.
-        uint32_t to_advance = 0;
-        if (tracking_error > 0 && !skip_compaction) {
-            // Catch up with weighted proportional
-            // correction. Weight scales up with spare I/O capacity.
-            double const K =
-                2.0 * avg_disk_growth_fast / last_block_disk_growth_fast_;
-            uint32_t const correction = std::min(
-                divide_and_round(
-                    K * static_cast<double>(tracking_error),
-                    valid_history_length),
-                avg_disk_growth_fast);
-            to_advance = std::min(
-                avg_disk_growth_fast + correction, max_compact_offset_range);
+    // <-- Fast list compaction -->
+    auto const fast_disk_usage =
+        num_chunks(chunk_list::fast) / (double)io->chunk_count();
+    if ((fast_disk_usage >= fast_usage_limit_start_compaction ||
+         num_chunks(chunk_list::fast) >=
+             fast_chunk_count_limit_start_compaction)) {
+        uint64_t const min_version = db_history_min_valid_version();
+        MONAD_ASSERT(min_version != INVALID_BLOCK_NUM);
+        compact_virtual_chunk_offset_t const curr_fast_writer_offset{
+            physical_to_virtual(node_writer_fast->sender().offset())};
+        // Estimate average fast-list disk growth per version. If the oldest
+        // root is on the fast list, compute from the full history range.
+        // Otherwise fall back to the last block's growth (e.g. roots from
+        // statesync may be on the slow list).
+        uint32_t avg_disk_growth_fast = last_block_disk_growth_fast_;
+        auto const min_version_root_virtual_offset =
+            physical_to_virtual(get_root_offset_at_version(min_version));
+        if (min_version_root_virtual_offset.in_fast_list() &&
+            max_version > min_version) {
+            avg_disk_growth_fast = divide_and_round(
+                curr_fast_writer_offset -
+                    compact_virtual_chunk_offset_t{
+                        min_version_root_virtual_offset},
+                max_version - min_version);
+            LOG_INFO(
+                "avg disk growth fast list per version: {} KB",
+                avg_disk_growth_fast << 6);
         }
-        to_advance = std::min(to_advance, max_compact_offset_range);
-        compact_offset_range_fast_.set_value(to_advance);
-        compact_offsets.fast += compact_offset_range_fast_;
+        uint32_t const latest_block_fast_uncompacted_range =
+            curr_fast_writer_offset - compact_offsets.fast;
+        if (latest_block_fast_uncompacted_range >
+            static_cast<uint64_t>(avg_disk_growth_fast) *
+                min_versions_of_growth_before_compact_fast_list) {
+            uint64_t const valid_history_length = max_version - min_version + 1;
+            uint64_t const target_uncompacted_range =
+                static_cast<uint64_t>(avg_disk_growth_fast) *
+                valid_history_length;
+            int64_t const tracking_error =
+                static_cast<int64_t>(latest_block_fast_uncompacted_range) -
+                static_cast<int64_t>(target_uncompacted_range);
+
+            // When at or ahead of target, or randomly ~5% of the time, skip
+            // compaction entirely so there's no recirculation from compaction
+            // parents and the average can come down.
+            uint32_t to_advance = 0;
+            if (tracking_error > 0 && !skip_compaction) {
+                // Catch up with weighted proportional
+                // correction. Weight scales up with spare I/O capacity.
+                double const K =
+                    2.0 * avg_disk_growth_fast / last_block_disk_growth_fast_;
+                uint32_t const correction = std::min(
+                    divide_and_round(
+                        K * static_cast<double>(tracking_error),
+                        valid_history_length),
+                    avg_disk_growth_fast);
+                to_advance = std::min(
+                    avg_disk_growth_fast + correction,
+                    max_compact_offset_range);
+            }
+            to_advance = std::min(to_advance, max_compact_offset_range);
+            compact_offset_range_fast_.set_value(to_advance);
+            compact_offsets.fast += compact_offset_range_fast_;
+        }
     }
+    // <-- Slow list compaction -->
     constexpr double usage_limit_start_compact_slow = 0.6;
     constexpr double slow_usage_limit_start_compact_slow = 0.2;
     constexpr uint32_t gc_efficiency_breakeven = 4;
@@ -1522,9 +1531,6 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
             compact_offset_range_slow_.set_value(4);
         }
         compact_offsets.slow += compact_offset_range_slow_;
-    }
-    else {
-        compact_offset_range_slow_ = MIN_COMPACT_VIRTUAL_OFFSET;
     }
 }
 

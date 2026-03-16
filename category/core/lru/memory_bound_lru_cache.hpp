@@ -20,6 +20,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <memory>
 #include <memory_resource>
 #include <span>
 
@@ -27,47 +28,108 @@ MONAD_NAMESPACE_BEGIN
 
 template <class Key, class KeyHashCompare = tbb::tbb_hash_compare<Key>>
 class MemoryBoundLruCache
-    : public LruCache<Key, std::pmr::basic_string<uint8_t>, KeyHashCompare>
 {
     using Value = std::pmr::basic_string<uint8_t>;
-    using Base = LruCache<Key, Value, KeyHashCompare>;
+    using Lru = LruCache<Key, Value, KeyHashCompare>;
+
+    struct Tier
+    {
+        size_t slab_size;
+        std::unique_ptr<Lru> lru;
+
+        Tier(size_t slab_sz, size_t max_entries)
+            : slab_size(slab_sz)
+            , lru(std::make_unique<Lru>(max_entries))
+        {
+        }
+    };
 
     slab_resource slab_;
     size_t max_bytes_;
-    std::atomic<size_t> used_bytes_{0};
+    std::vector<Tier> tiers_;
 
 public:
-    using ConstAccessor = typename Base::ConstAccessor;
+    using ConstAccessor = typename Lru::ConstAccessor;
 
     MemoryBoundLruCache(size_t max_bytes, std::span<size_t const> slab_sizes)
-        : Base(max_bytes / slab_sizes.front())
-        , slab_(slab_sizes)
-        , max_bytes_(max_bytes)
+        : max_bytes_(max_bytes)
     {
-        slab_.set_used_bytes(&used_bytes_);
+        tiers_.reserve(slab_sizes.size());
+        for (size_t const sz : slab_sizes) {
+            tiers_.emplace_back(sz, max_bytes / sz);
+        }
+    }
+
+    bool find(ConstAccessor &acc, Key const &key)
+    {
+        for (auto &tier : tiers_) {
+            if (tier.lru->find(acc, key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool insert(Key const &key, std::span<uint8_t const> data)
     {
-        while (used_bytes_.load(std::memory_order_relaxed) >= max_bytes_) {
-            if (!Base::evict()) {
+        size_t const idx = tier_index(data.size());
+        auto &tier = tiers_[idx];
+
+        while (slab_.used_bytes() >= max_bytes_) {
+            if (!evict_from(idx)) {
                 break;
             }
         }
+
         Value val{data.begin(), data.end(), &slab_};
-        return Base::insert(key, std::move(val));
+        return tier.lru->insert_construct(key, std::move(val));
     }
 
     void clear()
     {
-        Base::clear();
+        for (auto &tier : tiers_) {
+            tier.lru->clear();
+        }
         slab_.release();
-        used_bytes_.store(0, std::memory_order_relaxed);
     }
 
     size_t used_bytes() const
     {
-        return used_bytes_.load(std::memory_order_relaxed);
+        return slab_.used_bytes();
+    }
+
+    std::string print_stats()
+    {
+        std::string s;
+        for (auto &tier : tiers_) {
+            if (!s.empty()) {
+                s += '/';
+            }
+            s += tier.lru->print_stats();
+        }
+        return s;
+    }
+
+private:
+    size_t tier_index(size_t bytes) const
+    {
+        for (size_t i = 0; i < tiers_.size(); ++i) {
+            if (bytes <= tiers_[i].slab_size) {
+                return i;
+            }
+        }
+        return tiers_.size() - 1;
+    }
+
+    bool evict_from(size_t start)
+    {
+        for (size_t i = 0; i < tiers_.size(); ++i) {
+            size_t const idx = (start + i) % tiers_.size();
+            if (tiers_[idx].lru->evict()) {
+                return true;
+            }
+        }
+        return false;
     }
 };
 

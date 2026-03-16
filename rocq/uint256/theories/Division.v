@@ -1,51 +1,98 @@
 (** * Multi-Word Division Model
 
-    Models the C++ udivrem function which divides an M-word number by an
-    N-word divisor.  The control flow is identical for both constexpr
-    and runtime paths; only the leaf operations (div64, shld64, shrd64)
-    differ.
+    The [Make] functor (parameterized by [Uint64Ops]) models the C++
+    [udivrem] function from uint256.hpp.  Leaf operations (div, shld64,
+    shrd64) come from the [UintOps] interface and Primitives.Make.
 
-    This file contains:
+    The functor defines:
 
-    - Single-word divisor model (long_div);
-    - Knuth's Algorithm D for multi-word divisors
-    - udivrem: top-level unsigned division dispatcher
-    - sdivrem256: signed division wrapper
+    - [long_div]: single-word divisor path
+    - [knuth_div_estimate]: trial quotient for Knuth Algorithm D
+    - [countl_zero]: leading-zero count (via abstract shifts)
+    - [shift_left_words] / [shift_right_words]: word-list
+      normalization and denormalization
+    - Utility helpers: [count_significant_words], [get_segment],
+      [set_segment]
 
-    Proofs are in DivisionProofs.v.
-*)
+    Legacy concrete definitions outside the functor (using Z-level
+    arithmetic) cover the Knuth subtract-and-correct loop,
+    [udivrem], [negate_words], and [sdivrem256].  These are blocked
+    from porting by [knuth_div_subtract_correct]'s dependence on
+    [to_Z_words].
+
+    Proofs are in DivisionProofs.v. *)
 
 From Stdlib Require Import ZArith Lia List.
 From Uint256 Require Import Uint Primitives Words.
 Import ListNotations.
-Open Scope Z_scope.
+
+Module Make (U64 : Uint64Ops) (U128 : Uint128Ops).
+Include UintNotations(U64).
+Include Primitives.Make(U64).
+Include Words.Make(U64).
+
+(** Maximum representable value (all bits set, i.e., [2^width - 1]) *)
+Definition max_val : U64.t := 0 - 1.
 
 (** Result of long division *)
 Record long_div_result := mk_long_div_result {
   ld_quot : words;
-  ld_rem : uint64
+  ld_rem : U64.t
 }.
 
 (** Process words from most significant to least significant.
     Input: list in MSW-first order (i.e., rev of little-endian).
-    Each step divides (rem * 2^64 + u) by v, passing remainder forward. *)
-Fixpoint long_div_fold (us : words) (v : uint64) (rem : uint64) : long_div_result :=
+    Each step divides (rem * (base width) + u) by v, passing remainder forward. *)
+Fixpoint long_div_fold (us : words) (v : U64.t) (rem : U64.t) : long_div_result :=
   match us with
   | [] => mk_long_div_result [] rem
   | u :: rest =>
-      let r := div64 rem u v in
-      let rec_result := long_div_fold rest v (rem64 r) in
-      mk_long_div_result (quot64 r :: ld_quot rec_result) (ld_rem rec_result)
+      let (quot,rem) := U64.div rem u v in
+      let rec_result := long_div_fold rest v rem in
+      mk_long_div_result (quot :: ld_quot rec_result) (ld_rem rec_result)
   end.
 
 (** long_div: divide word list by single word.
     Input is little-endian, so we reverse to process MSW first,
     then reverse quotient back to little-endian. *)
-Definition long_div (us : words) (v : uint64) : long_div_result :=
+Definition long_div (us : words) (v : U64.t) : long_div_result :=
   let r := long_div_fold (rev us) v 0 in
   mk_long_div_result (rev (ld_quot r)) (ld_rem r).
 
+
+(** ** Knuth Division Core *)
+
+(** Trial quotient estimation with one refinement step.
+    C++ ref: uint256.hpp lines 1088-1137. *)
+Definition knuth_div_estimate (u_hi u_mid u_lo v_hi v_snd : U64.t) : U64.t :=
+  if (u_hi =? v_hi) then max_val
+  else
+    let (q0,r0) := U64.div u_hi u_mid v_hi in
+    if (q0 =? 0) then 0
+    else
+      if (q0 * v_snd >? r0 * (max_val + 1) + u_lo)
+      then q0 - 1
+      else q0.
+
 (** ** Utility Definitions *)
+
+(** Count leading zeros by scanning from MSB down.
+    At each step, [shr x pos'] is zero iff all bits at position [pos']
+    and above are zero. *)
+(* TODO: Consider adding counting zeros to the interface since this
+         definitions is a bit weird? *)
+Fixpoint countl_zero_go (x : U64.t) (pos : nat) : nat :=
+  match pos with
+  | O => O
+  | S pos' =>
+      if (U64.shr x pos' =? 0) then S (countl_zero_go x pos')
+      else O
+  end.
+
+(** Count leading zeros of a value.
+    C++ ref: std::countl_zero. *)
+Definition countl_zero (x : U64.t) : nat :=
+  countl_zero_go x (Pos.to_nat U64.width).
 
 (** Count non-zero words from MSW down.
     Scans the reversed (MSW-first) word list, skipping leading zeros. *)
@@ -57,18 +104,6 @@ Fixpoint skip_leading_zeros (rs : words) : nat :=
 
 Definition count_significant_words (ws : words) : nat :=
   skip_leading_zeros (rev ws).
-
-(** Leading zeros of a 64-bit word. C++ ref: std::countl_zero. *)
-Definition countl_zero64 (w : uint64) : nat :=
-  if (w =? 0) then 64%nat else (63 - Z.to_nat (Z.log2 w))%nat.
-
-(** Decompose a Z value into n little-endian 64-bit words. *)
-(* TODO: Possibly rename this: from_Z_words? to_words_Z? *)
-Fixpoint Z_to_words (z : Z) (n : nat) : words :=
-  match n with
-  | O => []
-  | S n' => normalize64 z :: Z_to_words (Z.shiftr z 64) n'
-  end.
 
 (** Extract a contiguous sub-range of a word list. *)
 Definition get_segment (ws : words) (start len : nat) : words :=
@@ -89,9 +124,8 @@ Fixpoint set_segment (ws : words) (start : nat) (seg : words) : words :=
 
 (** Left-shift a word list by [shift] bits (0 <= shift < 64).
     Produces [length ws + 1] words (overflow word appended as MSW).
-    Uses shld64 from Primitives.v.
     C++ ref: uint256.hpp lines 1208-1213. *)
-Fixpoint shift_left_words_aux (ws : words) (prev : uint64) (shift : nat)
+Fixpoint shift_left_words_aux (ws : words) (prev : U64.t) (shift : nat)
     : words :=
   match ws with
   | [] => [shld64 0 prev shift]
@@ -112,22 +146,28 @@ Fixpoint shift_right_words (ws : words) (shift : nat) : words :=
       shrd64 high w shift :: shift_right_words rest shift
   end.
 
-(** ** Knuth Division Core *)
+End Make.
 
-(** Trial quotient estimation with one refinement step.
-    C++ ref: uint256.hpp lines 1088-1137. *)
-Definition knuth_div_estimate (u_high u_mid u_low v_high v_second : uint64)
-    : uint64 :=
-  if (u_high =? v_high) then modulus64 - 1
-  else
-    let r := div64 u_high u_mid v_high in
-    let q0 := quot64 r in
-    if (q0 =? 0) then 0
-    else
-      let r0 := rem64 r in
-      if (q0 * v_second >? r0 * modulus64 + u_low)
-      then q0 - 1
-      else q0.
+(** ** Legacy concrete definitions
+    The following use Z-level arithmetic ([to_Z_words], [Z_to_words],
+    [normalize64]) and cannot move into the [UintOps] functor.
+    [knuth_div_subtract_correct] is the root blocker — it models the
+    subtract-and-correct step mathematically on Z rather than with
+    word-level operations.  Porting it would require defining
+    multi-word multiply-by-scalar and subtract-with-borrow in the
+    abstract interface. *)
+
+(** Leading zeros of a 64-bit word (legacy concrete version). *)
+Definition countl_zero64 (w : uint64) : nat :=
+  if (w =? 0) then 64%nat else (63 - Z.to_nat (Z.log2 w))%nat.
+
+(** Decompose a Z value into n little-endian 64-bit words. *)
+(* TODO: Possibly rename this: from_Z_words? to_words_Z? *)
+Fixpoint Z_to_words (z : Z) (n : nat) : words :=
+  match n with
+  | O => []
+  | S n' => normalize64 z :: Z_to_words (Z.shiftr z 64) n'
+  end.
 
 (** Subtract q_hat * v from u segment, with add-back correction.
     Modeled mathematically on Z (the C++ uses uint128_t, not assembly).
@@ -135,26 +175,97 @@ Definition knuth_div_estimate (u_high u_mid u_low v_high v_second : uint64)
 (* TODO: Refine to model C++ more closely since this represents the meat
    of the algorithm *)
 Definition knuth_div_subtract_correct (u_seg : words) (q_hat : Z)
-    (v : words) (n : nat) : words * uint64 :=
+    (v : words) (n : nat) : words * uint 64 :=
   let u_val := to_Z_words u_seg in
   let v_val := to_Z_words v in
   let diff := u_val - q_hat * v_val in
   if (diff <? 0) then
-    (Z_to_words (diff + v_val) (n + 1), normalize64 (q_hat - 1))
+    (Z_to_words (diff + v_val) (n + 1), uint_wrap 64 (q_hat - 1))
   else
-    (Z_to_words diff (n + 1), normalize64 q_hat).
+    (Z_to_words diff (n + 1), uint_wrap 64 q_hat).
+
+(** ** Word-Level Subtraction Loop (uint128 intermediates)
+
+    The definitions below refine [knuth_div_subtract_correct] to model
+    the C++ word-by-word arithmetic using [uint 128] intermediates.
+    C++ ref: uint256.hpp lines 1139-1165. *)
+
+(** Get word from word list as [uint w]. *)
+Definition get_u (w : positive) (ws : words) (i : nat) : uint w :=
+  uint_wrap w (get_word ws i).
+
+(** Store low 64 bits of a [uint w] into a word list position. *)
+Definition set_lo64 (ws : words) (i : nat) {w : positive} (x : uint w)
+    : words :=
+  set_word ws i (uint_wrap 64 (Uint.to_Z x)).
+
+Section WordLevelKnuthDiv.
+Local Open Scope uint_scope.
+
+(** Subtraction loop: [u_seg[0..n-1] -= q_hat * v[0..n-1]],
+    propagating borrow via [k : uint 128].
+
+    Each iteration computes:
+      prod  = q_hat * v[j]                               (uint128 mul)
+      t     = u_seg[j] - k - lo64(prod)                  (uint128 sub, wraps)
+      k'    = hi64(prod) - (int128_t)t >> 64              (borrow propagation)
+      u_seg[j] = (uint64_t)t                              (truncate to word)
+
+    C++ ref: uint256.hpp lines 1140-1151. *)
+Fixpoint knuth_sub_loop (u_seg : words) (q_hat : uint 128) (vs : words)
+    (j : nat) (k : uint 128) : words * uint 128 :=
+  match vs with
+  | [] => (u_seg, k)
+  | vj :: vs_rest =>
+      let prod := q_hat * uint_wrap 128 vj in
+      let t := get_u 128 u_seg j - k - lo128 prod in
+      let k' := hi128 prod - signed_hi128 t in
+      knuth_sub_loop (set_lo64 u_seg j t) q_hat vs_rest (S j) k'
+  end.
+
+(** Add-back loop: [u_seg[0..n-1] += v[0..n-1]], propagating carry via [k].
+    Used when the trial quotient was one too large.
+    C++ ref: uint256.hpp lines 1158-1163. *)
+Fixpoint knuth_addback_loop (u_seg : words) (vs : words)
+    (j : nat) (k : uint 128) : words * uint 128 :=
+  match vs with
+  | [] => (u_seg, k)
+  | vj :: vs_rest =>
+      let t := get_u 128 u_seg j + uint_wrap 128 vj + k in
+      knuth_addback_loop (set_lo64 u_seg j t) vs_rest (S j) (ushr t 64)
+  end.
+
+(** Word-level subtract-and-correct, modeling the C++ uint128_t loop.
+    Takes [q_hat : uint 64] from Uint.v (not the bare [uint64 := Z]
+    from Primitives.v). Returns updated segment and final quotient word.
+    C++ ref: uint256.hpp lines 1139-1165. *)
+Definition knuth_div_subtract (u_seg : words) (q_hat : uint 64)
+    (v : words) (n : nat) : words * uint 64 :=
+  let q128 := uint_wrap 128 (Uint.to_Z q_hat) in
+  let '(u_sub, k) := knuth_sub_loop u_seg q128 v 0 (uzero 128) in
+  let t := get_u 128 u_sub n - k in
+  let u_after := set_lo64 u_sub n t in
+  if (Uint.to_Z t >=? 2^127) then
+    let '(u_corr, k_add) :=
+      knuth_addback_loop u_after v 0 (uzero 128) in
+    (set_lo64 u_corr n (get_u 128 u_corr n + k_add),
+     q_hat - uint_wrap 64 1)
+  else
+    (u_after, q_hat).
+
+End WordLevelKnuthDiv.
 
 (** One iteration of Knuth division: estimate + subtract + correct. *)
 Definition knuth_div_step (u : words) (v : words) (i n : nat)
-    : words * uint64 :=
+    : words * uint 64 :=
   let q_hat := knuth_div_estimate
     (get_word u (i + n)) (get_word u (i + n - 1))
     (get_word u (i + n - 2)) (get_word v (n - 1)) (get_word v (n - 2)) in
-  if (q_hat =? 0) then (u, 0)
+  if (to_Z q_hat =? 0) then (u, uzero 64)
   else
     let u_seg := get_segment u i (n + 1) in
     let '(new_seg, final_q) :=
-      knuth_div_subtract_correct u_seg q_hat v n in
+      knuth_div_subtract u_seg q_hat v n in
     (set_segment u i new_seg, final_q).
 
 (** Outer loop: iterate from i = m-n down to 0.

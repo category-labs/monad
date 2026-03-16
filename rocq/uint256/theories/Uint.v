@@ -1,20 +1,24 @@
 (** * Abstract Bounded Unsigned Integer Interface
 
     Module types for fixed-width unsigned integer operations,
-    parameterized by bit width.  Contains operations used in the
-    multi-precision multiplication (RuntimeMul.v) and division
-    (Division.v) models, together with their dependencies on
-    Primitives.v and Words.v.
+    parameterized by bit width.  All model and proof files in
+    this development are functors over these module types.
 
     The interface is split into two layers:
 
     - [UintOps]: operations only (no [to_Z], no specs).  Model
-      functors should take [UintOps] to structurally prevent
-      escape into arbitrary Z arithmetic.
+      functors (RuntimeMul.Make, Division.Make, Words.Make, etc.)
+      take [UintOps] to structurally prevent escape into Z.
 
     - [Uint]: extends [UintOps] with a [to_Z] interpretation into
       Z and modular-arithmetic specifications.  Proof functors
       take [Uint] to access [to_Z] and the spec axioms.
+
+    Width-specific variants ([Uint64], [Uint128], [Uint64Ops],
+    [Uint128Ops]) fix the width via an axiom.
+
+    [UintNotations] is a functor over [UintOps] providing infix
+    notation for arithmetic and comparison in [uint_scope].
 
     Every operation wraps its result into [0, wB) where
     [wB = base width = 2^width]. *)

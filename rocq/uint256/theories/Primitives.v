@@ -1,15 +1,19 @@
 (** * Primitive 64-bit Operations
 
-    This file defines the specifications and implementations for 64-bit
-    primitive operations that form the building blocks of uint256 operations.
+    Definitions for composite 64-bit operations built from the
+    [UintOps] interface.  These model the corresponding C++
+    operations in uint256.hpp.
 
-    These correspond to the primitive operations in uint256.hpp:
-    - addc: addition with carry
-    - subb: subtraction with borrow
-    - mulx: extended multiplication
-    - div: extended division
-    - shld/shrd: double-precision shifts
-*)
+    The [Make] functor (parameterized by [Uint64Ops]) defines:
+    - addc64: addition with carry (models addc_constexpr)
+    - subb64: subtraction with borrow (models subb_constexpr)
+    - shld64/shrd64: double-precision shifts (models shld/shrd_constexpr)
+
+    Multi-precision primitives (mulx, adc_2, adc_3, div) are part
+    of the [UintOps] interface itself (see Uint.v).
+
+    Legacy concrete Z-based definitions and correctness lemmas
+    are retained below the functor for backward compatibility. *)
 
 From Stdlib Require Import ZArith.
 From Stdlib Require Import Lia.
@@ -82,14 +86,13 @@ Record div64_result := {
   rem64 : uint64
 }.
 
-Module Primitives (Import U64 : Uint64Ops).
-Module MN := UintNotations(U64).
-Import MN.
+Module Make (Import U64 : Uint64Ops).
+Include UintNotations(U64).
 Open Scope uint_scope.
 
 (** 64-bit result with carry/borrow *)
 Record result64 := {
-  value64 : U64.t;
+  value64 : t;
   carry64 : bool
 }.
 
@@ -106,7 +109,7 @@ Record result64 := {
       uint64_t const sum_carry = sum + carry_in;
       carry_out |= sum_carry < sum;
 *)
-Definition addc64 (lhs rhs : U64.t) (carry_in : bool) : result64 :=
+Definition addc64 (lhs rhs : t) (carry_in : bool) : result64 :=
   let sum := lhs + rhs in
   let cout := sum <? lhs in
   let sum_carry := sum + of_bool carry_in in
@@ -129,7 +132,7 @@ Definition addc64 (lhs rhs : U64.t) (carry_in : bool) : result64 :=
       borrow_out |= borrow_in > sub;
 *)
 
-Definition subb64 (lhs rhs : U64.t) (borrow_in : bool) : result64 :=
+Definition subb64 (lhs rhs : t) (borrow_in : bool) : result64 :=
   let bin := of_bool borrow_in in
   let sub := lhs - rhs in
   let bout := rhs >? lhs in
@@ -151,7 +154,7 @@ Definition subb64 (lhs rhs : U64.t) (borrow_in : bool) : result64 :=
     The formulation [(low >> 1) >> (63 - shift)] instead of
     [low >> (64 - shift)] avoids undefined behavior when
     [shift = 0] (x86 masks the shift count to 6 bits). *)
-Definition shld64 (high low : U64.t) (shift : nat) : U64.t :=
+Definition shld64 (high low : t) (shift : nat) : t :=
   orw (shl high shift) (shr (shr low 1) (63 - shift)).
 
 (** Right shift with double precision (shrd instruction)
@@ -160,13 +163,13 @@ Definition shld64 (high low : U64.t) (shift : nat) : U64.t :=
 
     This matches shrd_constexpr in uint256.hpp:
       return (low >> shift) | ((high << 1) << (63 - shift)); *)
-Definition shrd64 (high low : U64.t) (shift : nat) : U64.t :=
+Definition shrd64 (high low : t) (shift : nat) : t :=
   orw (shr low shift) (shl (shl high 1) (63 - shift)).
 
 (** Note: [mulx] and [div] are part of the [UintOps] interface
     and do not need separate definitions here. *)
 
-End Primitives.
+End Make.
 
 (** ** Pure Z utility lemmas *)
 

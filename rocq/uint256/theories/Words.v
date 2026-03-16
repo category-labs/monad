@@ -1,37 +1,61 @@
 (** * Word-List Representation for Multi-Word Arithmetic
 
-    This file defines the word-list representation used by multi-word
-    operations (multiplication, division). A word list represents a
-    multi-word unsigned integer in little-endian order.
+    The [Make] functor (parameterized by [Uint64Ops]) defines the
+    [words] type and basic accessors for multi-word unsigned
+    integers in little-endian order:
 
-    This is a shared foundation used by both constexpr and runtime
-    multiplication models, as well as division.
-*)
+    - [words]: list of [t] (least significant word first)
+    - [get_word] / [set_word]: indexed access and update
+    - [extend_words]: zero-padded word list of a given length
+
+    This is a shared foundation used by RuntimeMul.v, Division.v,
+    and their proof files. *)
 
 From Stdlib Require Import ZArith Lia List.
-From Uint256 Require Import Primitives.
+From Uint256 Require Import Uint Primitives.
 Import ListNotations.
-Open Scope Z_scope.
+
+Module Make (Import U64 : Uint64Ops).
+Include UintNotations(U64).
+Open Scope uint_scope.
 
 (** ** Word List Type *)
 
-(** A word list represents a multi-word unsigned integer in little-endian order.
-    The first element is the least significant word. *)
-Definition words := list uint64.
+(** A word list represents a multi-word unsigned integer in
+    little-endian order.  The first element is the least significant
+    word. *)
+Definition words := list t.
 
-(** Convert a word list to its mathematical value (little-endian) *)
-Fixpoint to_Z_words (ws : words) : Z :=
-  match ws with
-  | [] => 0
-  | w :: rest => to_Z64 w + 2^64 * to_Z_words rest
+(** ** Word Access and Update Helpers *)
+
+(** Get word at index i (0 if out of bounds) *)
+Definition get_word (ws : words) (i : nat) : t :=
+  nth i ws 0.
+
+(** Set word at index i *)
+Fixpoint set_word (ws : words) (i : nat) (v : t) : words :=
+  match ws, i with
+  | [], _ => []
+  | _ :: rest, O => v :: rest
+  | w :: rest, S i' => w :: set_word rest i' v
   end.
 
+(** Extend word list to length n (padding with zeros) *)
+Definition extend_words (n : nat) : words := repeat 0 n.
+
+End Make.
+
 (** The number of bits needed to represent an n-word number *)
+(* Replace occurrences with width from UintOps module *)
 Definition words_bits (n : nat) : Z := Z.of_nat n * 64.
 
 (** Modulus for an n-word number *)
+(* TODO: Replace occurrences with base width from UintOps module *)
 Definition modulus_words (n : nat) : Z := 2 ^ (words_bits n).
 
+(* TODO: Marked for removal once dependencies on uint256 have been
+   revised. *)
+(*
 (** ** Conversion Between uint256 and Words *)
 
 (** Convert uint256 record to 4-element word list *)
@@ -48,26 +72,12 @@ Definition words_to_uint256 (ws : words) : uint256 :=
 (** ** Word List Validity and Bounds *)
 
 (** All words in list are in valid uint64 range *)
+(* TODO: Holds by construction in Uint module *)
 Definition words_valid (ws : words) : Prop :=
   Forall (fun w => 0 <= w < modulus64) ws.
 
 (** Normalize a word list value to n words *)
+(* TODO: Marked for possible deletion; at most only needed for proofs *)
 Definition normalize_words (z : Z) (n : nat) : Z :=
   z mod modulus_words n.
-
-(** ** Word Access and Update Helpers *)
-
-(** Get word at index i (0 if out of bounds) *)
-Definition get_word (ws : words) (i : nat) : uint64 :=
-  nth i ws 0.
-
-(** Set word at index i *)
-Fixpoint set_word (ws : words) (i : nat) (v : uint64) : words :=
-  match ws, i with
-  | [], _ => []
-  | _ :: rest, O => v :: rest
-  | w :: rest, S i' => w :: set_word rest i' v
-  end.
-
-(** Extend word list to length n (padding with zeros) *)
-Definition extend_words (n : nat) : words := repeat 0 n.
+*)

@@ -83,16 +83,25 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
 
-    BOOST_OUTCOME_TRY(static_validate_system_transaction<traits>(tx_, sender_));
     {
+        auto system_validation_result =
+            static_validate_system_transaction<traits>(tx_, sender_);
+        if (system_validation_result.has_error()) {
+            prev_.get_future().wait();
+            return std::move(system_validation_result).as_failure();
+        }
         Transaction tx = tx_;
         tx.gas_limit =
             2'000'000; // required to pass intrinsic gas validation check
-        BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
+        auto tx_validation_result = static_validate_transaction<traits>(
             tx,
             std::nullopt /* 0 base fee to pass validation */,
             std::nullopt /* 0 blob fee to pass validation */,
-            chain_.get_chain_id()));
+            chain_.get_chain_id());
+        if (tx_validation_result.has_error()) {
+            prev_.get_future().wait();
+            return std::move(tx_validation_result).as_failure();
+        }
     }
 
     {

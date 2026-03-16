@@ -22,10 +22,12 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
+#include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -281,4 +283,83 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
         EXPECT_EQ(trace, nlohmann::json::parse(expected));
     }
+}
+
+TEST(SystemTransaction, static_validate_system_transaction_failure)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    MonadDevnet chain;
+
+    BlockState block_state{tdb, vm};
+    BlockMetrics block_metrics;
+
+    BlockHeader const header{};
+
+    NoopCallTracer noop_call_tracer;
+    trace::StateTracer noop_state_tracer = std::monostate{};
+
+    auto const tx = Transaction{.type = TransactionType::eip7702};
+
+    boost::fibers::promise<void> promise;
+    promise.set_value();
+
+    Result<Receipt> const result =
+        ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
+            chain,
+            0,
+            tx,
+            SYSTEM_SENDER,
+            header,
+            block_state,
+            block_metrics,
+            promise,
+            noop_call_tracer,
+            noop_state_tracer}();
+
+    EXPECT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), SystemTransactionError::TypeNotLegacy);
+}
+
+TEST(SystemTransaction, static_validate_transaction_failure)
+{
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    MonadDevnet chain;
+
+    BlockState block_state{tdb, vm};
+    BlockMetrics block_metrics;
+
+    BlockHeader const header{.number = 0};
+
+    NoopCallTracer noop_call_tracer;
+    trace::StateTracer noop_state_tracer = std::monostate{};
+
+    auto const tx = Transaction{
+        .sc = SignatureAndChain{.chain_id = 1}, .to = staking::STAKING_CA};
+
+    boost::fibers::promise<void> promise;
+    promise.set_value();
+
+    Result<Receipt> const result =
+        ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
+            chain,
+            0,
+            tx,
+            SYSTEM_SENDER,
+            header,
+            block_state,
+            block_metrics,
+            promise,
+            noop_call_tracer,
+            noop_state_tracer}();
+
+    EXPECT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), TransactionError::WrongChainId);
 }

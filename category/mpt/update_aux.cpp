@@ -1498,6 +1498,8 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
     }
     constexpr double usage_limit_start_compact_slow = 0.6;
     constexpr double slow_usage_limit_start_compact_slow = 0.2;
+    constexpr uint32_t gc_efficiency_breakeven = 4;
+
     double const slow_disk_usage =
         num_chunks(chunk_list::slow) / (double)io->chunk_count();
     double const total_disk_usage = fast_disk_usage + slow_disk_usage;
@@ -1505,19 +1507,19 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
     // above the thresholds
     if (!skip_compaction && total_disk_usage > usage_limit_start_compact_slow &&
         slow_disk_usage > slow_usage_limit_start_compact_slow) {
-        // Compact slow ring: the offset is based on slow list garbage
-        // collection ratio of the last block. We use the ratio of compacted
-        // bytes to determine how aggressively to advance the compaction head.
+        // Compact slow ring at growth rate scaled by gc_efficiency.
+        // The breakeven point is 4, above which we compact faster than
+        // growth (reduce backlog), below 4 we compact slower (back off
+        // when recirculation is heavy).
         if (last_block_slow_list_gc_efficiency_ > 0) {
-            // Cap at last block's growth + 1 to avoid advancing too fast
-            uint32_t const new_range = std::min(
-                static_cast<uint32_t>(last_block_disk_growth_slow_ + 1),
-                last_block_slow_list_gc_efficiency_);
-            compact_offset_range_slow_.set_value(new_range);
+            uint32_t to_advance = static_cast<uint32_t>(
+                static_cast<uint64_t>(last_block_disk_growth_slow_) *
+                last_block_slow_list_gc_efficiency_ / gc_efficiency_breakeven);
+            to_advance = std::min(to_advance, max_compact_offset_range);
+            compact_offset_range_slow_.set_value(to_advance);
         }
         else {
-            // No valid data, use minimum progress
-            compact_offset_range_slow_.set_value(1);
+            compact_offset_range_slow_.set_value(4);
         }
         compact_offsets.slow += compact_offset_range_slow_;
     }

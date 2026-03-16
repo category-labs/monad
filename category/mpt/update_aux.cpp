@@ -1145,7 +1145,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
 
     auto const upsert_duration = upsert_timer.elapsed();
     if (compaction) {
-        update_disk_growth_data();
+        update_compaction_state();
         // log stats
         print_update_stats(version);
     }
@@ -1345,18 +1345,30 @@ void UpdateAuxImpl::move_trie_version_forward(
     }
 }
 
-void UpdateAuxImpl::update_disk_growth_data()
+void UpdateAuxImpl::update_compaction_state()
 {
     compact_virtual_chunk_offset_t const curr_fast_writer_offset{
         physical_to_virtual(node_writer_fast->sender().offset())};
     compact_virtual_chunk_offset_t const curr_slow_writer_offset{
         physical_to_virtual(node_writer_slow->sender().offset())};
-    last_block_disk_growth_fast_ = // unused for speed control for now
+    last_block_disk_growth_fast_ =
         curr_fast_writer_offset - last_block_end_offset_fast_;
     last_block_disk_growth_slow_ =
         curr_slow_writer_offset - last_block_end_offset_slow_;
     last_block_end_offset_fast_ = curr_fast_writer_offset;
     last_block_end_offset_slow_ = curr_slow_writer_offset;
+
+    if (compact_offset_range_slow_ == 0) {
+        last_block_slow_list_gc_efficiency_ = 0;
+    }
+    else if (stats.compacted_bytes_in_slow == 0) {
+        last_block_slow_list_gc_efficiency_ = 50; // max
+    }
+    else {
+        last_block_slow_list_gc_efficiency_ = static_cast<uint32_t>(std::round(
+            double(compact_offset_range_slow_ << 16) /
+            stats.compacted_bytes_in_slow));
+    }
 }
 
 void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
@@ -1481,15 +1493,11 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
         // Compact slow ring: the offset is based on slow list garbage
         // collection ratio of the last block. We use the ratio of compacted
         // bytes to determine how aggressively to advance the compaction head.
-        if (stats.compacted_bytes_in_slow != 0 &&
-            compact_offset_range_slow_ != 0) {
-            uint32_t const gc_efficiency = static_cast<uint32_t>(std::round(
-                double(compact_offset_range_slow_ << 16) /
-                stats.compacted_bytes_in_slow));
+        if (last_block_slow_list_gc_efficiency_ > 0) {
             // Cap at last block's growth + 1 to avoid advancing too fast
             uint32_t const new_range = std::min(
                 static_cast<uint32_t>(last_block_disk_growth_slow_ + 1),
-                gc_efficiency);
+                last_block_slow_list_gc_efficiency_);
             compact_offset_range_slow_.set_value(new_range);
         }
         else {

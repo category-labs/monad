@@ -23,6 +23,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -43,7 +44,8 @@ public:
     using HashMap = tbb::concurrent_hash_map<Key, HashMapValue, KeyHashCompare>;
 
 protected:
-    using HashMapKeyValue = std::pair<Key, HashMapValue>;
+    using HashMapKeyValue = typename HashMap::value_type;
+
     using Accessor = typename HashMap::accessor;
     using Mutex = SpinLock;
     using Pool = BatchMemPool<ListNode>;
@@ -143,6 +145,38 @@ public:
         return true;
     }
 
+    template <class V>
+    bool insert_construct(Key const &key, V &&value)
+    {
+        Accessor acc;
+        bool const inserted = hmap_.insert(acc, key);
+        ListNode *const node =
+            inserted ? pool_.new_obj(key) : acc->second.node_;
+
+        if (!inserted) {
+            STATS_EVENT_INSERT_FOUND();
+        }
+
+        // Move-assignment of pmr containers does not propagate the source
+        // allocator (propagate_on_container_move_assignment is false), so
+        // the value would be copied into the destination's allocator,
+        // losing the backing pool resource.  Destroy + construct-in-place
+        // preserves the source allocator via move-construction.
+        auto *val = std::addressof(acc->second.value_);
+        std::destroy_at(val);
+        std::construct_at(val, std::forward<V>(value));
+        acc->second.node_ = node;
+
+        if (!inserted) {
+            try_update_lru(node);
+            return false;
+        }
+
+        acc.release();
+        finish_insert(node);
+        return true;
+    }
+
     void clear() // Not thread-safe with other cache operations
     {
         hmap_.clear();
@@ -153,6 +187,25 @@ public:
     size_t size() const
     {
         return size_.load(std::memory_order_acquire);
+    }
+
+    bool evict()
+    {
+        ListNode *target;
+        {
+            std::unique_lock const l(mutex_);
+            STATS_EVENT_EVICT();
+            target = lru_.evict();
+        }
+        if (!target) {
+            return false;
+        }
+        Accessor acc;
+        bool const found = hmap_.find(acc, target->key_);
+        MONAD_ASSERT(found);
+        hmap_.erase(acc);
+        pool_.delete_obj(target);
+        return true;
     }
 
 protected:
@@ -188,25 +241,6 @@ protected:
                 }
             }
         }
-    }
-
-    bool evict()
-    {
-        ListNode *target;
-        {
-            std::unique_lock const l(mutex_);
-            STATS_EVENT_EVICT();
-            target = lru_.evict();
-        }
-        if (!target) {
-            return false;
-        }
-        Accessor acc;
-        bool const found = hmap_.find(acc, target->key_);
-        MONAD_ASSERT(found);
-        hmap_.erase(acc);
-        pool_.delete_obj(target);
-        return true;
     }
 
     /// ListNode

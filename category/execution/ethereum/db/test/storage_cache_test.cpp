@@ -29,9 +29,10 @@ using TestCache = MemoryBoundLruCache<uint64_t>;
 TEST(MemoryBoundLruCache, insert_and_find)
 {
     TestCache cache{4096, SLAB_SIZES};
-    byte_string const value{0x01, 0x02, 0x03};
+    byte_string const value(64, 0xAB);
 
     cache.insert(1, value);
+    EXPECT_GE(cache.used_bytes(), value.size());
 
     TestCache::ConstAccessor acc{};
     ASSERT_TRUE(cache.find(acc, 1));

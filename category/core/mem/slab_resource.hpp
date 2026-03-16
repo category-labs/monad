@@ -17,69 +17,53 @@
 
 #include <category/core/config.hpp>
 
-#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <memory_resource>
-#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
 class slab_resource final : public std::pmr::memory_resource
 {
-    std::span<size_t const> slab_sizes_;
     std::pmr::synchronized_pool_resource pool_;
-    std::atomic<size_t> *used_bytes_{nullptr};
+    std::atomic<size_t> used_bytes_{0};
 
 public:
-    slab_resource(
-        std::span<size_t const> slab_sizes, std::pmr::pool_options opts = {},
+    explicit slab_resource(
+        std::pmr::pool_options opts = {},
         std::pmr::memory_resource *upstream = std::pmr::get_default_resource())
-        : slab_sizes_(slab_sizes)
-        , pool_(opts, upstream)
+        : pool_(opts, upstream)
     {
-    }
-
-    void set_used_bytes(std::atomic<size_t> *used_bytes) noexcept
-    {
-        used_bytes_ = used_bytes;
     }
 
     void release()
     {
         pool_.release();
+        used_bytes_.store(0, std::memory_order_relaxed);
+    }
+
+    size_t used_bytes() const noexcept
+    {
+        return used_bytes_.load(std::memory_order_relaxed);
     }
 
 private:
     void *do_allocate(size_t bytes, size_t alignment) override
     {
-        size_t const sz = round_up(bytes);
-        if (used_bytes_) {
-            used_bytes_->fetch_add(sz, std::memory_order_relaxed);
-        }
-        return pool_.allocate(sz, alignment);
+        used_bytes_.fetch_add(bytes, std::memory_order_relaxed);
+        return pool_.allocate(bytes, alignment);
     }
 
     void do_deallocate(void *p, size_t bytes, size_t alignment) override
     {
-        size_t const sz = round_up(bytes);
-        pool_.deallocate(p, sz, alignment);
-        if (used_bytes_) {
-            used_bytes_->fetch_sub(sz, std::memory_order_relaxed);
-        }
+        pool_.deallocate(p, bytes, alignment);
+        used_bytes_.fetch_sub(bytes, std::memory_order_relaxed);
     }
 
     bool
     do_is_equal(std::pmr::memory_resource const &other) const noexcept override
     {
         return this == &other;
-    }
-
-    size_t round_up(size_t bytes) const noexcept
-    {
-        auto it =
-            std::lower_bound(slab_sizes_.begin(), slab_sizes_.end(), bytes);
-        return it == slab_sizes_.end() ? bytes : *it;
     }
 };
 

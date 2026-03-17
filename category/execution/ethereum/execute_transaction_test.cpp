@@ -642,7 +642,8 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    NoopStorageCache cache{tdb};
+    BlockState bs{tdb, cache, vm};
     BlockMetrics metrics;
 
     boost::fibers::promise<void> prev{};

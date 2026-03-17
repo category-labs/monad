@@ -61,12 +61,10 @@ public:
             db_.read_storage(addr, inc, key));
     }
 
-    storage_page_t read_storage_page(
-        Address const &addr, Incarnation inc,
-        bytes32_t const &page_key) override
+    storage_page_t
+    read_storage_page(Address const &, Incarnation, bytes32_t const &) override
     {
-        return decode_storage_value<storage_page_t>(
-            db_.read_storage(addr, inc, page_key));
+        MONAD_ABORT("SlotStorageBroker does not support read_storage_page");
     }
 };
 

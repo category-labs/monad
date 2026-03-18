@@ -50,6 +50,7 @@ monad_statesync_client_context *monad_statesync_client_context_create(
         sq_thread_cpu == MONAD_SQPOLL_DISABLED
             ? std::nullopt
             : std::make_optional(sq_thread_cpu),
+        32,
         sync,
         statesync_send_request};
 }

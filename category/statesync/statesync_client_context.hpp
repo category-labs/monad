@@ -64,7 +64,8 @@ struct monad_statesync_client_context
 
     monad_statesync_client_context(
         std::vector<std::filesystem::path> dbname_paths,
-        std::optional<unsigned> sq_thread_cpu, monad_statesync_client *,
+        std::optional<unsigned> sq_thread_cpu, unsigned wr_buffers,
+        monad_statesync_client *,
         void (*statesync_send_request)(
             struct monad_statesync_client *, struct monad_sync_request));
 

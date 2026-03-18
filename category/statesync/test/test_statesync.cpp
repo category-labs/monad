@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_client.h>
+#include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
 #include <category/statesync/statesync_version.h>
@@ -166,13 +167,12 @@ namespace
 
         void init()
         {
-            char const *const str = cdbname.c_str();
-            cctx = monad_statesync_client_context_create(
-                &str,
-                1,
-                static_cast<unsigned>(get_nprocs() - 1),
+            cctx = new monad_statesync_client_context{
+                {cdbname},
+                std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),
+                4,
                 &client,
-                &statesync_send_request);
+                &statesync_send_request};
             net = {.client = &client, .cctx = cctx};
             for (size_t i = 0; i < monad_statesync_client_prefixes(); ++i) {
                 monad_statesync_client_handle_new_peer(

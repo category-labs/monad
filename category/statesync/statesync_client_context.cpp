@@ -30,7 +30,7 @@ using namespace monad::mpt;
 
 monad_statesync_client_context::monad_statesync_client_context(
     std::vector<std::filesystem::path> const dbname_paths,
-    std::optional<unsigned> const sq_thread_cpu,
+    std::optional<unsigned> const sq_thread_cpu, unsigned const wr_buffers,
     monad_statesync_client *const sync,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request))
@@ -40,7 +40,7 @@ monad_statesync_client_context::monad_statesync_client_context(
              .compaction = false,
              .rewind_to_latest_finalized = true,
              .rd_buffers = 8192,
-             .wr_buffers = 32,
+             .wr_buffers = wr_buffers,
              .uring_entries = 128,
              .sq_thread_cpu = sq_thread_cpu,
              .dbname_paths = dbname_paths}}

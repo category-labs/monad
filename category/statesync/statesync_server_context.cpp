@@ -235,6 +235,12 @@ byte_string monad_statesync_server_context::read_storage(
     return rw.read_storage(addr, incarnation, key);
 }
 
+byte_string monad_statesync_server_context::read_storage_page(
+    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+{
+    return rw.read_storage_page(addr, incarnation, key);
+}
+
 monad::vm::SharedIntercode
 monad_statesync_server_context::read_code(bytes32_t const &hash)
 {
@@ -249,6 +255,11 @@ monad::BlockHeader monad_statesync_server_context::read_eth_header()
 bytes32_t monad_statesync_server_context::state_root()
 {
     return rw.state_root();
+}
+
+bytes32_t monad_statesync_server_context::page_state_root()
+{
+    return rw.page_state_root();
 }
 
 bytes32_t monad_statesync_server_context::receipts_root()

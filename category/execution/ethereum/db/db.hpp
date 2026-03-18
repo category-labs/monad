@@ -41,13 +41,19 @@ struct Db
 {
     virtual std::optional<Account> read_account(Address const &) = 0;
 
+    // read storage slot from ethereum-compatible state table
     virtual byte_string
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
+
+    // read storage page from monad specific paged state table
+    virtual byte_string
+    read_storage_page(Address const &, Incarnation, bytes32_t const &key) = 0;
 
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 
     virtual BlockHeader read_eth_header() = 0;
     virtual bytes32_t state_root() = 0;
+    virtual bytes32_t page_state_root() = 0;
     virtual bytes32_t receipts_root() = 0;
     virtual bytes32_t transactions_root() = 0;
     virtual std::optional<bytes32_t> withdrawals_root() = 0;

@@ -57,8 +57,7 @@ public:
     bytes32_t read_storage(
         Address const &addr, Incarnation inc, bytes32_t const &key) override
     {
-        return decode_storage_value<bytes32_t>(
-            db_.read_storage(addr, inc, key));
+        return decode_storage_rle<bytes32_t>(db_.read_storage(addr, inc, key));
     }
 
     storage_page_t

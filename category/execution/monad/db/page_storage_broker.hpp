@@ -98,8 +98,8 @@ public:
 
         PageMap::accessor acc;
         if (pages_.insert(acc, pk)) {
-            acc->second = decode_storage_value<storage_page_t>(
-                db_.read_storage(addr, inc, page_key));
+            acc->second = decode_storage_rle<storage_page_t>(
+                db_.read_storage_page(addr, inc, page_key));
         }
         return acc->second[slot_offset];
     }
@@ -119,8 +119,8 @@ public:
 
         PageMap::accessor acc;
         if (pages_.insert(acc, pk)) {
-            acc->second = decode_storage_value<storage_page_t>(
-                db_.read_storage(addr, inc, page_key));
+            acc->second = decode_storage_rle<storage_page_t>(
+                db_.read_storage_page(addr, inc, page_key));
         }
         return acc->second;
     }

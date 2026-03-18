@@ -106,7 +106,33 @@ public:
                 "Block was invalidated in db while execution was in progress");
             return {};
         }
-        return byte_string{storage_leaf_res.value().node->value()};
+        byte_string_view enc{storage_leaf_res.value().node->value()};
+        auto decoded = decode_storage_db(enc);
+        MONAD_ASSERT(!decoded.has_error());
+        return byte_string{decoded.value().second};
+    }
+
+    virtual byte_string read_storage_page(
+        Address const &addr, Incarnation, bytes32_t const &key) override
+    {
+        auto storage_leaf_res = db_.find(
+            prefix_cursor_,
+            mpt::concat(
+                PAGED_STATE_NIBBLE,
+                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+            block_number_);
+        if (!storage_leaf_res.has_value()) {
+            MONAD_ASSERT_THROW(
+                storage_leaf_res.assume_error() !=
+                    ::monad::mpt::DbError::version_no_longer_exist,
+                "Block was invalidated in db while execution was in progress");
+            return {};
+        }
+        byte_string_view enc{storage_leaf_res.value().node->value()};
+        auto decoded = decode_storage_db(enc);
+        MONAD_ASSERT(!decoded.has_error());
+        return byte_string{decoded.value().second};
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
@@ -161,6 +187,11 @@ public:
     }
 
     virtual bytes32_t state_root() override
+    {
+        MONAD_ABORT();
+    }
+
+    virtual bytes32_t page_state_root() override
     {
         MONAD_ABORT();
     }

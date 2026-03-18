@@ -161,7 +161,7 @@ namespace
         MONAD_ASSERT(!storage.has_error());
         return std::make_pair(
             storage.value().first,
-            decode_storage_value<bytes32_t>(storage.value().second));
+            decode_storage_rle<bytes32_t>(storage.value().second));
     }
 
     std::vector<Address>

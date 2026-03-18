@@ -30,7 +30,6 @@
 #include <filesystem>
 #include <functional>
 #include <istream>
-#include <type_traits>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -67,6 +66,7 @@ struct MachineBase : public mpt::StateMachine
         BlockHeader,
         Ommer,
         CallFrame,
+        PagedState,
     };
 
     uint8_t depth{0};
@@ -116,6 +116,7 @@ inline constexpr unsigned char OMMER_NIBBLE = 6;
 inline constexpr unsigned char TX_HASH_NIBBLE = 7;
 inline constexpr unsigned char BLOCK_HASH_NIBBLE = 8;
 inline constexpr unsigned char CALL_FRAME_NIBBLE = 9;
+inline constexpr unsigned char PAGED_STATE_NIBBLE = 10;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
@@ -128,6 +129,7 @@ inline mpt::Nibbles const ommer_nibbles = mpt::concat(OMMER_NIBBLE);
 inline mpt::Nibbles const withdrawal_nibbles = mpt::concat(WITHDRAWAL_NIBBLE);
 inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
 inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
+inline mpt::Nibbles const paged_state_nibbles = mpt::concat(PAGED_STATE_NIBBLE);
 
 //////////////////////////////////////////////////////////
 // Proposed and finialized subtries. Active on all tables.
@@ -149,24 +151,12 @@ Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
 Result<Account> decode_account_db_ignore_address(byte_string_view &);
 
 template <typename T>
-inline T decode_storage_value(byte_string_view enc)
+inline T decode_storage_rle(byte_string_view enc)
 {
     if (enc.empty()) {
         return {};
     }
     return rle_decode<T>(enc.data(), enc.size());
-}
-
-template <typename T>
-inline T decode_storage_value(byte_string const &raw)
-{
-    if (raw.empty()) {
-        return {};
-    }
-    byte_string_view view{raw};
-    auto decoded = decode_storage_db(view);
-    MONAD_ASSERT(!decoded.has_error());
-    return decode_storage_value<T>(decoded.value().second);
 }
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);

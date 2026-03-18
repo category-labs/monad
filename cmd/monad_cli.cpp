@@ -544,7 +544,7 @@ void do_get_account(
         }
         print_storage(
             storage_res.value().first,
-            decode_storage_value<bytes32_t>(storage_res.value().second));
+            decode_storage_rle<bytes32_t>(storage_res.value().second));
     }
 }
 

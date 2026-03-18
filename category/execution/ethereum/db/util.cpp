@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
@@ -374,13 +375,28 @@ namespace
         {
             MONAD_ASSERT(node.has_value());
             auto encoded_storage = node.value();
-            // TODO: multi-slot storage needs a slot-aware leaf processor
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
             auto const value =
-                decode_storage_value<bytes32_t>(storage.value().second);
+                decode_storage_rle<bytes32_t>(storage.value().second);
             return rlp::encode_string2(
                 rlp::zeroless_view(to_byte_string_view(value.bytes)));
+        }
+    };
+
+    struct PagedStorageLeafProcessor
+    {
+        static byte_string process(Node const &node)
+        {
+            MONAD_ASSERT(node.has_value());
+            auto encoded_storage = node.value();
+            auto const storage = decode_storage_db(encoded_storage);
+            MONAD_ASSERT(!storage.has_error());
+            auto const page =
+                decode_storage_rle<storage_page_t>(storage.value().second);
+            auto const commitment = page_commit(page);
+            return rlp::encode_string2(
+                {commitment.bytes, sizeof(commitment.bytes)});
         }
     };
 
@@ -424,8 +440,24 @@ namespace
 
     using AccountMerkleCompute = MerkleComputeBase<AccountLeafProcessor>;
     using StorageMerkleCompute = MerkleComputeBase<StorageLeafProcessor>;
+    using PageStorageMerkleCompute =
+        MerkleComputeBase<PagedStorageLeafProcessor>;
 
     struct StorageRootMerkleCompute : public StorageMerkleCompute
+    {
+        virtual unsigned
+        compute(unsigned char *const buffer, Node const &node) override
+        {
+            MONAD_ASSERT(node.has_value());
+            return encode_two_pieces(
+                buffer,
+                node.path_nibble_view(),
+                AccountLeafProcessor::process(node),
+                true);
+        }
+    };
+
+    struct PageStorageRootMerkleCompute : public PageStorageMerkleCompute
     {
         virtual unsigned
         compute(unsigned char *const buffer, Node const &node) override
@@ -480,6 +512,8 @@ mpt::Compute &MachineBase::get_compute() const
     static AccountRootMerkleCompute account_root_compute;
     static StorageMerkleCompute storage_compute;
     static StorageRootMerkleCompute storage_root_compute;
+    static PageStorageMerkleCompute page_storage_compute;
+    static PageStorageRootMerkleCompute page_storage_root_compute;
 
     static VarLenMerkleCompute generic_merkle_compute;
     static RootVarLenMerkleCompute generic_root_merkle_compute;
@@ -491,7 +525,8 @@ mpt::Compute &MachineBase::get_compute() const
         transaction_root_compute;
 
     auto const prefix_length = prefix_len();
-    if (MONAD_LIKELY(table == TableType::State)) {
+    if (MONAD_LIKELY(
+            table == TableType::State || table == TableType::PagedState)) {
         MONAD_ASSERT(depth >= prefix_length);
         if (MONAD_UNLIKELY(depth == prefix_length)) {
             return account_root_compute;
@@ -500,10 +535,20 @@ mpt::Compute &MachineBase::get_compute() const
             return account_compute;
         }
         else if (depth == prefix_length + 2 * sizeof(bytes32_t)) {
-            return storage_root_compute;
+            if (table == TableType::State) {
+                return storage_root_compute;
+            }
+            else {
+                return page_storage_root_compute;
+            }
         }
         else {
-            return storage_compute;
+            if (table == TableType::State) {
+                return storage_compute;
+            }
+            else {
+                return page_storage_compute;
+            }
         }
     }
     else if (table == TableType::Receipt) {
@@ -552,7 +597,8 @@ void MachineBase::down(unsigned char const nibble)
          nibble == RECEIPT_NIBBLE || nibble == CALL_FRAME_NIBBLE ||
          nibble == TRANSACTION_NIBBLE || nibble == BLOCKHEADER_NIBBLE ||
          nibble == WITHDRAWAL_NIBBLE || nibble == OMMER_NIBBLE ||
-         nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE) ||
+         nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE ||
+         nibble == PAGED_STATE_NIBBLE) ||
         depth != prefix_length);
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
@@ -585,6 +631,9 @@ void MachineBase::down(unsigned char const nibble)
         }
         else if (nibble == CALL_FRAME_NIBBLE) {
             table = TableType::CallFrame;
+        }
+        else if (nibble == PAGED_STATE_NIBBLE) {
+            table = TableType::PagedState;
         }
         else {
             MONAD_ABORT_PRINTF("Invalid nibble %u", (unsigned)nibble);

@@ -33,7 +33,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "test_resource_data.h"
@@ -125,12 +127,15 @@ namespace
                                   "fffe5bfeffffffff00000001"})
             .value();
 
+    struct evmc_some_error
+    {
+    };
+
     struct test_case
     {
         std::string name;
         evmc::bytes input;
-        std::optional<evmc::bytes> expected;
-        std::optional<evmc_status_code> expected_failure;
+        std::variant<evmc::bytes, evmc_some_error, evmc_status_code> expected;
         int64_t gas;
         std::optional<int64_t> gas_offset;
     };
@@ -143,6 +148,10 @@ namespace
         if (j.contains("Expected")) {
             std::string expected = j.at("Expected");
             t.expected = from_hex(std::string_view{expected}).value();
+        }
+        else {
+            MONAD_ASSERT(j.contains("ExpectedError"));
+            t.expected = evmc_some_error{};
         }
 
         // Expected-to-fail tests don't have a Gas field, so we assign them the
@@ -185,20 +194,22 @@ namespace
     static test_case const ECRECOVER_TEST_CASES[] = {
         {.name = "ecrecover_unrecoverable_key_enough_gas",
          .input = ECRECOVER_UNRECOVERABLE_KEY_INPUT,
+         .expected = evmc::bytes{},
          .gas = 3'000,
          .gas_offset = 3'000},
         {.name = "ecrecover_unrecoverable_key_insufficient_gas",
          .input = ECRECOVER_UNRECOVERABLE_KEY_INPUT,
-         .expected_failure = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 3'000,
          .gas_offset = -1},
         {.name = "ecrecover_valid_key_enough_gas",
          .input = ECRECOVER_VALID_KEY_INPUT,
+         .expected = ECRECOVER_VALID_KEY_OUTPUT,
          .gas = 3'000,
          .gas_offset = 3'000},
         {.name = "ecrecover_valid_key_insufficient_gas",
          .input = ECRECOVER_VALID_KEY_INPUT,
-         .expected_failure = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 3'000,
          .gas_offset = -1}};
 
@@ -210,7 +221,7 @@ namespace
          .gas_offset = 40},
         {.name = "sha256_empty_insufficient_gas",
          .input = evmc::bytes{},
-         .expected_failure = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 60,
          .gas_offset = -1},
         {.name = "sha256_message_enough_gas",
@@ -220,7 +231,7 @@ namespace
          .gas_offset = 1},
         {.name = "sha256_message_insufficient_gas",
          .input = evmc::bytes{reinterpret_cast<uint8_t const *>("lol"), 3},
-         .expected_failure = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 72,
          .gas_offset = -1}};
 
@@ -232,7 +243,7 @@ namespace
          .gas_offset = 1},
         {.name = "ripemd160_empty_insufficient_gas",
          .input = evmc::bytes{},
-         .expected_failure = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 600,
          .gas_offset = -1},
         {.name = "ripemd160_message_enough_gas",
@@ -242,7 +253,7 @@ namespace
          .gas_offset = 1},
         {.name = "ripemd160_message_insufficient_gas",
          .input = evmc::bytes{reinterpret_cast<uint8_t const *>("lol"), 3},
-         .expected_failure = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 720,
          .gas_offset = -1}};
 
@@ -254,7 +265,7 @@ namespace
          .gas_offset = 1},
         {.name = "identity_empty_insufficient_gas",
          .input = evmc::bytes{},
-         .expected_failure = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 15,
          .gas_offset = -1},
         {.name = "identity_nonempty_enough_gas",
@@ -264,7 +275,7 @@ namespace
          .gas_offset = 1},
         {.name = "identity_nonempty_insufficient_gas",
          .input = evmc::bytes{reinterpret_cast<uint8_t const *>("dead"), 4},
-         .expected_failure = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 18,
          .gas_offset = -1}};
 
@@ -276,7 +287,7 @@ namespace
          .gas_offset = 3'000},
         {.name = "point_evaluation_insufficient_gas",
          .input = POINT_EVALUATION_INPUT,
-         .expected_failure = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 50'000,
          .gas_offset = -1}};
 
@@ -305,41 +316,43 @@ namespace
                     check_call_precompile<traits>(s, call_tracer, input)
                         .value();
 
-                if (test_case.expected) {
+                if (auto const *expected_value =
+                        std::get_if<evmc::bytes>(&test_case.expected)) {
                     EXPECT_EQ(
                         result.status_code, evmc_status_code::EVMC_SUCCESS)
                         << suite_name << " test case " << test_case.name;
-                }
 
-                if (test_case.expected_failure) {
-                    EXPECT_EQ(result.status_code, *test_case.expected_failure)
-                        << suite_name << " test case " << test_case.name;
-                }
-
-                if (result.status_code == evmc_status_code::EVMC_SUCCESS) {
                     EXPECT_EQ(result.gas_left, gas_offset)
                         << suite_name << " test case " << test_case.name
                         << " gas check failed.";
-                }
-                else {
-                    EXPECT_EQ(result.gas_left, 0)
-                        << suite_name << " test case " << test_case.name
-                        << " gas check failed. It should have cleared "
-                           "gas_left.";
-                }
 
-                if (test_case.expected) {
-                    auto &expected = *test_case.expected;
-
-                    ASSERT_EQ(result.output_size, expected.size())
+                    ASSERT_EQ(result.output_size, expected_value->size())
                         << suite_name << " test case " << test_case.name
                         << " output buffer size check failed.";
 
                     for (size_t i = 0; i < result.output_size; i++) {
-                        EXPECT_EQ(expected[i], result.output_data[i])
+                        EXPECT_EQ((*expected_value)[i], result.output_data[i])
                             << suite_name << " test case " << test_case.name
                             << " output buffer equality check failed.";
                     }
+                }
+                else {
+                    EXPECT_NE(
+                        result.status_code, evmc_status_code::EVMC_SUCCESS)
+                        << suite_name << " test case " << test_case.name;
+
+                    // expecting a specific error code
+                    if (auto const *expected_error_code =
+                            std::get_if<evmc_status_code>(
+                                &test_case.expected)) {
+                        EXPECT_EQ(result.status_code, *expected_error_code)
+                            << suite_name << " test case " << test_case.name;
+                    }
+
+                    EXPECT_EQ(result.gas_left, 0)
+                        << suite_name << " test case " << test_case.name
+                        << " gas check failed. It should have cleared "
+                           "gas_left.";
                 }
             };
 
@@ -348,7 +361,12 @@ namespace
             }
             else {
                 test_with_gas_offset(0);
-                test_with_gas_offset(100);
+                // only call for a test_case where gas isn't already set to
+                // int64_t max value to avoid gas overflow
+                if (test_case.gas <=
+                    std::numeric_limits<int64_t>::max() - 100) {
+                    test_with_gas_offset(100);
+                }
             }
         }
     }
@@ -707,7 +725,7 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
                              "0000000000000000000000000000000100000000000000000"
                              "000000000000000000000000000000005")
                         .value(),
-                .expected_failure = expected_failure,
+                .expected = expected_failure,
                 .gas = 30'000'000,
             },
             test_case{
@@ -716,7 +734,7 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
                                   "0000000000000000000000100000000000000000000"
                                   "00000000000000000000000000000005")
                              .value(),
-                .expected_failure = expected_failure,
+                .expected = expected_failure,
                 .gas = 30'000'000,
             },
             test_case{
@@ -724,7 +742,7 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
                 .input = from_hex("0x000000000000000000000000000000000000"
                                   "00000000000000000500")
                              .value(),
-                .expected_failure = expected_failure,
+                .expected = expected_failure,
                 .gas = 30'000'000,
             },
             test_case{

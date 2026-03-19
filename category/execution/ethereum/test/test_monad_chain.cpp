@@ -402,9 +402,18 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
     state.subtract_from_balance(sender, sender_gas_fee);
     state.subtract_from_balance(staking::STAKING_CA, to_wei(1));
 
-    EXPECT_FALSE(revert_transaction<traits>(
-        sender, tx, base_fee_per_gas, 0, state, chain_context));
-    EXPECT_FALSE(revert_transaction_cached<traits>(state));
+    bool const should_revert = revert_transaction<traits>(
+        sender, tx, base_fee_per_gas, 0, state, chain_context);
+    bool const should_revert_cached = revert_transaction_cached<traits>(state);
+
+    if constexpr (traits::monad_rev() >= MONAD_NINE) {
+        EXPECT_FALSE(should_revert);
+        EXPECT_FALSE(should_revert_cached);
+    }
+    else {
+        EXPECT_TRUE(should_revert);
+        EXPECT_TRUE(should_revert_cached);
+    }
 }
 
 TYPED_TEST(MonadTraitsTest, revert_transaction_dip_false)

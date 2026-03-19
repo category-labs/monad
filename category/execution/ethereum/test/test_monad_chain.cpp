@@ -347,7 +347,7 @@ TYPED_TEST(MonadTraitsTest, reserve_balance_checks_disabled_before_monad_four)
     }
 }
 
-TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
+TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_reserve_behavior)
 {
     if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
         GTEST_SKIP() << "reserve-balance checks are disabled before MONAD_FOUR";
@@ -777,6 +777,11 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_executed_initcode)
         state, SENDER, tx, BASE_FEE_PER_GAS, 0, context);
     state.subtract_from_balance(SENDER, gas_cost);
 
+    // Simulate a constructor-created account after initcode has already run:
+    // the account exists in the current incarnation, has nonce 1, and its
+    // balance has already been debited. This test is about the reserve-balance
+    // predicate on that post-initcode shape, not about actually executing
+    // initcode.
     state.create_contract(NEW_CONTRACT);
     state.set_nonce(NEW_CONTRACT, 1);
     state.subtract_from_balance(NEW_CONTRACT, to_wei(11));

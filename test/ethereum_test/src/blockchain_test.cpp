@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -59,6 +60,7 @@
 #include <category/mpt/nibbles_view.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/utils/evmc_utils.hpp>
 
 #include <monad/test/config.hpp>
 
@@ -86,6 +88,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <vector>
@@ -240,7 +243,11 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
         auto const hashed_account = to_bytes(keccak256(addr_bytes.bytes));
         auto const db_addr_key = fmt::format("{}", hashed_account);
 
-        ASSERT_TRUE(db.contains(db_addr_key)) << db_addr_key;
+        EXPECT_TRUE(db.contains(db_addr_key))
+            << fmt::format("{} ({})", db_addr_key, addr_bytes);
+        if (!db.contains(db_addr_key)) {
+            continue;
+        }
         auto const &db_account = db.at(db_addr_key);
 
         auto const expected_balance =
@@ -254,25 +261,42 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
             "0x{:02x}", fmt::join(std::as_bytes(std::span(code)), ""));
 
         EXPECT_EQ(db_account.at("balance").get<std::string>(), expected_balance)
-            << db_addr_key;
+            << fmt::format("{} ({})", db_addr_key, addr_bytes);
         EXPECT_EQ(db_account.at("nonce").get<std::string>(), expected_nonce)
-            << db_addr_key;
+            << fmt::format("{} ({})", db_addr_key, addr_bytes);
         EXPECT_EQ(db_account.at("code").get<std::string>(), expected_code)
-            << db_addr_key;
+            << fmt::format("{} ({})", db_addr_key, addr_bytes);
 
         auto const &db_storage = db_account.at("storage");
+        std::set<std::string> db_storage_keys_in_j;
+
         EXPECT_EQ(db_storage.size(), j_account.at("storage").size())
-            << db_addr_key;
+            << fmt::format("{} ({})", db_addr_key, addr_bytes);
         for (auto const &[key, j_value] : j_account.at("storage").items()) {
             nlohmann::json const key_json = key;
             auto const key_bytes = key_json.get<bytes32_t>();
             auto const db_storage_key =
                 fmt::format("{}", to_bytes(keccak256(key_bytes.bytes)));
-            ASSERT_TRUE(db_storage.contains(db_storage_key)) << db_storage_key;
-            auto const expected_value =
-                fmt::format("{}", j_value.get<bytes32_t>());
-            EXPECT_EQ(db_storage.at(db_storage_key).at("value"), expected_value)
-                << db_storage_key;
+            EXPECT_TRUE(db_storage.contains(db_storage_key))
+                << fmt::format("{} ({})", db_storage_key, key_bytes);
+            if (db_storage.contains(db_storage_key)) {
+                db_storage_keys_in_j.emplace(db_storage_key);
+                auto const expected_value =
+                    fmt::format("{}", j_value.get<bytes32_t>());
+                EXPECT_EQ(
+                    db_storage.at(db_storage_key).at("value"), expected_value)
+                    << fmt::format("{} ({})", db_storage_key, key_bytes);
+            }
+        }
+        for (auto const &[key, db_value] : db_account.at("storage").items()) {
+            auto const db_storage_value_bytes =
+                db_value.at("value").get<bytes32_t>();
+            // The previous loop has already checked for all key-value pairs of
+            // j_account whether there exists a corresponding pair in the db.
+            // So, it remains to check whether every db key has a corresponding
+            // entry in j_account.
+            EXPECT_TRUE(db_storage_keys_in_j.contains(key)) << fmt::format(
+                "Unexpected kv in db ({} => {})", key, db_storage_value_bytes);
         }
     }
 }
@@ -670,6 +694,11 @@ void process_test(
             }
         }
         else {
+            // Error case: if this test failed unexpectedly, then serialize the
+            // db state such that we can dump it for inspection.
+            if (!j_block.contains("expectException")) {
+                db_post_state = tdb.to_json();
+            }
             EXPECT_TRUE(j_block.contains("expectException"))
                 << name << "\n"
                 << result.error().message().c_str();

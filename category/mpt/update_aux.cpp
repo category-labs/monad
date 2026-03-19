@@ -1122,7 +1122,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
         }
         if (!version_is_valid_ondisk(version)) {
             // only advance compaction progress for non existent version
-            advance_compact_offsets();
+            advance_compact_offsets(prev_root);
         }
     }
 
@@ -1359,7 +1359,7 @@ void UpdateAuxImpl::update_disk_growth_data()
     last_block_end_offset_slow_ = curr_slow_writer_offset;
 }
 
-void UpdateAuxImpl::advance_compact_offsets()
+void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
 {
     /* Note on ring based compaction:
     Fast list compaction is steady pace based on disk growth over recent blocks,
@@ -1397,14 +1397,27 @@ void UpdateAuxImpl::advance_compact_offsets()
     // Small constant added to avg_disk_growth to ensure minimum progress
     constexpr uint32_t min_compaction_progress_buffer = 8;
 
+    if (prev_root) {
+        auto const min_offsets = calc_min_offsets(*prev_root);
+        MONAD_ASSERT(
+            !min_offsets.any_below(compact_offsets),
+            "Detected referenced offsets below compaction boundary; potential "
+            "disk corruption");
+        if (min_offsets.fast != INVALID_COMPACT_VIRTUAL_OFFSET) {
+            compact_offsets.fast = min_offsets.fast;
+        }
+        if (min_offsets.slow != INVALID_COMPACT_VIRTUAL_OFFSET) {
+            compact_offsets.slow = min_offsets.slow;
+        }
+    }
+
     auto const fast_disk_usage =
         num_chunks(chunk_list::fast) / (double)io->chunk_count();
     uint64_t const max_version = db_history_max_version();
     if ((fast_disk_usage < fast_usage_limit_start_compaction &&
          num_chunks(chunk_list::fast) <
              fast_chunk_count_limit_start_compaction) ||
-        max_version == INVALID_BLOCK_NUM ||
-        compact_offsets.fast >= last_block_end_offset_fast_) {
+        max_version == INVALID_BLOCK_NUM) {
         return;
     }
 

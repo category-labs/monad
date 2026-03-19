@@ -188,7 +188,7 @@ class UpdateAuxImpl
 
     void reset_node_writers();
 
-    void advance_compact_offsets();
+    void advance_compact_offsets(Node::SharedPtr prev_root);
 
     void free_compacted_chunks();
 

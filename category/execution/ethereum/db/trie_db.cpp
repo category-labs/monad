@@ -140,28 +140,6 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
     return byte_string{decoded.value().second};
 }
 
-byte_string TrieDb::read_storage_page(
-    Address const &addr, Incarnation, bytes32_t const &key)
-{
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            PAGED_STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
-        block_number_);
-    if (res.has_error()) {
-        stats_storage_no_value();
-        return {};
-    }
-    stats_storage_value();
-    byte_string_view enc{res.value().node->value()};
-    auto decoded = decode_storage_db(enc);
-    MONAD_ASSERT(!decoded.has_error());
-    return byte_string{decoded.value().second};
-}
-
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
     // TODO read intercode object
@@ -296,11 +274,6 @@ void TrieDb::update_proposed_metadata(
 bytes32_t TrieDb::state_root()
 {
     return merkle_root(state_nibbles);
-}
-
-bytes32_t TrieDb::page_state_root()
-{
-    return merkle_root(paged_state_nibbles);
 }
 
 bytes32_t TrieDb::receipts_root()

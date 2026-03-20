@@ -387,8 +387,7 @@ namespace
             auto encoded_storage = node.value();
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
-            auto const page =
-                decode_storage_page(storage.value().second);
+            auto const page = decode_storage_page(storage.value().second);
             auto const commitment = page_commit(page);
             return rlp::encode_string2(
                 {commitment.bytes, sizeof(commitment.bytes)});
@@ -520,8 +519,7 @@ mpt::Compute &MachineBase::get_compute() const
         transaction_root_compute;
 
     auto const prefix_length = prefix_len();
-    if (MONAD_LIKELY(
-            table == TableType::State || table == TableType::PagedState)) {
+    if (MONAD_LIKELY(table == TableType::State)) {
         MONAD_ASSERT(depth >= prefix_length);
         if (MONAD_UNLIKELY(depth == prefix_length)) {
             return account_root_compute;
@@ -530,20 +528,16 @@ mpt::Compute &MachineBase::get_compute() const
             return account_compute;
         }
         else if (depth == prefix_length + 2 * sizeof(bytes32_t)) {
-            if (table == TableType::State) {
-                return storage_root_compute;
-            }
-            else {
+            if (storage_format() == StorageFormat::PageCOO) {
                 return page_storage_root_compute;
             }
+            return storage_root_compute;
         }
         else {
-            if (table == TableType::State) {
-                return storage_compute;
-            }
-            else {
+            if (storage_format() == StorageFormat::PageCOO) {
                 return page_storage_compute;
             }
+            return storage_compute;
         }
     }
     else if (table == TableType::Receipt) {
@@ -592,8 +586,7 @@ void MachineBase::down(unsigned char const nibble)
          nibble == RECEIPT_NIBBLE || nibble == CALL_FRAME_NIBBLE ||
          nibble == TRANSACTION_NIBBLE || nibble == BLOCKHEADER_NIBBLE ||
          nibble == WITHDRAWAL_NIBBLE || nibble == OMMER_NIBBLE ||
-         nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE ||
-         nibble == PAGED_STATE_NIBBLE) ||
+         nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE) ||
         depth != prefix_length);
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
@@ -626,9 +619,6 @@ void MachineBase::down(unsigned char const nibble)
         }
         else if (nibble == CALL_FRAME_NIBBLE) {
             table = TableType::CallFrame;
-        }
-        else if (nibble == PAGED_STATE_NIBBLE) {
-            table = TableType::PagedState;
         }
         else {
             MONAD_ABORT_PRINTF("Invalid nibble %u", (unsigned)nibble);

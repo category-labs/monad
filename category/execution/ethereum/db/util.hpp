@@ -65,12 +65,27 @@ struct MachineBase : public mpt::StateMachine
         BlockHeader,
         Ommer,
         CallFrame,
-        PagedState,
+    };
+
+    enum class StorageFormat : uint8_t
+    {
+        SlotCompact,
+        PageCOO,
     };
 
     uint8_t depth{0};
     TrieType trie_section{TrieType::Undefined};
     TableType table{TableType::Prefix};
+
+    void set_storage_format(StorageFormat fmt)
+    {
+        storage_format_ = fmt;
+    }
+
+    StorageFormat storage_format() const
+    {
+        return storage_format_;
+    }
 
     virtual mpt::Compute &get_compute() const override;
     virtual void down(unsigned char const nibble) override;
@@ -82,6 +97,9 @@ struct MachineBase : public mpt::StateMachine
     {
         return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
     }
+
+private:
+    StorageFormat storage_format_{StorageFormat::SlotCompact};
 };
 
 static_assert(sizeof(MachineBase) == 16);
@@ -115,7 +133,6 @@ inline constexpr unsigned char OMMER_NIBBLE = 6;
 inline constexpr unsigned char TX_HASH_NIBBLE = 7;
 inline constexpr unsigned char BLOCK_HASH_NIBBLE = 8;
 inline constexpr unsigned char CALL_FRAME_NIBBLE = 9;
-inline constexpr unsigned char PAGED_STATE_NIBBLE = 10;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
@@ -128,8 +145,6 @@ inline mpt::Nibbles const ommer_nibbles = mpt::concat(OMMER_NIBBLE);
 inline mpt::Nibbles const withdrawal_nibbles = mpt::concat(WITHDRAWAL_NIBBLE);
 inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
 inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
-inline mpt::Nibbles const paged_state_nibbles = mpt::concat(PAGED_STATE_NIBBLE);
-
 //////////////////////////////////////////////////////////
 // Proposed and finialized subtries. Active on all tables.
 //////////////////////////////////////////////////////////

@@ -449,6 +449,7 @@ try {
                     block_db_path,
                     db,
                     db_cache,
+                    static_cast<MachineBase &>(*machine),
                     vm,
                     block_hash_buffer,
                     priority_pool,

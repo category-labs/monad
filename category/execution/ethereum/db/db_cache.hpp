@@ -124,33 +124,6 @@ public:
         return db_.read_storage(address, incarnation, key);
     }
 
-    virtual byte_string read_storage_page(
-        Address const &address, Incarnation const incarnation,
-        bytes32_t const &key) override
-    {
-        bool truncated = false;
-        bytes32_t proposal_result;
-        if (proposals_.try_read_storage(
-                address, incarnation, key, proposal_result, truncated)) {
-            if (proposal_result == bytes32_t{}) {
-                return {};
-            }
-            storage_page_t page{};
-            page[0] = proposal_result;
-            return encode_storage_page(page);
-        }
-
-        if (!truncated) {
-            StorageKey const sk{address, incarnation, key};
-            StorageCache::ConstAccessor acc{};
-            if (storage_.find(acc, sk)) {
-                auto const &val = acc->second.value_;
-                return byte_string{val.begin(), val.end()};
-            }
-        }
-        return db_.read_storage_page(address, incarnation, key);
-    }
-
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
     {
         return db_.read_code(code_hash);
@@ -226,11 +199,6 @@ public:
     virtual bytes32_t state_root() override
     {
         return db_.state_root();
-    }
-
-    virtual bytes32_t page_state_root() override
-    {
-        return db_.page_state_root();
     }
 
     virtual bytes32_t receipts_root() override

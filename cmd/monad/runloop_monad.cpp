@@ -181,9 +181,16 @@ template <Traits traits, class MonadConsensusBlockHeader>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
+<<<<<<< HEAD
     BlockHashChain &block_hash_chain, MonadChain const &chain, DbCache &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
     bool const enable_tracing, BlockCache &block_cache)
+=======
+    BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
+    MachineBase &machine, vm::VM &vm, fiber::PriorityPool &priority_pool,
+    bool const is_first_block, bool const enable_tracing,
+    BlockCache &block_cache)
+>>>>>>> aeb563fbe (Unify page and slot storage under single state trie)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -326,11 +333,14 @@ Result<BlockExecOutput> propose_block(
     if (block.withdrawals.has_value()) {
         builder.add_withdrawals(block.withdrawals.value());
     }
+    machine.set_storage_format(
+        traits::monad_rev() >= MONAD_NEXT
+            ? MachineBase::StorageFormat::PageCOO
+            : MachineBase::StorageFormat::SlotCompact);
     db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
         // second stage: populate block header
         h.receipts_root = db.receipts_root();
-        h.state_root = traits::monad_rev() < MONAD_NEXT ? db.state_root()
-                                                        : db.page_state_root();
+        h.state_root = db.state_root();
         h.withdrawals_root = db.withdrawals_root();
         h.transactions_root = db.transactions_root();
         h.gas_used = results.empty() ? 0 : results.back().gas_used;
@@ -482,7 +492,11 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &chain, std::filesystem::path const &ledger_dir,
+<<<<<<< HEAD
     mpt::Db &raw_db, DbCache &db, vm::VM &vm,
+=======
+    mpt::Db &raw_db, Db &db, MachineBase &machine, vm::VM &vm,
+>>>>>>> aeb563fbe (Unify page and slot storage under single state trie)
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
@@ -631,6 +645,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &block_hash_chain,
              &db,
              &chain,
+             &machine,
              &vm,
              &priority_pool,
              &last_finalized_block_number,
@@ -688,6 +703,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     block_hash_chain,
                     chain,
                     db,
+                    machine,
                     vm,
                     priority_pool,
                     block_number == start_block_num,

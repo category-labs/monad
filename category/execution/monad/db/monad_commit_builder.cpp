@@ -114,7 +114,7 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
     }
 
     updates_.push_front(update_alloc_.emplace_back(Update{
-        .key = paged_state_nibbles,
+        .key = state_nibbles,
         .value = byte_string_view{},
         .incarnation = false,
         .next = std::move(account_updates),

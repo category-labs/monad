@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -224,6 +225,180 @@ void add_call_code(
         g[18], g[17], g[16], g[15], g[14], g[13],  g[12],  g[11], g[10], g[9],
         g[8],  g[7],  g[6],  g[5],  g[4],  g[3],   g[2],   g[1],  g[0],  CALL,
     });
+}
+
+void add_deploy_stop_code(std::vector<uint8_t> &code)
+{
+    code.append_range(std::initializer_list<uint8_t>{
+        PUSH0,
+        PUSH0,
+        MSTORE8,
+        PUSH1,
+        1,
+        PUSH0,
+        RETURN,
+    });
+}
+
+void add_selfdestruct_code(Address beneficiary, std::vector<uint8_t> &code)
+{
+    auto const *b = intx::as_bytes(beneficiary);
+    code.append_range(std::initializer_list<uint8_t>{
+        PUSH20, b[0],  b[1],  b[2],  b[3],  b[4],         b[5],  b[6],
+        b[7],   b[8],  b[9],  b[10], b[11], b[12],        b[13], b[14],
+        b[15],  b[16], b[17], b[18], b[19], SELFDESTRUCT,
+    });
+}
+
+void add_create_code(
+    std::vector<uint8_t> &code, std::vector<uint8_t> const &initcode)
+{
+    MONAD_ASSERT(initcode.size() < 256);
+    code.append_range(std::initializer_list<uint8_t>{
+        PUSH1,
+        static_cast<uint8_t>(initcode.size()),
+        PUSH1,
+        0,
+        PUSH0,
+        CODECOPY,
+        PUSH1,
+        static_cast<uint8_t>(initcode.size()),
+        PUSH0,
+        PUSH0,
+        CREATE,
+        ISZERO,
+    });
+    size_t const initcode_offset_index = 3;
+    add_revert_if_true(code);
+    add_revert_check(code);
+    add_revert_if_true(code);
+    code.push_back(STOP);
+    MONAD_ASSERT(code.size() < 256);
+    code[initcode_offset_index] = static_cast<uint8_t>(code.size());
+    code.append_range(initcode);
+}
+
+enum class InitcodeFinalization
+{
+    DeployCode,
+    DeployEmptyCode,
+    Selfdestruct,
+};
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+void run_initcode_dipped_into_reserve_test(
+    InitcodeFinalization const finalization)
+{
+    static constexpr Address TX_SENDER{0xaaaaaaaa};
+    static constexpr Address FACTORY{0xbbbbbbbb};
+    static constexpr Address BENEFICIARY{0xcccccccc};
+    static constexpr uint64_t GAS_LIMIT = 1'000'000;
+    static constexpr uint256_t INITIAL_BALANCE =
+        uint256_t{11} * 1000000000000000000ULL;
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    NoopCallTracer call_tracer;
+    evmc_tx_context const tx_context{};
+    BlockHashBufferFinalized block_hash_buffer{};
+
+    std::vector<uint8_t> initcode;
+    add_spend_code(11, initcode);
+    add_revert_check(initcode);
+    add_revert_if_true(initcode);
+    switch (finalization) {
+    case InitcodeFinalization::DeployCode:
+        add_deploy_stop_code(initcode);
+        break;
+    case InitcodeFinalization::DeployEmptyCode:
+        initcode.append_range(std::initializer_list<uint8_t>{
+            PUSH0,
+            PUSH0,
+            RETURN,
+        });
+        break;
+    case InitcodeFinalization::Selfdestruct:
+        add_selfdestruct_code(BENEFICIARY, initcode);
+        break;
+    }
+
+    std::vector<uint8_t> factory_code;
+    add_create_code(factory_code, initcode);
+
+    Address const new_contract = create_contract_address(FACTORY, 0);
+
+    {
+        State state{bs, Incarnation{0, 0}};
+        state.add_to_balance(TX_SENDER, INITIAL_BALANCE);
+        state.add_to_balance(new_contract, INITIAL_BALANCE);
+        state.create_contract(FACTORY);
+        state.set_code(FACTORY, byte_string_view{factory_code});
+        MONAD_ASSERT(state.get_balance(TX_SENDER) == INITIAL_BALANCE);
+        MONAD_ASSERT(state.get_balance(new_contract) == INITIAL_BALANCE);
+        MONAD_ASSERT(bs.can_merge(state));
+        bs.merge(state);
+    }
+
+    Transaction const tx{
+        .max_fee_per_gas = 0,
+        .gas_limit = GAS_LIMIT,
+        .type = TransactionType::legacy,
+        .max_priority_fee_per_gas = 0,
+    };
+
+    std::vector<Address> const senders = {TX_SENDER};
+    std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_grandparent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_parent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    senders_and_authorities.insert(TX_SENDER);
+    ChainContext<traits> const chain_context{
+        .grandparent_senders_and_authorities =
+            empty_grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = empty_parent_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities};
+
+    State state{bs, Incarnation{1, 1}};
+
+    EvmcHost<traits> host{
+        call_tracer,
+        tx_context,
+        block_hash_buffer,
+        state,
+        tx,
+        0,
+        0,
+        chain_context};
+
+    monad::vm::test::TestMessage test_msg;
+    evmc_message msg{*test_msg};
+    msg.gas = static_cast<int64_t>(GAS_LIMIT);
+    msg.recipient = FACTORY;
+    msg.sender = TX_SENDER;
+
+    init_reserve_balance_context<traits>(
+        state,
+        msg.sender,
+        tx,
+        host.base_fee_per_gas_,
+        host.i_,
+        host.chain_ctx_);
+
+    auto const factory_code_hash =
+        to_bytes(keccak256(byte_string_view{factory_code}));
+    auto const factory_intercode =
+        make_shared_intercode(std::span<uint8_t const>{factory_code});
+    auto const result = vm.execute<traits>(
+        host, &msg, factory_code_hash, make_shared<Varcode>(factory_intercode));
+    EXPECT_EQ(EVMC_SUCCESS, result.status_code);
 }
 
 template <Traits traits>
@@ -545,6 +720,37 @@ TYPED_TEST(MonadTraitsTest, reverttransaction_revert)
     }();
 
     run_dipped_into_reserve_test<typename TestFixture::Trait>(15, 11, outcome);
+}
+
+TYPED_TEST(MonadTraitsTest, dipped_into_reserve_executed_initcode_deploy)
+{
+    if constexpr (TestFixture::Trait::monad_rev() < MONAD_NINE) {
+        return;
+    }
+
+    run_initcode_dipped_into_reserve_test<typename TestFixture::Trait>(
+        InitcodeFinalization::DeployCode);
+}
+
+TYPED_TEST(
+    MonadTraitsTest, dipped_into_reserve_executed_initcode_deploy_empty_code)
+{
+    if constexpr (TestFixture::Trait::monad_rev() < MONAD_NINE) {
+        return;
+    }
+
+    run_initcode_dipped_into_reserve_test<typename TestFixture::Trait>(
+        InitcodeFinalization::DeployEmptyCode);
+}
+
+TYPED_TEST(MonadTraitsTest, dipped_into_reserve_executed_initcode_selfdestruct)
+{
+    if constexpr (TestFixture::Trait::monad_rev() < MONAD_NINE) {
+        return;
+    }
+
+    run_initcode_dipped_into_reserve_test<typename TestFixture::Trait>(
+        InitcodeFinalization::Selfdestruct);
 }
 
 template <Traits traits>

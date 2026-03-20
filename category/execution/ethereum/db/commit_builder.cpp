@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -80,16 +81,12 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                         update_alloc_.emplace_back(Update{
                             .key = hash_alloc_.emplace_back(
                                 keccak256({key.bytes, sizeof(key.bytes)})),
-                            .value =
-                                delta.second == bytes32_t{}
-                                    ? std::nullopt
-                                    : std::make_optional<byte_string_view>(
-                                          bytes_alloc_.emplace_back(
-                                              encode_storage_db(
-                                                  key,
-                                                  bytes_alloc_.emplace_back(
-                                                      page_encode_slot(
-                                                          delta.second))))),
+                            .value = delta.second == bytes32_t{}
+                                         ? std::nullopt
+                                         : std::make_optional<byte_string_view>(
+                                               bytes_alloc_.emplace_back(
+                                                   encode_storage_eth_db(
+                                                       key, delta.second))),
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));

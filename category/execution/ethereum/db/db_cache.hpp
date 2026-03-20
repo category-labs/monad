@@ -24,9 +24,9 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 #include <category/vm/vm.hpp>
 
@@ -109,7 +109,7 @@ public:
             if (proposal_result == bytes32_t{}) {
                 return {};
             }
-            return page_encode_slot(proposal_result);
+            return encode_storage_eth(proposal_result);
         }
 
         if (!truncated) {
@@ -135,7 +135,9 @@ public:
             if (proposal_result == bytes32_t{}) {
                 return {};
             }
-            return rle_encode(proposal_result.bytes, sizeof(bytes32_t));
+            storage_page_t page{};
+            page[0] = proposal_result;
+            return encode_storage_page(page);
         }
 
         if (!truncated) {
@@ -278,7 +280,7 @@ private:
                         storage_.insert(sk, std::span<uint8_t const>{});
                     }
                     else {
-                        byte_string enc = page_encode_slot(val);
+                        byte_string enc = encode_storage_eth(val);
                         storage_.insert(sk, enc);
                     }
                 }

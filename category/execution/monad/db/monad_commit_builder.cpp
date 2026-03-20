@@ -17,6 +17,7 @@
 
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/storage_broker.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -88,10 +89,8 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                         page.is_empty()
                             ? std::nullopt
                             : std::make_optional<byte_string_view>(
-                                  bytes_alloc_.emplace_back(encode_storage_db(
-                                      page_key,
-                                      bytes_alloc_.emplace_back(
-                                          page_encode(page))))),
+                                  bytes_alloc_.emplace_back(
+                                      encode_storage_page_db(page_key, page))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_number_)}));

@@ -19,6 +19,7 @@
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -211,8 +212,8 @@ namespace
         MONAD_ASSERT(begin != end);
         bytes32_t const key{erase ? begin : n % (end - begin) + begin};
         bytes32_t const value{erase ? 0 : n};
-        auto const sorig = decode_storage_rle<bytes32_t>(
-            db.read_storage(addr, orig->incarnation, key));
+        auto const sorig =
+            decode_storage_eth(db.read_storage(addr, orig->incarnation, key));
         bool const success = deltas.emplace(
             addr,
             StateDelta{

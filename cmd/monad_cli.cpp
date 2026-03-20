@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -544,7 +545,7 @@ void do_get_account(
         }
         print_storage(
             storage_res.value().first,
-            decode_storage_rle<bytes32_t>(storage_res.value().second));
+            decode_storage_eth(storage_res.value().second));
     }
 }
 

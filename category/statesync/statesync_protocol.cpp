@@ -19,6 +19,7 @@
 #include <category/core/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/statesync/statesync_client.h>
@@ -34,7 +35,8 @@ bytes32_t read_storage(
     monad_statesync_client_context &ctx, Address const &addr,
     bytes32_t const &key)
 {
-    return decode_storage_rle<bytes32_t>(
+    // TODO: add page path when statesync machine supports monad_revision
+    return decode_storage_eth(
         ctx.tdb.read_storage(addr, Incarnation{0, 0}, key));
 }
 
@@ -210,13 +212,12 @@ bool StatesyncProtocolV1::handle_upsert(
             return false;
         }
         auto const &[k, value_enc] = res.value();
-        // TODO: decode as storage_page_t, read-merge-write like
-        // MonadCommitBuilder::add_state_deltas
+        // TODO: add page path when statesync machine supports monad_revision
         storage_update(
             *ctx,
             unaligned_load<Address>(val),
             k,
-            decode_storage_rle<bytes32_t>(value_enc));
+            decode_storage_eth(value_enc));
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE) {
         if (size != sizeof(Address)) {

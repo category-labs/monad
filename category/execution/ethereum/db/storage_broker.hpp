@@ -20,9 +20,8 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
-#include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -57,7 +56,7 @@ public:
     bytes32_t read_storage(
         Address const &addr, Incarnation inc, bytes32_t const &key) override
     {
-        return decode_storage_rle<bytes32_t>(db_.read_storage(addr, inc, key));
+        return decode_storage_eth(db_.read_storage(addr, inc, key));
     }
 
     storage_page_t

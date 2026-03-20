@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -454,8 +455,7 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             // TODO: multi-slot storage needs to iterate all slots
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_DEBUG_ASSERT(!storage.has_error());
-            auto const value =
-                decode_storage_rle<bytes32_t>(storage.value().second);
+            auto const value = decode_storage_eth(storage.value().second);
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));

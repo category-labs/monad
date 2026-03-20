@@ -32,11 +32,11 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
@@ -327,12 +327,12 @@ namespace
             while (!in.empty()) {
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = bytes_alloc_.emplace_back(encode_storage_db(
+                    .value = bytes_alloc_.emplace_back(encode_storage_eth_db(
                         bytes32_t{}, // TODO: update this when binary checkpoint
                                      // includes unhashed storage slot
-                        page_encode_slot(*reinterpret_cast<bytes32_t const *>(
+                        unaligned_load<bytes32_t>(
                             in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
-                                .data())))),
+                                .data()))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_id_)}));
@@ -375,10 +375,7 @@ namespace
             auto encoded_storage = node.value();
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
-            auto const value =
-                decode_storage_rle<bytes32_t>(storage.value().second);
-            return rlp::encode_string2(
-                rlp::zeroless_view(to_byte_string_view(value.bytes)));
+            return rlp::encode_string2(storage.value().second);
         }
     };
 
@@ -391,7 +388,7 @@ namespace
             auto const storage = decode_storage_db(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
             auto const page =
-                decode_storage_rle<storage_page_t>(storage.value().second);
+                decode_storage_page(storage.value().second);
             auto const commitment = page_commit(page);
             return rlp::encode_string2(
                 {commitment.bytes, sizeof(commitment.bytes)});
@@ -755,10 +752,18 @@ Result<Account> decode_account_db_ignore_address(byte_string_view &enc)
     return decode_account_db_helper(res.second);
 }
 
-byte_string encode_storage_db(bytes32_t const &key, byte_string_view const data)
+byte_string encode_storage_eth_db(bytes32_t const &key, bytes32_t const &val)
 {
     return rlp::encode_list2(
-        rlp::encode_bytes32_compact(key), rlp::encode_string2(data));
+        rlp::encode_bytes32_compact(key), rlp::encode_bytes32_compact(val));
+}
+
+byte_string
+encode_storage_page_db(bytes32_t const &key, storage_page_t const &page)
+{
+    return rlp::encode_list2(
+        rlp::encode_bytes32_compact(key),
+        rlp::encode_string2(encode_storage_page(page)));
 }
 
 Result<std::pair<bytes32_t, byte_string_view>>

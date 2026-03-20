@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/storage_broker.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -160,8 +161,7 @@ namespace
         auto const storage = decode_storage_db(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
         return std::make_pair(
-            storage.value().first,
-            decode_storage_rle<bytes32_t>(storage.value().second));
+            storage.value().first, decode_storage_eth(storage.value().second));
     }
 
     std::vector<Address>

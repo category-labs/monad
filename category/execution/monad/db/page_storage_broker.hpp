@@ -22,7 +22,7 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_broker.hpp>
-#include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
@@ -98,7 +98,7 @@ public:
 
         PageMap::accessor acc;
         if (pages_.insert(acc, pk)) {
-            acc->second = decode_storage_rle<storage_page_t>(
+            acc->second = decode_storage_page(
                 db_.read_storage_page(addr, inc, page_key));
         }
         return acc->second[slot_offset];
@@ -119,7 +119,7 @@ public:
 
         PageMap::accessor acc;
         if (pages_.insert(acc, pk)) {
-            acc->second = decode_storage_rle<storage_page_t>(
+            acc->second = decode_storage_page(
                 db_.read_storage_page(addr, inc, page_key));
         }
         return acc->second;

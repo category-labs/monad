@@ -21,7 +21,6 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/state_machine.hpp>
 
@@ -140,31 +139,11 @@ inline mpt::Nibbles const proposal_nibbles = mpt::concat(PROPOSAL_NIBBLE);
 inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
-byte_string encode_storage_db(bytes32_t const &key, byte_string_view data);
-
-Result<std::pair<bytes32_t, byte_string_view>>
-decode_storage_db(byte_string_view &);
 
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_account_db_raw(byte_string_view &);
 Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
 Result<Account> decode_account_db_ignore_address(byte_string_view &);
-
-template <typename T>
-inline T decode_storage_rle(byte_string_view enc)
-{
-    if (enc.empty()) {
-        return {};
-    }
-    auto const page = page_decode(enc.data(), enc.size());
-    if constexpr (std::is_same_v<T, storage_page_t>) {
-        return page;
-    }
-    else {
-        static_assert(sizeof(T) <= sizeof(bytes32_t));
-        return page.slots[0];
-    }
-}
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);
 Result<std::pair<Transaction, Address>>

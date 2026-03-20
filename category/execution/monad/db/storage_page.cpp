@@ -117,17 +117,19 @@ static constexpr uint8_t BITMAP_TAG = 0x80;
 static constexpr size_t BITMAP_BYTES = storage_page_t::SLOTS / 8; // 16
 static constexpr size_t COO_THRESHOLD = 16;
 
-byte_string page_encode(storage_page_t const &page)
+byte_string encode_storage_page(storage_page_t const &page)
 {
     static constexpr bytes32_t ZERO{};
     static constexpr size_t SZ = storage_page_t::SLOT_SIZE;
 
-    // Collect non-zero slot indices.
+    // Collect non-zero slot indices and build bitmap in a single pass.
     uint8_t indices[storage_page_t::SLOTS];
+    uint8_t mask[BITMAP_BYTES] = {};
     size_t k = 0;
     for (size_t i = 0; i < storage_page_t::SLOTS; ++i) {
         if (page.slots[i] != ZERO) {
             indices[k++] = static_cast<uint8_t>(i);
+            mask[i / 8] |= uint8_t(1) << (i % 8);
         }
     }
 
@@ -142,13 +144,6 @@ byte_string page_encode(storage_page_t const &page)
         return out;
     }
 
-    // Bitmap path.
-    uint8_t mask[BITMAP_BYTES] = {};
-    for (size_t i = 0; i < k; ++i) {
-        uint8_t const idx = indices[i];
-        mask[idx / 8] |= uint8_t(1) << (idx % 8);
-    }
-
     byte_string out(1 + BITMAP_BYTES + k * SZ, 0);
     out[0] = BITMAP_TAG;
     std::memcpy(out.data() + 1, mask, BITMAP_BYTES);
@@ -161,7 +156,7 @@ byte_string page_encode(storage_page_t const &page)
     return out;
 }
 
-storage_page_t page_decode(uint8_t const *data, size_t const len)
+storage_page_t decode_storage_page(uint8_t const *data, size_t const len)
 {
     static constexpr size_t SZ = storage_page_t::SLOT_SIZE;
     storage_page_t page{};
@@ -199,22 +194,6 @@ storage_page_t page_decode(uint8_t const *data, size_t const len)
     }
 
     return page;
-}
-
-byte_string page_encode_slot(bytes32_t const &val)
-{
-    static constexpr bytes32_t ZERO{};
-    static constexpr size_t SZ = storage_page_t::SLOT_SIZE;
-
-    if (val == ZERO) {
-        return byte_string(1, COO_TAG);
-    }
-
-    byte_string out(1 + 1 + SZ, 0);
-    out[0] = COO_TAG | 1;
-    out[1] = 0;
-    std::memcpy(out.data() + 2, val.bytes, SZ);
-    return out;
 }
 
 MONAD_NAMESPACE_END

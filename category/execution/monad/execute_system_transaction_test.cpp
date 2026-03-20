@@ -15,6 +15,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
@@ -75,10 +76,10 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 },
             .nonce = tx_nonce,
             .to = staking::STAKING_CA,
-            .data = evmc::from_hex(std::format(
-                                       "0x1d4e9f0200000000000000000000000000000"
-                                       "0000000000000000000000000000000000{}",
-                                       next_epoch))
+            .data = from_hex(std::format(
+                                 "0x1d4e9f0200000000000000000000000000000"
+                                 "0000000000000000000000000000000000{}",
+                                 next_epoch))
                         .value()};
     };
 
@@ -186,10 +187,10 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 },
             .nonce = tx_nonce,
             .to = staking::STAKING_CA,
-            .data = evmc::from_hex(std::format(
-                                       "0x1d4e9f0200000000000000000000000000000"
-                                       "0000000000000000000000000000000000{}",
-                                       next_epoch))
+            .data = from_hex(std::format(
+                                 "0x1d4e9f0200000000000000000000000000000"
+                                 "0000000000000000000000000000000000{}",
+                                 next_epoch))
                         .value()};
     };
 

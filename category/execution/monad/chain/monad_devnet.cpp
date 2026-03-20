@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_devnet_alloc.hpp>
@@ -37,8 +38,8 @@ GenesisState MonadDevnet::get_genesis_state() const
     header.difficulty = 17179869184;
     header.gas_limit = 5000;
     intx::be::unsafe::store<uint64_t>(header.nonce.data(), 66);
-    header.extra_data = evmc::from_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33a"
-                                       "db3db69cbdb7a38e1e50b1b82fa")
+    header.extra_data = from_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33a"
+                                 "db3db69cbdb7a38e1e50b1b82fa")
                             .value();
     return {header, MONAD_DEVNET_ALLOC};
 }

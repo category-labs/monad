@@ -15,6 +15,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -34,7 +35,6 @@
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <evmc/hex.hpp>
 
 #include <intx/intx.hpp>
 
@@ -860,7 +860,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
     auto const eoa_code_hash = to_bytes(keccak256(eoa_code));
 
     // PUSH0; PUSH0; PUSH0; CREATE
-    auto const delegated_code = evmc::from_hex("0x5F5F5FF0").value();
+    auto const delegated_code = from_hex("0x5F5F5FF0").value();
     auto const delegated_icode = vm::make_shared_intercode(delegated_code);
     auto const delegated_code_hash = to_bytes(keccak256(delegated_code));
 
@@ -974,14 +974,14 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
     // PUSH0; PUSH0; PUSH0; PUSH0; PUSH20 creator; GAS; DELEGATECALL;
     // PUSH1 0x1f; JUMPI; INVALID; JUMPDEST[1f]
     auto const delegated_code =
-        evmc::from_hex(
+        from_hex(
             "5f5f5f5f7300000000000000000000000000000000dddddddd5af4601f57fe5b")
             .value();
     auto const delegated_icode = vm::make_shared_intercode(delegated_code);
     auto const delegated_code_hash = to_bytes(keccak256(delegated_code));
 
     // PUSH0; PUSH0; PUSH0; PUSH0; CREATE2
-    auto const creator_code = evmc::from_hex("0x5F5F5F5FF5").value();
+    auto const creator_code = from_hex("0x5F5F5F5FF5").value();
     auto const creator_icode = vm::make_shared_intercode(creator_code);
     auto const creator_code_hash = to_bytes(keccak256(creator_code));
 
@@ -1092,8 +1092,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 
     // Delegated to ecRecover
     auto const eoa_code =
-        evmc::from_hex("0xEF01000000000000000000000000000000000000000001")
-            .value();
+        from_hex("0xEF01000000000000000000000000000000000000000001").value();
     auto const eoa_icode = vm::make_shared_intercode(eoa_code);
     auto const eoa_code_hash = to_bytes(keccak256(eoa_code));
 
@@ -1103,8 +1102,8 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
     // PUSH0; PUSH0; PUSH0; PUSH0; PUSH20 eoa; PUSH1 100; DELEGATECALL;
     // PUSH1 0x20; JUMPI; INVALID; JUMPDEST[20]
     auto const contract_code =
-        evmc::from_hex("5f5f5f5f7300000000000000000000000000000000aaaaaaaa6064f"
-                       "4602057fe5b")
+        from_hex("5f5f5f5f7300000000000000000000000000000000aaaaaaaa6064f"
+                 "4602057fe5b")
             .value();
     auto const contract_icode = vm::make_shared_intercode(contract_code);
     auto const contract_code_hash = to_bytes(keccak256(contract_code));
@@ -1195,8 +1194,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
 
     // push cold address; BALANCE
     auto const code =
-        evmc::from_hex("0x7300000000000000000000000000000000aaaaaaaa31")
-            .value();
+        from_hex("0x7300000000000000000000000000000000aaaaaaaa31").value();
     auto const icode = vm::make_shared_intercode(code);
     auto const code_hash = to_bytes(keccak256(code));
 

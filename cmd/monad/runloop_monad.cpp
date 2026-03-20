@@ -21,6 +21,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
@@ -386,7 +387,7 @@ std::optional<bytes32_t> handle_header(
     MONAD_ASSERT_PRINTF(
         !header_res.has_error(),
         "Could not rlp decode header: %s",
-        evmc::hex(id).c_str());
+        to_hex(id).c_str());
     auto const &header = header_res.value();
     if (header.seqno > start_exclusive && header.seqno <= end_inclusive) {
         fn(id, header);
@@ -415,7 +416,7 @@ bytes32_t for_each_header(
         MONAD_ASSERT_PRINTF(
             !ts.has_error(),
             "Could not rlp decode timestamp from header: %s",
-            evmc::hex(id).c_str());
+            to_hex(id).c_str());
         auto const rev = chain.get_monad_revision(ts.value());
 
         auto const body = [&]<Traits traits> {

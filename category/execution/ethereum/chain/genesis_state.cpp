@@ -15,6 +15,7 @@
 
 #include <category/core/blake3.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/address.hpp>
@@ -40,7 +41,7 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
     StateDeltas deltas;
     auto const json = nlohmann::json::parse(genesis.alloc);
     for (auto const &item : json.items()) {
-        Address const addr = evmc::from_hex<Address>(item.key()).value();
+        Address const addr = from_hex<Address>(item.key()).value();
         Account account{};
         account.balance =
             intx::from_string<uint256_t>(item.value()["wei_balance"]);

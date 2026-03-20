@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -33,7 +34,6 @@
 #include <eip4844/eip4844.h>
 
 #include <evmc/evmc.h>
-#include <evmc/hex.hpp>
 
 #include <intx/intx.hpp>
 
@@ -78,7 +78,7 @@ namespace
         constexpr std::string_view v{
             "0x0000000000000000000000000000000000000000000000000000000000001000"
             "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"};
-        constexpr auto r = evmc::from_hex<bytes64_t>(v);
+        constexpr auto r = monad::from_hex<bytes64_t>(v);
         static_assert(r.has_value());
         return r.value();
     }

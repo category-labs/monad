@@ -18,6 +18,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/update.hpp>
 
@@ -80,7 +81,7 @@ inline monad::byte_string const &to_byte_string(std::string_view s)
     std::string key(s);
     auto it = storage.find(key);
     if (it == storage.end()) {
-        auto const res = evmc::from_hex(s);
+        auto const res = monad::from_hex(s);
         MONAD_ASSERT(res.has_value());
         it = storage.emplace(std::move(key), std::move(res.value())).first;
     }

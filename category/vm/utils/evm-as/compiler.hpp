@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/hex.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
@@ -155,7 +156,7 @@ namespace monad::vm::utils::evm_as::internal
                 },
                 [&](PushAddressI const &push) -> bool {
                     ctx.vstack.push_back(
-                        std::format("0x{}", evmc::hex(push.address)));
+                        std::format("0x{}", monad::to_hex(push.address)));
                     return true;
                 },
                 [](auto const &) -> bool { return false; }},

@@ -17,6 +17,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
@@ -152,7 +153,7 @@ namespace nlohmann
         static void from_json(nlohmann::json const &json, monad::Address &o)
         {
             auto const maybe_address =
-                evmc::from_hex<monad::Address>(json.get<std::string>());
+                monad::from_hex<monad::Address>(json.get<std::string>());
             if (!maybe_address) {
                 throw std::invalid_argument{fmt::format(
                     "failed to convert json object {} to hexadecimal using "
@@ -178,11 +179,11 @@ namespace nlohmann
         static void from_json(nlohmann::json const &json, monad::byte_string &o)
         {
             auto const maybe_byte_string =
-                evmc::from_hex(json.get<std::string>());
+                monad::from_hex(json.get<std::string>());
             if (!maybe_byte_string) {
                 throw std::invalid_argument{fmt::format(
                     "failed to convert json object {} to hexadecimal using "
-                    "evm::from_hex<monad::byte_string>",
+                    "monad::from_hex<monad::byte_string>",
                     json.dump())};
             }
             o = maybe_byte_string.value();
@@ -195,11 +196,11 @@ namespace nlohmann
         static void from_json(nlohmann::json const &json, monad::bytes32_t &o)
         {
             auto const maybe_bytes32 =
-                evmc::from_hex<monad::bytes32_t>(json.get<std::string>());
+                monad::from_hex<monad::bytes32_t>(json.get<std::string>());
             if (!maybe_bytes32) {
                 throw std::invalid_argument{fmt::format(
                     "failed to convert json object {} to hexadecimal using "
-                    "evm::from_hex<monad::bytes32_t>",
+                    "monad::from_hex<monad::bytes32_t>",
                     json.dump())};
             }
             o = maybe_bytes32.value();

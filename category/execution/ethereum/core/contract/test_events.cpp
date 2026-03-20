@@ -15,6 +15,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
@@ -44,7 +45,7 @@ TEST(Events, build_undelegation_event)
     constexpr auto expected_topic2 =
         0x00000000000000000000000000000000000000000000000000000000deadbeef_bytes32;
     byte_string const expected_data =
-        evmc::from_hex(
+        from_hex(
             "0x0000000000000000000000000000000000000000000000000000000000000005"
             "00000000000000000000000000000000000000000000000000000000000f4240")
             .value();

@@ -17,10 +17,9 @@
 
 #include <category/core/assert.h>
 #include <category/core/blake3.hpp>
+#include <category/core/hex.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <fstream>
 #include <sstream>
@@ -29,7 +28,7 @@ MONAD_NAMESPACE_BEGIN
 
 byte_string read_file(bytes32_t const &id, std::filesystem::path const &dir)
 {
-    std::string const filename = evmc::hex(id);
+    std::string const filename = to_hex(id);
     std::filesystem::path const path = dir / filename;
     MONAD_ASSERT_PRINTF(
         std::filesystem::exists(path) && std::filesystem::is_regular_file(path),
@@ -52,9 +51,7 @@ read_body(bytes32_t const &id, std::filesystem::path const &dir)
     byte_string_view view{data};
     auto const res = rlp::decode_consensus_block_body(view);
     MONAD_ASSERT_PRINTF(
-        !res.has_error(),
-        "Could not rlp decode body: %s",
-        evmc::hex(id).c_str());
+        !res.has_error(), "Could not rlp decode body: %s", to_hex(id).c_str());
     return res.value();
 }
 
@@ -67,7 +64,7 @@ bytes32_t head_pointer_to_id(std::filesystem::path const &symlink)
     }
 
     auto const id_string = std::filesystem::path(resolved).stem().string();
-    auto const decode_res = evmc::from_hex(id_string);
+    auto const decode_res = from_hex(id_string);
     MONAD_ASSERT_PRINTF(
         decode_res.has_value(),
         "Link not hex encoded %s -> %s",

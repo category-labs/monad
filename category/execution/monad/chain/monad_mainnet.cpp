@@ -15,14 +15,13 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet_alloc.hpp>
 #include <category/vm/evm/monad/revision.h>
-
-#include <evmc/evmc.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -56,7 +55,7 @@ GenesisState MonadMainnet::get_genesis_state() const
     BlockHeader header;
     header.gas_limit = 5000;
     header.extra_data =
-        evmc::from_hex(
+        from_hex(
             "5fc30e623b72ee612c7b388f75c562de73ee347cc2437c4562dee137e386dc0d")
             .value();
     header.base_fee_per_gas = 0;

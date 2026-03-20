@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -368,7 +369,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
 
     // Deploy a nested contract, which then immediately selfdestructs.
     auto const code =
-        evmc::from_hex(
+        from_hex(
             "0x60806040526004361061003f576000357c010000000000000000000000000000"
             "000000000000000000000000000090048063e2179b8e1461004b57610046565b36"
             "61004657005b600080fd5b34801561005757600080fd5b50610060610062565b00"
@@ -470,7 +471,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
 
     // selfdestruct(ADDR_C): PUSH2 0x0102, SELFDESTRUCT
     static_assert(ADDR_C == 0x0000000000000000000000000000000000000102_address);
-    auto const code = evmc::from_hex("0x610102FF").value();
+    auto const code = from_hex("0x610102FF").value();
     auto const icode = vm::make_shared_intercode(code);
     auto const code_hash = to_bytes(keccak256(code));
 
@@ -563,7 +564,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     // Tries to deploy a contract that selfdestructs in its constructor, then
     // selfdestructs itself in the constructor. See diagram above.
     auto const initcode =
-        evmc::from_hex(
+        from_hex(
             "0x6080604052348015600f57600080fd5b50604051601a906036565b6040518091"
             "03906000f080158015603057600080fd5b50329050ff5b60148060428339019056"
             "fe6080604052348015600f57600080fd5b5032fffe")
@@ -739,7 +740,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
 
     // selfdestruct(ADDR_C): PUSH2 0x0102, SELFDESTRUCT
     static_assert(ADDR_C == 0x0000000000000000000000000000000000000102_address);
-    auto const code = evmc::from_hex("0x610102FF").value();
+    auto const code = from_hex("0x610102FF").value();
     auto const icode = vm::make_shared_intercode(code);
     auto const code_hash = to_bytes(keccak256(code));
 
@@ -842,7 +843,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
 
     // selfdestruct(ADDR_C): PUSH2 0x0102, SELFDESTRUCT
     static_assert(ADDR_C == 0x0000000000000000000000000000000000000102_address);
-    auto const code = evmc::from_hex("0x610102FF").value();
+    auto const code = from_hex("0x610102FF").value();
     auto const icode = vm::make_shared_intercode(code);
     auto const code_hash = to_bytes(keccak256(code));
 
@@ -1088,9 +1089,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
         };
 
         byte_string const expected_data =
-            evmc::from_hex(
-                "0x00000000000000000000000000000000000000000000000000000"
-                "000000F4240")
+            from_hex("0x00000000000000000000000000000000000000000000000000000"
+                     "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
         EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
@@ -1109,9 +1109,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
             abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR)};
 
         byte_string const expected_data =
-            evmc::from_hex(
-                "0x00000000000000000000000000000000000000000000000000000"
-                "000000F4240")
+            from_hex("0x00000000000000000000000000000000000000000000000000000"
+                     "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
         EXPECT_EQ(logs[0].log.topics, expected_topics);
@@ -1128,9 +1127,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
         };
 
         byte_string const expected_data =
-            evmc::from_hex(
-                "0x00000000000000000000000000000000000000000000000000000"
-                "000000F4240")
+            from_hex("0x00000000000000000000000000000000000000000000000000000"
+                     "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
         EXPECT_EQ(logs[1].log.topics, expected_topics);
@@ -1452,9 +1450,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
 
             byte_string const expected_data =
-                evmc::from_hex(
-                    "0x0000000000000000000000000000000000000000000000000"
-                    "000000000000001")
+                from_hex("0x0000000000000000000000000000000000000000000000000"
+                         "000000000000001")
                     .value();
 
             EXPECT_EQ(call_frames[1].logs->at(0).log.data, expected_data);

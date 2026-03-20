@@ -17,6 +17,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/keccak.h>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/account.hpp>
@@ -49,7 +50,6 @@
 #include <category/mpt/util.hpp>
 
 #include <evmc/evmc.hpp>
-#include <evmc/hex.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -447,8 +447,7 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
 
             auto const icode = db.read_code(acct.value().second.code_hash);
             MONAD_ASSERT(icode);
-            json[key]["code"] =
-                "0x" + evmc::hex({icode->code(), icode->size()});
+            json[key]["code"] = "0x" + to_hex({icode->code(), icode->size()});
 
             if (!json[key].contains("storage")) {
                 json[key]["storage"] = nlohmann::json::object();

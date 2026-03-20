@@ -20,7 +20,7 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/vm/evm/opcodes.hpp>
 
-#include <evmc/hex.hpp>
+#include <category/core/hex.hpp>
 #include <intx/intx.hpp>
 #include <nlohmann/json.hpp>
 
@@ -71,8 +71,8 @@ nlohmann::json to_json(CallFrame const &f)
     res["value"] = "0x" + intx::to_string(f.value, 16);
     res["gas"] = fmt::format("0x{:x}", f.gas);
     res["gasUsed"] = fmt::format("0x{:x}", f.gas_used);
-    res["input"] = "0x" + evmc::hex(f.input);
-    res["output"] = "0x" + evmc::hex(f.output);
+    res["input"] = "0x" + to_hex(f.input);
+    res["output"] = "0x" + to_hex(f.output);
 
     // If status == EVMC_SUCCESS, no error field is shown
     if (f.status == EVMC_REVERT) {

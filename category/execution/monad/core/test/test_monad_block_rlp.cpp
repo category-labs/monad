@@ -15,6 +15,7 @@
 
 #include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>

@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/keccak.h>
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
@@ -42,7 +43,6 @@
 
 #include <CLI/CLI.hpp>
 #include <evmc/evmc.hpp>
-#include <evmc/hex.hpp>
 #include <quill/Quill.h>
 #include <quill/bundled/fmt/core.h>
 #include <quill/bundled/fmt/format.h>
@@ -455,7 +455,7 @@ void do_table(DbStateMachine &sm, std::string_view const table_name)
 
 void do_get_code(DbStateMachine const &sm, std::string_view const code_hash)
 {
-    auto const code_hex = evmc::from_hex(code_hash);
+    auto const code_hex = from_hex(code_hash);
     if (!code_hex) {
         fmt::println("Code must be a valid hexadecimal value!");
         return;
@@ -475,7 +475,7 @@ void do_get_account(
     DbStateMachine const &sm, std::string_view const account,
     std::string_view const storage)
 {
-    auto const account_hex = evmc::from_hex(account);
+    auto const account_hex = from_hex(account);
     if (!account_hex) {
         fmt::println("Account must be a valid hexadecimal value!");
         return;
@@ -513,7 +513,7 @@ void do_get_account(
             normalized_storage = std::format("{:064x}", slot_id);
             storage_already_hashed = false;
         }
-        auto const storage_slot = evmc::from_hex(normalized_storage);
+        auto const storage_slot = from_hex(normalized_storage);
         if (!storage_slot) {
             fmt::println("Storage must be a valid hexadecimal value!");
             return;

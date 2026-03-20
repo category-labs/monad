@@ -25,6 +25,7 @@
 #include <category/core/event/event_iterator.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
@@ -147,7 +148,7 @@ BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
         genesis_json["difficulty"].get<std::string>());
 
     auto const extra_data =
-        evmc::from_hex(genesis_json["extraData"].get<std::string>());
+        from_hex(genesis_json["extraData"].get<std::string>());
     MONAD_ASSERT(extra_data.has_value());
     block_header.extra_data = extra_data.value();
 
@@ -155,7 +156,7 @@ BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
         std::stoull(genesis_json["gasLimit"].get<std::string>(), nullptr, 0);
 
     auto const mix_hash_byte_string =
-        evmc::from_hex(genesis_json["mixHash"].get<std::string>());
+        from_hex(genesis_json["mixHash"].get<std::string>());
     MONAD_ASSERT(mix_hash_byte_string.has_value());
     std::copy_n(
         mix_hash_byte_string.value().begin(),
@@ -167,7 +168,7 @@ BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     intx::be::unsafe::store<uint64_t>(block_header.nonce.data(), nonce);
 
     auto const parent_hash_byte_string =
-        evmc::from_hex(genesis_json["parentHash"].get<std::string>());
+        from_hex(genesis_json["parentHash"].get<std::string>());
     MONAD_ASSERT(parent_hash_byte_string.has_value());
     std::copy_n(
         parent_hash_byte_string.value().begin(),
@@ -179,7 +180,7 @@ BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
 
     if (genesis_json.contains("coinbase")) {
         auto const coinbase =
-            evmc::from_hex(genesis_json["coinbase"].get<std::string>());
+            from_hex(genesis_json["coinbase"].get<std::string>());
         MONAD_ASSERT(coinbase.has_value());
         std::copy_n(
             coinbase.value().begin(),
@@ -203,8 +204,8 @@ BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
             genesis_json["excessBlobGas"].get<std::string>(), nullptr, 0);
     }
     if (genesis_json.contains("parentBeaconBlockRoot")) {
-        auto const parent_beacon_block_root = evmc::from_hex(
-            genesis_json["parentBeaconBlockRoot"].get<std::string>());
+        auto const parent_beacon_block_root =
+            from_hex(genesis_json["parentBeaconBlockRoot"].get<std::string>());
         MONAD_ASSERT(parent_beacon_block_root.has_value());
         auto &write_to =
             block_header.parent_beacon_block_root.emplace(bytes32_t{});
@@ -217,7 +218,7 @@ BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
     // Prague fork
     if (genesis_json.contains("requestsHash")) {
         auto const requests_hash =
-            evmc::from_hex(genesis_json["requestsHash"].get<std::string>());
+            from_hex(genesis_json["requestsHash"].get<std::string>());
         MONAD_ASSERT(requests_hash.has_value());
         auto &write_to = block_header.requests_hash.emplace(bytes32_t{});
         std::copy_n(
@@ -438,30 +439,28 @@ void process_test(
         auto header = read_genesis_blockheader(genesisJson);
         ASSERT_EQ(
             NULL_ROOT,
-            evmc::from_hex<bytes32_t>(
+            from_hex<bytes32_t>(
                 genesisJson.at("transactionsTrie").get<std::string>())
                 .value());
         ASSERT_EQ(
             NULL_ROOT,
-            evmc::from_hex<bytes32_t>(
+            from_hex<bytes32_t>(
                 genesisJson.at("receiptTrie").get<std::string>())
                 .value());
         ASSERT_EQ(
             NULL_LIST_HASH,
-            evmc::from_hex<bytes32_t>(
-                genesisJson.at("uncleHash").get<std::string>())
+            from_hex<bytes32_t>(genesisJson.at("uncleHash").get<std::string>())
                 .value());
         ASSERT_EQ(
             bytes32_t{},
-            evmc::from_hex<bytes32_t>(
-                genesisJson.at("parentHash").get<std::string>())
+            from_hex<bytes32_t>(genesisJson.at("parentHash").get<std::string>())
                 .value());
 
         std::optional<std::vector<Withdrawal>> withdrawals;
         if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
             ASSERT_EQ(
                 NULL_ROOT,
-                evmc::from_hex<bytes32_t>(
+                from_hex<bytes32_t>(
                     genesisJson.at("withdrawalsRoot").get<std::string>())
                     .value());
             withdrawals.emplace(std::vector<Withdrawal>{});
@@ -484,7 +483,7 @@ void process_test(
         ASSERT_EQ(
             to_bytes(
                 keccak256(rlp::encode_block_header(tdb.read_eth_header()))),
-            evmc::from_hex<bytes32_t>(genesisJson.at("hash").get<std::string>())
+            from_hex<bytes32_t>(genesisJson.at("hash").get<std::string>())
                 .value());
     }
     auto db_post_state = tdb.to_json();

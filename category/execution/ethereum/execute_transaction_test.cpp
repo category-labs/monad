@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -332,7 +333,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
     // Sets s[0] = 1 if passed any data, clears s[0] if data is empty.
     auto const contract_code =
-        evmc::from_hex("0x3615600b576001600055005b6000600055").value();
+        from_hex("0x3615600b576001600055005b6000600055").value();
 
     {
         State state{bs, Incarnation{0, 0}};
@@ -358,7 +359,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
             .max_fee_per_gas = max_fee_per_gas,
             .gas_limit = gas_limit_tx1,
             .to = contract,
-            .data = evmc::from_hex("0x01").value(),
+            .data = from_hex("0x01").value(),
         };
 
         BlockHeader const header{.beneficiary = bene};
@@ -491,7 +492,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
     BlockMetrics metrics;
 
     // s[0] = 0; s[0] = 1
-    auto const contract_code = evmc::from_hex("0x60006000556001600055").value();
+    auto const contract_code = from_hex("0x60006000556001600055").value();
 
     {
         State state{bs, Incarnation{0, 0}};

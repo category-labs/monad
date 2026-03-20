@@ -17,6 +17,7 @@
 #include <category/core/blake3.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
@@ -154,7 +155,7 @@ void monad_db_snapshot_load_filesystem(
             std::ifstream t(checksum);
             std::stringstream buffer;
             buffer << t.rdbuf();
-            auto const stored_hash = evmc::from_hex<bytes32_t>(buffer.str());
+            auto const stored_hash = from_hex<bytes32_t>(buffer.str());
             auto const calculated_hash = to_bytes(
                 blake3({reinterpret_cast<unsigned char const *>(data), size}));
             MONAD_ASSERT_PRINTF(

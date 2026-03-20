@@ -16,6 +16,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
@@ -42,12 +43,12 @@ namespace trace
     template <std::size_t N>
     std::string bytes_to_hex(uint8_t const (&input)[N])
     {
-        return std::format("0x{}", evmc::hex(to_byte_string_view(input)));
+        return std::format("0x{}", to_hex(to_byte_string_view(input)));
     }
 
     std::string byte_string_to_hex(byte_string_view const view)
     {
-        return std::format("0x{}", evmc::hex(view));
+        return std::format("0x{}", to_hex(view));
     }
 
     bool PrestateTracer::retain_beneficiary(State const &state) const

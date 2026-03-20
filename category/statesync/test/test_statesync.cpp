@@ -18,6 +18,7 @@
 #include <category/core/basic_formatter.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
@@ -374,10 +375,9 @@ TEST_F(StateSyncFixture, sync_from_some)
         constexpr auto ADDR1 =
             0x5353535353535353535353535353535353535353_address;
         auto const code =
-            evmc::from_hex(
-                "7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                "ffffffffffffffffffffff0160005500")
+            from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                     "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+                     "ffffffffffffffffffffff0160005500")
                 .value();
         auto const code_hash = to_bytes(keccak256(code));
         auto const icode = vm::make_shared_intercode(code);
@@ -955,9 +955,9 @@ TEST_F(StateSyncFixture, update_contract_twice)
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
 
     auto const code =
-        evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                       "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                       "ffffffffffffffffffffff0160005500")
+        from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                 "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+                 "ffffffffffffffffffffff0160005500")
             .value();
     auto const code_hash = to_bytes(keccak256(code));
     auto const icode = vm::make_shared_intercode(code);

@@ -17,12 +17,12 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/hex.hpp>
 
 #include <intx/intx.hpp>
 
@@ -41,7 +41,7 @@ namespace nlohmann
     {
         for (auto const &[j_addr, j_acc] : j.items()) {
             auto const account_address =
-                evmc::from_hex<monad::Address>(j_addr).value();
+                monad::from_hex<monad::Address>(j_addr).value();
 
             if (j_acc.contains("code") || j_acc.contains("storage")) {
                 ASSERT_TRUE(

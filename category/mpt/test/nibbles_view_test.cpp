@@ -16,6 +16,7 @@
 #include "gtest/gtest.h"
 
 #include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/nibble.h>
 #include <category/mpt/nibbles_view.hpp>
 

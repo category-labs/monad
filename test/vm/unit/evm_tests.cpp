@@ -15,6 +15,7 @@
 
 #include "evm_fixture.hpp"
 
+#include <category/core/hex.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/types.hpp>
@@ -665,7 +666,7 @@ TYPED_TEST(VMTraitsTest, ShrCeilOffByOneRegression)
 TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
 {
     auto const code =
-        evmc::from_hex(
+        monad::from_hex(
             "0x60806040526004361061007a575f3560e01c8063c3d0f1d01161004d578063c3"
             "d0f1d014610110578063c7c41c7514610138578063d0e30db014610160578063e7"
             "c9063e1461016a5761007a565b8063209652551461007e57806356cde25b146100"
@@ -724,9 +725,10 @@ TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
             .value();
 
     auto const data =
-        evmc::from_hex("0x56cde25b000000000000000000000000000000000000000000000"
-                       "0000000000000000000000000000000000000000000000000000000"
-                       "0000000000000000000000004e20")
+        monad::from_hex(
+            "0x56cde25b000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000004e20")
             .value();
 
     TestFixture::execute(

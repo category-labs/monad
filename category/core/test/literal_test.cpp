@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 using namespace ::monad::literals;

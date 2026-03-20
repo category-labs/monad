@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/address.hpp>
@@ -270,7 +271,7 @@ void run_dipped_into_reserve_test(
 
         // set EOA to delegate to SCW
         evmc::bytes const delegate_code =
-            evmc::from_hex(std::format("0xef0100{}", evmc::hex(SCW))).value();
+            from_hex(std::format("0xef0100{}", to_hex(SCW))).value();
         state.set_code(EOA, byte_string_view{delegate_code});
 
         state.create_contract(SCW);

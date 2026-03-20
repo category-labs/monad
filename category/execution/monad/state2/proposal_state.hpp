@@ -19,7 +19,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/vm/vm.hpp>
 
-#include <evmc/hex.hpp>
+#include <category/core/hex.hpp>
 
 #include <quill/Quill.h>
 
@@ -204,11 +204,10 @@ private:
                 "finalized_block_id_ = %s, depth = %d",
                 block_number,
                 finalized_block_,
-                evmc::hex(to_byte_string_view(block_id.bytes)).c_str(),
+                to_hex(to_byte_string_view(block_id.bytes)).c_str(),
                 block_,
-                evmc::hex(to_byte_string_view(block_id_.bytes)).c_str(),
-                evmc::hex(to_byte_string_view(finalized_block_id_.bytes))
-                    .c_str(),
+                to_hex(to_byte_string_view(block_id_.bytes)).c_str(),
+                to_hex(to_byte_string_view(finalized_block_id_.bytes)).c_str(),
                 depth);
             auto const it =
                 proposal_map_.find(std::make_pair(block_number, block_id));

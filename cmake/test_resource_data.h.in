@@ -1,6 +1,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
@@ -63,35 +64,35 @@ inline constexpr auto ADDR_B =
 inline constexpr auto ADDR_C =
     0x0000000000000000000000000000000000000102_address;
 inline auto const A_CODE =
-    evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                   "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                   "ffffffffffffffffffffff0160005500")
+    from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+             "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+             "ffffffffffffffffffffff0160005500")
         .value();
 inline auto const A_CODE_HASH = to_bytes(keccak256(A_CODE));
 inline auto const A_ICODE = vm::make_shared_intercode(A_CODE);
 inline auto const B_CODE =
-    evmc::from_hex("60047ffffffffffffffffffffffffffffffffffffffffffffffffff"
-                   "fffffffffffffff0160005500")
+    from_hex("60047ffffffffffffffffffffffffffffffffffffffffffffffffff"
+             "fffffffffffffff0160005500")
         .value();
 inline auto const B_CODE_HASH = to_bytes(keccak256(B_CODE));
 inline auto const B_ICODE = vm::make_shared_intercode(B_CODE);
 inline auto const C_CODE =
-    evmc::from_hex("60017ffffffffffffffffffffffffffffffffffffffffffffffffff"
-                   "fffffffffffffff0160005500")
+    from_hex("60017ffffffffffffffffffffffffffffffffffffffffffffffffff"
+             "fffffffffffffff0160005500")
         .value();
 inline auto const C_CODE_HASH = to_bytes(keccak256(C_CODE));
 inline auto const C_ICODE = vm::make_shared_intercode(C_CODE);
-inline auto const D_CODE = evmc::from_hex("600060000160005500").value();
+inline auto const D_CODE = from_hex("600060000160005500").value();
 inline auto const D_CODE_HASH = to_bytes(keccak256(D_CODE));
 inline auto const D_ICODE = vm::make_shared_intercode(D_CODE);
 inline auto const E_CODE =
-    evmc::from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                   "fffffffffff60010160005500")
+    from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+             "fffffffffff60010160005500")
         .value();
 inline auto const E_CODE_HASH = to_bytes(keccak256(E_CODE));
 inline auto const E_ICODE = vm::make_shared_intercode(E_CODE);
 inline auto const H_CODE =
-    evmc::from_hex("600060006000600060006004356101000162fffffff100").value();
+    from_hex("600060006000600060006004356101000162fffffff100").value();
 inline auto const H_CODE_HASH = to_bytes(keccak256(H_CODE));
 inline auto const H_ICODE = vm::make_shared_intercode(H_CODE);
 

@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
@@ -67,7 +68,6 @@
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <evmc/hex.hpp>
 
 #include <gtest/gtest.h>
 
@@ -913,7 +913,7 @@ TEST_F(EthCallFixture, loop_out_of_gas)
 TEST_F(EthCallFixture, expensive_read_out_of_gas)
 {
     auto const code =
-        evmc::from_hex(
+        from_hex(
             "0x60806040526004361061007a575f3560e01c8063c3d0f1d01161004d578063c3"
             "d0f1d014610110578063c7c41c7514610138578063d0e30db014610160578063e7"
             "c9063e1461016a5761007a565b8063209652551461007e57806356cde25b146100"
@@ -3100,7 +3100,7 @@ TEST_F(EthCallFixture, prestate_state_overrides)
         "82fd5b8082525050506014600cf3";
 
     Transaction const tx{
-        .gas_limit = 200000u, .data = evmc::from_hex(tx_data).value()};
+        .gas_limit = 200000u, .data = from_hex(tx_data).value()};
     BlockHeader const header{.number = 256};
 
     commit_sequential(tdb, {}, {}, header);
@@ -3522,8 +3522,8 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
 
     // Transfer 5 MON to receipient
     auto const contract_code =
-        evmc::from_hex("0x5f5f5f5f674563918244f40000730000000000000000000000000"
-                       "0000000444444445af1")
+        from_hex("0x5f5f5f5f674563918244f40000730000000000000000000000000"
+                 "0000000444444445af1")
             .value();
     auto const contract_code_hash = to_bytes(keccak256(contract_code));
     auto const contract_icode = monad::vm::make_shared_intercode(contract_code);

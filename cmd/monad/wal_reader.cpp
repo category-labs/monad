@@ -21,7 +21,7 @@
 #include <category/execution/ethereum/wal_reader.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 
-#include <evmc/hex.hpp>
+#include <category/core/hex.hpp>
 
 #include <sstream>
 
@@ -66,7 +66,7 @@ std::optional<WalReader::Result> WalReader::next()
     if (MONAD_LIKELY(
             cursor_.read(reinterpret_cast<char *>(&entry), sizeof(WalEntry)))) {
         auto const header_filename = fmt::format(
-            "{}.header", evmc::hex(to_byte_string_view(entry.id.bytes)));
+            "{}.header", to_hex(to_byte_string_view(entry.id.bytes)));
         auto const header_data = slurp_file(ledger_dir_ / header_filename);
         byte_string_view header_view{header_data};
         auto const checksum_header = to_bytes(blake3(header_view));
@@ -82,7 +82,7 @@ std::optional<WalReader::Result> WalReader::next()
             header_filename.c_str());
 
         auto const body_filename =
-            fmt::format("{}.body", evmc::hex(header_res.value().block_body_id));
+            fmt::format("{}.body", to_hex(header_res.value().block_body_id));
         auto const body_data = slurp_file(ledger_dir_ / body_filename);
         auto const checksum_body = to_bytes(blake3(body_data));
         MONAD_ASSERT_PRINTF(

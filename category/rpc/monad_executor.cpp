@@ -22,6 +22,7 @@
 #include <category/core/fiber/fiber_group.hpp>
 #include <category/core/fiber/fiber_thread_pool.hpp>
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
@@ -92,7 +93,6 @@
 #include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <evmc/hex.hpp>
 #include <intx/intx.hpp>
 #include <nlohmann/json_fwd.hpp>
 #include <quill/Quill.h>
@@ -494,7 +494,7 @@ namespace
                     rlp::encode_transaction(transactions[transaction_index])));
                 nlohmann::json entry{
                     {"result", nlohmann::json{}},
-                    {"txHash", std::format("0x{}", evmc::hex(tx_hash))}};
+                    {"txHash", std::format("0x{}", to_hex(tx_hash))}};
                 return entry;
             };
 

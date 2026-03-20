@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
@@ -29,11 +30,11 @@ using namespace intx::literals;
 TEST(AbiEncode, boolean)
 {
     constexpr auto expected_false =
-        evmc::from_hex<bytes32_t>(
+        from_hex<bytes32_t>(
             "0000000000000000000000000000000000000000000000000000000000000000")
             .value();
     constexpr auto expected_true =
-        evmc::from_hex<bytes32_t>(
+        from_hex<bytes32_t>(
             "0000000000000000000000000000000000000000000000000000000000000001")
             .value();
     constexpr auto abi_true = abi_encode_bool(true);
@@ -46,7 +47,7 @@ TEST(AbiEncode, u16)
 {
     constexpr u16_be input{65535};
     constexpr auto expected =
-        evmc::from_hex<bytes32_t>(
+        from_hex<bytes32_t>(
             "000000000000000000000000000000000000000000000000000000000000ffff")
             .value();
     constexpr auto actual = abi_encode_uint(input);
@@ -57,9 +58,8 @@ TEST(AbiEncode, u256)
 {
     constexpr u256_be input{15355346523654236542356453_u256};
     constexpr auto expected =
-        evmc::from_hex<bytes32_t>(
-            "0x0000000000000000000000000000000000000000000cb3"
-            "9f00c54ee156444be5")
+        from_hex<bytes32_t>("0x0000000000000000000000000000000000000000000cb3"
+                            "9f00c54ee156444be5")
             .value();
     constexpr auto actual = abi_encode_uint(input);
     EXPECT_EQ(actual, expected);
@@ -69,7 +69,7 @@ TEST(AbiEncode, address)
 {
     constexpr Address input{0xDEADBEEF000000000000000000F00D0000000100_address};
     constexpr auto expected =
-        evmc::from_hex<bytes32_t>(
+        from_hex<bytes32_t>(
             "000000000000000000000000deadbeef000000000000000000f00d0000000100")
             .value();
     constexpr auto actual = abi_encode_address(input);
@@ -79,12 +79,12 @@ TEST(AbiEncode, address)
 TEST(AbiEncode, bytes)
 {
     byte_string const bls_pubkey =
-        evmc::from_hex("0x85686279cefd8ce0d32338910d476ca090b67"
-                       "f97fc6f2fbc7d96b0cf3d7dca2fe9"
-                       "80de55a715702f2ad35ee5f9bd6f9b")
+        from_hex("0x85686279cefd8ce0d32338910d476ca090b67"
+                 "f97fc6f2fbc7d96b0cf3d7dca2fe9"
+                 "80de55a715702f2ad35ee5f9bd6f9b")
             .value();
     byte_string const expected =
-        evmc::from_hex(
+        from_hex(
             "000000000000000000000000000000000000000000000000000000000000003085"
             "686279cefd8ce0d32338910d476ca090b67f97fc6f2fbc7d96b0cf3d7dca2fe980"
             "de55a715702f2ad35ee5f9bd6f9b00000000000000000000000000000000")
@@ -97,14 +97,14 @@ TEST(AbiEncode, bytes)
 TEST(AbiEncode, tuple)
 {
     byte_string const input_bytes =
-        evmc::from_hex(
+        from_hex(
             "0x85686279cefd8ce0d32338910d476ca090b67245034520354205420354203542"
             "f97fc6f2fbc7d96b0cf3d7dca2f80de55a715702f2ad35ee5f9bd6f9bb")
             .value();
     u256_be const input_u256 = 15324315423000000_u256;
 
     byte_string const expected =
-        evmc::from_hex(
+        from_hex(
             "000000000000000000000000000000000000000000000000000000000000008000"
             "0000000000000000000000000000000000000000000000003671623936c5c00000"
             "0000000000000000000000000000000000000000000000000000000000e0000000"
@@ -128,7 +128,7 @@ TEST(AbiEncode, tuple)
 TEST(AbiEncode, empty_array)
 {
     byte_string const expected =
-        evmc::from_hex(
+        from_hex(
             "000000000000000000000000000000000000000000000000000000000000002000"
             "00000000000000000000000000000000000000000000000000000000000000")
             .value();
@@ -144,7 +144,7 @@ TEST(AbiEncode, array_tuple)
     std::vector<u64_be> arr{2, 4, 20'000, 40'000};
 
     byte_string const expected =
-        evmc::from_hex(
+        from_hex(
             "000000000000000000000000000000000000000000000000000000000000000100"
             "000000000000000000000000000000000000000000000000000000000000400000"
             "000000000000000000000000000000000000000000000000000000000004000000"
@@ -170,7 +170,7 @@ TEST(AbiEncode, array_address)
     };
 
     byte_string const expected =
-        evmc::from_hex(
+        from_hex(
             "000000000000000000000000000000000000000000000000000000000000002000"
             "000000000000000000000000000000000000000000000000000000000000040000"
             "000000000000000000001111111111111111111111111111111111111111000000"

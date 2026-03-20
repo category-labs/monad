@@ -33,7 +33,7 @@
 
 #include <quill/Quill.h>
 
-#include <evmc/hex.hpp>
+#include <category/core/hex.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -491,12 +491,12 @@ public:
              << ".\n     It has been configured to retain no more than "
              << aux.version_history_length() << ".\n     Latest proposed is ("
              << aux.get_latest_proposed_version() << ", "
-             << evmc::hex(monad::byte_string_view(
+             << monad::to_hex(monad::byte_string_view(
                     aux.get_latest_proposed_block_id().bytes,
                     sizeof(monad::bytes32_t)))
              << ").\n     Latest voted is (" << aux.get_latest_voted_version()
              << ", "
-             << evmc::hex(monad::byte_string_view(
+             << monad::to_hex(monad::byte_string_view(
                     aux.get_latest_voted_block_id().bytes,
                     sizeof(monad::bytes32_t)))
              << ").\n     Latest finalized is "

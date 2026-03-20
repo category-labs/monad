@@ -134,8 +134,8 @@ Result<void> process_ethereum_block(
     // changes but does not commit them
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
-    SlotStorageBroker cache{db};
-    BlockState block_state(db, cache, vm);
+    SlotStorageBroker broker{db};
+    BlockState block_state(db, broker, vm);
 
     ChainContext<traits> const chain_ctx{};
     BOOST_OUTCOME_TRY(

@@ -190,12 +190,12 @@ Result<void> process_monad_block(
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
-    using Cache = std::conditional_t<
+    using Broker = std::conditional_t<
         (traits::monad_rev() >= MONAD_NEXT),
         PageStorageBroker,
         SlotStorageBroker>;
-    Cache cache{db};
-    BlockState block_state(db, cache, vm);
+    Broker broker{db};
+    BlockState block_state(db, broker, vm);
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<traits>(
@@ -216,7 +216,8 @@ Result<void> process_monad_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    MonadCommitBuilder builder(block.header.number, cache, traits::monad_rev());
+    MonadCommitBuilder builder(
+        block.header.number, broker, traits::monad_rev());
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)

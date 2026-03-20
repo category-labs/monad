@@ -295,12 +295,12 @@ Result<BlockExecOutput> propose_block(
 
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
-    using Cache = std::conditional_t<
+    using Broker = std::conditional_t<
         (traits::monad_rev() >= MONAD_NEXT),
         PageStorageBroker,
         SlotStorageBroker>;
-    Cache cache{db};
-    BlockState block_state(db, cache, vm);
+    Broker broker{db};
+    BlockState block_state(db, broker, vm);
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const results,
@@ -323,7 +323,8 @@ Result<BlockExecOutput> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    MonadCommitBuilder builder(block.header.number, cache, traits::monad_rev());
+    MonadCommitBuilder builder(
+        block.header.number, broker, traits::monad_rev());
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(results)

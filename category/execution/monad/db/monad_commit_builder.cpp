@@ -32,9 +32,10 @@ MONAD_NAMESPACE_BEGIN
 using namespace monad::mpt;
 
 MonadCommitBuilder::MonadCommitBuilder(
-    uint64_t const block_number, StorageBroker &cache, monad_revision const rev)
+    uint64_t const block_number, StorageBroker &broker,
+    monad_revision const rev)
     : CommitBuilder{block_number}
-    , cache_{cache}
+    , broker_{broker}
     , revision_{rev}
 {
 }
@@ -74,7 +75,7 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                     if (it == pages.end()) {
                         pages.push_back(
                             {pg_key,
-                             cache_.read_storage_page(addr, inc, pg_key)});
+                             broker_.read_storage_page(addr, inc, pg_key)});
                         it = std::prev(pages.end());
                     }
                     it->page[slot_off] = slot_delta.second;

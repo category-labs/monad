@@ -37,7 +37,7 @@ class State;
 class BlockState final
 {
     Db &db_;
-    StorageBroker &cache_;
+    StorageBroker &broker_;
     vm::VM &vm_;
     std::unique_ptr<StateDeltas> state_;
     Code code_;

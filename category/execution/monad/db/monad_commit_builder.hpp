@@ -24,12 +24,12 @@ struct StorageBroker;
 
 class MonadCommitBuilder : public CommitBuilder
 {
-    StorageBroker &cache_;
+    StorageBroker &broker_;
     monad_revision revision_;
 
 public:
     MonadCommitBuilder(
-        uint64_t block_number, StorageBroker &cache, monad_revision rev);
+        uint64_t block_number, StorageBroker &broker, monad_revision rev);
 
     CommitBuilder &add_state_deltas(StateDeltas const &) override;
 };

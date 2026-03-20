@@ -35,8 +35,8 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
     vm::VM vm;
     TrieDb tdb{db};
     tdb.set_block_and_prefix(block_num);
-    SlotStorageBroker cache{tdb};
-    BlockState block_state{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     Incarnation const incarnation{block_num, Incarnation::LAST_TX - 1u};
     State state{block_state, incarnation};
     NoopCallTracer call_tracer{};

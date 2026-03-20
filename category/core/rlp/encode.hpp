@@ -96,7 +96,9 @@ encode_string(std::span<unsigned char> d, byte_string_view const s)
             abort();
 #endif
         }
-        std::memcpy(d.data(), s.data(), s.size());
+        if (!s.empty()) {
+            std::memcpy(d.data(), s.data(), s.size());
+        }
         d = d.subspan(s.size());
     }
     else {
@@ -142,7 +144,9 @@ encode_list(std::span<unsigned char> d, byte_string_view const s)
             abort();
 #endif
         }
-        std::memcpy(d.data(), s.data(), s.size());
+        if (!s.empty()) {
+            std::memcpy(d.data(), s.data(), s.size());
+        }
         d = d.subspan(s.size());
     }
     else {

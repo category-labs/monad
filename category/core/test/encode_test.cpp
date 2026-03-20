@@ -133,6 +133,10 @@ TEST(rlp, encode_string)
     EXPECT_EQ(result.data() - buf, 1);
     EXPECT_TRUE(byte_string_view(buf, result.data()) == byte_string({128}));
 
+    result = monad::rlp::encode_string(buf, byte_string_view{});
+    EXPECT_EQ(result.data() - buf, 1);
+    EXPECT_TRUE(byte_string_view(buf, result.data()) == byte_string({128}));
+
     result = monad::rlp::encode_string(buf, byte_string({1, 2}));
     EXPECT_EQ(result.data() - buf, 3);
     EXPECT_TRUE(
@@ -177,6 +181,10 @@ TEST(rlp, encode_list)
     std::span<unsigned char> result;
 
     result = monad::rlp::encode_list(buf, byte_string{});
+    EXPECT_EQ(result.data() - buf, 1);
+    EXPECT_TRUE(byte_string_view(buf, result.data()) == byte_string{192});
+
+    result = monad::rlp::encode_list(buf, byte_string_view{});
     EXPECT_EQ(result.data() - buf, 1);
     EXPECT_TRUE(byte_string_view(buf, result.data()) == byte_string{192});
 

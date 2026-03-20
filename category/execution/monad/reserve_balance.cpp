@@ -270,12 +270,12 @@ void ReserveBalance::on_debit(Address const &address)
     update_violation_status(address);
 }
 
-void ReserveBalance::on_pop_reject(FailedSet const &accounts)
+void ReserveBalance::on_pop_reject(AccountSet const &dirty_accounts)
 {
     if (!tracking_enabled_) {
         return;
     }
-    for (auto const &dirty_address : accounts) {
+    for (auto const &dirty_address : dirty_accounts) {
         violation_thresholds_[dirty_address].reset();
         update_violation_status(dirty_address);
     }

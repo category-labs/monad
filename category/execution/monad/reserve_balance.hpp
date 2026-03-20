@@ -41,7 +41,7 @@ struct Transaction;
 
 class ReserveBalance
 {
-    using FailedSet = ankerl::unordered_dense::segmented_set<Address>;
+    using AccountSet = ankerl::unordered_dense::segmented_set<Address>;
     using ViolationThresholdMap = ankerl::unordered_dense::segmented_map<
         Address, std::optional<uint256_t>>;
 
@@ -49,16 +49,16 @@ class ReserveBalance
     bool tracking_enabled_{false};
     bool use_recent_code_hash_{false};
     bool allow_nonsender_empty_{false};
-    FailedSet const *grandparent_senders_and_authorities_{nullptr};
-    FailedSet const *parent_senders_and_authorities_{nullptr};
-    FailedSet const *senders_and_authorities_{nullptr};
+    AccountSet const *grandparent_senders_and_authorities_{nullptr};
+    AccountSet const *parent_senders_and_authorities_{nullptr};
+    AccountSet const *senders_and_authorities_{nullptr};
     std::vector<Address> const *senders_{nullptr};
     std::vector<std::vector<std::optional<Address>>> const *authorities_{
         nullptr};
     uint64_t tx_index_{0};
     Address sender_{};
     uint256_t sender_gas_fees_{0};
-    FailedSet failed_{};
+    AccountSet failed_{};
     ViolationThresholdMap violation_thresholds_{};
     std::function<uint256_t(Address const &)> get_max_reserve_{};
 
@@ -79,7 +79,7 @@ public:
     void on_credit(Address const &);
     void on_debit(Address const &);
 
-    void on_pop_reject(FailedSet const &accounts);
+    void on_pop_reject(AccountSet const &dirty_accounts);
 
     void on_set_code(Address const &address, byte_string_view const code);
 

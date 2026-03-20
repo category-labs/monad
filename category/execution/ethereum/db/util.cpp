@@ -32,7 +32,6 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/db/rle.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
@@ -331,10 +330,9 @@ namespace
                     .value = bytes_alloc_.emplace_back(encode_storage_db(
                         bytes32_t{}, // TODO: update this when binary checkpoint
                                      // includes unhashed storage slot
-                        rle_encode(
+                        page_encode_slot(*reinterpret_cast<bytes32_t const *>(
                             in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
-                                .data(),
-                            sizeof(bytes32_t)))),
+                                .data())))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_id_)}));

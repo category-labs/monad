@@ -88,10 +88,8 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                                               encode_storage_db(
                                                   key,
                                                   bytes_alloc_.emplace_back(
-                                                      rle_encode(
-                                                          delta.second.bytes,
-                                                          sizeof(
-                                                              bytes32_t)))))),
+                                                      page_encode_slot(
+                                                          delta.second))))),
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));

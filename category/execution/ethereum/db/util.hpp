@@ -21,7 +21,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/db/rle.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/state_machine.hpp>
 
@@ -156,7 +156,14 @@ inline T decode_storage_rle(byte_string_view enc)
     if (enc.empty()) {
         return {};
     }
-    return rle_decode<T>(enc.data(), enc.size());
+    auto const page = page_decode(enc.data(), enc.size());
+    if constexpr (std::is_same_v<T, storage_page_t>) {
+        return page;
+    }
+    else {
+        static_assert(sizeof(T) <= sizeof(bytes32_t));
+        return page.slots[0];
+    }
 }
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);

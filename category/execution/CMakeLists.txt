@@ -100,8 +100,6 @@ add_library(
   "ethereum/db/db_snapshot_filesystem.h"
   "ethereum/db/file_db.cpp"
   "ethereum/db/file_db.hpp"
-  "ethereum/db/rle.cpp"
-  "ethereum/db/rle.hpp"
   "ethereum/db/trie_db.cpp"
   "ethereum/db/trie_db.hpp"
   "ethereum/db/trie_rodb.hpp"
@@ -318,7 +316,7 @@ target_link_libraries(
   PUBLIC silkpre
   PUBLIC unordered_dense
   PUBLIC TBB::tbb
-  PRIVATE turborle)
+)
 monad_compile_options(monad_execution_ethereum)
 
 target_link_options(monad_execution_ethereum PRIVATE LINKER:-z,defs)

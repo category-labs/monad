@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 
@@ -93,5 +94,9 @@ compute_slot_key(bytes32_t const &page_key, uint8_t slot_offset)
 }
 
 bytes32_t page_commit(storage_page_t const &page);
+
+byte_string page_encode(storage_page_t const &page);
+byte_string page_encode_slot(bytes32_t const &val);
+storage_page_t page_decode(uint8_t const *data, size_t len);
 
 MONAD_NAMESPACE_END

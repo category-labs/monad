@@ -102,4 +102,119 @@ bytes32_t page_commit(storage_page_t const &page)
     return result;
 }
 
+// ── COO / Bitmap page encoding
+// ────────────────────────────────────────────────────
+//
+// Two cases based on population count k (number of non-zero slots):
+//
+//   k < 16  →  COO:     [0|k](1B) [indices](kB) [values](k×32B)
+//   k >= 16 →  Bitmap:  [1|0](1B) [128-bit mask](16B) [values](k×32B)
+//
+// Crossover at k=16: COO = 1+33k = 529, Bitmap = 17+32k = 529.
+
+static constexpr uint8_t COO_TAG = 0x00;
+static constexpr uint8_t BITMAP_TAG = 0x80;
+static constexpr size_t BITMAP_BYTES = storage_page_t::SLOTS / 8; // 16
+static constexpr size_t COO_THRESHOLD = 16;
+
+byte_string page_encode(storage_page_t const &page)
+{
+    static constexpr bytes32_t ZERO{};
+    static constexpr size_t SZ = storage_page_t::SLOT_SIZE;
+
+    // Collect non-zero slot indices.
+    uint8_t indices[storage_page_t::SLOTS];
+    size_t k = 0;
+    for (size_t i = 0; i < storage_page_t::SLOTS; ++i) {
+        if (page.slots[i] != ZERO) {
+            indices[k++] = static_cast<uint8_t>(i);
+        }
+    }
+
+    if (k < COO_THRESHOLD) {
+        byte_string out(1 + k + k * SZ, 0);
+        out[0] = COO_TAG | static_cast<uint8_t>(k);
+        std::memcpy(out.data() + 1, indices, k);
+        for (size_t i = 0; i < k; ++i) {
+            std::memcpy(
+                out.data() + 1 + k + i * SZ, page.slots[indices[i]].bytes, SZ);
+        }
+        return out;
+    }
+
+    // Bitmap path.
+    uint8_t mask[BITMAP_BYTES] = {};
+    for (size_t i = 0; i < k; ++i) {
+        uint8_t const idx = indices[i];
+        mask[idx / 8] |= uint8_t(1) << (idx % 8);
+    }
+
+    byte_string out(1 + BITMAP_BYTES + k * SZ, 0);
+    out[0] = BITMAP_TAG;
+    std::memcpy(out.data() + 1, mask, BITMAP_BYTES);
+    for (size_t i = 0; i < k; ++i) {
+        std::memcpy(
+            out.data() + 1 + BITMAP_BYTES + i * SZ,
+            page.slots[indices[i]].bytes,
+            SZ);
+    }
+    return out;
+}
+
+storage_page_t page_decode(uint8_t const *data, size_t const len)
+{
+    static constexpr size_t SZ = storage_page_t::SLOT_SIZE;
+    storage_page_t page{};
+
+    if (len == 0) {
+        return page;
+    }
+
+    uint8_t const header = data[0];
+
+    if ((header & BITMAP_TAG) == 0) {
+        // COO
+        size_t const k = header & 0x7F;
+        MONAD_ASSERT(len == 1 + k + k * SZ);
+        uint8_t const *idx_ptr = data + 1;
+        uint8_t const *val_ptr = data + 1 + k;
+        for (size_t i = 0; i < k; ++i) {
+            MONAD_ASSERT(idx_ptr[i] < storage_page_t::SLOTS);
+            std::memcpy(page.slots[idx_ptr[i]].bytes, val_ptr + i * SZ, SZ);
+        }
+    }
+    else {
+        // Bitmap
+        MONAD_ASSERT(len >= 1 + BITMAP_BYTES);
+        uint8_t const *mask = data + 1;
+        uint8_t const *val_ptr = data + 1 + BITMAP_BYTES;
+        size_t vi = 0;
+        for (size_t i = 0; i < storage_page_t::SLOTS; ++i) {
+            if (mask[i / 8] & (uint8_t(1) << (i % 8))) {
+                MONAD_ASSERT(1 + BITMAP_BYTES + (vi + 1) * SZ <= len);
+                std::memcpy(page.slots[i].bytes, val_ptr + vi * SZ, SZ);
+                ++vi;
+            }
+        }
+    }
+
+    return page;
+}
+
+byte_string page_encode_slot(bytes32_t const &val)
+{
+    static constexpr bytes32_t ZERO{};
+    static constexpr size_t SZ = storage_page_t::SLOT_SIZE;
+
+    if (val == ZERO) {
+        return byte_string(1, COO_TAG);
+    }
+
+    byte_string out(1 + 1 + SZ, 0);
+    out[0] = COO_TAG | 1;
+    out[1] = 0;
+    std::memcpy(out.data() + 2, val.bytes, SZ);
+    return out;
+}
+
 MONAD_NAMESPACE_END

@@ -90,9 +90,8 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                             : std::make_optional<byte_string_view>(
                                   bytes_alloc_.emplace_back(encode_storage_db(
                                       page_key,
-                                      bytes_alloc_.emplace_back(rle_encode(
-                                          page.slots[0].bytes,
-                                          sizeof(storage_page_t)))))),
+                                      bytes_alloc_.emplace_back(
+                                          page_encode(page))))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_number_)}));

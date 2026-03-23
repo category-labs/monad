@@ -32,6 +32,16 @@ class MemoryBoundLruCache
     using Value = std::pmr::basic_string<uint8_t>;
     using Lru = LruCache<Key, Value, KeyHashCompare>;
 
+public:
+    struct TierConfig
+    {
+        size_t slab_size;
+        size_t max_bytes;
+    };
+
+    using ConstAccessor = typename Lru::ConstAccessor;
+
+private:
     struct Tier
     {
         size_t slab_size;
@@ -49,14 +59,13 @@ class MemoryBoundLruCache
     std::vector<Tier> tiers_;
 
 public:
-    using ConstAccessor = typename Lru::ConstAccessor;
-
-    MemoryBoundLruCache(size_t max_bytes, std::span<size_t const> slab_sizes)
-        : max_bytes_(max_bytes)
+    MemoryBoundLruCache(std::span<TierConfig const> configs)
+        : max_bytes_(0)
     {
-        tiers_.reserve(slab_sizes.size());
-        for (size_t const sz : slab_sizes) {
-            tiers_.emplace_back(sz, max_bytes / sz);
+        tiers_.reserve(configs.size());
+        for (auto const &cfg : configs) {
+            max_bytes_ += cfg.max_bytes;
+            tiers_.emplace_back(cfg.slab_size, cfg.max_bytes / cfg.slab_size);
         }
     }
 

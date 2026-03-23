@@ -68,12 +68,14 @@ class DbCache final : public Db
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using StorageCache = MemoryBoundLruCache<StorageKey, StorageKeyHashCompare>;
 
-    static constexpr size_t STORAGE_CACHE_BYTES = 128 * 1024 * 1024;
-    static constexpr size_t STORAGE_SLAB_SIZES[] = {
-        32, 64, 128, 512, 2048, 8192};
+    static constexpr StorageCache::TierConfig STORAGE_TIERS[] = {
+        {encoded_page_size(1), 128 * 1024 * 1024},
+        {encoded_page_size(4), 64 * 1024 * 1024},
+        {encoded_page_size(16), 64 * 1024 * 1024},
+        {encoded_page_size(storage_page_t::SLOTS), 64 * 1024 * 1024}};
 
     AccountsCache accounts_{10'000'000};
-    StorageCache storage_{STORAGE_CACHE_BYTES, STORAGE_SLAB_SIZES};
+    StorageCache storage_{STORAGE_TIERS};
     Proposals proposals_;
 
 public:

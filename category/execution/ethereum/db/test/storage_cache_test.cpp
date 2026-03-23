@@ -22,13 +22,14 @@
 
 using namespace monad;
 
-static constexpr std::array<size_t, 4> SLAB_SIZES{32, 64, 128, 512};
-
 using TestCache = MemoryBoundLruCache<uint64_t>;
+
+static constexpr TestCache::TierConfig TIERS[] = {
+    {32, 1024}, {64, 1024}, {128, 1024}, {512, 1024}};
 
 TEST(MemoryBoundLruCache, insert_and_find)
 {
-    TestCache cache{4096, SLAB_SIZES};
+    TestCache cache{TIERS};
     byte_string const value(64, 0xAB);
 
     cache.insert(1, value);
@@ -43,14 +44,16 @@ TEST(MemoryBoundLruCache, insert_and_find)
 
 TEST(MemoryBoundLruCache, miss_returns_false)
 {
-    TestCache cache{4096, SLAB_SIZES};
+    TestCache cache{TIERS};
     TestCache::ConstAccessor acc{};
     EXPECT_FALSE(cache.find(acc, 42));
 }
 
 TEST(MemoryBoundLruCache, eviction_under_memory_pressure)
 {
-    TestCache cache{1024, SLAB_SIZES};
+    static constexpr TestCache::TierConfig SMALL_TIERS[] = {
+        {32, 256}, {64, 256}, {128, 256}, {512, 256}};
+    TestCache cache{SMALL_TIERS};
     byte_string const value(100, 0xAB);
 
     for (uint64_t i = 0; i < 100; ++i) {
@@ -65,7 +68,7 @@ TEST(MemoryBoundLruCache, eviction_under_memory_pressure)
 
 TEST(MemoryBoundLruCache, overwrite_same_key)
 {
-    TestCache cache{4096, SLAB_SIZES};
+    TestCache cache{TIERS};
 
     cache.insert(1, byte_string{0x01});
     cache.insert(1, byte_string{0x02});
@@ -79,7 +82,7 @@ TEST(MemoryBoundLruCache, overwrite_same_key)
 
 TEST(MemoryBoundLruCache, clear)
 {
-    TestCache cache{4096, SLAB_SIZES};
+    TestCache cache{TIERS};
     cache.insert(1, byte_string{0x01});
     cache.clear();
 
@@ -90,7 +93,7 @@ TEST(MemoryBoundLruCache, clear)
 
 TEST(MemoryBoundLruCache, variable_size_entries)
 {
-    TestCache cache{16384, SLAB_SIZES};
+    TestCache cache{TIERS};
 
     byte_string small_val{0x01, 0x02};
     cache.insert(0, small_val);

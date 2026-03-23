@@ -62,6 +62,3 @@
 [submodule "third_party/fiber"]
 	path = third_party/fiber
 	url = https://github.com/category-labs/fiber.git
-[submodule "third_party/TurboRLE"]
-	path = third_party/TurboRLE
-	url = https://github.com/powturbo/Turbo-Run-Length-Encoding.git

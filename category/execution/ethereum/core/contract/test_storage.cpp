@@ -42,8 +42,8 @@ struct Storage : public ::testing::Test
     vm::VM vm;
     mpt::Db db{machine};
     TrieDb tdb{db};
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State state{bs, Incarnation{0, 0}};
 
     void SetUp() override

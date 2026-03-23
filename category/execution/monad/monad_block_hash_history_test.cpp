@@ -36,8 +36,8 @@ protected:
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    SlotStorageBroker cache{tdb};
-    BlockState block_state{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     State state{block_state, Incarnation{0, 0}};
 };
 

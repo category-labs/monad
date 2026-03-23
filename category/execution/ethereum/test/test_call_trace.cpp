@@ -140,8 +140,8 @@ TYPED_TEST(TraitsTest, execute_success)
         Code{},
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -218,8 +218,8 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
         Code{},
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -301,8 +301,8 @@ TYPED_TEST(TraitsTest, create_call_trace)
         },
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -417,8 +417,8 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
         },
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -499,8 +499,8 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
         },
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -588,8 +588,8 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
         Code{},
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -662,8 +662,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
         Code{},
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -771,8 +771,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
         },
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -875,8 +875,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
         },
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -1021,8 +1021,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
         },
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -1237,8 +1237,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
         },
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     Incarnation const incarnation{0, 0};
     State s{bs, incarnation};
 
@@ -1396,8 +1396,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             // so skip.
             continue;
         }
-        SlotStorageBroker cache{tdb};
-        BlockState bs{tdb, cache, vm};
+        SlotStorageBroker broker{tdb};
+        BlockState bs{tdb, broker, vm};
         Incarnation const incarnation{0, 0};
         State s{bs, incarnation};
 

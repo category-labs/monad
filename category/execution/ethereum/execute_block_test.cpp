@@ -162,8 +162,8 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     block_hash_buffer.set(
         block.value().header.number - 1, block.value().header.parent_hash);
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs(tdb, cache, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     BlockMetrics metrics;
 
     fiber::PriorityPool pool{1, 1};
@@ -308,8 +308,8 @@ TYPED_TEST(TraitsTest, assertion_exception)
     block_hash_buffer.set(
         block.value().header.number - 1, block.value().header.parent_hash);
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs(tdb, cache, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     BlockMetrics metrics;
 
     fiber::PriorityPool pool{1, 1};
@@ -445,8 +445,8 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     block_hash_buffer.set(
         block.value().header.number - 1, block.value().header.parent_hash);
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs(tdb, cache, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     BlockMetrics metrics;
 
     fiber::PriorityPool pool{1, 1};

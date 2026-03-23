@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/storage_broker.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -131,7 +132,7 @@ namespace
         OnDiskMachine machine;
         mpt::Db db;
         TrieDb tdb;
-        SlotStorageBroker cache{tdb};
+        SlotStorageBroker broker{tdb};
         vm::VM vm;
 
         EthCallFixture()
@@ -1558,8 +1559,8 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         Code{},
         header);
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, this->vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, this->vm};
     State s{bs, Incarnation{0, 0}};
 
     Transaction const tx{
@@ -2493,8 +2494,8 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
             .senders = senders,
             .authorities = authorities};
 
-        SlotStorageBroker cache{tdb};
-        BlockState block_state{tdb, cache, vm};
+        SlotStorageBroker broker{tdb};
+        BlockState block_state{tdb, broker, vm};
         State state{
             block_state, Incarnation{header.number - 1, Incarnation::LAST_TX}};
         init_reserve_balance_context<monad::MonadTraits<MONAD_NEXT>>(
@@ -3290,10 +3291,10 @@ TEST_F(EthCallFixture, prestate_override_state)
     commit_sequential(
         tdb, deltas, {{code_hash, compiled_code}}, BlockHeader{.number = 0});
 
-    auto const storage = cache.read_storage(
+    auto const storage = decode_storage_eth(tdb.read_storage(
         CONTRACT_ADDR,
         Incarnation{0, 0},
-        to_bytes(to_big_endian(uint256_t{0})));
+        to_bytes(to_big_endian(uint256_t{0}))));
     ASSERT_EQ(storage, to_bytes(to_big_endian(uint256_t{uint64_t{64}})));
 
     for (uint64_t i = 1; i < 256; ++i) {

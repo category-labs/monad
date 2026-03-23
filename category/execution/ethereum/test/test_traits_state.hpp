@@ -32,9 +32,9 @@ struct InMemoryStateTestBase
     InMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
-    SlotStorageBroker cache{tdb};
+    SlotStorageBroker broker{tdb};
     vm::VM vm;
-    BlockState block_state{tdb, cache, vm};
+    BlockState block_state{tdb, broker, vm};
     State state{block_state, Incarnation{0, 0}};
 };
 

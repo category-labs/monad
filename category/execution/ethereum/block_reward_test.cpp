@@ -57,8 +57,8 @@ TYPED_TEST(TraitsTest, apply_block_reward)
         Code{},
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State as{bs, Incarnation{0, 0}};
 
     EXPECT_TRUE(as.account_exists(a));

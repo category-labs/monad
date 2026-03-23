@@ -75,8 +75,8 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     vm::VM vm;
     mpt::Db db{machine};
     TrieDb tdb{db};
-    SlotStorageBroker cache{tdb};
-    BlockState bs{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer{};
     StakingContract contract{state, call_tracer};

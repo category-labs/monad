@@ -58,8 +58,8 @@ TEST(StorageBroker, monad_page_read_and_cache)
     TrieDb tdb{mpt_db};
 
     {
-        MonadCache commit_cache{tdb};
-        MonadCommitBuilder builder(0, commit_cache);
+        MonadCache commit_broker{tdb};
+        MonadCommitBuilder builder(0, commit_broker);
         builder.add_state_deltas(StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -72,30 +72,30 @@ TEST(StorageBroker, monad_page_read_and_cache)
         tdb.reset_root(std::move(root), 0);
     }
 
-    MonadCache cache{tdb};
+    MonadCache broker{tdb};
 
     // First read — cache miss, fetches and decodes the full page.
     EXPECT_EQ(
-        cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), slot_val_0);
-    EXPECT_EQ(cache.pages().size(), 1);
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), slot_val_0);
+    EXPECT_EQ(broker.pages().size(), 1);
 
     // Second read — cache hit, slot 1 was populated when the page was decoded.
     auto const hit_result =
-        cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1);
-    EXPECT_EQ(cache.pages().size(), 1);
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1);
+    EXPECT_EQ(broker.pages().size(), 1);
     EXPECT_EQ(hit_result, slot_val_1);
 
     // Key 0x40 maps to a different page — cache miss.
     EXPECT_EQ(
-        cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_far),
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_far),
         slot_val_far);
-    EXPECT_EQ(cache.pages().size(), 2);
+    EXPECT_EQ(broker.pages().size(), 2);
 
     // Verify the cached page structure.
     bytes32_t const page_key = compute_page_key(slot_key_0);
     MonadCache::PageKey pk{ADDR_A, Incarnation{0, 0}, page_key};
     MonadCache::PageMap::const_accessor acc;
-    ASSERT_TRUE(cache.pages().find(acc, pk));
+    ASSERT_TRUE(broker.pages().find(acc, pk));
     EXPECT_EQ(acc->second[0], slot_val_0);
     EXPECT_EQ(acc->second[1], slot_val_1);
 }
@@ -109,8 +109,8 @@ TEST(StorageBroker, monad_cache_miss_returns_zero)
     TrieDb tdb{mpt_db};
 
     {
-        MonadCache commit_cache{tdb};
-        MonadCommitBuilder builder(0, commit_cache);
+        MonadCache commit_broker{tdb};
+        MonadCommitBuilder builder(0, commit_broker);
         builder.add_state_deltas(StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -120,13 +120,13 @@ TEST(StorageBroker, monad_cache_miss_returns_zero)
         tdb.reset_root(std::move(root), 0);
     }
 
-    MonadCache cache{tdb};
+    MonadCache broker{tdb};
 
-    EXPECT_EQ(cache.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(broker.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
 
     // Key with no data in the trie — empty page, returns zero.
     EXPECT_EQ(
-        cache.read_storage(ADDR_A, Incarnation{0, 0}, bytes32_t{}),
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, bytes32_t{}),
         bytes32_t{});
 }
 
@@ -149,8 +149,8 @@ TEST(StorageBroker, block_state_with_cache)
         Code{},
         BlockHeader{});
 
-    SlotStorageBroker cache{tdb};
-    BlockState block_state{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
 
     auto const account = block_state.read_account(ADDR_A);
     ASSERT_TRUE(account.has_value());

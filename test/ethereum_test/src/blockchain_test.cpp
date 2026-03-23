@@ -316,8 +316,8 @@ Result<BlockExecOutput> execute(
     TraitsMainnet<traits> const chain{};
     BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
 
-    SlotStorageBroker cache{db};
-    BlockState block_state(db, cache, vm);
+    SlotStorageBroker broker{db};
+    BlockState block_state(db, broker, vm);
     BlockMetrics metrics;
     auto const recovered_senders = recover_senders(block.transactions, *pool_);
     auto const recovered_authorities =
@@ -518,8 +518,8 @@ void process_test(
             withdrawals.emplace(std::vector<Withdrawal>{});
         }
 
-        SlotStorageBroker cache{tdb};
-        BlockState bs{tdb, cache, vm};
+        SlotStorageBroker broker{tdb};
+        BlockState bs{tdb, broker, vm};
         State state{bs, Incarnation{0, 0}};
         j_contents.at("pre").get_to(state);
         bs.merge(state);

@@ -54,7 +54,7 @@ namespace
         InMemoryMachine machine;
         mpt::Db db;
         TrieDb tdb;
-        SlotStorageBroker cache;
+        SlotStorageBroker broker;
         vm::VM vm;
         BlockState block_state;
         State state;
@@ -65,8 +65,8 @@ namespace
         BlockHistoryFixture()
             : db{machine}
             , tdb{db}
-            , cache{tdb}
-            , block_state{tdb, cache, vm}
+            , broker{tdb}
+            , block_state{tdb, broker, vm}
             , state{block_state, Incarnation{0, 0}}
             , block_hash_buffer{}
         {

@@ -98,6 +98,6 @@ namespace
         puts(buffer);
         EXPECT_NE(nullptr, strstr(buffer, "func_a"));
         EXPECT_NE(nullptr, strstr(buffer, "func_b"));
-        EXPECT_NE(nullptr, strstr(buffer, "/test/backtrace.cpp"));
+        EXPECT_NE(nullptr, strstr(buffer, "/backtrace_test.cpp"));
     }
 }

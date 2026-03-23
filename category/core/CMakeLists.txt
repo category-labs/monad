@@ -233,10 +233,16 @@ target_link_libraries(monad_core_disas PUBLIC monad_core)
 # tests
 # ##############################################################################
 
-enable_testing()
+monad_add_test_folder("${CMAKE_CURRENT_SOURCE_DIR}"
+  EXCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/log_ffi_test.cpp"
+          "${CMAKE_CURRENT_SOURCE_DIR}/event/event_recorder_test.cpp"
+          "${CMAKE_CURRENT_SOURCE_DIR}/fiber/priority_pool_test.cpp")
 
-find_package(GTest REQUIRED)
-
-add_subdirectory("test")
-
-monad_add_test(static_lru_test lru/static_lru_test.cpp)
+# log_ffi_test needs default gtest main — incompatible with monad test
+# environment which pre-initializes logging
+monad_add_test2(log_ffi_test NO_CUSTOM_MAIN log_ffi_test.cpp)
+monad_add_test2(event_recorder_test event/event_recorder_test.cpp
+  PROPERTIES RUN_SERIAL TRUE)
+monad_add_test2(priority_pool_test fiber/priority_pool_test.cpp
+  PROPERTIES RUN_SERIAL TRUE)
+target_compile_definitions(event_reader_extra_test PRIVATE "TEST_DATA_DIR=\"${TEST_DATA_DIR}\"")

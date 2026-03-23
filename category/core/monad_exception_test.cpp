@@ -93,7 +93,7 @@ namespace
             buffer[static_cast<size_t>(n)] = '\0';
 
             ASSERT_NE(nullptr, strstr(buffer, "hello world"));
-            ASSERT_NE(nullptr, strstr(buffer, "/test/monad_exception.cpp"));
+            ASSERT_NE(nullptr, strstr(buffer, "/monad_exception_test.cpp"));
 
             ::close(fds[0]);
             ::close(fds[1]);

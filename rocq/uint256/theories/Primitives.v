@@ -155,7 +155,7 @@ Definition subb64 (lhs rhs : t) (borrow_in : bool) : result64 :=
     [low >> (64 - shift)] avoids undefined behavior when
     [shift = 0] (x86 masks the shift count to 6 bits). *)
 Definition shld64 (high low : t) (shift : nat) : t :=
-  orw (shl high shift) (shr (shr low 1) (63 - shift)).
+  or (shl high shift) (shr (shr low 1) (63 - shift)).
 
 (** Right shift with double precision (shrd instruction)
 
@@ -164,7 +164,7 @@ Definition shld64 (high low : t) (shift : nat) : t :=
     This matches shrd_constexpr in uint256.hpp:
       return (low >> shift) | ((high << 1) << (63 - shift)); *)
 Definition shrd64 (high low : t) (shift : nat) : t :=
-  orw (shr low shift) (shl (shl high 1) (63 - shift)).
+  or (shr low shift) (shl (shl high 1) (63 - shift)).
 
 (** Note: [mulx] and [div] are part of the [UintOps] interface
     and do not need separate definitions here. *)

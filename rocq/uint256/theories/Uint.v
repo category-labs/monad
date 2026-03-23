@@ -59,7 +59,7 @@ Module Type UintOps.
   Parameter shr : t -> nat -> t.
 
   (** *** Bitwise OR *)
-  Parameter orw : t -> t -> t.
+  Parameter or : t -> t -> t.
 
   (** *** Comparison *)
   Parameter eqb : t -> t -> bool.
@@ -155,6 +155,8 @@ Module Type Uint <: UintOps.
   (** Bitwise OR specification *)
   Axiom spec_orw : forall x y,
     to_Z (orw x y) = Z.lor (to_Z x) (to_Z y) mod base width.
+  Axiom spec_or : forall x y,
+    to_Z (or x y) = Z.lor (to_Z x) (to_Z y) mod base width.
 
   (** Comparison specifications *)
   Axiom spec_eqb : forall x y, eqb x y = (to_Z x =? to_Z y).
@@ -190,6 +192,78 @@ Module Type Uint128Ops <: UintOps.
   Include UintOps.
   Axiom width_is_128 : width = 128%positive.
 End Uint128Ops.
+
+(** ** Double-width bridge — operations layer
+
+    Witnesses that [W] is double the width of [N]:
+    [W.width = 2 * N.width].
+
+    [N] is the "narrow" word type (e.g., 32-bit or 64-bit).
+    [W] is the "wide" intermediate type (e.g., 64-bit or 128-bit).
+
+    Conversion operations model C++ implicit/explicit width casts
+    between [narrow_t] and [wide_t]. *)
+
+Module Type UintWidenOps (N : UintOps) (W : UintOps).
+
+  (** Width relationship: wide is exactly double narrow *)
+  Axiom width_relation : W.width = (2 * N.width)%positive.
+
+  (** Zero-extend a narrow value into the wide type.
+      Models: [(wide_t)x] implicit widening cast in C++. *)
+  Parameter widen : N.t -> W.t.
+
+  (** Extract the low half of a wide value.
+      Models: [static_cast<narrow_t>(x)] truncation in C++. *)
+  Parameter trunc : W.t -> N.t.
+
+  (** Extract the high half of a wide value.
+      Models: [x >> narrow_width] in C++. *)
+  Parameter hi : W.t -> N.t.
+
+  (** Construct a wide value from high and low halves.
+      Inverse of [(hi x, trunc x)].
+      Models: [(wide_t)h << narrow_width | (wide_t)l] in C++. *)
+  Parameter combine : N.t -> N.t -> W.t.
+
+  (** Signed arithmetic right-shift by the narrow width.
+      Models: [(wide_t)((signed_wide_t)x >> narrow_width)] in C++.
+      If the MSB of [x] is set, the result is sign-extended;
+      otherwise it is zero-extended. *)
+  Parameter signed_hi : W.t -> W.t.
+
+End UintWidenOps.
+
+(** ** Double-width bridge — specification layer *)
+
+Module Type UintWiden (N : Uint) (W : Uint).
+  Include UintWidenOps N W.
+
+  Axiom spec_widen : forall x,
+    W.to_Z (widen x) = N.to_Z x.
+
+  Axiom spec_trunc : forall x,
+    N.to_Z (trunc x) = W.to_Z x mod base N.width.
+
+  Axiom spec_hi : forall x,
+    N.to_Z (hi x) = W.to_Z x / base N.width.
+
+  Axiom spec_combine : forall h l,
+    W.to_Z (combine h l) = N.to_Z h * base N.width + N.to_Z l.
+
+  (** [signed_hi] interprets the wide value as a signed integer
+      and arithmetic-right-shifts by the narrow width.  When
+      [x >= 2^(W.width - 1)] (i.e., MSB set), the high half is
+      filled with all-ones; otherwise it equals [hi x] zero-extended. *)
+  Axiom spec_signed_hi : forall x,
+    W.to_Z (signed_hi x) =
+      let v := W.to_Z x in
+      let half := base N.width in
+      if v <? base W.width / 2
+      then v / half
+      else v / half - base N.width.
+
+End UintWiden.
 
 (** ** Notations *)
 

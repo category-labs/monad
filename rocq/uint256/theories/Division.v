@@ -26,13 +26,17 @@ From Stdlib Require Import ZArith Lia List.
 From Uint256 Require Import Uint Primitives Words.
 Import ListNotations.
 
-Module Make (U64 : Uint64Ops) (U128 : Uint128Ops).
+Module Make (U64 : Uint64Ops) (U128 : Uint128Ops)
+  (Import Bridge : UintWidenOps U64 U128).
 Include UintNotations(U64).
 Include Primitives.Make(U64).
 Include Words.Make(U64).
 
+(* Notations for 128-bit operations *)
+Module WN := UintNotations(U128).
+
 (** Maximum representable value (all bits set, i.e., [2^width - 1]) *)
-Definition max_val : U64.t := 0 - 1.
+Definition u64_max_val : U64.t := 0 - 1.
 
 (** Result of long division *)
 Record long_div_result := mk_long_div_result {
@@ -61,18 +65,6 @@ Definition long_div (us : words) (v : U64.t) : long_div_result :=
 
 
 (** ** Knuth Division Core *)
-
-(** Trial quotient estimation with one refinement step.
-    C++ ref: uint256.hpp lines 1088-1137. *)
-Definition knuth_div_estimate (u_hi u_mid u_lo v_hi v_snd : U64.t) : U64.t :=
-  if (u_hi =? v_hi) then max_val
-  else
-    let (q0,r0) := U64.div u_hi u_mid v_hi in
-    if (q0 =? 0) then 0
-    else
-      if (q0 * v_snd >? r0 * (max_val + 1) + u_lo)
-      then q0 - 1
-      else q0.
 
 (** ** Utility Definitions *)
 
@@ -119,6 +111,62 @@ Fixpoint set_segment (ws : words) (start : nat) (seg : words) : words :=
       | w :: rest => w :: set_segment rest start' seg
       end
   end.
+
+Section KnuthMainLoop.
+
+(* Give notational precedence to 128-bit operations. *)
+Import WN.
+Local Open Scope uint_scope.
+
+(** Trial quotient estimation with one refinement step.
+    Return a 128-bit trial quotient following the
+    C++ ref: uint256.hpp lines 1088-1137. *)
+Definition knuth_div_estimate (u_hi u_mid u_lo v_hi v_snd : U64.t) : U128.t :=
+  if (U64.eqb u_hi v_hi) then widen u64_max_val
+  else
+    let (q0,r0) := U64.div u_hi u_mid v_hi in
+    if (U64.eqb q0 U64.zero) then 0
+    else
+      let q_hat := widen q0 in
+      if (q_hat * widen v_snd >? combine r0 u_lo)
+      then q_hat - 1
+      else q_hat.
+
+(** Subtraction loop: [u_seg[0..n-1] -= q_hat * v[0..n-1]],
+    propagating borrow via [k : U128.t].
+
+    Each iteration mirrors the C++ (uint256.hpp lines 1143-1147):
+
+      [prod  = q_hat * v[j]]
+        128-bit full multiply (both operands widened to U128).
+
+      [t = u[j+ix] - k - (prod & mask64)]
+        128-bit subtract; [prod & mask64] extracts the low 64 bits.
+        Modelled as [widen (trunc prod)] which is equivalent.
+
+      [u[j+ix] = (uint64_t)t]
+        Truncate [t] to 64 bits and store back.
+
+      [k = (prod >> 64) - (int128_t)t >> 64]
+        Borrow propagation.  [prod >> 64] is the high half of the
+        product; [(int128_t)t >> 64] is an arithmetic right-shift
+        that sign-extends if [t] wrapped negative.
+
+    Returns [(u_seg, k)] where [k] is the final borrow.
+    The caller is responsible for the post-loop assignment
+    [u[ix+n] = (uint64_t)(u[ix+n] - k)] (C++ line 1149-1150). *)
+Fixpoint knuth_sub_loop (u_seg : words) (q_hat : U128.t) (vs : words)
+    (j : nat) (k : U128.t) : words * U128.t :=
+  match vs with
+  | [] => (u_seg, k)
+  | vj :: vs_rest =>
+      let prod := q_hat * widen vj in
+      let t := widen (get_word u_seg j) - k - widen (trunc prod) in
+      let k' := widen (hi prod) - signed_hi t in
+      knuth_sub_loop (set_word u_seg j (trunc t)) q_hat vs_rest (S j) k'
+  end.
+
+End KnuthMainLoop.
 
 (** ** Normalization / Denormalization *)
 
@@ -236,11 +284,11 @@ Fixpoint knuth_addback_loop (u_seg : words) (vs : words)
   end.
 
 (** Word-level subtract-and-correct, modeling the C++ uint128_t loop.
-    Takes [q_hat : uint 64] from Uint.v (not the bare [uint64 := Z]
-    from Primitives.v). Returns updated segment and final quotient word.
+    Takes [q_hat : U64.t] from Uint.v.
+    Returns updated segment and final quotient word.
     C++ ref: uint256.hpp lines 1139-1165. *)
-Definition knuth_div_subtract (u_seg : words) (q_hat : uint 64)
-    (v : words) (n : nat) : words * uint 64 :=
+Definition knuth_div_subtract (u_seg : words) (q_hat : U64.t)
+    (v : words) (n : nat) : words * U64.t :=
   let q128 := uint_wrap 128 (Uint.to_Z q_hat) in
   let '(u_sub, k) := knuth_sub_loop u_seg q128 v 0 (uzero 128) in
   let t := get_u 128 u_sub n - k in
@@ -257,11 +305,11 @@ End WordLevelKnuthDiv.
 
 (** One iteration of Knuth division: estimate + subtract + correct. *)
 Definition knuth_div_step (u : words) (v : words) (i n : nat)
-    : words * uint 64 :=
+    : words * U64.t :=
   let q_hat := knuth_div_estimate
     (get_word u (i + n)) (get_word u (i + n - 1))
     (get_word u (i + n - 2)) (get_word v (n - 1)) (get_word v (n - 2)) in
-  if (to_Z q_hat =? 0) then (u, uzero 64)
+  if (q_hat =? 0) then (u, 0)
   else
     let u_seg := get_segment u i (n + 1) in
     let '(new_seg, final_q) :=

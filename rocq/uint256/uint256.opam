@@ -16,9 +16,9 @@ depends: [
 ]
 
 build: [
-  [make "-j%{jobs}%"]
+  ["dune" "build" "-p" name "-j" jobs]
 ]
 
 install: [
-  [make "install"]
+  ["dune" "install" "-p" name]
 ]

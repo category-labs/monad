@@ -477,7 +477,7 @@ TYPED_TEST(PlainTrieTest, large_values)
         find_notify_fiber_future(this->aux, inflights, p, this->root, key1);
         while (fut.wait_for(std::chrono::seconds(0)) !=
                ::boost::fibers::future_status::ready) {
-            this->aux.io->wait_until_done();
+            this->aux.io->flush();
         }
         auto [leaf_it, res] = fut.get();
         auto &leaf = leaf_it.node;
@@ -495,7 +495,7 @@ TYPED_TEST(PlainTrieTest, large_values)
         find_notify_fiber_future(this->aux, inflights, p, this->root, key2);
         while (fut.wait_for(std::chrono::seconds(0)) !=
                ::boost::fibers::future_status::ready) {
-            this->aux.io->wait_until_done();
+            this->aux.io->flush();
         }
         auto [leaf_it, res] = fut.get();
         auto &leaf = leaf_it.node;

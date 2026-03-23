@@ -255,7 +255,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
 AsyncIO::~AsyncIO()
 {
     try {
-        wait_until_done();
+        flush();
     }
     catch (...) {
         std::terminate();

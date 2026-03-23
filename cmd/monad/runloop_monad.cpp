@@ -181,16 +181,10 @@ template <Traits traits, class MonadConsensusBlockHeader>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
-<<<<<<< HEAD
     BlockHashChain &block_hash_chain, MonadChain const &chain, DbCache &db,
-    vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
-    bool const enable_tracing, BlockCache &block_cache)
-=======
-    BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     MachineBase &machine, vm::VM &vm, fiber::PriorityPool &priority_pool,
     bool const is_first_block, bool const enable_tracing,
     BlockCache &block_cache)
->>>>>>> aeb563fbe (Unify page and slot storage under single state trie)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -323,22 +317,22 @@ Result<BlockExecOutput> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    MonadCommitBuilder builder(
-        block.header.number, broker, traits::monad_rev());
-    builder.add_state_deltas(*state)
+    auto builder =
+        make_commit_builder(block.header.number, broker, traits::monad_rev());
+    builder->add_state_deltas(*state)
         .add_code(code)
         .add_receipts(results)
         .add_transactions(block.transactions, senders)
         .add_call_frames(call_frames)
         .add_ommers(block.ommers);
     if (block.withdrawals.has_value()) {
-        builder.add_withdrawals(block.withdrawals.value());
+        builder->add_withdrawals(block.withdrawals.value());
     }
     machine.set_storage_format(
         traits::monad_rev() >= MONAD_NEXT
             ? MachineBase::StorageFormat::PageCOO
             : MachineBase::StorageFormat::SlotCompact);
-    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
+    db.commit(block_id, *builder, block.header, *state, [&](BlockHeader &h) {
         // second stage: populate block header
         h.receipts_root = db.receipts_root();
         h.state_root = db.state_root();
@@ -493,11 +487,7 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &chain, std::filesystem::path const &ledger_dir,
-<<<<<<< HEAD
-    mpt::Db &raw_db, DbCache &db, vm::VM &vm,
-=======
-    mpt::Db &raw_db, Db &db, MachineBase &machine, vm::VM &vm,
->>>>>>> aeb563fbe (Unify page and slot storage under single state trie)
+    mpt::Db &raw_db, DbCache &db, MachineBase &machine, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,

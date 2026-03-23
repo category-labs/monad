@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
@@ -32,20 +33,26 @@ MONAD_NAMESPACE_BEGIN
 using namespace monad::mpt;
 
 MonadCommitBuilder::MonadCommitBuilder(
-    uint64_t const block_number, StorageBroker &broker,
-    monad_revision const rev)
+    uint64_t const block_number, PageStorageBroker &broker)
     : CommitBuilder{block_number}
     , broker_{broker}
-    , revision_{rev}
 {
+}
+
+std::unique_ptr<CommitBuilder> make_commit_builder(
+    uint64_t const block_number, StorageBroker &broker,
+    monad_revision const rev)
+{
+    if (rev >= MONAD_NEXT) {
+        return std::make_unique<MonadCommitBuilder>(
+            block_number, static_cast<PageStorageBroker &>(broker));
+    }
+    return std::make_unique<CommitBuilder>(block_number);
 }
 
 CommitBuilder &
 MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
-    if (revision_ < MONAD_NEXT) {
-        return CommitBuilder::add_state_deltas(state_deltas);
-    }
 
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {

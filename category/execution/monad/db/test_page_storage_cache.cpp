@@ -59,7 +59,7 @@ TEST(StorageBroker, monad_page_read_and_cache)
 
     {
         MonadCache commit_cache{tdb};
-        MonadCommitBuilder builder(0, commit_cache, MONAD_NEXT);
+        MonadCommitBuilder builder(0, commit_cache);
         builder.add_state_deltas(StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -110,7 +110,7 @@ TEST(StorageBroker, monad_cache_miss_returns_zero)
 
     {
         MonadCache commit_cache{tdb};
-        MonadCommitBuilder builder(0, commit_cache, MONAD_NEXT);
+        MonadCommitBuilder builder(0, commit_cache);
         builder.add_state_deltas(StateDeltas{
             {ADDR_A,
              StateDelta{

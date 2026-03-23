@@ -93,7 +93,7 @@ TEST(MonadDb, page_write_merges_slots)
     // Block 0: seed two slots on the same page.
     {
         MonadCache cache{tdb};
-        MonadCommitBuilder builder(0, cache, MONAD_NEXT);
+        MonadCommitBuilder builder(0, cache);
         builder.add_state_deltas(StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -117,7 +117,7 @@ TEST(MonadDb, page_write_merges_slots)
         ASSERT_EQ(
             cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
 
-        MonadCommitBuilder builder(1, cache, MONAD_NEXT);
+        MonadCommitBuilder builder(1, cache);
         builder.add_state_deltas(StateDeltas{
             {ADDR_A,
              StateDelta{

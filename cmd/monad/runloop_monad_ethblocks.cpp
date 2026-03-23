@@ -216,18 +216,18 @@ Result<void> process_monad_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    MonadCommitBuilder builder(
-        block.header.number, broker, traits::monad_rev());
-    builder.add_state_deltas(*state)
+    auto builder =
+        make_commit_builder(block.header.number, broker, traits::monad_rev());
+    builder->add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)
         .add_transactions(block.transactions, senders)
         .add_call_frames(call_frames)
         .add_ommers(block.ommers);
     if (block.withdrawals.has_value()) {
-        builder.add_withdrawals(block.withdrawals.value());
+        builder->add_withdrawals(block.withdrawals.value());
     }
-    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
+    db.commit(block_id, *builder, block.header, *state, [&](BlockHeader &h) {
         // second stage: populate block header
         h.receipts_root = db.receipts_root();
         h.state_root = db.state_root();

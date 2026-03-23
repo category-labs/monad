@@ -56,8 +56,8 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
     MonadDevnet chain;
 
-    SlotStorageBroker cache{tdb};
-    BlockState block_state{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     BlockMetrics block_metrics;
 
     BlockHeader const header{.number = 0};
@@ -171,8 +171,8 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
     MonadDevnet chain;
 
-    SlotStorageBroker cache{tdb};
-    BlockState block_state{tdb, cache, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     BlockMetrics block_metrics;
 
     BlockHeader const header{.number = 0};
@@ -298,7 +298,8 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
 
     MonadDevnet chain;
 
-    BlockState block_state{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     BlockMetrics block_metrics;
 
     BlockHeader const header{};
@@ -337,7 +338,8 @@ TEST(SystemTransaction, static_validate_transaction_failure)
 
     MonadDevnet chain;
 
-    BlockState block_state{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     BlockMetrics block_metrics;
 
     BlockHeader const header{.number = 0};

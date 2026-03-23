@@ -18,20 +18,24 @@
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/vm/evm/monad/revision.h>
 
+#include <memory>
+
 MONAD_NAMESPACE_BEGIN
 
 struct StorageBroker;
+class PageStorageBroker;
 
 class MonadCommitBuilder : public CommitBuilder
 {
-    StorageBroker &broker_;
-    monad_revision revision_;
+    PageStorageBroker &broker_;
 
 public:
-    MonadCommitBuilder(
-        uint64_t block_number, StorageBroker &broker, monad_revision rev);
+    MonadCommitBuilder(uint64_t block_number, PageStorageBroker &broker);
 
     CommitBuilder &add_state_deltas(StateDeltas const &) override;
 };
+
+std::unique_ptr<CommitBuilder> make_commit_builder(
+    uint64_t block_number, StorageBroker &broker, monad_revision rev);
 
 MONAD_NAMESPACE_END

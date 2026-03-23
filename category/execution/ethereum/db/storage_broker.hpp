@@ -32,9 +32,6 @@ struct StorageBroker
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
 
-    virtual storage_page_t read_storage_page(
-        Address const &, Incarnation, bytes32_t const &page_key) = 0;
-
     virtual ~StorageBroker() = default;
 };
 
@@ -57,12 +54,6 @@ public:
         Address const &addr, Incarnation inc, bytes32_t const &key) override
     {
         return decode_storage_eth(db_.read_storage(addr, inc, key));
-    }
-
-    storage_page_t
-    read_storage_page(Address const &, Incarnation, bytes32_t const &) override
-    {
-        MONAD_ABORT("SlotStorageBroker does not support read_storage_page");
     }
 };
 

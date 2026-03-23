@@ -84,29 +84,13 @@ public:
     bytes32_t read_storage(
         Address const &addr, Incarnation inc, bytes32_t const &key) override
     {
-        bytes32_t const page_key = compute_page_key(key);
-        uint8_t const slot_offset = compute_slot_offset(key);
-
-        PageKey const pk{addr, inc, page_key};
-
-        {
-            PageMap::const_accessor acc;
-            if (pages_.find(acc, pk)) {
-                return acc->second[slot_offset];
-            }
-        }
-
-        PageMap::accessor acc;
-        if (pages_.insert(acc, pk)) {
-            acc->second =
-                decode_storage_page(db_.read_storage(addr, inc, page_key));
-        }
-        return acc->second[slot_offset];
+        auto const page_key = compute_page_key(key);
+        auto const slot_offset = compute_slot_offset(key);
+        return read_storage_page(addr, inc, page_key)[slot_offset];
     }
 
     storage_page_t read_storage_page(
-        Address const &addr, Incarnation inc,
-        bytes32_t const &page_key) override
+        Address const &addr, Incarnation inc, bytes32_t const &page_key)
     {
         PageKey const pk{addr, inc, page_key};
 

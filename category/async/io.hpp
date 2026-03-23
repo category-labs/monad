@@ -481,6 +481,19 @@ public:
             (std::byte *)mem, detail::write_buffer_deleter(this));
     }
 
+    //! Non-blocking variant of get_write_buffer(). Returns null
+    //! write_buffer_ptr if pool is empty instead of blocking.
+    write_buffer_ptr try_get_write_buffer()
+    {
+        unsigned char *mem = wr_pool_.alloc();
+        if (mem == nullptr) {
+            return write_buffer_ptr(
+                nullptr, detail::write_buffer_deleter(this));
+        }
+        return write_buffer_ptr(
+            (std::byte *)mem, detail::write_buffer_deleter(this));
+    }
+
 private:
     unsigned char *poll_uring_while_no_io_buffers_(bool is_write);
 
@@ -511,6 +524,36 @@ private:
         else {
             MONAD_ASSERT(rwbuf_.get_read_size() >= READ_BUFFER_SIZE);
         }
+        return ret;
+    }
+
+    //! Non-blocking variant of make_connected_impl_. Returns nullptr if no
+    //! write buffer is immediately available. Write-only.
+    template <bool is_write, class F>
+    auto try_make_connected_impl_(F &&connect)
+    {
+        static_assert(is_write);
+        using connected_type = decltype(connect());
+        static_assert(sizeof(connected_type) <= MAX_CONNECTED_OPERATION_SIZE);
+        using traits =
+            std::allocator_traits<connected_operation_storage_allocator_type_>;
+        using ret_type = std::unique_ptr<
+            connected_type,
+            io_connected_operation_unique_ptr_deleter>;
+        auto buf = try_get_write_buffer();
+        if (!buf) {
+            return ret_type(nullptr);
+        }
+        unsigned char *mem = (unsigned char *)traits::allocate(
+            connected_operation_storage_pool_, 1);
+        MONAD_ASSERT_PRINTF(
+            mem != nullptr, "failed due to %s", strerror(errno));
+        auto ret = ret_type(new (mem) connected_type(connect()));
+        MONAD_ASSERT(ret->sender().buffer().data() == nullptr);
+        MONAD_ASSERT(rwbuf_.get_write_size() >= WRITE_BUFFER_SIZE);
+        auto buffer = std::move(ret->sender()).buffer();
+        buffer.set_write_buffer(std::move(buf));
+        ret->sender().reset(ret->sender().offset(), std::move(buffer));
         return ret;
     }
 
@@ -564,6 +607,26 @@ public:
                        std::move(sender_args),
                        std::move(receiver_args));
                });
+    }
+
+    //! Non-blocking variant of make_connected for write operations.
+    //! Returns nullptr if no write buffer is immediately available.
+    template <sender Sender, receiver Receiver>
+        requires(
+            Sender::my_operation_type == operation_type::write &&
+            requires(
+                Receiver r, erased_connected_operation *o,
+                typename Sender::result_type x) {
+                r.set_value(o, std::move(x));
+            })
+    auto try_make_connected(Sender &&sender, Receiver &&receiver)
+    {
+        return try_make_connected_impl_<true>([&] {
+            return connect<Sender, Receiver>(
+                *this,
+                std::forward<Sender>(sender),
+                std::forward<Receiver>(receiver));
+        });
     }
 
     template <class Base, sender Sender, receiver Receiver>

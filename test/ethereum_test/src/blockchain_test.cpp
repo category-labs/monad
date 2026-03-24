@@ -713,7 +713,8 @@ void process_test(
 
     bool const has_post_state = j_contents.contains("postState");
     bool const has_post_state_hash = j_contents.contains("postStateHash");
-    MONAD_DEBUG_ASSERT(has_post_state || has_post_state_hash);
+    ASSERT_TRUE(has_post_state || has_post_state_hash)
+        << "Test fixture missing postState/postStateHash: " << name;
 
     if (has_post_state_hash) {
         EXPECT_EQ(

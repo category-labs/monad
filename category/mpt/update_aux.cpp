@@ -151,7 +151,7 @@ void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx) noexcept
     if (list == chunk_list::free) {
         auto &chunk = io->storage_pool().chunk(storage_pool::seq, idx);
         auto capacity = chunk.capacity();
-        MONAD_DEBUG_ASSERT(chunk.size() == 0);
+        MONAD_ASSERT(chunk.size() == 0);
         db_metadata_[0].main->free_capacity_add_(capacity);
         db_metadata_[1].main->free_capacity_add_(capacity);
     }
@@ -181,7 +181,7 @@ void UpdateAuxImpl::remove(uint32_t const idx) noexcept
     if (is_free_list) {
         auto &chunk = io->storage_pool().chunk(storage_pool::seq, idx);
         auto capacity = chunk.capacity();
-        MONAD_DEBUG_ASSERT(chunk.size() == 0);
+        MONAD_ASSERT(chunk.size() == 0);
         db_metadata_[0].main->free_capacity_sub_(capacity);
         db_metadata_[1].main->free_capacity_sub_(capacity);
     }
@@ -427,10 +427,10 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     if (last_root_offset != INVALID_OFFSET) {
         auto const virtual_last_root_offset =
             physical_to_virtual(last_root_offset);
-        MONAD_DEBUG_ASSERT(virtual_last_root_offset != INVALID_VIRTUAL_OFFSET);
+        MONAD_ASSERT(virtual_last_root_offset != INVALID_VIRTUAL_OFFSET);
         if (db_metadata()->at(last_root_offset.id)->in_fast_list) {
             auto const virtual_fast_offset = physical_to_virtual(fast_offset);
-            MONAD_DEBUG_ASSERT(virtual_fast_offset != INVALID_VIRTUAL_OFFSET);
+            MONAD_ASSERT(virtual_fast_offset != INVALID_VIRTUAL_OFFSET);
             MONAD_ASSERT_PRINTF(
                 virtual_fast_offset > virtual_last_root_offset,
                 "Detected corruption. Last root offset (id=%d, count=%d, "
@@ -445,7 +445,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
         }
         else if (db_metadata()->at(last_root_offset.id)->in_slow_list) {
             auto const virtual_slow_offset = physical_to_virtual(slow_offset);
-            MONAD_DEBUG_ASSERT(virtual_slow_offset != INVALID_VIRTUAL_OFFSET);
+            MONAD_ASSERT(virtual_slow_offset != INVALID_VIRTUAL_OFFSET);
             MONAD_ASSERT_PRINTF(
                 virtual_slow_offset > virtual_last_root_offset,
                 "Detected corruption. Last root offset (id=%d, count=%d, "
@@ -828,7 +828,7 @@ void UpdateAuxImpl::set_io(
                 "existing data, stopping now to prevent data loss.");
         }
         memset(db_metadata_[0].main, 0, map_size);
-        MONAD_DEBUG_ASSERT((chunk_count & ~0xfffffU) == 0);
+        MONAD_ASSERT((chunk_count & ~0xfffffU) == 0);
         db_metadata_[0].main->chunk_info_count = chunk_count & 0xfffffU;
         MONAD_ASSERT(io->storage_pool().chunks(storage_pool::cnv) > 1);
         auto &storage = db_metadata_[0].main->root_offsets.storage_;
@@ -898,8 +898,8 @@ void UpdateAuxImpl::set_io(
         chunks.reserve(chunk_count);
         for (uint32_t n = 0; n < chunk_count; n++) {
             auto chunk = io->storage_pool().chunk(storage_pool::seq, n);
-            MONAD_DEBUG_ASSERT(chunk.zone_id().first == storage_pool::seq);
-            MONAD_DEBUG_ASSERT(chunk.zone_id().second == n);
+            MONAD_ASSERT(chunk.zone_id().first == storage_pool::seq);
+            MONAD_ASSERT(chunk.zone_id().second == n);
             MONAD_ASSERT(chunk.size() == 0); // chunks must actually be free
             chunks.push_back(n);
         }

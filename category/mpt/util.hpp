@@ -177,7 +177,7 @@ public:
         virtual_chunk_offset_t const offset)
         : v_{static_cast<uint32_t>(offset.raw() >> bits_to_truncate)}
     {
-        MONAD_DEBUG_ASSERT(offset != INVALID_VIRTUAL_OFFSET);
+        MONAD_ASSERT(offset != INVALID_VIRTUAL_OFFSET);
     }
 
     void set_value(uint32_t v) noexcept
@@ -264,7 +264,8 @@ static_assert(alignof(compact_offset_pair) == 4);
 inline constexpr unsigned
 bitmask_index(uint16_t const mask, unsigned const i) noexcept
 {
-    MONAD_DEBUG_ASSERT(i < 16);
+    MONAD_ASSERT(i < 16);
+    MONAD_ASSERT(mask & (1u << i));
     uint16_t const filter = UINT16_MAX >> (16 - i);
     return static_cast<unsigned>(
         std::popcount(static_cast<uint16_t>(mask & filter)));

@@ -189,7 +189,7 @@ namespace detail
             uint32_t index(db_metadata const *parent) const noexcept
             {
                 auto const ret = uint32_t(this - parent->chunk_info);
-                MONAD_DEBUG_ASSERT(ret < parent->chunk_info_count);
+                MONAD_ASSERT(ret < parent->chunk_info_count);
                 return ret;
             }
 
@@ -204,8 +204,7 @@ namespace detail
                 if (prev_chunk_id == INVALID_CHUNK_ID) {
                     return nullptr;
                 }
-                MONAD_DEBUG_ASSERT(prev_chunk_id < parent->chunk_info_count);
-                return &parent->chunk_info[prev_chunk_id];
+                return parent->at(prev_chunk_id);
             }
 
             chunk_info_t const *next(db_metadata const *parent) const noexcept
@@ -213,8 +212,7 @@ namespace detail
                 if (next_chunk_id == INVALID_CHUNK_ID) {
                     return nullptr;
                 }
-                MONAD_DEBUG_ASSERT(next_chunk_id < parent->chunk_info_count);
-                return &parent->chunk_info[next_chunk_id];
+                return parent->at(next_chunk_id);
             }
         };
 #ifdef __clang__
@@ -268,7 +266,7 @@ namespace detail
 
         chunk_info_t const *at(uint32_t idx) const noexcept
         {
-            MONAD_DEBUG_ASSERT(idx < chunk_info_count);
+            MONAD_ASSERT(idx < chunk_info_count);
             return &chunk_info[idx];
         }
 
@@ -280,19 +278,12 @@ namespace detail
                 ->load(load_ord);
         }
 
-        chunk_info_t const &operator[](uint32_t idx) const noexcept
-        {
-            MONAD_DEBUG_ASSERT(idx < chunk_info_count);
-            return chunk_info[idx];
-        }
-
         chunk_info_t const *free_list_begin() const noexcept
         {
             if (free_list.begin == UINT32_MAX) {
                 return nullptr;
             }
-            MONAD_DEBUG_ASSERT(free_list.begin < chunk_info_count);
-            return &chunk_info[free_list.begin];
+            return at(free_list.begin);
         }
 
         chunk_info_t const *free_list_end() const noexcept
@@ -300,8 +291,7 @@ namespace detail
             if (free_list.end == UINT32_MAX) {
                 return nullptr;
             }
-            MONAD_DEBUG_ASSERT(free_list.end < chunk_info_count);
-            return &chunk_info[free_list.end];
+            return at(free_list.end);
         }
 
         chunk_info_t const *fast_list_begin() const noexcept
@@ -309,8 +299,7 @@ namespace detail
             if (fast_list.begin == UINT32_MAX) {
                 return nullptr;
             }
-            MONAD_DEBUG_ASSERT(fast_list.begin < chunk_info_count);
-            return &chunk_info[fast_list.begin];
+            return at(fast_list.begin);
         }
 
         chunk_info_t const *fast_list_end() const noexcept
@@ -318,8 +307,7 @@ namespace detail
             if (fast_list.end == UINT32_MAX) {
                 return nullptr;
             }
-            MONAD_DEBUG_ASSERT(fast_list.end < chunk_info_count);
-            return &chunk_info[fast_list.end];
+            return at(fast_list.end);
         }
 
         chunk_info_t const *slow_list_begin() const noexcept
@@ -327,8 +315,7 @@ namespace detail
             if (slow_list.begin == UINT32_MAX) {
                 return nullptr;
             }
-            MONAD_DEBUG_ASSERT(slow_list.begin < chunk_info_count);
-            return &chunk_info[slow_list.begin];
+            return at(slow_list.begin);
         }
 
         chunk_info_t const *slow_list_end() const noexcept
@@ -336,14 +323,13 @@ namespace detail
             if (slow_list.end == UINT32_MAX) {
                 return nullptr;
             }
-            MONAD_DEBUG_ASSERT(slow_list.end < chunk_info_count);
-            return &chunk_info[slow_list.end];
+            return at(slow_list.end);
         }
 
     private:
         chunk_info_t *at_(uint32_t idx) noexcept
         {
-            MONAD_DEBUG_ASSERT(idx < chunk_info_count);
+            MONAD_ASSERT(idx < chunk_info_count);
             return &chunk_info[idx];
         }
 
@@ -357,12 +343,12 @@ namespace detail
             info.insertion_count0_ = info.insertion_count1_ = 0;
             info.next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
             if (list.end == UINT32_MAX) {
-                MONAD_DEBUG_ASSERT(list.begin == UINT32_MAX);
+                MONAD_ASSERT(list.begin == UINT32_MAX);
                 info.prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                 list.begin = list.end = i->index(this);
             }
             else {
-                MONAD_DEBUG_ASSERT((list.end & ~0xfffffU) == 0);
+                MONAD_ASSERT((list.end & ~0xfffffU) == 0);
                 info.prev_chunk_id = list.end & 0xfffffU;
                 auto *tail = at_(list.end);
                 uint32_t const insertion_count =
@@ -401,8 +387,8 @@ namespace detail
             if (i->prev_chunk_id == chunk_info_t::INVALID_CHUNK_ID &&
                 i->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID) {
                 id_pair &list = get_list();
-                MONAD_DEBUG_ASSERT(list.begin == i->index(this));
-                MONAD_DEBUG_ASSERT(list.end == i->index(this));
+                MONAD_ASSERT(list.begin == i->index(this));
+                MONAD_ASSERT(list.end == i->index(this));
                 list.begin = list.end = UINT32_MAX;
 #ifndef NDEBUG
                 i->in_fast_list = i->in_slow_list = false;
@@ -411,7 +397,7 @@ namespace detail
             }
             if (i->prev_chunk_id == chunk_info_t::INVALID_CHUNK_ID) {
                 id_pair &list = get_list();
-                MONAD_DEBUG_ASSERT(list.begin == i->index(this));
+                MONAD_ASSERT(list.begin == i->index(this));
                 auto *next = at_(i->next_chunk_id);
                 next->prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                 list.begin = next->index(this);
@@ -423,7 +409,7 @@ namespace detail
             }
             if (i->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID) {
                 id_pair &list = get_list();
-                MONAD_DEBUG_ASSERT(list.end == i->index(this));
+                MONAD_ASSERT(list.end == i->index(this));
                 auto *prev = at_(i->prev_chunk_id);
                 prev->next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                 list.end = prev->index(this);

@@ -113,18 +113,16 @@ public:
 
     [[gnu::always_inline]] unsigned char *get_read_buffer(size_t const i) const
     {
-        MONAD_DEBUG_ASSERT(i < read_count_);
+        MONAD_ASSERT(i < read_count_);
         unsigned char *const ret = read_buf_.get_data() + (i << read_bits_);
-        MONAD_DEBUG_ASSERT(((void)ret[0], true));
         return ret;
     }
 
     [[gnu::always_inline]] unsigned char *get_write_buffer(size_t const i) const
     {
-        MONAD_DEBUG_ASSERT(i < write_count_);
+        MONAD_ASSERT(i < write_count_);
         unsigned char *const ret =
             write_buf_.value().get_data() + (i << write_bits_);
-        MONAD_DEBUG_ASSERT(((void)ret[0], true));
         return ret;
     }
 };

@@ -247,7 +247,7 @@ ReservedExecEvent<T> ExecutionEventRecorder::reserve_block_event(
     uint8_t *payload_buf;
     monad_event_descriptor *const event = monad_event_recorder_reserve(
         &exec_recorder_, payload_size, &seqno, &payload_buf);
-    MONAD_DEBUG_ASSERT(event != nullptr);
+    MONAD_ASSERT(event != nullptr);
     if constexpr (sizeof...(trailing_bufs) > 0) {
         // Copy the variable-length trailing buffers; GCC issues a false
         // positive warning about this memcpy that must be disabled

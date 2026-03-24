@@ -214,7 +214,7 @@ public:
     template <class... Args>
     static UniquePtr make(size_t bytes, Args &&...args)
     {
-        MONAD_DEBUG_ASSERT(bytes <= Node::max_size);
+        MONAD_ASSERT(bytes <= Node::max_size);
         return allocators::allocate_aliasing_unique<
             &allocators::aliasing_allocator_pair<Node>>(
             bytes,

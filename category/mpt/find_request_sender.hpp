@@ -26,7 +26,6 @@
 #include "deserialize_node_from_receiver_result.hpp"
 
 #include <cstdint>
-#include <limits>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -169,9 +168,8 @@ struct find_request_sender<T>::find_receiver
         bytes_to_read =
             static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
         rd_offset = offset;
-        auto const new_offset = round_down_align<DISK_PAGE_BITS>(offset.offset);
-        MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);
-        rd_offset.offset = new_offset & chunk_offset_t::max_offset;
+        rd_offset.offset = round_down_align<DISK_PAGE_BITS>(offset.offset) &
+                           chunk_offset_t::max_offset;
         buffer_off = uint16_t(offset.offset - rd_offset.offset);
     }
 
@@ -246,8 +244,6 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
         MONAD_ASSERT(prefix_index < key_.nibble_size());
         if (unsigned char const branch = key_.get(prefix_index);
             node->mask & (1u << branch)) {
-            MONAD_DEBUG_ASSERT(
-                prefix_index < std::numeric_limits<unsigned char>::max());
             key_ = key_.substr(static_cast<unsigned char>(prefix_index) + 1u);
             auto const child_index = node->to_child_index(branch);
             NodeCache::ConstAccessor acc;

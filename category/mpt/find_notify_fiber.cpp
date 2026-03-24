@@ -35,7 +35,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <utility>
 
@@ -76,7 +75,6 @@ namespace
             rd_offset = offset;
             auto const new_offset =
                 round_down_align<DISK_PAGE_BITS>(offset.offset);
-            MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);
             rd_offset.offset = new_offset & chunk_offset_t::max_offset;
             buffer_off = uint16_t(offset.offset - rd_offset.offset);
         }
@@ -137,7 +135,6 @@ namespace
             rd_offset = offset;
             auto const new_offset =
                 round_down_align<DISK_PAGE_BITS>(offset.offset);
-            MONAD_DEBUG_ASSERT(new_offset <= chunk_offset_t::max_offset);
             rd_offset.offset = new_offset & chunk_offset_t::max_offset;
             buffer_off = uint16_t(offset.offset - rd_offset.offset);
         }
@@ -240,8 +237,6 @@ void find_notify_fiber_future(
     MONAD_ASSERT(prefix_index < key.nibble_size());
     if (unsigned char const branch = key.get(prefix_index);
         node->mask & (1u << branch)) {
-        MONAD_DEBUG_ASSERT(
-            prefix_index < std::numeric_limits<unsigned char>::max());
         auto const next_key =
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
@@ -321,8 +316,6 @@ void find_owning_notify_fiber_future(
     MONAD_ASSERT(prefix_index < key.nibble_size());
     if (unsigned char const branch = key.get(prefix_index);
         node->mask & (1u << branch)) {
-        MONAD_DEBUG_ASSERT(
-            prefix_index < std::numeric_limits<unsigned char>::max());
         auto const next_key =
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);

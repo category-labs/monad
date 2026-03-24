@@ -38,14 +38,14 @@
 [[gnu::always_inline]] static inline size_t
 monad_round_size_to_align(size_t const size, size_t const align)
 {
-    MONAD_DEBUG_ASSERT(std::has_single_bit(align));
+    MONAD_ASSERT(std::has_single_bit(align));
     return (size + align - 1) & ~(align - 1);
 }
 #else
 [[gnu::always_inline]] static inline size_t
 monad_round_size_to_align(size_t const size, size_t const align)
 {
-    MONAD_DEBUG_ASSERT(stdc_has_single_bit(align));
+    MONAD_ASSERT(stdc_has_single_bit(align));
     return (size + align - 1) & ~(align - 1);
 }
 #endif

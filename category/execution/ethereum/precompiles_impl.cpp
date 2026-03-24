@@ -107,7 +107,7 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
 {
     auto const [output, output_size] = Func(input.data(), input.size());
     if (output == nullptr) {
-        MONAD_DEBUG_ASSERT(output_size == 0);
+        MONAD_ASSERT(output_size == 0);
         return {EVMC_PRECOMPILE_FAILURE, nullptr, 0};
     }
     return {EVMC_SUCCESS, output, output_size};

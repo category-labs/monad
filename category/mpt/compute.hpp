@@ -40,7 +40,7 @@ namespace detail
 
         void keccak_inplace_to_root_hash()
         {
-            MONAD_DEBUG_ASSERT(len <= KECCAK256_SIZE);
+            MONAD_ASSERT(len <= KECCAK256_SIZE);
             if (len < KECCAK256_SIZE) {
                 keccak256(buffer, len, buffer);
                 len = KECCAK256_SIZE;
@@ -125,7 +125,7 @@ struct MerkleComputeBase : Compute
         NibblesView /*path*/,
         std::optional<byte_string_view> const value) override
     {
-        MONAD_DEBUG_ASSERT(mask);
+        MONAD_ASSERT(mask);
         if (!value.has_value()) {
             // no intermediate data for non-leaf node
             return 0;
@@ -136,9 +136,7 @@ struct MerkleComputeBase : Compute
                 children, [](ChildData const &item) constexpr {
                     return item.is_valid();
                 });
-            MONAD_DEBUG_ASSERT(it != children.end());
-            MONAD_DEBUG_ASSERT(it->branch < 16);
-            MONAD_DEBUG_ASSERT(it->ptr);
+            MONAD_ASSERT(it != children.end());
             compute_hash_with_extra_nibble_to_state_(*it);
             // root data of a subtrie is always a hash
             state.keccak_inplace_to_root_hash();
@@ -151,11 +149,11 @@ struct MerkleComputeBase : Compute
         result = encode_empty_string(result);
         auto const concat_len =
             static_cast<size_t>(result.data() - branch_str_rlp);
-        MONAD_DEBUG_ASSERT(concat_len <= max_branch_rlp_size);
+        MONAD_ASSERT(concat_len <= max_branch_rlp_size);
 
         // encode list
         auto const rlp_len = rlp::list_length(concat_len);
-        MONAD_DEBUG_ASSERT(rlp_len <= max_branch_rlp_size);
+        MONAD_ASSERT(rlp_len <= max_branch_rlp_size);
         unsigned char branch_rlp[max_branch_rlp_size];
         rlp::encode_list(
             branch_rlp, byte_string_view{branch_str_rlp, concat_len});
@@ -191,7 +189,7 @@ struct MerkleComputeBase : Compute
                 LeafValueProcessor::process(node), // processed leaf data
                 true);
         }
-        MONAD_DEBUG_ASSERT(node.number_of_children() > 1);
+        MONAD_ASSERT(node.number_of_children() > 1);
         if (node.has_path()) {
             unsigned char reference[KECCAK256_SIZE];
             unsigned len = compute_branch_reference_(reference, node);
@@ -207,7 +205,7 @@ private:
     unsigned compute_hash_with_extra_nibble_to_state_(ChildData &single_child)
     {
         Node *const node = single_child.ptr.get();
-        MONAD_DEBUG_ASSERT(node);
+        MONAD_ASSERT(node);
 
         return state.len = encode_two_pieces(
                 state.buffer,
@@ -238,7 +236,7 @@ private:
             static_cast<size_t>(result.data() - branch_str_rlp);
         MONAD_ASSERT(concat_len <= max_branch_rlp_size);
         auto const branch_rlp_len = rlp::list_length(concat_len);
-        MONAD_DEBUG_ASSERT(branch_rlp_len <= max_branch_rlp_size);
+        MONAD_ASSERT(branch_rlp_len <= max_branch_rlp_size);
 
         unsigned char branch_rlp[max_branch_rlp_size];
         rlp::encode_list(
@@ -396,9 +394,7 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafValueProcessor>
                 children, [](ChildData const &item) constexpr {
                     return item.is_valid();
                 });
-            MONAD_DEBUG_ASSERT(it != children.end());
-            MONAD_DEBUG_ASSERT(it->branch < 16);
-            MONAD_DEBUG_ASSERT(it->ptr);
+            MONAD_ASSERT(it != children.end());
             compute_hash_with_extra_nibble_to_state_(*it);
         }
         else {
@@ -419,7 +415,7 @@ private:
     unsigned compute_hash_with_extra_nibble_to_state_(ChildData &single_child)
     {
         Node *const node = single_child.ptr.get();
-        MONAD_DEBUG_ASSERT(node);
+        MONAD_ASSERT(node != nullptr);
 
         return state.len = encode_two_pieces(
                    state.buffer,

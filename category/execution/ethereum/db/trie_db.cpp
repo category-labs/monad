@@ -114,7 +114,6 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 
     auto encoded_account = res.value().node->value();
     auto const acct = decode_account_db_ignore_address(encoded_account);
-    MONAD_DEBUG_ASSERT(!acct.has_error());
     return acct.value();
 }
 
@@ -435,7 +434,6 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             auto encoded_account = node.value();
 
             auto acct = decode_account_db(encoded_account);
-            MONAD_DEBUG_ASSERT(!acct.has_error());
 
             auto const key = fmt::format("{}", NibblesView{path});
 
@@ -461,7 +459,6 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             auto encoded_storage = node.value();
 
             auto const storage = decode_storage_db(encoded_storage);
-            MONAD_DEBUG_ASSERT(!storage.has_error());
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));

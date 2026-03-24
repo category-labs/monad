@@ -86,7 +86,6 @@ public:
         }
         auto encoded_account = acc_leaf_res.value().node->value();
         auto const acct = decode_account_db_ignore_address(encoded_account);
-        MONAD_DEBUG_ASSERT(!acct.has_error());
         return acct.value();
     }
 

@@ -24,8 +24,8 @@ namespace monad::test
     [[nodiscard]] inline int
     path_compare(byte_string_view s1, byte_string_view s2)
     {
-        MONAD_DEBUG_ASSERT(!s1.empty());
-        MONAD_DEBUG_ASSERT(!s2.empty());
+        MONAD_ASSERT(!s1.empty());
+        MONAD_ASSERT(!s2.empty());
 
         auto const s1_size = static_cast<uint8_t>(s1[0]);
         auto const s2_size = static_cast<uint8_t>(s2[0]);
@@ -36,8 +36,8 @@ namespace monad::test
         }
 
         bool const odd = s1_size % 2;
-        MONAD_DEBUG_ASSERT(s1.size() == (1u + s1_size / 2u + odd));
-        MONAD_DEBUG_ASSERT(s2.size() == (1u + s1_size / 2u + odd));
+        MONAD_ASSERT(s1.size() == (1u + s1_size / 2u + odd));
+        MONAD_ASSERT(s2.size() == (1u + s1_size / 2u + odd));
         rc = std::memcmp(s1.data(), s2.data(), s1.size() - odd);
         if (rc != 0 || !odd) {
             return rc;
@@ -63,8 +63,8 @@ namespace monad::test
         [[nodiscard]] inline bool
         operator()(byte_string_view element, byte_string_view value) const
         {
-            MONAD_DEBUG_ASSERT(element.size() > 20);
-            MONAD_DEBUG_ASSERT(value.size() > 20);
+            MONAD_ASSERT(element.size() > 20);
+            MONAD_ASSERT(value.size() > 20);
 
             auto const rc = std::memcmp(element.data(), value.data(), 20);
             if (rc != 0) {

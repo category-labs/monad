@@ -15,17 +15,15 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
+#include <category/core/detail/start_lifetime_as_polyfill.hpp>
 
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <cstdint>
+#include <compare>
+#include <cstring>
+#include <span>
 #include <type_traits>
-
-static_assert(
-    std::is_same_v<std::uint8_t, unsigned char>,
-    "unaligned_load/store assume uint8_t is unsigned char");
 
 MONAD_NAMESPACE_BEGIN
 
@@ -44,6 +42,76 @@ unaligned_store(unsigned char *const buf, T const &value)
 {
     auto data = std::bit_cast<std::array<unsigned char, sizeof(T)>>(value);
     std::copy_n(data.data(), sizeof(T), buf);
+}
+
+// Element type for std::span over a packed unaligned array of T.
+//
+// Stores T as raw bytes; read via std::bit_cast, write via memcpy, so the
+// compiler emits unaligned load/store instructions and no alignment fault can
+// occur.  Works for any trivially-copyable T including non-POD class types.
+//
+// Implicit conversion to/from T means it behaves transparently at most call
+// sites. Use as_unaligned_span() to construct a std::span<unaligned_t<T>>.
+//
+// Note: std::min(T, unaligned_t<T>) fails template deduction (mixed-type case
+// only; std::min(unaligned_t<T>, unaligned_t<T>) deduces fine); use
+// std::min<T>(...) or a range-for loop with a T loop variable.
+//
+// [[gnu::may_alias]] — an unaligned_t<T>* may alias arbitrary storage,
+//                      mirroring the permission that unsigned char* already
+//                      has in the other direction.  Prevents the compiler from
+//                      assuming the typed pointer is disjoint from the
+//                      surrounding heterogeneous Node layout.
+template <typename T>
+struct [[gnu::may_alias]] unaligned_t
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+
+    unsigned char bytes[sizeof(T)];
+
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    operator T() const noexcept
+    {
+        return std::bit_cast<T>(bytes);
+    }
+
+    // implicit write
+    unaligned_t &operator=(T const &v) noexcept
+    {
+        std::memcpy(bytes, &v, sizeof(v));
+        return *this;
+    }
+
+    // comparisons (for std::min(unaligned_t, unaligned_t) and range algos)
+    bool operator==(unaligned_t const &o) const noexcept
+    {
+        return static_cast<T>(*this) == static_cast<T>(o);
+    }
+
+    auto operator<=>(unaligned_t const &o) const noexcept
+    {
+        return static_cast<T>(*this) <=> static_cast<T>(o);
+    }
+};
+
+static_assert(sizeof(unaligned_t<int64_t>) == sizeof(int64_t));
+static_assert(alignof(unaligned_t<int64_t>) == 1);
+
+// Returns std::span<unaligned_t<T>> over [ptr, ptr + n*sizeof(T)).
+// Safe because [[gnu::may_alias]] permits unaligned_t<T>* to alias the buffer.
+template <typename T>
+[[nodiscard]] std::span<unaligned_t<T>>
+as_unaligned_span(unsigned char *ptr, unsigned n) noexcept
+{
+    return {monad::start_lifetime_as_array<unaligned_t<T>>(ptr, n), n};
+}
+
+// Const overload.
+template <typename T>
+[[nodiscard]] std::span<unaligned_t<T> const>
+as_unaligned_span(unsigned char const *ptr, unsigned n) noexcept
+{
+    return {monad::start_lifetime_as_array<unaligned_t<T>>(ptr, n), n};
 }
 
 MONAD_NAMESPACE_END

@@ -101,62 +101,64 @@ void Node::set_fnext(unsigned const index, chunk_offset_t const off) noexcept
         sizeof(chunk_offset_t));
 }
 
-unsigned char *Node::child_min_offset_fast_data() noexcept
+std::span<unaligned_t<compact_virtual_chunk_offset_t>>
+Node::child_min_offset_fast_data() noexcept
 {
-    return fnext_data + number_of_children() * sizeof(file_offset_t);
+    unsigned const n = number_of_children();
+    return as_unaligned_span<compact_virtual_chunk_offset_t>(
+        fnext_data + n * sizeof(chunk_offset_t), n);
 }
 
-unsigned char const *Node::child_min_offset_fast_data() const noexcept
+std::span<unaligned_t<compact_virtual_chunk_offset_t> const>
+Node::child_min_offset_fast_data() const noexcept
 {
-    return fnext_data + number_of_children() * sizeof(file_offset_t);
+    unsigned const n = number_of_children();
+    return as_unaligned_span<compact_virtual_chunk_offset_t>(
+        fnext_data + n * sizeof(chunk_offset_t), n);
 }
 
 compact_virtual_chunk_offset_t
 Node::min_offset_fast(unsigned const index) const noexcept
 {
-    return unaligned_load<compact_virtual_chunk_offset_t>(
-        child_min_offset_fast_data() +
-        index * sizeof(compact_virtual_chunk_offset_t));
+    return child_min_offset_fast_data()[index];
 }
 
 void Node::set_min_offset_fast(
     unsigned const index, compact_virtual_chunk_offset_t const offset) noexcept
 {
-    std::memcpy(
-        child_min_offset_fast_data() +
-            index * sizeof(compact_virtual_chunk_offset_t),
-        &offset,
-        sizeof(compact_virtual_chunk_offset_t));
+    child_min_offset_fast_data()[index] = offset;
 }
 
-unsigned char *Node::child_min_offset_slow_data() noexcept
+std::span<unaligned_t<compact_virtual_chunk_offset_t>>
+Node::child_min_offset_slow_data() noexcept
 {
-    return child_min_offset_fast_data() +
-           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
+    unsigned const n = number_of_children();
+    auto const fast = child_min_offset_fast_data();
+    return as_unaligned_span<compact_virtual_chunk_offset_t>(
+        reinterpret_cast<unsigned char *>(fast.data()) + fast.size_bytes(), n);
 }
 
-unsigned char const *Node::child_min_offset_slow_data() const noexcept
+std::span<unaligned_t<compact_virtual_chunk_offset_t> const>
+Node::child_min_offset_slow_data() const noexcept
 {
-    return child_min_offset_fast_data() +
-           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
+    unsigned const n = number_of_children();
+    auto const fast = child_min_offset_fast_data();
+    return as_unaligned_span<compact_virtual_chunk_offset_t>(
+        reinterpret_cast<unsigned char const *>(fast.data()) +
+            fast.size_bytes(),
+        n);
 }
 
 compact_virtual_chunk_offset_t
 Node::min_offset_slow(unsigned const index) const noexcept
 {
-    return unaligned_load<compact_virtual_chunk_offset_t>(
-        child_min_offset_slow_data() +
-        index * sizeof(compact_virtual_chunk_offset_t));
+    return child_min_offset_slow_data()[index];
 }
 
 void Node::set_min_offset_slow(
     unsigned const index, compact_virtual_chunk_offset_t const offset) noexcept
 {
-    std::memcpy(
-        child_min_offset_slow_data() +
-            index * sizeof(compact_virtual_chunk_offset_t),
-        &offset,
-        sizeof(compact_virtual_chunk_offset_t));
+    child_min_offset_slow_data()[index] = offset;
 }
 
 compact_offset_pair Node::min_offsets(unsigned const index) const noexcept
@@ -171,41 +173,48 @@ void Node::set_min_offsets(
     set_min_offset_slow(index, offsets.slow);
 }
 
-unsigned char *Node::child_min_version_data() noexcept
+std::span<unaligned_t<int64_t>> Node::child_min_version_data() noexcept
 {
-    return child_min_offset_slow_data() +
-           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
+    unsigned const n = number_of_children();
+    auto const slow = child_min_offset_slow_data();
+    return as_unaligned_span<int64_t>(
+        reinterpret_cast<unsigned char *>(slow.data()) + slow.size_bytes(), n);
 }
 
-unsigned char const *Node::child_min_version_data() const noexcept
+std::span<unaligned_t<int64_t> const>
+Node::child_min_version_data() const noexcept
 {
-    return child_min_offset_slow_data() +
-           number_of_children() * sizeof(compact_virtual_chunk_offset_t);
+    unsigned const n = number_of_children();
+    auto const slow = child_min_offset_slow_data();
+    return as_unaligned_span<int64_t>(
+        reinterpret_cast<unsigned char const *>(slow.data()) +
+            slow.size_bytes(),
+        n);
 }
 
 int64_t Node::subtrie_min_version(unsigned const index) const noexcept
 {
-    return unaligned_load<int64_t>(
-        child_min_version_data() + index * sizeof(int64_t));
+    return child_min_version_data()[index];
 }
 
 void Node::set_subtrie_min_version(
     unsigned const index, int64_t const min_version) noexcept
 {
-    std::memcpy(
-        child_min_version_data() + index * sizeof(int64_t),
-        &min_version,
-        sizeof(int64_t));
+    child_min_version_data()[index] = min_version;
 }
 
 unsigned char *Node::child_off_data() noexcept
 {
-    return child_min_version_data() + number_of_children() * sizeof(int64_t);
+    auto const versions = child_min_version_data();
+    return reinterpret_cast<unsigned char *>(versions.data()) +
+           versions.size_bytes();
 }
 
 unsigned char const *Node::child_off_data() const noexcept
 {
-    return child_min_version_data() + number_of_children() * sizeof(int64_t);
+    auto const versions = child_min_version_data();
+    return reinterpret_cast<unsigned char const *>(versions.data()) +
+           versions.size_bytes();
 }
 
 uint16_t Node::child_data_offset(unsigned const index) const noexcept
@@ -615,8 +624,8 @@ void serialize_node_to_buffer(
 int64_t calc_min_version(Node const &node)
 {
     int64_t min_version = node.version;
-    for (unsigned i = 0; i < node.number_of_children(); ++i) {
-        min_version = std::min(min_version, node.subtrie_min_version(i));
+    for (int64_t const v : node.child_min_version_data()) {
+        min_version = std::min(min_version, v);
     }
     return min_version;
 }

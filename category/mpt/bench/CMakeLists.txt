@@ -13,6 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+# benchmark calc_min_version
+add_executable(calc_min_version_bench "calc_min_version_bench.cpp")
+monad_compile_options(calc_min_version_bench)
+target_link_libraries(calc_min_version_bench PUBLIC monad_trie monad_async monad_core)
+
 # benchmark async reads
 add_executable(async_read_bench "async_read_bench.cpp")
 monad_compile_options(async_read_bench)

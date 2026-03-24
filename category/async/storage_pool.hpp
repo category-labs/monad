@@ -17,7 +17,7 @@
 
 #include <category/async/util.hpp>
 
-#include <category/async/detail/start_lifetime_as_polyfill.hpp>
+#include <category/core/detail/start_lifetime_as_polyfill.hpp>
 
 #include <atomic>
 #include <filesystem>

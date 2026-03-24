@@ -483,15 +483,20 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
     for (unsigned i = 0; i < node->number_of_children(); ++i) {
         new (node->child_ptr(i)) Node::SharedPtr();
     }
+    auto const orig_fast = orig->child_min_offset_fast_data();
+    auto const orig_slow = orig->child_min_offset_slow_data();
+    auto const orig_ver = orig->child_min_version_data();
+    auto const node_fast = node->child_min_offset_fast_data();
+    auto const node_slow = node->child_min_offset_slow_data();
+    auto const node_ver = node->child_min_version_data();
     for (unsigned j = 0; j < number_of_children; ++j) {
-        auto const &orig_j = orig_indexes[j];
+        auto const orig_j = orig_indexes[j];
         node->set_fnext(j, orig->fnext(orig_j));
-        node->set_min_offset_fast(j, orig->min_offset_fast(orig_j));
-        node->set_min_offset_slow(j, orig->min_offset_slow(orig_j));
-        MONAD_ASSERT(
-            orig->subtrie_min_version(orig_j) >=
-            aux.curr_upsert_auto_expire_version);
-        node->set_subtrie_min_version(j, orig->subtrie_min_version(orig_j));
+        node_fast[j] = orig_fast[orig_j];
+        node_slow[j] = orig_slow[orig_j];
+        auto const ver = orig_ver[orig_j];
+        MONAD_ASSERT(ver >= aux.curr_upsert_auto_expire_version);
+        node_ver[j] = ver;
         if (tnode->cache_mask & (1u << orig_j)) {
             node->set_next(j, orig->move_next(orig_j));
         }
@@ -1252,9 +1257,12 @@ void compact_(
         virtual_node_offset,
         compact_node.get_disk_size());
 
-    for (unsigned j = 0; j < compact_node.number_of_children(); ++j) {
+    unsigned const n = compact_node.number_of_children();
+    auto const fast = compact_node.child_min_offset_fast_data();
+    auto const slow = compact_node.child_min_offset_slow_data();
+    for (unsigned j = 0; j < n; ++j) {
         auto child_ptr = compact_node.move_next(j);
-        auto const child_min_offsets = compact_node.min_offsets(j);
+        compact_offset_pair const child_min_offsets{fast[j], slow[j]};
         if (sm.compact() && child_min_offsets.any_below(aux.compact_offsets)) {
             compact_(
                 aux,

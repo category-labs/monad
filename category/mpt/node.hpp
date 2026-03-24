@@ -241,15 +241,19 @@ public:
     void set_fnext(unsigned index, chunk_offset_t) noexcept;
 
     //! fastlist min_offset array
-    unsigned char *child_min_offset_fast_data() noexcept;
-    unsigned char const *child_min_offset_fast_data() const noexcept;
+    std::span<unaligned_t<compact_virtual_chunk_offset_t>>
+    child_min_offset_fast_data() noexcept;
+    std::span<unaligned_t<compact_virtual_chunk_offset_t> const>
+    child_min_offset_fast_data() const noexcept;
     compact_virtual_chunk_offset_t
     min_offset_fast(unsigned index) const noexcept;
     void set_min_offset_fast(
         unsigned index, compact_virtual_chunk_offset_t) noexcept;
     //! slowlist min_offset array
-    unsigned char *child_min_offset_slow_data() noexcept;
-    unsigned char const *child_min_offset_slow_data() const noexcept;
+    std::span<unaligned_t<compact_virtual_chunk_offset_t>>
+    child_min_offset_slow_data() noexcept;
+    std::span<unaligned_t<compact_virtual_chunk_offset_t> const>
+    child_min_offset_slow_data() const noexcept;
     compact_virtual_chunk_offset_t
     min_offset_slow(unsigned index) const noexcept;
     void set_min_offset_slow(
@@ -259,8 +263,9 @@ public:
     void set_min_offsets(unsigned index, compact_offset_pair) noexcept;
 
     //! subtrie min version array
-    unsigned char *child_min_version_data() noexcept;
-    unsigned char const *child_min_version_data() const noexcept;
+    std::span<unaligned_t<int64_t>> child_min_version_data() noexcept;
+    std::span<unaligned_t<int64_t> const>
+    child_min_version_data() const noexcept;
     int64_t subtrie_min_version(unsigned index) const noexcept;
     void set_subtrie_min_version(unsigned index, int64_t version) noexcept;
 

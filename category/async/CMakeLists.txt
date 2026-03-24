@@ -31,7 +31,6 @@ add_library(
   "connected_operation.hpp"
   "detail/connected_operation_storage.hpp"
   "detail/scope_polyfill.hpp"
-  "detail/start_lifetime_as_polyfill.hpp"
   "erased_connected_operation.hpp"
   "io.cpp"
   "io.hpp"

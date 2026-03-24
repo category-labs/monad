@@ -758,9 +758,12 @@ inline compact_offset_pair calc_min_offsets(
         auto &r = node_virtual_offset.in_fast_list() ? ret.fast : ret.slow;
         r = compact_virtual_chunk_offset_t{node_virtual_offset};
     }
-    for (unsigned i = 0; i < node.number_of_children(); ++i) {
-        ret.fast = std::min(ret.fast, node.min_offset_fast(i));
-        ret.slow = std::min(ret.slow, node.min_offset_slow(i));
+    unsigned const n = node.number_of_children();
+    auto const fast = node.child_min_offset_fast_data();
+    auto const slow = node.child_min_offset_slow_data();
+    for (unsigned i = 0; i < n; ++i) {
+        ret.fast = std::min<compact_virtual_chunk_offset_t>(ret.fast, fast[i]);
+        ret.slow = std::min<compact_virtual_chunk_offset_t>(ret.slow, slow[i]);
     }
     return ret;
 }

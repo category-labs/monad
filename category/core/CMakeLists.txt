@@ -110,6 +110,7 @@ add_library(
   "srcloc.h"
   "tl_tid.c"
   "tl_tid.h"
+  "detail/start_lifetime_as_polyfill.hpp"
   "lru/lru_cache.hpp"
   "lru/static_lru_cache.hpp"
   "mem/batch_mem_pool.hpp"

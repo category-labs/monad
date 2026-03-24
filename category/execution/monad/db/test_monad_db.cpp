@@ -74,8 +74,6 @@ TEST(MonadDb, key_grouping)
 // must be present in the same page.
 TEST(MonadDb, page_write_merges_slots)
 {
-    using MonadCache = PageStorageBroker;
-
     constexpr auto slot_key_0 = bytes32_t{0x00};
     constexpr auto slot_key_1 = bytes32_t{0x01};
     constexpr auto val_0 =
@@ -92,8 +90,8 @@ TEST(MonadDb, page_write_merges_slots)
 
     // Block 0: seed two slots on the same page.
     {
-        MonadCache cache{tdb};
-        MonadCommitBuilder builder(0, cache);
+        PageStorageBroker broker{tdb};
+        MonadCommitBuilder builder(0, broker);
         builder.add_state_deltas(StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -106,18 +104,18 @@ TEST(MonadDb, page_write_merges_slots)
     }
 
     // Block 1: update slot 0, leave slot 1 untouched.
-    // The cache reads the existing page (both slots), the commit builder
+    // The broker reads the existing page (both slots), the commit builder
     // merges the delta on top, so the resulting page keeps both values.
     {
-        MonadCache cache{tdb};
+        PageStorageBroker broker{tdb};
 
-        // Populate cache by reading through it.
+        // Populate broker by reading through it.
         ASSERT_EQ(
-            cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), val_0);
+            broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), val_0);
         ASSERT_EQ(
-            cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
+            broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
 
-        MonadCommitBuilder builder(1, cache);
+        MonadCommitBuilder builder(1, broker);
         builder.add_state_deltas(StateDeltas{
             {ADDR_A,
              StateDelta{
@@ -128,12 +126,13 @@ TEST(MonadDb, page_write_merges_slots)
         tdb.reset_root(std::move(root), 1);
     }
 
-    // Verify: fresh cache reads back both values from the committed page.
-    MonadCache cache{tdb};
+    // Verify: fresh broker reads back both values from the committed page.
+    PageStorageBroker broker{tdb};
     EXPECT_EQ(
-        cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0),
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0),
         val_0_updated);
-    EXPECT_EQ(cache.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
+    EXPECT_EQ(
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
 }
 
 TEST(MonadDb, page_commit_deterministic)

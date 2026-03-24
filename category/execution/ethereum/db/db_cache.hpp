@@ -45,26 +45,6 @@ class DbCache final : public Db
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
 
-    struct StorageKey
-    {
-        static constexpr size_t k_bytes =
-            sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
-        uint8_t bytes[k_bytes];
-
-        StorageKey() = default;
-
-        StorageKey(
-            Address const &addr, Incarnation incarnation, bytes32_t const &key)
-        {
-            memcpy(bytes, addr.bytes, sizeof(Address));
-            memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
-            memcpy(
-                &bytes[sizeof(Address) + sizeof(Incarnation)],
-                key.bytes,
-                sizeof(bytes32_t));
-        }
-    };
-
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using StorageCache = MemoryBoundLruCache<StorageKey, StorageKeyHashCompare>;
 

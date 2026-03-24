@@ -19,10 +19,35 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
+#include <cstring>
+
 MONAD_NAMESPACE_BEGIN
+
+struct StorageKey
+{
+    static constexpr size_t k_bytes =
+        sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
+
+    uint8_t bytes[k_bytes];
+
+    StorageKey() = default;
+
+    StorageKey(
+        Address const &addr, Incarnation incarnation, bytes32_t const &key)
+    {
+        memcpy(bytes, addr.bytes, sizeof(Address));
+        memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
+        memcpy(
+            &bytes[sizeof(Address) + sizeof(Incarnation)],
+            key.bytes,
+            sizeof(bytes32_t));
+    }
+};
 
 // ── Shared RLP layer ────────────────────────────────────────────────
 //

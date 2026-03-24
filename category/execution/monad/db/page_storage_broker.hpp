@@ -28,42 +28,19 @@
 
 #include <tbb/concurrent_hash_map.h>
 
-#include <cstring>
-
 MONAD_NAMESPACE_BEGIN
 
 class PageStorageBroker final : public StorageBroker
 {
 public:
-    struct PageKey
-    {
-        static constexpr size_t k_bytes =
-            sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
-
-        uint8_t bytes[k_bytes];
-
-        PageKey() = default;
-
-        PageKey(
-            Address const &addr, Incarnation incarnation,
-            bytes32_t const &page_key)
-        {
-            memcpy(bytes, addr.bytes, sizeof(Address));
-            memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
-            memcpy(
-                &bytes[sizeof(Address) + sizeof(Incarnation)],
-                page_key.bytes,
-                sizeof(bytes32_t));
-        }
-    };
-
+    using PageKey = StorageKey;
     using PageKeyHashCompare = BytesHashCompare<PageKey>;
     using PageMap =
         tbb::concurrent_hash_map<PageKey, storage_page_t, PageKeyHashCompare>;
 
-    PageMap &pages()
+    size_t page_count() const
     {
-        return pages_;
+        return pages_.size();
     }
 
 private:
@@ -76,17 +53,26 @@ public:
     {
     }
 
-    Db &db() override
-    {
-        return db_;
-    }
-
     bytes32_t read_storage(
         Address const &addr, Incarnation inc, bytes32_t const &key) override
     {
         auto const page_key = compute_page_key(key);
         auto const slot_offset = compute_slot_offset(key);
-        return read_storage_page(addr, inc, page_key)[slot_offset];
+        PageKey const pk{addr, inc, page_key};
+
+        {
+            PageMap::const_accessor acc;
+            if (pages_.find(acc, pk)) {
+                return acc->second[slot_offset];
+            }
+        }
+
+        PageMap::accessor acc;
+        if (pages_.insert(acc, pk)) {
+            acc->second =
+                decode_storage_page(db_.read_storage(addr, inc, page_key));
+        }
+        return acc->second[slot_offset];
     }
 
     storage_page_t read_storage_page(

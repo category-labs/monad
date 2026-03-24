@@ -27,8 +27,6 @@ MONAD_NAMESPACE_BEGIN
 
 struct StorageBroker
 {
-    virtual Db &db() = 0;
-
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
 
@@ -43,11 +41,6 @@ public:
     explicit SlotStorageBroker(Db &db)
         : db_{db}
     {
-    }
-
-    Db &db() override
-    {
-        return db_;
     }
 
     bytes32_t read_storage(

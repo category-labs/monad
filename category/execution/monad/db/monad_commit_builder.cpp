@@ -44,8 +44,9 @@ std::unique_ptr<CommitBuilder> make_commit_builder(
     monad_revision const rev)
 {
     if (rev >= MONAD_NEXT) {
-        return std::make_unique<MonadCommitBuilder>(
-            block_number, static_cast<PageStorageBroker &>(broker));
+        auto *page_broker = dynamic_cast<PageStorageBroker *>(&broker);
+        MONAD_ASSERT(page_broker);
+        return std::make_unique<MonadCommitBuilder>(block_number, *page_broker);
     }
     return std::make_unique<CommitBuilder>(block_number);
 }

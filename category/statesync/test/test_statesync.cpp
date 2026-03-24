@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
@@ -1354,4 +1355,19 @@ TEST_F(StateSyncFixture, validation_old_target_greater_than_target)
     client.rqs.push_back(rq);
     monad_statesync_server_run_once(server);
     EXPECT_FALSE(client.success);
+}
+
+TEST(ProtocolValidation, storage_deletion_rejects_oversized_key)
+{
+    StatesyncProtocolV1 proto;
+
+    Address a{0xdeadbeef};
+    byte_string oversized_key(33, 0xff);
+
+    byte_string buf{};
+    buf += to_byte_string_view(a.bytes);
+    buf += rlp::encode_string2(oversized_key);
+
+    EXPECT_FALSE(proto.handle_upsert(
+        nullptr, SYNC_TYPE_UPSERT_STORAGE_DELETE, buf.data(), buf.size()));
 }

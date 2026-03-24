@@ -216,15 +216,15 @@ set(VM_DATA_DIR "${PROJECT_SOURCE_DIR}/test/vm/data")
 configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 
 set(TOP_CURRENT_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-function(monad_add_test2 target)
-  cmake_parse_arguments(AT2 "NO_CUSTOM_MAIN" "" "PROPERTIES" ${ARGN})
-  if(AT2_NO_CUSTOM_MAIN)
-    add_executable(${target} ${AT2_UNPARSED_ARGUMENTS})
+function(monad_add_test target)
+  cmake_parse_arguments(AT "NO_CUSTOM_MAIN" "" "PROPERTIES" ${ARGN})
+  if(AT_NO_CUSTOM_MAIN)
+    add_executable(${target} ${AT_UNPARSED_ARGUMENTS})
   else()
     add_executable(
       ${target}
       "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/src/test/main.cpp"
-      ${AT2_UNPARSED_ARGUMENTS})
+      ${AT_UNPARSED_ARGUMENTS})
     target_include_directories(
       ${target}
       PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/include")
@@ -239,7 +239,7 @@ function(monad_add_test2 target)
     PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
                UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1 ENVIRONMENT
                TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer
-               ${AT2_PROPERTIES})
+               ${AT_PROPERTIES})
 endfunction()
 
 function(monad_add_test_folder target)
@@ -251,7 +251,7 @@ function(monad_add_test_folder target)
   endif()
   foreach(test_file ${test_files})
     get_filename_component(test_name ${test_file} NAME_WLE)
-    monad_add_test2(${test_name} ${test_file})
+    monad_add_test(${test_name} ${test_file})
   endforeach()
 endfunction()
 

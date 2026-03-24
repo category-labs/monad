@@ -162,7 +162,7 @@ Fixpoint knuth_sub_loop (u_seg : words) (q_hat : U128.t) (vs : words)
   | vj :: vs_rest =>
       let prod := q_hat * widen vj in
       let t := widen (get_word u_seg j) - k - widen (trunc prod) in
-      let k' := widen (hi prod) - signed_hi t in
+      let k' := widen (hi prod) - U128.asr t (Pos.to_nat U64.width) in
       knuth_sub_loop (set_word u_seg j (trunc t)) q_hat vs_rest (S j) k'
   end.
 

@@ -58,6 +58,11 @@ Module Type UintOps.
   Parameter shl : t -> nat -> t.
   Parameter shr : t -> nat -> t.
 
+  (** *** Arithmetic right shift
+      Like [shr] but sign-extends from the MSB.
+      Models C++ signed right-shift on two's complement values. *)
+  Parameter asr : t -> nat -> t.
+
   (** *** Bitwise OR *)
   Parameter or : t -> t -> t.
 
@@ -152,9 +157,16 @@ Module Type Uint <: UintOps.
   Axiom spec_shr : forall x n,
     to_Z (shr x n) = Z.shiftr (to_Z x) (Z.of_nat n) mod base width.
 
+  (** Arithmetic right shift specification.
+      Interprets [x] as a signed two's complement value, shifts right
+      by [n], and wraps the result back to [0, wB). *)
+  Axiom spec_asr : forall x n,
+    to_Z (asr x n) =
+      Z.shiftr (to_Z x - (if to_Z x <? base width / 2 then 0 else base width))
+               (Z.of_nat n)
+      mod base width.
+
   (** Bitwise OR specification *)
-  Axiom spec_orw : forall x y,
-    to_Z (orw x y) = Z.lor (to_Z x) (to_Z y) mod base width.
   Axiom spec_or : forall x y,
     to_Z (or x y) = Z.lor (to_Z x) (to_Z y) mod base width.
 
@@ -226,12 +238,6 @@ Module Type UintWidenOps (N : UintOps) (W : UintOps).
       Models: [(wide_t)h << narrow_width | (wide_t)l] in C++. *)
   Parameter combine : N.t -> N.t -> W.t.
 
-  (** Signed arithmetic right-shift by the narrow width.
-      Models: [(wide_t)((signed_wide_t)x >> narrow_width)] in C++.
-      If the MSB of [x] is set, the result is sign-extended;
-      otherwise it is zero-extended. *)
-  Parameter signed_hi : W.t -> W.t.
-
 End UintWidenOps.
 
 (** ** Double-width bridge — specification layer *)
@@ -250,18 +256,6 @@ Module Type UintWiden (N : Uint) (W : Uint).
 
   Axiom spec_combine : forall h l,
     W.to_Z (combine h l) = N.to_Z h * base N.width + N.to_Z l.
-
-  (** [signed_hi] interprets the wide value as a signed integer
-      and arithmetic-right-shifts by the narrow width.  When
-      [x >= 2^(W.width - 1)] (i.e., MSB set), the high half is
-      filled with all-ones; otherwise it equals [hi x] zero-extended. *)
-  Axiom spec_signed_hi : forall x,
-    W.to_Z (signed_hi x) =
-      let v := W.to_Z x in
-      let half := base N.width in
-      if v <? base W.width / 2
-      then v / half
-      else v / half - base N.width.
 
 End UintWiden.
 

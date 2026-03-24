@@ -30,6 +30,20 @@ namespace monad::vm
         friend class VM;
 
     public:
+        struct PageSstoreResult
+        {
+            bool write_page_cold;
+            bool exceeded_max;
+        };
+
+        // Page-level SSTORE tracking. Only called under page_gas_active.
+        virtual PageSstoreResult update_page_tracking(
+            evmc::address const &, evmc::bytes32 const &,
+            evmc_storage_status) noexcept
+        {
+            std::abort();
+        }
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept

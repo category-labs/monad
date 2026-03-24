@@ -164,6 +164,11 @@ public:
 
     evmc_access_status access_storage(Address const &, bytes32_t const &key);
 
+    using PageSstoreResult = PageTracker::Result;
+
+    PageSstoreResult update_page_tracking(
+        Address const &, bytes32_t const &page_key, evmc_storage_status status);
+
     ////////////////////////////////////////
 
     template <Traits traits>

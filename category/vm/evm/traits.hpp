@@ -104,6 +104,11 @@ namespace monad
             return Rev >= EVMC_OSAKA;
         }
 
+        static consteval bool page_gas_active() noexcept
+        {
+            return false;
+        }
+
         static consteval bool mip_3_active() noexcept
         {
             return false;
@@ -224,13 +229,43 @@ namespace monad
 
         // Pricing version 1 activates the changes in:
         // Monad specification §4: Opcode Gas Costs and Gas Refunds
+        // Pricing version 2 activates page-level storage gas scheduling.
         static consteval uint8_t monad_pricing_version() noexcept
         {
+            if constexpr (Rev >= MONAD_NEXT) {
+                return 2;
+            }
             if constexpr (Rev >= MONAD_SEVEN) {
                 return 1;
             }
 
             return 0;
+        }
+
+        static consteval bool page_gas_active() noexcept
+        {
+            return monad_pricing_version() >= 2;
+        }
+
+        // TODO: finalize page gas constants
+        static consteval int64_t base_sload_cost() noexcept
+        {
+            return 100;
+        }
+
+        static consteval int64_t base_sstore_cost() noexcept
+        {
+            return 100;
+        }
+
+        static consteval int64_t page_write_cost() noexcept
+        {
+            return 5000;
+        }
+
+        static consteval int64_t new_slot_cost() noexcept
+        {
+            return 20000;
         }
 
         static consteval size_t max_code_size() noexcept

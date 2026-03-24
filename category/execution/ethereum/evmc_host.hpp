@@ -101,6 +101,10 @@ public:
     virtual void set_transient_storage(
         Address const &, evmc::bytes32 const &key,
         evmc::bytes32 const &value) noexcept override;
+
+    PageSstoreResult update_page_tracking(
+        Address const &, evmc::bytes32 const &page_key,
+        evmc_storage_status) noexcept override;
 };
 
 static_assert(sizeof(EvmcHostBase) == 64);

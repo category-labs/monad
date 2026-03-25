@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/hex.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -21,7 +22,6 @@
 #include <category/vm/llvm/llvm.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
-#include <category/vm/utils/evmc_utils.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -94,7 +94,7 @@ namespace monad::vm::llvm
         }
 
         auto const *isq = std::getenv("MONAD_VM_LLVM_DEBUG");
-        auto code_hash_str = monad::vm::utils::hex_string(code_hash);
+        auto code_hash_str = to_hex(code_hash);
         std::string const hash_str =
             std::format(".{}.{}", (int)rev, code_hash_str);
         std::string const dbg_nm = isq ? "t" + hash_str : "";

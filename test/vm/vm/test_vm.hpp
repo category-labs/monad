@@ -52,9 +52,7 @@ public:
     };
 
     template <typename V>
-    using CodeMap = std::unordered_map<
-        evmc::bytes32, V, monad::vm::utils::Hash32Hash,
-        monad::vm::utils::Bytes32Equal>;
+    using CodeMap = std::unordered_map<evmc::bytes32, V>;
 
     BlockchainTestVM(
         Implementation impl,

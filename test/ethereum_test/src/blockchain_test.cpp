@@ -60,7 +60,6 @@
 #include <category/mpt/nibbles_view.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/utils/evmc_utils.hpp>
 
 #include <monad/test/config.hpp>
 

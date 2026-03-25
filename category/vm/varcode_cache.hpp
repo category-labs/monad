@@ -16,7 +16,6 @@
 #pragma once
 
 #include <category/vm/code.hpp>
-#include <category/vm/utils/evmc_utils.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
 #include <span>
@@ -31,8 +30,7 @@ namespace monad::vm
         static constexpr std::uint32_t default_warm_cache_kb =
             (3 * default_max_cache_kb) / 4; // ~75%
 
-        using WeightCache = utils::LruWeightCache<
-            evmc::bytes32, SharedVarcode, utils::Hash32Compare>;
+        using WeightCache = utils::LruWeightCache<evmc::bytes32, SharedVarcode>;
 
     public:
         explicit VarcodeCache(

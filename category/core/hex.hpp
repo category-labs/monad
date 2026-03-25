@@ -141,6 +141,14 @@ std::string to_hex(uint8_t byte);
 /// prefix).
 std::string to_hex(byte_string_view bytes);
 
+/// Encode a FixedBytes type (e.g. Address, Hash) as a contiguous lowercase
+/// hex string (no "0x" prefix), by delegating to the byte_string_view overload.
+template <FixedBytes T>
+std::string to_hex(T const &value)
+{
+    return to_hex(byte_string_view{value.bytes, sizeof(value)});
+}
+
 namespace literals
 {
     /// User-defined literal for hex-encoded byte strings: `0xdeadbeef_bytes`.

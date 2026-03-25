@@ -18,12 +18,12 @@
 #include <test_state.hpp>
 #include <test_vm.hpp>
 
+#include <category/core/hex.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/switch_traits.hpp>
 
-#include <category/vm/utils/evmc_utils.hpp>
 #include <category/vm/vm.hpp>
 
 #ifdef MONAD_COMPILER_LLVM
@@ -202,7 +202,7 @@ BlockchainTestVM::get_intercode_nativecode(
         std::ostringstream file(std::ostringstream::ate);
         file.str(debug_dir_);
         file << '/';
-        file << monad::vm::utils::hex_string(code_hash);
+        file << to_hex(code_hash);
         native::CompilerConfig config{base_config};
         auto asm_log_path = file.str();
         config.asm_log_path = asm_log_path.c_str();
@@ -273,9 +273,8 @@ evmc::Result BlockchainTestVM::execute_compiler(
         get_intercode_nativecode(rev, code_hash, code, code_size);
 
     if (base_config.runtime_debug_trace) {
-        std::cout << "Address " << vm::utils::hex_string(msg->code_address)
-                  << " => Hash " << vm::utils::hex_string(code_hash)
-                  << std::endl;
+        std::cout << "Address " << to_hex(msg->code_address) << " => Hash "
+                  << to_hex(code_hash) << std::endl;
     }
 
     MONAD_VM_ASSERT(ncode->entrypoint() != nullptr)

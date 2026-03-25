@@ -145,8 +145,7 @@ namespace monad::vm
                 std::function<SharedNativecode(
                     evmc::bytes32 const &, SharedIntercode const &,
                     CompilerConfig const &)>,
-                uint64_t, SharedIntercode, CompilerConfig>,
-            utils::Hash32Compare>;
+                uint64_t, SharedIntercode, CompilerConfig>>;
         using CompileJobAccessor = CompileJobMap::accessor;
         using CompileJobQueue = tbb::concurrent_queue<evmc::bytes32>;
 

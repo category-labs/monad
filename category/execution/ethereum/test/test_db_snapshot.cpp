@@ -31,6 +31,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 
 namespace
 {
@@ -39,13 +40,19 @@ namespace
         int fd;
         std::string path;
 
-        TempDb()
+        TempDb(monad::mpt::StorageFormat fmt =
+                   monad::mpt::StorageFormat::SlotCompact)
             : fd{MONAD_ASYNC_NAMESPACE::make_temporary_inode()}
             , path{"/proc/self/fd/" + std::to_string(fd)}
         {
             MONAD_ASSERT(
                 -1 !=
                 ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
+            monad::OnDiskMachine machine;
+            monad::mpt::Db const db{
+                machine,
+                monad::mpt::OnDiskDbConfig{
+                    .storage_format = fmt, .dbname_paths = {path}}};
         }
 
         TempDb(TempDb const &) = delete;
@@ -143,7 +150,9 @@ TEST(DbBinarySnapshot, Basic)
     {
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
-                snapshot_dir.path.c_str(), 100);
+                snapshot_dir.path.c_str(),
+                100,
+                static_cast<uint8_t>(mpt::StorageFormat::SlotCompact));
         char const *dbname_paths[] = {src_db.path.c_str()};
         EXPECT_TRUE(monad_db_dump_snapshot(
             dbname_paths,
@@ -264,7 +273,9 @@ TEST(DbBinarySnapshot, MultipleShards)
 
             auto *const context =
                 monad_db_snapshot_filesystem_write_user_context_create(
-                    shard_root.c_str(), 100);
+                    shard_root.c_str(),
+                    100,
+                    static_cast<uint8_t>(mpt::StorageFormat::SlotCompact));
             char const *dbname_paths[] = {src_db.path.c_str()};
             EXPECT_TRUE(monad_db_dump_snapshot(
                 dbname_paths,
@@ -341,5 +352,89 @@ TEST(DbBinarySnapshot, MultipleShards)
                 byte_string_view(from_db->code(), from_db->size()),
                 byte_string_view(icode->code(), icode->size()));
         }
+    }
+}
+
+TEST(DbBinarySnapshot, StorageFormatWrittenToSnapshot)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    TempDb const src_db{StorageFormat::SlotCompact};
+    TempDir const snapshot_dir;
+    {
+        OnDiskMachine machine;
+        mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        Node::SharedPtr root{};
+        root = load_header(std::move(root), db, BlockHeader{.number = 0});
+        db.update_finalized_version(0);
+        TrieDb tdb{db};
+        test::commit_simple(
+            tdb, StateDeltas{}, Code{}, bytes32_t{1},
+            BlockHeader{.number = 1});
+        tdb.finalize(1, bytes32_t{1});
+    }
+    {
+        auto *const context =
+            monad_db_snapshot_filesystem_write_user_context_create(
+                snapshot_dir.path.c_str(),
+                1,
+                static_cast<uint8_t>(StorageFormat::SlotCompact));
+        char const *paths[] = {src_db.path.c_str()};
+        EXPECT_TRUE(monad_db_dump_snapshot(
+            paths, 1, static_cast<unsigned>(-1), 1,
+            monad_db_snapshot_write_filesystem, context, 2048, 1, 0));
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
+    }
+
+    auto const fmt_path = snapshot_dir.path / "1" / "storage_format";
+    ASSERT_TRUE(std::filesystem::exists(fmt_path));
+    {
+        std::ifstream f(fmt_path);
+        std::string content;
+        f >> content;
+        EXPECT_EQ(content, "slots");
+    }
+}
+
+TEST(DbBinarySnapshot, StorageFormatSnapshotPages)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    TempDb const src_db{StorageFormat::PageCOO};
+    TempDir const snapshot_dir;
+    {
+        OnDiskMachine machine;
+        mpt::Db db{machine, OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        Node::SharedPtr root{};
+        root = load_header(std::move(root), db, BlockHeader{.number = 0});
+        db.update_finalized_version(0);
+        TrieDb tdb{db};
+        test::commit_simple(
+            tdb, StateDeltas{}, Code{}, bytes32_t{1},
+            BlockHeader{.number = 1});
+        tdb.finalize(1, bytes32_t{1});
+    }
+    {
+        auto *const context =
+            monad_db_snapshot_filesystem_write_user_context_create(
+                snapshot_dir.path.c_str(),
+                1,
+                static_cast<uint8_t>(StorageFormat::PageCOO));
+        char const *paths[] = {src_db.path.c_str()};
+        EXPECT_TRUE(monad_db_dump_snapshot(
+            paths, 1, static_cast<unsigned>(-1), 1,
+            monad_db_snapshot_write_filesystem, context, 2048, 1, 0));
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
+    }
+
+    auto const fmt_path = snapshot_dir.path / "1" / "storage_format";
+    ASSERT_TRUE(std::filesystem::exists(fmt_path));
+    {
+        std::ifstream f(fmt_path);
+        std::string content;
+        f >> content;
+        EXPECT_EQ(content, "pages");
     }
 }

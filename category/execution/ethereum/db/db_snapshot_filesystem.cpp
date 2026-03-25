@@ -59,7 +59,7 @@ struct monad_db_snapshot_filesystem_write_user_context
 
 monad_db_snapshot_filesystem_write_user_context *
 monad_db_snapshot_filesystem_write_user_context_create(
-    char const *const root, uint64_t const block)
+    char const *const root, uint64_t const block, uint8_t const storage_format)
 {
     std::filesystem::path const snapshot{
         std::filesystem::path{root} / std::to_string(block)};
@@ -67,6 +67,10 @@ monad_db_snapshot_filesystem_write_user_context_create(
         std::filesystem::create_directories(snapshot),
         "snapshot failed, %s already exists!",
         snapshot.c_str());
+    {
+        std::ofstream f(snapshot / "storage_format", std::ios::out);
+        f << (storage_format == 1 ? "pages" : "slots");
+    }
     return new monad_db_snapshot_filesystem_write_user_context{snapshot};
 }
 
@@ -129,8 +133,23 @@ void monad_db_snapshot_load_filesystem(
 {
     std::filesystem::path const root{std::format("{}/{}", snapshot_dir, block)};
     MONAD_ASSERT(std::filesystem::is_directory(root));
+
+    // Read source storage format from snapshot (missing = slots)
+    uint8_t source_format = 0;
+    {
+        auto const fmt_path = root / "storage_format";
+        if (std::filesystem::exists(fmt_path)) {
+            std::ifstream f(fmt_path);
+            std::string content;
+            f >> content;
+            if (content == "pages") {
+                source_format = 1;
+            }
+        }
+    }
+
     monad_db_snapshot_loader *const loader = monad_db_snapshot_loader_create(
-        block, dbname_paths, len, sq_thread_cpu);
+        block, dbname_paths, len, sq_thread_cpu, source_format);
 
     auto const do_mmap = [](std::filesystem::path const file) {
         using namespace monad;
@@ -169,6 +188,9 @@ void monad_db_snapshot_load_filesystem(
     };
 
     for (auto const &dir : std::filesystem::directory_iterator{root}) {
+        if (!dir.is_directory()) {
+            continue;
+        }
         uint64_t const shard = std::stoull(dir.path().stem());
         auto const [eth_header_fd, eth_header, eth_header_len] =
             do_mmap(dir.path() / "eth_header");

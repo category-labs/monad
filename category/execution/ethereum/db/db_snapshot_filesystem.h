@@ -24,9 +24,10 @@ extern "C"
 
 struct monad_db_snapshot_filesystem_write_user_context;
 
+// storage_format: 0 = slots, 1 = pages
 struct monad_db_snapshot_filesystem_write_user_context *
 monad_db_snapshot_filesystem_write_user_context_create(
-    char const *root, uint64_t block);
+    char const *root, uint64_t block, uint8_t storage_format);
 
 void monad_db_snapshot_filesystem_write_user_context_destroy(
     struct monad_db_snapshot_filesystem_write_user_context *);

@@ -182,7 +182,7 @@ Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, DbCache &db,
-    MachineBase &machine, vm::VM &vm, fiber::PriorityPool &priority_pool,
+    MachineBase &, vm::VM &vm, fiber::PriorityPool &priority_pool,
     bool const is_first_block, bool const enable_tracing,
     BlockCache &block_cache)
 {
@@ -328,10 +328,6 @@ Result<BlockExecOutput> propose_block(
     if (block.withdrawals.has_value()) {
         builder->add_withdrawals(block.withdrawals.value());
     }
-    machine.set_storage_format(
-        traits::monad_rev() >= MONAD_NEXT
-            ? MachineBase::StorageFormat::PageCOO
-            : MachineBase::StorageFormat::SlotCompact);
     db.commit(block_id, *builder, block.header, *state, [&](BlockHeader &h) {
         // second stage: populate block header
         h.receipts_root = db.receipts_root();

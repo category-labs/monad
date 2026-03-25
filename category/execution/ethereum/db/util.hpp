@@ -67,25 +67,11 @@ struct MachineBase : public mpt::StateMachine
         CallFrame,
     };
 
-    enum class StorageFormat : uint8_t
-    {
-        SlotCompact,
-        PageCOO,
-    };
+    using StorageFormat = mpt::StorageFormat;
 
     uint8_t depth{0};
     TrieType trie_section{TrieType::Undefined};
     TableType table{TableType::Prefix};
-
-    void set_storage_format(StorageFormat fmt)
-    {
-        storage_format_ = fmt;
-    }
-
-    StorageFormat storage_format() const
-    {
-        return storage_format_;
-    }
 
     virtual mpt::Compute &get_compute() const override;
     virtual void down(unsigned char const nibble) override;
@@ -97,12 +83,9 @@ struct MachineBase : public mpt::StateMachine
     {
         return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
     }
-
-private:
-    StorageFormat storage_format_{StorageFormat::SlotCompact};
 };
 
-static_assert(sizeof(MachineBase) == 16);
+static_assert(sizeof(MachineBase) == 24);
 static_assert(alignof(MachineBase) == 8);
 
 struct InMemoryMachine final : public MachineBase

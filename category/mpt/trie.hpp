@@ -259,16 +259,18 @@ public:
     // on-disk
     explicit UpdateAuxImpl(
         MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
-        std::optional<uint64_t> const history_len = {})
+        std::optional<uint64_t> const history_len = {},
+        StorageFormat storage_format = StorageFormat::SlotCompact)
     {
-        set_io(io_, history_len);
+        set_io(io_, history_len, storage_format);
     }
 
     virtual ~UpdateAuxImpl();
 
     void set_io(
         MONAD_ASYNC_NAMESPACE::AsyncIO &,
-        std::optional<uint64_t> history_length = {});
+        std::optional<uint64_t> history_length = {},
+        StorageFormat storage_format = StorageFormat::SlotCompact);
 
     void unset_io();
 
@@ -594,8 +596,9 @@ public:
     // on-disk
     explicit UpdateAux(
         MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
-        std::optional<uint64_t> const history_len = {})
-        : UpdateAuxImpl(io_, history_len)
+        std::optional<uint64_t> const history_len = {},
+        StorageFormat storage_format = StorageFormat::SlotCompact)
+        : UpdateAuxImpl(io_, history_len, storage_format)
     {
     }
 

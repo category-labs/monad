@@ -161,6 +161,7 @@ public:
 
     bool is_on_disk() const;
     bool is_read_only() const;
+    StorageFormat storage_format() const;
 };
 
 // The following are not threadsafe. Please use async get from the RODb owning

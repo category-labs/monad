@@ -59,6 +59,7 @@ add_library(
   "ondisk_db_config.hpp"
   "request.hpp"
   "read_node_blocking.cpp"
+  "state_machine.cpp"
   "state_machine.hpp"
   "traverse.hpp"
   "traverse_util.hpp"

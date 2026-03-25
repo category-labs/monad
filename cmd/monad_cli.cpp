@@ -881,12 +881,14 @@ int main(int argc, char *argv[])
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
     quill::flush();
 
+    auto db_storage_format = mpt::StorageFormat::SlotCompact;
     {
         fmt::println("Opening read only database {}.", dbname_paths);
         ReadOnlyOnDiskDbConfig const ro_config{
             .sq_thread_cpu = sq_thread_cpu, .dbname_paths = dbname_paths};
         AsyncIOContext io_ctx{ro_config};
         Db ro_db{io_ctx};
+        db_storage_format = ro_db.storage_format();
         fmt::println(
             "db summary: earliest_block_id={} latest_block_id={} "
             "latest_finalized_block_id={} last_verified_block_id={} "
@@ -911,7 +913,9 @@ int main(int argc, char *argv[])
 
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
-                dump_binary_snapshot.value().c_str(), version);
+                dump_binary_snapshot.value().c_str(),
+                version,
+                static_cast<uint8_t>(db_storage_format));
         std::vector<char const *> c_dbname_paths;
         for (auto const &path : dbname_paths) {
             c_dbname_paths.emplace_back(path.c_str());

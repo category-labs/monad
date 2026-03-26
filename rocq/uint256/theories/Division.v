@@ -51,9 +51,9 @@ Fixpoint long_div_fold (us : words) (v : U64.t) (rem : U64.t) : long_div_result 
   match us with
   | [] => mk_long_div_result [] rem
   | u :: rest =>
-      let (quot,rem) := U64.div rem u v in
-      let rec_result := long_div_fold rest v rem in
-      mk_long_div_result (quot :: ld_quot rec_result) (ld_rem rec_result)
+      let r := U64.div rem u v in
+      let rec_result := long_div_fold rest v (snd r) in
+      mk_long_div_result (fst r :: ld_quot rec_result) (ld_rem rec_result)
   end.
 
 (** long_div: divide word list by single word.

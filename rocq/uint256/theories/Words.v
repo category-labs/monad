@@ -45,14 +45,6 @@ Definition extend_words (n : nat) : words := repeat 0 n.
 
 End Make.
 
-(** The number of bits needed to represent an n-word number *)
-(* Replace occurrences with width from UintOps module *)
-Definition words_bits (n : nat) : Z := Z.of_nat n * 64.
-
-(** Modulus for an n-word number *)
-(* TODO: Replace occurrences with base width from UintOps module *)
-Definition modulus_words (n : nat) : Z := 2 ^ (words_bits n).
-
 (* TODO: Marked for removal once dependencies on uint256 have been
    revised. *)
 (*

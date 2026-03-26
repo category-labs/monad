@@ -31,13 +31,11 @@ using namespace monad::mpt;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-bytes32_t read_storage(
+byte_string read_storage(
     monad_statesync_client_context &ctx, Address const &addr,
     bytes32_t const &key)
 {
-    // TODO: add page path when statesync machine supports monad_revision
-    return decode_storage_eth(
-        ctx.tdb.read_storage(addr, Incarnation{0, 0}, key));
+    return ctx.tdb.read_storage(addr, Incarnation{0, 0}, key);
 }
 
 void account_update(
@@ -99,7 +97,7 @@ void account_update(
 
 void storage_update(
     monad_statesync_client_context &ctx, Address const &addr,
-    bytes32_t const &key, bytes32_t const &val)
+    bytes32_t const &key, byte_string val)
 {
     using StorageDeltas = monad_statesync_client_context::StorageDeltas;
 
@@ -108,7 +106,7 @@ void storage_update(
 
     if (ctx.buffered.contains(addr)) {
         MONAD_ASSERT(!ctx.tdb.read_account(addr).has_value() && !updated);
-        if (val == bytes32_t{}) {
+        if (val.empty()) {
             ctx.buffered[addr].erase(key);
             if (ctx.buffered[addr].empty()) {
                 ctx.buffered.erase(addr);
@@ -117,46 +115,48 @@ void storage_update(
         else {
             auto const sit = ctx.buffered[addr].find(key);
             if (sit != ctx.buffered[addr].end()) {
-                sit->second = val;
+                sit->second = std::move(val);
             }
             else {
-                MONAD_ASSERT(ctx.buffered[addr].emplace(key, val).second);
+                MONAD_ASSERT(
+                    ctx.buffered[addr].emplace(key, std::move(val)).second);
             }
         }
     }
-    else if (
-        val != bytes32_t{} || read_storage(ctx, addr, key) != bytes32_t{}) {
+    else if (!val.empty() || !read_storage(ctx, addr, key).empty()) {
         if (updated) {
             if (it->second.has_value()) {
-                std::get<StorageDeltas>(it->second.value())[key] = val;
+                std::get<StorageDeltas>(it->second.value())[key] =
+                    std::move(val);
             }
             // incarnation
-            else if (val != bytes32_t{}) {
+            else if (!val.empty()) {
                 ctx.commit();
-                storage_update(ctx, addr, key, val);
+                storage_update(ctx, addr, key, std::move(val));
             }
         }
         else {
             auto const orig = ctx.tdb.read_account(addr);
             if (orig.has_value()) {
-                MONAD_ASSERT(
-                    ctx.deltas
-                        .emplace(
-                            addr,
-                            std::make_pair(
-                                orig.value(), StorageDeltas{{key, val}}))
-                        .second);
+                MONAD_ASSERT(ctx.deltas
+                                 .emplace(
+                                     addr,
+                                     std::make_pair(
+                                         orig.value(),
+                                         StorageDeltas{{key, std::move(val)}}))
+                                 .second);
             }
             else {
-                MONAD_ASSERT(val != bytes32_t{});
+                MONAD_ASSERT(!val.empty());
                 MONAD_ASSERT(
-                    ctx.buffered.emplace(addr, StorageDeltas{{key, val}})
+                    ctx.buffered
+                        .emplace(addr, StorageDeltas{{key, std::move(val)}})
                         .second);
             }
         }
     }
     else if (updated && it->second.has_value()) {
-        MONAD_ASSERT(val == bytes32_t{});
+        MONAD_ASSERT(val.empty());
         std::get<StorageDeltas>(it->second.value()).erase(key);
     }
 }
@@ -207,17 +207,17 @@ bool StatesyncProtocolV1::handle_upsert(
             return false;
         }
         raw.remove_prefix(sizeof(Address));
+        byte_string_view const raw_before{raw};
         auto const res = decode_storage_db(raw);
         if (res.has_error()) {
             return false;
         }
-        auto const &[k, value_enc] = res.value();
-        // TODO: add page path when statesync machine supports monad_revision
+        auto const consumed = raw_before.size() - raw.size();
         storage_update(
             *ctx,
             unaligned_load<Address>(val),
-            k,
-            decode_storage_eth(value_enc));
+            res.value().first,
+            byte_string{raw_before.data(), consumed});
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE) {
         if (size != sizeof(Address)) {
@@ -234,7 +234,70 @@ bool StatesyncProtocolV1::handle_upsert(
         if (res.has_error()) {
             return false;
         }
-        storage_update(*ctx, unaligned_load<Address>(val), res.value(), {});
+        auto const &key = res.value();
+        auto const addr = unaligned_load<Address>(val);
+
+        if (ctx->machine.storage_format() == mpt::StorageFormat::PageCOO) {
+            // Page format: the deletion key is a slot preimage. Read the
+            // containing page, zero the specific slot, and write back the
+            // modified page (or delete the page entry if now empty).
+            // Check buffered deltas first to avoid losing uncommitted
+            // modifications (e.g. prior deletions on the same page).
+            auto const page_key = compute_page_key(key);
+            auto const offset = compute_slot_offset(key);
+
+            // Resolve the current page value. Buffered deltas hold full
+            // RLP trie leaf values; tdb.read_storage returns the inner
+            // value (after RLP unwrap). Unwrap buffered values before
+            // decoding the page.
+            byte_string page_enc;
+            auto const dit = ctx->deltas.find(addr);
+            if (dit != ctx->deltas.end() && dit->second.has_value()) {
+                auto const &sd = dit->second.value().second;
+                auto const sit = sd.find(page_key);
+                if (sit != sd.end() && !sit->second.empty()) {
+                    byte_string_view v{sit->second};
+                    auto const r = decode_storage_db(v);
+                    if (r.has_value()) {
+                        page_enc = byte_string{
+                            r.value().second.data(), r.value().second.size()};
+                    }
+                }
+            }
+            if (page_enc.empty() && ctx->buffered.contains(addr)) {
+                auto const sit = ctx->buffered[addr].find(page_key);
+                if (sit != ctx->buffered[addr].end() && !sit->second.empty()) {
+                    byte_string_view v{sit->second};
+                    auto const r = decode_storage_db(v);
+                    if (r.has_value()) {
+                        page_enc = byte_string{
+                            r.value().second.data(), r.value().second.size()};
+                    }
+                }
+            }
+            if (page_enc.empty()) {
+                page_enc =
+                    ctx->tdb.read_storage(addr, Incarnation{0, 0}, page_key);
+            }
+
+            if (!page_enc.empty()) {
+                auto page = decode_storage_page(page_enc);
+                page[offset] = bytes32_t{};
+                if (page.is_empty()) {
+                    storage_update(*ctx, addr, page_key, byte_string{});
+                }
+                else {
+                    storage_update(
+                        *ctx,
+                        addr,
+                        page_key,
+                        encode_storage_page_db(page_key, page));
+                }
+            }
+        }
+        else {
+            storage_update(*ctx, addr, key, byte_string{});
+        }
     }
     else {
         MONAD_ASSERT(type == SYNC_TYPE_UPSERT_HEADER);

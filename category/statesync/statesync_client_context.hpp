@@ -41,7 +41,7 @@ struct monad_statesync_client_context
     template <class K, class V>
     using Map = ankerl::unordered_dense::segmented_map<K, V>;
 
-    using StorageDeltas = Map<monad::bytes32_t, monad::bytes32_t>;
+    using StorageDeltas = Map<monad::bytes32_t, monad::byte_string>;
 
     using StateDelta = std::pair<monad::Account, StorageDeltas>;
 

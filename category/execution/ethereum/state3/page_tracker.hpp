@@ -69,6 +69,7 @@ public:
         switch (status) {
         case EVMC_STORAGE_ADDED:
         case EVMC_STORAGE_DELETED_ADDED:
+        case EVMC_STORAGE_DELETED_RESTORED:
             adjustment = +1;
             break;
         case EVMC_STORAGE_DELETED:

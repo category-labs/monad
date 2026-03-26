@@ -123,11 +123,9 @@ void monad_statesync_client_context::commit()
             for (auto const &[key, val] : deltas) {
                 storage.push_front(alloc.emplace_back(Update{
                     .key = hash_alloc.emplace_back(keccak256(key.bytes)),
-                    .value = val == bytes32_t{}
+                    .value = val.empty()
                                  ? std::nullopt
-                                 : std::make_optional<byte_string_view>(
-                                       bytes_alloc.emplace_back(
-                                           encode_storage_eth_db(key, val))),
+                                 : std::make_optional<byte_string_view>(val),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(current)}));

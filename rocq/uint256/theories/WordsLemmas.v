@@ -13,6 +13,7 @@
 
 From Stdlib Require Import ZArith Lia List.
 From Uint256 Require Import Uint Primitives Words.
+From Stdlib Require Import DoubleType.
 Import ListNotations.
 
 Module Make (Import U64 : Uint64Ops).
@@ -72,6 +73,123 @@ Proof.
 Qed.
 
 End Make.
+
+(** ** Abstract proof functor — [to_Z_words] and Z-level reasoning *)
+
+Module MakeProofs (Import U64 : Uint64).
+Include Make(U64).
+
+#[local] Open Scope Z_scope.
+
+(** Interpretation of a word list as a multi-word integer (little-endian) *)
+Fixpoint to_Z_words (ws : words) : Z :=
+  match ws with
+  | [] => 0
+  | w :: rest => to_Z w + (base width) * to_Z_words rest
+  end.
+
+(** Modulus for an n-word number: [(base width) ^ n] *)
+Definition modulus_words (n : nat) : Z := (base width) ^ (Z.of_nat n).
+
+Lemma modulus_words_0 : modulus_words 0 = 1%Z.
+Proof. unfold modulus_words. reflexivity. Qed.
+
+Lemma modulus_words_succ : forall n,
+  modulus_words (S n) = base width * modulus_words n.
+Proof.
+  intros. unfold modulus_words.
+  rewrite Nat2Z.inj_succ, Z.pow_succ_r by lia. reflexivity.
+Qed.
+
+(** Every word is bounded by [spec_to_Z] *)
+Lemma get_word_bounded : forall ws i,
+  (i < length ws)%nat ->
+  0 <= to_Z (get_word ws i) < (base width).
+Proof.
+  intros ws i Hi.
+  apply spec_to_Z.
+Qed.
+
+(** Bound on multi-word value *)
+Lemma to_Z_words_bound : forall ws,
+  0 <= to_Z_words ws < modulus_words (length ws).
+Proof.
+  induction ws as [| w rest IH].
+  - unfold modulus_words. simpl. lia.
+  - cbn [to_Z_words length].
+    pose proof (spec_to_Z w) as Hw.
+    unfold modulus_words in *. cbn [length].
+    rewrite Nat2Z.inj_succ.
+    replace ((base width) ^ Z.succ (Z.of_nat (length rest)))
+      with ((base width) * (base width) ^ Z.of_nat (length rest))
+      by (rewrite Z.pow_succ_r by lia; ring).
+    nia.
+Qed.
+
+(** [to_Z_words] of zero-padded word list is 0 *)
+Lemma to_Z_extend_words : forall n,
+  to_Z_words (extend_words n) = 0.
+Proof.
+  intros n. induction n as [|n' IH].
+  - simpl. reflexivity.
+  - unfold extend_words in *. cbn [repeat to_Z_words].
+    rewrite spec_zero. rewrite IH. lia.
+Qed.
+
+(** [get_word] from [extend_words] returns [zero] *)
+Lemma get_extend_words_zero : forall n i,
+  (i < n)%nat ->
+  get_word (extend_words n) i = zero.
+Proof.
+  intros n i Hi.
+  unfold get_word, extend_words.
+  apply nth_repeat.
+Qed.
+
+(** [to_Z] of [get_word] from [extend_words] is 0 *)
+Lemma get_extend_words_Z : forall n i,
+  (i < n)%nat ->
+  to_Z (get_word (extend_words n) i) = 0.
+Proof.
+  intros n i Hi.
+  rewrite get_extend_words_zero by exact Hi.
+  apply spec_zero.
+Qed.
+
+(** Setting word [i] changes the value by replacing the [i]-th digit *)
+Lemma to_Z_words_set_word : forall ws i v,
+  (i < length ws)%nat ->
+  to_Z_words (set_word ws i v) =
+    to_Z_words ws - to_Z (get_word ws i) * (base width) ^ (Z.of_nat i) +
+    to_Z v * (base width) ^ (Z.of_nat i).
+Proof.
+  induction ws as [|w rest IH]; intros i v Hi.
+  - simpl in Hi. lia.
+  - destruct i.
+    + cbn [set_word get_word to_Z_words nth].
+      simpl Z.of_nat. rewrite Z.pow_0_r. ring.
+    + simpl in Hi.
+      cbn [set_word to_Z_words get_word nth].
+      rewrite IH by lia.
+      rewrite Nat2Z.inj_succ.
+      rewrite Z.pow_succ_r by lia.
+      set (P := (base width) ^ Z.of_nat i). unfold get_word. nia.
+Qed.
+
+(** [to_Z_words] of appended single word *)
+Lemma to_Z_words_app_single : forall ws w,
+  to_Z_words (ws ++ [w]) =
+    to_Z_words ws + to_Z w * modulus_words (length ws).
+Proof.
+  induction ws as [|w0 rest IH]; intros w.
+  - cbn [app to_Z_words length Z.of_nat]. rewrite modulus_words_0. ring.
+  - cbn [app to_Z_words length]. rewrite IH.
+    rewrite modulus_words_succ.
+    ring.
+Qed.
+
+End MakeProofs.
+
 (*
 (** Convert a word list to its mathematical value (little-endian) *)
 Fixpoint to_Z_words (ws : words) : Z :=

@@ -179,6 +179,46 @@ Module Type Uint <: UintOps.
   (** Bool injection specification *)
   Axiom spec_of_bool : forall b, to_Z (of_bool b) = if b then 1 else 0.
 
+  (** ** Multi-precision primitive specifications *)
+
+  (** [mulx] full multiplication: [hi * wB + lo = x * y] *)
+  Axiom spec_mulx : forall x y,
+    let '(hi, lo) := mulx x y in
+    to_Z hi * base width + to_Z lo = to_Z x * to_Z y.
+
+  (** [adc_2_short] exact double-width addition.
+      Precondition: [to_Z x1 <= wB - 2] ensures no overflow. *)
+  Axiom spec_adc_2_short : forall x1 x0 y0,
+    to_Z x1 <= base width - 2 ->
+    let '(r1, r0) := adc_2_short x1 x0 y0 in
+    to_Z r1 * base width + to_Z r0 =
+      to_Z x1 * base width + to_Z x0 + to_Z y0.
+
+  (** [adc_2_full] truncating double-width addition.
+      The result is the sum modulo [wB^2]. *)
+  Axiom spec_adc_2_full : forall x1 x0 y1 y0,
+    let '(r1, r0) := adc_2_full x1 x0 y1 y0 in
+    to_Z r1 * base width + to_Z r0 =
+      (to_Z x1 * base width + to_Z x0 +
+       to_Z y1 * base width + to_Z y0) mod (base width * base width).
+
+  (** [adc_3] exact triple-width addition.
+      Precondition: [to_Z x2 <= wB - 2] ensures no overflow. *)
+  Axiom spec_adc_3 : forall x2 x1 x0 y1 y0,
+    to_Z x2 <= base width - 2 ->
+    let '(r2, r1, r0) := adc_3 x2 x1 x0 y1 y0 in
+    to_Z r2 * base width * base width + to_Z r1 * base width + to_Z r0 =
+      to_Z x2 * base width * base width + to_Z x1 * base width + to_Z x0
+      + to_Z y1 * base width + to_Z y0.
+
+  (** [div] double-width division.
+      Preconditions: [v > 0] and [u_hi < v] (ensures quotient fits). *)
+  Axiom spec_div : forall u_hi u_lo v,
+    to_Z v > 0 -> to_Z u_hi < to_Z v ->
+    let '(q, r) := div u_hi u_lo v in
+    to_Z u_hi * base width + to_Z u_lo = to_Z q * to_Z v + to_Z r /\
+    to_Z r < to_Z v.
+
 End Uint.
 
 (** ** Width-specific module types *)

@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -23,7 +24,6 @@
 #include <category/vm/varcode_cache.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_queue.h>
@@ -140,14 +140,13 @@ namespace monad::vm
     class Compiler
     {
         using CompileJobMap = tbb::concurrent_hash_map<
-            evmc::bytes32,
-            std::tuple<
-                std::function<SharedNativecode(
-                    evmc::bytes32 const &, SharedIntercode const &,
-                    CompilerConfig const &)>,
-                uint64_t, SharedIntercode, CompilerConfig>>;
+            bytes32_t, std::tuple<
+                           std::function<SharedNativecode(
+                               bytes32_t const &, SharedIntercode const &,
+                               CompilerConfig const &)>,
+                           uint64_t, SharedIntercode, CompilerConfig>>;
         using CompileJobAccessor = CompileJobMap::accessor;
-        using CompileJobQueue = tbb::concurrent_queue<evmc::bytes32>;
+        using CompileJobQueue = tbb::concurrent_queue<bytes32_t>;
 
     public:
         explicit Compiler(
@@ -163,7 +162,7 @@ namespace monad::vm
         /// Find nativecode in cache, else compile and add to cache.
         template <Traits traits>
         SharedNativecode cached_compile(
-            evmc::bytes32 const &code_hash, SharedIntercode const &,
+            bytes32_t const &code_hash, SharedIntercode const &,
             CompilerConfig const & = {});
 
         /// Asynchronously compile intercode with given code hash for
@@ -172,24 +171,23 @@ namespace monad::vm
         /// are too many compile jobs, so unable to submit the new job.
         template <Traits traits>
         bool async_compile(
-            evmc::bytes32 const &code_hash, SharedIntercode const &,
+            bytes32_t const &code_hash, SharedIntercode const &,
             CompilerConfig const & = {});
 
         /// Lookup in the cache.
-        std::optional<SharedVarcode>
-        find_varcode(evmc::bytes32 const &code_hash)
+        std::optional<SharedVarcode> find_varcode(bytes32_t const &code_hash)
         {
             return varcode_cache_.get(code_hash);
         }
 
         SharedVarcode try_insert_varcode(
-            evmc::bytes32 const &code_hash, SharedIntercode const &icode)
+            bytes32_t const &code_hash, SharedIntercode const &icode)
         {
             return varcode_cache_.try_set(code_hash, icode);
         }
 
         SharedVarcode try_insert_varcode_raw(
-            evmc::bytes32 const &code_hash, std::span<uint8_t const> code)
+            bytes32_t const &code_hash, std::span<uint8_t const> code)
         {
             return varcode_cache_.try_set_raw(code_hash, code);
         }

@@ -65,19 +65,20 @@ public:
 
     virtual ~EvmcHostBase() noexcept = default;
 
-    virtual bytes32_t
-    get_storage(Address const &, bytes32_t const &key) const noexcept override;
+    virtual evmc::bytes32 get_storage(
+        Address const &, evmc::bytes32 const &key) const noexcept override;
 
     virtual evmc_storage_status set_storage(
-        Address const &, bytes32_t const &key,
-        bytes32_t const &value) noexcept override;
+        Address const &, evmc::bytes32 const &key,
+        evmc::bytes32 const &value) noexcept override;
 
     virtual evmc::uint256be
     get_balance(Address const &) const noexcept override;
 
     virtual size_t get_code_size(Address const &) const noexcept override;
 
-    virtual bytes32_t get_code_hash(Address const &) const noexcept override;
+    virtual evmc::bytes32
+    get_code_hash(Address const &) const noexcept override;
 
     virtual size_t copy_code(
         Address const &, size_t offset, uint8_t *data,
@@ -85,21 +86,21 @@ public:
 
     virtual evmc_tx_context const *get_tx_context() const noexcept override;
 
-    virtual bytes32_t get_block_hash(int64_t) const noexcept override;
+    virtual evmc::bytes32 get_block_hash(int64_t) const noexcept override;
 
     virtual void emit_log(
         Address const &, uint8_t const *data, size_t data_size,
-        bytes32_t const topics[], size_t num_topics) noexcept override;
+        evmc::bytes32 const topics[], size_t num_topics) noexcept override;
 
     virtual evmc_access_status
-    access_storage(Address const &, bytes32_t const &key) noexcept override;
+    access_storage(Address const &, evmc::bytes32 const &key) noexcept override;
 
-    virtual bytes32_t get_transient_storage(
-        Address const &, bytes32_t const &key) const noexcept override;
+    virtual evmc::bytes32 get_transient_storage(
+        Address const &, evmc::bytes32 const &key) const noexcept override;
 
     virtual void set_transient_storage(
-        Address const &, bytes32_t const &key,
-        bytes32_t const &value) noexcept override;
+        Address const &, evmc::bytes32 const &key,
+        evmc::bytes32 const &value) noexcept override;
 };
 
 static_assert(sizeof(EvmcHostBase) == 64);

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -49,9 +50,9 @@ namespace monad::vm::runtime
                 if constexpr (traits::evm_rev() == EVMC_TANGERINE_WHISTLE) {
                     return true;
                 }
-                auto const balance =
-                    ctx->host->get_balance(ctx->context, &ctx->env.recipient);
-                return balance != evmc::bytes32{};
+                auto const balance = static_cast<bytes32_t>(
+                    ctx->host->get_balance(ctx->context, &ctx->env.recipient));
+                return balance != bytes32_t{};
             }();
 
             if (non_zero_transfer) {

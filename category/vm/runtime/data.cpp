@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -43,7 +44,8 @@ namespace monad::vm::runtime
             }
         }
 
-        auto const balance = ctx->host->get_balance(ctx->context, &address);
+        auto const balance = static_cast<bytes32_t>(
+            ctx->host->get_balance(ctx->context, &address));
         *result_ptr = uint256_from_bytes32(balance);
     }
 
@@ -202,7 +204,8 @@ namespace monad::vm::runtime
             }
         }
 
-        auto const hash = ctx->host->get_code_hash(ctx->context, &address);
+        auto const hash = static_cast<bytes32_t>(
+            ctx->host->get_code_hash(ctx->context, &address));
         *result_ptr = uint256_from_bytes32(hash);
     }
 

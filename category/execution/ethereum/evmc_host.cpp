@@ -45,8 +45,8 @@ EvmcHostBase::EvmcHostBase(
 {
 }
 
-bytes32_t EvmcHostBase::get_storage(
-    Address const &address, bytes32_t const &key) const noexcept
+evmc::bytes32 EvmcHostBase::get_storage(
+    Address const &address, evmc::bytes32 const &key) const noexcept
 {
     try {
         return state_.get_storage(address, key);
@@ -58,8 +58,8 @@ bytes32_t EvmcHostBase::get_storage(
 }
 
 evmc_storage_status EvmcHostBase::set_storage(
-    Address const &address, bytes32_t const &key,
-    bytes32_t const &value) noexcept
+    Address const &address, evmc::bytes32 const &key,
+    evmc::bytes32 const &value) noexcept
 {
     try {
         return state_.set_storage(address, key, value);
@@ -92,7 +92,7 @@ size_t EvmcHostBase::get_code_size(Address const &address) const noexcept
     stack_unwind();
 }
 
-bytes32_t EvmcHostBase::get_code_hash(Address const &address) const noexcept
+evmc::bytes32 EvmcHostBase::get_code_hash(Address const &address) const noexcept
 {
     try {
         if (state_.account_is_dead(address)) {
@@ -127,7 +127,7 @@ evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
 // This attempts to read from the contract first before falling back to the
 // block hash buffer. This is currently only called by the BLOCKHASH
 // implementation which guarantees that the block_number is in range.
-bytes32_t
+evmc::bytes32
 EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 {
     try {
@@ -150,7 +150,7 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 
 void EvmcHostBase::emit_log(
     Address const &address, uint8_t const *data, size_t data_size,
-    bytes32_t const topics[], size_t num_topics) noexcept
+    evmc::bytes32 const topics[], size_t num_topics) noexcept
 {
     try {
         Receipt::Log log{.data = {data, data_size}, .address = address};
@@ -168,7 +168,7 @@ void EvmcHostBase::emit_log(
 }
 
 evmc_access_status EvmcHostBase::access_storage(
-    Address const &address, bytes32_t const &key) noexcept
+    Address const &address, evmc::bytes32 const &key) noexcept
 {
     try {
         return state_.access_storage(address, key);
@@ -179,8 +179,8 @@ evmc_access_status EvmcHostBase::access_storage(
     stack_unwind();
 }
 
-bytes32_t EvmcHostBase::get_transient_storage(
-    Address const &address, bytes32_t const &key) const noexcept
+evmc::bytes32 EvmcHostBase::get_transient_storage(
+    Address const &address, evmc::bytes32 const &key) const noexcept
 {
     try {
         return state_.get_transient_storage(address, key);
@@ -192,8 +192,8 @@ bytes32_t EvmcHostBase::get_transient_storage(
 }
 
 void EvmcHostBase::set_transient_storage(
-    Address const &address, bytes32_t const &key,
-    bytes32_t const &value) noexcept
+    Address const &address, evmc::bytes32 const &key,
+    evmc::bytes32 const &value) noexcept
 {
     try {
         return state_.set_transient_storage(address, key, value);

@@ -25,6 +25,7 @@
 #include "test_state.hpp"
 #include "transaction.hpp"
 
+#include <category/core/bytes.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
@@ -278,7 +279,7 @@ static void clean_storage(State &state)
         for (auto it = acc.storage.begin(); it != acc.storage.end();) {
             auto const &[k, v] = *it;
 
-            if (v.current == evmc::bytes32{} && v.original == evmc::bytes32{} &&
+            if (v.current == bytes32_t{} && v.original == bytes32_t{} &&
                 v.access_status == EVMC_ACCESS_COLD) {
                 it = acc.storage.erase(it);
             }
@@ -289,7 +290,7 @@ static void clean_storage(State &state)
         for (auto it = acc.transient_storage.begin();
              it != acc.transient_storage.end();) {
             auto const &[k, v] = *it;
-            if (v == evmc::bytes32{}) {
+            if (v == bytes32_t{}) {
                 it = acc.transient_storage.erase(it);
             }
             else {

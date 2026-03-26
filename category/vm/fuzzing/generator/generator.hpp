@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
@@ -1212,8 +1213,10 @@ namespace monad::vm::fuzzing
             .sender = sender,
             .input_data = input_data,
             .input_size = input_size,
-            .value = value.template store_be<evmc::bytes32>(),
-            .create2_salt = salt.template store_be<evmc::bytes32>(),
+            .value = static_cast<evmc::bytes32>(
+                value.template store_be<bytes32_t>()),
+            .create2_salt =
+                static_cast<evmc::bytes32>(salt.template store_be<bytes32_t>()),
             .code_address = target,
             .memory_handle = memory_handle,
             .memory = memory_handle,

@@ -52,7 +52,7 @@ public:
     };
 
     template <typename V>
-    using CodeMap = std::unordered_map<evmc::bytes32, V>;
+    using CodeMap = std::unordered_map<monad::bytes32_t, V>;
 
     BlockchainTestVM(
         Implementation impl,
@@ -84,8 +84,8 @@ public:
     };
 
     void precompile_contract(
-        evmc_revision rev, evmc::bytes32 const &code_hash, uint8_t const *code,
-        size_t const code_size,
+        evmc_revision rev, monad::bytes32_t const &code_hash,
+        uint8_t const *code, size_t const code_size,
         [[maybe_unused]] BlockchainTestVM::Implementation const impl);
 
     void precompile_contracts(
@@ -111,16 +111,18 @@ private:
 #endif
 
     evmone::baseline::CodeAnalysis const &get_code_analysis(
-        evmc::bytes32 const &code_hash, uint8_t const *code, size_t code_size);
+        monad::bytes32_t const &code_hash, uint8_t const *code,
+        size_t code_size);
 
     monad::vm::SharedIntercode const &get_intercode(
-        evmc::bytes32 const &code_hash, uint8_t const *code, size_t code_size);
+        monad::bytes32_t const &code_hash, uint8_t const *code,
+        size_t code_size);
 
     std::pair<
         monad::vm::SharedIntercode const &,
         monad::vm::SharedNativecode const> const
     get_intercode_nativecode(
-        evmc_revision const rev, evmc::bytes32 const &code_hash,
+        evmc_revision const rev, monad::bytes32_t const &code_hash,
         uint8_t const *code, size_t code_size);
 
     evmc::Result execute_evmone(
@@ -140,7 +142,7 @@ private:
 
 #ifdef MONAD_COMPILER_LLVM
     void cache_llvm(
-        evmc_revision const rev, evmc::bytes32 const &code_hash,
+        evmc_revision const rev, monad::bytes32_t const &code_hash,
         uint8_t const *code, size_t code_size);
 
     evmc::Result execute_llvm(

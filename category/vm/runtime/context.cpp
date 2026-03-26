@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
@@ -98,8 +99,8 @@ namespace monad::vm::runtime
                     .depth = msg->depth,
                     .recipient = msg->recipient,
                     .sender = msg->sender,
-                    .value = msg->value,
-                    .create2_salt = msg->create2_salt,
+                    .value = static_cast<bytes32_t>(msg->value),
+                    .create2_salt = static_cast<bytes32_t>(msg->create2_salt),
                     .input_data = msg->input_data,
                     .code = code.data(),
                     .return_data = {},
@@ -130,8 +131,8 @@ namespace monad::vm::runtime
                     .depth = 0,
                     .recipient = evmc::address{},
                     .sender = evmc::address{},
-                    .value = evmc::bytes32{},
-                    .create2_salt = evmc::bytes32{},
+                    .value = bytes32_t{},
+                    .create2_salt = bytes32_t{},
                     .input_data = nullptr,
                     .code = {},
                     .return_data = {},

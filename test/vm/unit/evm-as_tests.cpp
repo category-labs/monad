@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "asmjit/core/jitruntime.h"
+#include "category/core/bytes.hpp"
 #include "category/core/runtime/uint256.hpp"
 #include "category/vm/compiler/ir/x86/types.hpp"
 #include "category/vm/runtime//types.hpp"
@@ -77,9 +78,9 @@ namespace
         return ret;
     }
 
-    evmc::bytes32 max_bytes32()
+    bytes32_t max_bytes32()
     {
-        evmc::bytes32 ret;
+        bytes32_t ret;
         std::memset(ret.bytes, -1, sizeof(ret.bytes) / sizeof(*ret.bytes));
         return ret;
     }
@@ -157,7 +158,7 @@ namespace
         auto const sz = 3000 * 32 * (args_size == 0 ? 1 : args_size);
         std::vector<uint8_t> ret(sz, 0);
         for (size_t i = 0; i < ret.size() / 32; ++i) {
-            uint256_t{i + 1}.store_be(&ret[i * 32]);
+            runtime::uint256_t{i + 1}.store_be(&ret[i * 32]);
         }
         return ret;
     }
@@ -205,10 +206,11 @@ TEST(EvmAs, PushExpansion)
     }
     eb.push(std::numeric_limits<uint64_t>::max());
     for (int nbytes = 9; nbytes < 32; nbytes++) {
-        runtime::uint256_t const value = (uint256_t{1} << (8 * nbytes)) - 1;
+        runtime::uint256_t const value =
+            (runtime::uint256_t{1} << (8 * nbytes)) - 1;
         eb.push(value);
     }
-    eb.push(std::numeric_limits<uint256_t>::max());
+    eb.push(std::numeric_limits<runtime::uint256_t>::max());
     ASSERT_TRUE(evm_as::validate(eb));
     check(eb);
 
@@ -219,7 +221,7 @@ TEST(EvmAs, PushExpansion)
     ASSERT_TRUE(Instruction::is_push(eb[0]));
     ASSERT_TRUE(Instruction::is_push(eb[1]));
     auto const push1 = Instruction::as_push(eb[0]);
-    ASSERT_EQ(push1.imm, std::numeric_limits<uint256_t>::max());
+    ASSERT_EQ(push1.imm, std::numeric_limits<runtime::uint256_t>::max());
 
     auto i = push1.imm;
     int j = 0;
@@ -471,7 +473,8 @@ TEST(EvmAs, Compose1)
             for (size_t i = 0; i < eb.size(); i++) {
                 ASSERT_TRUE(Instruction::is_push(eb[i]));
                 ASSERT_EQ(
-                    Instruction::as_push(eb[i]).imm, uint256_t{i + 1 + offset});
+                    Instruction::as_push(eb[i]).imm,
+                    runtime::uint256_t{i + 1 + offset});
             }
         };
     };
@@ -709,21 +712,21 @@ TEST(EvmAs, BytecodeCompile4)
 TEST(EvmAs, Execution1)
 {
     auto eb = evm_as::latest();
-    uint256_t const expected = 0x42;
+    runtime::uint256_t const expected = 0x42;
 
     // The default program on evm.codes/playground (as of May 2025).
     eb.push(1, 0x42).push(1, 0).mstore().push(1, 0x20).push(1, 0).return_();
 
     ASSERT_TRUE(evm_as::validate(eb));
 
-    uint256_t const result = jit::run(eb);
+    runtime::uint256_t const result = jit::run(eb);
     ASSERT_EQ(result, expected);
 }
 
 TEST(EvmAs, Execution2)
 {
     auto eb = evm_as::latest();
-    uint256_t const expected = 0x0A;
+    runtime::uint256_t const expected = 0x0A;
 
     eb.spush(-10) // [-10]
         .push0() // [0 -10]
@@ -745,14 +748,14 @@ TEST(EvmAs, Execution2)
 
     ASSERT_TRUE(evm_as::validate(eb));
 
-    uint256_t const result = jit::run(eb);
+    runtime::uint256_t const result = jit::run(eb);
     ASSERT_EQ(result, expected);
 }
 
 TEST(EvmAs, Execution3)
 {
     auto eb = evm_as::latest();
-    uint256_t const expected = 0xC0FFEEC0FFEE;
+    runtime::uint256_t const expected = 0xC0FFEEC0FFEE;
 
     eb.jump("END").push(0xBADBADBADBAD).push0().mstore();
 
@@ -773,14 +776,14 @@ TEST(EvmAs, Execution3)
 
     ASSERT_TRUE(evm_as::validate(eb));
 
-    uint256_t const result = jit::run(eb);
+    runtime::uint256_t const result = jit::run(eb);
     ASSERT_EQ(result, expected);
 }
 
 TEST(EvmAs, Execution4)
 {
     auto eb = evm_as::latest();
-    uint256_t const expected = 0xABBA;
+    runtime::uint256_t const expected = 0xABBA;
 
     eb.push0() // dummy value
         .jump("START")
@@ -801,7 +804,7 @@ TEST(EvmAs, Execution4)
 
     ASSERT_TRUE(evm_as::validate(eb));
 
-    uint256_t const result = jit::run(eb);
+    runtime::uint256_t const result = jit::run(eb);
     ASSERT_EQ(result, expected);
 }
 
@@ -1156,12 +1159,14 @@ TEST(EvmAs, KernelBuilderRepetitionCount)
 
         ASSERT_EQ(ctx->result.status, runtime::StatusCode::Success);
         ASSERT_EQ(
-            uint256_t::load_le(ctx->result.size), KB::resulting_memory_size);
+            runtime::uint256_t::load_le(ctx->result.size),
+            KB::resulting_memory_size);
         ASSERT_EQ(
-            uint256_t::load_le(ctx->result.offset), KB::free_memory_start);
+            runtime::uint256_t::load_le(ctx->result.offset),
+            KB::free_memory_start);
 
-        auto const n =
-            uint256_t::load_be_unsafe(&ctx->memory.data[KB::free_memory_start]);
+        auto const n = runtime::uint256_t::load_be_unsafe(
+            &ctx->memory.data[KB::free_memory_start]);
         ASSERT_EQ(
             n, KB::get_sequence_repetition_count(args_size, calldata.size()));
     };
@@ -1262,9 +1267,11 @@ TEST(EvmAs, KernelBuilderCalldata)
 
         ASSERT_EQ(ctx->result.status, runtime::StatusCode::Success);
         ASSERT_EQ(
-            uint256_t::load_le(ctx->result.size), KB::resulting_memory_size);
+            runtime::uint256_t::load_le(ctx->result.size),
+            KB::resulting_memory_size);
         ASSERT_EQ(
-            uint256_t::load_le(ctx->result.offset), KB::free_memory_start);
+            runtime::uint256_t::load_le(ctx->result.offset),
+            KB::free_memory_start);
     };
 
     for (size_t args_size = 0; args_size <= 10; ++args_size) {

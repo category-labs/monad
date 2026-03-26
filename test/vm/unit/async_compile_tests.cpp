@@ -53,9 +53,9 @@ namespace
         return code;
     }
 
-    evmc::bytes32 test_hash(uint64_t index)
+    bytes32_t test_hash(uint64_t index)
     {
-        evmc::bytes32 h{};
+        bytes32_t h{};
         for (uint64_t i = 0; i < 8; ++i) {
             h.bytes[31 - i] = static_cast<uint8_t>(index >> 8 * (7 - i));
         }
@@ -114,8 +114,8 @@ TEST(async_compile_test, stress)
 
             auto const &ret = ctx->result;
             ASSERT_EQ(ret.status, runtime::StatusCode::Success);
-            ASSERT_EQ(uint256_t::load_le(ret.offset), index);
-            ASSERT_EQ(uint256_t::load_le(ret.size), 1);
+            ASSERT_EQ(runtime::uint256_t::load_le(ret.offset), index);
+            ASSERT_EQ(runtime::uint256_t::load_le(ret.size), 1);
         }
     };
 

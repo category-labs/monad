@@ -103,7 +103,7 @@ namespace monad::vm::compiler::test
 
             host_.accounts[msg_.sender].balance =
                 std::numeric_limits<uint256_t>::max()
-                    .template store_be<evmc::bytes32>();
+                    .template store_be<bytes32_t>();
 
             msg_.gas = gas_limit;
             msg_.input_data = calldata.data();

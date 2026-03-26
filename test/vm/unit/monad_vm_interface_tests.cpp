@@ -42,7 +42,7 @@ using namespace monad::vm::compiler;
 
 namespace
 {
-    std::pair<std::vector<uint8_t>, evmc::bytes32> make_bytecode(uint32_t bytes)
+    std::pair<std::vector<uint8_t>, bytes32_t> make_bytecode(uint32_t bytes)
     {
         std::vector<uint8_t> bytecode{
             PUSH1,
@@ -53,12 +53,12 @@ namespace
             static_cast<uint8_t>(bytes >> 8),
             static_cast<uint8_t>(bytes),
             RETURN};
-        auto hash = std::bit_cast<evmc::bytes32>(
+        auto hash = std::bit_cast<bytes32_t>(
             ethash::keccak256(bytecode.data(), bytecode.size()));
         return {bytecode, hash};
     }
 
-    std::pair<std::vector<uint8_t>, evmc::bytes32>
+    std::pair<std::vector<uint8_t>, bytes32_t>
     make_bytecode_with_compilation_failure()
     {
         std::vector<uint8_t> bytecode{PUSH4, 0, 0, 0, 0, JUMP, JUMPDEST};
@@ -71,7 +71,7 @@ namespace
         bytecode[2] = static_cast<uint8_t>(dest >> 16);
         bytecode[3] = static_cast<uint8_t>(dest >> 8);
         bytecode[4] = static_cast<uint8_t>(dest);
-        auto hash = std::bit_cast<evmc::bytes32>(
+        auto hash = std::bit_cast<bytes32_t>(
             ethash::keccak256(bytecode.data(), bytecode.size()));
         return {bytecode, hash};
     }
@@ -210,7 +210,7 @@ TEST(MonadVmInterface, VarcodeCacheEmptyCode)
 
     uint8_t *const p = nullptr;
     std::span<uint8_t const> empty_code{p, 0};
-    auto code_hash = std::bit_cast<evmc::bytes32>(
+    auto code_hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(empty_code.data(), empty_code.size()));
 
     auto vcode0 = cache.try_set(code_hash, make_shared_intercode(empty_code));
@@ -332,8 +332,8 @@ TEST(MonadVmInterface, compile)
     test::TestContext ctx1;
     entry1(&*ctx1, nullptr);
 
-    ASSERT_EQ(uint256_t::load_le(ctx1->result.size), 0);
-    ASSERT_EQ(uint256_t::load_le(ctx1->result.offset), 1);
+    ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.size), 0);
+    ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.offset), 1);
 
     ASSERT_FALSE(vm.find_varcode(hash1).has_value());
 }
@@ -353,8 +353,8 @@ TEST(MonadVmInterface, cached_compile)
     test::TestContext ctx1;
     entry1(&*ctx1, nullptr);
 
-    ASSERT_EQ(uint256_t::load_le(ctx1->result.size), 0);
-    ASSERT_EQ(uint256_t::load_le(ctx1->result.offset), 1);
+    ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.size), 0);
+    ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.offset), 1);
 
     auto vcode1 = vm.find_varcode(hash1);
     ASSERT_TRUE(vcode1.has_value());
@@ -384,8 +384,8 @@ TEST(MonadVmInterface, async_compile)
             ASSERT_NE(entry1, nullptr);
             test::TestContext ctx1;
             entry1(&*ctx1, nullptr);
-            ASSERT_EQ(uint256_t::load_le(ctx1->result.size), 0);
-            ASSERT_EQ(uint256_t::load_le(ctx1->result.offset), 1);
+            ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.size), 0);
+            ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.offset), 1);
         }
         else {
             ASSERT_EQ(entry1, nullptr);
@@ -492,7 +492,7 @@ TEST(MonadVmInterface, execute_raw)
     // when the lambda gets called.
     auto execute_raw =
         [&]<Traits traits>(
-            traits, evmc::bytes32 const &hash, SharedVarcode const &vcode) {
+            traits, bytes32_t const &hash, SharedVarcode const &vcode) {
             auto const &icode = vcode->intercode();
             auto rt_ctx = runtime::Context::from(
                 &host.get_interface(),
@@ -648,7 +648,7 @@ TEST(MonadVmInterface, execute)
         HostMock host{
             0, [&](Host &, evmc_message const &) { return evmc::Result{}; }};
         std::vector<uint8_t> bytecode{};
-        auto hash = std::bit_cast<evmc::bytes32>(
+        auto hash = std::bit_cast<bytes32_t>(
             ethash::keccak256(bytecode.data(), bytecode.size()));
         auto icode = make_shared_intercode(bytecode);
         auto vcode = vm.try_insert_varcode(hash, icode);
@@ -660,7 +660,7 @@ TEST(MonadVmInterface, execute)
 
     std::vector<uint8_t> bytecode = {
         PUSH0, PUSH0, PUSH0, PUSH0, PUSH0, ADDRESS, GAS, CALL};
-    auto hash = std::bit_cast<evmc::bytes32>(
+    auto hash = std::bit_cast<bytes32_t>(
         ethash::keccak256(bytecode.data(), bytecode.size()));
     auto icode = make_shared_intercode(bytecode);
 

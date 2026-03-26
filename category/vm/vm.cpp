@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -44,7 +45,7 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute(
-        Host &host, evmc_message const *msg, evmc::bytes32 const &code_hash,
+        Host &host, evmc_message const *msg, bytes32_t const &code_hash,
         SharedVarcode const &vcode)
     {
         auto const *const host_itf = &host.get_interface();
@@ -97,7 +98,7 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute_raw(
-        runtime::Context &rt_ctx, evmc::bytes32 const &code_hash,
+        runtime::Context &rt_ctx, bytes32_t const &code_hash,
         SharedVarcode const &vcode)
     {
         auto const &icode = vcode->intercode();

@@ -15,6 +15,7 @@
 
 #include "fixture.hpp"
 
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
@@ -30,9 +31,9 @@ using namespace monad::vm::compiler::test;
 
 namespace
 {
-    evmc::bytes32 get_test_bytes32()
+    bytes32_t get_test_bytes32()
     {
-        evmc::bytes32 b;
+        bytes32_t b;
         for (std::uint8_t i = 0; i < 32; ++i) {
             b.bytes[31 - i] = i + 1;
         }
@@ -48,9 +49,9 @@ namespace
         return b;
     }
 
-    uint256_t get_test_uint256()
+    vm::runtime::uint256_t get_test_uint256()
     {
-        uint256_t u;
+        vm::runtime::uint256_t u;
         uint8_t *b = u.as_bytes();
         for (std::uint8_t i = 0; i < 32; ++i) {
             b[i] = i + 1;
@@ -61,8 +62,8 @@ namespace
 
 TEST_F(RuntimeTest, TransmuteBytes32)
 {
-    evmc::bytes32 const b = get_test_bytes32();
-    uint256_t const u = get_test_uint256();
+    bytes32_t const b = get_test_bytes32();
+    vm::runtime::uint256_t const u = get_test_uint256();
     ASSERT_EQ(bytes32_from_uint256(u), b);
     ASSERT_EQ(u, uint256_from_bytes32(b));
 }
@@ -70,7 +71,7 @@ TEST_F(RuntimeTest, TransmuteBytes32)
 TEST_F(RuntimeTest, TransmuteAddress)
 {
     evmc::address const a = get_test_address();
-    uint256_t u = get_test_uint256();
+    vm::runtime::uint256_t u = get_test_uint256();
     ASSERT_EQ(address_from_uint256(u), a);
     uint8_t *b = u.as_bytes();
     for (auto i = 20; i < 32; ++i) {
@@ -86,7 +87,7 @@ TEST_F(RuntimeTest, LoadBounded)
         src_buffer[i] = i + 1;
     }
     for (int64_t n = -5; n <= 37; ++n) {
-        uint256_t expected_le;
+        vm::runtime::uint256_t expected_le;
         if (n > 0) {
             std::memcpy(
                 expected_le.as_bytes(),
@@ -96,13 +97,13 @@ TEST_F(RuntimeTest, LoadBounded)
 
         auto x = monad_vm_runtime_load_bounded_le(
             src_buffer, std::min(n, int64_t{32}));
-        uint256_t le1{x};
+        vm::runtime::uint256_t le1{x};
         ASSERT_EQ(le1, expected_le);
 
-        uint256_t le2 = uint256_load_bounded_le(src_buffer, n);
+        vm::runtime::uint256_t le2 = uint256_load_bounded_le(src_buffer, n);
         ASSERT_EQ(le2, expected_le);
 
-        uint256_t be = uint256_load_bounded_be(src_buffer, n);
+        vm::runtime::uint256_t be = uint256_load_bounded_be(src_buffer, n);
         ASSERT_EQ(be, expected_le.to_be());
     }
 }

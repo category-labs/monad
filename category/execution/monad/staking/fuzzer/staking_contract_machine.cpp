@@ -1136,7 +1136,7 @@ namespace monad::staking::test
         auto const value = intx::be::store<evmc_uint256be>(stake);
         Address const auth_address = gen_new_or_old_address();
         auto const commission = gen_bound_biased_uint256(0, MAX_COMMISSION);
-        auto const secret = intx::be::store<evmc::bytes32>(gen_uint256());
+        auto const secret = intx::be::store<bytes32_t>(gen_uint256());
 
         auto [msg, secp, bls, signer] = craft_add_validator_input_raw(
             auth_address, stake, commission, secret);

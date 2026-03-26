@@ -65,7 +65,7 @@ namespace monad::vm::llvm
                 uint256_t const hash256 =
                     runtime::uint256_t::from_string("0x" + exts[1].substr(1));
 
-                evmc::bytes32 const code_hash = bytes32_from_uint256(hash256);
+                auto const code_hash = bytes32_from_uint256(hash256);
 
                 std::shared_ptr<LLVMState> const ptr =
                     monad::vm::llvm::load_from_disk(rev, entry.path().string());
@@ -79,13 +79,13 @@ namespace monad::vm::llvm
         : stack_allocator_{max_stack_cache}
         , cached_llvm_code_(
               EVMC_MAX_REVISION + 1,
-              std::unordered_map<evmc::bytes32, std::shared_ptr<LLVMState>>())
+              std::unordered_map<bytes32_t, std::shared_ptr<LLVMState>>())
     {
         load_llvm_file_cache();
     }
 
     std::shared_ptr<LLVMState> VM::cache_llvm(
-        evmc_revision rev, evmc::bytes32 const &code_hash, uint8_t const *code,
+        evmc_revision rev, bytes32_t const &code_hash, uint8_t const *code,
         size_t code_size)
     {
         auto const item = cached_llvm_code_[rev].find(code_hash);
@@ -106,7 +106,7 @@ namespace monad::vm::llvm
     }
 
     evmc::Result VM::execute_llvm(
-        evmc_revision rev, evmc::bytes32 const &code_hash,
+        evmc_revision rev, bytes32_t const &code_hash,
         evmc_host_interface const *host, evmc_host_context *context,
         evmc_message const *msg, uint8_t const *code, size_t code_size)
     {

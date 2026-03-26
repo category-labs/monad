@@ -19,8 +19,6 @@
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <cstdint>
 
 namespace monad::vm::runtime
@@ -36,10 +34,11 @@ namespace monad::vm::runtime
     inline void
     tload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
     {
-        auto key = bytes32_from_uint256(*key_ptr);
+        auto key = static_cast<evmc::bytes32>(bytes32_from_uint256(*key_ptr));
 
-        auto const value = ctx->host->get_transient_storage(
-            ctx->context, &ctx->env.recipient, &key);
+        auto const value =
+            static_cast<bytes32_t>(ctx->host->get_transient_storage(
+                ctx->context, &ctx->env.recipient, &key));
 
         *result_ptr = uint256_from_bytes32(value);
     }
@@ -51,8 +50,8 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::Error);
         }
 
-        auto key = bytes32_from_uint256(*key_ptr);
-        auto val = bytes32_from_uint256(*val_ptr);
+        auto key = static_cast<evmc::bytes32>(bytes32_from_uint256(*key_ptr));
+        auto val = static_cast<evmc::bytes32>(bytes32_from_uint256(*val_ptr));
 
         ctx->host->set_transient_storage(
             ctx->context, &ctx->env.recipient, &key, &val);

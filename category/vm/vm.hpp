@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
@@ -129,20 +130,19 @@ namespace monad::vm
     public:
         explicit VM(bool enable_async = true);
 
-        std::optional<SharedVarcode>
-        find_varcode(evmc::bytes32 const &code_hash)
+        std::optional<SharedVarcode> find_varcode(bytes32_t const &code_hash)
         {
             return compiler_.find_varcode(code_hash);
         }
 
         SharedVarcode try_insert_varcode(
-            evmc::bytes32 const &code_hash, SharedIntercode const &icode)
+            bytes32_t const &code_hash, SharedIntercode const &icode)
         {
             return compiler_.try_insert_varcode(code_hash, icode);
         }
 
         SharedVarcode try_insert_varcode_raw(
-            evmc::bytes32 const &code_hash, std::span<uint8_t const> code)
+            bytes32_t const &code_hash, std::span<uint8_t const> code)
         {
             return compiler_.try_insert_varcode_raw(code_hash, code);
         }
@@ -172,7 +172,7 @@ namespace monad::vm
         /// interpreter and potentially start async compilation.
         template <Traits traits>
         evmc::Result execute(
-            Host &host, evmc_message const *msg, evmc::bytes32 const &code_hash,
+            Host &host, evmc_message const *msg, bytes32_t const &code_hash,
             SharedVarcode const &vcode);
 
         /// Execute the bytecode `code` with interpreter.
@@ -183,7 +183,7 @@ namespace monad::vm
         /// Like `execute`, but without stack unwind support.
         template <Traits traits>
         evmc::Result execute_raw(
-            runtime::Context &rt_ctx, evmc::bytes32 const &code_hash,
+            runtime::Context &rt_ctx, bytes32_t const &code_hash,
             SharedVarcode const &vcode);
 
         /// Execute with interpreter, without stack unwind support.

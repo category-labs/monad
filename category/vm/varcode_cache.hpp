@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
@@ -30,7 +31,7 @@ namespace monad::vm
         static constexpr std::uint32_t default_warm_cache_kb =
             (3 * default_max_cache_kb) / 4; // ~75%
 
-        using WeightCache = utils::LruWeightCache<evmc::bytes32, SharedVarcode>;
+        using WeightCache = utils::LruWeightCache<bytes32_t, SharedVarcode>;
 
     public:
         explicit VarcodeCache(
@@ -38,22 +39,22 @@ namespace monad::vm
             std::uint32_t warm_cache_kb = default_warm_cache_kb);
 
         /// Get varcode for given code hash.
-        std::optional<SharedVarcode> get(evmc::bytes32 const &code_hash);
+        std::optional<SharedVarcode> get(bytes32_t const &code_hash);
 
         /// Insert into cache under `code_hash`.
         void
-        set(evmc::bytes32 const &code_hash, SharedIntercode const &,
+        set(bytes32_t const &code_hash, SharedIntercode const &,
             SharedNativecode const &);
 
         /// Find varcode under `code_hash`, otherwise insert into cache.
         SharedVarcode
-        try_set(evmc::bytes32 const &code_hash, SharedIntercode const &);
+        try_set(bytes32_t const &code_hash, SharedIntercode const &);
 
         /// Find varcode under `code_hash`, otherwise construct a
         /// `SharedVarcode` object from the given bytecodes and insert it into
         /// cache.
-        SharedVarcode try_set_raw(
-            evmc::bytes32 const &code_hash, std::span<uint8_t const> code);
+        SharedVarcode
+        try_set_raw(bytes32_t const &code_hash, std::span<uint8_t const> code);
 
         /// Whether the cache is warmed up.
         bool is_warm()

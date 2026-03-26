@@ -13,14 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -70,7 +69,7 @@ namespace monad::vm
 
     template <Traits traits>
     SharedNativecode Compiler::cached_compile(
-        evmc::bytes32 const &code_hash, SharedIntercode const &icode,
+        bytes32_t const &code_hash, SharedIntercode const &icode,
         CompilerConfig const &config)
     {
         if (auto vcode = varcode_cache_.get(code_hash)) {
@@ -91,7 +90,7 @@ namespace monad::vm
 
     template <Traits traits>
     bool Compiler::async_compile(
-        evmc::bytes32 const &code_hash, SharedIntercode const &icode,
+        bytes32_t const &code_hash, SharedIntercode const &icode,
         CompilerConfig const &config)
     {
         if (compile_job_map_.size() >= compile_job_soft_limit_) {
@@ -144,7 +143,7 @@ namespace monad::vm
 
     void Compiler::dispense_compile_jobs()
     {
-        evmc::bytes32 code_hash;
+        bytes32_t code_hash;
         while (compile_job_queue_.try_pop(code_hash) &&
                !stop_flag_.test(std::memory_order_acquire)) {
             CompileJobAccessor acc;

@@ -58,11 +58,11 @@ TEST_F(RuntimeTest, Mul)
 
 TEST_F(RuntimeTest, Mul_192)
 {
-    uint256_t bit256{0, 0, 0, static_cast<uint64_t>(1) << 63};
-    uint256_t bit192{0, 0, static_cast<uint64_t>(1) << 63};
-    uint256_t bit128{0, static_cast<uint64_t>(1) << 63};
-    uint256_t bit64{static_cast<uint64_t>(1) << 63};
-    std::vector<std::pair<uint256_t, uint256_t>> const inputs{
+    runtime::uint256_t bit256{0, 0, 0, static_cast<uint64_t>(1) << 63};
+    runtime::uint256_t bit192{0, 0, static_cast<uint64_t>(1) << 63};
+    runtime::uint256_t bit128{0, static_cast<uint64_t>(1) << 63};
+    runtime::uint256_t bit64{static_cast<uint64_t>(1) << 63};
+    std::vector<std::pair<runtime::uint256_t, runtime::uint256_t>> const inputs{
         {0, 0},
         {0, bit256},
         {0, bit192},
@@ -101,9 +101,9 @@ TEST_F(RuntimeTest, Mul_192)
          2}};
 
     for (auto const &[a, b] : inputs) {
-        uint256_t result;
+        runtime::uint256_t result;
         monad_vm_runtime_mul_192(&result, &a, &b);
-        ASSERT_EQ(result, mulmod(a, b, uint256_t{1} << 192));
+        ASSERT_EQ(result, mulmod(a, b, runtime::uint256_t{1} << 192));
     }
 }
 
@@ -121,7 +121,7 @@ TEST_F(RuntimeTest, UDiv)
 
 TEST_F(RuntimeTest, SDiv)
 {
-    constexpr auto neg = [](auto n) { return -uint256_t{n}; };
+    constexpr auto neg = [](auto n) { return -runtime::uint256_t{n}; };
 
     auto f = wrap(sdiv);
 

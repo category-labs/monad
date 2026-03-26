@@ -18,6 +18,7 @@
 #include <test_state.hpp>
 #include <test_vm.hpp>
 
+#include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -164,7 +165,7 @@ evmc::Result BlockchainTestVM::execute(
 }
 
 evmone::baseline::CodeAnalysis const &BlockchainTestVM::get_code_analysis(
-    evmc::bytes32 const &code_hash, uint8_t const *code, size_t code_size)
+    bytes32_t const &code_hash, uint8_t const *code, size_t code_size)
 {
     auto it1 = code_analyses_.find(code_hash);
     if (it1 != code_analyses_.end()) {
@@ -177,7 +178,7 @@ evmone::baseline::CodeAnalysis const &BlockchainTestVM::get_code_analysis(
 }
 
 monad::vm::SharedIntercode const &BlockchainTestVM::get_intercode(
-    evmc::bytes32 const &code_hash, uint8_t const *code, size_t code_size)
+    bytes32_t const &code_hash, uint8_t const *code, size_t code_size)
 {
     auto it1 = intercodes_.find(code_hash);
     if (it1 != intercodes_.end()) {
@@ -192,8 +193,8 @@ monad::vm::SharedIntercode const &BlockchainTestVM::get_intercode(
 std::pair<
     monad::vm::SharedIntercode const &, monad::vm::SharedNativecode const> const
 BlockchainTestVM::get_intercode_nativecode(
-    evmc_revision const rev, evmc::bytes32 const &code_hash,
-    uint8_t const *code, size_t code_size)
+    evmc_revision const rev, bytes32_t const &code_hash, uint8_t const *code,
+    size_t code_size)
 {
     auto const &icode = get_intercode(code_hash, code, code_size);
 
@@ -227,7 +228,7 @@ BlockchainTestVM::get_intercode_nativecode(
 }
 
 void BlockchainTestVM::precompile_contract(
-    evmc_revision rev, evmc::bytes32 const &code_hash, uint8_t const *code,
+    evmc_revision rev, bytes32_t const &code_hash, uint8_t const *code,
     size_t const code_size,
     [[maybe_unused]] BlockchainTestVM::Implementation const impl)
 {
@@ -285,8 +286,8 @@ evmc::Result BlockchainTestVM::execute_compiler(
 
 #ifdef MONAD_COMPILER_LLVM
 void BlockchainTestVM::cache_llvm(
-    evmc_revision const rev, evmc::bytes32 const &code_hash,
-    uint8_t const *code, size_t code_size)
+    evmc_revision const rev, bytes32_t const &code_hash, uint8_t const *code,
+    size_t code_size)
 {
     llvm_vm_.cache_llvm(rev, code_hash, code, code_size);
 }

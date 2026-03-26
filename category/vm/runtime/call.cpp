@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/delegation.hpp>
@@ -52,7 +53,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     uint256_t call_impl(
         Context *ctx, uint256_t const &gas_word, uint256_t const &address,
-        bool has_value, evmc_bytes32 const &value,
+        bool has_value, bytes32_t const &value,
         uint256_t const &args_offset_word, uint256_t const &args_size_word,
         uint256_t const &ret_offset_word, uint256_t const &ret_size_word,
         evmc_call_kind call_kind, bool static_call,
@@ -171,8 +172,8 @@ namespace monad::vm::runtime
             .input_data =
                 (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr,
             .input_size = *args_size,
-            .value = value,
-            .create2_salt = ctx->env.create2_salt,
+            .value = static_cast<evmc::bytes32>(value),
+            .create2_salt = static_cast<evmc::bytes32>(ctx->env.create2_salt),
             .code_address = code_address,
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,
@@ -287,7 +288,7 @@ namespace monad::vm::runtime
             *gas_ptr,
             *address_ptr,
             false,
-            evmc::bytes32{},
+            bytes32_t{},
             *args_offset_ptr,
             *args_size_ptr,
             *ret_offset_ptr,

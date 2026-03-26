@@ -16,6 +16,7 @@
 #include "fixture.hpp"
 
 #include <algorithm>
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
@@ -165,7 +166,7 @@ namespace monad::vm::compiler::test
     {
         auto const contract_addr = address_from_uint256(addr);
         auto const codehash = ethash::keccak256(code.data(), code.size());
-        evmc::bytes32 codehash_bytes;
+        bytes32_t codehash_bytes;
         std::copy(codehash.bytes, codehash.bytes + 32, codehash_bytes.bytes);
         auto const account = evmc::MockedAccount{
             .nonce = 0,

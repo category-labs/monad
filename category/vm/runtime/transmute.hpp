@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 
@@ -38,7 +39,7 @@ extern "C" __m256i monad_vm_runtime_load_bounded_le_raw();
 namespace monad::vm::runtime
 {
     static_assert(sizeof(evmc_address) == 20);
-    static_assert(sizeof(evmc_bytes32) == 32);
+    static_assert(sizeof(bytes32_t) == 32);
     static_assert(sizeof(uint256_t) == 32);
 
     [[gnu::always_inline]]
@@ -59,9 +60,9 @@ namespace monad::vm::runtime
     }
 
     [[gnu::always_inline]]
-    inline evmc::bytes32 bytes32_from_uint256(uint256_t const &x)
+    inline bytes32_t bytes32_from_uint256(uint256_t const &x)
     {
-        evmc_bytes32 ret;
+        bytes32_t ret;
         x.store_be(ret.bytes);
         return ret;
     }
@@ -91,7 +92,7 @@ namespace monad::vm::runtime
     }
 
     [[gnu::always_inline]]
-    inline uint256_t uint256_from_bytes32(evmc::bytes32 const &x)
+    inline uint256_t uint256_from_bytes32(bytes32_t const &x)
     {
         return uint256_t::load_be(x.bytes);
     }

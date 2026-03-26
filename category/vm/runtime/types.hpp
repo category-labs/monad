@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
@@ -53,8 +54,8 @@ namespace monad::vm::runtime
         std::int32_t depth;
         evmc::address recipient;
         evmc::address sender;
-        evmc::bytes32 value;
-        evmc::bytes32 create2_salt;
+        bytes32_t value;
+        bytes32_t create2_salt;
 
         std::uint8_t const *input_data;
         std::uint8_t const *code;

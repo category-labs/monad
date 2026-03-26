@@ -13,11 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/varcode_cache.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -39,8 +38,7 @@ namespace monad::vm
     {
     }
 
-    std::optional<SharedVarcode>
-    VarcodeCache::get(evmc::bytes32 const &code_hash)
+    std::optional<SharedVarcode> VarcodeCache::get(bytes32_t const &code_hash)
     {
         WeightCache::ConstAccessor acc;
         if (!weight_cache_.find(acc, code_hash)) {
@@ -50,7 +48,7 @@ namespace monad::vm
     }
 
     void VarcodeCache::set(
-        evmc::bytes32 const &code_hash, SharedIntercode const &icode,
+        bytes32_t const &code_hash, SharedIntercode const &icode,
         SharedNativecode const &ncode)
     {
         MONAD_VM_ASSERT(icode != nullptr);
@@ -62,7 +60,7 @@ namespace monad::vm
     }
 
     SharedVarcode VarcodeCache::try_set(
-        evmc::bytes32 const &code_hash, SharedIntercode const &icode)
+        bytes32_t const &code_hash, SharedIntercode const &icode)
     {
         MONAD_VM_ASSERT(icode != nullptr);
         auto const weight = code_size_to_cache_weight(*icode->code_size());
@@ -72,7 +70,7 @@ namespace monad::vm
     }
 
     SharedVarcode VarcodeCache::try_set_raw(
-        evmc::bytes32 const &code_hash, std::span<uint8_t const> code)
+        bytes32_t const &code_hash, std::span<uint8_t const> code)
     {
         WeightCache::ConstAccessor acc;
         if (!weight_cache_.find(acc, code_hash)) {

@@ -1404,7 +1404,7 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
     MONAD_ASSERT(is_on_disk());
 
     constexpr double fast_usage_limit_start_compaction = 0.1;
-    constexpr unsigned fast_chunk_count_limit_start_compaction = 800;
+    constexpr size_t fast_chunk_count_limit_start_compaction = 800;
     constexpr uint32_t max_compact_offset_range =
         512; // 32MB, each unit of compact_virtual_chunk_offset_t represents
              // 64KB
@@ -1441,11 +1441,11 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
     bool const skip_compaction = (rand() % 20) == 0;
 
     // <-- Fast list compaction -->
-    auto const fast_disk_usage =
-        num_chunks(chunk_list::fast) / (double)io->chunk_count();
-    if ((fast_disk_usage >= fast_usage_limit_start_compaction ||
-         num_chunks(chunk_list::fast) >=
-             fast_chunk_count_limit_start_compaction)) {
+    auto const min_fast_chunks_to_start_compaction = std::min(
+        fast_chunk_count_limit_start_compaction,
+        static_cast<size_t>(
+            (double)io->chunk_count() * fast_usage_limit_start_compaction));
+    if (num_chunks(chunk_list::fast) >= min_fast_chunks_to_start_compaction) {
         uint64_t const min_version = db_history_min_valid_version();
         MONAD_ASSERT(min_version != INVALID_BLOCK_NUM);
         compact_virtual_chunk_offset_t const curr_fast_writer_offset{
@@ -1470,13 +1470,17 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
         }
         uint32_t const latest_block_fast_uncompacted_range =
             curr_fast_writer_offset - compact_offsets.fast;
-        if (latest_block_fast_uncompacted_range >
-            static_cast<uint64_t>(avg_disk_growth_fast) *
-                min_versions_of_growth_before_compact_fast_list) {
-            uint64_t const valid_history_length = max_version - min_version + 1;
-            uint64_t const target_uncompacted_range =
+        if (avg_disk_growth_fast > 0 &&
+            latest_block_fast_uncompacted_range >
                 static_cast<uint64_t>(avg_disk_growth_fast) *
-                valid_history_length;
+                    min_versions_of_growth_before_compact_fast_list) {
+            uint64_t const valid_history_length = max_version - min_version + 1;
+            uint64_t const target_uncompacted_range = std::min(
+                static_cast<uint64_t>(avg_disk_growth_fast) *
+                    valid_history_length,
+                // Cap: convert chunks (1<<28 bytes) to compact offset
+                // units (1<<16 bytes), i.e. shift by 12.
+                min_fast_chunks_to_start_compaction << 12);
             int64_t const tracking_error =
                 static_cast<int64_t>(latest_block_fast_uncompacted_range) -
                 static_cast<int64_t>(target_uncompacted_range);
@@ -1488,8 +1492,9 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
             if (tracking_error > 0 && !skip_compaction) {
                 // Catch up with weighted proportional
                 // correction. Weight scales up with spare I/O capacity.
-                double const K =
-                    2.0 * avg_disk_growth_fast / last_block_disk_growth_fast_;
+                double const K = (last_block_disk_growth_fast_ > 0)
+                    ? 2.0 * avg_disk_growth_fast / last_block_disk_growth_fast_
+                    : 2.0;
                 uint32_t const correction = std::min(
                     divide_and_round(
                         K * static_cast<double>(tracking_error),
@@ -1511,10 +1516,9 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
 
     double const slow_disk_usage =
         num_chunks(chunk_list::slow) / (double)io->chunk_count();
-    double const total_disk_usage = fast_disk_usage + slow_disk_usage;
     // Do not compact slow list until slow list usage and total usage are both
     // above the thresholds
-    if (!skip_compaction && total_disk_usage > usage_limit_start_compact_slow &&
+    if (!skip_compaction && disk_usage() > usage_limit_start_compact_slow &&
         slow_disk_usage > slow_usage_limit_start_compact_slow) {
         // Compact slow ring at growth rate scaled by gc_efficiency.
         // The breakeven point is 4, above which we compact faster than

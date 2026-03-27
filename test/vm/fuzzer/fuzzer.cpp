@@ -279,7 +279,8 @@ static void clean_storage(State &state)
         for (auto it = acc.storage.begin(); it != acc.storage.end();) {
             auto const &[k, v] = *it;
 
-            if (v.current == bytes32_t{} && v.original == bytes32_t{} &&
+            if (bytes32_t(v.current) == bytes32_t{} &&
+                bytes32_t(v.original) == bytes32_t{} &&
                 v.access_status == EVMC_ACCESS_COLD) {
                 it = acc.storage.erase(it);
             }
@@ -290,7 +291,7 @@ static void clean_storage(State &state)
         for (auto it = acc.transient_storage.begin();
              it != acc.transient_storage.end();) {
             auto const &[k, v] = *it;
-            if (v == bytes32_t{}) {
+            if (bytes32_t(v) == bytes32_t{}) {
                 it = acc.transient_storage.erase(it);
             }
             else {

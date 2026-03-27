@@ -692,8 +692,8 @@ TYPED_TEST(
                     }
                     msg.flags = flags;
 
-                    for (evmc_uint256be const value :
-                         std::initializer_list<evmc_uint256be>{
+                    for (uint256_be_t const value :
+                         std::initializer_list<uint256_be_t>{
                              0x00_bytes32, 0x01_bytes32}) {
                         msg.value = value;
 
@@ -716,8 +716,8 @@ TYPED_TEST(
         evmc_message msg = make_msg();
         msg.gas = 99;
 
-        for (evmc_uint256be const value : std::initializer_list<evmc_uint256be>{
-                 0x00_bytes32, 0x01_bytes32}) {
+        for (uint256_be_t const value :
+             std::initializer_list<uint256_be_t>{0x00_bytes32, 0x01_bytes32}) {
             msg.value = value;
 
             for (auto const &calldata_variant : calldata_variants) {
@@ -749,8 +749,7 @@ TYPED_TEST(
             msg.input_data = data;
             msg.input_size = size;
 
-            for (evmc_uint256be const value :
-                 std::initializer_list<evmc_uint256be>{
+            for (uint256_be_t const value : std::initializer_list<uint256_be_t>{
                      0x00_bytes32, 0x01_bytes32}) {
                 msg.value = value;
 
@@ -772,8 +771,8 @@ TYPED_TEST(
             {wrong_too_long.data(), wrong_too_long.size()},
         };
 
-        for (evmc_uint256be const value : std::initializer_list<evmc_uint256be>{
-                 0x00_bytes32, 0x01_bytes32}) {
+        for (uint256_be_t const value :
+             std::initializer_list<uint256_be_t>{0x00_bytes32, 0x01_bytes32}) {
             msg.value = value;
 
             for (auto const &[data, size] : wrong_calldata) {

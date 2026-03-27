@@ -20,7 +20,7 @@
 #include <optional>
 #include <vector>
 
-#include <evmc/evmc.h>
+#include <category/core/bytes.hpp>
 #include <stdint.h>
 
 MONAD_NAMESPACE_BEGIN
@@ -38,7 +38,7 @@ struct Validator
 {
     uint8_t secp_pubkey[33];
     uint8_t bls_pubkey[48];
-    evmc_uint256be stake;
+    uint256_be_t stake;
 };
 
 std::optional<std::vector<Validator>>

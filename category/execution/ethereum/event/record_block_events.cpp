@@ -68,7 +68,7 @@ void record_block_start(
              .nonce = std::bit_cast<monad_c_b64>(eth_block_header.nonce),
              .base_fee_per_gas = eth_block_header.base_fee_per_gas.value_or(0),
              .withdrawals_root =
-                 eth_block_header.withdrawals_root.value_or(evmc_bytes32{}),
+                 eth_block_header.withdrawals_root.value_or(bytes32_t{}),
              .txn_count = txn_count},
         .monad_block_input = opt_monad_input.value_or({})};
     memcpy(

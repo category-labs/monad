@@ -637,34 +637,37 @@ void process_test(
             if (check_exec_events) {
                 EXPECT_FALSE(exec_events.block_reject_code) << name;
                 EXPECT_EQ(
-                    exec_events.block_end->exec_output.state_root,
+                    bytes32_t(exec_events.block_end->exec_output.state_root),
                     tdb.state_root())
                     << name;
                 EXPECT_EQ(
-                    exec_events.block_start->eth_block_input.transactions_root,
+                    bytes32_t(exec_events.block_start->eth_block_input
+                                  .transactions_root),
                     tdb.transactions_root())
                     << name;
                 if (tdb.withdrawals_root()) {
                     EXPECT_EQ(
-                        exec_events.block_start->eth_block_input
-                            .withdrawals_root,
+                        bytes32_t(exec_events.block_start->eth_block_input
+                                      .withdrawals_root),
                         *tdb.withdrawals_root())
                         << name;
                 }
                 else {
                     EXPECT_EQ(
-                        exec_events.block_start->eth_block_input
-                            .withdrawals_root,
+                        bytes32_t(exec_events.block_start->eth_block_input
+                                      .withdrawals_root),
                         bytes32_t{})
                         << name;
                 }
                 EXPECT_EQ(
-                    exec_events.block_start->eth_block_input.ommers_hash,
+                    bytes32_t(
+                        exec_events.block_start->eth_block_input.ommers_hash),
                     tdb_ommers_hash)
                     << name;
                 if constexpr (traits::evm_rev() >= EVMC_BYZANTIUM) {
                     EXPECT_EQ(
-                        exec_events.block_end->exec_output.receipts_root,
+                        bytes32_t(
+                            exec_events.block_end->exec_output.receipts_root),
                         tdb.receipts_root())
                         << name;
                 }
@@ -718,7 +721,8 @@ void process_test(
                 if (check_exec_events) {
                     ASSERT_LT(i, size(exec_events.txn_inputs));
                     EXPECT_EQ(
-                        exec_events.txn_inputs[i]->txn_hash, to_bytes(hash))
+                        bytes32_t(exec_events.txn_inputs[i]->txn_hash),
+                        to_bytes(hash))
                         << name;
                 }
             }

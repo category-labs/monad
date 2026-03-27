@@ -230,7 +230,7 @@ TEST(Rlp_Number, DecodeEncodeBigNumers)
             0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_u256);
     }
 
-    using namespace evmc::literals;
+    using monad::literals::operator""_bytes32;
     // bytes32
     {
         auto const encoding = encode_bytes32(

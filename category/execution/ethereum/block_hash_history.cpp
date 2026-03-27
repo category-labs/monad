@@ -30,6 +30,7 @@
 #include <cstdint>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+using literals::operator""_bytes32;
 
 byte_string const BLOCK_HISTORY_CODE =
     from_hex(

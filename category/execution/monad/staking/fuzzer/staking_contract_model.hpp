@@ -163,49 +163,49 @@ namespace monad::staking::test
         Result<u64_be> precompile_add_validator(
             byte_string_view message, byte_string_view secp_signature,
             byte_string_view bls_signature, evmc_address const &sender,
-            evmc_uint256be const &value);
+            uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_delegate(
             u64_be val_id, evmc_address const &sender,
-            evmc_uint256be const &value);
+            uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_undelegate(
             u64_be val_id, u256_be const &stake, u8_be withdrawal_id,
-            evmc_address const &sender, evmc_uint256be const &value);
+            evmc_address const &sender, uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_compound(
             u64_be val_id, evmc_address const &sender,
-            evmc_uint256be const &value);
+            uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_withdraw(
             u64_be val_id, u8_be withdrawal_id, evmc_address const &sender,
-            evmc_uint256be const &value);
+            uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_claim_rewards(
             u64_be val_id, evmc_address const &sender,
-            evmc_uint256be const &value);
+            uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_change_commission(
             u64_be val_id, u256_be const &new_commission,
-            evmc_address const &sender, evmc_uint256be const &value);
+            evmc_address const &sender, uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_external_reward(
             u64_be val_id, evmc_address const &sender,
-            evmc_uint256be const &value);
+            uint256_be_t const &value);
 
         // Result type is not accurate. Just interested in the side
         // effects of this function on the state:
         template <Traits traits>
         Result<void> precompile_get_delegator(
             u64_be val_id, Address const &addr, evmc_address const &sender,
-            evmc_uint256be const &value);
+            uint256_be_t const &value);
 
     private:
         uint256_t get_delegator_stake(uint64_t, Address const &, uint64_t);
@@ -217,7 +217,7 @@ namespace monad::staking::test
 
         void distribute_reward(u64_be, u256_be const &);
 
-        void pre_call(evmc_uint256be const &value);
+        void pre_call(uint256_be_t const &value);
 
         template <typename T>
         void post_call(Result<T> const &);
@@ -225,6 +225,6 @@ namespace monad::staking::test
         template <Traits traits>
         Result<byte_string> dispatch(
             byte_string const &input, evmc_address const &sender,
-            evmc_uint256be const &value);
+            uint256_be_t const &value);
     };
 }

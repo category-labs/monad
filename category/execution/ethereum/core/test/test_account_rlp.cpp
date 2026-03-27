@@ -29,7 +29,7 @@ using namespace monad::rlp;
 TEST(Rlp_Account, Encode)
 {
     using namespace intx;
-    using namespace evmc::literals;
+    using monad::literals::operator""_bytes32;
 
     static constexpr uint256_t b{24'000'000};
     static constexpr bytes32_t storage_root{

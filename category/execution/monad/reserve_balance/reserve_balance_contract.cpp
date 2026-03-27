@@ -64,11 +64,11 @@ ReserveBalanceContract::ReserveBalanceContract(
     state_.add_to_balance(RESERVE_BALANCE_CA, 0);
 }
 
-Result<void> function_not_payable(evmc_uint256be const &value)
+Result<void> function_not_payable(uint256_be_t const &value)
 {
     bool const all_zero = std::all_of(
         value.bytes,
-        value.bytes + sizeof(evmc_uint256be),
+        value.bytes + sizeof(uint256_be_t),
         [](uint8_t const byte) { return byte == 0; });
 
     if (MONAD_UNLIKELY(!all_zero)) {
@@ -103,8 +103,7 @@ EXPLICIT_MONAD_TRAITS(ReserveBalanceContract::precompile_dispatch);
 
 template <Traits traits>
 Result<byte_string> ReserveBalanceContract::precompile_dipped_into_reserve(
-    byte_string_view input, evmc_address const &,
-    evmc_uint256be const &msg_value)
+    byte_string_view input, evmc_address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
@@ -120,7 +119,7 @@ EXPLICIT_MONAD_TRAITS_MEMBER(
     ReserveBalanceContract::precompile_dipped_into_reserve);
 
 Result<byte_string> ReserveBalanceContract::precompile_fallback(
-    byte_string_view, evmc_address const &, evmc_uint256be const &)
+    byte_string_view, evmc_address const &, uint256_be_t const &)
 {
     return ReserveBalanceError::MethodNotSupported;
 }

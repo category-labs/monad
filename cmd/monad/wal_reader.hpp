@@ -18,7 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 
-#include <evmc/evmc.h>
+#include <category/core/bytes.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -40,7 +40,7 @@ static_assert(alignof(WalAction) == 1);
 struct WalEntry
 {
     WalAction action;
-    struct evmc_bytes32 id;
+    monad::bytes32_t id;
 };
 
 static_assert(sizeof(WalEntry) == 33);

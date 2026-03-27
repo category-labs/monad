@@ -89,7 +89,7 @@ TEST(Rlp_CallFrame, encode_decode_call_frames)
                 .log =
                     Receipt::Log{
                         .data = {byte_string{0xef, 0xfe}},
-                        .topics = {evmc_bytes32{0x01, 0x02}},
+                        .topics = {bytes32_t{uint8_t{0x01}, uint8_t{0x02}}},
                         .address = a,
                     },
                 .position = 0,
@@ -100,8 +100,8 @@ TEST(Rlp_CallFrame, encode_decode_call_frames)
                         .data = {byte_string{0xab, 0xcd}},
                         .topics =
                             {
-                                evmc_bytes32{0x03},
-                                evmc_bytes32{0x04, 0x05},
+                                bytes32_t{uint8_t{0x03}},
+                                bytes32_t{uint8_t{0x04}, uint8_t{0x05}},
                             },
                         .address = b,
                     },

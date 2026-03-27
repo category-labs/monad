@@ -39,7 +39,7 @@ public:
     ReserveBalanceContract(State &state, CallTracerBase &tracer);
 
     using PrecompileFunc = Result<byte_string> (ReserveBalanceContract::*)(
-        byte_string_view, evmc_address const &, evmc_bytes32 const &);
+        byte_string_view, evmc_address const &, uint256_be_t const &);
 
     //
     // Precompile methods
@@ -50,10 +50,10 @@ public:
 
     template <Traits traits>
     Result<byte_string> precompile_dipped_into_reserve(
-        byte_string_view, evmc_address const &, evmc_uint256be const &);
+        byte_string_view, evmc_address const &, uint256_be_t const &);
 
     Result<byte_string> precompile_fallback(
-        byte_string_view, evmc_address const &, evmc_uint256be const &);
+        byte_string_view, evmc_address const &, uint256_be_t const &);
 };
 
 MONAD_NAMESPACE_END

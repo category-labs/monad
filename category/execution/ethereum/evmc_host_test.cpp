@@ -129,7 +129,7 @@ TYPED_TEST(TraitsTest, emit_log)
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32};
     static constexpr auto topic1{
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
-    static constexpr bytes32_t topics[] = {topic0, topic1};
+    static constexpr evmc::bytes32 topics[] = {topic0, topic1};
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
     InMemoryMachine machine;
@@ -154,12 +154,7 @@ TYPED_TEST(TraitsTest, emit_log)
         0,
         chain_ctx};
 
-    host.emit_log(
-        from,
-        data.data(),
-        data.size(),
-        topics,
-        sizeof(topics) / sizeof(bytes32_t));
+    host.emit_log(from, data.data(), data.size(), topics, std::size(topics));
 
     auto const logs = state.logs();
     EXPECT_EQ(logs.size(), 1);

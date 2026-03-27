@@ -37,14 +37,10 @@
 #include <memory>
 #include <optional>
 
-using namespace monad;
-using namespace monad::vm;
-using namespace monad::vm::compiler;
-
 struct LLVMBinary
 {
 #ifdef MONAD_COMPILER_LLVM
-    std::shared_ptr<llvm::LLVMState> llvm_code;
+    std::shared_ptr<monad::vm::llvm::LLVMState> llvm_code;
 #else
     bool llvm_backend_unavailable{true};
 #endif
@@ -52,7 +48,7 @@ struct LLVMBinary
 
 struct CompilerBinary
 {
-    std::shared_ptr<native::Nativecode> ncode;
+    std::shared_ptr<monad::vm::compiler::native::Nativecode> ncode;
 };
 
 using Binary = std::variant<CompilerBinary, LLVMBinary>;
@@ -116,8 +112,9 @@ public:
     {
         if (use_llvm) {
 #ifdef MONAD_COMPILER_LLVM
-            std::shared_ptr<llvm::LLVMState> p =
-                llvm::compile_basicblocks_llvm<traits>(ir, "mce_llvm");
+            std::shared_ptr<monad::vm::llvm::LLVMState> p =
+                monad::vm::llvm::compile_basicblocks_llvm<traits>(
+                    ir, "mce_llvm");
             return LLVMBinary{p};
 #else
             LOG_ERROR("Unable to compile with LLVM.  LLVM not configured in "

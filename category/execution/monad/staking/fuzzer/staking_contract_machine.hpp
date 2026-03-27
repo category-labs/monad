@@ -194,80 +194,79 @@ namespace monad::staking::test
 
         std::tuple<
             Address, byte_string, byte_string, byte_string, Address,
-            evmc_uint256be>
+            uint256_be_t>
         gen_precompile_add_validator_input(
             uint256_t const &min_stake, uint256_t const &max_stake);
 
         u64_be model_precompile_add_validator(
             Address const &, byte_string const &, byte_string const &,
-            byte_string const &, Address const &, evmc_uint256be const &);
+            byte_string const &, Address const &, uint256_be_t const &);
 
         void precompile_add_validator();
 
-        std::tuple<u64_be, Address, evmc_uint256be>
+        std::tuple<u64_be, Address, uint256_be_t>
         gen_precompile_delegate_input();
 
         void model_precompile_delegate(
-            u64_be, Address const &, evmc_uint256be const &);
+            u64_be, Address const &, uint256_be_t const &);
 
         void precompile_delegate();
 
-        std::optional<
-            std::tuple<u64_be, u256_be, u8_be, Address, evmc_uint256be>>
+        std::optional<std::tuple<u64_be, u256_be, u8_be, Address, uint256_be_t>>
         gen_precompile_undelegate_input(uint256_t const &min_undelegate);
 
         void model_precompile_undelegate(
-            u64_be, u256_be, u8_be, Address const &, evmc_uint256be const &);
+            u64_be, u256_be, u8_be, Address const &, uint256_be_t const &);
 
         void precompile_undelegate();
 
-        std::optional<std::tuple<u64_be, Address, evmc_uint256be>>
+        std::optional<std::tuple<u64_be, Address, uint256_be_t>>
         gen_precompile_compound_input();
 
         void model_precompile_compound(
-            u64_be, Address const &, evmc_uint256be const &);
+            u64_be, Address const &, uint256_be_t const &);
 
         [[nodiscard]]
         bool precompile_compound();
 
-        std::optional<std::tuple<u64_be, u8_be, Address, evmc_uint256be>>
+        std::optional<std::tuple<u64_be, u8_be, Address, uint256_be_t>>
         gen_precompile_withdraw_input();
 
         void model_precompile_withdraw(
-            u64_be, u8_be, Address const &, evmc_uint256be const &);
+            u64_be, u8_be, Address const &, uint256_be_t const &);
 
         [[nodiscard]]
         bool precompile_withdraw();
 
-        std::tuple<u64_be, Address, evmc_uint256be>
+        std::tuple<u64_be, Address, uint256_be_t>
         gen_precompile_claim_rewards_input();
 
         void model_precompile_claim_rewards(
-            u64_be, Address const &, evmc_uint256be const &);
+            u64_be, Address const &, uint256_be_t const &);
 
         void precompile_claim_rewards();
 
-        std::tuple<u64_be, u256_be, Address, evmc_uint256be>
+        std::tuple<u64_be, u256_be, Address, uint256_be_t>
         gen_precompile_change_commission_input();
 
         void model_precompile_change_commission(
-            u64_be, u256_be const &, Address const &, evmc_uint256be const &);
+            u64_be, u256_be const &, Address const &, uint256_be_t const &);
 
         void precompile_change_commission();
 
-        std::optional<std::tuple<u64_be, Address, evmc_uint256be>>
+        std::optional<std::tuple<u64_be, Address, uint256_be_t>>
         gen_precompile_external_reward_input();
 
         void model_precompile_external_reward(
-            u64_be, Address const &, evmc_uint256be const &);
+            u64_be, Address const &, uint256_be_t const &);
 
         bool precompile_external_reward();
 
-        std::tuple<u64_be, Address, Address, evmc_uint256be>
+        std::tuple<u64_be, Address, Address, uint256_be_t>
         gen_precompile_get_delegator_input();
 
         void model_precompile_get_delegator(
-            u64_be, Address const &, Address const &, evmc_uint256be const &);
+            u64_be, Address const &, Address const &, uint256_be_t const &);
 
         void precompile_get_delegator();
     };

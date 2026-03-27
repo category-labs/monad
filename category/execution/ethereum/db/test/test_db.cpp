@@ -470,7 +470,8 @@ TYPED_TEST(DBTest, storage_deletion)
 TYPED_TEST(DBTest, commit_receipts_transactions)
 {
     using namespace intx;
-    using namespace evmc::literals;
+    using evmc::literals::operator""_address;
+    using monad::literals::operator""_bytes32;
 
     TrieDb tdb{this->db};
     // empty receipts
@@ -650,7 +651,8 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
 {
     using namespace intx;
-    using namespace evmc::literals;
+    using evmc::literals::operator""_address;
+    using monad::literals::operator""_bytes32;
 
     TrieDb tdb{this->db};
 

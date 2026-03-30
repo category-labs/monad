@@ -26,7 +26,6 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 #include <category/vm/vm.hpp>
 
@@ -85,13 +84,10 @@ public:
         bytes32_t const &key) override
     {
         bool truncated = false;
-        bytes32_t proposal_result;
+        byte_string proposal_result;
         if (proposals_.try_read_storage(
                 address, incarnation, key, proposal_result, truncated)) {
-            if (proposal_result == bytes32_t{}) {
-                return {};
-            }
-            return encode_storage_eth(proposal_result);
+            return proposal_result;
         }
 
         if (!truncated) {
@@ -125,7 +121,7 @@ public:
         std::unique_ptr<ProposalState> const ps =
             proposals_.finalize(block_number, block_id);
         if (ps) {
-            insert_in_lru_caches(ps->state());
+            insert_in_lru_caches(ps->overlays());
         }
         else {
             accounts_.clear();
@@ -166,11 +162,10 @@ public:
     }
 
     void update_proposal_state(
-        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
+        ProposalOverlays overlays, uint64_t const block_number,
         bytes32_t const &block_id)
     {
-        MONAD_ASSERT(state_deltas);
-        proposals_.commit(std::move(state_deltas), block_number, block_id);
+        proposals_.commit(std::move(overlays), block_number, block_id);
     }
 
     virtual BlockHeader read_eth_header() override
@@ -210,31 +205,13 @@ public:
     }
 
 private:
-    void insert_in_lru_caches(StateDeltas const &state_deltas)
+    void insert_in_lru_caches(ProposalOverlays const &overlays)
     {
-        for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
-            auto const &address = it->first;
-            auto const &account_delta = it->second.account;
-            accounts_.insert(address, account_delta.second);
-            auto const &storage = it->second.storage;
-            auto const &account = account_delta.second;
-            if (account.has_value()) {
-                for (auto it2 = storage.cbegin(); it2 != storage.cend();
-                     ++it2) {
-                    auto const &key = it2->first;
-                    auto const &storage_delta = it2->second;
-                    auto const incarnation = account->incarnation;
-                    auto const &val = storage_delta.second;
-                    StorageKey const sk{address, incarnation, key};
-                    if (val == bytes32_t{}) {
-                        storage_.insert(sk, std::span<uint8_t const>{});
-                    }
-                    else {
-                        byte_string enc = encode_storage_eth(val);
-                        storage_.insert(sk, enc);
-                    }
-                }
-            }
+        for (auto const &[addr, acct] : overlays.accounts) {
+            accounts_.insert(addr, acct);
+        }
+        for (auto const &[sk, leaf] : overlays.storage) {
+            storage_.insert(sk, leaf);
         }
     }
 };

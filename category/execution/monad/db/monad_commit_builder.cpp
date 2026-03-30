@@ -51,10 +51,9 @@ std::unique_ptr<CommitBuilder> make_commit_builder(
     return std::make_unique<CommitBuilder>(block_number);
 }
 
-CommitBuilder &
-MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
+CommitBuilder &MonadCommitBuilder::add_state_deltas(
+    StateDeltas const &state_deltas, LeafOverlay *const overlay)
 {
-
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
@@ -91,18 +90,23 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
             }
 
             for (auto const &[page_key, page] : pages) {
+                bool const is_empty = page.is_empty();
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = hash_alloc_.emplace_back(
                         keccak256({page_key.bytes, sizeof(page_key.bytes)})),
-                    .value =
-                        page.is_empty()
-                            ? std::nullopt
-                            : std::make_optional<byte_string_view>(
-                                  bytes_alloc_.emplace_back(
-                                      encode_storage_page_db(page_key, page))),
+                    .value = is_empty ? std::nullopt
+                                      : std::make_optional<byte_string_view>(
+                                            bytes_alloc_.emplace_back(
+                                                encode_storage_page_db(
+                                                    page_key, page))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_number_)}));
+                if (overlay) {
+                    StorageKey const sk{addr, inc, page_key};
+                    (*overlay)[sk] =
+                        is_empty ? byte_string{} : encode_storage_page(page);
+                }
             }
             value = bytes_alloc_.emplace_back(
                 encode_account_db(addr, account.value()));

@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/db/proposal_overlays.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/update.hpp>
 
@@ -45,7 +46,8 @@ public:
     explicit CommitBuilder(uint64_t block_number);
     virtual ~CommitBuilder() = default;
 
-    virtual CommitBuilder &add_state_deltas(StateDeltas const &);
+    virtual CommitBuilder &
+    add_state_deltas(StateDeltas const &, LeafOverlay *overlay = nullptr);
 
     CommitBuilder &add_code(Code const &);
 

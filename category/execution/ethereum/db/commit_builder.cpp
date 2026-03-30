@@ -67,7 +67,8 @@ CommitBuilder::CommitBuilder(uint64_t const block_number)
 {
 }
 
-CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
+CommitBuilder &CommitBuilder::add_state_deltas(
+    StateDeltas const &state_deltas, LeafOverlay *const overlay)
 {
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
@@ -77,11 +78,12 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         if (account.has_value()) {
             for (auto const &[key, delta] : delta.storage) {
                 if (delta.first != delta.second) {
+                    bool const is_delete = delta.second == bytes32_t{};
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
                             .key = hash_alloc_.emplace_back(
                                 keccak256({key.bytes, sizeof(key.bytes)})),
-                            .value = delta.second == bytes32_t{}
+                            .value = is_delete
                                          ? std::nullopt
                                          : std::make_optional<byte_string_view>(
                                                bytes_alloc_.emplace_back(
@@ -90,6 +92,12 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));
+                    if (overlay) {
+                        StorageKey const sk{addr, account->incarnation, key};
+                        (*overlay)[sk] = is_delete
+                                             ? byte_string{}
+                                             : encode_storage_eth(delta.second);
+                    }
                 }
             }
             value = bytes_alloc_.emplace_back(

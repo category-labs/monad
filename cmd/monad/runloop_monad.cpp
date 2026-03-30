@@ -316,9 +316,10 @@ Result<BlockExecOutput> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
+    LeafOverlay leaf_overlay;
     auto builder =
         make_commit_builder(block.header.number, broker, traits::monad_rev());
-    builder->add_state_deltas(*state)
+    builder->add_state_deltas(*state, &leaf_overlay)
         .add_code(code)
         .add_receipts(results)
         .add_transactions(block.transactions, senders)
@@ -337,7 +338,11 @@ Result<BlockExecOutput> propose_block(
         h.logs_bloom = compute_bloom(results);
         h.ommers_hash = compute_ommers_hash(block.ommers);
     });
-    db.update_proposal_state(std::move(state), block.header.number, block_id);
+
+    db.update_proposal_state(
+        ProposalOverlays::from_state_deltas(*state, &leaf_overlay),
+        block.header.number,
+        block_id);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);

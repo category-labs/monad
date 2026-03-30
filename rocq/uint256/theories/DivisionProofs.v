@@ -113,6 +113,23 @@ Proof.
     nia.
 Qed.
 
+
+(** Division distributes over [a + base * R] when the base is a
+    power of 2 and the divisor divides the base. *)
+Lemma Z_div_add_base_pow2 : forall a R s,
+  0 <= a < 2 ^ (Z.pos width) -> 0 <= R -> 0 <= s <= Z.pos width ->
+  (a + base width * R) / 2 ^ s = a / 2 ^ s + 2 ^ (Z.pos width - s) * R.
+Proof.
+  intros a R s Ha HR Hs.
+  assert (Hpow: base width = 2 ^ s * 2 ^ (Z.pos width - s)).
+  { unfold base. rewrite <- Z.pow_add_r by lia. f_equal. lia. }
+  rewrite Hpow.
+  replace (a + 2 ^ s * 2 ^ (Z.pos width - s) * R)
+    with (2 ^ (Z.pos width - s) * R * 2 ^ s + a) by ring.
+  rewrite Z.div_add_l by (apply Z.pow_nonzero; lia).
+  lia.
+Qed.
+
 (** ** Structural Properties *)
 
 (** long_div_fold produces quotient with same length as input *)
@@ -310,12 +327,167 @@ Proof.
   lia.
 Qed.
 
+(** ** Right-Shift Helpers *)
+
+Lemma shrd64_zero : forall shift,
+  to_Z (shrd64 U64.zero U64.zero shift) = 0.
+Proof.
+  intros shift. unfold shrd64.
+  rewrite spec_or, spec_shr, spec_shl, spec_shl, spec_zero.
+  assert (Hbw: base width <> 0) by (apply Z.pow_nonzero; lia).
+  rewrite Z.shiftr_0_l, (Z.mod_0_l _ Hbw),
+          Z.shiftl_0_l, (Z.mod_0_l _ Hbw),
+          Z.lor_0_r, (Z.mod_0_l _ Hbw).
+  reflexivity.
+Qed.
+
+(** [shrd64] computes the low 64 bits of [(high || low) >> shift].
+
+    Given two 64-bit words and a shift amount [s] (0 < s < 64):
+
+       high                  low
+    [  63 ........... 0 | 63 ........... 0 ]
+
+    After right-shifting the 128-bit concatenation by [s]:
+
+    [  63 ........... 0 | 63 ........... 0 ]
+                          <---- result ----->
+                          |<-- 64-s -->|<-s->|
+                          | high*2^(64-s)   | low/2^s  |
+                          | (mod 2^64)      |          |
+
+    Result = low / 2^s  +  (high * 2^(64-s)) mod 2^64
+                ^^^ kept bits    ^^^ overflow bits
+                (disjoint: high half aligned to 2^(64-s),
+                 low half bounded by 2^(64-s))              *)
+Lemma shrd64_spec : forall high low shift,
+  (shift < Pos.to_nat U64.width)%nat ->
+  to_Z (shrd64 high low shift) =
+    to_Z low / 2 ^ Z.of_nat shift +
+      (to_Z high * 2 ^ (Z.pos width - Z.of_nat shift)) mod base width.
+Proof.
+  intros high low s Hs.
+  pose proof (spec_to_Z high) as Hhigh.
+  pose proof (spec_to_Z low) as Hlow.
+  unfold shrd64.
+  rewrite spec_or, spec_shr.
+  pose proof (spec_shl (shl high 1) (63 - s)) as Hshl_outer.
+  pose proof (spec_shl high 1) as Hshl_inner.
+  rewrite Hshl_inner in Hshl_outer.
+  rewrite Hshl_outer.
+  rewrite Z.shiftr_div_pow2 by lia.
+  (* Remove the mod on the shr result — it's already in range *)
+  assert (Hdiv_small: 0 <= to_Z low / 2 ^ Z.of_nat s < base width).
+  { unfold base in Hlow |- *. split.
+    - apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia].
+    - apply Z.div_lt_upper_bound.
+      + apply Z.pow_pos_nonneg; lia.
+      + pose proof (Z.pow_pos_nonneg 2 (Z.of_nat s) ltac:(lia) ltac:(lia)). nia. }
+  rewrite (Z.mod_small _ _ Hdiv_small).
+  (* Collapse double shl: shl (shl high 1) (63-s) = high * 2^(64-s) mod 2^64 *)
+  rewrite Z.shiftl_mul_pow2 by lia.
+  rewrite Z.shiftl_mul_pow2 by lia.
+  rewrite width_is_64 in Hs.
+  replace (Z.pos width) with 64 by (rewrite width_is_64; reflexivity).
+  rewrite Z.mul_mod_idemp_l by (unfold base; apply Z.pow_nonzero; lia).
+  replace (to_Z high * 2 ^ Z.of_nat 1 * 2 ^ Z.of_nat (63 - s))
+    with (to_Z high * (2 ^ Z.of_nat 1 * 2 ^ Z.of_nat (63 - s))) by ring.
+  replace (2 ^ Z.of_nat 1 * 2 ^ Z.of_nat (63 - s))
+    with (2 ^ (64 - Z.of_nat s))
+    by (rewrite <- Z.pow_add_r by lia; f_equal; lia).
+  (* Disjoint bits => lor = add *)
+  set (a := to_Z low / 2 ^ Z.of_nat s).
+  set (b := (to_Z high * 2 ^ (64 - Z.of_nat s)) mod base width).
+  assert (Hlor: Z.lor a b = a + b).
+  { rewrite Z.lor_comm. replace (a + b) with (b + a) by lia.
+    apply (Z_lor_add_disjoint a b (64 - Z.of_nat s)); [lia| | |].
+    - unfold a. split.
+      + apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia].
+      + apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
+        unfold base in Hlow. rewrite width_is_64 in Hlow.
+        assert (2 ^ Z.of_nat s * 2 ^ (64 - Z.of_nat s) = 2 ^ 64)
+          by (rewrite <- Z.pow_add_r by lia; f_equal; lia).
+        nia.
+    - unfold b. unfold base. rewrite width_is_64.
+      pose proof (Z.mod_pos_bound (to_Z high * 2 ^ (64 - Z.of_nat s)) (2^64)
+                    ltac:(apply Z.pow_pos_nonneg; lia)). lia.
+    - unfold b. unfold base. rewrite width_is_64.
+      apply Z_mod_mul_pow2_aligned. lia. }
+  rewrite Hlor.
+  (* Outer mod is no-op: a + b < base width *)
+  apply Z.mod_small. unfold base. rewrite width_is_64.
+  assert (Ha_bound: 0 <= a < 2 ^ (64 - Z.of_nat s)).
+  { unfold a. split.
+    - apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia].
+    - apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
+      unfold base in Hlow. rewrite width_is_64 in Hlow.
+      assert (Hpow: 2 ^ Z.of_nat s * 2 ^ (64 - Z.of_nat s) = 2 ^ 64).
+      { rewrite <- Z.pow_add_r by lia. f_equal. lia. }
+      nia. }
+  assert (Hb_bound: 0 <= b < 2^64).
+  { unfold b. unfold base. rewrite width_is_64.
+    apply Z.mod_pos_bound. apply Z.pow_pos_nonneg; lia. }
+  split; [lia|].
+  rewrite <- Hlor.
+  destruct (Z.eq_dec (Z.lor a b) 0) as [->|Hlor_nz].
+  + apply Z.pow_pos_nonneg; lia.
+  + apply Z.log2_lt_pow2; [rewrite Hlor; lia|].
+    rewrite Z.log2_lor by lia.
+    apply Z.max_lub_lt.
+    * destruct (Z.eq_dec a 0) as [->|]; [cbn; lia|].
+      apply Z.log2_lt_pow2; [lia|].
+      pose proof (Z.pow_le_mono_r 2 (64 - Z.of_nat s) 64 ltac:(lia) ltac:(lia)). lia.
+    * destruct (Z.eq_dec b 0) as [->|]; [cbn; lia|].
+      apply Z.log2_lt_pow2; lia.
+Qed.
+
+(** Euclidean decomposition of [to_Z (hd zero rest) * 2^(w-s)] links
+    the first word of [rest] to the full [to_Z_words rest]. *)
+Lemma shift_right_hd_decomp : forall rest s,
+  0 <= s <= Z.pos width ->
+  (to_Z (hd zero rest) * 2 ^ (Z.pos width - s)) mod base width +
+    base width * (to_Z_words rest / 2 ^ s) =
+    2 ^ (Z.pos width - s) * to_Z_words rest.
+Proof.
+  intros rest s Hs.
+  destruct rest as [|w' rest'].
+  - cbn [hd to_Z_words].
+    rewrite spec_zero, Z.mul_0_l, Zmod_0_l, Z.div_0_l, Z.mul_0_r, Z.mul_0_r.
+    + reflexivity.
+    + apply Z.pow_nonzero; lia.
+  - cbn [hd to_Z_words].
+    pose proof (spec_to_Z w') as Hw'.
+    pose proof (to_Z_words_bound rest') as Hrest'.
+    assert (Ha: 0 <= to_Z w' < 2 ^ Z.pos width) by (unfold base in Hw'; lia).
+    rewrite (Z_div_add_base_pow2 (to_Z w') (to_Z_words rest') s Ha ltac:(lia) ltac:(lia)).
+    pose proof (Z_div_pow2_complement (to_Z w') (Z.pos width - s) (Z.pos width)
+                  ltac:(lia) ltac:(lia)) as Hcomp.
+    replace (Z.pos width - (Z.pos width - s)) with s in Hcomp by lia.
+    pose proof (Z_div_mod_eq_full (to_Z w' * 2 ^ (Z.pos width - s)) (base width)) as Heuc.
+    unfold base in Heuc. rewrite <- Hcomp in Heuc. unfold base. nia.
+Qed.
+
 (** Right-shift divides value by 2^shift (truncating). *)
 Lemma shift_right_words_correct : forall ws shift,
   (shift < Pos.to_nat U64.width)%nat ->
   to_Z_words (shift_right_words ws shift) =
     to_Z_words ws / 2 ^ (Z.of_nat shift).
-Proof. Admitted.
+Proof.
+  induction ws as [|w rest IH]; intros s Hs.
+  - cbn [shift_right_words to_Z_words].
+    rewrite Z.div_0_l by (apply Z.pow_nonzero; lia). reflexivity.
+  - cbn [shift_right_words to_Z_words].
+    rewrite shrd64_spec by exact Hs.
+    rewrite IH by exact Hs.
+    pose proof (spec_to_Z w) as Hw.
+    pose proof (to_Z_words_bound rest) as Hrest.
+    assert (Ha: 0 <= to_Z w < 2 ^ Z.pos width) by (unfold base in Hw; lia).
+    rewrite (Z_div_add_base_pow2 (to_Z w) (to_Z_words rest) (Z.of_nat s)
+               Ha ltac:(lia) ltac:(lia)).
+    (* Remains: hd decomposition — destruct rest *)
+    rewrite <- Z.add_assoc.
+    rewrite (shift_right_hd_decomp rest (Z.of_nat s)); lia.
+Qed.
 
 (** Shift-left then shift-right is division (round-trip for aligned values). *)
 Lemma shift_right_left_cancel : forall ws shift,

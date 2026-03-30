@@ -182,9 +182,8 @@ Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, DbCache &db,
-    MachineBase &, vm::VM &vm, fiber::PriorityPool &priority_pool,
-    bool const is_first_block, bool const enable_tracing,
-    BlockCache &block_cache)
+    vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
+    bool const enable_tracing, BlockCache &block_cache)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -483,7 +482,7 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &chain, std::filesystem::path const &ledger_dir,
-    mpt::Db &raw_db, DbCache &db, MachineBase &machine, vm::VM &vm,
+    mpt::Db &raw_db, DbCache &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
@@ -632,7 +631,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &block_hash_chain,
              &db,
              &chain,
-             &machine,
              &vm,
              &priority_pool,
              &last_finalized_block_number,
@@ -690,7 +688,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     block_hash_chain,
                     chain,
                     db,
-                    machine,
                     vm,
                     priority_pool,
                     block_number == start_block_num,

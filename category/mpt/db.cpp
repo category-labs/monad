@@ -1318,6 +1318,12 @@ bool Db::is_read_only() const
     return is_on_disk() && impl_->aux().io->is_read_only();
 }
 
+UpdateAuxImpl const &Db::aux() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux();
+}
+
 uint64_t Db::get_history_length() const
 {
     return is_on_disk() ? impl_->aux().version_history_length() : 1;

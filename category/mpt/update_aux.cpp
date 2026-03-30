@@ -401,7 +401,7 @@ UpdateAuxImpl::calc_auto_expire_version(uint64_t const upsert_version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     if (db_history_max_version() == INVALID_BLOCK_NUM) {
-        return 0;
+        return static_cast<int64_t>(upsert_version);
     }
     auto const min_valid_version = db_history_min_valid_version();
     auto const max_version_post_upsert =
@@ -1354,6 +1354,9 @@ void UpdateAuxImpl::move_trie_version_forward(
     append_root_offset(offset);
     MONAD_ASSERT(dest == db_history_max_version());
     MONAD_ASSERT(version_is_valid_ondisk(dest));
+    if (get_auto_expire_version_metadata() == static_cast<int64_t>(src)) {
+        set_auto_expire_version_metadata(static_cast<int64_t>(dest));
+    }
 }
 
 void UpdateAuxImpl::update_disk_growth_data()

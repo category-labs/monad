@@ -129,7 +129,7 @@ TEST(DbBinarySnapshot, Basic)
         }
         TrieDb tdb{db};
         ASSERT_EQ(tdb.get_block_number(), db.get_latest_version());
-        test::commit_simple(
+        monad::test::commit_simple(
             tdb,
             deltas,
             code_delta,
@@ -242,7 +242,7 @@ TEST(DbBinarySnapshot, MultipleShards)
         }
         TrieDb tdb{db};
         ASSERT_EQ(tdb.get_block_number(), db.get_latest_version());
-        test::commit_simple(
+        monad::test::commit_simple(
             tdb,
             deltas,
             code_delta,

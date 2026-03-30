@@ -19,14 +19,11 @@
 #include <category/async/connected_operation.hpp>
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/erased_connected_operation.hpp>
-#include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
-#include <category/core/io/buffers.hpp>
-#include <category/core/io/ring.hpp>
 #include <category/core/keccak.h>
 #include <category/core/result.hpp>
 #include <category/core/small_prng.hpp>
@@ -78,6 +75,17 @@
 
 using namespace monad::mpt;
 using namespace monad::test;
+
+namespace monad::mpt::test
+{
+    struct DbAccessor
+    {
+        static UpdateAuxImpl const &aux(Db const &db)
+        {
+            return db.aux();
+        }
+    };
+}
 
 namespace
 {
@@ -830,7 +838,7 @@ TEST(DbTest, history_length_adjustment_never_under_min)
 {
     auto const dbname = create_temp_file(4);
     StateMachineAlwaysEmpty machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname}};
@@ -851,19 +859,6 @@ TEST(DbTest, history_length_adjustment_never_under_min)
             .next = UpdateList{}});
     }
 
-    // construct a read-only aux
-    monad::async::storage_pool::creation_flags pool_options;
-    pool_options.open_read_only = true;
-    monad::async::storage_pool pool(
-        config.dbname_paths,
-        monad::async::storage_pool::mode::open_existing,
-        pool_options);
-    monad::io::Ring read_ring{monad::io::RingConfig{128}};
-    monad::io::Buffers read_buffers = monad::io::make_buffers_for_read_only(
-        read_ring, 128, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
-    monad::async::AsyncIO io_ctx(pool, read_buffers);
-    UpdateAux const aux_reader{io_ctx};
-
     auto batch_upsert_once = [&](uint64_t const version) {
         UpdateList ls;
         for (auto &u : updates_alloc) {
@@ -876,13 +871,13 @@ TEST(DbTest, history_length_adjustment_never_under_min)
         batch_upsert_once(block_id);
         ++block_id;
     }
-    auto const disk_usage_before = aux_reader.disk_usage();
-    while (aux_reader.disk_usage() == disk_usage_before) {
+    auto const disk_usage_before = test::DbAccessor::aux(db).disk_usage();
+    while (test::DbAccessor::aux(db).disk_usage() == disk_usage_before) {
         batch_upsert_once(block_id);
         ++block_id;
     }
     // Db stops adjusting down history length at MIN_HISTORY_LENGTH
-    EXPECT_GT(aux_reader.disk_usage(), disk_usage_before);
+    EXPECT_GT(test::DbAccessor::aux(db).disk_usage(), disk_usage_before);
     EXPECT_EQ(db.get_history_length(), MIN_HISTORY_LENGTH);
 
     remove(dbname);
@@ -2231,27 +2226,15 @@ TEST(DbTest, move_trie_version_forward_history_ring_wrap_around)
     auto const undb = monad::make_scope_exit(
         [&]() noexcept { std::filesystem::remove(dbname); });
     StateMachineAlwaysEmpty machine{};
-    OnDiskDbConfig config{
+    OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
         .dbname_paths = {dbname}};
     Db db{machine, config};
     Node::SharedPtr root;
 
-    uint64_t const root_offsets_ring_capacity = [&] {
-        monad::async::storage_pool::creation_flags pool_options;
-        pool_options.open_read_only = true;
-        monad::async::storage_pool pool_ro(
-            config.dbname_paths,
-            monad::async::storage_pool::mode::open_existing,
-            pool_options);
-        monad::io::Ring ring;
-        monad::io::Buffers robuf = monad::io::make_buffers_for_read_only(
-            ring, 2, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
-        monad::async::AsyncIO testio(pool_ro, robuf);
-        monad::mpt::UpdateAux const aux_reader{testio};
-        return aux_reader.root_offsets().capacity();
-    }();
+    uint64_t const root_offsets_ring_capacity =
+        test::DbAccessor::aux(db).root_offsets().capacity();
 
     auto const prefix = 0x0012_bytes;
     monad::byte_string const kv = keccak_int_to_string(10);
@@ -2313,20 +2296,8 @@ TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
         kv_alloc.emplace_back(keccak_int_to_string(i));
     }
 
-    uint64_t const root_offsets_ring_capacity = [&] {
-        monad::async::storage_pool::creation_flags pool_options;
-        pool_options.open_read_only = true;
-        monad::async::storage_pool pool_ro(
-            config.dbname_paths,
-            monad::async::storage_pool::mode::open_existing,
-            pool_options);
-        monad::io::Ring ring;
-        monad::io::Buffers robuf = monad::io::make_buffers_for_read_only(
-            ring, 2, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
-        monad::async::AsyncIO testio(pool_ro, robuf);
-        monad::mpt::UpdateAux const aux_reader{testio};
-        return aux_reader.root_offsets().capacity();
-    }();
+    uint64_t const root_offsets_ring_capacity =
+        test::DbAccessor::aux(db).root_offsets().capacity();
     std::cout << root_offsets_ring_capacity << std::endl;
 
     auto const version_begin = root_offsets_ring_capacity * 2;
@@ -2882,4 +2853,30 @@ TYPED_TEST(DbTest, scalability)
             i.join();
         }
     }
+}
+
+TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_updates_auto_expire)
+{
+    // After upsert at version 0 and move_trie_version_forward
+    // to 1000, auto_expire_version_metadata should be updated to 1000 (not
+    // remain at 0).
+    auto const prefix = 0x00_bytes;
+    auto const key0 = 0x0000000000000000_bytes;
+
+    root = upsert_updates_flat_list(
+        nullptr, db, prefix, 0, make_update(key0, key0));
+
+    // After upsert at version 0, auto_expire_version_metadata should be 0
+    EXPECT_EQ(test::DbAccessor::aux(db).get_auto_expire_version_metadata(), 0);
+
+    // Move trie from version 0 to version 1000
+    constexpr uint64_t start_version = 1000;
+    db.move_trie_version_forward(0, start_version);
+
+    // After move, auto_expire_version_metadata should be updated to 1000
+    EXPECT_EQ(
+        test::DbAccessor::aux(db).get_auto_expire_version_metadata(),
+        start_version)
+        << "auto_expire_version_metadata should be moved forward with "
+           "move_trie_version_forward";
 }

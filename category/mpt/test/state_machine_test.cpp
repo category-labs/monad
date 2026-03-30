@@ -84,7 +84,7 @@ namespace
 
         virtual Compute &get_compute() const override
         {
-            static test::EmptyCompute compute{};
+            static monad::test::EmptyCompute compute{};
             compute_calls.emplace(path);
             return compute;
         }

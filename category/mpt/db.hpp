@@ -42,6 +42,11 @@ struct StateMachine;
 struct TraverseMachine;
 struct AsyncContext;
 
+namespace test
+{
+    struct DbAccessor;
+}
+
 struct AsyncIOContext
 {
     async::storage_pool pool;
@@ -161,6 +166,10 @@ public:
 
     bool is_on_disk() const;
     bool is_read_only() const;
+
+private:
+    friend struct test::DbAccessor;
+    UpdateAuxImpl const &aux() const;
 };
 
 // The following are not threadsafe. Please use async get from the RODb owning

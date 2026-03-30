@@ -129,7 +129,7 @@ uint64_t monad_db_snapshot_write_filesystem(
 void monad_db_snapshot_load_filesystem(
     char const *const *const dbname_paths, size_t const len,
     unsigned const sq_thread_cpu, char const *const snapshot_dir,
-    uint64_t const block)
+    uint64_t const block, uint8_t const dest_storage_format)
 {
     std::filesystem::path const root{std::format("{}/{}", snapshot_dir, block)};
     MONAD_ASSERT(std::filesystem::is_directory(root));
@@ -149,7 +149,12 @@ void monad_db_snapshot_load_filesystem(
     }
 
     monad_db_snapshot_loader *const loader = monad_db_snapshot_loader_create(
-        block, dbname_paths, len, sq_thread_cpu, source_format);
+        block,
+        dbname_paths,
+        len,
+        sq_thread_cpu,
+        source_format,
+        dest_storage_format);
 
     auto const do_mmap = [](std::filesystem::path const file) {
         using namespace monad;

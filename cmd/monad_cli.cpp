@@ -951,7 +951,8 @@ int main(int argc, char *argv[])
             c_dbname_paths.size(),
             sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
             load_binary_snapshot.value().c_str(),
-            version);
+            version,
+            static_cast<uint8_t>(db_storage_format));
         LOG_INFO(
             "snapshot version={} load_binary_snapshot={} elapsed={}",
             version,

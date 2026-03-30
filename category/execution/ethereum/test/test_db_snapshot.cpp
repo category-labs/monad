@@ -40,8 +40,9 @@ namespace
         int fd;
         std::string path;
 
-        TempDb(monad::mpt::StorageFormat fmt =
-                   monad::mpt::StorageFormat::SlotCompact)
+        TempDb(
+            monad::mpt::StorageFormat fmt =
+                monad::mpt::StorageFormat::SlotCompact)
             : fd{MONAD_ASYNC_NAMESPACE::make_temporary_inode()}
             , path{"/proc/self/fd/" + std::to_string(fd)}
         {
@@ -178,7 +179,8 @@ TEST(DbBinarySnapshot, Basic)
             1,
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
-            100);
+            100,
+            static_cast<uint8_t>(mpt::StorageFormat::SlotCompact));
     }
 
     {
@@ -331,7 +333,8 @@ TEST(DbBinarySnapshot, MultipleShards)
             1,
             static_cast<unsigned>(-1),
             combined_root.path.c_str(),
-            100);
+            100,
+            static_cast<uint8_t>(mpt::StorageFormat::SlotCompact));
     }
     {
         AsyncIOContext io_context{
@@ -370,8 +373,7 @@ TEST(DbBinarySnapshot, StorageFormatWrittenToSnapshot)
         db.update_finalized_version(0);
         TrieDb tdb{db};
         test::commit_simple(
-            tdb, StateDeltas{}, Code{}, bytes32_t{1},
-            BlockHeader{.number = 1});
+            tdb, StateDeltas{}, Code{}, bytes32_t{1}, BlockHeader{.number = 1});
         tdb.finalize(1, bytes32_t{1});
     }
     {
@@ -382,8 +384,15 @@ TEST(DbBinarySnapshot, StorageFormatWrittenToSnapshot)
                 static_cast<uint8_t>(StorageFormat::SlotCompact));
         char const *paths[] = {src_db.path.c_str()};
         EXPECT_TRUE(monad_db_dump_snapshot(
-            paths, 1, static_cast<unsigned>(-1), 1,
-            monad_db_snapshot_write_filesystem, context, 2048, 1, 0));
+            paths,
+            1,
+            static_cast<unsigned>(-1),
+            1,
+            monad_db_snapshot_write_filesystem,
+            context,
+            2048,
+            1,
+            0));
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
     }
 
@@ -412,8 +421,7 @@ TEST(DbBinarySnapshot, StorageFormatSnapshotPages)
         db.update_finalized_version(0);
         TrieDb tdb{db};
         test::commit_simple(
-            tdb, StateDeltas{}, Code{}, bytes32_t{1},
-            BlockHeader{.number = 1});
+            tdb, StateDeltas{}, Code{}, bytes32_t{1}, BlockHeader{.number = 1});
         tdb.finalize(1, bytes32_t{1});
     }
     {
@@ -424,8 +432,15 @@ TEST(DbBinarySnapshot, StorageFormatSnapshotPages)
                 static_cast<uint8_t>(StorageFormat::PageCOO));
         char const *paths[] = {src_db.path.c_str()};
         EXPECT_TRUE(monad_db_dump_snapshot(
-            paths, 1, static_cast<unsigned>(-1), 1,
-            monad_db_snapshot_write_filesystem, context, 2048, 1, 0));
+            paths,
+            1,
+            static_cast<unsigned>(-1),
+            1,
+            monad_db_snapshot_write_filesystem,
+            context,
+            2048,
+            1,
+            0));
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
     }
 

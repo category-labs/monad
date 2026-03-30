@@ -63,10 +63,12 @@ struct monad_db_snapshot_loader
     monad_db_snapshot_loader(
         uint64_t const block, char const *const *const dbname_paths,
         size_t const len, unsigned const sq_thread_cpu,
-        monad::mpt::StorageFormat const source_fmt)
+        monad::mpt::StorageFormat const source_fmt,
+        monad::mpt::StorageFormat const dest_fmt)
         : block{block}
         , db{machine,
              monad::mpt::OnDiskDbConfig{
+                 .storage_format = dest_fmt,
                  .append = true,
                  .compaction = false,
                  .rd_buffers = 8192,
@@ -81,6 +83,9 @@ struct monad_db_snapshot_loader
         , source_format{source_fmt}
         , dest_format{machine.storage_format()}
     {
+        MONAD_ASSERT_PRINTF(
+            dest_format == dest_fmt,
+            "DB metadata format does not match requested format");
         MONAD_ASSERT_PRINTF(
             !(source_format == monad::mpt::StorageFormat::PageCOO &&
               dest_format == monad::mpt::StorageFormat::SlotCompact),
@@ -460,15 +465,20 @@ bool monad_db_dump_snapshot(
 monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t const block, char const *const *const dbname_paths,
     size_t const len, unsigned const sq_thread_cpu,
-    uint8_t const source_storage_format)
+    uint8_t const source_storage_format, uint8_t const dest_storage_format)
 {
-    auto const src_fmt =
-        source_storage_format ==
-                static_cast<uint8_t>(monad::mpt::StorageFormat::PageCOO)
-            ? monad::mpt::StorageFormat::PageCOO
-            : monad::mpt::StorageFormat::SlotCompact;
+    auto const to_fmt = [](uint8_t v) {
+        return v == static_cast<uint8_t>(monad::mpt::StorageFormat::PageCOO)
+                   ? monad::mpt::StorageFormat::PageCOO
+                   : monad::mpt::StorageFormat::SlotCompact;
+    };
     auto *loader = new monad_db_snapshot_loader(
-        block, dbname_paths, len, sq_thread_cpu, src_fmt);
+        block,
+        dbname_paths,
+        len,
+        sq_thread_cpu,
+        to_fmt(source_storage_format),
+        to_fmt(dest_storage_format));
     MONAD_ASSERT_PRINTF(
         loader->db.get_latest_version() == monad::mpt::INVALID_BLOCK_NUM,
         "database must be hard reset when loading snapshot");

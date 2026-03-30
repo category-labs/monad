@@ -27,9 +27,10 @@ extern unsigned const MONAD_SQPOLL_DISABLED;
 struct monad_statesync_client;
 struct monad_statesync_client_context;
 
+// storage_format: 0 = slots, 1 = pages
 struct monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const *dbname_paths, size_t len, unsigned sq_thread_cpu,
-    struct monad_statesync_client *,
+    uint8_t storage_format, struct monad_statesync_client *,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request));
 

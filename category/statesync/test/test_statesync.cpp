@@ -63,7 +63,8 @@ namespace
 {
     GenesisState const GENESIS_STATE = EthereumMainnet{}.get_genesis_state();
 
-    std::filesystem::path tmp_dbname()
+    std::filesystem::path
+    tmp_dbname(mpt::StorageFormat fmt = mpt::StorageFormat::SlotCompact)
     {
         std::filesystem::path dbname(
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
@@ -78,7 +79,10 @@ namespace
         OnDiskMachine machine;
         mpt::Db const db{
             machine,
-            mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
+            mpt::OnDiskDbConfig{
+                .storage_format = fmt,
+                .append = false,
+                .dbname_paths = {path}}};
         return dbname;
     }
 
@@ -173,6 +177,7 @@ namespace
                 {cdbname},
                 std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),
                 4,
+                monad::mpt::StorageFormat::SlotCompact,
                 &client,
                 &statesync_send_request};
             net = {.client = &client, .cctx = cctx};
@@ -1367,4 +1372,35 @@ TEST(ProtocolValidation, storage_deletion_rejects_oversized_key)
 
     EXPECT_FALSE(proto.handle_upsert(
         nullptr, SYNC_TYPE_UPSERT_STORAGE_DELETE, buf.data(), buf.size()));
+}
+
+TEST(StateSyncFormat, page_format_client_db)
+{
+    auto const dbname = tmp_dbname(mpt::StorageFormat::PageCOO);
+    {
+        OnDiskMachine machine;
+        mpt::Db db{
+            machine,
+            mpt::OnDiskDbConfig{
+                .storage_format = mpt::StorageFormat::PageCOO,
+                .append = true,
+                .dbname_paths = {dbname}}};
+        EXPECT_EQ(machine.storage_format(), mpt::StorageFormat::PageCOO);
+    }
+    std::filesystem::remove(dbname);
+}
+
+TEST(StateSyncFormat, format_mismatch_asserts)
+{
+    auto const dbname = tmp_dbname(mpt::StorageFormat::SlotCompact);
+    ASSERT_DEATH(
+        (monad_statesync_client_context{
+            {dbname},
+            std::nullopt,
+            4,
+            mpt::StorageFormat::PageCOO,
+            nullptr,
+            nullptr}),
+        "");
+    std::filesystem::remove(dbname);
 }

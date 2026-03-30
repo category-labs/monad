@@ -32,11 +32,12 @@ using namespace monad::mpt;
 monad_statesync_client_context::monad_statesync_client_context(
     std::vector<std::filesystem::path> const dbname_paths,
     std::optional<unsigned> const sq_thread_cpu, unsigned const wr_buffers,
-    monad_statesync_client *const sync,
+    mpt::StorageFormat const storage_format, monad_statesync_client *const sync,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request))
     : db{machine,
          mpt::OnDiskDbConfig{
+             .storage_format = storage_format,
              .append = true,
              .compaction = false,
              .rewind_to_latest_finalized = true,
@@ -57,6 +58,9 @@ monad_statesync_client_context::monad_statesync_client_context(
     , statesync_send_request{statesync_send_request}
 {
     MONAD_ASSERT(db.get_latest_version() == db.get_latest_finalized_version());
+    MONAD_ASSERT_PRINTF(
+        machine.storage_format() == storage_format,
+        "statesync client DB format mismatch");
 }
 
 void monad_statesync_client_context::prepare_current_state()

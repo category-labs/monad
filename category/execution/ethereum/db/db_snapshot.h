@@ -50,9 +50,11 @@ bool monad_db_dump_snapshot(
     uint64_t shard_number);
 
 // source_storage_format: 0 = slots, 1 = pages (from snapshot metadata)
+// dest_storage_format: 0 = slots, 1 = pages (target DB format)
 struct monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t block, char const *const *dbname_paths, size_t len,
-    unsigned sq_thread_cpu, uint8_t source_storage_format);
+    unsigned sq_thread_cpu, uint8_t source_storage_format,
+    uint8_t dest_storage_format);
 
 void monad_db_snapshot_loader_load(
     struct monad_db_snapshot_loader *loader, uint64_t shard,

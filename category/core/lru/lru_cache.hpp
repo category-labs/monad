@@ -23,8 +23,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -32,13 +34,19 @@ template <
     class Key, class Value, class KeyHashCompare = tbb::tbb_hash_compare<Key>>
 class LruCache
 {
+protected:
     /// TYPES
     struct ListNode;
     struct HashMapValue;
     struct LruList;
+
+public:
     using HashMap = tbb::concurrent_hash_map<Key, HashMapValue, KeyHashCompare>;
-    using HashMapKeyValue = std::pair<Key, HashMapValue>;
-    using Accessor = HashMap::accessor;
+
+protected:
+    using HashMapKeyValue = typename HashMap::value_type;
+
+    using Accessor = typename HashMap::accessor;
     using Mutex = SpinLock;
     using Pool = BatchMemPool<ListNode>;
 
@@ -119,6 +127,56 @@ public:
         return true;
     }
 
+    bool insert(Key const &key, Value &&value)
+    {
+        Accessor acc;
+        HashMapKeyValue hmkv(key, HashMapValue(std::move(value), nullptr));
+        if (!hmap_.insert(acc, hmkv)) {
+            STATS_EVENT_INSERT_FOUND();
+            acc->second.value_ = std::move(hmkv.second.value_);
+            ListNode *const node = acc->second.node_;
+            try_update_lru(node);
+            return false;
+        }
+        ListNode *const node = pool_.new_obj(key);
+        acc->second.node_ = node;
+        acc.release();
+        finish_insert(node);
+        return true;
+    }
+
+    template <class V>
+    bool insert_construct(Key const &key, V &&value)
+    {
+        Accessor acc;
+        bool const inserted = hmap_.insert(acc, key);
+        ListNode *const node =
+            inserted ? pool_.new_obj(key) : acc->second.node_;
+
+        if (!inserted) {
+            STATS_EVENT_INSERT_FOUND();
+        }
+
+        // Move-assignment of pmr containers does not propagate the source
+        // allocator (propagate_on_container_move_assignment is false), so
+        // the value would be copied into the destination's allocator,
+        // losing the backing pool resource.  Destroy + construct-in-place
+        // preserves the source allocator via move-construction.
+        auto *val = std::addressof(acc->second.value_);
+        std::destroy_at(val);
+        std::construct_at(val, std::forward<V>(value));
+        acc->second.node_ = node;
+
+        if (!inserted) {
+            try_update_lru(node);
+            return false;
+        }
+
+        acc.release();
+        finish_insert(node);
+        return true;
+    }
+
     void clear() // Not thread-safe with other cache operations
     {
         hmap_.clear();
@@ -129,41 +187,6 @@ public:
     size_t size() const
     {
         return size_.load(std::memory_order_acquire);
-    }
-
-private:
-    void try_update_lru(ListNode *node)
-    {
-        if (node->check_lru_time()) {
-            std::unique_lock const l(mutex_);
-            STATS_EVENT_UPDATE_LRU();
-            lru_.update_lru(node);
-        }
-    }
-
-    void finish_insert(ListNode *node)
-    {
-        size_t sz = size();
-        bool const evicted = (sz >= max_size_) && evict();
-        {
-            std::unique_lock const l(mutex_);
-            STATS_EVENT_INSERT_NEW();
-            lru_.push_front(node);
-        }
-        if (!evicted) {
-            sz = 1 + size_.fetch_add(1, std::memory_order_acq_rel);
-        }
-        if (sz > max_size_) {
-            if (size_.compare_exchange_strong(
-                    sz,
-                    sz - 1,
-                    std::memory_order_acq_rel,
-                    std::memory_order_relaxed)) {
-                if (!evict()) {
-                    size_.fetch_add(1, std::memory_order_release);
-                }
-            }
-        }
     }
 
     bool evict()
@@ -183,6 +206,41 @@ private:
         hmap_.erase(acc);
         pool_.delete_obj(target);
         return true;
+    }
+
+protected:
+    void try_update_lru(ListNode *node)
+    {
+        if (node->check_lru_time()) {
+            std::unique_lock const l(mutex_);
+            STATS_EVENT_UPDATE_LRU();
+            lru_.update_lru(node);
+        }
+    }
+
+    void finish_insert(ListNode *node)
+    {
+        size_t sz = size();
+        bool evicted = (sz >= max_size_) ? evict() : false;
+        {
+            std::unique_lock const l(mutex_);
+            STATS_EVENT_INSERT_NEW();
+            lru_.push_front(node);
+        }
+        if (!evicted) {
+            sz = 1 + size_.fetch_add(1, std::memory_order_acq_rel);
+        }
+        if (sz > max_size_) {
+            if (size_.compare_exchange_strong(
+                    sz,
+                    sz - 1,
+                    std::memory_order_acq_rel,
+                    std::memory_order_relaxed)) {
+                if (!evict()) {
+                    size_.fetch_add(1, std::memory_order_release);
+                }
+            }
+        }
     }
 
     /// ListNode
@@ -301,6 +359,12 @@ private:
 
         HashMapValue(Value const &value, ListNode *const node)
             : value_(value)
+            , node_(node)
+        {
+        }
+
+        HashMapValue(Value &&value, ListNode *const node)
+            : value_(std::move(value))
             , node_(node)
         {
         }

@@ -15,13 +15,16 @@
 
 #pragma once
 
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/core/lru/lru_cache.hpp>
+#include <category/core/lru/memory_bound_lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 #include <category/vm/vm.hpp>
@@ -41,7 +44,17 @@ class DbCache final : public Db
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
 
+    using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
+    using StorageCache = MemoryBoundLruCache<StorageKey, StorageKeyHashCompare>;
+
+    static constexpr StorageCache::TierConfig STORAGE_TIERS[] = {
+        {encoded_page_size(1), 128 * 1024 * 1024},
+        {encoded_page_size(4), 64 * 1024 * 1024},
+        {encoded_page_size(16), 64 * 1024 * 1024},
+        {encoded_page_size(storage_page_t::SLOTS), 64 * 1024 * 1024}};
+
     AccountsCache accounts_{10'000'000};
+    StorageCache storage_{STORAGE_TIERS};
     Proposals proposals_;
 
 public:
@@ -76,6 +89,16 @@ public:
                 address, incarnation, key, proposal_result, truncated)) {
             return proposal_result;
         }
+
+        if (!truncated) {
+            StorageKey const sk{address, incarnation, key};
+            StorageCache::ConstAccessor acc{};
+            if (storage_.find(acc, sk)) {
+                auto const &val = acc->second.value_;
+                return byte_string{val.begin(), val.end()};
+            }
+        }
+
         return db_.read_storage(address, incarnation, key);
     }
 
@@ -101,8 +124,8 @@ public:
             insert_in_lru_caches(ps->overlays());
         }
         else {
-            // Finalizing a truncated proposal. Clear LRU caches.
             accounts_.clear();
+            storage_.clear();
         }
         db_.finalize(block_number, block_id);
         proposals_.set_block_and_prefix(block_number, block_id);
@@ -172,7 +195,8 @@ public:
 
     virtual std::string print_stats() override
     {
-        return db_.print_stats() + ",ac=" + accounts_.print_stats();
+        return db_.print_stats() + ",ac=" + accounts_.print_stats() +
+               ",sc=" + storage_.print_stats();
     }
 
     virtual uint64_t get_block_number() const override
@@ -185,6 +209,9 @@ private:
     {
         for (auto const &[addr, acct] : overlays.accounts) {
             accounts_.insert(addr, acct);
+        }
+        for (auto const &[sk, leaf] : overlays.storage) {
+            storage_.insert(sk, leaf);
         }
     }
 };

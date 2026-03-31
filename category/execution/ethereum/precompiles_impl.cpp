@@ -39,6 +39,7 @@
 
 #include <silkpre/precompile.h>
 #include <silkpre/sha256.h>
+#include <silkpre/ecdsa.h>
 
 #include <cstring>
 
@@ -99,14 +100,22 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
     auto const [output, output_size] = Func(input.data(), input.size());
     if (output == nullptr) {
         MONAD_DEBUG_ASSERT(output_size == 0);
-        return {EVMC_PRECOMPILE_FAILURE, nullptr, 0};
+        return PrecompileResult::failure();
     }
     return {EVMC_SUCCESS, output, output_size};
 }
 
-PrecompileResult ecrecover_execute(byte_string_view const input)
+ImplOutput ecrecover_impl(const uint8_t msg[32],
+                          const uint8_t sig[64],
+                          uint8_t recid,
+                          uint8_t out[20])
 {
-    return silkpre_execute<silkpre_ecrec_run>(input);
+    std::memset(out, 0, 12);
+    thread_local secp256k1_context* context{secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS)};
+    if (!silkpre_recover_address(out + 12, msg, sig, recid, context)) {
+        return {out, 0};
+    }
+    return {out, 32};
 }
 
 PrecompileResult sha256_execute(byte_string_view const input)

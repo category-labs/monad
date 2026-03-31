@@ -188,6 +188,123 @@ Proof.
     ring.
 Qed.
 
+(** ** Phase 1A: Structural Lemmas for [to_Z_words] *)
+
+(** [to_Z_words] of a [repeat zero] list is 0 *)
+Lemma to_Z_words_repeat_zero : forall n,
+  to_Z_words (repeat zero n) = 0.
+Proof.
+  induction n as [|n' IH].
+  - reflexivity.
+  - cbn [repeat to_Z_words]. rewrite spec_zero, IH. lia.
+Qed.
+
+(** General append lemma *)
+Lemma to_Z_words_app : forall ws1 ws2,
+  to_Z_words (ws1 ++ ws2) =
+    to_Z_words ws1 + modulus_words (length ws1) * to_Z_words ws2.
+Proof.
+  induction ws1 as [|w rest IH]; intros ws2.
+  - cbn [app to_Z_words length]. rewrite modulus_words_0. lia.
+  - cbn [app to_Z_words length]. rewrite IH.
+    rewrite modulus_words_succ. ring.
+Qed.
+
+(** Splitting at position n *)
+Lemma to_Z_words_firstn_skipn : forall ws n,
+  (n <= length ws)%nat ->
+  to_Z_words ws = to_Z_words (firstn n ws) +
+    modulus_words n * to_Z_words (skipn n ws).
+Proof.
+  intros ws n Hn.
+  rewrite <- (firstn_skipn n ws) at 1.
+  rewrite to_Z_words_app. rewrite firstn_length_le by lia.
+  reflexivity.
+Qed.
+
+(** All words zero implies value is zero *)
+Lemma to_Z_words_all_zero : forall ws,
+  (forall i, (i < length ws)%nat -> to_Z (get_word ws i) = 0) ->
+  to_Z_words ws = 0.
+Proof.
+  induction ws as [|w rest IH]; intros Hzeros.
+  - reflexivity.
+  - cbn [to_Z_words].
+    assert (Hw: to_Z w = 0).
+    { specialize (Hzeros 0%nat ltac:(simpl; lia)).
+      unfold get_word in Hzeros. simpl in Hzeros. exact Hzeros. }
+    rewrite Hw.
+    rewrite IH by (intros i Hi; specialize (Hzeros (S i) ltac:(simpl; lia));
+                    unfold get_word in Hzeros |- *; simpl in Hzeros; exact Hzeros).
+    lia.
+Qed.
+
+(** [to_Z_words] of [skipn] when all remaining words are zero *)
+Lemma to_Z_words_skipn_zeros : forall ws n,
+  (n <= length ws)%nat ->
+  (forall i, (n <= i < length ws)%nat -> to_Z (get_word ws i) = 0) ->
+  to_Z_words (skipn n ws) = 0.
+Proof.
+  intros ws. induction ws as [|w rest IH]; intros n Hn Hzeros.
+  - rewrite skipn_nil. reflexivity.
+  - destruct n as [|n'].
+    + cbn [skipn]. apply to_Z_words_all_zero.
+      intros i Hi. apply (Hzeros i). lia.
+    + cbn [skipn]. apply IH; [simpl in Hn; lia|].
+      intros i Hi. apply (Hzeros (S i)).
+      simpl in Hn |- *. lia.
+Qed.
+
+(** Trailing zeros don't contribute *)
+Lemma to_Z_words_firstn_trailing_zeros : forall ws n,
+  (n <= length ws)%nat ->
+  (forall i, (n <= i < length ws)%nat -> to_Z (get_word ws i) = 0) ->
+  to_Z_words (firstn n ws) = to_Z_words ws.
+Proof.
+  intros ws n Hn Hzeros.
+  rewrite (to_Z_words_firstn_skipn ws n Hn).
+  rewrite (to_Z_words_skipn_zeros ws n Hn Hzeros). lia.
+Qed.
+
+(** [to_Z_words] of [firstn] with padding preserves value *)
+Lemma to_Z_words_firstn_app_repeat : forall ws N,
+  (length ws <= N)%nat ->
+  to_Z_words (firstn N (ws ++ repeat zero N)) = to_Z_words ws.
+Proof.
+  intros ws N HN.
+  rewrite firstn_app.
+  destruct (Nat.le_gt_cases N (length ws)) as [Hle|Hgt].
+  - (* N <= length ws, so N = length ws by HN *)
+    assert (N = length ws) by lia. subst.
+    rewrite Nat.sub_diag. cbn [firstn]. rewrite app_nil_r.
+    rewrite firstn_all. reflexivity.
+  - (* N > length ws *)
+    rewrite firstn_all2 by lia.
+    rewrite to_Z_words_app.
+    replace (N - length ws)%nat with (N - length ws)%nat by lia.
+    assert (Hfn: forall k n, to_Z_words (firstn k (repeat zero n)) = 0).
+    { intros k. induction k as [|k' IH]; intros n0.
+      - reflexivity.
+      - destruct n0 as [|n0']; [simpl; reflexivity|].
+        cbn [repeat firstn to_Z_words].
+        rewrite spec_zero, IH. lia. }
+    rewrite Hfn. lia.
+Qed.
+
+(** Monotonicity of modulus_words *)
+Lemma modulus_words_le : forall m n,
+  (m <= n)%nat -> modulus_words m <= modulus_words n.
+Proof.
+  intros m n Hmn. unfold modulus_words.
+  apply Z.pow_le_mono_r; [unfold base; apply Z.pow_pos_nonneg; lia | lia].
+Qed.
+
+(** modulus_words is positive *)
+Lemma modulus_words_pos : forall n, modulus_words n > 0.
+Proof.
+  intros n. unfold modulus_words, base. apply Z.lt_gt. apply Z.pow_pos_nonneg; lia.
+Qed.
+
 End MakeProofs.
 
 (*

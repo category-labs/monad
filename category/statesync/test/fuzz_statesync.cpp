@@ -16,7 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
-#include <category/core/unaligned.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>

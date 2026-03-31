@@ -20,7 +20,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/unaligned.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/core/util/stopwatch.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/collected_stats.hpp>

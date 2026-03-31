@@ -15,14 +15,23 @@
 
 #pragma once
 
+#include <category/core/config.hpp>
+
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstdint>
+#include <type_traits>
+
+static_assert(
+    std::is_same_v<std::uint8_t, unsigned char>,
+    "unaligned_load/store assume uint8_t is unsigned char");
 
 MONAD_NAMESPACE_BEGIN
 
 template <typename T>
-[[nodiscard]] constexpr T unaligned_load(unsigned char const *const buf)
+[[nodiscard, gnu::always_inline]] constexpr T
+unaligned_load(unsigned char const *const buf)
 {
     std::array<unsigned char, sizeof(T)> data;
     std::copy_n(buf, sizeof(T), data.data());
@@ -30,7 +39,8 @@ template <typename T>
 }
 
 template <typename T>
-constexpr void unaligned_store(unsigned char *const buf, T const &value)
+[[gnu::always_inline]] constexpr void
+unaligned_store(unsigned char *const buf, T const &value)
 {
     auto data = std::bit_cast<std::array<unsigned char, sizeof(T)>>(value);
     std::copy_n(data.data(), sizeof(T), buf);

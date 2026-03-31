@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/runtime/uint256.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -27,6 +28,7 @@
 
 #include <immintrin.h>
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <numeric>
@@ -49,18 +51,10 @@ namespace monad::vm::interpreter
 
         using subword_t = runtime::uint256_t::word_type;
 
-        // We need to do this memcpy dance to avoid triggering UB when
-        // reading whole words from potentially unaligned addresses in the
-        // instruction stream. The compilers seem able to optimise this out
-        // effectively, and the generated code doesn't appear different to
-        // the UB-triggering version.
         [[gnu::always_inline]] inline subword_t
         read_unaligned(std::uint8_t const *ptr)
         {
-            alignas(subword_t) std::uint8_t aligned_mem[sizeof(subword_t)];
-            std::memcpy(&aligned_mem[0], ptr, sizeof(subword_t));
-            return std::byteswap(
-                *reinterpret_cast<subword_t *>(&aligned_mem[0]));
+            return std::byteswap(unaligned_load<subword_t>(ptr));
         }
 
         template <std::size_t N, Traits traits>

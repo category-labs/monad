@@ -18,7 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/endian.hpp>
 #include <category/core/int.hpp>
-#include <category/core/unaligned.hpp>
+#include <category/core/runtime/unaligned.hpp>
 
 #include <algorithm>
 #include <type_traits>

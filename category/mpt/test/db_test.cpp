@@ -26,9 +26,9 @@
 #include <category/core/hex.hpp>
 #include <category/core/keccak.h>
 #include <category/core/result.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
-#include <category/core/unaligned.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>

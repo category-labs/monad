@@ -16,7 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/unaligned.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>

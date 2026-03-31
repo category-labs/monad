@@ -1117,7 +1117,96 @@ Lemma knuth_div_step_correct : forall u v i n,
         get_word u' j = get_word u j)
   (* MSW of modified segment is zero — remainder fits in n words *)
   /\ get_word u' (i + n) = U64.zero.
-Proof. Admitted.
+Proof.
+  intros u v i n Hlv Hn Hi Hvpos Hmsw.
+  unfold knuth_div_step.
+  set (q_hat := knuth_div_estimate (get_word u (i + n)) (get_word u (i + n - 1))
+    (get_word u (i + n - 2)) (get_word v (n - 1)) (get_word v (n - 2))).
+  change (MakeProofs.get_word) with get_word.
+  change (MakeProofs.get_segment) with get_segment.
+  fold q_hat.
+  destruct (U128.eqb q_hat U128.zero) eqn:Hq;
+    [| fold (get_segment u i (n + 1))].
+  - (* Case q_hat = 0 *)
+    set (u_hi := get_word u (i + n)) in *.
+    set (u_mid := get_word u (i + n - 1)) in *.
+    set (v_hi := get_word v (n - 1)) in *.
+    unfold q_hat, knuth_div_estimate in Hq.
+    destruct (U64.eqb u_hi v_hi) eqn:Heq_hi.
+    + (* u_hi = v_hi: widen u64_max_val ≠ 0 — contradiction *)
+      exfalso.
+      rewrite U128.spec_eqb in Hq. apply Z.eqb_eq in Hq.
+      rewrite U128.spec_zero in Hq.
+      pose proof (spec_widen u64_max_val) as Hw.
+      (* widen u64_max_val has to_Z = to_Z u64_max_val > 0 *)
+      admit.
+    + (* u_hi ≠ v_hi *)
+      rewrite spec_eqb in Heq_hi. apply Z.eqb_neq in Heq_hi.
+      assert (Hu_lt_v: to_Z u_hi < to_Z v_hi)
+        by (clear - Hmsw Heq_hi; lia).
+      assert (Hv_hi_pos: to_Z v_hi > 0)
+        by (clear - Hu_lt_v; pose proof (spec_to_Z u_hi); lia).
+      pose proof (spec_div u_hi u_mid v_hi Hv_hi_pos Hu_lt_v)
+        as [q0 [r0 [Hdiv_eq [Hdiv_val Hdiv_lt]]]].
+      rewrite Hdiv_eq in Hq.
+      destruct (U64.eqb q0 U64.zero) eqn:Hq0.
+      * (* q0 = 0: derive u_hi = 0, u_mid < v_hi *)
+        rewrite spec_eqb in Hq0. rewrite spec_zero in Hq0.
+        apply Z.eqb_eq in Hq0.
+        rewrite Hq0, Z.mul_0_l, Z.add_0_l in Hdiv_val.
+        pose proof (spec_to_Z u_hi) as [Hu_nn Hu_lt_base].
+        pose proof (spec_to_Z u_mid) as [Humid_nn _].
+        assert (Hu_hi_zero: to_Z u_hi = 0).
+        { destruct (Z.eq_dec (to_Z u_hi) 0) as [|Hnz]; [exact e|exfalso].
+          assert (base width * 1 <= base width * to_Z u_hi).
+          { apply Z.mul_le_mono_nonneg_l;
+              [unfold base; apply Z.pow_nonneg; lia | lia]. }
+          pose proof (spec_to_Z v_hi). unfold base in *. lia. }
+        assert (Humid_lt: to_Z u_mid < to_Z v_hi) by lia.
+        assert (Hu_hi_eq: u_hi = U64.zero)
+          by (apply spec_to_Z_inj; rewrite spec_zero; exact Hu_hi_zero).
+        rewrite spec_zero. rewrite Z.mul_0_l, Z.add_0_l.
+        assert (Hseg_msw: to_Z (get_word (get_segment u i (n + 1)) n) = 0).
+        { rewrite get_word_get_segment by lia.
+          unfold u_hi in Hu_hi_zero. exact Hu_hi_zero. }
+        split; [|split; [|split; [reflexivity|split; [auto|exact Hu_hi_eq]]]].
+        { (* Euclidean: segment = firstn n segment *)
+          rewrite (to_Z_words_firstn_skipn (get_segment u i (n + 1)) n)
+            by (rewrite get_segment_length by lia; lia).
+          (* The skipn part contributes msw * modulus_words n = 0 *)
+          admit. }
+        { (* Remainder bound *)
+          split; [apply to_Z_words_bound|].
+          (* firstn n seg < modulus_words(n-1) * (1 + u_mid) <= modulus_words(n-1) * v_hi <= v *)
+          admit. }
+      * (* q0 ≠ 0 but estimate = 0 — contradiction *)
+        exfalso.
+        rewrite spec_eqb in Hq0. apply Z.eqb_neq in Hq0. rewrite spec_zero in Hq0.
+        rewrite U128.spec_eqb in Hq. apply Z.eqb_eq in Hq. rewrite U128.spec_zero in Hq.
+        destruct (U128.gtb _ _).
+        { (* widen q0 - 1 = 0 implies widen q0 = 1 implies q0 = 1, nonzero *)
+          admit. }
+        { (* widen q0 = 0 implies q0 = 0 — contradiction *)
+          pose proof (spec_widen q0).
+          pose proof (spec_to_Z q0).
+          rewrite Hq in H. lia. }
+  - (* Case q_hat ≠ 0 *)
+    pose proof (knuth_div_subtract_correct (get_segment u i (n + 1)) q_hat v n
+      ltac:(rewrite get_segment_length by lia; lia) Hlv Hvpos) as Hsub.
+    destruct (knuth_div_subtract (get_segment u i (n + 1)) q_hat v n)
+      as [new_seg final_q].
+    destruct Hsub as [Heuclid [Hrem [Hlen_seg Hmsw_seg]]].
+    replace (n + 1)%nat with (length new_seg) in |- * by lia.
+    rewrite (get_segment_set_segment_same u i new_seg ltac:(lia)).
+    replace (length new_seg) with (n + 1)%nat in |- * by lia.
+    split; [exact Heuclid|].
+    split; [exact Hrem|].
+    split; [apply set_segment_length; lia|].
+    split.
+    + intros j Hout Hj. apply get_word_set_segment_outside; lia.
+    + rewrite get_word_set_segment_inside by lia.
+      replace (i + n - i)%nat with n by lia. exact Hmsw_seg.
+Admitted.
 
 (** knuth_div_loop: the outer loop iterating from [m-n] down to [0].
     Invariant: the accumulated value [firstn (ci+n+1) u + quot * v] is

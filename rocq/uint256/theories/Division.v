@@ -51,9 +51,14 @@ Fixpoint long_div_fold (us : words) (v : U64.t) (rem : U64.t) : long_div_result 
   match us with
   | [] => mk_long_div_result [] rem
   | u :: rest =>
-      let r := U64.div rem u v in
-      let rec_result := long_div_fold rest v (snd r) in
-      mk_long_div_result (fst r :: ld_quot rec_result) (ld_rem rec_result)
+      match U64.div rem u v with
+      | Some (q, rm) =>
+          let rec_result := long_div_fold rest v rm in
+          mk_long_div_result (q :: ld_quot rec_result) (ld_rem rec_result)
+      | None =>  (* unreachable: rem < v from loop invariant *)
+          let rec_result := long_div_fold rest v U64.zero in
+          mk_long_div_result (U64.zero :: ld_quot rec_result) (ld_rem rec_result)
+      end
   end.
 
 (** long_div: divide word list by single word.
@@ -124,13 +129,16 @@ Local Open Scope uint_scope.
 Definition knuth_div_estimate (u_hi u_mid u_lo v_hi v_snd : U64.t) : U128.t :=
   if (U64.eqb u_hi v_hi) then widen u64_max_val
   else
-    let (q0,r0) := U64.div u_hi u_mid v_hi in
-    if (U64.eqb q0 U64.zero) then 0
-    else
-      let q_hat := widen q0 in
-      if (q_hat * widen v_snd >? combine r0 u_lo)
-      then q_hat - 1
-      else q_hat.
+    match U64.div u_hi u_mid v_hi with
+    | Some (q0, r0) =>
+        if (U64.eqb q0 U64.zero) then 0
+        else
+          let q_hat := widen q0 in
+          if (q_hat * widen v_snd >? combine r0 u_lo)
+          then q_hat - 1
+          else q_hat
+    | None => 0  (* unreachable: u_hi < v_hi in else branch *)
+    end.
 
 (** Subtraction loop: [u_seg[0..n-1] -= q_hat * v[0..n-1]],
     propagating borrow via [k : U128.t].
@@ -290,10 +298,14 @@ Definition udivrem (M N : nat) (u v : words) : udivrem_result :=
     mk_udivrem_result (extend_words M)
       (firstn N (u ++ repeat 0 N))
   else if Nat.eqb m 1 then
-    let (q,r) := U64.div 0 (get_word u 0) (get_word v 0) in
-    mk_udivrem_result
-      (set_word (extend_words M) 0 q)
-      (set_word (extend_words N) 0 r)
+    match U64.div 0 (get_word u 0) (get_word v 0) with
+    | Some (q, r) =>
+        mk_udivrem_result
+          (set_word (extend_words M) 0 q)
+          (set_word (extend_words N) 0 r)
+    | None => (* unreachable: u_hi = 0 < v *)
+        mk_udivrem_result (extend_words M) (extend_words N)
+    end
   else if Nat.eqb n 1 then
     let ld := long_div (firstn m u) (get_word v 0) in
     mk_udivrem_result

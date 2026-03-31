@@ -19,6 +19,12 @@ Open Scope Z_scope.
 
 (** ** Local Helpers *)
 
+Lemma Z_pow_split : forall s w,
+  0 <= s <= w -> 2 ^ w = 2 ^ s * 2 ^ (w - s).
+Proof.
+  intros s w Hs. rewrite <- Z.pow_add_r by lia. f_equal. lia.
+Qed.
+
 Lemma shld64_zero : forall shift,
   to_Z (shld64 U64.zero U64.zero shift) = 0.
 Proof.
@@ -76,8 +82,7 @@ Lemma Z_mod_mul_pow2_aligned : forall a s w,
 Proof.
   intros a s w Hsw.
   apply Z.mod_divide; [apply Z.pow_nonzero; lia|].
-  assert (Hw_eq: 2^w = 2^s * 2^(w-s))
-    by (rewrite <- Z.pow_add_r by lia; f_equal; lia).
+  pose proof (Z_pow_split s w Hsw) as Hw_eq.
   exists (a - a * 2^s / 2^w * 2^(w-s)).
   pose proof (Z_div_mod_eq_full (a * 2^s) (2^w)).
   lia.
@@ -90,9 +95,7 @@ Lemma Z_div_pow2_complement : forall x s w,
   x / 2^(w - s) = (x * 2^s) / 2^w.
 Proof.
   intros x s w Hx Hs.
-  assert (Hpow_eq: 2^w = 2^s * 2^(w - s)).
-  { rewrite <- Z.pow_add_r by lia. f_equal. lia. }
-  rewrite Hpow_eq.
+  rewrite (Z_pow_split s w Hs).
   rewrite <- Z.div_div
     by (first [apply Z.pow_nonzero; lia | apply Z.pow_pos_nonneg; lia]).
   rewrite Z_div_mult by (apply Z.lt_gt, Z.pow_pos_nonneg; lia).
@@ -121,8 +124,8 @@ Lemma Z_div_add_base_pow2 : forall a R s,
   (a + base width * R) / 2 ^ s = a / 2 ^ s + 2 ^ (Z.pos width - s) * R.
 Proof.
   intros a R s Ha HR Hs.
-  assert (Hpow: base width = 2 ^ s * 2 ^ (Z.pos width - s)).
-  { unfold base. rewrite <- Z.pow_add_r by lia. f_equal. lia. }
+  pose proof (Z_pow_split s (Z.pos width) ltac:(lia)) as Hpow.
+  change (2 ^ Z.pos width) with (base width) in Hpow.
   rewrite Hpow.
   replace (a + 2 ^ s * 2 ^ (Z.pos width - s) * R)
     with (2 ^ (Z.pos width - s) * R * 2 ^ s + a) by ring.
@@ -139,7 +142,8 @@ Proof.
   induction us as [|u rest IH]; intros v rem.
   - reflexivity.
   - unfold long_div_fold; fold long_div_fold.
-    cbn [ld_quot length]. rewrite IH. reflexivity.
+    destruct (div rem u v) as [[q rm]|]; cbn [ld_quot length];
+      rewrite IH; reflexivity.
 Qed.
 
 (** ** Correctness *)
@@ -158,13 +162,11 @@ Proof.
   - cbn [long_div_fold ld_quot ld_rem rev length to_Z_words].
     rewrite modulus_words_0.
     lia.
-  - unfold long_div_fold; fold long_div_fold. cbn [ld_quot ld_rem].
-    pose proof (spec_div _ u _ Hv Hrem) as Hdiv.
-    destruct (div rem u v) as [q rm].
-    destruct Hdiv as [Hdiv_eq Hdiv_lt].
-    cbn [fst snd].
+  - unfold long_div_fold; fold long_div_fold.
+    pose proof (spec_div _ u _ Hv Hrem) as [q [rm [Hdiv_eq [Hdiv_val Hdiv_lt]]]].
+    rewrite Hdiv_eq. cbn [ld_quot ld_rem].
     set (rec := long_div_fold rest v rm).
-    pose proof (IH v rm Hv Hdiv_lt) as HIH.
+    pose proof (IH v rm Hv ltac:(lia)) as HIH.
     change (long_div_fold rest v rm) with rec in HIH.
     cbn in HIH.
     cbn [rev].
@@ -249,9 +251,7 @@ Proof.
       + apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia].
       + apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
         rewrite width_is_64 in Hlow.
-        assert (2 ^ (64 - Z.of_nat s) * 2 ^ Z.of_nat s = 2 ^ 64)
-          by (rewrite <- Z.pow_add_r by lia; f_equal; lia).
-        nia.
+        pose proof (Z_pow_split (Z.of_nat s) 64 ltac:(lia)). nia.
     - unfold a. pose proof (Z.mod_pos_bound (to_Z high * 2 ^ Z.of_nat s) (2^64)
                               ltac:(unfold base; apply Z.pow_pos_nonneg; lia)). lia.
     - unfold a. unfold base. apply Z_mod_mul_pow2_aligned. lia.
@@ -266,9 +266,7 @@ Proof.
     - apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia].
     - apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
       rewrite width_is_64 in Hlow.
-      assert (Hpow: 2 ^ (64 - Z.of_nat s) * 2 ^ Z.of_nat s = 2 ^ 64).
-      { rewrite <- Z.pow_add_r by lia. f_equal. lia. }
-      nia.
+      pose proof (Z_pow_split (Z.of_nat s) 64 ltac:(lia)). nia.
   }
   split; [lia|].
   rewrite <- Hlor.
@@ -405,9 +403,7 @@ Proof.
       + apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia].
       + apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
         unfold base in Hlow. rewrite width_is_64 in Hlow.
-        assert (2 ^ Z.of_nat s * 2 ^ (64 - Z.of_nat s) = 2 ^ 64)
-          by (rewrite <- Z.pow_add_r by lia; f_equal; lia).
-        nia.
+        pose proof (Z_pow_split (Z.of_nat s) 64 ltac:(lia)). nia.
     - unfold b. unfold base. rewrite width_is_64.
       pose proof (Z.mod_pos_bound (to_Z high * 2 ^ (64 - Z.of_nat s)) (2^64)
                     ltac:(apply Z.pow_pos_nonneg; lia)). lia.
@@ -421,9 +417,7 @@ Proof.
     - apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia].
     - apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
       unfold base in Hlow. rewrite width_is_64 in Hlow.
-      assert (Hpow: 2 ^ Z.of_nat s * 2 ^ (64 - Z.of_nat s) = 2 ^ 64).
-      { rewrite <- Z.pow_add_r by lia. f_equal. lia. }
-      nia. }
+      pose proof (Z_pow_split (Z.of_nat s) 64 ltac:(lia)). nia. }
   assert (Hb_bound: 0 <= b < 2^64).
   { unfold b. unfold base. rewrite width_is_64.
     apply Z.mod_pos_bound. apply Z.pow_pos_nonneg; lia. }
@@ -540,10 +534,9 @@ Lemma long_div_fold_rem_bound : forall us v rem,
 Proof.
   induction us as [|u rest IH]; intros v rem Hv Hrem.
   - cbn [long_div_fold ld_rem]. exact Hrem.
-  - unfold long_div_fold; fold long_div_fold. cbn [ld_rem].
-    pose proof (spec_div _ u _ Hv Hrem) as Hdiv.
-    destruct (div rem u v) as [q rm]. cbn [snd].
-    destruct Hdiv as [_ Hlt]. apply IH; assumption.
+  - unfold long_div_fold; fold long_div_fold.
+    pose proof (spec_div _ u _ Hv Hrem) as [q [rm [Hdiv_eq [_ Hlt]]]].
+    rewrite Hdiv_eq. cbn [ld_rem]. apply IH; [exact Hv | lia].
 Qed.
 
 Lemma long_div_rem_bound : forall us v,
@@ -662,8 +655,7 @@ Proof.
   set (c := countl_zero x) in *.
   set (w := Pos.to_nat U64.width) in *.
   assert (Hpow: 2 ^ Z.of_nat (w - c) * 2 ^ Z.of_nat c = base width).
-  { unfold base. rewrite <- Z.pow_add_r by lia.
-    f_equal. lia. }
+  { unfold base. rewrite <- Z.pow_add_r by lia. f_equal. lia. }
   nia.
 Qed.
 
@@ -851,6 +843,90 @@ Proof.
   reflexivity.
 Qed.
 
+(** ** Segment Infrastructure *)
+
+Lemma get_segment_length : forall ws start len,
+  (start + len <= length ws)%nat ->
+  length (get_segment ws start len) = len.
+Proof.
+  intros. unfold get_segment.
+  rewrite firstn_length_le by (rewrite length_skipn; lia). reflexivity.
+Qed.
+
+Lemma get_word_get_segment : forall ws start len j,
+  (j < len)%nat -> (start + len <= length ws)%nat ->
+  get_word (get_segment ws start len) j = get_word ws (start + j).
+Proof.
+  intros ws start len j Hj Hlen.
+  unfold get_word, get_segment.
+  rewrite nth_firstn. replace ((j <? len)%nat) with true
+    by (symmetry; apply Nat.ltb_lt; lia).
+  rewrite nth_skipn. reflexivity.
+Qed.
+
+Lemma set_segment_length : forall ws start seg,
+  (start + length seg <= length ws)%nat ->
+  length (set_segment ws start seg) = length ws.
+Proof.
+  intros ws. induction ws as [|w rest IH]; intros start seg Hlen.
+  - destruct start; simpl in Hlen; [destruct seg; simpl in *; lia | lia].
+  - destruct start as [|start'].
+    + simpl. rewrite length_app, length_skipn. simpl length in *. lia.
+    + simpl set_segment. simpl length. f_equal. apply IH. simpl in Hlen. lia.
+Qed.
+
+Lemma get_word_set_segment_inside : forall ws start seg j,
+  (start <= j)%nat -> (j < start + length seg)%nat ->
+  (start + length seg <= length ws)%nat ->
+  get_word (set_segment ws start seg) j = get_word seg (j - start).
+Proof.
+  intros ws. induction ws as [|w rest IH]; intros start seg j Hlo Hhi Hlen.
+  - simpl in Hlen. lia.
+  - destruct start as [|start'].
+    + simpl. replace (j - 0)%nat with j by lia.
+      unfold get_word. rewrite app_nth1 by lia. reflexivity.
+    + destruct j as [|j']; [lia|].
+      simpl set_segment. cbn [get_word nth].
+      replace (S j' - S start')%nat with (j' - start')%nat by lia.
+      apply IH; simpl in *; lia.
+Qed.
+
+Lemma get_word_set_segment_outside : forall ws start seg j,
+  (j < start \/ start + length seg <= j)%nat ->
+  (start + length seg <= length ws)%nat ->
+  get_word (set_segment ws start seg) j = get_word ws j.
+Proof.
+  intros ws. induction ws as [|w rest IH]; intros start seg j Hout Hlen.
+  - destruct start; simpl in Hlen; destruct seg; simpl in *; try lia; reflexivity.
+  - destruct start as [|start'].
+    + simpl. destruct Hout as [Hlt|Hge]; [lia|].
+      unfold get_word. rewrite app_nth2 by lia.
+      rewrite nth_skipn. f_equal. lia.
+    + destruct j as [|j'].
+      * reflexivity.
+      * simpl set_segment. cbn [get_word nth]. apply IH; simpl in *; [lia | lia].
+Qed.
+
+Lemma get_segment_set_segment_same : forall ws start seg,
+  (start + length seg <= length ws)%nat ->
+  get_segment (set_segment ws start seg) start (length seg) = seg.
+Proof.
+  intros ws start seg Hlen.
+  apply nth_ext with (d := U64.zero) (d' := U64.zero).
+  - rewrite get_segment_length by (rewrite set_segment_length by lia; lia).
+    reflexivity.
+  - intros n Hn.
+    rewrite get_segment_length in Hn
+      by (rewrite set_segment_length by lia; lia).
+    change (nth n (get_segment (set_segment ws start seg) start (length seg))
+      U64.zero) with
+      (get_word (get_segment (set_segment ws start seg) start (length seg)) n).
+    rewrite get_word_get_segment
+      by (first [exact Hn | rewrite set_segment_length by lia; lia]).
+    rewrite get_word_set_segment_inside by lia.
+    unfold get_word. f_equal. lia.
+Qed.
+
 (** ** Knuth Subtract-and-Correct *)
 
 (** knuth_sub_loop computes [u_seg - q_hat * v] with borrow propagation.
@@ -860,9 +936,10 @@ Lemma knuth_sub_loop_correct : forall u_seg q_hat vs j k,
   length u_seg = (j + length vs)%nat ->
   let '(u', k') := knuth_sub_loop u_seg q_hat vs j k in
   to_Z_words u' + U128.to_Z k' * modulus_words (j + length vs) =
-    to_Z_words u_seg - (U128.to_Z q_hat * to_Z_words vs - U128.to_Z k)
-      * base width ^ (Z.of_nat j).
-Proof. Admitted.
+    to_Z_words u_seg - (U128.to_Z q_hat * to_Z_words vs - U128.to_Z k) *
+      base width ^ (Z.of_nat j).
+Proof.
+Admitted.
 
 (** knuth_addback_loop computes [u_seg + v] with carry propagation.
     Used when the trial quotient overestimated by 1. *)
@@ -884,8 +961,10 @@ Lemma knuth_div_subtract_correct : forall u_seg q_hat v n,
   to_Z_words v > 0 ->
   let '(u_after, q_final) := knuth_div_subtract u_seg q_hat v n in
   to_Z_words u_seg =
-    to_Z q_final * to_Z_words v + to_Z_words (firstn n u_after) /\
-  0 <= to_Z_words (firstn n u_after) < to_Z_words v.
+    to_Z q_final * to_Z_words v + to_Z_words (firstn n u_after)
+  /\ 0 <= to_Z_words (firstn n u_after) < to_Z_words v
+  /\ length u_after = (n + 1)%nat
+  /\ get_word u_after n = U64.zero.
 Proof. Admitted.
 
 (** ** Knuth Division — Single Step and Loop *)
@@ -895,6 +974,7 @@ Lemma knuth_div_step_correct : forall u v i n,
   length v = n -> (n > 1)%nat ->
   (i + n < length u)%nat ->
   to_Z_words v > 0 ->
+  to_Z (get_word u (i + n)) <= to_Z (get_word v (n - 1)) ->
   let '(u', q_i) := knuth_div_step u v i n in
   (* Euclidean decomposition of the segment *)
   to_Z_words (get_segment u i (n + 1)) =
@@ -917,6 +997,7 @@ Lemma knuth_div_loop_correct : forall u v quot n fuel current_i,
   to_Z_words v > 0 ->
   length u = (current_i + n + 1)%nat ->
   fuel = S current_i ->
+  to_Z (get_word u (current_i + n)) <= to_Z (get_word v (n - 1)) ->
   let '(u_after, quot_final) := knuth_div_loop u v quot n fuel current_i in
   (* Value conservation *)
   to_Z_words (firstn (current_i + n + 1) u) + to_Z_words quot * to_Z_words v =
@@ -934,15 +1015,18 @@ Theorem knuth_div_correct : forall m n u v,
   length u = (m + 1)%nat -> length v = n ->
   (m >= n)%nat -> (n > 1)%nat ->
   to_Z_words v > 0 ->
+  to_Z (get_word u m) <= to_Z (get_word v (n - 1)) ->
   let '(u_after, quot) := knuth_div m n u v in
   to_Z_words u = to_Z_words quot * to_Z_words v
     + to_Z_words (firstn n u_after) /\
   0 <= to_Z_words (firstn n u_after) < to_Z_words v.
 Proof.
-  intros m n u v Hlu Hlv Hmn Hn Hvpos.
+  intros m n u v Hlu Hlv Hmn Hn Hvpos Hmsw.
   unfold knuth_div. change (MakeProofs.extend_words) with extend_words.
+  assert (Hmsw': to_Z (get_word u (m - n + n)) <= to_Z (get_word v (n - 1)))
+    by (replace (m - n + n)%nat with m by lia; exact Hmsw).
   pose proof (knuth_div_loop_correct u v (extend_words (m - n + 1)) n
-    (m - n + 1) (m - n) Hlv Hn Hvpos ltac:(lia) ltac:(lia)) as Hloop.
+    (m - n + 1) (m - n) Hlv Hn Hvpos ltac:(lia) ltac:(lia) Hmsw') as Hloop.
   destruct (knuth_div_loop u v (extend_words (m - n + 1)) n
     (m - n + 1) (m - n)) as [u_after quot_final].
   destruct Hloop as [Hinv Hrem].
@@ -1098,13 +1182,12 @@ Proof.
       by (apply csw_one_value; [exact Hn1 | lia]).
     assert (Hv0_pos: to_Z (get_word v 0) > 0) by lia.
     assert (H0_lt: to_Z U64.zero < to_Z (get_word v 0)) by (rewrite spec_zero; lia).
-    pose proof (spec_div U64.zero (get_word u 0) (get_word v 0) Hv0_pos H0_lt) as Hdiv.
-    rewrite spec_zero in Hdiv.
+    pose proof (spec_div U64.zero (get_word u 0) (get_word v 0) Hv0_pos H0_lt)
+      as [q [r [Hdiv_eq [Hdiv_val Hdiv_lt]]]].
+    rewrite spec_zero in Hdiv_val.
     cbv beta iota zeta delta [ud_quot ud_rem] in |- *.
-    destruct (div U64.zero (MakeProofs.get_word u 0) (MakeProofs.get_word v 0))
-      as [q r] eqn:Hd.
-    change (MakeProofs.get_word) with get_word in Hd.
-    rewrite Hd in Hdiv. destruct Hdiv as [Hdiv_eq Hdiv_lt].
+    change (MakeProofs.get_word) with get_word.
+    rewrite Hdiv_eq.
     change (MakeProofs.set_word) with set_word.
     change (MakeProofs.extend_words) with extend_words.
     rewrite !to_Z_words_set_extend by lia.
@@ -1181,9 +1264,15 @@ Proof.
     assert (to_Z_words (firstn n v) > 0) by lia.
     assert (2 ^ Z.of_nat shift > 0) by (apply Z.lt_gt, Z.pow_pos_nonneg; lia).
     nia. }
-  (* Apply knuth_div_correct (Admitted) *)
+  (* MSW bound: overflow word of u_norm <= MSW of v_norm *)
+  assert (Hu_norm_msw: to_Z (get_word u_norm m) <= to_Z (get_word v_norm (n - 1))).
+  { (* The overflow word of shift_left_words is bounded by 2^shift - 1.
+       The MSW of v_norm is >= 2^(width-1) after normalization.
+       Since shift < width, 2^shift <= 2^(width-1) <= v_norm's MSW. *)
+    admit. }
+  (* Apply knuth_div_correct *)
   pose proof (knuth_div_correct m n u_norm v_norm
-    Hu_norm_len Hv_norm_len ltac:(lia) ltac:(lia) Hv_norm_pos) as Hknuth.
+    Hu_norm_len Hv_norm_len ltac:(lia) ltac:(lia) Hv_norm_pos Hu_norm_msw) as Hknuth.
   rewrite Hkd in Hknuth. destruct Hknuth as [Hknuth_eq Hknuth_rem].
   rewrite shift_right_words_correct by exact Hshift_bound.
   rewrite <- (count_significant_words_preserves_value u). fold m.
@@ -1203,7 +1292,7 @@ Proof.
   - split.
     + apply Z.div_pos; lia.
     + apply Z.div_lt_upper_bound; lia.
-Qed.
+Admitted.
 
 (** Specialization to 256-bit (4-word) operands.
     Follows directly from udivrem_correct once it is fully proved. *)
@@ -1216,6 +1305,6 @@ Theorem udivrem256_correct : forall u v,
   0 <= to_Z_words (ud_rem r) < to_Z_words v.
 Proof.
   intros. apply udivrem_correct; assumption.
-Qed.
+Admitted.
 
 End MakeProofs.

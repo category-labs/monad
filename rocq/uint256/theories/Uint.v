@@ -49,9 +49,11 @@ Module Type UintOps.
   Parameter sub : t -> t -> t.
   Parameter mul : t -> t -> t.
 
-  (** *** Unsigned division and modulo *)
-  Parameter divw : t -> t -> t.
-  Parameter modw : t -> t -> t.
+  (** [div u_hi u_lo v] returns [Some (quot, rem)] where
+      [u_hi * wB + u_lo = quot * v + rem] with [0 <= rem < v],
+      or [None] if [v = 0] or [u_hi >= v] (quotient overflow).
+      Models the x86 [div] instruction / C++ [div_intrinsic]. *)
+  Parameter div : t -> t -> t -> option (t * t).
 
   (** *** Shifts
       Shift amounts are [nat] (no Z dependency). *)
@@ -108,13 +110,6 @@ Module Type UintOps.
       result.  Models the BMI2 [mulx] instruction in uint256.hpp. *)
   Parameter mulx : t -> t -> t * t.
 
-  (** [div u_hi u_lo v] returns [(quot, rem)] where
-      [u_hi * wB + u_lo = quot * v + rem] with [0 <= rem < v].
-      Divides a double-width dividend [(u_hi, u_lo)] by [v].
-      Precondition: [u_hi < v] (ensures the quotient fits in [t]).
-      Models [div_intrinsic] / [div_constexpr] in uint256.hpp. *)
-  Parameter div : t -> t -> t -> t * t.
-
 End UintOps.
 
 (** ** Specification layer — adds [to_Z] and specs *)
@@ -145,11 +140,18 @@ Module Type Uint <: UintOps.
   Axiom spec_mul : forall x y,
     to_Z (mul x y) = (to_Z x * to_Z y) mod base width.
 
-  (** Division and modulo specifications *)
-  Axiom spec_divw : forall x y,
-    to_Z (divw x y) = (to_Z x / to_Z y) mod base width.
-  Axiom spec_modw : forall x y,
-    to_Z (modw x y) = (to_Z x mod to_Z y) mod base width.
+  (** [div] double-width division.
+      Returns [Some (q, r)] when [v > 0] and [u_hi < v]. *)
+  Axiom spec_div : forall u_hi u_lo v,
+    to_Z v > 0 -> to_Z u_hi < to_Z v ->
+    exists q r, div u_hi u_lo v = Some (q, r) /\
+    to_Z u_hi * base width + to_Z u_lo = to_Z q * to_Z v + to_Z r /\
+    0 <= to_Z r < to_Z v.
+
+  (** [div] faults (returns [None]) on overflow or division by zero. *)
+  Axiom spec_div_None : forall u_hi u_lo v,
+    to_Z v = 0 \/ to_Z u_hi >= to_Z v ->
+    div u_hi u_lo v = None.
 
   (** Shift specifications *)
   Axiom spec_shl : forall x n,
@@ -210,14 +212,6 @@ Module Type Uint <: UintOps.
     to_Z r2 * base width * base width + to_Z r1 * base width + to_Z r0 =
       to_Z x2 * base width * base width + to_Z x1 * base width + to_Z x0
       + to_Z y1 * base width + to_Z y0.
-
-  (** [div] double-width division.
-      Preconditions: [v > 0] and [u_hi < v] (ensures quotient fits). *)
-  Axiom spec_div : forall u_hi u_lo v,
-    to_Z v > 0 -> to_Z u_hi < to_Z v ->
-    let '(q, r) := div u_hi u_lo v in
-    to_Z u_hi * base width + to_Z u_lo = to_Z q * to_Z v + to_Z r /\
-    to_Z r < to_Z v.
 
 End Uint.
 
@@ -310,7 +304,9 @@ Module UintNotations (U : UintOps).
   Infix "+" := U.add : uint_scope.
   Infix "-" := U.sub : uint_scope.
   Infix "*" := U.mul : uint_scope.
-  Infix "mod" := U.modw : uint_scope.
+  (* No infix notation for [or] and [and] — [|] conflicts with
+     match-branch syntax and [&] has awkward precedence.
+     Use [U.or x y] / [U.and x y] or unqualified when imported. *)
   Infix "<?" := U.ltb : uint_scope.
   Infix "=?" := U.eqb : uint_scope.
   Infix "<=?" := U.leb : uint_scope.

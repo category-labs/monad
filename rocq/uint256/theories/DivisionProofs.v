@@ -896,21 +896,33 @@ Lemma knuth_div_step_correct : forall u v i n,
   (i + n < length u)%nat ->
   to_Z_words v > 0 ->
   let '(u', q_i) := knuth_div_step u v i n in
+  (* Euclidean decomposition of the segment *)
   to_Z_words (get_segment u i (n + 1)) =
-    to_Z q_i * to_Z_words v + to_Z_words (firstn n (get_segment u' i (n + 1))) /\
-  0 <= to_Z_words (firstn n (get_segment u' i (n + 1))) < to_Z_words v.
+    to_Z q_i * to_Z_words v + to_Z_words (firstn n (get_segment u' i (n + 1)))
+  /\ 0 <= to_Z_words (firstn n (get_segment u' i (n + 1))) < to_Z_words v
+  (* Length preserved *)
+  /\ length u' = length u
+  (* Words outside [i, i+n] unchanged *)
+  /\ (forall j, (j < i \/ i + n < j)%nat -> (j < length u)%nat ->
+        get_word u' j = get_word u j)
+  (* MSW of modified segment is zero — remainder fits in n words *)
+  /\ get_word u' (i + n) = U64.zero.
 Proof. Admitted.
 
 (** knuth_div_loop: the outer loop iterating from [m-n] down to [0].
-    Invariant: the mathematical quotient is accumulated in [quot],
-    and [u] is progressively reduced. *)
+    Invariant: the accumulated value [firstn (ci+n+1) u + quot * v] is
+    conserved across iterations. *)
 Lemma knuth_div_loop_correct : forall u v quot n fuel current_i,
   length v = n -> (n > 1)%nat ->
   to_Z_words v > 0 ->
+  length u = (current_i + n + 1)%nat ->
+  fuel = S current_i ->
   let '(u_after, quot_final) := knuth_div_loop u v quot n fuel current_i in
-  to_Z_words u =
-    to_Z_words quot_final * to_Z_words v + to_Z_words (firstn n u_after) /\
-  0 <= to_Z_words (firstn n u_after) < to_Z_words v.
+  (* Value conservation *)
+  to_Z_words (firstn (current_i + n + 1) u) + to_Z_words quot * to_Z_words v =
+    to_Z_words quot_final * to_Z_words v + to_Z_words (firstn n u_after)
+  (* Remainder bound *)
+  /\ 0 <= to_Z_words (firstn n u_after) < to_Z_words v.
 Proof. Admitted.
 
 (** ** Knuth Division — Main Theorem *)
@@ -926,7 +938,19 @@ Theorem knuth_div_correct : forall m n u v,
   to_Z_words u = to_Z_words quot * to_Z_words v
     + to_Z_words (firstn n u_after) /\
   0 <= to_Z_words (firstn n u_after) < to_Z_words v.
-Proof. Admitted.
+Proof.
+  intros m n u v Hlu Hlv Hmn Hn Hvpos.
+  unfold knuth_div. change (MakeProofs.extend_words) with extend_words.
+  pose proof (knuth_div_loop_correct u v (extend_words (m - n + 1)) n
+    (m - n + 1) (m - n) Hlv Hn Hvpos ltac:(lia) ltac:(lia)) as Hloop.
+  destruct (knuth_div_loop u v (extend_words (m - n + 1)) n
+    (m - n + 1) (m - n)) as [u_after quot_final].
+  destruct Hloop as [Hinv Hrem].
+  replace (m - n + n + 1)%nat with (m + 1)%nat in Hinv by lia.
+  rewrite firstn_all2 in Hinv by lia.
+  rewrite to_Z_extend_words, Z.mul_0_l, Z.add_0_r in Hinv.
+  exact (conj Hinv Hrem).
+Qed.
 
 (** ** Top-Level Division Correctness *)
 
@@ -1179,7 +1203,7 @@ Proof.
   - split.
     + apply Z.div_pos; lia.
     + apply Z.div_lt_upper_bound; lia.
-Admitted.
+Qed.
 
 (** Specialization to 256-bit (4-word) operands.
     Follows directly from udivrem_correct once it is fully proved. *)
@@ -1192,6 +1216,6 @@ Theorem udivrem256_correct : forall u v,
   0 <= to_Z_words (ud_rem r) < to_Z_words v.
 Proof.
   intros. apply udivrem_correct; assumption.
-Admitted.
+Qed.
 
 End MakeProofs.

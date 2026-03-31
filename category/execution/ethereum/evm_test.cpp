@@ -1406,4 +1406,97 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
     EXPECT_EQ(d4.value(), falsely_delegated_3);
 }
 
+// Warm SLOAD under page gas must cost exactly base_sload_cost (100 gas).
+// The interpreter pre-deducts min_gas (100) before the handler runs.
+// The handler must deduct nothing extra for warm access.
+TEST(PageGasSload, warm_sload_not_double_charged)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    static_assert(traits::page_gas_active());
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    db_t tdb{db};
+    vm::VM vm;
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    static constexpr auto from{
+        0x00000000000000000000000000000000eeeeeeee_address};
+    static constexpr auto contract{
+        0x00000000000000000000000000000000dddddddd_address};
+
+    // PUSH0 SLOAD POP PUSH0 SLOAD POP STOP
+    // Two SLOADs on slot 0: first cold, second warm (same page).
+    uint8_t const code[] = {0x5f, 0x54, 0x50, 0x5f, 0x54, 0x50, 0x00};
+    auto const icode = vm::make_shared_intercode(code);
+    auto const code_hash = to_bytes(keccak256(code));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 10'000'000'000}}}},
+            {contract,
+             StateDelta{
+                 .account = {std::nullopt, Account{.code_hash = code_hash}},
+                 .storage = {{bytes32_t{}, {bytes32_t{}, bytes32_t{1}}}}}}},
+        Code{{code_hash, icode}},
+        BlockHeader{});
+
+    constexpr int64_t gas_limit = 1'000'000;
+    auto msg_memory = vm.message_memory_ref();
+    evmc_message const m{
+        .kind = EVMC_CALL,
+        .gas = gas_limit,
+        .recipient = contract,
+        .sender = from,
+        .code_address = contract,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
+    };
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx = ChainContext<traits>::debug_empty();
+    uint256_t base_fee{0};
+    EvmcHost<traits> h{
+        call_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
+    init_rb_for_test<traits>(s, h, Address{m.sender});
+
+    auto const result = h.call(m);
+    ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+
+    auto const gas_used = gas_limit - result.gas_left;
+
+    // Expected gas:
+    //   PUSH0:        2
+    //   SLOAD (cold): min_gas(100) + cold_storage_cost(8000) = 8100
+    //   POP:          2
+    //   PUSH0:        2
+    //   SLOAD (warm): min_gas(100) + 0 = 100
+    //   POP:          2
+    //   STOP:         0
+    //   Total:        8208
+    //
+    // With the old bug (warm deducted base_sload_cost on top of min_gas),
+    // the warm SLOAD would cost 200 and the total would be 8308.
+    constexpr int64_t expected_gas =
+        2 + (traits::base_sload_cost() + traits::cold_storage_cost()) + 2 + 2 +
+        traits::base_sload_cost() + 2;
+    EXPECT_EQ(gas_used, expected_gas);
+}
+
 #undef PUSH3

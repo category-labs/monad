@@ -40,15 +40,26 @@ namespace monad::vm::runtime
     template <Traits traits>
     static consteval std::int64_t minimum_store_gas()
     {
-        constexpr auto costs = StorageCostTable<traits>::costs;
-        constexpr auto min_gas =
-            std::min_element(costs.begin(), costs.end(), [](auto ca, auto cb) {
-                return ca.gas_cost < cb.gas_cost;
-            })->gas_cost;
-        static_assert(
-            compiler::opcode_table<traits>[compiler::SSTORE].min_gas ==
-            min_gas);
-        return min_gas;
+        if constexpr (traits::page_gas_active()) {
+            constexpr auto min_gas = traits::base_sstore_cost();
+            static_assert(
+                compiler::opcode_table<traits>[compiler::SSTORE].min_gas ==
+                min_gas);
+            return min_gas;
+        }
+        else {
+            constexpr auto costs = StorageCostTable<traits>::costs;
+            constexpr auto min_gas =
+                std::min_element(
+                    costs.begin(),
+                    costs.end(),
+                    [](auto ca, auto cb) { return ca.gas_cost < cb.gas_cost; })
+                    ->gas_cost;
+            static_assert(
+                compiler::opcode_table<traits>[compiler::SSTORE].min_gas ==
+                min_gas);
+            return min_gas;
+        }
     }
 
     template <Traits traits>

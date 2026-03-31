@@ -15,9 +15,11 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -38,7 +40,15 @@ namespace monad::vm::runtime
     {
         auto key = static_cast<evmc::bytes32>(bytes32_from_uint256(*key_ptr));
 
-        if constexpr (traits::eip_2929_active()) {
+        if constexpr (traits::page_gas_active()) {
+            auto const page_key = compute_page_key(key);
+            auto const access_status = ctx->host->access_storage(
+                ctx->context, &ctx->env.recipient, &page_key);
+            if (access_status == EVMC_ACCESS_COLD) {
+                ctx->deduct_gas(traits::cold_storage_cost());
+            }
+        }
+        else if constexpr (traits::eip_2929_active()) {
             auto const access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
@@ -77,28 +87,55 @@ namespace monad::vm::runtime
         auto value =
             static_cast<evmc::bytes32>(bytes32_from_uint256(*value_ptr));
 
-        auto access_status = EVMC_ACCESS_COLD;
-        if constexpr (traits::eip_2929_active()) {
-            access_status = ctx->host->access_storage(
-                ctx->context, &ctx->env.recipient, &key);
+        if constexpr (traits::page_gas_active()) {
+            auto const page_key = compute_page_key(key);
+
+            // Page-level warm/cold for the access cost
+            auto const access_status = ctx->host->access_storage(
+                ctx->context, &ctx->env.recipient, &page_key);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
+
+            // Perform the write
+            auto const storage_status = ctx->host->set_storage(
+                ctx->context, &ctx->env.recipient, &key, &value);
+
+            // Page-level tracking
+            auto *host = evmc::Host::from_context<vm::Host>(ctx->context);
+            auto const [write_page_cold, exceeded_max] =
+                host->update_page_tracking(
+                    ctx->env.recipient, page_key, storage_status);
+
+            int64_t gas = traits::base_sstore_cost();
+            if (write_page_cold) {
+                gas += traits::page_write_cost();
+            }
+            if (exceeded_max) {
+                gas += traits::new_slot_cost();
+            }
+            ctx->deduct_gas(gas - min_gas);
         }
+        else {
+            auto access_status = EVMC_ACCESS_COLD;
+            if constexpr (traits::eip_2929_active()) {
+                access_status = ctx->host->access_storage(
+                    ctx->context, &ctx->env.recipient, &key);
+                if (access_status == EVMC_ACCESS_COLD) {
+                    ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+                }
+            }
 
-        auto const storage_status = ctx->host->set_storage(
-            ctx->context, &ctx->env.recipient, &key, &value);
+            auto const storage_status = ctx->host->set_storage(
+                ctx->context, &ctx->env.recipient, &key, &value);
 
-        auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
+            auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 
-        // The code generator has taken care of accounting for the minimum base
-        // gas cost of this SSTORE already, but to keep the table of costs
-        // readable it encodes the total gas usage of each combination, rather
-        // than the amount relative to the minimum gas.
-        gas_used -= min_gas;
+            gas_used -= min_gas;
 
-        ctx->gas_refund += gas_refund;
-        ctx->deduct_gas(gas_used);
+            ctx->gas_refund += gas_refund;
+            ctx->deduct_gas(gas_used);
+        }
     }
 
     EXPLICIT_TRAITS(sstore);

@@ -413,6 +413,14 @@ State::access_storage(Address const &address, bytes32_t const &key)
     return account_state.access_storage(key);
 }
 
+State::PageSstoreResult State::update_page_tracking(
+    Address const &address, bytes32_t const &page_key,
+    evmc_storage_status const status)
+{
+    auto &account_state = current_account_state(address);
+    return account_state.page_tracker_.update(page_key, status);
+}
+
 template <Traits traits>
 std::pair<bool, uint256_t>
 State::selfdestruct(Address const &address, Address const &beneficiary)

@@ -163,4 +163,11 @@ PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view);
 // Rollup precompiles
 PrecompileResult p256_verify_execute(byte_string_view);
 
+using ImplOutput = std::tuple<uint8_t*, size_t>;
+
+ImplOutput ecrecover_impl(const uint8_t msg[32],
+                          const uint8_t sig[64],
+                          uint8_t recid,
+                          uint8_t out[20]);
+
 MONAD_NAMESPACE_END

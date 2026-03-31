@@ -137,47 +137,29 @@ bool init_trusted_setup()
     return true;
 }
 
-PrecompileResult ecrecover_execute(byte_string_view const input)
+ImplOutput ecrecover_impl(const uint8_t msg[32],
+                          const uint8_t sig[64],
+                          uint8_t recid,
+                          uint8_t out[20])
 {
-    using namespace intx;
-
-    static constexpr auto kSecp256k1n =
-        0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
-
-    // Right-pad input to 128 bytes.
-    uint8_t d[128];
-    safe_copy(d, 128, input.data(), input.size(), 0);
-
-    uint256_t const v = u256_be::unsafe_from(&d[32]).native();
-    uint256_t const r = u256_be::unsafe_from(&d[64]).native();
-    uint256_t const s = u256_be::unsafe_from(&d[96]).native();
-
-    if (!r || !s || r >= kSecp256k1n || s >= kSecp256k1n) {
-        return {EVMC_SUCCESS, nullptr, 0};
-    }
-
-    if (v != 27 && v != 28) {
-        return {EVMC_SUCCESS, nullptr, 0};
-    }
-
-    auto const *msg_hash = reinterpret_cast<zkvm_bytes_32 const *>(&d[0]);
-    auto const *sig =
-        reinterpret_cast<zkvm_secp256k1_signature const *>(&d[64]);
+    auto const *msg_hash = reinterpret_cast<zkvm_bytes_32 const *>(&msg[0]);
+    auto const *signature =
+        reinterpret_cast<zkvm_secp256k1_signature const *>(&sig[64]);
 
     zkvm_secp256k1_pubkey pubkey;
-    if (zkvm_secp256k1_ecrecover(msg_hash, sig, v == 28 ? 1 : 0, &pubkey) !=
+
+    if (zkvm_secp256k1_ecrecover(msg_hash, signature, recid, &pubkey) !=
         ZKVM_EOK) {
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {out, 0};
     }
 
     zkvm_bytes_32 key_hash;
     if (zkvm_keccak256(pubkey.data, 64, &key_hash) != ZKVM_EOK) {
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {out, 0};
     }
 
-    auto result = alloc_success(32);
-    std::memcpy(result.obuf + 12, key_hash.data + 12, 20);
-    return result;
+    std::memcpy(out + 12, key_hash.data + 12, 20);
+    return {out, 32};
 }
 
 PrecompileResult sha256_execute(byte_string_view const input)

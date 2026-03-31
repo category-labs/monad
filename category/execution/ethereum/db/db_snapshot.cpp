@@ -18,7 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/endian.hpp> // little endian
 #include <category/core/nibble.h>
-#include <category/core/unaligned.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/util.hpp>

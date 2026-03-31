@@ -22,7 +22,8 @@
 MONAD_NAMESPACE_BEGIN
 
 template <typename T>
-[[nodiscard]] constexpr T unaligned_load(unsigned char const *const buf)
+[[nodiscard, gnu::always_inline]] constexpr T
+unaligned_load(unsigned char const *const buf)
 {
     std::array<unsigned char, sizeof(T)> data;
     std::copy_n(buf, sizeof(T), data.data());
@@ -30,7 +31,8 @@ template <typename T>
 }
 
 template <typename T>
-constexpr void unaligned_store(unsigned char *const buf, T const &value)
+[[gnu::always_inline]] constexpr void
+unaligned_store(unsigned char *const buf, T const &value)
 {
     auto data = std::bit_cast<std::array<unsigned char, sizeof(T)>>(value);
     std::copy_n(data.data(), sizeof(T), buf);

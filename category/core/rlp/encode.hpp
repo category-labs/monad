@@ -19,7 +19,7 @@
 #include <category/core/endian.hpp>
 #include <category/core/likely.h>
 #include <category/core/rlp/config.hpp>
-#include <category/core/unaligned.hpp>
+#include <category/core/runtime/unaligned.hpp>
 
 #include <algorithm>
 #include <bit>

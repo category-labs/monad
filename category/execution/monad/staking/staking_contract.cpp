@@ -17,7 +17,7 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/monad_exception.hpp>
-#include <category/core/unaligned.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>

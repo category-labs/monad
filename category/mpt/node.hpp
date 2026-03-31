@@ -22,7 +22,7 @@
 #include <category/core/math.hpp>
 #include <category/core/mem/allocators.hpp>
 #include <category/core/rlp/encode.hpp>
-#include <category/core/unaligned.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/util.hpp>
 

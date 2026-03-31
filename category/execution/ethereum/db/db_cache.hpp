@@ -23,7 +23,6 @@
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 #include <category/vm/vm.hpp>
 
@@ -71,7 +70,12 @@ public:
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
-        // TODO: reintegrate proposal/LRU caching for storage
+        bool truncated = false;
+        byte_string proposal_result;
+        if (proposals_.try_read_storage(
+                address, incarnation, key, proposal_result, truncated)) {
+            return proposal_result;
+        }
         return db_.read_storage(address, incarnation, key);
     }
 
@@ -94,7 +98,7 @@ public:
         std::unique_ptr<ProposalState> const ps =
             proposals_.finalize(block_number, block_id);
         if (ps) {
-            insert_in_lru_caches(ps->state());
+            insert_in_lru_caches(ps->overlays());
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.
@@ -135,11 +139,10 @@ public:
     }
 
     void update_proposal_state(
-        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
+        ProposalOverlays overlays, uint64_t const block_number,
         bytes32_t const &block_id)
     {
-        MONAD_ASSERT(state_deltas);
-        proposals_.commit(std::move(state_deltas), block_number, block_id);
+        proposals_.commit(std::move(overlays), block_number, block_id);
     }
 
     virtual BlockHeader read_eth_header() override
@@ -178,12 +181,10 @@ public:
     }
 
 private:
-    void insert_in_lru_caches(StateDeltas const &state_deltas)
+    void insert_in_lru_caches(ProposalOverlays const &overlays)
     {
-        for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
-            auto const &address = it->first;
-            auto const &account_delta = it->second.account;
-            accounts_.insert(address, account_delta.second);
+        for (auto const &[addr, acct] : overlays.accounts) {
+            accounts_.insert(addr, acct);
         }
     }
 };

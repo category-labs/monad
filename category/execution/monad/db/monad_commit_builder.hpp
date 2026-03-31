@@ -32,7 +32,8 @@ class MonadCommitBuilder : public CommitBuilder
 public:
     MonadCommitBuilder(uint64_t block_number, PageStorageBroker &broker);
 
-    CommitBuilder &add_state_deltas(StateDeltas const &) override;
+    CommitBuilder &add_state_deltas(
+        StateDeltas const &, LeafOverlay *overlay = nullptr) override;
 };
 
 std::unique_ptr<CommitBuilder> make_commit_builder(

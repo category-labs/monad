@@ -47,6 +47,11 @@ struct StorageKey
             key.bytes,
             sizeof(bytes32_t));
     }
+
+    bool operator==(StorageKey const &other) const
+    {
+        return memcmp(bytes, other.bytes, k_bytes) == 0;
+    }
 };
 
 // ── Shared RLP layer ────────────────────────────────────────────────

@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/vm/vm.hpp>
+#include <category/execution/ethereum/db/proposal_overlays.hpp>
 
 #include <category/core/hex.hpp>
 
@@ -30,15 +30,15 @@ MONAD_NAMESPACE_BEGIN
 
 class ProposalState
 {
-    std::unique_ptr<StateDeltas> state_;
+    ProposalOverlays overlays_;
     uint64_t parent_block_;
     bytes32_t parent_id_;
 
 public:
     ProposalState(
-        std::unique_ptr<StateDeltas> state, uint64_t const parent_block_number,
+        ProposalOverlays overlays, uint64_t const parent_block_number,
         bytes32_t const &parent_id)
-        : state_(std::move(state))
+        : overlays_(std::move(overlays))
         , parent_block_(parent_block_number)
         , parent_id_(parent_id)
     {
@@ -49,17 +49,17 @@ public:
         return {parent_block_, parent_id_};
     }
 
-    StateDeltas const &state() const
+    ProposalOverlays const &overlays() const
     {
-        return *state_;
+        return overlays_;
     }
 
     bool try_read_account(
         Address const &address, std::optional<Account> &result) const
     {
-        StateDeltas::const_accessor it{};
-        if (state_->find(it, address)) {
-            result = it->second.account.second;
+        auto const it = overlays_.accounts.find(address);
+        if (it != overlays_.accounts.end()) {
+            result = it->second;
             return true;
         }
         return false;
@@ -67,21 +67,24 @@ public:
 
     bool try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, bytes32_t &result) const
+        bytes32_t const &key, byte_string &result) const
     {
-        StateDeltas::const_accessor it{};
-        if (!state_->find(it, address)) {
-            return false;
+        // If the address is in the account overlay, check incarnation.
+        // A deleted account or incarnation mismatch means all storage
+        // for the requested incarnation is gone — return empty.
+        auto const acct_it = overlays_.accounts.find(address);
+        if (acct_it != overlays_.accounts.end()) {
+            auto const &acct = acct_it->second;
+            if (!acct.has_value() || acct->incarnation != incarnation) {
+                result = {};
+                return true;
+            }
         }
-        auto const &account = it->second.account.second;
-        if (!account || incarnation != account->incarnation) {
-            result = {};
-            return true;
-        }
-        auto const &storage = it->second.storage;
-        StorageDeltas::const_accessor it2{};
-        if (storage.find(it2, key)) {
-            result = it2->second.second;
+
+        StorageKey const sk{address, incarnation, key};
+        auto const it = overlays_.storage.find(sk);
+        if (it != overlays_.storage.end()) {
+            result = it->second;
             return true;
         }
         return false;
@@ -127,7 +130,7 @@ public:
 
     bool try_read_storage(
         Address const &address, Incarnation incarnation, bytes32_t const &key,
-        bytes32_t &result, bool &truncated) const
+        byte_string &result, bool &truncated) const
     {
         auto const fn =
             [&address, incarnation, &key, &result](ProposalState const &ps) {
@@ -144,7 +147,7 @@ public:
     }
 
     void commit(
-        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
+        ProposalOverlays overlays, uint64_t const block_number,
         bytes32_t const &block_id)
     {
         if (proposal_map_.size() >= MAX_PROPOSAL_MAP_SIZE) {
@@ -155,8 +158,8 @@ public:
             proposal_map_
                 .insert(
                     {key,
-                     std::unique_ptr<ProposalState>(new ProposalState(
-                         std::move(state_deltas), block_, block_id_))})
+                     std::make_unique<ProposalState>(
+                         std::move(overlays), block_, block_id_)})
                 .second == true);
         block_ = block_number;
         block_id_ = block_id;

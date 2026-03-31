@@ -19,6 +19,12 @@ Open Scope Z_scope.
 
 (** ** Local Helpers *)
 
+Lemma Z_mul_le_contradiction : forall low M v s,
+  M > 0 -> 0 <= low < M ->
+  low + M * v >= M * s ->
+  M * v <= M * (s - 1) -> False.
+Proof. intros. nia. Qed.
+
 Lemma Z_pow_split : forall s w,
   0 <= s <= w -> 2 ^ w = 2 ^ s * 2 ^ (w - s).
 Proof.
@@ -499,6 +505,60 @@ Proof.
   intros. unfold shift_left_words. apply shift_left_words_aux_length.
 Qed.
 
+(** The MSW (overflow word) of [shift_left_words ws s] is
+    [shld64 0 (last ws) s], i.e., the top bits of the MSW of [ws]. *)
+Lemma shift_left_words_aux_nth_msw : forall ws prev s,
+  (length ws > 0)%nat ->
+  nth (length ws) (shift_left_words_aux ws prev s) U64.zero =
+    shld64 U64.zero (nth (length ws - 1) ws U64.zero) s.
+Proof.
+  induction ws as [|w rest IH]; intros prev s Hlen.
+  - simpl in Hlen. lia.
+  - destruct rest as [|w2 rest2].
+    + simpl. reflexivity.
+    + specialize (IH w s ltac:(simpl; lia)).
+      change (shift_left_words_aux (w :: w2 :: rest2) prev s)
+        with (shld64 w prev s :: shift_left_words_aux (w2 :: rest2) w s).
+      change (length (w :: w2 :: rest2)) with (S (length (w2 :: rest2))).
+      change (nth (S (length (w2 :: rest2)))
+        (shld64 w prev s :: shift_left_words_aux (w2 :: rest2) w s) U64.zero)
+        with (nth (length (w2 :: rest2))
+          (shift_left_words_aux (w2 :: rest2) w s) U64.zero).
+      replace (S (length (w2 :: rest2)) - 1)%nat
+        with (length (w2 :: rest2)) by lia.
+      simpl length. simpl nth.
+      simpl length in IH. simpl nth in IH.
+      replace (length rest2 - 0)%nat with (length rest2) in IH by lia.
+      exact IH.
+Qed.
+
+Lemma shift_left_words_msw : forall ws s,
+  (length ws > 0)%nat ->
+  get_word (shift_left_words ws s) (length ws) =
+    shld64 U64.zero (get_word ws (length ws - 1)) s.
+Proof.
+  intros ws s Hlen. unfold shift_left_words, get_word.
+  apply shift_left_words_aux_nth_msw. exact Hlen.
+Qed.
+
+(** The overflow word of [shift_left_words ws s] is bounded by [2^s]. *)
+Lemma shift_left_words_msw_bound : forall ws s,
+  (s < Pos.to_nat U64.width)%nat ->
+  (length ws > 0)%nat ->
+  to_Z (get_word (shift_left_words ws s) (length ws)) < 2 ^ Z.of_nat s.
+Proof.
+  intros ws s Hs Hlen.
+  rewrite shift_left_words_msw by exact Hlen.
+  rewrite shld64_spec by exact Hs.
+  rewrite spec_zero, Z.mul_0_l, Zmod_0_l. rewrite Z.add_0_l.
+  pose proof (spec_to_Z (get_word ws (length ws - 1))) as Hw.
+  unfold base in Hw.
+  apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
+  rewrite <- Z.pow_add_r by lia.
+  replace (Z.pos width - Z.of_nat s + Z.of_nat s) with (Z.pos width) by lia.
+  lia.
+Qed.
+
 (** If the shifted value fits in [length ws] words, the overflow word is 0
     and [firstn (length ws)] preserves the value. *)
 Lemma to_Z_words_firstn_shift_left : forall ws s,
@@ -927,6 +987,76 @@ Proof.
     unfold get_word. f_equal. lia.
 Qed.
 
+(** ** Segment Value Decomposition *)
+
+Lemma to_Z_words_firstn_segment : forall ws start len,
+  (start + len <= length ws)%nat ->
+  to_Z_words (firstn (start + len) ws) =
+    to_Z_words (firstn start ws) +
+    modulus_words start * to_Z_words (get_segment ws start len).
+Proof.
+  intros ws start len Hlen.
+  rewrite (to_Z_words_firstn_skipn (firstn (start + len) ws) start).
+  2: { rewrite firstn_length_le by lia. lia. }
+  f_equal.
+  { f_equal. rewrite firstn_firstn.
+    replace (Nat.min start (start + len)) with start by lia. reflexivity. }
+  { f_equal. unfold get_segment. rewrite skipn_firstn_comm.
+    replace (start + len - start)%nat with len by lia. reflexivity. }
+Qed.
+
+Lemma remainder_msw_le : forall r v,
+  length r = length v ->
+  (length r > 0)%nat ->
+  0 <= to_Z_words r < to_Z_words v ->
+  to_Z (get_word r (length r - 1)) <= to_Z (get_word v (length v - 1)).
+Proof.
+  intros r v Hlen Hpos [Hrnn Hrlt].
+  set (k := (length r - 1)%nat).
+  destruct (Z.le_gt_cases (to_Z (get_word r k)) (to_Z (get_word v k))).
+  { replace (length v - 1)%nat with k by (unfold k; lia). exact H. }
+  exfalso.
+  rewrite (to_Z_words_firstn_skipn r k) in Hrlt by lia.
+  rewrite (to_Z_words_firstn_skipn v k) in Hrlt by (rewrite Hlen in *; lia).
+  pose proof (to_Z_words_bound (firstn k v)) as Hlow_v.
+  rewrite firstn_length_le in Hlow_v by lia.
+  (* skipn k r and skipn k v each have exactly 1 element *)
+  assert (Hsr: to_Z_words (skipn k r) = to_Z (get_word r k)).
+  { destruct (skipn k r) as [|w rest] eqn:Hsk.
+    - exfalso. assert (length (skipn k r) = 0%nat) by (rewrite Hsk; reflexivity).
+      rewrite length_skipn in H0. lia.
+    - assert (rest = [])
+        by (assert (length (w :: rest) = 1%nat)
+              by (rewrite <- Hsk, length_skipn; unfold k; lia);
+            destruct rest; [reflexivity | simpl in *; lia]).
+      subst rest. cbn [to_Z_words].
+      assert (w = get_word r k)
+        by (unfold get_word; symmetry;
+            change w with (nth 0 (w :: []) U64.zero);
+            rewrite <- Hsk, nth_skipn; f_equal; unfold k; lia).
+      rewrite H0. lia. }
+  assert (Hkv: (k < length v)%nat) by (unfold k; lia).
+  assert (Hsv: to_Z_words (skipn k v) = to_Z (get_word v k)).
+  { destruct (skipn k v) as [|w rest] eqn:Hsk.
+    - exfalso. assert (length (skipn k v) = 0%nat) by (rewrite Hsk; reflexivity).
+      rewrite length_skipn in *. lia.
+    - assert (rest = [])
+        by (assert (length (w :: rest) = 1%nat)
+              by (rewrite <- Hsk, length_skipn; unfold k; lia);
+            destruct rest; [reflexivity | simpl in *; lia]).
+      subst rest. cbn [to_Z_words].
+      assert (w = get_word v k)
+        by (unfold get_word; symmetry;
+            change w with (nth 0 (w :: []) U64.zero);
+            rewrite <- Hsk, nth_skipn; f_equal; unfold k; lia).
+      rewrite H0. lia. }
+  rewrite Hsr, Hsv in Hrlt.
+  pose proof (modulus_words_pos k).
+  pose proof (to_Z_words_bound (firstn k r)) as Hlow_r.
+  rewrite firstn_length_le in Hlow_r by lia.
+  nia.
+Qed.
+
 (** ** Knuth Subtract-and-Correct *)
 
 (** knuth_sub_loop computes [u_seg - q_hat * v] with borrow propagation.
@@ -995,16 +1125,107 @@ Proof. Admitted.
 Lemma knuth_div_loop_correct : forall u v quot n fuel current_i,
   length v = n -> (n > 1)%nat ->
   to_Z_words v > 0 ->
-  length u = (current_i + n + 1)%nat ->
+  (current_i + n < length u)%nat ->
+  (current_i < length quot)%nat ->
   fuel = S current_i ->
   to_Z (get_word u (current_i + n)) <= to_Z (get_word v (n - 1)) ->
+  (forall j, (j <= current_i)%nat -> to_Z (get_word quot j) = 0) ->
   let '(u_after, quot_final) := knuth_div_loop u v quot n fuel current_i in
   (* Value conservation *)
   to_Z_words (firstn (current_i + n + 1) u) + to_Z_words quot * to_Z_words v =
     to_Z_words quot_final * to_Z_words v + to_Z_words (firstn n u_after)
   (* Remainder bound *)
   /\ 0 <= to_Z_words (firstn n u_after) < to_Z_words v.
-Proof. Admitted.
+Proof.
+  intros u v quot n fuel. revert u v quot n.
+  induction fuel as [|fuel' IH];
+    intros u v quot n current_i Hlv Hn Hvpos Hlen Hqlen Hfuel Hmsw Hqz;
+    [lia|].
+  assert (Hci: fuel' = current_i) by lia. subst fuel'.
+  simpl knuth_div_loop.
+  pose proof (knuth_div_step_correct u v current_i n
+    Hlv Hn Hlen Hvpos Hmsw) as Hstep.
+  destruct (knuth_div_step u v current_i n) as [u' q_i].
+  destruct Hstep as [Heuclid [Hrem [Hlen' [Hout Hmsw_zero]]]].
+  change (MakeProofs.set_word) with set_word.
+  destruct current_i as [|ci'].
+  - (* current_i = 0: last iteration, recursive call has fuel = 0 *)
+    simpl knuth_div_loop.
+    replace (get_segment u 0 (n + 1)) with (firstn (n + 1) u) in *
+      by (unfold get_segment; rewrite skipn_O; reflexivity).
+    replace (get_segment u' 0 (n + 1)) with (firstn (n + 1) u') in *
+      by (unfold get_segment; rewrite skipn_O; reflexivity).
+    rewrite firstn_firstn in Heuclid, Hrem.
+    replace (Nat.min n (n + 1)) with n in * by lia.
+    replace (0 + n + 1)%nat with (n + 1)%nat by lia.
+    split; [|exact Hrem].
+    pose proof (Hqz 0%nat ltac:(lia)) as Hq0.
+    rewrite (to_Z_words_set_word quot 0%nat q_i ltac:(lia)).
+    simpl Z.of_nat. rewrite Z.pow_0_r, Hq0. lia.
+  - (* current_i = S ci': recursive call *)
+    simpl Nat.pred.
+    (* Apply IH *)
+    assert (HIH_len: (ci' + n < length u')%nat) by lia.
+    assert (HIH_qlen: (ci' < length (set_word quot (S ci') q_i))%nat)
+      by (rewrite set_word_length; lia).
+    assert (HIH_fuel: S ci' = S ci') by lia.
+    (* MSW bound for IH: get_word u' (ci' + n) <= get_word v (n-1) *)
+    assert (HIH_msw: to_Z (get_word u' (ci' + n)) <= to_Z (get_word v (n - 1))).
+    { set (r := firstn n (get_segment u' (S ci') (n + 1))).
+      assert (Hrlen: length r = n)
+        by (unfold r; rewrite firstn_length_le
+              by (rewrite get_segment_length by lia; lia); reflexivity).
+      pose proof (remainder_msw_le r v ltac:(lia) ltac:(lia) Hrem) as Hmsw_r.
+      rewrite Hrlen, Hlv in Hmsw_r.
+      assert (Hgw_r: get_word r (n - 1) = get_word u' (ci' + n)).
+      { unfold r, get_word. rewrite nth_firstn.
+        replace ((n - 1 <? n)%nat) with true
+          by (symmetry; apply Nat.ltb_lt; lia).
+        unfold get_segment. rewrite nth_firstn.
+        replace ((n - 1 <? n + 1)%nat) with true
+          by (symmetry; apply Nat.ltb_lt; lia).
+        rewrite nth_skipn. f_equal. lia. }
+      rewrite Hgw_r in Hmsw_r. exact Hmsw_r. }
+    (* Quotient zeros for IH: positions <= ci' in set_word quot (S ci') q_i *)
+    assert (HIH_qz: forall j, (j <= ci')%nat ->
+      to_Z (get_word (set_word quot (S ci') q_i) j) = 0).
+    { intros j Hj. rewrite get_set_word_other by lia. apply Hqz. lia. }
+    pose proof (IH u' v (set_word quot (S ci') q_i) n ci'
+      Hlv Hn Hvpos HIH_len HIH_qlen HIH_fuel HIH_msw HIH_qz) as Hloop.
+    destruct (knuth_div_loop u' v (set_word quot (S ci') q_i)
+      n (S ci') ci') as [u_after quot_final].
+    destruct Hloop as [Hinv_rec Hrem_rec].
+    split; [|exact Hrem_rec].
+    (* Value conservation: combine step equation with IH *)
+    rewrite <- Hinv_rec.
+    (* Decompose firstn (S ci' + n + 1) u at position S ci' *)
+    replace (S ci' + n + 1)%nat with (S ci' + (n + 1))%nat by lia.
+    rewrite (to_Z_words_firstn_segment u (S ci') (n + 1) ltac:(lia)).
+    rewrite Heuclid.
+    (* Decompose firstn (ci' + n + 1) u' at position S ci' *)
+    replace (ci' + n + 1)%nat with (S ci' + n)%nat in * by lia.
+    rewrite (to_Z_words_firstn_segment u' (S ci') n ltac:(lia)).
+    (* firstn (S ci') u' = firstn (S ci') u *)
+    assert (Hlow: firstn (S ci') u' = firstn (S ci') u).
+    { apply nth_ext with (d := U64.zero) (d' := U64.zero).
+      - rewrite !firstn_length_le by lia. reflexivity.
+      - intros j Hj. rewrite firstn_length_le in Hj by lia.
+        rewrite !nth_firstn.
+        replace ((j <? S ci')%nat) with true
+          by (symmetry; apply Nat.ltb_lt; lia).
+        apply Hout; lia. }
+    rewrite Hlow.
+    (* get_segment u' (S ci') n = firstn n (get_segment u' (S ci') (n+1)) *)
+    assert (Hseg_eq: get_segment u' (S ci') n =
+      firstn n (get_segment u' (S ci') (n + 1))).
+    { unfold get_segment. rewrite firstn_firstn.
+      replace (Nat.min n (n + 1)) with n by lia. reflexivity. }
+    rewrite Hseg_eq.
+    (* Expand set_word quot (S ci') q_i using quot[S ci'] = 0 *)
+    rewrite (to_Z_words_set_word quot (S ci') q_i ltac:(lia)).
+    pose proof (Hqz (S ci') ltac:(lia)) as HqSci. rewrite HqSci.
+    unfold modulus_words. nia.
+Qed.
 
 (** ** Knuth Division — Main Theorem *)
 
@@ -1025,8 +1246,14 @@ Proof.
   unfold knuth_div. change (MakeProofs.extend_words) with extend_words.
   assert (Hmsw': to_Z (get_word u (m - n + n)) <= to_Z (get_word v (n - 1)))
     by (replace (m - n + n)%nat with m by lia; exact Hmsw).
+  assert (Hquot_zero: forall j, (j <= m - n)%nat ->
+    to_Z (get_word (extend_words (m - n + 1)) j) = 0)
+    by (intros; rewrite get_extend_words_Z by lia; reflexivity).
   pose proof (knuth_div_loop_correct u v (extend_words (m - n + 1)) n
-    (m - n + 1) (m - n) Hlv Hn Hvpos ltac:(lia) ltac:(lia) Hmsw') as Hloop.
+    (m - n + 1) (m - n) Hlv Hn Hvpos ltac:(lia)
+    ltac:(rewrite extend_words_length; lia)
+    ltac:(lia) Hmsw' Hquot_zero)
+    as Hloop.
   destruct (knuth_div_loop u v (extend_words (m - n + 1)) n
     (m - n + 1) (m - n)) as [u_after quot_final].
   destruct Hloop as [Hinv Hrem].
@@ -1266,10 +1493,59 @@ Proof.
     nia. }
   (* MSW bound: overflow word of u_norm <= MSW of v_norm *)
   assert (Hu_norm_msw: to_Z (get_word u_norm m) <= to_Z (get_word v_norm (n - 1))).
-  { (* The overflow word of shift_left_words is bounded by 2^shift - 1.
-       The MSW of v_norm is >= 2^(width-1) after normalization.
-       Since shift < width, 2^shift <= 2^(width-1) <= v_norm's MSW. *)
-    admit. }
+  { (* Overflow word < 2^shift *)
+    pose proof (shift_left_words_msw_bound (firstn m u) shift
+      Hshift_bound ltac:(rewrite firstn_length_le by lia; lia)) as Hu_msw_lt.
+    unfold u_norm in Hu_msw_lt.
+    rewrite firstn_length_le in Hu_msw_lt by lia.
+    (* v_norm MSW >= 2^shift - 1, via value decomposition *)
+    pose proof (count_significant_words_lower_bound v Hn_pos) as Hv_lb.
+    fold n in Hv_lb.
+    assert (Hvn_val_lb: to_Z_words v_norm >= modulus_words (n - 1) * 2 ^ Z.of_nat shift).
+    { rewrite Hv_norm_val.
+      pose proof (count_significant_words_preserves_value v) as Hcsv.
+      fold n in Hcsv. rewrite <- Hcsv in Hv_lb.
+      pose proof (modulus_words_pos (n - 1)).
+      assert (2 ^ Z.of_nat shift > 0) by (apply Z.lt_gt, Z.pow_pos_nonneg; lia).
+      nia. }
+    (* Decompose v_norm at position n-1 *)
+    rewrite (to_Z_words_firstn_skipn v_norm (n - 1)) in Hvn_val_lb by lia.
+    pose proof (to_Z_words_bound (firstn (n - 1) v_norm)) as Hlow_v.
+    rewrite firstn_length_le in Hlow_v by lia.
+    pose proof (to_Z_words_bound (skipn (n - 1) v_norm)) as Hskip_v.
+    rewrite length_skipn, Hv_norm_len in Hskip_v.
+    replace (n - (n - 1))%nat with 1%nat in Hskip_v by lia.
+    (* skipn (n-1) v_norm has exactly 1 element = v_norm[n-1] *)
+    assert (Hskip_eq: to_Z_words (skipn (n - 1) v_norm) = to_Z (get_word v_norm (n - 1))).
+    { destruct (skipn (n - 1) v_norm) as [|w rest] eqn:Hsk.
+      - exfalso. assert (length (skipn (n-1) v_norm) = 0%nat) by (rewrite Hsk; reflexivity).
+        rewrite length_skipn, Hv_norm_len in *. lia.
+      - assert (Hrest: rest = []).
+        { assert (length (w :: rest) = 1%nat)
+            by (rewrite <- Hsk, length_skipn, Hv_norm_len; lia).
+          destruct rest; [reflexivity | simpl in *; lia]. }
+        subst rest. cbn [to_Z_words].
+        assert (Hw: w = get_word v_norm (n - 1)).
+        { unfold get_word. change w with (nth 0 (w :: []) U64.zero).
+          rewrite <- Hsk. rewrite nth_skipn. f_equal. lia. }
+        rewrite Hw. lia. }
+    rewrite Hskip_eq in Hvn_val_lb.
+    pose proof (modulus_words_pos (n - 1)) as HM.
+    set (MW := modulus_words (n - 1)) in *.
+    set (vlow := to_Z_words (firstn (n - 1) v_norm)) in *.
+    set (vmsw := to_Z (get_word v_norm (n - 1))) in *.
+    set (sh := 2 ^ Z.of_nat shift) in *.
+    (* vmsw >= sh *)
+    (* Derive vmsw >= sh, then overflow < sh <= vmsw *)
+    destruct (Z.le_gt_cases sh vmsw).
+    + (* sh <= vmsw: done *) exact (Z.le_trans _ _ _ (Z.lt_le_incl _ _ Hu_msw_lt) H).
+    + (* sh > vmsw: contradiction *)
+      exfalso.
+      assert (H0_MW: 0 <= MW) by (unfold MW; pose proof (modulus_words_pos (n-1)); lia).
+      assert (H0_le: vmsw <= sh - 1) by (unfold vmsw, sh in *; lia).
+      pose proof (Z.mul_le_mono_nonneg_l vmsw (sh - 1) MW H0_MW H0_le).
+      eapply (Z_mul_le_contradiction vlow MW vmsw sh);
+        [exact HM | exact Hlow_v | exact Hvn_val_lb | exact H0]. }
   (* Apply knuth_div_correct *)
   pose proof (knuth_div_correct m n u_norm v_norm
     Hu_norm_len Hv_norm_len ltac:(lia) ltac:(lia) Hv_norm_pos Hu_norm_msw) as Hknuth.
@@ -1292,7 +1568,7 @@ Proof.
   - split.
     + apply Z.div_pos; lia.
     + apply Z.div_lt_upper_bound; lia.
-Admitted.
+Qed.
 
 (** Specialization to 256-bit (4-word) operands.
     Follows directly from udivrem_correct once it is fully proved. *)
@@ -1305,6 +1581,6 @@ Theorem udivrem256_correct : forall u v,
   0 <= to_Z_words (ud_rem r) < to_Z_words v.
 Proof.
   intros. apply udivrem_correct; assumption.
-Admitted.
+Qed.
 
 End MakeProofs.

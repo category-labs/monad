@@ -667,6 +667,20 @@ Proof.
   nia.
 Qed.
 
+Lemma countl_zero_succ_shift_le : forall x,
+  to_Z x > 0 ->
+  (1 + to_Z x) * 2 ^ Z.of_nat (countl_zero x) <= base width.
+Proof.
+  intros x Hx.
+  pose proof (countl_zero_upper x) as Hub.
+  pose proof (countl_zero_bound x Hx) as Hcb.
+  set (c := countl_zero x) in *.
+  set (w := Pos.to_nat U64.width) in *.
+  assert (Hpow: 2 ^ Z.of_nat (w - c) * 2 ^ Z.of_nat c = base width).
+  { unfold base. rewrite <- Z.pow_add_r by lia. f_equal. lia. }
+  nia.
+Qed.
+
 (** ** Count Significant Words Properties *)
 
 Lemma skip_leading_zeros_le : forall rs,
@@ -982,6 +996,43 @@ Proof.
   pose proof (spec_to_Z w). lia.
 Qed.
 
+Lemma shifted_words_fit : forall ws len s,
+  (s < Pos.to_nat U64.width)%nat ->
+  length ws = len ->
+  (len > 0)%nat ->
+  to_Z (get_word ws (len - 1)) > 0 ->
+  (1 + to_Z (get_word ws (len - 1))) * 2 ^ Z.of_nat s <= base width ->
+  to_Z_words ws * 2 ^ Z.of_nat s < modulus_words len.
+Proof.
+  intros ws len s Hs Hlen_eq Hlen Hmsw Hbound. subst len.
+  set (k := (length ws - 1)%nat).
+  rewrite (to_Z_words_firstn_skipn ws k) by lia.
+  pose proof (to_Z_words_bound (firstn k ws)) as Hlow.
+  rewrite firstn_length_le in Hlow by lia.
+  assert (Hskip_eq: to_Z_words (skipn k ws) = to_Z (get_word ws k)).
+  { destruct (skipn k ws) as [|w rest] eqn:Hsk.
+    - exfalso. assert (length (skipn k ws) = 0%nat) by (rewrite Hsk; reflexivity).
+      rewrite length_skipn in H. lia.
+    - assert (Hrest: rest = []).
+      { assert (Hrl: length (w :: rest) = 1%nat).
+        { rewrite <- Hsk. rewrite length_skipn. unfold k. lia. }
+        destruct rest; [reflexivity | simpl in Hrl; lia]. }
+      subst rest.
+      assert (Hw: w = get_word ws k).
+      { unfold get_word. symmetry.
+        change w with (nth 0 (w :: []) U64.zero).
+        rewrite <- Hsk. rewrite nth_skipn. f_equal. unfold k. lia. }
+      rewrite Hw. cbn [to_Z_words]. lia. }
+  rewrite Hskip_eq.
+  assert (Hmod: modulus_words (length ws) = base width * modulus_words k).
+  { replace (length ws) with (S k) by (unfold k; lia).
+    apply modulus_words_succ. }
+  rewrite Hmod. fold k in Hmsw, Hbound.
+  pose proof (modulus_words_pos k).
+  pose proof (Z.pow_pos_nonneg 2 (Z.of_nat s) ltac:(lia) ltac:(lia)).
+  nia.
+Qed.
+
 Theorem udivrem_correct : forall M N u v,
   length u = M -> length v = N ->
   to_Z_words v > 0 ->
@@ -1080,19 +1131,36 @@ Proof.
   assert (Hv_norm_len: length v_norm = n).
   { unfold v_norm. rewrite firstn_length_le; [lia|].
     rewrite shift_left_words_length, firstn_length_le by lia. lia. }
-  assert (Hv_norm_pos: to_Z_words v_norm > 0) by admit.
+  (* Prove Hv_norm_val first (needed for Hv_norm_pos) *)
+  assert (Hu_norm_val: to_Z_words u_norm = to_Z_words (firstn m u) * 2 ^ Z.of_nat shift).
+  { unfold u_norm. rewrite shift_left_words_correct by exact Hshift_bound. reflexivity. }
+  assert (Hfnv_len: length (firstn n v) = n) by (rewrite firstn_length_le; lia).
+  assert (Hmsw_pos: to_Z (get_word v (n - 1)) > 0).
+  { apply (count_significant_words_msw_nonzero v). fold n. lia. }
+  assert (Hgw_eq: get_word (firstn n v) (n - 1) = get_word v (n - 1)).
+  { unfold get_word. rewrite nth_firstn.
+    replace ((n - 1 <? n)%nat) with true
+      by (symmetry; apply Nat.ltb_lt; lia). reflexivity. }
+  assert (Hoverflow: to_Z_words (firstn n v) * 2 ^ Z.of_nat shift < modulus_words n).
+  { apply (shifted_words_fit _ n); [exact Hshift_bound | exact Hfnv_len | lia | |].
+    - rewrite Hgw_eq. exact Hmsw_pos.
+    - rewrite Hgw_eq. unfold shift.
+      apply countl_zero_succ_shift_le. exact Hmsw_pos. }
+  assert (Hv_norm_val: to_Z_words v_norm = to_Z_words (firstn n v) * 2 ^ Z.of_nat shift).
+  { unfold v_norm. rewrite <- Hfnv_len at 1.
+    apply to_Z_words_firstn_shift_left; [exact Hshift_bound|].
+    rewrite Hfnv_len. exact Hoverflow. }
+  assert (Hv_norm_pos: to_Z_words v_norm > 0).
+  { rewrite Hv_norm_val.
+    pose proof (count_significant_words_preserves_value v) as Hcsv.
+    fold n in Hcsv.
+    assert (to_Z_words (firstn n v) > 0) by lia.
+    assert (2 ^ Z.of_nat shift > 0) by (apply Z.lt_gt, Z.pow_pos_nonneg; lia).
+    nia. }
   (* Apply knuth_div_correct (Admitted) *)
   pose proof (knuth_div_correct m n u_norm v_norm
     Hu_norm_len Hv_norm_len ltac:(lia) ltac:(lia) Hv_norm_pos) as Hknuth.
   rewrite Hkd in Hknuth. destruct Hknuth as [Hknuth_eq Hknuth_rem].
-  (* Relate normalized values to originals via shift *)
-  assert (Hu_norm_val: to_Z_words u_norm = to_Z_words (firstn m u) * 2 ^ Z.of_nat shift).
-  { unfold u_norm. rewrite shift_left_words_correct by exact Hshift_bound. reflexivity. }
-  assert (Hfnv_len: length (firstn n v) = n) by (rewrite firstn_length_le; lia).
-  assert (Hv_norm_val: to_Z_words v_norm = to_Z_words (firstn n v) * 2 ^ Z.of_nat shift).
-  { unfold v_norm. rewrite <- Hfnv_len at 1.
-    apply to_Z_words_firstn_shift_left; [exact Hshift_bound|].
-    rewrite Hfnv_len. admit. }
   rewrite shift_right_words_correct by exact Hshift_bound.
   rewrite <- (count_significant_words_preserves_value u). fold m.
   rewrite <- (count_significant_words_preserves_value v). fold n.

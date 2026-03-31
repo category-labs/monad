@@ -412,7 +412,9 @@ struct OnDiskWithWorkerThreadImpl
             OnDiskDbConfig const &options)
             : parent(parent)
             , async_io(options)
-            , aux{async_io.io, options.fixed_history_length}
+            , aux{async_io.io,
+                  options.fixed_history_length,
+                  options.storage_format}
         {
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id = aux.get_latest_finalized_version();
@@ -1105,6 +1107,7 @@ Db::Db(StateMachine &machine, OnDiskDbConfig const &config)
     : impl_{std::make_unique<RWOnDisk>(config, machine)}
 {
     MONAD_ASSERT(impl_->aux().is_on_disk());
+    machine.bind_metadata(impl_->aux().db_metadata());
 }
 
 Db::Db(AsyncIOContext &io_ctx)
@@ -1316,6 +1319,16 @@ bool Db::is_read_only() const
 {
     MONAD_ASSERT(impl_);
     return is_on_disk() && impl_->aux().io->is_read_only();
+}
+
+StorageFormat Db::storage_format() const
+{
+    if (!is_on_disk()) {
+        return StorageFormat::SlotCompact;
+    }
+    auto const fmt = impl_->aux().db_metadata()->storage_format;
+    return fmt == StorageFormat::PageCOO ? StorageFormat::PageCOO
+                                         : StorageFormat::SlotCompact;
 }
 
 uint64_t Db::get_history_length() const

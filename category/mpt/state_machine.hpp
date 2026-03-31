@@ -24,6 +24,18 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 struct Compute;
 
+namespace detail
+{
+    struct db_metadata;
+}
+
+// Persisted in db_metadata. Values must be stable.
+enum class StorageFormat : uint8_t
+{
+    SlotCompact = 0,
+    PageCOO = 1,
+};
+
 struct StateMachine
 {
     virtual ~StateMachine() = default;
@@ -39,6 +51,18 @@ struct StateMachine
     {
         return false;
     }
+
+    // Live read from db_metadata when backed by an on-disk DB.
+    // Returns SlotCompact for in-memory DBs or uninitialised metadata.
+    StorageFormat storage_format() const;
+
+    void bind_metadata(detail::db_metadata const *m)
+    {
+        metadata_ = m;
+    }
+
+private:
+    detail::db_metadata const *metadata_{nullptr};
 };
 
 MONAD_MPT_NAMESPACE_END

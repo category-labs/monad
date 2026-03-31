@@ -577,7 +577,8 @@ UpdateAuxImpl::~UpdateAuxImpl()
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
 void UpdateAuxImpl::set_io(
-    AsyncIO &io_, std::optional<uint64_t> const history_len)
+    AsyncIO &io_, std::optional<uint64_t> const history_len,
+    StorageFormat const storage_format)
 {
     io = &io_;
     auto const chunk_count = io->chunk_count();
@@ -979,6 +980,7 @@ void UpdateAuxImpl::set_io(
         for (auto const i : {0, 1}) {
             auto *const m = db_metadata_[i].main;
             auto const g = m->hold_dirty();
+            m->storage_format = storage_format;
             memset(
                 m->future_variables_unused,
                 0xff,

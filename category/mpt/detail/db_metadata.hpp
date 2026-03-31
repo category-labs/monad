@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/mpt/config.hpp>
+#include <category/mpt/state_machine.hpp>
 
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
@@ -154,8 +155,12 @@ namespace detail
         bytes32_t latest_voted_block_id;
         bytes32_t latest_proposed_block_id;
 
-        // padding for adding future atomics without requiring DB reset
-        uint8_t future_variables_unused[4032];
+        // Persisted storage encoding format. Existing DBs have 0xff here
+        // (uninitialised); treat as SlotCompact.
+        StorageFormat storage_format;
+
+        // padding for adding future variables without requiring DB reset
+        uint8_t future_variables_unused[4031];
 
         // used to know if the metadata was being
         // updated when the process suddenly exited

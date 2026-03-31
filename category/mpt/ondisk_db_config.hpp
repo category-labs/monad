@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/mpt/config.hpp>
+#include <category/mpt/state_machine.hpp>
 
 #include <filesystem>
 #include <optional>
@@ -23,10 +24,9 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-struct StateMachine;
-
 struct OnDiskDbConfig
 {
+    StorageFormat storage_format{StorageFormat::SlotCompact};
     bool append{false};
     bool compaction{false};
     bool capture_io_latencies{false};

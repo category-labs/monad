@@ -13,37 +13,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#pragma once
+#include <category/mpt/state_machine.hpp>
 
-#include <category/core/config.hpp>
-#include <category/core/result.hpp>
-#include <category/vm/vm.hpp>
+#include <category/mpt/detail/db_metadata.hpp>
 
-#include <cstdint>
-#include <filesystem>
-#include <utility>
+MONAD_MPT_NAMESPACE_BEGIN
 
-#include <signal.h>
-
-MONAD_NAMESPACE_BEGIN
-
-struct MonadChain;
-class DbCache;
-class BlockHashBufferFinalized;
-
-namespace mpt
+StorageFormat StateMachine::storage_format() const
 {
-    class Db;
+    if (metadata_) {
+        auto const fmt = metadata_->storage_format;
+        return fmt == StorageFormat::PageCOO ? StorageFormat::PageCOO
+                                             : StorageFormat::SlotCompact;
+    }
+    return StorageFormat::SlotCompact;
 }
 
-namespace fiber
-{
-    class PriorityPool;
-}
-
-Result<std::pair<uint64_t, uint64_t>> runloop_monad(
-    MonadChain const &, std::filesystem::path const &, mpt::Db &, DbCache &,
-    vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &,
-    uint64_t, sig_atomic_t const volatile &, bool enable_tracing);
-
-MONAD_NAMESPACE_END
+MONAD_MPT_NAMESPACE_END

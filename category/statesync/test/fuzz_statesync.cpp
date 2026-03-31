@@ -280,6 +280,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
             &cdbname_str,
             1,
             static_cast<unsigned>(get_nprocs() - 1),
+            static_cast<uint8_t>(monad::mpt::StorageFormat::SlotCompact),
             &client,
             &statesync_send_request);
     std::filesystem::path sdbname{tmp_dbname()};

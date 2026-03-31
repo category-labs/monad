@@ -24,9 +24,10 @@ extern "C"
 
 struct monad_db_snapshot_filesystem_write_user_context;
 
+// storage_format: 0 = slots, 1 = pages
 struct monad_db_snapshot_filesystem_write_user_context *
 monad_db_snapshot_filesystem_write_user_context_create(
-    char const *root, uint64_t block);
+    char const *root, uint64_t block, uint8_t storage_format);
 
 void monad_db_snapshot_filesystem_write_user_context_destroy(
     struct monad_db_snapshot_filesystem_write_user_context *);
@@ -35,9 +36,10 @@ uint64_t monad_db_snapshot_write_filesystem(
     uint64_t shard, monad_snapshot_type, unsigned char const *bytes, size_t len,
     void *user);
 
+// dest_storage_format: 0 = slots, 1 = pages
 void monad_db_snapshot_load_filesystem(
     char const *const *dbname_paths, size_t len, unsigned sq_thread_cpu,
-    char const *snapshot_dir, uint64_t block);
+    char const *snapshot_dir, uint64_t block, uint8_t dest_storage_format);
 
 #ifdef __cplusplus
 }

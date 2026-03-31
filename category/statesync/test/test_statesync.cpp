@@ -173,6 +173,7 @@ namespace
                 {cdbname},
                 std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),
                 4,
+                monad::mpt::StorageFormat::SlotCompact,
                 &client,
                 &statesync_send_request};
             net = {.client = &client, .cctx = cctx};

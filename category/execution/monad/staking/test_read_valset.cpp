@@ -16,6 +16,7 @@
 #include <category/async/util.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/db/storage_broker.hpp>
+#include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>

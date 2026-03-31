@@ -41,7 +41,7 @@ struct monad_statesync_client_context
     template <class K, class V>
     using Map = ankerl::unordered_dense::segmented_map<K, V>;
 
-    using StorageDeltas = Map<monad::bytes32_t, monad::bytes32_t>;
+    using StorageDeltas = Map<monad::bytes32_t, monad::byte_string>;
 
     using StateDelta = std::pair<monad::Account, StorageDeltas>;
 
@@ -65,7 +65,7 @@ struct monad_statesync_client_context
     monad_statesync_client_context(
         std::vector<std::filesystem::path> dbname_paths,
         std::optional<unsigned> sq_thread_cpu, unsigned wr_buffers,
-        monad_statesync_client *,
+        monad::mpt::StorageFormat storage_format, monad_statesync_client *,
         void (*statesync_send_request)(
             struct monad_statesync_client *, struct monad_sync_request));
 

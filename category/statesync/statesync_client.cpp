@@ -38,10 +38,15 @@ unsigned const MONAD_SQPOLL_DISABLED = unsigned(-1);
 
 monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const *const dbname_paths, size_t const len,
-    unsigned const sq_thread_cpu, monad_statesync_client *sync,
+    unsigned const sq_thread_cpu, uint8_t const storage_format,
+    monad_statesync_client *sync,
     void (*statesync_send_request)(
         monad_statesync_client *, monad_sync_request))
 {
+    auto const fmt = storage_format == static_cast<uint8_t>(
+                                           monad::mpt::StorageFormat::PageCOO)
+                         ? monad::mpt::StorageFormat::PageCOO
+                         : monad::mpt::StorageFormat::SlotCompact;
     std::vector<std::filesystem::path> const paths{
         dbname_paths, dbname_paths + len};
     MONAD_ASSERT(!paths.empty());
@@ -51,6 +56,7 @@ monad_statesync_client_context *monad_statesync_client_context_create(
             ? std::nullopt
             : std::make_optional(sq_thread_cpu),
         32,
+        fmt,
         sync,
         statesync_send_request};
 }

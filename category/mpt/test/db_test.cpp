@@ -2883,3 +2883,17 @@ TYPED_TEST(DbTest, scalability)
         }
     }
 }
+
+TEST(DbMetadata, StorageFormatPersisted)
+{
+    using namespace monad::mpt;
+
+    auto make_db = [](StorageFormat fmt) {
+        StateMachineAlwaysMerkle machine;
+        Db db{machine, OnDiskDbConfig{.storage_format = fmt}};
+        EXPECT_EQ(machine.storage_format(), fmt);
+    };
+
+    make_db(StorageFormat::SlotCompact);
+    make_db(StorageFormat::PageCOO);
+}

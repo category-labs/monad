@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 
@@ -31,6 +32,7 @@
 
 #include <deque>
 #include <limits>
+#include <map>
 
 struct monad_db_snapshot_loader
 {
@@ -41,6 +43,7 @@ struct monad_db_snapshot_loader
     std::array<monad::byte_string, 256> eth_headers;
     std::deque<monad::hash256> hash_alloc;
     std::deque<monad::mpt::Update> update_alloc;
+    std::deque<monad::byte_string> bytes_alloc;
     std::array<
         ankerl::unordered_dense::segmented_map<uint64_t, monad::mpt::Update>,
         MONAD_SNAPSHOT_SHARDS>
@@ -48,13 +51,24 @@ struct monad_db_snapshot_loader
     monad::mpt::UpdateList state_updates;
     monad::mpt::UpdateList code_updates;
     uint64_t bytes_read;
+    monad::mpt::StorageFormat source_format;
+    monad::mpt::StorageFormat dest_format;
+
+    bool needs_slot_to_page_conversion() const
+    {
+        return source_format == monad::mpt::StorageFormat::SlotCompact &&
+               dest_format == monad::mpt::StorageFormat::PageCOO;
+    }
 
     monad_db_snapshot_loader(
         uint64_t const block, char const *const *const dbname_paths,
-        size_t const len, unsigned const sq_thread_cpu)
+        size_t const len, unsigned const sq_thread_cpu,
+        monad::mpt::StorageFormat const source_fmt,
+        monad::mpt::StorageFormat const dest_fmt)
         : block{block}
         , db{machine,
              monad::mpt::OnDiskDbConfig{
+                 .storage_format = dest_fmt,
                  .append = true,
                  .compaction = false,
                  .rd_buffers = 8192,
@@ -66,7 +80,16 @@ struct monad_db_snapshot_loader
                          : std::make_optional(sq_thread_cpu),
                  .dbname_paths = {dbname_paths, dbname_paths + len}}}
         , bytes_read{0}
+        , source_format{source_fmt}
+        , dest_format{machine.storage_format()}
     {
+        MONAD_ASSERT_PRINTF(
+            dest_format == dest_fmt,
+            "DB metadata format does not match requested format");
+        MONAD_ASSERT_PRINTF(
+            !(source_format == monad::mpt::StorageFormat::PageCOO &&
+              dest_format == monad::mpt::StorageFormat::SlotCompact),
+            "pages -> slots conversion is not supported");
     }
 };
 
@@ -122,6 +145,7 @@ void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
         false);
     loader->hash_alloc.clear();
     loader->update_alloc.clear();
+    loader->bytes_alloc.clear();
     for (auto &map : loader->account_offset_to_update) {
         map.clear();
     }
@@ -440,10 +464,21 @@ bool monad_db_dump_snapshot(
 
 monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t const block, char const *const *const dbname_paths,
-    size_t const len, unsigned const sq_thread_cpu)
+    size_t const len, unsigned const sq_thread_cpu,
+    uint8_t const source_storage_format, uint8_t const dest_storage_format)
 {
-    auto *loader =
-        new monad_db_snapshot_loader(block, dbname_paths, len, sq_thread_cpu);
+    auto const to_fmt = [](uint8_t v) {
+        return v == static_cast<uint8_t>(monad::mpt::StorageFormat::PageCOO)
+                   ? monad::mpt::StorageFormat::PageCOO
+                   : monad::mpt::StorageFormat::SlotCompact;
+    };
+    auto *loader = new monad_db_snapshot_loader(
+        block,
+        dbname_paths,
+        len,
+        sq_thread_cpu,
+        to_fmt(source_storage_format),
+        to_fmt(dest_storage_format));
     MONAD_ASSERT_PRINTF(
         loader->db.get_latest_version() == monad::mpt::INVALID_BLOCK_NUM,
         "database must be hard reset when loading snapshot");
@@ -474,33 +509,92 @@ void monad_db_snapshot_loader_load(
 
     if (storage) {
         MONAD_ASSERT(account);
-        byte_string_view storage_view{storage, storage_len};
         auto &account_offset_to_update =
             loader->account_offset_to_update.at(shard);
-        while (!storage_view.empty()) {
-            uint64_t const account_offset =
-                unaligned_load<uint64_t>(storage_view.data());
-            if (!account_offset_to_update.contains(account_offset)) {
-                monad_db_snapshot_loader_read_account(
-                    loader, shard, account_offset, {account, account_len});
+
+        if (loader->needs_slot_to_page_conversion()) {
+            // Slot-to-page migration: decode slot entries, group into
+            // pages, re-encode as page entries for the target DB.
+            struct SlotEntry
+            {
+                bytes32_t key;
+                bytes32_t value;
+            };
+
+            ankerl::unordered_dense::
+                segmented_map<uint64_t, std::vector<SlotEntry>>
+                    account_slots;
+
+            byte_string_view storage_view{storage, storage_len};
+            while (!storage_view.empty()) {
+                uint64_t const account_offset =
+                    unaligned_load<uint64_t>(storage_view.data());
+                if (!account_offset_to_update.contains(account_offset)) {
+                    monad_db_snapshot_loader_read_account(
+                        loader, shard, account_offset, {account, account_len});
+                }
+                storage_view.remove_prefix(sizeof(account_offset));
+                auto const res = decode_storage_db(storage_view);
+                MONAD_ASSERT(res.has_value());
+                auto const &[slot_key, slot_value_enc] = res.value();
+                account_slots[account_offset].push_back(
+                    {slot_key, decode_storage_eth(slot_value_enc)});
             }
-            storage_view.remove_prefix(sizeof(account_offset));
-            byte_string_view const before{storage_view};
-            // TODO: multi-slot storage needs slot-aware snapshot loading
-            auto const res = decode_storage_db(storage_view);
-            MONAD_ASSERT(res.has_value());
-            auto &update = account_offset_to_update.at(account_offset);
-            uint64_t const consumed = before.size() - storage_view.size();
-            update.next.push_front(loader->update_alloc.emplace_back(Update{
-                .key = loader->hash_alloc.emplace_back(keccak256(
-                    {res.value().first.bytes,
-                     sizeof(res.value().first.bytes)})),
-                .value = before.substr(0, consumed),
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(loader->block)}));
-            loader->bytes_read += consumed;
+
+            for (auto &[account_offset, slots] : account_slots) {
+                auto &update = account_offset_to_update.at(account_offset);
+                std::map<bytes32_t, storage_page_t> pages;
+                for (auto const &[slot_key, slot_value] : slots) {
+                    pages[compute_page_key(slot_key)]
+                         [compute_slot_offset(slot_key)] = slot_value;
+                }
+                for (auto const &[page_key, page] : pages) {
+                    if (page.is_empty()) {
+                        continue;
+                    }
+                    auto &encoded = loader->bytes_alloc.emplace_back(
+                        encode_storage_page_db(page_key, page));
+                    update.next.push_front(
+                        loader->update_alloc.emplace_back(Update{
+                            .key = loader->hash_alloc.emplace_back(keccak256(
+                                {page_key.bytes, sizeof(page_key.bytes)})),
+                            .value = byte_string_view{encoded},
+                            .next = UpdateList{},
+                            .version = static_cast<int64_t>(loader->block)}));
+                    loader->bytes_read += encoded.size();
+                }
+            }
             if (loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
                 monad_db_snapshot_loader_flush(loader);
+            }
+        }
+        else {
+            // Same format (slot→slot or pages→pages) — raw insert.
+            byte_string_view storage_view{storage, storage_len};
+            while (!storage_view.empty()) {
+                uint64_t const account_offset =
+                    unaligned_load<uint64_t>(storage_view.data());
+                if (!account_offset_to_update.contains(account_offset)) {
+                    monad_db_snapshot_loader_read_account(
+                        loader, shard, account_offset, {account, account_len});
+                }
+                storage_view.remove_prefix(sizeof(account_offset));
+                byte_string_view const before{storage_view};
+                auto const res = decode_storage_db(storage_view);
+                MONAD_ASSERT(res.has_value());
+                auto &update = account_offset_to_update.at(account_offset);
+                uint64_t const consumed = before.size() - storage_view.size();
+                update.next.push_front(loader->update_alloc.emplace_back(Update{
+                    .key = loader->hash_alloc.emplace_back(keccak256(
+                        {res.value().first.bytes,
+                         sizeof(res.value().first.bytes)})),
+                    .value = before.substr(0, consumed),
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(loader->block)}));
+                loader->bytes_read += consumed;
+                if (loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
+                    monad_db_snapshot_loader_flush(loader);
+                }
             }
         }
     }

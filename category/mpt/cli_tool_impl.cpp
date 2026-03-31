@@ -407,6 +407,7 @@ struct impl_t
     std::filesystem::path restore_database;
     std::vector<std::filesystem::path> storage_paths;
     int compression_level = 3;
+    std::string storage_format_str = "slots";
 
     std::optional<MONAD_ASYNC_NAMESPACE::storage_pool> pool;
 
@@ -1445,6 +1446,14 @@ opened.
                 "destroy any existing database, replacing it with the archived "
                 "database (implies --truncate).");
             cli.add_option(
+                   "--storage-format",
+                   impl.storage_format_str,
+                   "storage encoding format for new databases: "
+                   "'slots' (per-slot compact) or 'pages' (per-page "
+                   "COO/bitmap). "
+                   "Default: slots.")
+                ->check(CLI::IsMember({"slots", "pages"}));
+            cli.add_option(
                 "--chunk-capacity",
                 impl.chunk_capacity,
                 "set chunk capacity during database creation (default is 28, "
@@ -1582,7 +1591,11 @@ opened.
                       MONAD_ASYNC_NAMESPACE::AsyncIO::
                           MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*impl.pool, rwbuf};
-        MONAD_MPT_NAMESPACE::UpdateAux aux(io);
+        auto const storage_format =
+            impl.storage_format_str == "pages"
+                ? MONAD_MPT_NAMESPACE::StorageFormat::PageCOO
+                : MONAD_MPT_NAMESPACE::StorageFormat::SlotCompact;
+        MONAD_MPT_NAMESPACE::UpdateAux aux(io, {}, storage_format);
 
         {
             cout << R"(MPT database on storages:
@@ -1602,6 +1615,14 @@ opened.
             cout << std::setw(default_width) << std::setprecision(default_prec)
                  << std::endl;
 
+            {
+                auto const fmt = aux.db_metadata()->storage_format;
+                cout << "Storage format: "
+                     << (fmt == MONAD_MPT_NAMESPACE::StorageFormat::PageCOO
+                             ? "pages"
+                             : "slots")
+                     << "\n";
+            }
             cout << "MPT database internal lists:\n";
             impl.total_used += impl.print_list_info(
                 aux, aux.db_metadata()->fast_list_begin(), "Fast", &impl.fast);

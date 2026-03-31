@@ -15,6 +15,7 @@
 
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -94,7 +95,8 @@ TEST(PrestateTracer, pre_state_to_json)
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -133,7 +135,8 @@ TEST(PrestateTracer, zero_nonce)
 
     commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -173,7 +176,8 @@ TEST(PrestateTracer, state_deltas_to_json)
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -214,7 +218,8 @@ TEST(PrestateTracer, statediff_account_creation)
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -254,7 +259,8 @@ TEST(PrestateTracer, statediff_balance_nonce_update)
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -308,7 +314,8 @@ TEST(PrestateTracer, statediff_delete_storage)
 
     commit_sequential(tdb, state_deltas2, Code{}, BlockHeader{.number = 1});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -363,7 +370,8 @@ TEST(PrestateTracer, statediff_multiple_fields_update)
         Code{{A_CODE_HASH, A_ICODE}, {B_CODE_HASH, B_ICODE}},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -417,7 +425,8 @@ TEST(PrestateTracer, statediff_account_deletion)
 
     commit_sequential(tdb, state_deltas2, Code{}, BlockHeader{.number = 1});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -478,7 +487,8 @@ TEST(PrestateTracer, geth_example_prestate)
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
-    BlockState bs0(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs0(tdb, broker, vm);
     State s(bs0, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -530,7 +540,8 @@ TEST(PrestateTracer, geth_example_statediff)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs0(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs0(tdb, broker, vm);
     State s(bs0, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -564,7 +575,8 @@ TEST(PrestateTracer, prestate_empty)
 
     commit_sequential(tdb, {}, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"({})";
@@ -585,7 +597,8 @@ TEST(PrestateTracer, statediff_empty)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     auto const json_str = R"(
@@ -611,7 +624,8 @@ TYPED_TEST(TraitsTest, access_list_empty)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     nlohmann::json storage;
@@ -633,7 +647,8 @@ TYPED_TEST(TraitsTest, access_list_write)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     s.create_account_no_rollback(addr1);
@@ -682,7 +697,8 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     // Regular account is included even if it does not have storage keys set
     {
@@ -754,7 +770,8 @@ TYPED_TEST(TraitsTest, access_list_sender)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     // Sender is excluded if it does not have storage keys set
     {
@@ -815,7 +832,8 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     // Beneficiary is excluded if it does not have storage keys set
     {
@@ -876,7 +894,8 @@ TYPED_TEST(TraitsTest, access_list_recipient)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     // Recipient is excluded if it does not have storage keys set
     {
@@ -937,7 +956,8 @@ TYPED_TEST(TraitsTest, access_list_authorities)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     // Valid authorities are excluded if they do not have storage keys set
     {
@@ -1011,7 +1031,8 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
 
     commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     constexpr auto ecrecover =
         0x0000000000000000000000000000000000000001_address;
@@ -1077,7 +1098,8 @@ TEST(PrestateTracer, prestate_access_storage)
         {},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     State s(bs, Incarnation{0, 0});
 
@@ -1144,7 +1166,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
         {},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     // Modify the storage of the beneficiary, which implies it must show up in
@@ -1217,7 +1240,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
         {},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     // Modify the storage of the beneficiary, which implies it must show up
@@ -1292,7 +1316,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
         {},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     // Modify the balance of the beneficiary, which implies it
@@ -1364,7 +1389,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
         {},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     // Modify the nonce of the beneficiary, which implies it
@@ -1432,7 +1458,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     State s(bs, Incarnation{0, 0});
 
@@ -1508,7 +1535,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
         {},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     State s(bs, Incarnation{0, 0});
 
@@ -1575,7 +1603,8 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
         {},
         BlockHeader{.number = 0});
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
 
     State s(bs, Incarnation{0, 0});
 
@@ -1626,7 +1655,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     // Block 0
     commit_sequential(tdb, {}, {}, header);
 
-    BlockState bs(tdb, vm);
+    SlotStorageBroker broker{tdb};
+    BlockState bs(tdb, broker, vm);
     State s(bs, Incarnation{0, 0});
 
     // Apply block reward.

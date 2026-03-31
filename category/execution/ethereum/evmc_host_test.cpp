@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -136,7 +137,8 @@ TYPED_TEST(TraitsTest, emit_log)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -176,7 +178,8 @@ TYPED_TEST(TraitsTest, access_precompile)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;

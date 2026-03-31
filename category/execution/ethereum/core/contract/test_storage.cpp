@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -41,7 +42,8 @@ struct Storage : public ::testing::Test
     vm::VM vm;
     mpt::Db db{machine};
     TrieDb tdb{db};
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State state{bs, Incarnation{0, 0}};
 
     void SetUp() override

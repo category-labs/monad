@@ -15,6 +15,7 @@
 
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/update.hpp>
@@ -126,7 +127,7 @@ void monad_statesync_client_context::commit()
                                  ? std::nullopt
                                  : std::make_optional<byte_string_view>(
                                        bytes_alloc.emplace_back(
-                                           encode_storage_db(key, val))),
+                                           encode_storage_eth_db(key, val))),
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(current)}));

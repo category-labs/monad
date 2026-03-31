@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -69,7 +70,8 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     BlockMetrics metrics;
 
     {
@@ -175,7 +177,8 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     BlockMetrics metrics;
 
     {
@@ -325,7 +328,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     BlockMetrics metrics;
 
     // Sets s[0] = 1 if passed any data, clears s[0] if data is empty.
@@ -485,7 +489,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     BlockMetrics metrics;
 
     // s[0] = 0; s[0] = 1
@@ -634,7 +639,8 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     BlockMetrics metrics;
 
     boost::fibers::promise<void> prev{};

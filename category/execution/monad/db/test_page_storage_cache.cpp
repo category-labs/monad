@@ -1,0 +1,159 @@
+// Copyright (C) 2025 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
+
+#include <gtest/gtest.h>
+
+#include <test_resource_data.h>
+
+using namespace monad;
+using namespace monad::mpt;
+using namespace monad::test;
+
+namespace
+{
+    constexpr auto key1 =
+        0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32;
+    constexpr auto value1 =
+        0x0000000000000013370000000000000000000000000000000000000000000003_bytes32;
+}
+
+// PageStorageBroker reads full pages from DB and caches them.
+// Keys that share a page (same upper 250 bits) are all populated on first miss.
+TEST(StorageBroker, monad_page_read_and_cache)
+{
+    constexpr auto slot_key_0 = bytes32_t{0x00};
+    constexpr auto slot_key_1 = bytes32_t{0x01};
+    constexpr auto slot_val_0 =
+        0x000000000000000000000000000000000000000000000000000000000000aaaa_bytes32;
+    constexpr auto slot_val_1 =
+        0x000000000000000000000000000000000000000000000000000000000000bbbb_bytes32;
+    constexpr auto slot_key_far = bytes32_t{0x80};
+    constexpr auto slot_val_far =
+        0x000000000000000000000000000000000000000000000000000000000000cccc_bytes32;
+
+    Account const acct{.nonce = 1};
+    InMemoryMachine machine;
+    mpt::Db mpt_db{machine};
+    TrieDb tdb{mpt_db};
+
+    {
+        PageStorageBroker commit_broker{tdb};
+        MonadCommitBuilder builder(0, commit_broker);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {
+                     {slot_key_0, {bytes32_t{}, slot_val_0}},
+                     {slot_key_1, {bytes32_t{}, slot_val_1}},
+                     {slot_key_far, {bytes32_t{}, slot_val_far}}}}}});
+        auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
+        tdb.reset_root(std::move(root), 0);
+    }
+
+    PageStorageBroker broker{tdb};
+
+    // First read — cache miss, fetches and decodes the full page.
+    EXPECT_EQ(
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), slot_val_0);
+    EXPECT_EQ(broker.page_count(), 1);
+
+    // Second read — cache hit, slot 1 was populated when the page was decoded.
+    auto const hit_result =
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1);
+    EXPECT_EQ(broker.page_count(), 1);
+    EXPECT_EQ(hit_result, slot_val_1);
+
+    // Key 0x40 maps to a different page — cache miss.
+    EXPECT_EQ(
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_far),
+        slot_val_far);
+    EXPECT_EQ(broker.page_count(), 2);
+
+    // Re-read through the broker to verify cached page contents.
+    EXPECT_EQ(
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), slot_val_0);
+    EXPECT_EQ(
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), slot_val_1);
+}
+
+// Missing key returns zero from a cached page.
+TEST(StorageBroker, monad_cache_miss_returns_zero)
+{
+    Account const acct{.nonce = 1};
+    InMemoryMachine machine;
+    mpt::Db mpt_db{machine};
+    TrieDb tdb{mpt_db};
+
+    {
+        PageStorageBroker commit_broker{tdb};
+        MonadCommitBuilder builder(0, commit_broker);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}});
+        auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
+        tdb.reset_root(std::move(root), 0);
+    }
+
+    PageStorageBroker broker{tdb};
+
+    EXPECT_EQ(broker.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
+
+    // Key with no data in the trie — empty page, returns zero.
+    EXPECT_EQ(
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, bytes32_t{}),
+        bytes32_t{});
+}
+
+// SlotStorageBroker with per-slot encoding (the ethereum path).
+TEST(StorageBroker, block_state_with_cache)
+{
+    Account const acct{.nonce = 1};
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        Code{},
+        BlockHeader{});
+
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
+
+    auto const account = block_state.read_account(ADDR_A);
+    ASSERT_TRUE(account.has_value());
+    EXPECT_EQ(account->nonce, 1);
+
+    auto const storage =
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1);
+    EXPECT_EQ(storage, value1);
+}

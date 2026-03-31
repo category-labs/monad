@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -99,6 +100,7 @@ namespace
         InMemoryMachine machine;
         mpt::Db db{machine};
         TrieDb tdb{db};
+        SlotStorageBroker broker{tdb};
         vm::VM vm;
     };
 
@@ -107,6 +109,7 @@ namespace
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{}};
         TrieDb tdb{db};
+        SlotStorageBroker broker{tdb};
         vm::VM vm;
     };
 
@@ -138,7 +141,7 @@ DEFINE_TRAITS_FIXTURE(InMemoryStateTraitsTest);
 
 TEST_F(InMemoryStateTest, access_account)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -158,7 +161,7 @@ TEST_F(InMemoryStateTest, access_account)
 
 TEST_F(InMemoryStateTest, account_exists)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -178,7 +181,7 @@ TEST_F(InMemoryStateTest, account_exists)
 
 TEST_F(InMemoryStateTest, create_contract)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
@@ -192,7 +195,7 @@ TEST_F(InMemoryStateTest, create_contract)
 
 TEST_F(InMemoryStateTest, get_balance)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -211,7 +214,7 @@ TEST_F(InMemoryStateTest, get_balance)
 
 TEST_F(InMemoryStateTest, add_to_balance)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -229,7 +232,7 @@ TEST_F(InMemoryStateTest, add_to_balance)
 
 TEST_F(InMemoryStateTest, get_nonce)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -246,7 +249,7 @@ TEST_F(InMemoryStateTest, get_nonce)
 
 TEST_F(InMemoryStateTest, set_nonce)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.set_nonce(b, 1);
@@ -256,7 +259,7 @@ TEST_F(InMemoryStateTest, set_nonce)
 
 TEST_F(InMemoryStateTest, get_code_hash)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -275,7 +278,7 @@ TEST_F(InMemoryStateTest, get_code_hash)
 
 TEST_F(InMemoryStateTest, set_code_sets_code_hash)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(b);
@@ -286,7 +289,7 @@ TEST_F(InMemoryStateTest, set_code_sets_code_hash)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -332,7 +335,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -375,7 +378,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_same_tx)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -413,7 +416,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_same_tx)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_separate_tx)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -448,7 +451,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_separate_tx)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -476,7 +479,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -510,7 +513,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_incarnation)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_create_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -559,7 +562,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_create_incarnation)
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -600,14 +603,14 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
         this->tdb.finalize(1, bytes32_t{1});
         this->tdb.set_block_and_prefix(1);
         EXPECT_EQ(
-            this->tdb.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
+            this->broker.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
     }
 }
 
 TYPED_TEST(
     InMemoryStateTraitsTest, selfdestruct_merge_create_commit_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -654,18 +657,21 @@ TYPED_TEST(
             std::nullopt);
         this->tdb.finalize(1, bytes32_t{1});
         this->tdb.set_block_and_prefix(1);
-        EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key1), value1);
-        EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value2);
+        EXPECT_EQ(
+            this->broker.read_storage(a, Incarnation{1, 2}, key1), value1);
+        EXPECT_EQ(
+            this->broker.read_storage(a, Incarnation{1, 2}, key2), value2);
         if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
             EXPECT_EQ(
-                this->tdb.read_storage(a, Incarnation{1, 2}, key3), value3);
+                this->broker.read_storage(a, Incarnation{1, 2}, key3), value3);
 
             EXPECT_EQ(
                 this->tdb.state_root(),
                 0x425AE06EDEDEC27A17412E8A2BC2F148A4AF94EE510FFB7AEA81E1ABF5450768_bytes32);
         }
         else {
-            EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key3), null);
+            EXPECT_EQ(
+                this->broker.read_storage(a, Incarnation{1, 2}, key3), null);
             EXPECT_EQ(
                 this->tdb.state_root(),
                 0x5B853ED6066181BF0E0D405DA0926FD7707446BCBE670DE13C9EDA7A84F6A401_bytes32);
@@ -677,7 +683,7 @@ TYPED_TEST(
     InMemoryStateTraitsTest,
     selfdestruct_create_destroy_create_commit_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     {
         State s1{bs, Incarnation{1, 1}};
 
@@ -715,14 +721,15 @@ TYPED_TEST(
         this->tdb.finalize(0, NULL_HASH_BLAKE3);
         this->tdb.set_block_and_prefix(0);
         EXPECT_EQ(
-            this->tdb.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
-        EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value3);
+            this->broker.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
+        EXPECT_EQ(
+            this->broker.read_storage(a, Incarnation{1, 2}, key2), value3);
     }
 }
 
 TEST_F(InMemoryStateTest, create_conflict_address_incarnation)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -744,7 +751,7 @@ TEST_F(InMemoryStateTest, create_conflict_address_incarnation)
 
 TYPED_TEST(InMemoryStateTraitsTest, destruct_touched_dead)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -789,7 +796,7 @@ TYPED_TEST(InMemoryStateTraitsTest, destruct_touched_dead)
 // Storage
 TEST_F(InMemoryStateTest, access_storage)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
@@ -804,7 +811,7 @@ TEST_F(InMemoryStateTest, access_storage)
 
 TEST_F(InMemoryStateTest, get_storage)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -834,7 +841,7 @@ TEST_F(InMemoryStateTest, get_storage)
 
 TEST_F(InMemoryStateTest, set_storage_modified)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -854,7 +861,7 @@ TEST_F(InMemoryStateTest, set_storage_modified)
 
 TEST_F(InMemoryStateTest, set_storage_deleted)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -878,7 +885,7 @@ TEST_F(InMemoryStateTest, set_storage_deleted)
 
 TEST_F(InMemoryStateTest, set_storage_added)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
@@ -897,7 +904,7 @@ TEST_F(InMemoryStateTest, set_storage_added)
 
 TEST_F(InMemoryStateTest, set_storage_different_assigned)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -919,7 +926,7 @@ TEST_F(InMemoryStateTest, set_storage_different_assigned)
 
 TEST_F(InMemoryStateTest, set_storage_unchanged_assigned)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -939,7 +946,7 @@ TEST_F(InMemoryStateTest, set_storage_unchanged_assigned)
 
 TEST_F(InMemoryStateTest, set_storage_added_deleted)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
@@ -956,7 +963,7 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted)
 
 TEST_F(InMemoryStateTest, set_storage_added_deleted_null)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
@@ -973,7 +980,7 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted_null)
 
 TEST_F(InMemoryStateTest, set_storage_modify_delete)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -994,7 +1001,7 @@ TEST_F(InMemoryStateTest, set_storage_modify_delete)
 
 TEST_F(InMemoryStateTest, set_storage_delete_restored)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -1015,7 +1022,7 @@ TEST_F(InMemoryStateTest, set_storage_delete_restored)
 
 TEST_F(InMemoryStateTest, set_storage_modified_restored)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     commit_sequential(
         this->tdb,
         StateDeltas{
@@ -1037,7 +1044,7 @@ TEST_F(InMemoryStateTest, set_storage_modified_restored)
 // Code
 TEST_F(InMemoryStateTest, get_code_size)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     Account acct{.code_hash = code_hash1};
     commit_sequential(
         this->tdb,
@@ -1051,7 +1058,7 @@ TEST_F(InMemoryStateTest, get_code_size)
 
 TEST_F(InMemoryStateTest, copy_code)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     Account acct_a{.code_hash = code_hash1};
     Account acct_b{.code_hash = code_hash2};
 
@@ -1105,7 +1112,7 @@ TEST_F(InMemoryStateTest, get_code)
 {
     byte_string const contract{0x60, 0x34, 0x00};
 
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1131,7 +1138,7 @@ TEST_F(InMemoryStateTest, get_code)
 
 TEST_F(InMemoryStateTest, set_code)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
@@ -1148,7 +1155,7 @@ TEST_F(InMemoryStateTest, set_code)
 
 TEST_F(InMemoryStateTest, can_merge_same_account_different_storage)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1183,7 +1190,7 @@ TEST_F(InMemoryStateTest, can_merge_same_account_different_storage)
 
 TEST_F(InMemoryStateTest, cant_merge_colliding_storage)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1219,7 +1226,7 @@ TEST_F(InMemoryStateTest, cant_merge_colliding_storage)
 
 TYPED_TEST(InMemoryStateTraitsTest, merge_txn0_and_txn1)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
 
     commit_sequential(
         this->tdb,
@@ -1263,7 +1270,7 @@ TYPED_TEST(InMemoryStateTraitsTest, merge_txn0_and_txn1)
 
 TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
 {
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
@@ -1289,13 +1296,13 @@ TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
 
     EXPECT_TRUE(this->tdb.read_account(a).has_value());
     EXPECT_EQ(this->tdb.read_account(a).value().balance, 1u);
-    EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 1}, key1), value1);
+    EXPECT_EQ(this->broker.read_storage(a, Incarnation{1, 1}, key1), value1);
 }
 
 TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
 {
     using namespace intx;
-    BlockState bs{this->tdb, this->vm};
+    BlockState bs{this->tdb, this->broker, this->vm};
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
@@ -1317,7 +1324,8 @@ TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
         std::nullopt);
 
     EXPECT_EQ(
-        this->tdb.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
+        this->broker.read_storage(a, Incarnation{1, 1}, key1),
+        monad::bytes32_t{});
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
@@ -1351,7 +1359,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
 
     { // Commit to Block 10 Round 5, on top of block 9 finalized
         this->tdb.set_block_and_prefix(9);
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->broker, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
@@ -1371,13 +1379,15 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             BlockHeader{.number = 10});
         this->tdb.finalize(10, bytes32_t{10});
 
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value2);
+        EXPECT_EQ(
+            this->broker.read_storage(b, Incarnation{1, 1}, key1), value2);
+        EXPECT_EQ(
+            this->broker.read_storage(b, Incarnation{1, 1}, key2), value2);
 
         this->tdb.set_block_and_prefix(10, bytes32_t{10});
     }
     { // Commit to Block 11 Round 6, on top of block 10 round 5
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->broker, this->vm};
         State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
@@ -1397,15 +1407,15 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             bytes32_t{11},
             BlockHeader{.number = 11});
         EXPECT_EQ(
-            this->tdb.read_storage(c, Incarnation{2, 1}, key1),
+            this->broker.read_storage(c, Incarnation{2, 1}, key1),
             monad::bytes32_t{});
         if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
             EXPECT_EQ(
-                this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
+                this->broker.read_storage(c, Incarnation{2, 1}, key2), value1);
         }
         else {
             EXPECT_EQ(
-                this->tdb.read_storage(c, Incarnation{2, 1}, key2),
+                this->broker.read_storage(c, Incarnation{2, 1}, key2),
                 monad::bytes32_t{});
         }
 
@@ -1413,15 +1423,15 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         this->tdb.finalize(11, bytes32_t{11});
         this->tdb.set_block_and_prefix(11);
         EXPECT_EQ(
-            this->tdb.read_storage(c, Incarnation{2, 1}, key1),
+            this->broker.read_storage(c, Incarnation{2, 1}, key1),
             monad::bytes32_t{});
         if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
             EXPECT_EQ(
-                this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
+                this->broker.read_storage(c, Incarnation{2, 1}, key2), value1);
         }
         else {
             EXPECT_EQ(
-                this->tdb.read_storage(c, Incarnation{2, 1}, key2),
+                this->broker.read_storage(c, Incarnation{2, 1}, key2),
                 monad::bytes32_t{});
         }
     }
@@ -1460,7 +1470,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
     {
         // set to block 10 round 5
         this->tdb.set_block_and_prefix(10, bytes32_t{10});
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->broker, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
@@ -1480,16 +1490,17 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
             BlockHeader{.number = 11});
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 82'000);
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
         EXPECT_EQ(
-            this->tdb.read_storage(b, Incarnation{1, 1}, key2), bytes32_t{});
+            this->broker.read_storage(b, Incarnation{1, 1}, key1), value2);
+        EXPECT_EQ(
+            this->broker.read_storage(b, Incarnation{1, 1}, key2), bytes32_t{});
     }
     auto const state_root_round8 = this->tdb.state_root();
 
     {
         // set to block 10 round 5
         this->tdb.set_block_and_prefix(10, bytes32_t{10});
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->broker, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 44'000);
@@ -1509,16 +1520,16 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 84'000);
         EXPECT_EQ(
-            this->tdb.read_storage(b, Incarnation{1, 1}, key1), bytes32_t{});
+            this->broker.read_storage(b, Incarnation{1, 1}, key1), bytes32_t{});
         EXPECT_EQ(
-            this->tdb.read_storage(b, Incarnation{1, 1}, key2), bytes32_t{});
+            this->broker.read_storage(b, Incarnation{1, 1}, key2), bytes32_t{});
     }
 
     auto const state_root_round6 = this->tdb.state_root();
     {
         // set to block 10 round 5
         this->tdb.set_block_and_prefix(10, bytes32_t{10});
-        BlockState bs{this->tdb, this->vm};
+        BlockState bs{this->tdb, this->broker, this->vm};
         State as{bs, Incarnation{1, 1}};
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 32'000);
@@ -1538,8 +1549,10 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
             BlockHeader{.number = 11});
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 72'000);
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value3);
+        EXPECT_EQ(
+            this->broker.read_storage(b, Incarnation{1, 1}, key1), value2);
+        EXPECT_EQ(
+            this->broker.read_storage(b, Incarnation{1, 1}, key2), value3);
     }
     auto const state_root_round7 = this->tdb.state_root();
     this->tdb.finalize(11, bytes32_t{117});
@@ -1573,7 +1586,8 @@ TEST_F(OnDiskStateTest, proposal_basics)
 
     DbCache db_cache(db);
     db_cache.set_block_and_prefix(10, bytes32_t{10});
-    BlockState bs1(db_cache, this->vm);
+    SlotStorageBroker broker1{db_cache};
+    BlockState bs1(db_cache, broker1, this->vm);
     EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
     auto [released_state1, released_code1] = std::move(bs1).release();
     commit_simple(
@@ -1587,7 +1601,8 @@ TEST_F(OnDiskStateTest, proposal_basics)
     db_cache.finalize(11, bytes32_t{11});
 
     db_cache.set_block_and_prefix(11, bytes32_t{11});
-    BlockState bs2(db_cache, this->vm);
+    SlotStorageBroker broker2{db_cache};
+    BlockState bs2(db_cache, broker2, this->vm);
     State as{bs2, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(a));
     as.add_to_balance(a, 10'000);
@@ -1612,6 +1627,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 {
     load_header({}, this->db, BlockHeader{.number = 9});
     DbCache db_cache(this->tdb);
+    SlotStorageBroker db_broker_storage{db_cache};
 
     // b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
     // b11 r111 r100           +40 v2 --
@@ -1654,14 +1670,19 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
     EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{20'000});
     EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{30'000});
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), value2);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(b, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(b, Incarnation{0, 0}, key2), value2);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(c, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(c, Incarnation{0, 0}, key2), value2);
 
     LOG_INFO("block 11 round 111 on block 10 round 100");
     db_cache.set_block_and_prefix(10, bytes32_t{10});
-    BlockState bs_111(db_cache, this->vm);
+    SlotStorageBroker broker_111{db_cache};
+    BlockState bs_111(db_cache, broker_111, this->vm);
     // b11 r111 r100           +40 v2 --
     {
         State as{bs_111, Incarnation{11, 1}};
@@ -1688,14 +1709,20 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
     EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{60'000});
     EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{30'000});
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(b, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(b, Incarnation{0, 0}, key2),
+        bytes32_t{});
+    EXPECT_EQ(
+        db_broker_storage.read_storage(c, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(c, Incarnation{0, 0}, key2), value2);
 
     LOG_INFO("block 12 round 121 on block 11 round 111");
     db_cache.set_block_and_prefix(11, bytes32_t{111});
-    BlockState bs_121(db_cache, this->vm);
+    SlotStorageBroker broker_121{db_cache};
+    BlockState bs_121(db_cache, broker_121, this->vm);
     // b12 r121 r111                        +10    v1
     {
         State as{bs_121, Incarnation{12, 1}};
@@ -1720,14 +1747,20 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
     EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{60'000});
     EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{40'000});
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value1);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(b, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(b, Incarnation{0, 0}, key2),
+        bytes32_t{});
+    EXPECT_EQ(
+        db_broker_storage.read_storage(c, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(c, Incarnation{0, 0}, key2), value1);
 
     LOG_INFO("block 11 round 112 on block 10 round 100");
     db_cache.set_block_and_prefix(10, bytes32_t{10});
-    BlockState bs_112(db_cache, this->vm);
+    SlotStorageBroker broker_112{db_cache};
+    BlockState bs_112(db_cache, broker_112, this->vm);
     // b11 r112 r100    +20        --           --
     {
         State as{bs_112, Incarnation{11, 1}};
@@ -1749,7 +1782,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 12 round 122 on block 11 round 112");
     db_cache.set_block_and_prefix(11, bytes32_t{112});
-    BlockState bs_122(db_cache, this->vm);
+    SlotStorageBroker broker_122{db_cache};
+    BlockState bs_122(db_cache, broker_122, this->vm);
     //  b12 r122 r112           +20 v3              v1
     {
         State as{bs_122, Incarnation{12, 1}};
@@ -1770,7 +1804,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 13 round 131 on block 12 round 121");
     db_cache.set_block_and_prefix(12, bytes32_t{121});
-    BlockState bs_131(db_cache, this->vm);
+    SlotStorageBroker broker_131{db_cache};
+    BlockState bs_131(db_cache, broker_131, this->vm);
     //  b13 r131 r121    +30    +20    v1        v2 __
     {
         State as{bs_131, Incarnation{13, 1}};
@@ -1795,7 +1830,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
 
     LOG_INFO("block 13 round 132 on block 12 round 122");
     db_cache.set_block_and_prefix(12, bytes32_t{122});
-    BlockState bs_132(db_cache, this->vm);
+    SlotStorageBroker broker_132{db_cache};
+    BlockState bs_132(db_cache, broker_132, this->vm);
     // b13 r132 r122                  --        v3
     {
         State as{bs_132, Incarnation{13, 1}};
@@ -1831,10 +1867,15 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
     EXPECT_EQ(db_cache.read_account(b).value().balance, 80'000);
     EXPECT_EQ(db_cache.read_account(c).value().balance, 40'000);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(
+        db_broker_storage.read_storage(b, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(b, Incarnation{0, 0}, key2), value1);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(c, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(
+        db_broker_storage.read_storage(c, Incarnation{0, 0}, key2),
+        bytes32_t{});
 
     // check state root of previous rounds
     db_cache.set_block_and_prefix(11, bytes32_t{111});
@@ -1861,6 +1902,8 @@ namespace
         std::mt19937_64 rng_;
         Db &db1_;
         DbCache &db2_;
+        SlotStorageBroker broker1_;
+        SlotStorageBroker broker2_;
         vm::VM &vm_;
         uint64_t finalized_block_{0};
         uint64_t finalized_proposal_seed_{0};
@@ -1886,6 +1929,8 @@ namespace
             : rng_(seed)
             , db1_(db1)
             , db2_(db2)
+            , broker1_(db1)
+            , broker2_(db2)
             , vm_(vm)
         {
         }
@@ -2038,8 +2083,10 @@ namespace
             db2_.set_block_and_prefix(
                 block - 1,
                 parent.has_value() ? get_dummy_block_id(*parent) : bytes32_t{});
-            BlockState bs1(db1_, vm_);
-            BlockState bs2(db2_, vm_);
+            SlotStorageBroker broker1{db1_};
+            SlotStorageBroker broker2{db2_};
+            BlockState bs1(db1_, broker1, vm_);
+            BlockState bs2(db2_, broker2, vm_);
             Incarnation const inc{block, 1};
             State st1(bs1, inc);
             State st2(bs2, inc);
@@ -2204,9 +2251,9 @@ namespace
                     for (uint8_t const j : KEYS) {
                         bytes32_t const key(j);
                         auto const val1 =
-                            db1_.read_storage(addr, incarnation, key);
+                            broker1_.read_storage(addr, incarnation, key);
                         auto const val2 =
-                            db2_.read_storage(addr, incarnation, key);
+                            broker2_.read_storage(addr, incarnation, key);
                         if (val1 != bytes32_t{0}) {
                             LOG_INFO(
                                 "Check_storage_ a_{}          k_{} {}",

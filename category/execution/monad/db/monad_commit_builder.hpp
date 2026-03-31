@@ -15,36 +15,27 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
-#include <category/core/result.hpp>
-#include <category/vm/vm.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/vm/evm/monad/revision.h>
 
-#include <cstdint>
-#include <filesystem>
-#include <utility>
-
-#include <signal.h>
+#include <memory>
 
 MONAD_NAMESPACE_BEGIN
 
-struct MonadChain;
-class DbCache;
-struct MachineBase;
-class BlockHashBufferFinalized;
+struct StorageBroker;
+class PageStorageBroker;
 
-namespace mpt
+class MonadCommitBuilder : public CommitBuilder
 {
-    class Db;
-}
+    PageStorageBroker &broker_;
 
-namespace fiber
-{
-    class PriorityPool;
-}
+public:
+    MonadCommitBuilder(uint64_t block_number, PageStorageBroker &broker);
 
-Result<std::pair<uint64_t, uint64_t>> runloop_monad(
-    MonadChain const &, std::filesystem::path const &, mpt::Db &, DbCache &,
-    MachineBase &, vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &,
-    uint64_t &, uint64_t, sig_atomic_t const volatile &, bool enable_tracing);
+    CommitBuilder &add_state_deltas(StateDeltas const &) override;
+};
+
+std::unique_ptr<CommitBuilder> make_commit_builder(
+    uint64_t block_number, StorageBroker &broker, monad_revision rev);
 
 MONAD_NAMESPACE_END

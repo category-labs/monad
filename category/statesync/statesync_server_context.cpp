@@ -226,7 +226,7 @@ monad_statesync_server_context::read_account(Address const &addr)
     return rw.read_account(addr);
 }
 
-bytes32_t monad_statesync_server_context::read_storage(
+byte_string monad_statesync_server_context::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
     return rw.read_storage(addr, incarnation, key);

@@ -40,6 +40,7 @@
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -263,7 +264,8 @@ namespace
             chain.get_chain_id()));
 
         tdb.set_block_and_prefix(block_number, block_id);
-        BlockState block_state{tdb, vm};
+        SlotStorageBroker broker{tdb};
+        BlockState block_state{tdb, broker, vm};
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
         apply_state_overrides(block_state, incarnation, state_overrides);
@@ -1229,7 +1231,8 @@ struct monad_executor
                     // Set db to parent block state
                     TrieRODb tdb{db};
                     tdb.set_block_and_prefix(block_number - 1, parent_id);
-                    BlockState block_state{tdb, vm_};
+                    SlotStorageBroker broker{tdb};
+                    BlockState block_state{tdb, broker, vm_};
                     LazyBlockHash block_hash_buffer{db, block_number};
 
                     auto const res = [&]() -> Result<nlohmann::json> {

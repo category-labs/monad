@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -77,7 +78,8 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -135,7 +137,8 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -213,7 +216,8 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -276,7 +280,8 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -339,7 +344,8 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -408,7 +414,8 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -523,7 +530,8 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
         },
         BlockHeader{});
 
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
 
@@ -646,7 +654,8 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
         },
         BlockHeader{});
 
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
 
@@ -724,7 +733,8 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{},
         BlockHeader{});
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
 
     uint8_t const code[] = {0xde, 0xad, 0xbe, 0xef};
     // Successfully deploy code
@@ -768,7 +778,8 @@ TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{},
         BlockHeader{});
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
 
     if constexpr (
         TestFixture::Trait::max_code_size() <
@@ -806,7 +817,8 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
         StateDeltas{{a, StateDelta{.account = {std::nullopt, Account{}}}}},
         Code{},
         BlockHeader{});
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
 
     // EIP-3541 validation
     byte_string const illegal_code{0xef, 0x60};
@@ -835,7 +847,8 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto eoa{
@@ -939,7 +952,8 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     // `eoa` 7702-delegates its code to `delegated`, which makes a DELEGATECALL
@@ -1069,7 +1083,8 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     // `from` calls `contract`, which delegatecalls `eoa`, which has delegated
@@ -1176,7 +1191,8 @@ TYPED_TEST(TraitsTest, cold_account_access)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     static constexpr auto from{
@@ -1282,7 +1298,8 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
     mpt::Db db{machine};
     db_t tdb{db};
     vm::VM vm;
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State s{bs, Incarnation{0, 0}};
 
     BlockHashBufferFinalized const block_hash_buffer;

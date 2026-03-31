@@ -101,7 +101,7 @@ struct monad_statesync_server_context final : public monad::Db
     virtual std::optional<monad::Account>
     read_account(monad::Address const &addr) override;
 
-    virtual monad::bytes32_t read_storage(
+    virtual monad::byte_string read_storage(
         monad::Address const &addr, monad::Incarnation,
         monad::bytes32_t const &key) override;
 

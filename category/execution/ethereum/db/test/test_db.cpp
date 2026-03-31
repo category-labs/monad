@@ -20,6 +20,8 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -158,7 +160,8 @@ namespace
         auto encoded_storage = find_res.value().node->value();
         auto const storage = decode_storage_db(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
-        return storage.value();
+        return std::make_pair(
+            storage.value().first, decode_storage_eth(storage.value().second));
     }
 
     std::vector<Address>
@@ -256,7 +259,9 @@ TYPED_TEST(DBTest, read_storage)
         BlockHeader{});
 
     // Existing storage
-    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(
+        decode_storage_eth(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1)),
+        value1);
     EXPECT_EQ(
         read_storage_and_slot(
             tdb.get_root(), this->db, tdb.get_block_number(), ADDR_A, key1)
@@ -264,7 +269,9 @@ TYPED_TEST(DBTest, read_storage)
         key1);
 
     // Non-existing key
-    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(
+        decode_storage_eth(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key2)),
+        bytes32_t{});
     EXPECT_EQ(
         read_storage_and_slot(
             tdb.get_root(), this->db, tdb.get_block_number(), ADDR_A, key2)
@@ -273,7 +280,9 @@ TYPED_TEST(DBTest, read_storage)
 
     // Non-existing account
     EXPECT_FALSE(tdb.read_account(ADDR_B).has_value());
-    EXPECT_EQ(tdb.read_storage(ADDR_B, Incarnation{0, 0}, key1), bytes32_t{});
+    EXPECT_EQ(
+        decode_storage_eth(tdb.read_storage(ADDR_B, Incarnation{0, 0}, key1)),
+        bytes32_t{});
     EXPECT_EQ(
         read_storage_and_slot(
             tdb.get_root(), this->db, tdb.get_block_number(), ADDR_B, key1)
@@ -406,6 +415,7 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
 {
     Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};
     TrieDb tdb{this->db};
+    SlotStorageBroker broker{tdb};
     commit_sequential(
         tdb,
         StateDeltas{
@@ -430,7 +440,8 @@ TYPED_TEST(DBTest, delete_account_modify_storage_regression)
         BlockHeader{.number = 1});
 
     EXPECT_EQ(tdb.read_account(ADDR_A), std::nullopt);
-    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1), bytes32_t{});
+    EXPECT_EQ(
+        broker.read_storage(ADDR_A, Incarnation{0, 0}, key1), bytes32_t{});
     EXPECT_EQ(tdb.state_root(), NULL_ROOT);
 }
 

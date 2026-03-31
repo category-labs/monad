@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -53,6 +54,7 @@ namespace
         InMemoryMachine machine;
         mpt::Db db;
         TrieDb tdb;
+        SlotStorageBroker broker;
         vm::VM vm;
         BlockState block_state;
         State state;
@@ -63,7 +65,8 @@ namespace
         BlockHistoryFixture()
             : db{machine}
             , tdb{db}
-            , block_state{tdb, vm}
+            , broker{tdb}
+            , block_state{tdb, broker, vm}
             , state{block_state, Incarnation{0, 0}}
             , block_hash_buffer{}
         {

@@ -15,6 +15,7 @@
 
 #include <category/core/hex.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -300,7 +301,8 @@ namespace
         mpt::Db db{machine};
         TrieDb tdb{db};
         vm::VM vm;
-        BlockState bs{tdb, vm};
+        SlotStorageBroker broker{tdb};
+        BlockState bs{tdb, broker, vm};
         State s{bs, Incarnation{0, 0}};
 
         for (auto const &test_case : test_cases) {

@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -34,7 +35,8 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
     vm::VM vm;
     TrieDb tdb{db};
     tdb.set_block_and_prefix(block_num);
-    BlockState block_state{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     Incarnation const incarnation{block_num, Incarnation::LAST_TX - 1u};
     State state{block_state, incarnation};
     NoopCallTracer call_tracer{};

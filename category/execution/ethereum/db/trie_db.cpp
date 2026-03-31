@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -117,7 +118,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     return acct.value();
 }
 
-bytes32_t
+byte_string
 TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
     auto const res = db_.find(
@@ -133,11 +134,11 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
         return {};
     }
     stats_storage_value();
-    auto encoded_storage = res.value().node->value();
-    auto const storage = decode_storage_db_ignore_slot(encoded_storage);
-    MONAD_ASSERT(!storage.has_error());
-    return to_bytes(storage.value());
-};
+    byte_string_view enc{res.value().node->value()};
+    auto decoded = decode_storage_db(enc);
+    MONAD_ASSERT(!decoded.has_error());
+    return byte_string{decoded.value().second};
+}
 
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
@@ -425,7 +426,10 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
 
             auto encoded_storage = node.value();
 
+            // TODO: multi-slot storage needs to iterate all slots
             auto const storage = decode_storage_db(encoded_storage);
+            MONAD_DEBUG_ASSERT(!storage.has_error());
+            auto const value = decode_storage_eth(storage.value().second);
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
@@ -442,9 +446,7 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
                     std::as_bytes(std::span(storage.value().first.bytes)), ""));
             storage_data_json["value"] = fmt::format(
                 "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(storage.value().second.bytes)),
-                    ""));
+                fmt::join(std::as_bytes(std::span(value.bytes)), ""));
             json[acct_key]["storage"][key] = storage_data_json;
         }
 

@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -534,6 +535,7 @@ void do_get_account(
             return;
         }
         auto storage_encoded = storage_query_res.value().node->value();
+        // TODO: multi-slot storage needs slot-aware CLI display
         auto const storage_res = decode_storage_db(storage_encoded);
         if (!storage_res) {
             fmt::println(
@@ -541,8 +543,9 @@ void do_get_account(
                 storage_res.error().message().c_str());
             return;
         }
-
-        print_storage(storage_res.value().first, storage_res.value().second);
+        print_storage(
+            storage_res.value().first,
+            decode_storage_eth(storage_res.value().second));
     }
 }
 

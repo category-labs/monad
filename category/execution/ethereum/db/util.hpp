@@ -67,9 +67,25 @@ struct MachineBase : public mpt::StateMachine
         CallFrame,
     };
 
+    enum class StorageFormat : uint8_t
+    {
+        SlotCompact,
+        PageCOO,
+    };
+
     uint8_t depth{0};
     TrieType trie_section{TrieType::Undefined};
     TableType table{TableType::Prefix};
+
+    void set_storage_format(StorageFormat fmt)
+    {
+        storage_format_ = fmt;
+    }
+
+    StorageFormat storage_format() const
+    {
+        return storage_format_;
+    }
 
     virtual mpt::Compute &get_compute() const override;
     virtual void down(unsigned char const nibble) override;
@@ -81,6 +97,9 @@ struct MachineBase : public mpt::StateMachine
     {
         return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
     }
+
+private:
+    StorageFormat storage_format_{StorageFormat::SlotCompact};
 };
 
 static_assert(sizeof(MachineBase) == 16);
@@ -126,7 +145,6 @@ inline mpt::Nibbles const ommer_nibbles = mpt::concat(OMMER_NIBBLE);
 inline mpt::Nibbles const withdrawal_nibbles = mpt::concat(WITHDRAWAL_NIBBLE);
 inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
 inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
-
 //////////////////////////////////////////////////////////
 // Proposed and finialized subtries. Active on all tables.
 //////////////////////////////////////////////////////////
@@ -136,17 +154,11 @@ inline mpt::Nibbles const proposal_nibbles = mpt::concat(PROPOSAL_NIBBLE);
 inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
-byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
 
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_account_db_raw(byte_string_view &);
 Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
 Result<Account> decode_account_db_ignore_address(byte_string_view &);
-
-Result<std::pair<byte_string_view, byte_string_view>>
-decode_storage_db_raw(byte_string_view &);
-Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
-Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);
 Result<std::pair<Transaction, Address>>

@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/decode_error.hpp>
@@ -326,7 +327,7 @@ namespace
             while (!in.empty()) {
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = bytes_alloc_.emplace_back(encode_storage_db(
+                    .value = bytes_alloc_.emplace_back(encode_storage_eth_db(
                         bytes32_t{}, // TODO: update this when binary checkpoint
                                      // includes unhashed storage slot
                         unaligned_load<bytes32_t>(
@@ -372,9 +373,24 @@ namespace
         {
             MONAD_ASSERT(node.has_value());
             auto encoded_storage = node.value();
-            auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+            auto const storage = decode_storage_db(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
-            return rlp::encode_string2(storage.value());
+            return rlp::encode_string2(storage.value().second);
+        }
+    };
+
+    struct PagedStorageLeafProcessor
+    {
+        static byte_string process(Node const &node)
+        {
+            MONAD_ASSERT(node.has_value());
+            auto encoded_storage = node.value();
+            auto const storage = decode_storage_db(encoded_storage);
+            MONAD_ASSERT(!storage.has_error());
+            auto const page = decode_storage_page(storage.value().second);
+            auto const commitment = page_commit(page);
+            return rlp::encode_string2(
+                {commitment.bytes, sizeof(commitment.bytes)});
         }
     };
 
@@ -418,8 +434,24 @@ namespace
 
     using AccountMerkleCompute = MerkleComputeBase<AccountLeafProcessor>;
     using StorageMerkleCompute = MerkleComputeBase<StorageLeafProcessor>;
+    using PageStorageMerkleCompute =
+        MerkleComputeBase<PagedStorageLeafProcessor>;
 
     struct StorageRootMerkleCompute : public StorageMerkleCompute
+    {
+        virtual unsigned
+        compute(unsigned char *const buffer, Node const &node) override
+        {
+            MONAD_ASSERT(node.has_value());
+            return encode_two_pieces(
+                buffer,
+                node.path_nibble_view(),
+                AccountLeafProcessor::process(node),
+                true);
+        }
+    };
+
+    struct PageStorageRootMerkleCompute : public PageStorageMerkleCompute
     {
         virtual unsigned
         compute(unsigned char *const buffer, Node const &node) override
@@ -474,6 +506,8 @@ mpt::Compute &MachineBase::get_compute() const
     static AccountRootMerkleCompute account_root_compute;
     static StorageMerkleCompute storage_compute;
     static StorageRootMerkleCompute storage_root_compute;
+    static PageStorageMerkleCompute page_storage_compute;
+    static PageStorageRootMerkleCompute page_storage_root_compute;
 
     static VarLenMerkleCompute generic_merkle_compute;
     static RootVarLenMerkleCompute generic_root_merkle_compute;
@@ -494,9 +528,15 @@ mpt::Compute &MachineBase::get_compute() const
             return account_compute;
         }
         else if (depth == prefix_length + 2 * sizeof(bytes32_t)) {
+            if (storage_format() == StorageFormat::PageCOO) {
+                return page_storage_root_compute;
+            }
             return storage_root_compute;
         }
         else {
+            if (storage_format() == StorageFormat::PageCOO) {
+                return page_storage_compute;
+            }
             return storage_compute;
         }
     }
@@ -702,40 +742,29 @@ Result<Account> decode_account_db_ignore_address(byte_string_view &enc)
     return decode_account_db_helper(res.second);
 }
 
-byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)
+byte_string encode_storage_eth_db(bytes32_t const &key, bytes32_t const &val)
 {
-    byte_string encoded_storage;
-    encoded_storage += rlp::encode_bytes32_compact(key);
-    encoded_storage += rlp::encode_bytes32_compact(val);
-    return rlp::encode_list2(encoded_storage);
+    return rlp::encode_list2(
+        rlp::encode_bytes32_compact(key), rlp::encode_bytes32_compact(val));
 }
 
-Result<std::pair<byte_string_view, byte_string_view>>
-decode_storage_db_raw(byte_string_view &enc)
+byte_string
+encode_storage_page_db(bytes32_t const &key, storage_page_t const &page)
+{
+    return rlp::encode_list2(
+        rlp::encode_bytes32_compact(key),
+        rlp::encode_string2(encode_storage_page(page)));
+}
+
+Result<std::pair<bytes32_t, byte_string_view>>
+decode_storage_db(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
-    BOOST_OUTCOME_TRY(byte_string_view const slot, rlp::decode_string(payload));
-    BOOST_OUTCOME_TRY(byte_string_view const val, rlp::decode_string(payload));
-    return {slot, val};
+    BOOST_OUTCOME_TRY(auto const key_view, rlp::decode_string(payload));
+    BOOST_OUTCOME_TRY(auto const storage_view, rlp::decode_string(payload));
+    bytes32_t const key = to_bytes(key_view);
+    return std::make_pair(key, storage_view);
 }
-
-Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
-{
-    BOOST_OUTCOME_TRY(auto res, decode_storage_db_raw(enc));
-    if (!enc.empty()) {
-        return rlp::DecodeError::InputTooLong;
-    }
-    return {to_bytes(res.first), to_bytes(res.second)};
-}
-
-Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
-{
-    BOOST_OUTCOME_TRY(auto const res, decode_storage_db_raw(enc));
-    if (!enc.empty()) {
-        return rlp::DecodeError::InputTooLong;
-    }
-    return res.second;
-};
 
 void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,

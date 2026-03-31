@@ -18,6 +18,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -55,7 +56,8 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
     MonadDevnet chain;
 
-    BlockState block_state{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     BlockMetrics block_metrics;
 
     BlockHeader const header{.number = 0};
@@ -169,7 +171,8 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
     MonadDevnet chain;
 
-    BlockState block_state{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     BlockMetrics block_metrics;
 
     BlockHeader const header{.number = 0};
@@ -295,7 +298,8 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
 
     MonadDevnet chain;
 
-    BlockState block_state{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     BlockMetrics block_metrics;
 
     BlockHeader const header{};
@@ -334,7 +338,8 @@ TEST(SystemTransaction, static_validate_transaction_failure)
 
     MonadDevnet chain;
 
-    BlockState block_state{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     BlockMetrics block_metrics;
 
     BlockHeader const header{.number = 0};

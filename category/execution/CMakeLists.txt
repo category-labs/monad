@@ -100,6 +100,7 @@ add_library(
   "ethereum/db/db_snapshot_filesystem.h"
   "ethereum/db/file_db.cpp"
   "ethereum/db/file_db.hpp"
+  "ethereum/db/storage_encoding.hpp"
   "ethereum/db/trie_db.cpp"
   "ethereum/db/trie_db.hpp"
   "ethereum/db/trie_rodb.hpp"
@@ -267,6 +268,10 @@ add_library(
   "monad/staking/util/staking_error.hpp"
   "monad/staking/util/val_execution.cpp"
   "monad/staking/util/val_execution.hpp"
+  # monad/db
+  "monad/db/monad_commit_builder.cpp"
+  "monad/db/storage_page.hpp"
+  "monad/db/storage_page.cpp"
   # monad/state2
   "monad/state2/proposal_state.hpp")
 
@@ -311,7 +316,8 @@ target_link_libraries(
   PUBLIC quill::quill
   PUBLIC silkpre
   PUBLIC unordered_dense
-  PUBLIC TBB::tbb)
+  PUBLIC TBB::tbb
+)
 monad_compile_options(monad_execution_ethereum)
 
 target_link_options(monad_execution_ethereum PRIVATE LINKER:-z,defs)

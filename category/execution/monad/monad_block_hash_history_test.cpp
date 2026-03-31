@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/block_hash_history.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -35,7 +36,8 @@ protected:
     mpt::Db db{machine};
     TrieDb tdb{db};
     vm::VM vm;
-    BlockState block_state{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState block_state{tdb, broker, vm};
     State state{block_state, Incarnation{0, 0}};
 };
 

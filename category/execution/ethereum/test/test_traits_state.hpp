@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -31,8 +32,9 @@ struct InMemoryStateTestBase
     InMemoryMachine machine;
     mpt::Db db{machine};
     TrieDb tdb{db};
+    SlotStorageBroker broker{tdb};
     vm::VM vm;
-    BlockState block_state{tdb, vm};
+    BlockState block_state{tdb, broker, vm};
     State state{block_state, Incarnation{0, 0}};
 };
 

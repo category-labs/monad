@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -56,7 +57,8 @@ TYPED_TEST(TraitsTest, apply_block_reward)
         Code{},
         BlockHeader{});
 
-    BlockState bs{tdb, vm};
+    SlotStorageBroker broker{tdb};
+    BlockState bs{tdb, broker, vm};
     State as{bs, Incarnation{0, 0}};
 
     EXPECT_TRUE(as.account_exists(a));

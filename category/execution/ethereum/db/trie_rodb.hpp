@@ -18,6 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_encoding.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
@@ -89,7 +90,7 @@ public:
         return acct.value();
     }
 
-    virtual bytes32_t read_storage(
+    virtual byte_string read_storage(
         Address const &addr, Incarnation, bytes32_t const &key) override
     {
         auto storage_leaf_res = db_.find(
@@ -106,10 +107,10 @@ public:
                 "Block was invalidated in db while execution was in progress");
             return {};
         }
-        auto encoded_storage = storage_leaf_res.value().node->value();
-        auto const storage = decode_storage_db_ignore_slot(encoded_storage);
-        MONAD_ASSERT(!storage.has_error());
-        return to_bytes(storage.value());
+        byte_string_view enc{storage_leaf_res.value().node->value()};
+        auto decoded = decode_storage_db(enc);
+        MONAD_ASSERT(!decoded.has_error());
+        return byte_string{decoded.value().second};
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override

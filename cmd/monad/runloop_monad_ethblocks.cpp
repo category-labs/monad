@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -36,6 +37,8 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -187,7 +190,12 @@ Result<void> process_monad_block(
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
-    BlockState block_state(db, vm);
+    using Broker = std::conditional_t<
+        (traits::monad_rev() >= MONAD_NEXT),
+        PageStorageBroker,
+        SlotStorageBroker>;
+    Broker broker{db};
+    BlockState block_state(db, broker, vm);
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_block<traits>(
@@ -208,17 +216,18 @@ Result<void> process_monad_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
-    builder.add_state_deltas(*state)
+    auto builder =
+        make_commit_builder(block.header.number, broker, traits::monad_rev());
+    builder->add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)
         .add_transactions(block.transactions, senders)
         .add_call_frames(call_frames)
         .add_ommers(block.ommers);
     if (block.withdrawals.has_value()) {
-        builder.add_withdrawals(block.withdrawals.value());
+        builder->add_withdrawals(block.withdrawals.value());
     }
-    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
+    db.commit(block_id, *builder, block.header, *state, [&](BlockHeader &h) {
         // second stage: populate block header
         h.receipts_root = db.receipts_root();
         h.state_root = db.state_root();

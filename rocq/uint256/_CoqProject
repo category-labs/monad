@@ -7,7 +7,6 @@ theories/Uint.v
 theories/Primitives.v
 theories/Words.v
 theories/WordsLemmas.v
-theories/ConstexprMul.v
 theories/Division.v
 theories/DivisionProofs.v
 theories/RuntimeMul.v

@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/hex.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/core/assert.h>
 #include <category/vm/core/cases.hpp>
@@ -146,6 +147,12 @@ namespace monad::vm::utils::evm_as
             return insert(std::move(pushop));
         }
 
+        EvmBuilder &push(FixedBytes auto const &data) noexcept
+            requires(sizeof(data) <= 32)
+        {
+            return push(runtime::from_bytes(sizeof(data), data.bytes));
+        }
+
         EvmBuilder &push(evmc::address const &address) noexcept
         {
             auto const pushop = PushAddressI{address};
@@ -200,6 +207,11 @@ namespace monad::vm::utils::evm_as
         {
             auto commentop = CommentI{comment};
             return insert(std::move(commentop));
+        }
+
+        EvmBuilder &invalid() noexcept
+        {
+            return insert(InvalidI{"INVALID"});
         }
 
         // Macro expansions

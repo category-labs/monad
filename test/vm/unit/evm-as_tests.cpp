@@ -1861,3 +1861,146 @@ TEST(EvmAs, CallMacroExpansions)
         EXPECT_EQ(evm_as::mcompile(eb1), expected);
     }
 }
+
+template <size_t N>
+    requires(N > 0 && N <= 32)
+struct fixed_bytes
+{
+    explicit fixed_bytes(runtime::uint256_t const &value)
+    {
+        uint8_t buf[32] = {};
+        value.store_be(buf);
+        std::memcpy(bytes, buf + (32 - N), N);
+    }
+
+    uint8_t bytes[N];
+};
+
+TEST(EvmAs, FixedBytesPush)
+{
+    auto eb = evm_as::latest();
+
+    eb.push(fixed_bytes<1>(255))
+        .push(fixed_bytes<2>(0xABCD))
+        .push(fixed_bytes<11>(0x0123456789ABCDEFFEDCBA_u256))
+        .push(fixed_bytes<27>(
+            0x0123456789ABCDEFFEDCBA9876543210FEDCBA9876543210123456_u256))
+        .push(fixed_bytes<32>(
+            0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF_u256));
+
+    EXPECT_TRUE(evm_as::validate(eb));
+
+    std::vector<uint8_t> bytecode{};
+    evm_as::compile(eb, bytecode);
+
+    std::vector<uint8_t> expected{
+        compiler::EvmOpCode::PUSH1,
+        0xFF,
+        compiler::EvmOpCode::PUSH2,
+        0xAB,
+        0xCD,
+        compiler::EvmOpCode::PUSH11,
+        0x01,
+        0x23,
+        0x45,
+        0x67,
+        0x89,
+        0xAB,
+        0xCD,
+        0xEF,
+        0xFE,
+        0xDC,
+        0xBA,
+        compiler::EvmOpCode::PUSH27,
+        0x01,
+        0x23,
+        0x45,
+        0x67,
+        0x89,
+        0xAB,
+        0xCD,
+        0xEF,
+        0xFE,
+        0xDC,
+        0xBA,
+        0x98,
+        0x76,
+        0x54,
+        0x32,
+        0x10,
+        0xFE,
+        0xDC,
+        0xBA,
+        0x98,
+        0x76,
+        0x54,
+        0x32,
+        0x10,
+        0x12,
+        0x34,
+        0x56,
+        compiler::EvmOpCode::PUSH32,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF};
+
+    EXPECT_EQ(bytecode.size(), expected.size());
+    EXPECT_EQ(bytecode, expected);
+
+    std::string const expected_mnemonic =
+        "PUSH1 0xFF\n"
+        "PUSH2 0xABCD\n"
+        "PUSH11 0x123456789ABCDEFFEDCBA\n"
+        "PUSH27 0x123456789ABCDEFFEDCBA9876543210FEDCBA9876543210123456\n"
+        "PUSH32 "
+        "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\n";
+    EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+}
+
+TEST(EvmAs, Invalid)
+{
+    auto eb = evm_as::latest();
+    eb.invalid();
+
+    EXPECT_FALSE(evm_as::validate(eb));
+    EXPECT_TRUE(evm_as::validate(eb, {.allow_invalid = true}));
+
+    std::vector<uint8_t> bytecode{};
+    evm_as::compile(eb, bytecode);
+
+    std::vector<uint8_t> expected{0xFE};
+
+    EXPECT_EQ(bytecode, expected);
+
+    std::string const expected_mnemonic = "INVALID\n";
+    EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+}

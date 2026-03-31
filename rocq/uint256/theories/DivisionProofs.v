@@ -1137,9 +1137,20 @@ Proof.
       exfalso.
       rewrite U128.spec_eqb in Hq. apply Z.eqb_eq in Hq.
       rewrite U128.spec_zero in Hq.
-      pose proof (spec_widen u64_max_val) as Hw.
-      (* widen u64_max_val has to_Z = to_Z u64_max_val > 0 *)
-      admit.
+      pose proof (spec_widen u64_max_val) as Hw. rewrite Hw in Hq.
+      unfold u64_max_val in Hq.
+      pose proof (spec_to_Z (U64.sub U64.zero U64.one)) as [Hnn Hlt].
+      rewrite spec_sub, spec_zero, spec_one in Hq.
+      assert (Hb: base width > 1) by (unfold base; rewrite width_is_64; lia).
+      apply Z.mod_divide in Hq; [| unfold base; apply Z.pow_nonzero; lia].
+      destruct Hq as [k Hk].
+      destruct (Z.eq_dec k 0); [lia|].
+      assert (Z.abs k >= 1) by lia.
+      assert (Z.abs (k * base width) >= base width).
+      { rewrite Z.abs_mul.
+        assert (Z.abs (base width) = base width) by (apply Z.abs_eq; lia).
+        nia. }
+      lia.
     + (* u_hi ≠ v_hi *)
       rewrite spec_eqb in Heq_hi. apply Z.eqb_neq in Heq_hi.
       assert (Hu_lt_v: to_Z u_hi < to_Z v_hi)
@@ -1170,15 +1181,85 @@ Proof.
         { rewrite get_word_get_segment by lia.
           unfold u_hi in Hu_hi_zero. exact Hu_hi_zero. }
         split; [|split; [|split; [reflexivity|split; [auto|exact Hu_hi_eq]]]].
-        { (* Euclidean: segment = firstn n segment *)
+        { (* Euclidean: segment = firstn n segment since MSW = 0 *)
           rewrite (to_Z_words_firstn_skipn (get_segment u i (n + 1)) n)
-            by (rewrite get_segment_length by lia; lia).
-          (* The skipn part contributes msw * modulus_words n = 0 *)
-          admit. }
+            by (try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia).
+          (* skipn n seg has 1 element = 0, so its value is 0 *)
+          assert (Hskip0: to_Z_words (skipn n (get_segment u i (n + 1))) = 0).
+          { destruct (skipn n (get_segment u i (n + 1))) as [|w rest] eqn:Hsk.
+            - reflexivity.
+            - assert (rest = [])
+                by (assert (length (w :: rest) = 1%nat)
+                      by (rewrite <- Hsk, length_skipn, get_segment_length by lia; lia);
+                    destruct rest; [reflexivity | simpl in *; lia]).
+              subst rest. cbn [to_Z_words].
+              assert (w = get_word (get_segment u i (n + 1)) n).
+              { unfold get_word. change w with (nth 0 (w :: []) U64.zero).
+                rewrite <- Hsk, nth_skipn. f_equal. lia. }
+              rewrite H. rewrite Hseg_msw. lia. }
+          rewrite Hskip0. lia. }
         { (* Remainder bound *)
           split; [apply to_Z_words_bound|].
-          (* firstn n seg < modulus_words(n-1) * (1 + u_mid) <= modulus_words(n-1) * v_hi <= v *)
-          admit. }
+          (* Decompose firstn n seg at position n-1 *)
+          set (seg := get_segment u i (n + 1)).
+          pose proof (to_Z_words_bound (firstn (n - 1) (firstn n seg))) as Hlow_bound.
+          rewrite firstn_firstn, Nat.min_l in Hlow_bound by lia.
+          assert (Hseg_len: length seg = (n + 1)%nat)
+            by (unfold seg; try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia).
+          rewrite firstn_length_le in Hlow_bound by lia.
+          rewrite (to_Z_words_firstn_skipn (firstn n seg) (n - 1))
+            by (rewrite firstn_length_le by (try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia); lia).
+          (* The (n-1)-th word of seg is u_mid *)
+          assert (Hseg_mid: get_word seg (n - 1) = u_mid).
+          { unfold seg. rewrite get_word_get_segment by lia.
+            unfold u_mid. f_equal. lia. }
+          (* skipn (n-1) (firstn n seg) has 1 element = seg[n-1] = u_mid *)
+          assert (Hskip_val: to_Z_words (skipn (n - 1) (firstn n seg)) = to_Z u_mid).
+          { destruct (skipn (n - 1) (firstn n seg)) as [|w rest] eqn:Hsk.
+            - exfalso. assert (length (skipn (n-1) (firstn n seg)) = 0%nat)
+                by (rewrite Hsk; reflexivity).
+              rewrite length_skipn, firstn_length_le in H
+                by (try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia). lia.
+            - assert (rest = [])
+                by (assert (length (w :: rest) = 1%nat)
+                      by (rewrite <- Hsk, length_skipn, firstn_length_le
+                            by (try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia); lia);
+                    destruct rest; [reflexivity | simpl in *; lia]).
+              subst rest. cbn [to_Z_words].
+              assert (w = get_word seg (n - 1)).
+              { unfold get_word. change w with (nth 0 (w :: []) U64.zero).
+                rewrite <- Hsk, nth_skipn.
+                rewrite nth_firstn.
+                replace ((n - 1 + 0 <? n)%nat) with true
+                  by (symmetry; apply Nat.ltb_lt; lia).
+                f_equal. lia. }
+              rewrite H, Hseg_mid. lia. }
+          rewrite Hskip_val.
+          rewrite firstn_firstn, Nat.min_l by lia.
+          (* Now: low + modulus(n-1) * u_mid < modulus(n-1) * (1 + u_mid) <= modulus(n-1) * v_hi *)
+          pose proof (modulus_words_pos (n - 1)).
+          assert (Hv_decomp: to_Z_words v >= modulus_words (n - 1) * to_Z v_hi).
+          { rewrite (to_Z_words_firstn_skipn v (n - 1)) by lia.
+            pose proof (to_Z_words_bound (firstn (n - 1) v)).
+            rewrite firstn_length_le in H0 by lia.
+            (* skipn (n-1) v has >= 1 element, first is v[n-1] = v_hi *)
+            assert (to_Z_words (skipn (n - 1) v) >= to_Z v_hi).
+            { destruct (skipn (n - 1) v) as [|w rest] eqn:Hsk.
+              - exfalso. assert (length (skipn (n-1) v) = 0%nat)
+                  by (rewrite Hsk; reflexivity).
+                rewrite length_skipn in H1. lia.
+              - cbn [to_Z_words]. pose proof (spec_to_Z w).
+                pose proof (to_Z_words_bound rest).
+                assert (Hwv: w = get_word v (n - 1)).
+                { unfold get_word. change w with (nth 0 (w :: rest) U64.zero).
+                  rewrite <- Hsk, nth_skipn. f_equal. lia. }
+                unfold v_hi. rewrite <- Hwv.
+                pose proof (modulus_words_pos (length rest)). nia. }
+            nia. }
+          assert (modulus_words (n - 1) * (1 + to_Z u_mid) <=
+            modulus_words (n - 1) * to_Z v_hi).
+          { apply Z.mul_le_mono_nonneg_l; lia. }
+          lia. }
       * (* q0 ≠ 0 but estimate = 0 — contradiction *)
         exfalso.
         rewrite spec_eqb in Hq0. apply Z.eqb_neq in Hq0. rewrite spec_zero in Hq0.
@@ -1192,7 +1273,7 @@ Proof.
           rewrite Hq in H. lia. }
   - (* Case q_hat ≠ 0 *)
     pose proof (knuth_div_subtract_correct (get_segment u i (n + 1)) q_hat v n
-      ltac:(rewrite get_segment_length by lia; lia) Hlv Hvpos) as Hsub.
+      ltac:(try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia) Hlv Hvpos) as Hsub.
     destruct (knuth_div_subtract (get_segment u i (n + 1)) q_hat v n)
       as [new_seg final_q].
     destruct Hsub as [Heuclid [Hrem [Hlen_seg Hmsw_seg]]].
@@ -1263,7 +1344,7 @@ Proof.
     { set (r := firstn n (get_segment u' (S ci') (n + 1))).
       assert (Hrlen: length r = n)
         by (unfold r; rewrite firstn_length_le
-              by (rewrite get_segment_length by lia; lia); reflexivity).
+              by (try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia); reflexivity).
       pose proof (remainder_msw_le r v ltac:(lia) ltac:(lia) Hrem) as Hmsw_r.
       rewrite Hrlen, Hlv in Hmsw_r.
       assert (Hgw_r: get_word r (n - 1) = get_word u' (ci' + n)).

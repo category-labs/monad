@@ -84,9 +84,9 @@ class State
 public:
     OriginalAccountState &original_account_state(Address const &);
 
-private:
     AccountState const &recent_account_state(Address const &);
 
+private:
     AccountState &current_account_state(Address const &);
 
     std::optional<Account> const &recent_account(Address const &);

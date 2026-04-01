@@ -103,7 +103,7 @@ public:
     [[nodiscard]] bytes32_t get_code_hash() const
     {
         if (MONAD_LIKELY(account_.has_value())) {
-            return account_->code_hash;
+            return account_->get_code_hash();
         }
         return NULL_HASH;
     }
@@ -114,6 +114,11 @@ public:
             return account_->nonce;
         }
         return 0;
+    }
+
+    [[nodiscard]] bool inline_delegated_code() const noexcept
+    {
+        return account_.has_value() && account_->inline_delegated_code();
     }
 
     [[nodiscard]] std::optional<Incarnation> get_incarnation() const

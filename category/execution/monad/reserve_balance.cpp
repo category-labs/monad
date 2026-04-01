@@ -69,11 +69,10 @@ bool dipped_into_reserve(
     auto const &orig = state.original();
     for (auto const &[addr, cur_account] : state.current()) {
         MONAD_ASSERT(orig.contains(addr));
-        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
-        bytes32_t const effective_code_hash =
-            (traits::monad_rev() >= MONAD_EIGHT)
-                ? cur_account.recent().get_code_hash()
-                : orig_code_hash;
+        auto const &effective_state = (traits::monad_rev() >= MONAD_EIGHT)
+                                          ? cur_account.recent()
+                                          : orig.at(addr);
+        bytes32_t const effective_code_hash = effective_state.get_code_hash();
         bool effective_is_delegated = false;
 
         // the balance of the staking contract address can decrease but that
@@ -85,12 +84,16 @@ bool dipped_into_reserve(
 
         // Skip if not EOA
         if (effective_code_hash != NULL_HASH) {
-            vm::SharedIntercode const intercode =
-                state.read_code(effective_code_hash)->intercode();
-            effective_is_delegated = monad::vm::evm::is_delegated(
-                {intercode->code(), intercode->size()});
-            if (!effective_is_delegated) {
-                continue;
+            effective_is_delegated = effective_state.inline_delegated_code();
+            if (!effective_is_delegated) { // if not inlined code, read code to
+                                           // to check delegation status
+                vm::SharedIntercode const intercode =
+                    state.read_code(effective_code_hash)->intercode();
+                effective_is_delegated = monad::vm::evm::is_delegated(
+                    {intercode->code(), intercode->size()});
+                if (!effective_is_delegated) {
+                    continue; // skip if account has code and is not delegated
+                }
             }
         }
         else if (
@@ -136,8 +139,12 @@ bool dipped_into_reserve(
     return false;
 }
 
-bool is_delegated(State &state, bytes32_t const &code_hash)
+bool is_delegated(State &state, AccountState const &account_state)
 {
+    if (account_state.inline_delegated_code()) {
+        return true;
+    }
+    bytes32_t const code_hash = account_state.get_code_hash();
     if (MONAD_UNLIKELY(code_hash == NULL_HASH)) {
         return false;
     }
@@ -192,14 +199,14 @@ bool ReserveBalance::subject_account(Address const &address)
         return false;
     }
 
-    OriginalAccountState &orig_state = state_->original_account_state(address);
-    bytes32_t const effective_code_hash = use_recent_code_hash_
-                                              ? state_->get_code_hash(address)
-                                              : orig_state.get_code_hash();
-    if (effective_code_hash == NULL_HASH) {
+    AccountState const &account_state =
+        use_recent_code_ ? state_->recent_account_state(address)
+                         : state_->original_account_state(address);
+    bytes32_t const code_hash = account_state.get_code_hash();
+    if (code_hash == NULL_HASH) {
         return true;
     }
-    return is_delegated(*state_, effective_code_hash);
+    return is_delegated(*state_, account_state);
 }
 
 uint256_t ReserveBalance::pretx_reserve(Address const &address)
@@ -303,7 +310,7 @@ void ReserveBalance::on_set_code(
     if (!tracking_enabled_) {
         return;
     }
-    if (!use_recent_code_hash_) {
+    if (!use_recent_code_) {
         return;
     }
     auto &violation_threshold = violation_thresholds_[address];
@@ -333,7 +340,7 @@ void ReserveBalance::init_from_tx(
 
     if constexpr (tracking_disabled) {
         tracking_enabled_ = false;
-        use_recent_code_hash_ = false;
+        use_recent_code_ = false;
         allow_init_selfdestruct_exemption_ = false;
         sender_ = {};
         sender_gas_fees_ = 0;
@@ -346,14 +353,13 @@ void ReserveBalance::init_from_tx(
     MONAD_ASSERT(i < ctx.senders.size());
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
-    use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
+    use_recent_code_ = traits::monad_rev() >= MONAD_EIGHT;
     allow_init_selfdestruct_exemption_ = traits::monad_rev() >= MONAD_NINE;
-    bytes32_t const sender_code_hash =
-        use_recent_code_hash_
-            ? state_->get_code_hash(sender)
-            : state_->original_account_state(sender).get_code_hash();
+    AccountState const &sender_account_state =
+        use_recent_code_ ? state_->recent_account_state(sender)
+                         : state_->original_account_state(sender);
     bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
-        sender, i, is_delegated(*state_, sender_code_hash), ctx);
+        sender, i, is_delegated(*state_, sender_account_state), ctx);
     tracking_enabled_ = true;
     sender_ = sender;
     sender_gas_fees_ = uint256_t{tx.gas_limit} *

@@ -5413,3 +5413,220 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         monad_executor_destroy(executor);
     }
 }
+
+// Test that eth_simulate correctly logs contract calls using each of the
+// four EVM call types: CALL, STATICCALL, DELEGATECALL, and CALLCODE.
+//
+// Each call type is exercised by a dedicated wrapper contract that invokes a
+// target contract (which simply STOPs), stores the subcall success flag, and
+// returns it as 32-byte output. We submit 4 transactions in a single simulated
+// block and verify each one succeeds with the expected return data.
+TEST_F(EthCallFixture, eth_simulate_v1_call_types)
+{
+    using namespace monad::vm::utils;
+    using namespace evm_as::sugar;
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address target =
+        0x00000000000000000000000000000000eeeeeeee_address;
+    static constexpr Address call_wrapper =
+        0x00000000000000000000000000000000ca110001_address;
+    static constexpr Address staticcall_wrapper =
+        0x00000000000000000000000000000000ca110002_address;
+    static constexpr Address delegatecall_wrapper =
+        0x00000000000000000000000000000000ca110003_address;
+    static constexpr Address callcode_wrapper =
+        0x00000000000000000000000000000000ca110004_address;
+
+    struct CompiledCode
+    {
+        std::vector<uint8_t> bytecode;
+        bytes32_t hash;
+        std::shared_ptr<monad::vm::Intercode const> icode;
+    };
+
+    auto const compile = [](auto const &eb) -> CompiledCode {
+        MONAD_ASSERT(evm_as::validate(eb));
+        std::vector<uint8_t> bytecode{};
+        evm_as::compile(eb, bytecode);
+        byte_string_view const view{bytecode.data(), bytecode.size()};
+        return {
+            std::move(bytecode),
+            to_bytes(keccak256(view)),
+            vm::make_shared_intercode(view),
+        };
+    };
+
+    // Target contract
+    CompiledCode const target_cc = compile(evm_as::latest().stop());
+
+    // CALL wrapper: CALL(target); MSTORE result; RETURN 32 bytes
+    CompiledCode const call_cc = compile(evm_as::latest()
+                                             .call({.address = target})
+                                             .push0()
+                                             .mstore()
+                                             .return_(0, 32));
+
+    // STATICCALL wrapper
+    CompiledCode const staticcall_cc =
+        compile(evm_as::latest()
+                    .staticcall({.address = target})
+                    .push0()
+                    .mstore()
+                    .return_(0, 32));
+
+    // DELEGATECALL wrapper
+    CompiledCode const delegatecall_cc =
+        compile(evm_as::latest()
+                    .delegatecall({.address = target})
+                    .push0()
+                    .mstore()
+                    .return_(0, 32));
+
+    // CALLCODE wrapper
+    CompiledCode const callcode_cc = compile(evm_as::latest()
+                                                 .callcode({.address = target})
+                                                 .push0()
+                                                 .mstore()
+                                                 .return_(0, 32));
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .nonce = 0}}}},
+            {target,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = target_cc.hash}}}},
+            {call_wrapper,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = call_cc.hash}}}},
+            {staticcall_wrapper,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = staticcall_cc.hash}}}},
+            {delegatecall_wrapper,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = delegatecall_cc.hash}}}},
+            {callcode_wrapper,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = callcode_cc.hash}}}}},
+        Code{
+            {target_cc.hash, target_cc.icode},
+            {call_cc.hash, call_cc.icode},
+            {staticcall_cc.hash, staticcall_cc.icode},
+            {delegatecall_cc.hash, delegatecall_cc.icode},
+            {callcode_cc.hash, callcode_cc.icode},
+        },
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    // 4 transactions from sender, each calling a different wrapper.
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender, enc_sender, enc_sender, enc_sender)));
+
+    Transaction const tx_call{
+        .gas_limit = 200'000'000, .value = 0, .to = call_wrapper};
+    Transaction const tx_staticcall{
+        .gas_limit = 200'000'000, .value = 0, .to = staticcall_wrapper};
+    Transaction const tx_delegatecall{
+        .gas_limit = 200'000'000, .value = 0, .to = delegatecall_wrapper};
+    Transaction const tx_callcode{
+        .gas_limit = 200'000'000, .value = 0, .to = callcode_wrapper};
+
+    auto const enc_call = rlp::encode_string2(rlp::encode_transaction(tx_call));
+    auto const enc_staticcall =
+        rlp::encode_string2(rlp::encode_transaction(tx_staticcall));
+    auto const enc_delegatecall =
+        rlp::encode_string2(rlp::encode_transaction(tx_delegatecall));
+    auto const enc_callcode =
+        rlp::encode_string2(rlp::encode_transaction(tx_callcode));
+    auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(
+        enc_call, enc_staticcall, enc_delegatecall, enc_callcode)));
+
+    BlockHeader const header{.number = 1, .gas_limit = 800'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    monad_state_override *const so = monad_state_override_create();
+    monad_block_override *const bo = monad_block_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        &so,
+        1,
+        &bo,
+        1,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 1);
+    ASSERT_EQ(output[0]["calls"].size(), 4);
+
+    // Expected return data: 32-byte big-endian encoding of 1 (subcall success).
+    std::string const expected_return_data =
+        "0x0000000000000000000000000000000000000000000000000000000000000001";
+
+    // CALL
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[0]["calls"][0]["returnData"], expected_return_data);
+
+    // STATICCALL
+    EXPECT_EQ(output[0]["calls"][1]["status"], "0x1");
+    EXPECT_EQ(output[0]["calls"][1]["returnData"], expected_return_data);
+
+    // DELEGATECALL
+    EXPECT_EQ(output[0]["calls"][2]["status"], "0x1");
+    EXPECT_EQ(output[0]["calls"][2]["returnData"], expected_return_data);
+
+    // CALLCODE
+    EXPECT_EQ(output[0]["calls"][3]["status"], "0x1");
+    EXPECT_EQ(output[0]["calls"][3]["returnData"], expected_return_data);
+
+    monad_block_override_destroy(bo);
+    monad_state_override_destroy(so);
+    monad_executor_destroy(executor);
+}

@@ -101,6 +101,8 @@ add_library(
   "ethereum/db/db_snapshot_filesystem.h"
   "ethereum/db/file_db.cpp"
   "ethereum/db/file_db.hpp"
+  "ethereum/db/partial_trie_db.hpp"
+  "ethereum/db/partial_trie_db.cpp"
   "ethereum/db/trie_db.cpp"
   "ethereum/db/trie_db.hpp"
   "ethereum/db/trie_rodb.hpp"
@@ -176,6 +178,8 @@ add_library(
   "ethereum/rlp/config.hpp"
   "ethereum/rlp/decode.hpp"
   "ethereum/rlp/encode2.hpp"
+  "ethereum/rlp/execution_witness.cpp"
+  "ethereum/rlp/execution_witness.hpp"
   # ethereum/state2
   "ethereum/state2/block_state.cpp"
   "ethereum/state2/block_state.hpp"

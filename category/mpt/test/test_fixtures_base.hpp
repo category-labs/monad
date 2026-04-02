@@ -363,7 +363,7 @@ namespace monad::test
                   MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE))
             , io(pool, rwbuf)
             , root()
-            , aux(io, MPT_TEST_HISTORY_LENGTH)
+            , aux(io, 1, MPT_TEST_HISTORY_LENGTH)
         {
         }
 
@@ -492,7 +492,7 @@ namespace monad::test
             Node::SharedPtr root;
             StateMachineAlwaysMerkle sm;
             UpdateAux aux{
-                io, Config.history_len}; // trie section starts from account
+                io, 1, Config.history_len}; // trie section starts from account
             monad::small_prng rand;
             std::vector<std::pair<monad::byte_string, size_t>> keys;
             uint64_t version{0};

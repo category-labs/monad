@@ -577,7 +577,8 @@ UpdateAuxImpl::~UpdateAuxImpl()
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
 void UpdateAuxImpl::set_io(
-    AsyncIO &io_, std::optional<uint64_t> const history_len)
+    AsyncIO &io_, uint16_t const db_id,
+    std::optional<uint64_t> const history_len)
 {
     io = &io_;
     auto const chunk_count = io->chunk_count();
@@ -585,9 +586,45 @@ void UpdateAuxImpl::set_io(
     auto const map_size =
         sizeof(detail::db_metadata) +
         chunk_count * sizeof(detail::db_metadata::chunk_info_t);
-    auto &cnv_chunk = io->storage_pool().chunk(storage_pool::cnv, 0);
-    auto const fdr = cnv_chunk.read_fd();
-    auto const fdw = cnv_chunk.write_fd(0);
+
+    // Resolve CNV chunk IDs for this DB: metadata chunk + root offset chunks.
+    // Uses pool catalog if available, otherwise legacy device-0 inference.
+    uint32_t meta_cnv_id;
+    std::vector<uint32_t> ro_cnv_ids;
+    {
+        auto const *slot = io->storage_pool().find_db_slot(db_id);
+        if (slot != nullptr) {
+            meta_cnv_id = slot->metadata_cnv_chunk_id;
+            for (uint16_t i = 0; i < slot->root_offset_cnv_count; ++i) {
+                ro_cnv_ids.push_back(uint32_t(slot->root_offset_cnv_start) + i);
+            }
+        }
+        else {
+            MONAD_ASSERT(db_id == 1);
+            auto const &dev0 = io->storage_pool().devices()[0];
+            auto const total_cnv = io->storage_pool().chunks(storage_pool::cnv);
+            bool found_metadata = false;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(total_cnv); ++i) {
+                auto &c = io->storage_pool().chunk(storage_pool::cnv, i);
+                if (std::addressof(c.device()) != std::addressof(dev0)) {
+                    continue;
+                }
+                if (!found_metadata) {
+                    meta_cnv_id = i;
+                    found_metadata = true;
+                }
+                else {
+                    ro_cnv_ids.push_back(i);
+                }
+            }
+            MONAD_ASSERT(found_metadata);
+        }
+    }
+    MONAD_ASSERT(!ro_cnv_ids.empty());
+    auto &meta_chunk = io->storage_pool().chunk(storage_pool::cnv, meta_cnv_id);
+    auto const fdr = meta_chunk.read_fd();
+    auto const fdw = meta_chunk.write_fd(0);
+    auto const cnv_capacity = static_cast<uint64_t>(meta_chunk.capacity());
     /* We keep accidentally running MPT on 4Kb min granularity storage, so
     error out on that early to save everybody time and hassle.
 
@@ -649,7 +686,7 @@ void UpdateAuxImpl::set_io(
         prot,
         mapflags,
         fd.first,
-        off_t(fdr.second + cnv_chunk.capacity() / 2)));
+        off_t(fdr.second + cnv_capacity / 2)));
     MONAD_ASSERT(db_metadata_[1].main != MAP_FAILED);
     /* If on a storage which ignores TRIM, and the user just truncated
     an existing triedb, all the magics will be valid but the pool has
@@ -754,7 +791,7 @@ void UpdateAuxImpl::set_io(
     auto map_root_offsets = [&] {
         // Map in the DB version history storage
         // Firstly reserve address space for each copy
-        size_t const map_bytes_per_chunk = cnv_chunk.capacity() / 2;
+        size_t const map_bytes_per_chunk = cnv_capacity / 2;
         size_t const db_version_history_storage_bytes =
             db_metadata()->root_offsets.storage_.cnv_chunks_len *
             map_bytes_per_chunk;
@@ -775,19 +812,17 @@ void UpdateAuxImpl::set_io(
             -1,
             0);
         MONAD_ASSERT(reservation[1] != MAP_FAILED);
-        // For each chunk, map the first half into the first copy and the
-        // second half into the second copy
+        // For each stored root-offset chunk, look it up directly in the pool.
         for (size_t n = 0;
              n < db_metadata()->root_offsets.storage_.cnv_chunks_len;
              n++) {
-            auto &chunk = io->storage_pool().chunk(
-                storage_pool::cnv,
-                db_metadata()
-                    ->root_offsets.storage_.cnv_chunks[n]
-                    .cnv_chunk_id);
-            auto const fdr = chunk.read_fd();
-            auto const fdw = chunk.write_fd(0);
-            auto const &fd = can_write_to_map ? fdw : fdr;
+            auto const stored_id =
+                db_metadata()->root_offsets.storage_.cnv_chunks[n].cnv_chunk_id;
+            auto &ro_chunk =
+                io->storage_pool().chunk(storage_pool::cnv, stored_id);
+            auto const ro_fdr = ro_chunk.read_fd();
+            auto const ro_fdw = ro_chunk.write_fd(0);
+            auto const &fd = can_write_to_map ? ro_fdw : ro_fdr;
             MONAD_ASSERT(
                 MAP_FAILED != ::mmap(
                                   reservation[0] + n * map_bytes_per_chunk,
@@ -795,7 +830,7 @@ void UpdateAuxImpl::set_io(
                                   prot,
                                   mapflags | MAP_FIXED,
                                   fd.first,
-                                  off_t(fdr.second)));
+                                  off_t(ro_fdr.second)));
             MONAD_ASSERT(
                 MAP_FAILED != ::mmap(
                                   reservation[1] + n * map_bytes_per_chunk,
@@ -803,7 +838,7 @@ void UpdateAuxImpl::set_io(
                                   prot,
                                   mapflags | MAP_FIXED,
                                   fd.first,
-                                  off_t(fdr.second + map_bytes_per_chunk)));
+                                  off_t(ro_fdr.second + map_bytes_per_chunk)));
         }
         db_metadata_[0].root_offsets = {
             start_lifetime_as<chunk_offset_t>((chunk_offset_t *)reservation[0]),
@@ -827,56 +862,54 @@ void UpdateAuxImpl::set_io(
             can_write_to_map,
             "Neither copy of the DB metadata is valid, and not opened for "
             "writing so stopping now.");
+        // Phase 0: all seq chunks must be empty on fresh init. Live-pool
+        // DB2+ bootstrap (where another DB already owns seq chunks) requires
+        // the Phase 1 shared pool freelist.
         for (uint32_t n = 0; n < chunk_count; n++) {
             auto const &chunk = io->storage_pool().chunk(storage_pool::seq, n);
-            MONAD_ASSERT(
+            MONAD_ASSERT_PRINTF(
                 chunk.size() == 0,
-                "Trying to initialise new DB but storage pool contains "
-                "existing data, stopping now to prevent data loss.");
+                "Seq chunk %u is not empty.%s",
+                n,
+                db_id != 1 ? " Live-pool DB2+ bootstrap requires the Phase 1 "
+                             "shared pool freelist."
+                           : " Stopping to prevent data loss.");
         }
         memset(db_metadata_[0].main, 0, map_size);
         MONAD_ASSERT((chunk_count & ~0xfffffU) == 0);
         db_metadata_[0].main->chunk_info_count = chunk_count & 0xfffffU;
-        MONAD_ASSERT(io->storage_pool().chunks(storage_pool::cnv) > 1);
+
         auto &storage = db_metadata_[0].main->root_offsets.storage_;
         memset(&storage, 0xff, sizeof(storage));
         storage.cnv_chunks_len = 0;
-        auto &chunk = io->storage_pool().chunk(storage_pool::cnv, 1);
-        auto *tofill = aligned_alloc(DISK_PAGE_SIZE, chunk.capacity());
-        MONAD_ASSERT(tofill != nullptr);
-        auto const untofill =
-            make_scope_exit([&]() noexcept { ::free(tofill); });
-        memset(tofill, 0xff, chunk.capacity());
-        {
-            auto const fdw = chunk.write_fd(chunk.capacity());
-            MONAD_ASSERT(
-                -1 !=
-                ::pwrite(
-                    fdw.first, tofill, chunk.capacity(), (off_t)fdw.second));
-        }
-        storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = 1;
-        db_metadata_[0].main->history_length =
-            chunk.capacity() / 2 / sizeof(chunk_offset_t);
-        // Allocate cnv chunks of the first device - 1 for root offsets,
-        // since chunk 0 is used for db_metadata
-        auto const root_offsets_chunk_count =
-            io->storage_pool().devices()[0].cnv_chunks() -
-            UpdateAuxImpl::cnv_chunks_for_db_metadata;
+        auto const root_offsets_chunk_count = ro_cnv_ids.size();
         MONAD_ASSERT(
             root_offsets_chunk_count > 0 &&
                 (root_offsets_chunk_count & (root_offsets_chunk_count - 1)) ==
                     0,
             "Number of cnv chunks for root offsets must be a power of two");
-        for (uint32_t n = 2; n <= root_offsets_chunk_count; n++) {
-            auto &chunk = io->storage_pool().chunk(storage_pool::cnv, n);
-            auto const fdw = chunk.write_fd(chunk.capacity());
+        auto *tofill = aligned_alloc(DISK_PAGE_SIZE, cnv_capacity);
+        MONAD_ASSERT(tofill != nullptr);
+        auto const untofill =
+            make_scope_exit([&]() noexcept { ::free(tofill); });
+        memset(tofill, 0xff, cnv_capacity);
+        db_metadata_[0].main->history_length = 0;
+        for (uint32_t n = 0;
+             n < static_cast<uint32_t>(root_offsets_chunk_count);
+             n++) {
+            auto &ro_chunk =
+                io->storage_pool().chunk(storage_pool::cnv, ro_cnv_ids[n]);
+            auto const ro_fdw = ro_chunk.write_fd(ro_chunk.capacity());
             MONAD_ASSERT(
-                -1 !=
-                ::pwrite(
-                    fdw.first, tofill, chunk.capacity(), (off_t)fdw.second));
-            storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id = n;
+                -1 != ::pwrite(
+                          ro_fdw.first,
+                          tofill,
+                          ro_chunk.capacity(),
+                          static_cast<off_t>(ro_fdw.second)));
+            storage.cnv_chunks[storage.cnv_chunks_len++].cnv_chunk_id =
+                ro_cnv_ids[n];
             db_metadata_[0].main->history_length +=
-                chunk.capacity() / 2 / sizeof(chunk_offset_t);
+                ro_chunk.capacity() / 2 / sizeof(chunk_offset_t);
         }
         memset(
             &db_metadata_[0].main->free_list,
@@ -901,14 +934,14 @@ void UpdateAuxImpl::set_io(
         // magics are not set yet, so memcpy is fine here
         memcpy(db_metadata_[1].main, db_metadata_[0].main, map_size);
 
-        // Insert all chunks into the free list
+        // Insert all seq chunks into this DB's free list
         std::vector<uint32_t> chunks;
         chunks.reserve(chunk_count);
         for (uint32_t n = 0; n < chunk_count; n++) {
             auto const chunk = io->storage_pool().chunk(storage_pool::seq, n);
             MONAD_ASSERT(chunk.zone_id().first == storage_pool::seq);
             MONAD_ASSERT(chunk.zone_id().second == n);
-            MONAD_ASSERT(chunk.size() == 0); // chunks must actually be free
+            MONAD_ASSERT(chunk.size() == 0);
             chunks.push_back(n);
         }
 

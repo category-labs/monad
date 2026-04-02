@@ -75,6 +75,43 @@ public:
         seq = 1
     };
 
+    //! \brief A DB slot in the pool catalog, mapping a db_id to its CNV
+    //! chunk assignment. Does not describe seq chunk ownership — that is
+    //! managed by the Phase 1 shared pool freelist.
+    struct db_slot
+    {
+        uint16_t db_id; // 0 = unused slot
+        uint16_t metadata_cnv_chunk_id;
+        uint16_t root_offset_cnv_start; // first root offset CNV ID
+        uint16_t root_offset_cnv_count;
+
+        uint32_t root_offset_cnv_end() const noexcept
+        {
+            return uint32_t(root_offset_cnv_start) + root_offset_cnv_count;
+        }
+
+        bool cnv_range_contains(uint16_t id) const noexcept
+        {
+            return id >= root_offset_cnv_start && id < root_offset_cnv_end();
+        }
+
+        bool cnv_overlaps(db_slot const &other) const noexcept
+        {
+            return root_offset_cnv_start < other.root_offset_cnv_end() &&
+                   root_offset_cnv_end() > other.root_offset_cnv_start;
+        }
+
+        bool cnv_conflicts_with(db_slot const &other) const noexcept
+        {
+            return cnv_overlaps(other) ||
+                   cnv_range_contains(other.metadata_cnv_chunk_id) ||
+                   other.cnv_range_contains(metadata_cnv_chunk_id) ||
+                   metadata_cnv_chunk_id == other.metadata_cnv_chunk_id;
+        }
+    };
+
+    static_assert(sizeof(db_slot) == 8);
+
     /*! \brief A source of backing storage for the storage pool.
      */
     class device_t
@@ -95,7 +132,12 @@ public:
         {
             // Preceding this is an array of uint32_t of chunk bytes used
 
-            uint32_t spare_[12]; // set aside for flags later
+            static constexpr size_t MAX_DBS = 4;
+
+            uint16_t num_dbs; // populated db_slot count
+            uint16_t spare_pad_; // reserved
+            storage_pool::db_slot dbs[MAX_DBS]; // 4 * 8 = 32 bytes
+            uint32_t spare2_[3]; // reserved for future use
             uint32_t num_cnv_chunks; // number of cnv chunks per device
             uint32_t config_hash; // hash of this configuration
             uint32_t chunk_capacity;
@@ -413,6 +455,13 @@ public:
 
     //! \brief Get an existing chunk, if it is activated
     chunk_t &chunk(chunk_type which, uint32_t id);
+
+    //! \brief Look up a DB slot by db_id. Returns nullptr if not found.
+    db_slot const *find_db_slot(uint16_t db_id) const noexcept;
+
+    //! \brief Register a DB slot in pool metadata. Asserts on duplicate db_id
+    //! or full catalog. Only valid on writable pools.
+    void register_db_slot(db_slot const &slot);
 
     //! \brief Clones an existing storage pool as read-only
     storage_pool clone_as_read_only() const;

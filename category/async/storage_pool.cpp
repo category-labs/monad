@@ -463,6 +463,8 @@ storage_pool::device_t storage_pool::make_device_(
             metadata_footer->chunk_capacity =
                 static_cast<uint32_t>(chunk_capacity);
             metadata_footer->num_cnv_chunks = flags.num_cnv_chunks;
+            metadata_footer->num_dbs = 0;
+            memset(metadata_footer->dbs, 0, sizeof(metadata_footer->dbs));
             MONAD_ASSERT_PRINTF(
                 ::pwrite(
                     readwritefd,
@@ -880,6 +882,64 @@ storage_pool::chunk_t storage_pool::activate_chunk(
 storage_pool storage_pool::clone_as_read_only() const
 {
     return storage_pool(this, clone_as_read_only_tag_{});
+}
+
+storage_pool::db_slot const *
+storage_pool::find_db_slot(uint16_t const db_id) const noexcept
+{
+    auto const *m = devices_[0].metadata_;
+    for (uint16_t i = 0; i < m->num_dbs; ++i) {
+        if (m->dbs[i].db_id == db_id) {
+            return &m->dbs[i];
+        }
+    }
+    return nullptr;
+}
+
+void storage_pool::register_db_slot(db_slot const &slot)
+{
+    MONAD_ASSERT(!is_read_only_);
+    MONAD_ASSERT_PRINTF(slot.db_id != 0, "db_id 0 is reserved (unused slot)");
+
+    auto const total_cnv = chunks(cnv);
+    MONAD_ASSERT_PRINTF(
+        slot.metadata_cnv_chunk_id < total_cnv,
+        "metadata_cnv_chunk_id %u out of range (pool has %zu CNV chunks)",
+        slot.metadata_cnv_chunk_id,
+        total_cnv);
+    MONAD_ASSERT_PRINTF(
+        slot.root_offset_cnv_end() <= total_cnv,
+        "root_offset range [%u, %u) out of range (pool has %zu CNV chunks)",
+        slot.root_offset_cnv_start,
+        slot.root_offset_cnv_end(),
+        total_cnv);
+    MONAD_ASSERT_PRINTF(
+        !slot.cnv_range_contains(slot.metadata_cnv_chunk_id),
+        "metadata_cnv_chunk_id %u overlaps root_offset range [%u, %u)",
+        slot.metadata_cnv_chunk_id,
+        slot.root_offset_cnv_start,
+        slot.root_offset_cnv_end());
+
+    for (auto &device : devices_) {
+        auto *m = device.metadata_;
+        MONAD_ASSERT_PRINTF(
+            m->num_dbs < device_t::metadata_t::MAX_DBS,
+            "DB catalog full (%u/%zu)",
+            m->num_dbs,
+            device_t::metadata_t::MAX_DBS);
+        for (uint16_t i = 0; i < m->num_dbs; ++i) {
+            MONAD_ASSERT_PRINTF(
+                m->dbs[i].db_id != slot.db_id,
+                "Duplicate db_id %u in pool catalog",
+                slot.db_id);
+            MONAD_ASSERT_PRINTF(
+                !slot.cnv_conflicts_with(m->dbs[i]),
+                "db_id %u CNV range overlaps with existing db_id %u",
+                slot.db_id,
+                m->dbs[i].db_id);
+        }
+        m->dbs[m->num_dbs++] = slot;
+    }
 }
 
 MONAD_ASYNC_NAMESPACE_END

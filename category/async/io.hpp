@@ -77,7 +77,6 @@ private:
 
     pid_t const owning_tid_;
     class storage_pool *storage_pool_{nullptr};
-    chunk_ref_ cnv_chunk_;
     std::vector<chunk_ref_> seq_chunks_;
 
     monad::io::Ring &uring_, *wr_uring_{nullptr};
@@ -646,7 +645,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 272);
+static_assert(sizeof(AsyncIO) == 256);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

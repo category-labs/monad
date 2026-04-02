@@ -730,7 +730,7 @@ public:
                     MONAD_ASYNC_NAMESPACE::AsyncIO::
                         MONAD_IO_BUFFERS_WRITE_SIZE);
             auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
-            MONAD_MPT_NAMESPACE::UpdateAux aux(io);
+            MONAD_MPT_NAMESPACE::UpdateAux aux(io, 1);
             for (;;) {
                 auto const *item = aux.db_metadata()->fast_list_begin();
                 if (item == nullptr) {
@@ -834,6 +834,9 @@ public:
                               "version.";
                         throw std::runtime_error(ss.str());
                     }
+                    // TODO(phase0): archive restore still hardcodes CNV chunk 0
+                    // for metadata. Thread db_id through here when
+                    // archive/export support for non-legacy DBs is added.
                     auto &cnv_chunk =
                         pool->chunk(monad::async::storage_pool::cnv, 0);
                     auto [wfd, offset] = cnv_chunk.write_fd(0);
@@ -975,7 +978,7 @@ public:
             2,
             MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
-        MONAD_MPT_NAMESPACE::UpdateAux aux(io);
+        MONAD_MPT_NAMESPACE::UpdateAux aux(io, 1);
         size_t slow_chunks_inserted = 0;
         size_t fast_chunks_inserted = 0;
         auto override_insertion_count =
@@ -1582,7 +1585,7 @@ opened.
                       MONAD_ASYNC_NAMESPACE::AsyncIO::
                           MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*impl.pool, rwbuf};
-        MONAD_MPT_NAMESPACE::UpdateAux aux(io);
+        MONAD_MPT_NAMESPACE::UpdateAux aux(io, 1);
 
         {
             cout << R"(MPT database on storages:
@@ -1628,7 +1631,7 @@ opened.
                     impl.cli_ask_question(ss.str().c_str());
                 }
                 aux.unset_io();
-                aux.set_io(io, impl.reset_history_length);
+                aux.set_io(io, 1, impl.reset_history_length);
                 cout << "Success! Done resetting history to "
                      << impl.reset_history_length.value() << ".\n";
                 impl.print_db_history_summary(aux);

@@ -258,16 +258,16 @@ public:
 
     // on-disk
     explicit UpdateAuxImpl(
-        MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
+        MONAD_ASYNC_NAMESPACE::AsyncIO &io_, uint16_t db_id,
         std::optional<uint64_t> const history_len = {})
     {
-        set_io(io_, history_len);
+        set_io(io_, db_id, history_len);
     }
 
     virtual ~UpdateAuxImpl();
 
     void set_io(
-        MONAD_ASYNC_NAMESPACE::AsyncIO &,
+        MONAD_ASYNC_NAMESPACE::AsyncIO &, uint16_t db_id,
         std::optional<uint64_t> history_length = {});
 
     void unset_io();
@@ -593,9 +593,9 @@ public:
 
     // on-disk
     explicit UpdateAux(
-        MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
+        MONAD_ASYNC_NAMESPACE::AsyncIO &io_, uint16_t db_id,
         std::optional<uint64_t> const history_len = {})
-        : UpdateAuxImpl(io_, history_len)
+        : UpdateAuxImpl(io_, db_id, history_len)
     {
     }
 

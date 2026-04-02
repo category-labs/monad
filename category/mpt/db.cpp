@@ -114,6 +114,7 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
           read_ring, options.rd_buffers,
           async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
     , io{pool, buffers}
+    , db_id{options.db_id}
 {
     io.set_capture_io_latencies(options.capture_io_latencies);
     io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -123,6 +124,8 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
 AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     : pool{[&] -> async::storage_pool {
         async::storage_pool::creation_flags pool_options;
+        // CNV chunk count is determined by the pool catalog (for DB2+)
+        // or root_offsets_chunk_count (for legacy DB1).
         pool_options.num_cnv_chunks = options.root_offsets_chunk_count + 1;
         auto const len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
         if (options.dbname_paths.empty()) {
@@ -157,6 +160,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
           async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
           async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE)}
     , io{pool, buffers}
+    , db_id{options.db_id}
 {
     io.set_capture_io_latencies(options.capture_io_latencies);
     io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -169,7 +173,7 @@ class Db::ROOnDiskBlocking final : public Db::Impl
 
 public:
     explicit ROOnDiskBlocking(AsyncIOContext &io_ctx)
-        : aux_(io_ctx.io)
+        : aux_(io_ctx.io, io_ctx.db_id)
     {
     }
 
@@ -403,7 +407,7 @@ struct OnDiskWithWorkerThreadImpl
             ReadOnlyOnDiskDbConfig const &options)
             : parent(parent)
             , async_io(options)
-            , aux(async_io.io)
+            , aux(async_io.io, async_io.db_id)
         {
         }
 
@@ -412,7 +416,7 @@ struct OnDiskWithWorkerThreadImpl
             OnDiskDbConfig const &options)
             : parent(parent)
             , async_io(options)
-            , aux{async_io.io, options.fixed_history_length}
+            , aux{async_io.io, async_io.db_id, options.fixed_history_length}
         {
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id = aux.get_latest_finalized_version();

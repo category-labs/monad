@@ -54,6 +54,8 @@ struct AsyncIOContext
     std::optional<io::Ring> write_ring;
     io::Buffers buffers;
     async::AsyncIO io;
+    uint8_t db_id;
+    std::optional<uint32_t> max_seq_chunks;
 
     explicit AsyncIOContext(ReadOnlyOnDiskDbConfig const &options);
     explicit AsyncIOContext(OnDiskDbConfig const &options);

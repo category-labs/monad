@@ -119,7 +119,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
         monad::io::Buffers rwbuf{monad::io::make_buffers_for_read_only(
             ring, 2, AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)};
         AsyncIO io{pool, rwbuf};
-        monad::test::UpdateAux const ro_aux{io};
+        monad::test::UpdateAux const ro_aux{io, 1};
 
         int count = 0;
         while (!stop_token.stop_requested()) {
@@ -197,7 +197,7 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
         monad::io::Buffers rwbuf{monad::io::make_buffers_for_read_only(
             ring, 2, AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)};
         AsyncIO io{pool, rwbuf};
-        monad::test::UpdateAux ro_aux{io};
+        monad::test::UpdateAux ro_aux{io, 1};
 
         DummyTraverseMachine traverse{};
         int count = 0;

@@ -20,7 +20,9 @@
 #include <category/core/detail/start_lifetime_as_polyfill.hpp>
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <mutex>
 #include <span>
 #include <variant>
@@ -75,6 +77,58 @@ public:
         seq = 1
     };
 
+    static constexpr uint32_t ALLOC_FAILED =
+        std::numeric_limits<uint32_t>::max();
+
+    static constexpr uint8_t CHUNK_FREE = 0;
+    static constexpr uint8_t CHUNK_RESERVED = 1;
+    static constexpr uint8_t CHUNK_OWNED = 2;
+
+    struct chunk_state
+    {
+        uint8_t db_id;
+        uint8_t status;
+    };
+
+    static_assert(sizeof(chunk_state) == sizeof(uint16_t));
+
+    //! \brief A DB slot in the pool catalog, mapping a db_id to its CNV
+    //! chunk assignment.
+    struct db_slot
+    {
+        uint8_t db_id; // 0 = unused slot
+        uint8_t db_id_pad_{};
+        uint16_t metadata_cnv;
+        uint16_t root_offset_cnv_start; // first root offset CNV ID
+        uint16_t root_offset_cnv_count;
+
+        uint32_t root_offset_cnv_end() const noexcept
+        {
+            return uint32_t(root_offset_cnv_start) + root_offset_cnv_count;
+        }
+
+        bool cnv_range_contains(uint16_t id) const noexcept
+        {
+            return id >= root_offset_cnv_start && id < root_offset_cnv_end();
+        }
+
+        bool cnv_overlaps(db_slot const &other) const noexcept
+        {
+            return root_offset_cnv_start < other.root_offset_cnv_end() &&
+                   root_offset_cnv_end() > other.root_offset_cnv_start;
+        }
+
+        bool cnv_conflicts_with(db_slot const &other) const noexcept
+        {
+            return cnv_overlaps(other) ||
+                   cnv_range_contains(other.metadata_cnv) ||
+                   other.cnv_range_contains(metadata_cnv) ||
+                   metadata_cnv == other.metadata_cnv;
+        }
+    };
+
+    static_assert(sizeof(db_slot) == 8);
+
     /*! \brief A source of backing storage for the storage pool.
      */
     class device_t
@@ -93,32 +147,39 @@ public:
 
         struct metadata_t
         {
-            // Preceding this is an array of uint32_t of chunk bytes used
+            // Preceding this on disk (growing downward from metadata_t):
+            //   chunk_bytes_used[N]:  uint32_t per seq chunk
+            //   chunk_states[N]:      chunk_state (2 bytes) per seq chunk
 
-            uint32_t spare_[12]; // set aside for flags later
+            static constexpr size_t MAX_DBS = 4;
+
+            uint16_t num_dbs; // populated db_slot count
+            uint16_t spare_pad_; // reserved
+            storage_pool::db_slot dbs[MAX_DBS]; // 4 * 8 = 32 bytes
+            uint32_t spare3_[3];
             uint32_t num_cnv_chunks; // number of cnv chunks per device
             uint32_t config_hash; // hash of this configuration
             uint32_t chunk_capacity;
-            uint8_t magic[4]; // "MND0" for v1 of this metadata
+            uint8_t magic[4]; // "MND1"
+
+            static constexpr size_t PER_CHUNK_META_BYTES =
+                sizeof(uint32_t) + sizeof(storage_pool::chunk_state);
 
             size_t chunks(file_offset_t end_of_this_offset) const noexcept
             {
                 end_of_this_offset -= sizeof(metadata_t);
-                auto const ret =
-                    end_of_this_offset / (chunk_capacity + sizeof(uint32_t));
-                // We need the front CPU_PAGE_SIZE of this metadata to not
-                // include any chunk
+                auto const ret = end_of_this_offset /
+                                 (chunk_capacity + PER_CHUNK_META_BYTES);
                 auto const endofchunks =
                     round_down_align<CPU_PAGE_BITS>(ret * chunk_capacity);
                 auto const startofmetadata = round_down_align<CPU_PAGE_BITS>(
-                    end_of_this_offset - ret * sizeof(uint32_t));
+                    end_of_this_offset - ret * PER_CHUNK_META_BYTES);
                 if (startofmetadata == endofchunks) {
                     return ret - 1;
                 }
                 return ret;
             }
 
-            // Only used for seq chunks
             std::span<std::atomic<uint32_t>>
             chunk_bytes_used(file_offset_t end_of_this_offset) const noexcept
             {
@@ -134,11 +195,27 @@ public:
                     count};
             }
 
-            // Bytes used by the pool metadata on this device
+            std::span<std::atomic<uint16_t>>
+            chunk_states(file_offset_t end_of_this_offset) const noexcept
+            {
+                static_assert(
+                    sizeof(uint16_t) == sizeof(std::atomic<uint16_t>));
+                static_assert(
+                    sizeof(storage_pool::chunk_state) == sizeof(uint16_t));
+                auto const count = chunks(end_of_this_offset);
+                return {
+                    start_lifetime_as_array<std::atomic<uint16_t>>(
+                        const_cast<std::byte *>(
+                            reinterpret_cast<std::byte const *>(this)) -
+                            count * sizeof(uint32_t) - count * sizeof(uint16_t),
+                        count),
+                    count};
+            }
+
             size_t total_size(file_offset_t end_of_this_offset) const noexcept
             {
                 auto const count = chunks(end_of_this_offset);
-                return sizeof(metadata_t) + count * sizeof(uint32_t);
+                return sizeof(metadata_t) + count * PER_CHUNK_META_BYTES;
             }
         } *const metadata_;
 
@@ -347,6 +424,11 @@ private:
     mutable std::mutex lock_;
 
     std::vector<chunk_t> chunks_[2];
+    // Per-device mapping: device-local chunk ID → global seq ID.
+    // Only needed for interleaved multi-device pools where device-local
+    // IDs don't map to global IDs with simple arithmetic.
+    // Built once in fill_chunks_().
+    std::vector<std::vector<uint32_t>> local_to_global_seq_;
 
     device_t make_device_(
         mode op, device_t::type_t_ type, std::filesystem::path const &path,
@@ -414,10 +496,43 @@ public:
     //! \brief Get an existing chunk, if it is activated
     chunk_t &chunk(chunk_type which, uint32_t id);
 
+    //! \brief Look up a DB slot by db_id. Returns nullptr if not found.
+    db_slot const *find_db_slot(uint8_t db_id) const noexcept;
+
+    //! \brief Register a DB slot in pool metadata. Asserts on duplicate db_id
+    //! or full catalog. Only valid on writable pools.
+    void register_db_slot(db_slot const &slot);
+
+    // FREE → RESERVED(db_id). Returns global chunk index or ALLOC_FAILED.
+    uint32_t allocate_seq_chunk(uint8_t db_id) noexcept;
+
+    // RESERVED(db_id) → OWNED(db_id). Call after appending to DB list.
+    void commit_seq_chunk(uint32_t chunk_id) noexcept;
+
+    // OWNED → RESERVED. Call before removing from DB list.
+    void begin_free_seq_chunk(uint32_t chunk_id) noexcept;
+
+    // RESERVED → FREE. Chunk must be destroyed first.
+    void free_seq_chunk(uint32_t chunk_id) noexcept;
+
+    // Number of FREE seq chunks (relaxed reads, diagnostic only).
+    size_t free_seq_chunk_count() const noexcept;
+
+    // Find the RESERVED chunk for db_id (at most one per DB).
+    // Returns global seq chunk ID, or ALLOC_FAILED if none.
+    uint32_t find_reserved_chunk(uint8_t db_id) const noexcept;
+
+    // Reclaim all chunks (RESERVED or OWNED) belonging to db_id.
+    // Destroys contents and returns each to FREE. Use only when
+    // DB metadata is invalid and a fresh init is about to run.
+    void reclaim_all_chunks_for_db(uint8_t db_id) noexcept;
+
     //! \brief Clones an existing storage pool as read-only
     storage_pool clone_as_read_only() const;
 
 private:
+    std::atomic<uint16_t> &chunk_state_at_(uint32_t global_seq_id) noexcept;
+
     //! \brief Activate a chunk (i.e. open file descriptors to it, if necessary)
     chunk_t activate_chunk(
         chunk_type which, device_t &device, uint32_t id_within_device,

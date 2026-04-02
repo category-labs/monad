@@ -46,6 +46,11 @@ namespace
 TEST(update_aux_test, set_io_reader_dirty)
 {
     monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+    pool.register_db_slot(monad::async::storage_pool::db_slot{
+        .db_id = 1,
+        .metadata_cnv = 0,
+        .root_offset_cnv_start = 1,
+        .root_offset_cnv_count = 2});
 
     // All this threading nonsense is because we can't have two AsyncIO
     // instances on the same thread.
@@ -64,7 +69,7 @@ TEST(update_aux_test, set_io_reader_dirty)
                 monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
                 monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
         monad::async::AsyncIO testio(pool, testbuf);
-        aux_writer.set_io(testio, AUX_TEST_HISTORY_LENGTH);
+        aux_writer.set_io(testio, 1, AUX_TEST_HISTORY_LENGTH);
         io_set = true;
 
         while (!token.stop_requested()) {
@@ -117,13 +122,13 @@ TEST(update_aux_test, set_io_reader_dirty)
     ASSERT_DEATH(
         ({
             monad::mpt::UpdateAux aux_reader{};
-            aux_reader.set_io(testio, AUX_TEST_HISTORY_LENGTH);
+            aux_reader.set_io(testio, 1, AUX_TEST_HISTORY_LENGTH);
         }),
         "DB metadata was closed dirty, but not opened for healing");
 
     // TestAux adds instrumentation to turn off the dirty bit. Should not throw.
     TestAux aux_reader(aux_writer);
-    EXPECT_NO_THROW(aux_reader.set_io(testio, AUX_TEST_HISTORY_LENGTH));
+    EXPECT_NO_THROW(aux_reader.set_io(testio, 1, AUX_TEST_HISTORY_LENGTH));
     EXPECT_TRUE(aux_reader.was_dirty) << "target codepath not exercised";
 }
 
@@ -132,6 +137,11 @@ TEST(update_aux_test, root_offsets_fast_slow)
     testing::FLAGS_gtest_death_test_style = "threadsafe";
 
     monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+    pool.register_db_slot(monad::async::storage_pool::db_slot{
+        .db_id = 1,
+        .metadata_cnv = 0,
+        .root_offset_cnv_start = 1,
+        .root_offset_cnv_count = 2});
     monad::io::Ring ring1;
     monad::io::Ring ring2;
     monad::io::Buffers testbuf =
@@ -145,7 +155,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
     monad::async::AsyncIO testio(pool, testbuf);
     {
         monad::mpt::UpdateAux aux_writer{};
-        aux_writer.set_io(testio, AUX_TEST_HISTORY_LENGTH);
+        aux_writer.set_io(testio, 1, AUX_TEST_HISTORY_LENGTH);
 
         // Root offset at 0, fast list offset at 50. This is correct
         auto const start_offset =
@@ -162,7 +172,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
     {
         // verify set_io() succeeds
         monad::mpt::UpdateAux aux_writer{};
-        aux_writer.set_io(testio, AUX_TEST_HISTORY_LENGTH);
+        aux_writer.set_io(testio, 1, AUX_TEST_HISTORY_LENGTH);
         EXPECT_EQ(aux_writer.root_offsets().max_version(), 0);
 
         // Write version 1. However, append the new root offset without
@@ -180,7 +190,7 @@ TEST(update_aux_test, root_offsets_fast_slow)
     { // Fail to reopen upon calling rewind_to_match_offsets()
         monad::mpt::UpdateAux aux_writer{};
         EXPECT_EXIT(
-            aux_writer.set_io(testio, AUX_TEST_HISTORY_LENGTH),
+            aux_writer.set_io(testio, 1, AUX_TEST_HISTORY_LENGTH),
             ::testing::KilledBySignal(SIGABRT),
             "Detected corruption");
     }
@@ -214,12 +224,15 @@ TEST(update_aux_test, configurable_root_offset_chunks)
             monad::async::storage_pool::mode::truncate,
             flags);
         EXPECT_EQ(pool.chunks(monad::async::storage_pool::cnv), 5);
+        pool.register_db_slot(monad::async::storage_pool::db_slot{
+            .db_id = 1,
+            .metadata_cnv = 0,
+            .root_offset_cnv_start = 1,
+            .root_offset_cnv_count = 4});
 
         monad::async::AsyncIO testio(pool, testbuf);
-        monad::mpt::UpdateAux const aux(testio);
+        monad::mpt::UpdateAux const aux(testio, 1);
 
-        // Verify that exactly 4 chunks were allocated to hold two copies of
-        // root offsets, since chunk 0 is used for metadata
         EXPECT_EQ(aux.db_metadata()->root_offsets.storage_.cnv_chunks_len, 4);
         EXPECT_EQ(aux.root_offsets().capacity(), 2ULL << 25);
     }
@@ -231,7 +244,7 @@ TEST(update_aux_test, configurable_root_offset_chunks)
             flags);
         EXPECT_EQ(pool.chunks(monad::async::storage_pool::cnv), 5);
         monad::async::AsyncIO testio(pool, testbuf);
-        monad::mpt::UpdateAux const aux(testio);
+        monad::mpt::UpdateAux const aux(testio, 1);
         EXPECT_EQ(aux.db_metadata()->root_offsets.storage_.cnv_chunks_len, 4);
         EXPECT_EQ(aux.root_offsets().capacity(), 2ULL << 25);
     }

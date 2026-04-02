@@ -150,7 +150,6 @@ namespace detail
 AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     : owning_tid_(get_tl_tid())
     , storage_pool_{std::addressof(pool)}
-    , cnv_chunk_{pool.chunk(storage_pool::cnv, 0)}
     , uring_(rwbuf.ring())
     , wr_uring_(rwbuf.wr_ring())
     , rwbuf_(rwbuf)
@@ -177,9 +176,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
 
     auto const count = pool.chunks(storage_pool::seq);
     std::vector<int> fds;
-    fds.reserve(count * 2 + 2);
-    fds.push_back(cnv_chunk_.io_uring_read_fd);
-    fds.push_back(cnv_chunk_.io_uring_write_fd);
+    fds.reserve(count * 2);
     for (size_t n = 0; n < count; n++) {
         seq_chunks_.emplace_back(
             pool.chunk(storage_pool::seq, static_cast<uint32_t>(n)));
@@ -246,7 +243,6 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         MONAD_ASSERT(it != fd_to_iouring_map.end());
         p.io_uring_write_fd = it->second;
     };
-    replace_fds_with_iouring_fds(cnv_chunk_);
     for (auto &chnk : seq_chunks_) {
         replace_fds_with_iouring_fds(chnk);
     }

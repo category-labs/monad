@@ -363,7 +363,14 @@ namespace monad::test
                   MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE))
             , io(pool, rwbuf)
             , root()
-            , aux(io, MPT_TEST_HISTORY_LENGTH)
+            , aux((pool.register_db_slot(
+                       MONAD_ASYNC_NAMESPACE::storage_pool::db_slot{
+                           .db_id = 1,
+                           .metadata_cnv = 0,
+                           .root_offset_cnv_start = 1,
+                           .root_offset_cnv_count = 2}),
+                   io),
+                  1, MPT_TEST_HISTORY_LENGTH)
         {
         }
 
@@ -492,7 +499,15 @@ namespace monad::test
             Node::SharedPtr root;
             StateMachineAlwaysMerkle sm;
             UpdateAux aux{
-                io, Config.history_len}; // trie section starts from account
+                (pool.register_db_slot(
+                     MONAD_ASYNC_NAMESPACE::storage_pool::db_slot{
+                         .db_id = 1,
+                         .metadata_cnv = 0,
+                         .root_offset_cnv_start = 1,
+                         .root_offset_cnv_count = 2}),
+                 io),
+                1,
+                Config.history_len};
             monad::small_prng rand;
             std::vector<std::pair<monad::byte_string, size_t>> keys;
             uint64_t version{0};
@@ -551,9 +566,8 @@ namespace monad::test
                               << " has capacity = " << chunk.capacity()
                               << " consumed = " << chunk.size();
                 }
-                std::cout << "\n\n   Free list: "
-                          << aux.db_metadata()->capacity_in_free_list
-                          << " bytes.";
+                std::cout << "\n\n   Pool free chunks: "
+                          << pool.free_seq_chunk_count();
                 auto const ro = aux.root_offsets();
                 auto const most_recent_offset = ro[ro.max_version()];
                 std::cout << "\n\n   DB version history is "

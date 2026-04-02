@@ -66,7 +66,7 @@ TEST(db_metadata, DISABLED_copy)
         }
     });
     metadata[1]->chunk_info_count = 6;
-    metadata[1]->capacity_in_free_list = 6;
+    metadata[1]->max_seq_chunks = 6;
     unsigned count = 0;
     auto const begin = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - begin <
@@ -75,14 +75,14 @@ TEST(db_metadata, DISABLED_copy)
             EXPECT_FALSE(true);
         }
         metadata[0]->chunk_info_count = 5;
-        metadata[0]->capacity_in_free_list = 5;
+        metadata[0]->max_seq_chunks = 5;
         latch.store(0, std::memory_order_release);
         do {
             memcpy((void *)metadata[2], metadata[0], 32);
             // If first half copied but not yet second half, dirty bit must be
             // set
             if (metadata[2]->chunk_info_count != 5 &&
-                metadata[2]->capacity_in_free_list == 5) {
+                metadata[2]->max_seq_chunks == 5) {
                 if (!metadata[2]->is_dirty().load(std::memory_order_acquire)) {
                     EXPECT_TRUE(metadata[2]->is_dirty().load(
                         std::memory_order_acquire));

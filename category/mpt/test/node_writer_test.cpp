@@ -93,7 +93,13 @@ struct NodeWriterTestBase : public ::testing::Test
               ring1, ring2, 2, 4, AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
               AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE)}
         , io{pool, rwbuf}
-        , aux{io}
+        , aux{(pool.register_db_slot(storage_pool::db_slot{
+                   .db_id = 1,
+                   .metadata_cnv = 0,
+                   .root_offset_cnv_start = 1,
+                   .root_offset_cnv_count = 2}),
+               io),
+              1}
     {
     }
 

@@ -45,7 +45,7 @@ TEST_F(RewindTest, works)
     aux.set_latest_voted(100, monad::bytes32_t{100});
     aux.unset_io();
     std::cout << "Reopening DB ..." << std::endl;
-    aux.set_io(io, 20000);
+    aux.set_io(io, 1, 20000);
     std::cout << "Rewinding DB to latest version " << max_version << "..."
               << std::endl;
     aux.rewind_to_version(max_version);
@@ -70,7 +70,7 @@ TEST_F(RewindTest, works)
     std::cout
         << "Reopening DB to check valid versions are what they should be ..."
         << std::endl;
-    aux.set_io(io);
+    aux.set_io(io, 1);
     EXPECT_EQ(0, aux.db_history_min_valid_version());
     EXPECT_EQ(9990, aux.db_history_max_version());
     // rewind to latest is noop
@@ -80,7 +80,7 @@ TEST_F(RewindTest, works)
     EXPECT_EQ(aux.get_latest_voted_block_id(), monad::bytes32_t{});
     aux.unset_io();
     std::cout << "Setting max history to 9000 and reopening ..." << std::endl;
-    aux.set_io(io, 9000);
+    aux.set_io(io, 1, 9000);
     EXPECT_EQ(991, aux.db_history_min_valid_version());
     EXPECT_EQ(9990, aux.db_history_max_version());
     EXPECT_EQ(aux.get_latest_voted_version(), monad::mpt::INVALID_BLOCK_NUM);
@@ -91,7 +91,7 @@ TEST_F(RewindTest, works)
     EXPECT_EQ(aux.get_latest_voted_version(), monad::mpt::INVALID_BLOCK_NUM);
     EXPECT_EQ(aux.get_latest_voted_block_id(), monad::bytes32_t{});
     aux.unset_io();
-    aux.set_io(io);
+    aux.set_io(io, 1);
     EXPECT_EQ(991, aux.db_history_min_valid_version());
     EXPECT_EQ(9900, aux.db_history_max_version());
     EXPECT_EQ(aux.get_latest_voted_version(), monad::mpt::INVALID_BLOCK_NUM);
@@ -144,11 +144,10 @@ TEST_F(
 
     // advance fast writer head to the next chunk
     auto const fast_writer_offset = aux.node_writer_fast->sender().offset();
-    auto const *ci = aux.db_metadata()->free_list_end();
-    ASSERT_TRUE(ci != nullptr);
-    auto const idx = ci->index(aux.db_metadata());
-    aux.remove(idx);
+    auto const idx = this->state()->pool.allocate_seq_chunk(1);
+    ASSERT_NE(idx, monad::async::storage_pool::ALLOC_FAILED);
     aux.append(monad::mpt::UpdateAuxImpl::chunk_list::fast, idx);
+    this->state()->pool.commit_seq_chunk(idx);
     monad::async::chunk_offset_t const new_fast_writer_offset{idx, 0};
     aux.advance_db_offsets_to(
         new_fast_writer_offset, aux.node_writer_slow->sender().offset());
@@ -160,5 +159,5 @@ TEST_F(
     aux.unset_io();
 
     // verifies set_io() succeeds
-    aux.set_io(io);
+    aux.set_io(io, 1);
 }

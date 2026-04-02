@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cassert>
 #include <cerrno>
 #include <cstddef>
@@ -404,9 +405,18 @@ storage_pool::device_t storage_pool::make_device_(
             bytesread != -1, "pread failed due to %s", std::strerror(errno));
         auto *const metadata_footer = start_lifetime_as<device_t::metadata_t>(
             buffer + bytesread - sizeof(device_t::metadata_t));
-        if (memcmp(metadata_footer->magic, "MND0", 4) != 0 ||
+        if (memcmp(metadata_footer->magic, "MND1", 4) != 0 ||
             op == mode::truncate) {
-            // Uninitialised
+            if (op == mode::create_if_needed &&
+                memcmp(metadata_footer->magic, "MND", 3) == 0) {
+                MONAD_ABORT_PRINTF(
+                    "Storage pool source %s has incompatible format "
+                    "(found %.4s, expected MND1). Use monad-mpt --create "
+                    "to reinitialize.",
+                    path.string().c_str(),
+                    metadata_footer->magic);
+            }
+            // Uninitialised — chunk_owner array is zero-filled by truncate.
             if (op == mode::open_existing) {
                 MONAD_ABORT_PRINTF(
                     "Storage pool source %s has not been initialised "
@@ -450,8 +460,9 @@ storage_pool::device_t storage_pool::make_device_(
                 chunk_capacity <= std::numeric_limits<uint32_t>::max());
             for (off_t offset2 = static_cast<off_t>(
                      offset - round_up_align<DISK_PAGE_BITS>(
-                                  (monad::async::file_offset_t(stat.st_size) /
-                                   chunk_capacity * sizeof(uint32_t))));
+                                  monad::async::file_offset_t(stat.st_size) /
+                                  chunk_capacity *
+                                  device_t::metadata_t::PER_CHUNK_META_BYTES));
                  offset2 < static_cast<off_t>(offset);
                  offset2 += DISK_PAGE_SIZE) {
                 MONAD_ASSERT_PRINTF(
@@ -459,10 +470,14 @@ storage_pool::device_t storage_pool::make_device_(
                     "failed due to %s",
                     std::strerror(errno));
             }
-            memcpy(metadata_footer->magic, "MND0", 4);
+            memcpy(metadata_footer->magic, "MND1", 4);
             metadata_footer->chunk_capacity =
                 static_cast<uint32_t>(chunk_capacity);
             metadata_footer->num_cnv_chunks = flags.num_cnv_chunks;
+            metadata_footer->num_dbs = 0;
+            memset(metadata_footer->dbs, 0, sizeof(metadata_footer->dbs));
+            memset(
+                metadata_footer->spare3_, 0, sizeof(metadata_footer->spare3_));
             MONAD_ASSERT_PRINTF(
                 ::pwrite(
                     readwritefd,
@@ -504,7 +519,7 @@ storage_pool::device_t storage_pool::make_device_(
     auto *const metadata = start_lifetime_as<device_t::metadata_t>(
         reinterpret_cast<std::byte *>(addr) + stat.st_size - offset -
         sizeof(device_t::metadata_t));
-    MONAD_ASSERT(0 == memcmp(metadata->magic, "MND0", 4));
+    MONAD_ASSERT(0 == memcmp(metadata->magic, "MND1", 4));
     if (auto const **const dev = std::get_if<1>(&dev_no_or_dev)) {
         unique_hash = (*dev)->unique_hash_;
     }
@@ -650,6 +665,18 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
                     zone_id(seq)));
             }
         }
+    }
+    // Build device-local → global seq ID lookup
+    local_to_global_seq_.resize(devices_.size());
+    for (size_t di = 0; di < devices_.size(); ++di) {
+        auto const dev_total = devices_[di].metadata_->chunks(
+            static_cast<file_offset_t>(devices_[di].size_of_file_));
+        local_to_global_seq_[di].resize(dev_total, ALLOC_FAILED);
+    }
+    for (uint32_t g = 0; g < chunks_[seq].size(); ++g) {
+        auto const &c = chunks_[seq][g];
+        auto const di = static_cast<size_t>(&c.device() - devices_.data());
+        local_to_global_seq_[di][c.chunkid_within_device_] = g;
     }
 }
 
@@ -880,6 +907,204 @@ storage_pool::chunk_t storage_pool::activate_chunk(
 storage_pool storage_pool::clone_as_read_only() const
 {
     return storage_pool(this, clone_as_read_only_tag_{});
+}
+
+storage_pool::db_slot const *
+storage_pool::find_db_slot(uint8_t const db_id) const noexcept
+{
+    auto const *m = devices_[0].metadata_;
+    for (uint16_t i = 0; i < m->num_dbs; ++i) {
+        if (m->dbs[i].db_id == db_id) {
+            return &m->dbs[i];
+        }
+    }
+    return nullptr;
+}
+
+void storage_pool::register_db_slot(db_slot const &slot)
+{
+    MONAD_ASSERT(!is_read_only_);
+    MONAD_ASSERT_PRINTF(slot.db_id != 0, "db_id 0 is reserved (unused slot)");
+
+    auto const total_cnv = chunks(cnv);
+    MONAD_ASSERT_PRINTF(
+        slot.metadata_cnv < total_cnv,
+        "metadata_cnv %u out of range (pool has %zu CNV chunks)",
+        slot.metadata_cnv,
+        total_cnv);
+    MONAD_ASSERT_PRINTF(
+        slot.root_offset_cnv_end() <= total_cnv,
+        "root_offset range [%u, %u) out of range (pool has %zu CNV chunks)",
+        slot.root_offset_cnv_start,
+        slot.root_offset_cnv_end(),
+        total_cnv);
+    MONAD_ASSERT_PRINTF(
+        !slot.cnv_range_contains(slot.metadata_cnv),
+        "metadata_cnv %u overlaps root_offset range [%u, %u)",
+        slot.metadata_cnv,
+        slot.root_offset_cnv_start,
+        slot.root_offset_cnv_end());
+    MONAD_ASSERT_PRINTF(
+        slot.root_offset_cnv_count > 0 &&
+            (slot.root_offset_cnv_count & (slot.root_offset_cnv_count - 1)) ==
+                0,
+        "root_offset_cnv_count %u must be a non-zero power of 2",
+        slot.root_offset_cnv_count);
+
+    for (auto &device : devices_) {
+        auto *m = device.metadata_;
+        MONAD_ASSERT_PRINTF(
+            m->num_dbs < device_t::metadata_t::MAX_DBS,
+            "DB catalog full (%u/%zu)",
+            m->num_dbs,
+            device_t::metadata_t::MAX_DBS);
+        for (uint16_t i = 0; i < m->num_dbs; ++i) {
+            MONAD_ASSERT_PRINTF(
+                m->dbs[i].db_id != slot.db_id,
+                "Duplicate db_id %u in pool catalog",
+                slot.db_id);
+            MONAD_ASSERT_PRINTF(
+                !slot.cnv_conflicts_with(m->dbs[i]),
+                "db_id %u CNV range overlaps with existing db_id %u",
+                slot.db_id,
+                m->dbs[i].db_id);
+        }
+        m->dbs[m->num_dbs++] = slot;
+    }
+}
+
+// Linear scan over chunk_states (~14KB for 7000 chunks, fits in L1).
+// Only called on chunk rollover (once per ~256MB of writes).
+uint32_t storage_pool::allocate_seq_chunk(uint8_t const db_id) noexcept
+{
+    MONAD_ASSERT(db_id != 0);
+    auto const desired =
+        std::bit_cast<uint16_t>(chunk_state{db_id, CHUNK_RESERVED});
+    for (size_t di = 0; di < devices_.size(); ++di) {
+        auto *m = devices_[di].metadata_;
+        auto const sz = static_cast<file_offset_t>(devices_[di].size_of_file_);
+        auto states = m->chunk_states(sz);
+        auto const cnv = m->num_cnv_chunks;
+        for (uint32_t i = cnv; i < states.size(); ++i) {
+            auto expected = std::bit_cast<uint16_t>(chunk_state{0, CHUNK_FREE});
+            if (states[i].compare_exchange_strong(
+                    expected, desired, std::memory_order_acq_rel)) {
+                return local_to_global_seq_[di][i];
+            }
+        }
+    }
+    return ALLOC_FAILED;
+}
+
+std::atomic<uint16_t> &
+storage_pool::chunk_state_at_(uint32_t const global_seq_id) noexcept
+{
+    auto &c = chunks_[seq][global_seq_id];
+    auto *m = c.device().metadata_;
+    auto const sz = static_cast<file_offset_t>(c.device().size_of_file_);
+    return m->chunk_states(sz)[c.chunkid_within_device_];
+}
+
+void storage_pool::commit_seq_chunk(uint32_t const global_seq_id) noexcept
+{
+    auto &slot = chunk_state_at_(global_seq_id);
+    auto const cur =
+        std::bit_cast<chunk_state>(slot.load(std::memory_order_relaxed));
+    MONAD_ASSERT(cur.status == CHUNK_RESERVED);
+    slot.store(
+        std::bit_cast<uint16_t>(chunk_state{cur.db_id, CHUNK_OWNED}),
+        std::memory_order_release);
+}
+
+void storage_pool::begin_free_seq_chunk(uint32_t const global_seq_id) noexcept
+{
+    auto &slot = chunk_state_at_(global_seq_id);
+    auto const cur =
+        std::bit_cast<chunk_state>(slot.load(std::memory_order_relaxed));
+    MONAD_ASSERT(cur.status == CHUNK_OWNED);
+    slot.store(
+        std::bit_cast<uint16_t>(chunk_state{cur.db_id, CHUNK_RESERVED}),
+        std::memory_order_release);
+}
+
+void storage_pool::free_seq_chunk(uint32_t const global_seq_id) noexcept
+{
+    auto &c = chunks_[seq][global_seq_id];
+    auto *m = c.device().metadata_;
+    auto const sz = static_cast<file_offset_t>(c.device().size_of_file_);
+    MONAD_ASSERT(
+        m->chunk_bytes_used(sz)[c.chunkid_within_device_].load(
+            std::memory_order_relaxed) == 0,
+        "chunk must be destroyed before returning to pool");
+    auto &slot = chunk_state_at_(global_seq_id);
+    MONAD_ASSERT(
+        std::bit_cast<chunk_state>(slot.load(std::memory_order_relaxed))
+            .status == CHUNK_RESERVED);
+    slot.store(
+        std::bit_cast<uint16_t>(chunk_state{0, CHUNK_FREE}),
+        std::memory_order_release);
+}
+
+size_t storage_pool::free_seq_chunk_count() const noexcept
+{
+    size_t count = 0;
+    for (auto const &device : devices_) {
+        auto const *m = device.metadata_;
+        auto const sz = static_cast<file_offset_t>(device.size_of_file_);
+        auto states = m->chunk_states(sz);
+        auto const cnv = m->num_cnv_chunks;
+        for (uint32_t i = cnv; i < states.size(); ++i) {
+            if (std::bit_cast<chunk_state>(
+                    states[i].load(std::memory_order_relaxed))
+                    .status == CHUNK_FREE) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
+// Each DB should have at most one RESERVED chunk at any time.
+uint32_t storage_pool::find_reserved_chunk(uint8_t const db_id) const noexcept
+{
+    for (size_t di = 0; di < devices_.size(); ++di) {
+        auto const *m = devices_[di].metadata_;
+        auto const sz = static_cast<file_offset_t>(devices_[di].size_of_file_);
+        auto states = m->chunk_states(sz);
+        auto const cnv = m->num_cnv_chunks;
+        for (uint32_t i = cnv; i < states.size(); ++i) {
+            auto const s = std::bit_cast<chunk_state>(
+                states[i].load(std::memory_order_relaxed));
+            if (s.status == CHUNK_RESERVED && s.db_id == db_id) {
+                return local_to_global_seq_[di][i];
+            }
+        }
+    }
+    return ALLOC_FAILED;
+}
+
+void storage_pool::reclaim_all_chunks_for_db(uint8_t const db_id) noexcept
+{
+    for (size_t di = 0; di < devices_.size(); ++di) {
+        auto *m = devices_[di].metadata_;
+        auto const sz = static_cast<file_offset_t>(devices_[di].size_of_file_);
+        auto states = m->chunk_states(sz);
+        auto const cnv = m->num_cnv_chunks;
+        for (uint32_t i = cnv; i < states.size(); ++i) {
+            if (std::bit_cast<chunk_state>(
+                    states[i].load(std::memory_order_relaxed))
+                    .db_id != db_id) {
+                continue;
+            }
+            auto const global = local_to_global_seq_[di][i];
+            // Bypass the normal state machine — DB metadata is invalid
+            // so there's no list to update. Just destroy and free.
+            chunks_[seq][global].destroy_contents();
+            states[i].store(
+                std::bit_cast<uint16_t>(chunk_state{0, CHUNK_FREE}),
+                std::memory_order_release);
+        }
+    }
 }
 
 MONAD_ASYNC_NAMESPACE_END

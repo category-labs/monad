@@ -78,6 +78,7 @@ add_subdirectory(third_party/BLAKE3/c)
 
 # Precompile deps: blst, silkpre, c-kzg-4844, cryptopp, immer,
 # nlohmann_json, unordered_dense, asmjit
+set(DOWNLOAD_BLST OFF)
 include(cmake/precompile_deps.cmake)
 
 # cli11

@@ -349,7 +349,6 @@ target_link_options(monad_execution_ethereum PRIVATE LINKER:-z,defs)
 target_link_libraries(
   monad_execution_native
   PUBLIC monad_execution_ethereum
-  PUBLIC blst::blst
   PUBLIC monad_core
   PUBLIC monad_trie
   PUBLIC evmc

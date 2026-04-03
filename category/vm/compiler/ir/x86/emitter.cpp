@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/cases.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
@@ -61,7 +62,7 @@
 namespace runtime = monad::vm::runtime;
 namespace x86 = asmjit::x86;
 
-using monad::vm::Cases;
+using monad::Cases;
 
 static_assert(ASMJIT_ARCH_X86 == 64);
 

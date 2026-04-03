@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/core/cases.hpp>
+#include <category/core/cases.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>

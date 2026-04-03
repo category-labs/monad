@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/cases.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
@@ -459,7 +460,7 @@ struct std::formatter<monad::vm::dependency_blocks::EvmValue>
         std::format_context &ctx) const
     {
         using namespace monad::vm::dependency_blocks;
-        using monad::vm::Cases;
+        using monad::Cases;
 
         std::visit<void>(
             Cases{
@@ -486,7 +487,7 @@ struct std::formatter<monad::vm::dependency_blocks::Instr>
         std::format_context &ctx) const
     {
         using namespace monad::vm::dependency_blocks;
-        using monad::vm::Cases;
+        using monad::Cases;
 
         std::visit<void>(
             Cases{
@@ -526,7 +527,7 @@ struct std::formatter<monad::vm::dependency_blocks::DependencyBlock>
         std::format_context &ctx) const
     {
         using namespace monad::vm::dependency_blocks;
-        using monad::vm::Cases;
+        using monad::Cases;
 
         std::format_to(ctx.out(), "  0x{:02x}:\n", blk.offset);
 

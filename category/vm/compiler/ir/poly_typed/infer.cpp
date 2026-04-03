@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/local_stacks.hpp>
@@ -25,7 +26,6 @@
 #include <category/vm/compiler/ir/poly_typed/unify.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/core/cases.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -46,7 +46,7 @@ namespace
 
     void subst_terminator(InferState &state, block_id bid)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         auto new_term = std::visit(
             Cases{

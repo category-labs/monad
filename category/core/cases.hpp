@@ -15,20 +15,11 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
-
-MONAD_NAMESPACE_BEGIN
-
-// shamelessly stolen from cppreference
-
-// helper type for the visitor #4
-template <class... Ts>
-struct overloaded : Ts...
+namespace monad
 {
-    using Ts::operator()...;
-};
-// explicit deduction guide (not needed as of C++20)
-template <class... Ts>
-overloaded(Ts...) -> overloaded<Ts...>;
-
-MONAD_NAMESPACE_END
+    template <class... Ts>
+    struct Cases : Ts...
+    {
+        using Ts::operator()...;
+    };
+}

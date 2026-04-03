@@ -15,13 +15,13 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/cases.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/core/variant.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -244,7 +244,7 @@ namespace trace
     void run_tracer(StateTracer &tracer, State &state)
     {
         return std::visit(
-            overloaded{
+            Cases{
                 [](std::monostate) {},
                 [&state](PrestateTracer &prestate) {
                     prestate.encode(state.original(), state);

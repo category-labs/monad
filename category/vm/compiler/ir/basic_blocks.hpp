@@ -15,10 +15,10 @@
 
 #pragma once
 
+#include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/core/cases.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -438,7 +438,7 @@ namespace monad::vm::compiler::basic_blocks
         ChainMarker<traits>)
         : codesize(byte_count)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         enum class St
         {

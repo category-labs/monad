@@ -85,7 +85,6 @@ add_library(
   "ethereum/core/signature.hpp"
   "ethereum/core/transaction.cpp"
   "ethereum/core/transaction.hpp"
-  "ethereum/core/variant.hpp"
   "ethereum/core/withdrawal.hpp"
   # ethereum/db
   "ethereum/db/block_db.cpp"

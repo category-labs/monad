@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/poly_typed.hpp>
 #include <category/vm/compiler/ir/poly_typed/block.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -115,7 +116,7 @@ struct std::formatter<monad::vm::compiler::untyped::JumpDest>
         monad::vm::compiler::untyped::JumpDest const &jd,
         std::format_context &ctx) const
     {
-        using monad::vm::Cases;
+        using monad::Cases;
         using namespace monad::vm::compiler::untyped;
 
         std::visit<void>(

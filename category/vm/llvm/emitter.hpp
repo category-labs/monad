@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/cases.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/llvm/dependency_blocks.hpp>
 #include <category/vm/llvm/llvm_state.hpp>

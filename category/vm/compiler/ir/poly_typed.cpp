@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/local_stacks.hpp>
 #include <category/vm/compiler/ir/poly_typed.hpp>
@@ -21,7 +22,6 @@
 #include <category/vm/compiler/ir/poly_typed/kind.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/core/cases.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -35,7 +35,7 @@
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::poly_typed;
 
-using monad::vm::Cases;
+using monad::Cases;
 
 namespace
 {

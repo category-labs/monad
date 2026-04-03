@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/local_stacks.hpp>
 #include <category/vm/compiler/ir/poly_typed/block.hpp>
@@ -20,7 +21,6 @@
 #include <category/vm/compiler/ir/poly_typed/kind.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/core/cases.hpp>
 
 #include <cstdint>
 #include <iterator>
@@ -62,7 +62,7 @@ namespace
 
     ContKind refresh(InferState &state, PolyVarSubstMap &su, ContKind cont)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         std::vector<Kind> kinds;
         for (auto const &k : cont->front) {
@@ -91,7 +91,7 @@ namespace
 
     Kind refresh(InferState &state, PolyVarSubstMap &su, Kind kind)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         return std::visit(
             Cases{

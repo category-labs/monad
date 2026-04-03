@@ -13,12 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/poly_typed/exceptions.hpp>
 #include <category/vm/compiler/ir/poly_typed/kind.hpp>
 #include <category/vm/compiler/ir/poly_typed/subst_map.hpp>
 #include <category/vm/compiler/ir/poly_typed/unify.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/core/cases.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -41,7 +41,7 @@ namespace
         SubstMap &su, VarName var, bool is_kind_var, Kind kind, size_t depth,
         size_t &ticks)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         increment_kind_depth(depth, 1);
         while (std::holds_alternative<KindVar>(*kind)) {
@@ -233,7 +233,7 @@ namespace
 
     void unify(SubstMap &su, Kind k1, Kind k2, size_t depth, size_t &ticks)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         increment_kind_depth(depth, 1);
         while (std::holds_alternative<KindVar>(*k1)) {
@@ -353,7 +353,7 @@ namespace
     void
     unify(SubstMap &su, ContKind c1, ContKind c2, size_t depth, size_t &ticks)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         increment_kind_depth(depth, 1);
 
@@ -441,7 +441,7 @@ namespace
     void unify_param_var(
         SubstMap &su, VarName param_var, VarName new_param_var, size_t &ticks)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         Kind const param = kind_var(param_var);
         Kind const new_param = kind_var(new_param_var);

@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/poly_typed/kind.hpp>
 #include <category/vm/core/assert.h>
-#include <category/vm/core/cases.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -37,7 +37,7 @@ namespace
     bool
     kind_alpha_eq(PolyVarSubstMap &su1, Kind k1, PolyVarSubstMap &su2, Kind k2)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         if (k1->index() != k2->index()) {
             return false;
@@ -84,7 +84,7 @@ namespace
     bool cont_alpha_eq(
         PolyVarSubstMap &su1, ContKind c1, PolyVarSubstMap &su2, ContKind c2)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         if (c1->front.size() != c2->front.size()) {
             return false;
@@ -131,7 +131,7 @@ namespace
 
     bool can_specialize(SpecializeSubstMap &su, Kind generic, Kind specific)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         if (std::holds_alternative<KindVar>(*generic)) {
             auto const new_k =
@@ -327,7 +327,7 @@ namespace monad::vm::compiler::poly_typed
 
     void format_cont(ContKind const &cont, std::format_context &ctx)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         for (auto const &k : cont->front) {
             format_kind(k, ctx, true);
@@ -347,7 +347,7 @@ namespace monad::vm::compiler::poly_typed
     void
     format_kind(Kind const &kind, std::format_context &ctx, bool use_parens)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         std::visit(
             Cases{
@@ -404,7 +404,7 @@ namespace monad::vm::compiler::poly_typed
 
     bool weak_equal(Kind k1, Kind k2)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         if (k1->index() != k2->index()) {
             return false;
@@ -437,7 +437,7 @@ namespace monad::vm::compiler::poly_typed
 
     bool weak_equal(ContKind c1, ContKind c2)
     {
-        using monad::vm::Cases;
+        using monad::Cases;
 
         if (c1->tail.index() != c2->tail.index()) {
             return false;

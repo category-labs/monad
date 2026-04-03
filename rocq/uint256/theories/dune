@@ -1,0 +1,4 @@
+(rocq.theory
+ (name Uint256)
+ (flags -w -notation-overridden -w -redundant-canonical-projection)
+ (theories Stdlib))

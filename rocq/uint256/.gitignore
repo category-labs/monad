@@ -1,0 +1,24 @@
+# Opam local switch
+_opam/
+
+# Dune build directory
+_build/
+
+# Coq/Rocq compiled files
+*.vo
+*.vok
+*.vos
+*.glob
+*.aux
+
+# Makefile.coq (auto-generated from _CoqProject)
+Makefile.coq
+Makefile.coq.conf
+
+# Arithmetic tactic caches
+.nia.cache
+theories/.nia.cache
+
+# Emacs backup/lock files
+.dir-locals.el
+.envrc

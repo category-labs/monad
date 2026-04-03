@@ -27,6 +27,7 @@
 
 #include <immintrin.h>
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <numeric>
@@ -57,10 +58,9 @@ namespace monad::vm::interpreter
         [[gnu::always_inline]] inline subword_t
         read_unaligned(std::uint8_t const *ptr)
         {
-            alignas(subword_t) std::uint8_t aligned_mem[sizeof(subword_t)];
-            std::memcpy(&aligned_mem[0], ptr, sizeof(subword_t));
-            return std::byteswap(
-                *reinterpret_cast<subword_t *>(&aligned_mem[0]));
+            subword_t aligned_mem;
+            std::memcpy(&aligned_mem, ptr, sizeof(subword_t));
+            return std::byteswap(aligned_mem);
         }
 
         template <std::size_t N, Traits traits>

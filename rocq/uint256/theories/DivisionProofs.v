@@ -1067,29 +1067,157 @@ Proof.
   nia.
 Qed.
 
+(** 128-bit to 64+64 decomposition: trunc gives low word, shr 64 gives high word. *)
+Lemma trunc_shr_decompose : forall (x : U128.t),
+  to_Z (trunc x) + U128.to_Z (U128.shr x (Pos.to_nat U64.width)) * base width =
+    U128.to_Z x.
+Proof.
+  intros x.
+  pose proof (spec_trunc x) as Htr.
+  pose proof (U128.spec_shr x (Pos.to_nat U64.width)) as Hsh.
+  rewrite width_is_64 in *.
+  rewrite Z.shiftr_div_pow2 in Hsh by lia.
+  pose proof (U128.spec_to_Z x) as [Hx_nn Hx_lt].
+  assert (Hq_range: 0 <= U128.to_Z x / 2 ^ Z.pos 64 < base U128.width).
+  { split.
+    - apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia].
+    - apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
+      unfold base in Hx_lt. rewrite U128.width_is_128 in Hx_lt.
+      unfold base. rewrite U128.width_is_128.
+      rewrite <- Z.pow_add_r by lia. simpl. lia. }
+  rewrite Z.mod_small in Hsh by exact Hq_range.
+  rewrite Htr, Hsh.
+  pose proof (Z_div_mod_eq_full (U128.to_Z x) (2 ^ Z.pos 64)).
+  unfold base. lia.
+Qed.
+
 (** ** Knuth Subtract-and-Correct *)
 
 (** knuth_sub_loop computes [u_seg - q_hat * v] with borrow propagation.
     The mathematical value of the segment decreases by [q_hat * v_val],
     modulo the segment width, with the borrow [k] tracking the overflow. *)
 Lemma knuth_sub_loop_correct : forall u_seg q_hat vs j k,
-  length u_seg = (j + length vs)%nat ->
+  (j + length vs <= length u_seg)%nat ->
   let '(u', k') := knuth_sub_loop u_seg q_hat vs j k in
   to_Z_words u' + U128.to_Z k' * modulus_words (j + length vs) =
     to_Z_words u_seg - (U128.to_Z q_hat * to_Z_words vs - U128.to_Z k) *
-      base width ^ (Z.of_nat j).
+      base width ^ (Z.of_nat j)
+  /\ length u' = length u_seg
+  /\ (forall i, (i < j \/ j + length vs <= i)%nat ->
+        get_word u' i = get_word u_seg i).
 Proof.
 Admitted.
 
 (** knuth_addback_loop computes [u_seg + v] with carry propagation.
     Used when the trial quotient overestimated by 1. *)
 Lemma knuth_addback_loop_correct : forall u_seg vs j k,
-  length u_seg = (j + length vs)%nat ->
+  (j + length vs <= length u_seg)%nat ->
+  U128.to_Z k <= 1 ->
   let '(u', k') := knuth_addback_loop u_seg vs j k in
   to_Z_words u' + U128.to_Z k' * modulus_words (j + length vs) =
     to_Z_words u_seg + (to_Z_words vs + U128.to_Z k)
-      * base width ^ (Z.of_nat j).
-Proof. Admitted.
+      * base width ^ (Z.of_nat j)
+  /\ length u' = length u_seg
+  /\ (forall i, (i < j \/ j + length vs <= i)%nat ->
+        get_word u' i = get_word u_seg i)
+  /\ U128.to_Z k' <= 1.
+Proof.
+  intros u_seg vs. revert u_seg.
+  induction vs as [|vj vs_rest IH]; intros u_seg j k Hlen Hk;
+    simpl knuth_addback_loop.
+  { (* Base: vs = [] *)
+    split; [|split; [reflexivity|split; [intros; reflexivity|exact Hk]]].
+    cbn [to_Z_words length Nat.add].
+    replace (j + 0)%nat with j by lia.
+    unfold modulus_words. ring. }
+  (* Step: vj :: vs_rest *)
+  change (MakeProofs.set_word) with set_word.
+  change (MakeProofs.get_word) with get_word.
+  set (t := U128.add (U128.add (widen (get_word u_seg j)) (widen vj)) k).
+  assert (Hk': U128.to_Z (U128.shr t 64) <= 1).
+  { (* t = u_seg[j] + vj + k as U128. sum < 2*base since u,v < base and k <= 1 *)
+    pose proof (spec_to_Z (get_word u_seg j)) as [Huj_nn Huj_lt].
+    pose proof (spec_to_Z vj) as [Hvj_nn Hvj_lt].
+    pose proof (U128.spec_to_Z k) as [Hk_nn _].
+    assert (Ht_val: U128.to_Z t =
+      (to_Z (get_word u_seg j) + to_Z vj + U128.to_Z k) mod base U128.width).
+    { unfold t. rewrite U128.spec_add, U128.spec_add,
+        (spec_widen (get_word u_seg j)), (spec_widen vj).
+      rewrite Zplus_mod_idemp_l. reflexivity. }
+    assert (Hsum_bound: to_Z (get_word u_seg j) + to_Z vj + U128.to_Z k <
+      2 * base width).
+    { clear - Huj_lt Hvj_lt Hk. unfold base in *. rewrite width_is_64 in *. lia. }
+    assert (Hsum_nn: 0 <= to_Z (get_word u_seg j) + to_Z vj + U128.to_Z k)
+      by lia.
+    assert (Hno_wrap: U128.to_Z t = to_Z (get_word u_seg j) + to_Z vj + U128.to_Z k).
+    { rewrite Ht_val. apply Z.mod_small. split; [lia|].
+      assert (2 * base width < base U128.width).
+      { unfold base. rewrite width_is_64, U128.width_is_128. simpl. lia. }
+      lia. }
+    (* shr t 64 = t / base, and t < 2*base, so t/base <= 1 *)
+    pose proof (U128.spec_shr t 64) as Hsh.
+    rewrite Z.shiftr_div_pow2 in Hsh by lia.
+    pose proof (U128.spec_to_Z t) as [Ht_nn Ht_lt].
+    assert (Hsh_range: 0 <= U128.to_Z t / 2 ^ 64 < base U128.width).
+    { split; [apply Z.div_pos; [lia|]; apply Z.pow_pos_nonneg; lia|].
+      apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
+      unfold base. rewrite U128.width_is_128.
+      rewrite <- Z.pow_add_r by lia. simpl.
+      unfold base in Ht_lt. rewrite U128.width_is_128 in Ht_lt. lia. }
+    rewrite Z.mod_small in Hsh by exact Hsh_range.
+    rewrite Hsh, Hno_wrap.
+    assert (Hlt2: (to_Z (get_word u_seg j) + to_Z vj + U128.to_Z k) / 2 ^ 64 < 2).
+    { apply Z.div_lt_upper_bound; [apply Z.pow_pos_nonneg; lia|].
+      clear - Hsum_bound. unfold base in *. rewrite width_is_64 in *. lia. }
+    assert (Hge0: 0 <= (to_Z (get_word u_seg j) + to_Z vj + U128.to_Z k) / 2 ^ 64).
+    { apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia]. }
+    lia. }
+  specialize (IH (set_word u_seg j (trunc t)) (S j) (U128.shr t 64)
+    ltac:(rewrite set_word_length; simpl in Hlen; lia) Hk').
+  destruct (knuth_addback_loop (set_word u_seg j (trunc t)) vs_rest
+    (S j) (U128.shr t 64)) as [u' k''].
+  destruct IH as [Hval [Hlen_u [Hunchanged Hk'']]].
+  split; [|split;
+    [rewrite Hlen_u, set_word_length; reflexivity
+    |split;
+      [intros i0 Hi0; rewrite Hunchanged by (simpl in *; lia);
+       rewrite get_set_word_other by (simpl in *; lia); reflexivity
+      |exact Hk'']]].
+  (* Value equation *)
+  pose proof (trunc_shr_decompose t) as Hcarry.
+  (* t = u_seg[j] + vj + k without 128-bit overflow *)
+  pose proof (spec_to_Z (get_word u_seg j)) as [Huj_nn Huj_lt].
+  pose proof (spec_to_Z vj) as [Hvj_nn Hvj_lt].
+  pose proof (U128.spec_to_Z k) as [Hk_nn _].
+  assert (Hno_wrap: U128.to_Z t = to_Z (get_word u_seg j) + to_Z vj + U128.to_Z k).
+  { unfold t. rewrite U128.spec_add, U128.spec_add,
+      (spec_widen (get_word u_seg j)), (spec_widen vj).
+    rewrite Zplus_mod_idemp_l. apply Z.mod_small. split; [lia|].
+    assert (2 * base width < base U128.width).
+    { unfold base. rewrite width_is_64, U128.width_is_128. simpl. lia. }
+    clear - Huj_lt Hvj_lt Hk H. lia. }
+  (* Combine: trunc(t) + shr(t,64) * base = u_seg[j] + vj + k *)
+  rewrite Hno_wrap in Hcarry.
+  (* Now algebra: Hcarry + to_Z_words_set_word + IH Hval => goal *)
+  replace (j + length (vj :: vs_rest))%nat with (S j + length vs_rest)%nat
+    by (simpl; lia).
+  rewrite Hval.
+  rewrite (to_Z_words_set_word u_seg j (trunc t) ltac:(simpl in Hlen; lia)).
+  cbn [to_Z_words].
+  rewrite Nat2Z.inj_succ, Z.pow_succ_r by lia.
+  rewrite width_is_64 in *.
+  change (Pos.to_nat 64) with 64%nat in Hcarry.
+  remember (2 ^ Z.pos 64) as B eqn:HB in *.
+  remember (B ^ Z.of_nat j) as Bj eqn:HBj in *.
+  remember (to_Z_words u_seg) as U eqn:HU.
+  remember (to_Z (get_word u_seg j)) as uj eqn:Huj_def.
+  remember (to_Z (trunc t)) as tt eqn:Htt.
+  remember (to_Z_words vs_rest) as vr eqn:Hvr.
+  remember (U128.to_Z (U128.shr t 64)) as c eqn:Hc.
+  remember (to_Z vj) as vv eqn:Hvv.
+  remember (U128.to_Z k) as kk eqn:Hkk.
+  clear - Hcarry. nia.
+Qed.
 
 (** knuth_div_subtract: one full subtract-and-correct step.
     Returns [(u_after, q_final)] where:
@@ -1099,12 +1227,35 @@ Proof. Admitted.
 Lemma knuth_div_subtract_correct : forall u_seg q_hat v n,
   length u_seg = (n + 1)%nat -> length v = n ->
   to_Z_words v > 0 ->
+  U128.to_Z q_hat < base width ->
+  (U128.to_Z q_hat - 1) * to_Z_words v <= to_Z_words u_seg ->
+  to_Z_words u_seg < (U128.to_Z q_hat + 1) * to_Z_words v ->
   let '(u_after, q_final) := knuth_div_subtract u_seg q_hat v n in
   to_Z_words u_seg =
     to_Z q_final * to_Z_words v + to_Z_words (firstn n u_after)
   /\ 0 <= to_Z_words (firstn n u_after) < to_Z_words v
   /\ length u_after = (n + 1)%nat
   /\ get_word u_after n = U64.zero.
+Proof. Admitted.
+
+(** ** Knuth Division — Estimate Bounds *)
+
+(** Knuth §4.3.1: the trial quotient estimate [q_hat] fits in 64 bits
+    and brackets the true quotient: [(q_hat - 1) * v <= seg < (q_hat + 1) * v].
+    This follows from normalization and the one-step refinement in
+    [knuth_div_estimate]. *)
+Lemma knuth_div_estimate_bounds : forall u v i n,
+  length v = n -> (n > 1)%nat ->
+  (i + n < length u)%nat ->
+  to_Z_words v > 0 ->
+  to_Z (get_word u (i + n)) <= to_Z (get_word v (n - 1)) ->
+  forall q_hat,
+  q_hat = knuth_div_estimate (get_word u (i + n)) (get_word u (i + n - 1))
+    (get_word u (i + n - 2)) (get_word v (n - 1)) (get_word v (n - 2)) ->
+  U128.eqb q_hat U128.zero = false ->
+  U128.to_Z q_hat < base width
+  /\ (U128.to_Z q_hat - 1) * to_Z_words v <= to_Z_words (get_segment u i (n + 1))
+  /\ to_Z_words (get_segment u i (n + 1)) < (U128.to_Z q_hat + 1) * to_Z_words v.
 Proof. Admitted.
 
 (** ** Knuth Division — Single Step and Loop *)
@@ -1406,8 +1557,12 @@ Proof.
           pose proof (spec_to_Z q0).
           rewrite Hq in H. lia. }
   - (* Case q_hat ≠ 0 *)
+    (* Estimate bounds from knuth_div_estimate_bounds (Admitted) *)
+    pose proof (knuth_div_estimate_bounds u v i n Hlv Hn Hi Hvpos Hmsw
+      q_hat eq_refl Hq) as [Hqhat_small [Hqhat_lb Hqhat_ub]].
     pose proof (knuth_div_subtract_correct (get_segment u i (n + 1)) q_hat v n
-      ltac:(try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia) Hlv Hvpos) as Hsub.
+      ltac:(try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia) Hlv Hvpos
+      Hqhat_small Hqhat_lb Hqhat_ub) as Hsub.
     destruct (knuth_div_subtract (get_segment u i (n + 1)) q_hat v n)
       as [new_seg final_q].
     destruct Hsub as [Heuclid [Hrem [Hlen_seg Hmsw_seg]]].

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Wrapper for Proof General: runs rocq top with dune's build directory.
+# Assumes `dune build` has been run to populate _build/.
+DIR="$(dirname "$0")"
+OPAM_BIN="$DIR/_opam/bin"
+export PATH="$OPAM_BIN:$PATH"
+exec rocq top -R "$DIR/_build/default/theories" Uint256 "$@"

@@ -1,0 +1,8 @@
+((nil . ((eval . (let* ((root (locate-dominating-file default-directory "dune-project"))
+                        (opam-bin (expand-file-name "_opam/bin" root)))
+                   (add-to-list 'exec-path opam-bin)))))
+ (coq-mode . ((coq-use-project-file . nil)
+              (eval . (let* ((root (locate-dominating-file default-directory "dune-project"))
+                             (build-dir (expand-file-name "_build/default/theories" root)))
+                        (setq-local coq-prog-name (expand-file-name "dune-rocq-top" root))
+                        (setq-local coq-load-path (list (list build-dir "Uint256"))))))))

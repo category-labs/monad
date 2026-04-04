@@ -19,6 +19,5 @@ Makefile.coq.conf
 .nia.cache
 theories/.nia.cache
 
-# Emacs backup/lock files
-.dir-locals.el
+# direnv
 .envrc

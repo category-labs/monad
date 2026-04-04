@@ -19,6 +19,16 @@ Open Scope Z_scope.
 
 (** ** Local Helpers *)
 
+Lemma word_lt_implies_value_lt : forall sl vl M sw vw,
+  0 <= sl < M -> 0 <= vl -> M > 0 -> sw < vw ->
+  sl + M * sw < vl + M * vw.
+Proof.
+  intros. assert (M * sw + M <= M * vw).
+  { replace (M * sw + M) with (M * (sw + 1)) by ring.
+    apply Z.mul_le_mono_nonneg_l; lia. }
+  lia.
+Qed.
+
 Lemma Z_mul_le_contradiction : forall low M v s,
   M > 0 -> 0 <= low < M ->
   low + M * v >= M * s ->
@@ -1260,14 +1270,138 @@ Proof.
             modulus_words (n - 1) * to_Z v_hi).
           { apply Z.mul_le_mono_nonneg_l; lia. }
           lia. }
-      * (* q0 ≠ 0 but estimate = 0 — contradiction *)
-        exfalso.
+      * (* q0 ≠ 0, estimate refined to 0: prove conclusions via V > U *)
         rewrite spec_eqb in Hq0. apply Z.eqb_neq in Hq0. rewrite spec_zero in Hq0.
         rewrite U128.spec_eqb in Hq. apply Z.eqb_eq in Hq. rewrite U128.spec_zero in Hq.
-        destruct (U128.gtb _ _).
-        { (* widen q0 - 1 = 0 implies widen q0 = 1 implies q0 = 1, nonzero *)
-          admit. }
-        { (* widen q0 = 0 implies q0 = 0 — contradiction *)
+        destruct (U128.gtb (U128.mul (widen q0) (widen (get_word v (n - 2))))
+          (combine r0 (get_word u (i + n - 2)))) eqn:Hrefine.
+        { (* Refinement test passed, widen q0 - 1 = 0, so q0 = 1.
+             Knuth §4.3.1: refinement test passing means q0 overestimated,
+             so q0 - 1 = 0 >= q_true, meaning segment < v.
+             Proof outline:
+             1. Derive to_Z q0 = 1 from widen/sub/mod arithmetic
+             2. Refinement test gives v_snd > r0 * base + u_lo (Z level)
+             3. r0 = 0 (since r0 >= 1 would give r0*base >= base > v_snd)
+             4. u_hi = 0 (since u_hi*base + u_mid = v_hi with v_hi < base)
+             5. V' = v_hi*base + v_snd > v_hi*base + u_lo = U' (word-level)
+             6. V >= V' * modulus(n-2) >= (U'+1) * modulus(n-2) > U
+             7. Segment < v, MSW = 0, and all 5 conclusions follow. *)
+          (* Step 1: q0 = 1 — Hq is already U128.to_Z(sub(widen q0) one) = 0 *)
+          rewrite U128.spec_sub, (spec_widen q0), U128.spec_one in Hq.
+          pose proof (spec_to_Z q0) as [Hq0nn Hq0lt].
+          assert (H128: base width < base U128.width).
+          { unfold base. rewrite width_is_64, U128.width_is_128. simpl. lia. }
+          assert (Hq0_1: to_Z q0 = 1).
+          { clear - Hq Hq0nn Hq0lt H128 Hq0.
+            rewrite Z.mod_small in Hq by lia. lia. }
+          (* Step 2: Hdiv_val and Hdiv_lt already in context from outer spec_div *)
+          rewrite Hq0_1, Z.mul_1_l in Hdiv_val.
+          rewrite U128.spec_gtb in Hrefine. apply Z.gtb_lt in Hrefine.
+          rewrite U128.spec_mul, (spec_widen q0), (spec_widen (get_word v (n - 2))),
+            (spec_combine r0 (get_word u (i + n - 2))) in Hrefine.
+          rewrite Hq0_1, Z.mul_1_l in Hrefine.
+          pose proof (spec_to_Z (get_word v (n - 2))) as [Hvsnd_nn Hvsnd_lt].
+          rewrite Z.mod_small in Hrefine by (clear - Hvsnd_nn Hvsnd_lt H128; lia).
+          (* Step 3: r0 = 0 *)
+          pose proof (spec_to_Z r0) as [Hr0nn _].
+          pose proof (spec_to_Z (get_word u (i + n - 2))) as [Hulo_nn _].
+          assert (Hr0_zero: to_Z r0 = 0).
+          { destruct (Z.eq_dec (to_Z r0) 0); [exact e|exfalso].
+            assert (base width <= to_Z r0 * base width).
+            { replace (base width) with (1 * base width) at 1 by ring.
+              apply Z.mul_le_mono_nonneg_r; [unfold base; apply Z.pow_nonneg; lia | lia]. }
+            clear - Hrefine Hvsnd_lt H Hulo_nn. lia. }
+          (* Step 4: u_hi = 0 *)
+          rewrite Hr0_zero, Z.add_0_r in Hdiv_val.
+          assert (Hu_hi_zero: to_Z u_hi = 0).
+          { pose proof (spec_to_Z v_hi) as [_ Hvhi_lt].
+            pose proof (spec_to_Z u_mid) as [Humid_nn _].
+            assert (Hprod: to_Z u_hi * base width < base width).
+            { clear - Hdiv_val Hvhi_lt Humid_nn. lia. }
+            destruct (Z.eq_dec (to_Z u_hi) 0) as [Hz|Hnz]; [exact Hz|exfalso].
+            assert (1 * base width <= to_Z u_hi * base width).
+            { apply Z.mul_le_mono_nonneg_r;
+                [unfold base; apply Z.pow_nonneg; lia
+                | clear - Hnz; pose proof (spec_to_Z u_hi); lia]. }
+            lia. }
+          assert (Hu_hi_eq: u_hi = U64.zero)
+            by (apply spec_to_Z_inj; rewrite spec_zero; exact Hu_hi_zero).
+          (* Step 5-7: Prove the 5 conclusions *)
+          rewrite spec_zero. rewrite Z.mul_0_l, Z.add_0_l.
+          set (seg := get_segment u i (n + 1)).
+          assert (Hseg_len: length seg = (n + 1)%nat)
+            by (unfold seg; rewrite get_segment_length by lia; lia).
+          assert (Hseg_msw: to_Z (get_word seg n) = 0)
+            by (unfold seg; rewrite get_word_get_segment by lia; exact Hu_hi_zero).
+          split; [|split; [|split; [reflexivity|split; [auto|exact Hu_hi_eq]]]].
+          { (* Euclidean *)
+            rewrite (to_Z_words_firstn_skipn seg n) by lia.
+            assert (Hskip0: to_Z_words (skipn n seg) = 0).
+            { destruct (skipn n seg) as [|w rest] eqn:Hsk; [reflexivity|].
+              assert (rest = [])
+                by (assert (length (w :: rest) = 1%nat)
+                      by (rewrite <- Hsk, length_skipn; lia);
+                    destruct rest; [reflexivity | simpl in *; lia]).
+              subst rest. cbn [to_Z_words].
+              assert (w = get_word seg n)
+                by (unfold get_word; change w with (nth 0 (w :: []) U64.zero);
+                    rewrite <- Hsk, nth_skipn; f_equal; lia).
+              rewrite H. rewrite Hseg_msw. lia. }
+            rewrite Hskip0. lia. }
+          { (* Remainder: firstn n seg < v, using word_lt_implies_value_lt *)
+            split; [apply to_Z_words_bound|].
+            rewrite Hu_hi_zero, Z.mul_0_l, Z.add_0_l in Hdiv_val.
+            (* u_mid = v_hi, u_lo < v_snd (from Hrefine with r0=0) *)
+            assert (Hseg_mid_val: to_Z (get_word seg (n - 1)) = to_Z (get_word v (n - 1))).
+            { unfold seg. rewrite get_word_get_segment by lia.
+              replace (i + (n - 1))%nat with (i + n - 1)%nat by lia. exact Hdiv_val. }
+            assert (Hseg_lo_lt: to_Z (get_word seg (n - 2)) < to_Z (get_word v (n - 2))).
+            { unfold seg. rewrite get_word_get_segment by lia.
+              replace (i + (n - 2))%nat with (i + n - 2)%nat by lia.
+              rewrite Hr0_zero in Hrefine. clear - Hrefine Hulo_nn. lia. }
+            (* Decompose at n-1: equal MSW contribution, reduce to firstn(n-1) *)
+            rewrite (to_Z_words_firstn_skipn (firstn n seg) (n - 1))
+              by (rewrite firstn_length_le by lia; lia).
+            rewrite (to_Z_words_firstn_skipn v (n - 1)) by lia.
+            (* Show skipn(n-1) parts are single equal words *)
+            assert (Hskip_seg: to_Z_words (skipn (n - 1) (firstn n seg)) = to_Z (get_word seg (n - 1))).
+            { destruct (skipn (n - 1) (firstn n seg)) as [|w rest] eqn:Hsk.
+              - exfalso. assert (length (skipn (n-1) (firstn n seg)) = 0%nat) by (rewrite Hsk; reflexivity).
+                rewrite length_skipn, firstn_length_le in * by lia. lia.
+              - assert (rest = []) by (assert (length (w :: rest) = 1%nat) by (rewrite <- Hsk, length_skipn, firstn_length_le by lia; lia); destruct rest; [reflexivity|simpl in *; lia]).
+                subst rest. cbn [to_Z_words]. assert (Hw: w = get_word seg (n-1)) by (unfold get_word; change w with (nth 0 (w :: []) U64.zero); rewrite <- Hsk, nth_skipn, nth_firstn; replace ((n-1+0 <? n)%nat) with true by (symmetry; apply Nat.ltb_lt; lia); f_equal; lia). rewrite Hw. lia. }
+            assert (Hskip_v: to_Z_words (skipn (n - 1) v) = to_Z (get_word v (n - 1))).
+            { destruct (skipn (n - 1) v) as [|w rest] eqn:Hsk.
+              - exfalso. assert (length (skipn (n-1) v) = 0%nat) by (rewrite Hsk; reflexivity). rewrite length_skipn in *. lia.
+              - assert (rest = []) by (assert (length (w :: rest) = 1%nat) by (rewrite <- Hsk, length_skipn; lia); destruct rest; [reflexivity|simpl in *; lia]).
+                subst rest. cbn [to_Z_words]. assert (Hw: w = get_word v (n-1)) by (unfold get_word; change w with (nth 0 (w :: []) U64.zero); rewrite <- Hsk, nth_skipn; f_equal; lia). rewrite Hw. lia. }
+            rewrite Hskip_seg, Hskip_v, Hseg_mid_val.
+            (* Cancel M(n-1) * v_hi; reduce to firstn(n-1) comparison *)
+            cut (to_Z_words (firstn (n - 1) (firstn n seg)) < to_Z_words (firstn (n - 1) v)); [lia|].
+            rewrite firstn_firstn, Nat.min_l by lia.
+            (* Decompose at n-2 and use word_lt_implies_value_lt *)
+            rewrite (to_Z_words_firstn_skipn (firstn (n - 1) seg) (n - 2))
+              by (rewrite firstn_length_le by lia; lia).
+            rewrite (to_Z_words_firstn_skipn (firstn (n - 1) v) (n - 2))
+              by (rewrite firstn_length_le by lia; lia).
+            (* Prove skipn(n-2) = single word for both *)
+            assert (Hss: to_Z_words (skipn (n-2) (firstn (n-1) seg)) = to_Z (get_word seg (n-2))).
+            { destruct (skipn (n-2) (firstn (n-1) seg)) as [|w rest] eqn:Hsk.
+              - exfalso. assert (length (skipn (n-2) (firstn (n-1) seg)) = 0%nat) by (rewrite Hsk; reflexivity). rewrite length_skipn, firstn_length_le in * by lia. lia.
+              - assert (rest = []) by (assert (length (w :: rest) = 1%nat) by (rewrite <- Hsk, length_skipn, firstn_length_le by lia; lia); destruct rest; [reflexivity|simpl in *; lia]).
+                subst rest. cbn [to_Z_words]. assert (Hw: w = get_word seg (n-2)) by (unfold get_word; change w with (nth 0 (w :: []) U64.zero); rewrite <- Hsk, nth_skipn, nth_firstn; replace ((n-2+0 <? n-1)%nat) with true by (symmetry; apply Nat.ltb_lt; lia); f_equal; lia). rewrite Hw. lia. }
+            assert (Hsv: to_Z_words (skipn (n-2) (firstn (n-1) v)) = to_Z (get_word v (n-2))).
+            { destruct (skipn (n-2) (firstn (n-1) v)) as [|w rest] eqn:Hsk.
+              - exfalso. assert (length (skipn (n-2) (firstn (n-1) v)) = 0%nat) by (rewrite Hsk; reflexivity). rewrite length_skipn, firstn_length_le in * by lia. lia.
+              - assert (rest = []) by (assert (length (w :: rest) = 1%nat) by (rewrite <- Hsk, length_skipn, firstn_length_le by lia; lia); destruct rest; [reflexivity|simpl in *; lia]).
+                subst rest. cbn [to_Z_words]. assert (Hw: w = get_word v (n-2)) by (unfold get_word; change w with (nth 0 (w :: []) U64.zero); rewrite <- Hsk, nth_skipn, nth_firstn; replace ((n-2+0 <? n-1)%nat) with true by (symmetry; apply Nat.ltb_lt; lia); f_equal; lia). rewrite Hw. lia. }
+            rewrite Hss, Hsv. rewrite !firstn_firstn, !Nat.min_l by lia.
+            apply word_lt_implies_value_lt; [| |pose proof (modulus_words_pos (n - 2)); lia | exact Hseg_lo_lt].
+            - pose proof (to_Z_words_bound (firstn (n - 2) seg)) as Hb.
+              rewrite firstn_length_le in Hb by lia. exact Hb.
+            - pose proof (to_Z_words_bound (firstn (n - 2) v)) as Hb.
+              rewrite firstn_length_le in Hb by lia. lia. } }
+        { (* Refinement test failed, widen q0 = 0 — contradiction *)
           pose proof (spec_widen q0).
           pose proof (spec_to_Z q0).
           rewrite Hq in H. lia. }
@@ -1287,7 +1421,7 @@ Proof.
     + intros j Hout Hj. apply get_word_set_segment_outside; lia.
     + rewrite get_word_set_segment_inside by lia.
       replace (i + n - i)%nat with n by lia. exact Hmsw_seg.
-Admitted.
+Qed.
 
 (** knuth_div_loop: the outer loop iterating from [m-n] down to [0].
     Invariant: the accumulated value [firstn (ci+n+1) u + quot * v] is

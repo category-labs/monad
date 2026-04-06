@@ -53,6 +53,9 @@ public:
 
     Result<void> execute_staking_syscall(
         State &state, byte_string_view data, uint256_t const &);
+    Result<void> execute_tinyvm_syscall(
+        State &state, byte_string_view data, Address const &sender,
+        uint256_t const &value);
 };
 
 MONAD_NAMESPACE_END

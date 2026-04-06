@@ -32,7 +32,8 @@ enum monad_revision
     MONAD_SEVEN = 7,
     MONAD_EIGHT = 8,
     MONAD_NINE = 9,
-    MONAD_NEXT = 10
+    MONAD_NEXT = 10,
+    MONAD_TINYVM = 11
 };
 
 inline char const *monad_revision_to_string(enum monad_revision const rev)
@@ -60,6 +61,8 @@ inline char const *monad_revision_to_string(enum monad_revision const rev)
         return "MONAD_NINE";
     case MONAD_NEXT:
         return "MONAD_NEXT";
+    case MONAD_TINYVM:
+        return "MONAD_TINYVM";
     }
     return ""; // unreachable
 }

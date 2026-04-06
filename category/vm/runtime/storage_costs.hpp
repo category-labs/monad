@@ -346,4 +346,10 @@ namespace monad::vm::runtime
         : StorageCostTable<MonadTraits<MONAD_NEXT>::evm_base>
     {
     };
+
+    template <>
+    struct StorageCostTable<MonadTraits<MONAD_TINYVM>>
+        : StorageCostTable<MonadTraits<MONAD_TINYVM>::evm_base>
+    {
+    };
 }

@@ -30,6 +30,7 @@
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
+#include <category/execution/monad/tinyvm/tinyvm_precompile.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -177,13 +178,28 @@ template <Traits traits>
 Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
 {
     BOOST_OUTCOME_TRY(validate_system_transaction(tx_, sender_, state));
+    MONAD_ASSERT(tx_.to.has_value());
 
     auto const nonce = state.get_nonce(sender_);
     state.set_nonce(sender_, nonce + 1);
 
     state.push();
     call_tracer_.on_enter(to_message());
-    BOOST_OUTCOME_TRY(execute_staking_syscall(state, tx_.data, tx_.value));
+    if (tx_.to == staking::STAKING_CA) {
+        BOOST_OUTCOME_TRY(execute_staking_syscall(state, tx_.data, tx_.value));
+    }
+    else if constexpr (traits::monad_rev() >= MONAD_TINYVM) {
+        if (tx_.to == TINYVM_PRECOMPILE_ADDRESS) {
+            BOOST_OUTCOME_TRY(
+                execute_tinyvm_syscall(state, tx_.data, sender_, tx_.value));
+        }
+        else {
+            return SystemTransactionError::InvalidSystemContract;
+        }
+    }
+    else {
+        return SystemTransactionError::InvalidSystemContract;
+    }
     call_tracer_.on_exit(evmc::Result{EVMC_SUCCESS});
     state.pop_accept();
 
@@ -233,6 +249,23 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
         return contract.syscall_on_epoch_change(calldata, value);
     }
     return staking::StakingError::MethodNotSupported;
+}
+
+template <Traits traits>
+Result<void> ExecuteSystemTransaction<traits>::execute_tinyvm_syscall(
+    State &state, byte_string_view calldata, Address const &sender,
+    uint256_t const &value)
+{
+    TinyVmPrecompile contract(state, call_tracer_);
+    auto input = calldata;
+    auto const [method, _cost] =
+        contract.template precompile_dispatch<traits>(input);
+
+    evmc_uint256be evmc_value{};
+    intx::be::store(evmc_value.bytes, value);
+
+    BOOST_OUTCOME_TRY(auto _, (contract.*method)(input, sender, evmc_value));
+    return success();
 }
 
 EXPLICIT_MONAD_TRAITS_CLASS(ExecuteSystemTransaction);

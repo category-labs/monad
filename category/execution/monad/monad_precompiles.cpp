@@ -20,6 +20,7 @@
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/tinyvm/tinyvm_precompile.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -76,7 +77,9 @@ bool is_precompile(Address const &address)
     // in.
     return is_eth_precompile<traits>(address) ||
            (address == staking::STAKING_CA) ||
-           (traits::monad_rev() >= MONAD_NINE && address == RESERVE_BALANCE_CA);
+           (traits::monad_rev() >= MONAD_NINE && address == RESERVE_BALANCE_CA) ||
+           (traits::monad_rev() >= MONAD_TINYVM &&
+            address == TINYVM_PRECOMPILE_ADDRESS);
 }
 
 EXPLICIT_MONAD_TRAITS(is_precompile);
@@ -110,6 +113,11 @@ std::optional<evmc::Result> check_call_precompile(
         traits::monad_rev() >= MONAD_NINE,
         ReserveBalanceContract,
         RESERVE_BALANCE_CA);
+
+    CASE(
+        traits::monad_rev() >= MONAD_TINYVM,
+        TinyVmPrecompile,
+        TINYVM_PRECOMPILE_ADDRESS);
 
     return std::nullopt;
 

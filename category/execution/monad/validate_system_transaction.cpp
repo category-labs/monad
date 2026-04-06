@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
+#include <category/execution/monad/tinyvm/tinyvm_precompile.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
@@ -56,7 +57,13 @@ static_validate_system_transaction(Transaction const &tx, Address const &sender)
         return SystemTransactionError::MissingTo;
     }
 
-    if (MONAD_UNLIKELY(tx.to != staking::STAKING_CA)) {
+    bool valid_system_contract = tx.to == staking::STAKING_CA;
+    if constexpr (traits::monad_rev() >= MONAD_TINYVM) {
+        valid_system_contract =
+            valid_system_contract || tx.to == TINYVM_PRECOMPILE_ADDRESS;
+    }
+
+    if (MONAD_UNLIKELY(!valid_system_contract)) {
         return SystemTransactionError::InvalidSystemContract;
     }
 

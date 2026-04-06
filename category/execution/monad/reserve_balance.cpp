@@ -28,6 +28,7 @@
 #include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/tinyvm/tinyvm_precompile.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -80,6 +81,11 @@ bool dipped_into_reserve(
         // should not cause this tx to revert as that address cannot send
         // transactions
         if (addr == staking::STAKING_CA) {
+            continue;
+        }
+
+        // same for tinyvm precompile — unshield reduces its balance
+        if (addr == TINYVM_PRECOMPILE_ADDRESS) {
             continue;
         }
 

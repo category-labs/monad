@@ -79,6 +79,8 @@
         return f<::monad::MonadTraits<MONAD_NINE>>(__VA_ARGS__);               \
     case MONAD_NEXT:                                                           \
         return f<::monad::MonadTraits<MONAD_NEXT>>(__VA_ARGS__);               \
+    case MONAD_TINYVM:                                                         \
+        return f<::monad::MonadTraits<MONAD_TINYVM>>(__VA_ARGS__);             \
     }
 
 // NOLINTEND(bugprone-macro-parentheses)

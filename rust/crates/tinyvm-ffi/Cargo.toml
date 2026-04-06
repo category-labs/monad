@@ -1,0 +1,16 @@
+[package]
+name = "tinyvm-ffi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+anyhow = "1.0.100"
+bincode = "1.3.3"
+tiny-privacy-vm-confidential-backend = { path = "../../../monad-tinyvm/crates/backends/confidential-balance" }
+tiny-privacy-vm-runtime = { path = "../../../monad-tinyvm/crates/tiny-privacy-vm-runtime" }
+
+[dev-dependencies]
+rand = "0.8.5"

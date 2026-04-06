@@ -62,3 +62,6 @@
 [submodule "third_party/fiber"]
 	path = third_party/fiber
 	url = https://github.com/category-labs/fiber.git
+[submodule "monad-tinyvm"]
+	path = monad-tinyvm
+	url = https://github.com/mr-ma/monad-tinyvm.git

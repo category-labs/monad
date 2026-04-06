@@ -835,6 +835,13 @@ namespace monad::vm::compiler
         return make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();
     }
 
+    template <>
+    consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<MonadTraits<MONAD_TINYVM>>()
+    {
+        return make_opcode_table<MonadTraits<MONAD_TINYVM>::evm_base>();
+    }
+
     /**
      * Returns `true` if `opcode` is an invalid opcode at this revision.
      */

@@ -76,7 +76,9 @@
     template decltype(f<::monad::MonadTraits<MONAD_NINE>>)                     \
         f<::monad::MonadTraits<MONAD_NINE>>;                                   \
     template decltype(f<::monad::MonadTraits<MONAD_NEXT>>)                     \
-        f<::monad::MonadTraits<MONAD_NEXT>>;
+        f<::monad::MonadTraits<MONAD_NEXT>>;                                   \
+    template decltype(f<::monad::MonadTraits<MONAD_TINYVM>>)                   \
+        f<::monad::MonadTraits<MONAD_TINYVM>>;
 
 #define EXPLICIT_TRAITS(f)                                                     \
     EXPLICIT_EVM_TRAITS(f)                                                     \
@@ -111,7 +113,8 @@
     template class c<::monad::MonadTraits<MONAD_SEVEN>>;                       \
     template class c<::monad::MonadTraits<MONAD_EIGHT>>;                       \
     template class c<::monad::MonadTraits<MONAD_NINE>>;                        \
-    template class c<::monad::MonadTraits<MONAD_NEXT>>;
+    template class c<::monad::MonadTraits<MONAD_NEXT>>;                        \
+    template class c<::monad::MonadTraits<MONAD_TINYVM>>;
 
 #define EXPLICIT_TRAITS_CLASS(c)                                               \
     EXPLICIT_EVM_TRAITS_CLASS(c)                                               \
@@ -128,7 +131,8 @@
     template struct c<::monad::MonadTraits<MONAD_SEVEN>>;                      \
     template struct c<::monad::MonadTraits<MONAD_EIGHT>>;                      \
     template struct c<::monad::MonadTraits<MONAD_NINE>>;                       \
-    template struct c<::monad::MonadTraits<MONAD_NEXT>>;
+    template struct c<::monad::MonadTraits<MONAD_NEXT>>;                       \
+    template struct c<::monad::MonadTraits<MONAD_TINYVM>>;
 
 // Template member functions
 
@@ -196,7 +200,9 @@
     template decltype(id<::monad::MonadTraits<MONAD_NINE>>)                    \
         id<::monad::MonadTraits<MONAD_NINE>>;                                  \
     template decltype(id<::monad::MonadTraits<MONAD_NEXT>>)                    \
-        id<::monad::MonadTraits<MONAD_NEXT>>;
+        id<::monad::MonadTraits<MONAD_NEXT>>;                                  \
+    template decltype(id<::monad::MonadTraits<MONAD_TINYVM>>)                  \
+        id<::monad::MonadTraits<MONAD_TINYVM>>;
 
 #define EXPLICIT_MONAD_TRAITS_MEMBER_HELPER(f, id)                             \
     EXPLICIT_TRAITS_MEMBER_HEADER(f, id)                                       \

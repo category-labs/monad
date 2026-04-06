@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@ use std::{
     cmp::Ordering,
     ffi::CString,
     path::Path,
-    ptr::{null, null_mut, slice_from_raw_parts},
+    ptr::{null, null_mut, NonNull},
     sync::{
         atomic::{AtomicUsize, Ordering::SeqCst},
         Arc,
@@ -27,19 +27,16 @@ use std::{
 use futures::channel::oneshot::Sender;
 use tracing::{debug, error};
 
-use crate::bindings::{validator_data, validator_set};
+use self::ffi::{validator_data, validator_set};
 
-#[allow(dead_code, non_camel_case_types, non_upper_case_globals)]
-mod bindings {
-    include!(concat!(env!("OUT_DIR"), "/triedb.rs"));
-}
+pub mod ffi;
 
 #[derive(Debug)]
 pub struct TriedbHandle {
-    db_ptr: *mut bindings::triedb,
+    db_ptr: *mut ffi::triedb,
 }
 
-pub struct SenderContext {
+struct SenderContext {
     sender: Sender<Option<Vec<u8>>>,
     completed_counter: Arc<AtomicUsize>,
 
@@ -52,7 +49,7 @@ pub struct SenderContext {
 }
 
 #[derive(Debug)]
-pub struct TraverseContext {
+struct TraverseContext {
     // values in traversal order
     data: std::sync::Mutex<Vec<TraverseEntry>>,
     sender: Sender<Option<Vec<TraverseEntry>>>,
@@ -71,11 +68,43 @@ pub struct TraverseEntry {
     pub value: Vec<u8>,
 }
 
+/// Returns `None` if nibble length validation fails (overflow or insufficient key bytes).
+fn validate_nibble_key(key: &[u8], key_len_nibbles: u8, label: &str) -> Option<()> {
+    if key_len_nibbles >= u8::MAX - 1 {
+        error!("{label} length nibbles exceeds maximum allowed value");
+        return None;
+    }
+    if (key_len_nibbles as usize).div_ceil(2) > key.len() {
+        error!("{label} length is insufficient for the given nibbles");
+        return None;
+    }
+    Some(())
+}
+
+/// Converts a C `u64` sentinel value (`u64::MAX` = not found) to `Option<u64>`.
+fn parse_triedb_block_num(value: u64) -> Option<u64> {
+    if value == u64::MAX {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+const ZERO_BYTES32: [u8; 32] = [0u8; 32];
+
+/// Converts a C `monad_c_bytes32` sentinel value (all-zeros = not found) to `Option<[u8; 32]>`.
+fn parse_triedb_block_id(value: ffi::monad_c_bytes32) -> Option<[u8; 32]> {
+    if value.bytes == ZERO_BYTES32 {
+        return None;
+    }
+    Some(value.bytes)
+}
+
 /// # Safety
-/// This should be used only as a callback for async TrieDB calls
+/// This should be used only as a callback for async TrieDB calls.
 ///
-/// This function is called by TrieDB once it proceses a single read async call
-pub unsafe extern "C" fn read_async_callback(
+/// This function is called by TrieDB once it processes a single read async call.
+unsafe extern "C" fn read_async_callback(
     value_ptr: *const u8,
     value_len: i32,
     sender_context: *mut std::ffi::c_void,
@@ -91,7 +120,7 @@ pub unsafe extern "C" fn read_async_callback(
         Ordering::Greater => {
             let value =
                 unsafe { std::slice::from_raw_parts(value_ptr, value_len as usize).to_vec() };
-            unsafe { bindings::triedb_finalize(value_ptr) };
+            unsafe { ffi::triedb_finalize(value_ptr) };
             Some(value)
         }
     };
@@ -101,9 +130,9 @@ pub unsafe extern "C" fn read_async_callback(
 }
 
 /// # Safety
-/// This is used as a callback when traversing the transaction or receipt trie
-pub unsafe extern "C" fn traverse_callback(
-    op_kind: bindings::triedb_async_traverse_callback,
+/// This is used as a callback when traversing the transaction or receipt trie.
+unsafe extern "C" fn traverse_callback(
+    op_kind: ffi::triedb_async_traverse_callback,
     context: *mut std::ffi::c_void,
     key_ptr: *const u8,
     key_len: usize,
@@ -112,15 +141,14 @@ pub unsafe extern "C" fn traverse_callback(
 ) {
     let traverse_context = unsafe { Box::from_raw(context as *mut TraverseContext) };
 
-    if op_kind
-        == bindings::triedb_async_traverse_callback_triedb_async_traverse_callback_finished_early
+    if op_kind == ffi::triedb_async_traverse_callback_triedb_async_traverse_callback_finished_early
     {
         let _ = traverse_context.sender.send(None);
         // traverse_context is freed here, because we don't call Box::into_raw
         return;
     }
     if op_kind
-        == bindings::triedb_async_traverse_callback_triedb_async_traverse_callback_finished_normally
+        == ffi::triedb_async_traverse_callback_triedb_async_traverse_callback_finished_normally
     {
         // completed
         let mut lock = traverse_context.data.lock().expect("mutex poisoned");
@@ -132,18 +160,11 @@ pub unsafe extern "C" fn traverse_callback(
     }
     assert_eq!(
         op_kind,
-        bindings::triedb_async_traverse_callback_triedb_async_traverse_callback_value
+        ffi::triedb_async_traverse_callback_triedb_async_traverse_callback_value
     );
 
-    let key = unsafe {
-        let key = std::slice::from_raw_parts(key_ptr, key_len).to_vec();
-        key
-    };
-
-    let value = unsafe {
-        let value = std::slice::from_raw_parts(value_ptr, value_len).to_vec();
-        value
-    };
+    let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len).to_vec() };
+    let value = unsafe { std::slice::from_raw_parts(value_ptr, value_len).to_vec() };
 
     {
         let mut lock = traverse_context.data.lock().expect("mutex poisoned");
@@ -163,9 +184,8 @@ impl TriedbHandle {
 
         let mut db_ptr = null_mut();
 
-        let result = unsafe {
-            bindings::triedb_open(path.as_c_str().as_ptr(), &mut db_ptr, node_lru_max_mem)
-        };
+        let result =
+            unsafe { ffi::triedb_open(path.as_c_str().as_ptr(), &mut db_ptr, node_lru_max_mem) };
 
         if result != 0 {
             debug!("triedb try_new error result: {}", result);
@@ -176,19 +196,11 @@ impl TriedbHandle {
     }
 
     pub fn read(&self, key: &[u8], key_len_nibbles: u8, block_id: u64) -> Option<Vec<u8>> {
-        let mut value_ptr = null();
-        // make sure doesn't overflow
-        if key_len_nibbles >= u8::MAX - 1 {
-            error!("Key length nibbles exceeds maximum allowed value");
-            return None;
-        }
-        if (key_len_nibbles as usize).div_ceil(2) > key.len() {
-            error!("Key length is insufficient for the given nibbles");
-            return None;
-        }
+        validate_nibble_key(key, key_len_nibbles, "Key")?;
 
+        let mut value_ptr = null();
         let result = unsafe {
-            bindings::triedb_read(
+            ffi::triedb_read(
                 self.db_ptr,
                 key.as_ptr(),
                 key_len_nibbles,
@@ -210,10 +222,10 @@ impl TriedbHandle {
             return None;
         }
 
-        let value_len = result.try_into().unwrap();
+        let value_len: usize = result.try_into().expect("positive i32 fits in usize");
         let value = unsafe {
             let value = std::slice::from_raw_parts(value_ptr, value_len).to_vec();
-            bindings::triedb_finalize(value_ptr);
+            ffi::triedb_finalize(value_ptr);
             value
         };
 
@@ -238,13 +250,7 @@ impl TriedbHandle {
         sender: Sender<Option<Vec<u8>>>,
         concurrency_tracker: Arc<()>,
     ) {
-        // make sure doesn't overflow
-        if key_len_nibbles >= u8::MAX - 1 {
-            error!("Key length nibbles exceeds maximum allowed value");
-            return;
-        }
-        if (key_len_nibbles as usize).div_ceil(2) > key.len() {
-            error!("Key length is insufficient for the given nibbles");
+        if validate_nibble_key(key, key_len_nibbles, "Key").is_none() {
             return;
         }
 
@@ -259,7 +265,7 @@ impl TriedbHandle {
             // Convert the struct into a raw pointer which will be sent to the callback function
             let sender_context_ptr = Box::into_raw(sender_context);
 
-            bindings::triedb_async_read(
+            ffi::triedb_async_read(
                 self.db_ptr,
                 key.as_ptr(),
                 key_len_nibbles,
@@ -270,15 +276,15 @@ impl TriedbHandle {
         }
     }
 
-    /// Used to pump async reads in TrieDB
+    /// Used to pump async reads in TrieDB.
     /// if blocking is true, the thread will sleep at least until 1 completion is available to process
     /// if blocking is false, poll will return if no completion is available to process
     /// max_completions is used as a bound for maximum completions to process in this poll
     ///
-    /// Returns the number of completions processed
+    /// Returns the number of completions processed.
     /// NOTE: could call poll internally: number of calls to this functions != number of completions processed
     pub fn triedb_poll(&self, blocking: bool, max_completions: usize) -> usize {
-        unsafe { bindings::triedb_poll(self.db_ptr, blocking, max_completions) }
+        unsafe { ffi::triedb_poll(self.db_ptr, blocking, max_completions) }
     }
 
     pub fn traverse_triedb_async(
@@ -289,13 +295,7 @@ impl TriedbHandle {
         sender: Sender<Option<Vec<TraverseEntry>>>,
         concurrency_tracker: Arc<()>,
     ) {
-        // make sure doesn't overflow
-        if key_len_nibbles >= u8::MAX - 1 {
-            error!("Key length nibbles exceeds maximum allowed value");
-            return;
-        }
-        if (key_len_nibbles as usize).div_ceil(2) > key.len() {
-            error!("Key length is insufficient for the given nibbles");
+        if validate_nibble_key(key, key_len_nibbles, "Key").is_none() {
             return;
         }
 
@@ -307,7 +307,7 @@ impl TriedbHandle {
 
         unsafe {
             let context = Box::into_raw(traverse_context) as *mut std::ffi::c_void;
-            bindings::triedb_async_traverse(
+            ffi::triedb_async_traverse(
                 self.db_ptr,
                 key.as_ptr(),
                 key_len_nibbles,
@@ -325,13 +325,7 @@ impl TriedbHandle {
         block_id: u64,
         sender: Sender<Option<Vec<TraverseEntry>>>,
     ) {
-        // make sure doesn't overflow
-        if key_len_nibbles >= u8::MAX - 1 {
-            error!("Key length nibbles exceeds maximum allowed value");
-            return;
-        }
-        if (key_len_nibbles as usize).div_ceil(2) > key.len() {
-            error!("Key length is insufficient for the given nibbles");
+        if validate_nibble_key(key, key_len_nibbles, "Key").is_none() {
             return;
         }
 
@@ -344,7 +338,7 @@ impl TriedbHandle {
         unsafe {
             let context = Box::into_raw(traverse_context) as *mut std::ffi::c_void;
             // sync result is already handled by traverse_callback
-            let _result = bindings::triedb_traverse(
+            let _result = ffi::triedb_traverse(
                 self.db_ptr,
                 key.as_ptr(),
                 key_len_nibbles,
@@ -367,21 +361,10 @@ impl TriedbHandle {
         sender: Sender<Option<Vec<TraverseEntry>>>,
         concurrency_tracker: Arc<()>,
     ) {
-        // make sure doesn't overflow
-        if min_key_len_nibbles >= u8::MAX - 1 {
-            error!("Min key length nibbles exceeds maximum allowed value");
+        if validate_nibble_key(min_key, min_key_len_nibbles, "Min key").is_none() {
             return;
         }
-        if (min_key_len_nibbles as usize).div_ceil(2) > min_key.len() {
-            error!("Min key length is insufficient for the given nibbles");
-            return;
-        }
-        if max_key_len_nibbles >= u8::MAX - 1 {
-            error!("Max key length nibbles exceeds maximum allowed value");
-            return;
-        }
-        if (max_key_len_nibbles as usize).div_ceil(2) > max_key.len() {
-            error!("Max key length is insufficient for the given nibbles");
+        if validate_nibble_key(max_key, max_key_len_nibbles, "Max key").is_none() {
             return;
         }
 
@@ -393,7 +376,7 @@ impl TriedbHandle {
 
         unsafe {
             let context = Box::into_raw(traverse_context) as *mut std::ffi::c_void;
-            bindings::triedb_async_ranged_get(
+            ffi::triedb_async_ranged_get(
                 self.db_ptr,
                 prefix_key.as_ptr(),
                 prefix_key_len_nibbles,
@@ -409,107 +392,53 @@ impl TriedbHandle {
     }
 
     pub fn latest_proposed_block(&self) -> Option<u64> {
-        let maybe_latest_proposed_block =
-            unsafe { bindings::triedb_latest_proposed_block(self.db_ptr) };
-        if maybe_latest_proposed_block == u64::MAX {
-            None
-        } else {
-            Some(maybe_latest_proposed_block)
-        }
+        parse_triedb_block_num(unsafe { ffi::triedb_latest_proposed_block(self.db_ptr) })
     }
 
     /// Note that this *can* return an inconsistent blockid if concurrently written to
     pub fn latest_proposed_block_id(&self) -> Option<[u8; 32]> {
-        let maybe_latest_proposed_block_id =
-            unsafe { bindings::triedb_latest_proposed_block_id(self.db_ptr) };
-        if maybe_latest_proposed_block_id.is_null() {
-            None
-        } else {
-            let id: [u8; 32] = unsafe {
-                std::slice::from_raw_parts(maybe_latest_proposed_block_id, 32)
-                    .try_into()
-                    .unwrap()
-            };
-            unsafe { bindings::triedb_finalize(maybe_latest_proposed_block_id) };
-            Some(id)
-        }
+        parse_triedb_block_id(unsafe { ffi::triedb_latest_proposed_block_id(self.db_ptr) })
     }
 
     pub fn latest_voted_block(&self) -> Option<u64> {
-        let maybe_latest_voted_block = unsafe { bindings::triedb_latest_voted_block(self.db_ptr) };
-        if maybe_latest_voted_block == u64::MAX {
-            None
-        } else {
-            Some(maybe_latest_voted_block)
-        }
+        parse_triedb_block_num(unsafe { ffi::triedb_latest_voted_block(self.db_ptr) })
     }
 
     /// Note that this *can* return an inconsistent blockid if concurrently written to
     pub fn latest_voted_block_id(&self) -> Option<[u8; 32]> {
-        let maybe_latest_voted_block_id =
-            unsafe { bindings::triedb_latest_voted_block_id(self.db_ptr) };
-        if maybe_latest_voted_block_id.is_null() {
-            None
-        } else {
-            let id: [u8; 32] = unsafe {
-                std::slice::from_raw_parts(maybe_latest_voted_block_id, 32)
-                    .try_into()
-                    .unwrap()
-            };
-            unsafe { bindings::triedb_finalize(maybe_latest_voted_block_id) };
-            Some(id)
-        }
+        parse_triedb_block_id(unsafe { ffi::triedb_latest_voted_block_id(self.db_ptr) })
     }
 
     pub fn latest_finalized_block(&self) -> Option<u64> {
-        let maybe_latest_finalized_block =
-            unsafe { bindings::triedb_latest_finalized_block(self.db_ptr) };
-        if maybe_latest_finalized_block == u64::MAX {
-            None
-        } else {
-            Some(maybe_latest_finalized_block)
-        }
+        parse_triedb_block_num(unsafe { ffi::triedb_latest_finalized_block(self.db_ptr) })
     }
 
     pub fn latest_verified_block(&self) -> Option<u64> {
-        let maybe_latest_verified_block =
-            unsafe { bindings::triedb_latest_verified_block(self.db_ptr) };
-        if maybe_latest_verified_block == u64::MAX {
-            None
-        } else {
-            Some(maybe_latest_verified_block)
-        }
+        parse_triedb_block_num(unsafe { ffi::triedb_latest_verified_block(self.db_ptr) })
     }
 
     pub fn earliest_finalized_block(&self) -> Option<u64> {
-        let maybe_earliest_finalized_block =
-            unsafe { bindings::triedb_earliest_finalized_block(self.db_ptr) };
-        if maybe_earliest_finalized_block == u64::MAX {
-            None
-        } else {
-            Some(maybe_earliest_finalized_block)
-        }
+        parse_triedb_block_num(unsafe { ffi::triedb_earliest_finalized_block(self.db_ptr) })
     }
 
     pub fn validator_set_at_block(
         &self,
         block_num: usize,
         requested_epoch: u64,
-    ) -> ValidatorSet<'_> {
-        let result_ptr = unsafe { bindings::read_valset(self.db_ptr, block_num, requested_epoch) };
+    ) -> Option<ValidatorSet<'_>> {
+        let result_ptr =
+            unsafe { ffi::triedb_read_valset(self.db_ptr, block_num, requested_epoch) };
 
-        // assert read valset didn't fail
-        assert!(!result_ptr.is_null());
-
-        ValidatorSet {
-            validator_set: unsafe { &mut *result_ptr },
-        }
+        Some(ValidatorSet {
+            ptr: NonNull::new(result_ptr)?,
+            _lifetime: std::marker::PhantomData,
+        })
     }
 }
 
 impl Drop for TriedbHandle {
     fn drop(&mut self) {
-        let result = unsafe { bindings::triedb_close(self.db_ptr) };
+        let result = unsafe { ffi::triedb_close(self.db_ptr) };
         if result != 0 {
             error!("Unexpected result from triedb close: {}", result);
         }
@@ -517,29 +446,25 @@ impl Drop for TriedbHandle {
 }
 
 pub struct ValidatorSet<'s> {
-    validator_set: &'s mut validator_set,
+    ptr: NonNull<validator_set>,
+    _lifetime: std::marker::PhantomData<&'s TriedbHandle>,
 }
 
 impl<'s> ValidatorSet<'s> {
     pub fn data(&self) -> &[validator_data] {
-        let val_set_ptr = self.validator_set.validators;
+        let val_set_ptr = unsafe { self.ptr.as_ref() };
 
-        let val_set_length: usize = self
-            .validator_set
+        let val_set_length: usize = val_set_ptr
             .length
             .try_into()
-            .expect("val_set_length doesn't fit in usize");
+            .expect("validator_set length fits in usize");
 
-        unsafe {
-            slice_from_raw_parts(val_set_ptr, val_set_length)
-                .as_ref()
-                .unwrap()
-        }
+        unsafe { std::slice::from_raw_parts(val_set_ptr.validators, val_set_length) }
     }
 }
 
 impl Drop for ValidatorSet<'_> {
     fn drop(&mut self) {
-        unsafe { bindings::free_valset(self.validator_set) }
+        unsafe { ffi::triedb_free_valset(self.ptr.as_ptr()) }
     }
 }

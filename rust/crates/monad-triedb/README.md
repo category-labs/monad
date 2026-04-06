@@ -1,6 +1,6 @@
 # monad-triedb
 
-Triedb stores the blockchain state (i.e. account balance, contract bytecode, value at a particular storage slot etc), code, and block data. The schema are documented as follows.
+Triedb stores the blockchain state (i.e. account balance, contract bytecode, value at a particular storage slot etc), code, and block data. The schemas are documented as follows.
 
 ## State 
 **Account**

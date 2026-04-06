@@ -56,8 +56,7 @@
                     -performance-no-int-to-ptr,
                     -performance-unnecessary-value-param,
                     readability-isolate-declaration,
-                    readability-qualified-auto,
-                    -misc-include-cleaner'
+                    readability-qualified-auto'
   WarningsAsErrors: '*'
   CheckOptions:
     - key:          bugprone-assert-side-effect.AssertMacros

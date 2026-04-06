@@ -9,14 +9,15 @@ panic = "abort"
 
 [workspace.metadata.cargo-shear]
 ignored = [
-    "monad-cxx",
     "monad-exec-events",
+    "monad-triedb",
 ]
 
 [workspace.dependencies]
 monad-cxx = { path = "./crates/monad-cxx" }
 monad-event-ring = { path = "./crates/monad-event-ring" }
 monad-exec-events = { path = "./crates/monad-exec-events" }
+monad-triedb = { path = "./crates/monad-triedb" }
 
 alloy-consensus  = { version = "1.7",     default-features = false }
 alloy-eips       = { version = "1.7",     default-features = false }
@@ -28,6 +29,7 @@ chrono           = { version = "0.4.34",  default-features = false, features = [
 clap             = { version = "4.2",     default-features = false }
 cmake            = { version = "0.1",     default-features = false }
 criterion        = { version = "0.8",     default-features = false, features = ["html_reports"] }
+futures          = { version = "0.3.31",  default-features = false, features = ["std"] }
 hex              = { version = "0.4",     default-features = false, features = ["std"] }
 itertools        = { version = "0.10",    default-features = false, features = ["use_std"] }
 lazy_static      = { version = "1.5.0",   default-features = false }

@@ -233,7 +233,7 @@ void run_revert_transaction_test(
     ankerl::unordered_dense::segmented_set<Address> const
         senders_and_authorities = {SENDER};
 
-    ChainContext<traits> chain_context{
+    ChainContext<traits> const chain_context{
         .grandparent_senders_and_authorities =
             grandparent_senders_and_authorities,
         .parent_senders_and_authorities = parent_senders_and_authorities,
@@ -248,14 +248,14 @@ void run_revert_transaction_test(
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
         state.subtract_from_balance(SENDER, value);
-        bool should_revert = revert_transaction<traits>(
+        bool const should_revert = revert_transaction<traits>(
             SENDER,
             tx,
             BASE_FEE_PER_GAS,
             1, // transaction index
             state,
             chain_context);
-        bool should_revert_cached = revert_transaction_cached<traits>(state);
+        bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
         EXPECT_EQ(should_revert, expected)
             << std::bitset<64>{prevent_dip_bitset};

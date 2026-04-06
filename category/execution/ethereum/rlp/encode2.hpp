@@ -67,7 +67,7 @@ inline byte_string encode_string2(byte_string_view const string_view)
 template <std::convertible_to<byte_string>... Args>
 byte_string encode_list2(Args const &...args)
 {
-    size_t size = 0;
+    size_t size = 0; // NOLINT(misc-auto-const-correctness)
     ([&] { size += args.size(); }(), ...);
     byte_string result;
     if (size > 55) {

@@ -57,7 +57,6 @@
                     -performance-unnecessary-value-param,
                     readability-isolate-declaration,
                     readability-qualified-auto,
-                    -misc-auto-const-correctness,
                     -misc-include-cleaner'
   WarningsAsErrors: '*'
   CheckOptions:

@@ -184,7 +184,7 @@ PrecompileResult point_evaluation_execute(byte_string_view input)
     auto const *const proof =
         reinterpret_cast<KZGProof const *>(input.substr(144).data());
 
-    KZGCommitment commitment{*commitment_data};
+    KZGCommitment const commitment{*commitment_data};
     if (versioned_hash != kzg_to_version_hashed(commitment)) {
         return PrecompileResult::failure();
     }
@@ -259,13 +259,13 @@ PrecompileResult p256_verify_execute(byte_string_view const input)
         return empty_result;
     }
 
-    Integer h(input.data(), 32);
-    Integer r(input.data() + 32, 32);
-    Integer s(input.data() + 64, 32);
-    Integer qx(input.data() + 96, 32);
-    Integer qy(input.data() + 128, 32);
+    Integer const h(input.data(), 32);
+    Integer const r(input.data() + 32, 32);
+    Integer const s(input.data() + 64, 32);
+    Integer const qx(input.data() + 96, 32);
+    Integer const qy(input.data() + 128, 32);
 
-    DL_GroupParameters_EC<ECP> params(ASN1::secp256r1());
+    DL_GroupParameters_EC<ECP> const params(ASN1::secp256r1());
     auto const &ec = params.GetCurve();
     auto const &n = params.GetSubgroupOrder();
     auto const p_mod = ec.FieldSize();

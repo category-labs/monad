@@ -135,7 +135,7 @@ void monad_db_snapshot_load_filesystem(
     auto const do_mmap = [](std::filesystem::path const file) {
         using namespace monad;
         MONAD_ASSERT(std::filesystem::is_regular_file(file));
-        int fd = open(file.c_str(), O_RDONLY);
+        int const fd = open(file.c_str(), O_RDONLY);
         MONAD_ASSERT(fd != -1);
 
         unsigned long const size = std::filesystem::file_size(file);
@@ -152,7 +152,7 @@ void monad_db_snapshot_load_filesystem(
                 std::filesystem::is_regular_file(checksum),
                 "missing checksum file %s",
                 checksum.c_str());
-            std::ifstream t(checksum);
+            std::ifstream const t(checksum);
             std::stringstream buffer;
             buffer << t.rdbuf();
             auto const stored_hash = from_hex<bytes32_t>(buffer.str());

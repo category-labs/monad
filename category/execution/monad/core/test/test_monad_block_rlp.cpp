@@ -31,7 +31,7 @@ using namespace monad::literals;
 
 TEST(Rlp_Block, MonadConsensusBlock)
 {
-    unsigned char header[] = {
+    unsigned char const header[] = {
         0xf9, 0x04, 0x3f, 0x0a, 0x05, 0xf8, 0xae, 0xf8, 0x45, 0xa0, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -124,13 +124,13 @@ TEST(Rlp_Block, MonadConsensusBlock)
         0x7f, 0x49, 0x94, 0x92, 0x18, 0xb8, 0x0a, 0xe1, 0xd9, 0xfc, 0x52, 0xda,
         0xc3, 0x11, 0x52, 0x45, 0x6b, 0xc7, 0x17, 0x4a, 0xfd, 0xf4};
 
-    unsigned char body[] = {0xc4, 0xc3, 0xc0, 0xc0, 0xc0};
+    unsigned char const body[] = {0xc4, 0xc3, 0xc0, 0xc0, 0xc0};
 
     auto encoded_header = to_byte_string_view(header);
     auto encoded_body = to_byte_string_view(body);
 
     // header
-    MonadTestnet chain;
+    MonadTestnet const chain;
     auto const res =
         rlp::decode_consensus_block_header<MonadConsensusBlockHeaderV0>(
             encoded_header);
@@ -157,7 +157,7 @@ TEST(Rlp_Block, MonadConsensusBlock)
         EXPECT_EQ(vote.parent_round, 0);
     }
 
-    BlockHeader execution_header{
+    BlockHeader const execution_header{
         .number = 5,
         .extra_data = byte_string(bytes32_t{}.bytes, sizeof(bytes32_t)),
         .base_fee_per_gas = 0,

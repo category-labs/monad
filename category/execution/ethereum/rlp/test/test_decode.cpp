@@ -28,7 +28,7 @@ TEST(Rlp, DecodeAfterEncodeString)
 {
     {
         std::string const empty_string = "";
-        auto encoding = encode_string2(to_byte_string_view(empty_string));
+        auto const encoding = encode_string2(to_byte_string_view(empty_string));
 
         byte_string_view encoded_string_view{encoding};
         auto const decoded_string = decode_string(encoded_string_view);
@@ -39,7 +39,7 @@ TEST(Rlp, DecodeAfterEncodeString)
 
     {
         std::string const short_string = "hello world";
-        auto encoding = encode_string2(to_byte_string_view(short_string));
+        auto const encoding = encode_string2(to_byte_string_view(short_string));
 
         byte_string_view encoded_string_view{encoding};
         auto const decoded_string = decode_string(encoded_string_view);
@@ -51,7 +51,7 @@ TEST(Rlp, DecodeAfterEncodeString)
     {
         std::string const long_string =
             "Lorem ipsum dolor sit amet, consectetur adipisicing elit";
-        auto encoding = encode_string2(to_byte_string_view(long_string));
+        auto const encoding = encode_string2(to_byte_string_view(long_string));
 
         byte_string_view encoded_string_view2{encoding};
         auto const decoded_string = decode_string(encoded_string_view2);

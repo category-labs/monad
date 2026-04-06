@@ -682,7 +682,7 @@ TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
     std::vector<Receipt> receipts;
     receipts.resize(transactions.size());
     call_frames.resize(receipts.size());
-    std::vector<Address> senders = recover_senders(transactions);
+    std::vector<Address> const senders = recover_senders(transactions);
     commit_sequential(
         tdb,
         StateDeltas{},
@@ -828,7 +828,7 @@ TYPED_TEST(DBTest, load_from_binary)
 {
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
     std::ifstream code(test_resource::checkpoint_dir / "code");
-    auto root = load_from_binary(this->db, accounts, code);
+    auto const root = load_from_binary(this->db, accounts, code);
     TrieDb tdb{this->db};
     tdb.reset_root(root, 0);
     EXPECT_EQ(

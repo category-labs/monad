@@ -143,10 +143,10 @@ namespace
     void from_json(nlohmann::json const &j, test_case &t)
     {
         t.name = j.at("Name");
-        std::string input = j.at("Input");
+        std::string const input = j.at("Input");
         t.input = from_hex(std::string_view{input}).value();
         if (j.contains("Expected")) {
-            std::string expected = j.at("Expected");
+            std::string const expected = j.at("Expected");
             t.expected = from_hex(std::string_view{expected}).value();
         }
         else {

@@ -53,7 +53,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
     TrieDb tdb{db};
     vm::VM vm;
 
-    MonadDevnet chain;
+    MonadDevnet const chain;
 
     BlockState block_state{tdb, vm};
     BlockMetrics block_metrics;
@@ -167,7 +167,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
     TrieDb tdb{db};
     vm::VM vm;
 
-    MonadDevnet chain;
+    MonadDevnet const chain;
 
     BlockState block_state{tdb, vm};
     BlockMetrics block_metrics;
@@ -293,7 +293,7 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
     TrieDb tdb{db};
     vm::VM vm;
 
-    MonadDevnet chain;
+    MonadDevnet const chain;
 
     BlockState block_state{tdb, vm};
     BlockMetrics block_metrics;
@@ -332,7 +332,7 @@ TEST(SystemTransaction, static_validate_transaction_failure)
     TrieDb tdb{db};
     vm::VM vm;
 
-    MonadDevnet chain;
+    MonadDevnet const chain;
 
     BlockState block_state{tdb, vm};
     BlockMetrics block_metrics;

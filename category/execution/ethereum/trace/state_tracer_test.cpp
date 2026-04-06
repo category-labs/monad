@@ -120,7 +120,7 @@ TEST(PrestateTracer, pre_state_to_json)
 TEST(PrestateTracer, zero_nonce)
 {
     Account const a{.balance = 1000, .code_hash = NULL_HASH, .nonce = 0};
-    OriginalAccountState as{a};
+    OriginalAccountState const as{a};
 
     trace::Map<Address, OriginalAccountState> prestate{};
     prestate.emplace(ADDR_A, as);
@@ -158,7 +158,7 @@ TEST(PrestateTracer, state_deltas_to_json)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {ADDR_A,
          StateDelta{
              .account = {std::nullopt, a},
@@ -205,7 +205,7 @@ TEST(PrestateTracer, statediff_account_creation)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}};
 
     commit_sequential(
@@ -245,7 +245,7 @@ TEST(PrestateTracer, statediff_balance_nonce_update)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {ADDR_A, StateDelta{.account = {a, b}, .storage = {}}}};
 
     commit_sequential(
@@ -290,12 +290,12 @@ TEST(PrestateTracer, statediff_delete_storage)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas1{
+    StateDeltas const state_deltas1{
         {ADDR_A,
          StateDelta{
              .account = {a, b}, .storage = {{key1, {bytes32_t{}, value1}}}}}};
 
-    StateDeltas state_deltas2{
+    StateDeltas const state_deltas2{
         {ADDR_A,
          StateDelta{
              .account = {a, b}, .storage = {{key1, {value1, bytes32_t{}}}}}}};
@@ -346,7 +346,7 @@ TEST(PrestateTracer, statediff_multiple_fields_update)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {ADDR_A,
          StateDelta{
              .account = {a, b},
@@ -405,13 +405,13 @@ TEST(PrestateTracer, statediff_account_deletion)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas1{
+    StateDeltas const state_deltas1{
         {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}},
     };
 
     commit_sequential(tdb, state_deltas1, Code{}, BlockHeader{.number = 0});
 
-    StateDeltas state_deltas2{
+    StateDeltas const state_deltas2{
         {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}},
     };
 
@@ -451,14 +451,14 @@ TEST(PrestateTracer, geth_example_prestate)
 
     Account const b{
         .balance = 0x7a48734599f7284, .code_hash = NULL_HASH, .nonce = 1133};
-    OriginalAccountState bs{b};
+    OriginalAccountState const bs{b};
     Account const c{
         .balance = intx::from_string<uint256_t>("0x2638035a26d133809"),
         .code_hash = NULL_HASH,
         .nonce = 0};
-    OriginalAccountState cs{c};
+    OriginalAccountState const cs{c};
     Account const d{.balance = 0x0, .code_hash = NULL_HASH, .nonce = 0};
-    OriginalAccountState ds{d};
+    OriginalAccountState const ds{d};
 
     trace::Map<Address, OriginalAccountState> prestate{};
     prestate.emplace(addr1, ds);
@@ -518,7 +518,7 @@ TEST(PrestateTracer, geth_example_statediff)
     Account const b{
         .balance = 0x7a48429e177130a, .code_hash = NULL_HASH, .nonce = 1135};
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {addr3, StateDelta{.account = {a, b}, .storage = {}}},
     };
 
@@ -554,7 +554,7 @@ TEST(PrestateTracer, geth_example_statediff)
 
 TEST(PrestateTracer, prestate_empty)
 {
-    trace::Map<Address, OriginalAccountState> prestate{};
+    trace::Map<Address, OriginalAccountState> const prestate{};
 
     // The State setup is only used to get code
     InMemoryMachine machine;
@@ -575,7 +575,7 @@ TEST(PrestateTracer, prestate_empty)
 
 TEST(PrestateTracer, statediff_empty)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     // The State setup is only used to get code
     InMemoryMachine machine;
@@ -602,7 +602,7 @@ TEST(PrestateTracer, statediff_empty)
 
 TYPED_TEST(TraitsTest, access_list_empty)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -624,7 +624,7 @@ TYPED_TEST(TraitsTest, access_list_empty)
 
 TYPED_TEST(TraitsTest, access_list_write)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -673,7 +673,7 @@ TYPED_TEST(TraitsTest, access_list_write)
 
 TYPED_TEST(TraitsTest, access_list_regular_account)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -745,7 +745,7 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
 
 TYPED_TEST(TraitsTest, access_list_sender)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -806,7 +806,7 @@ TYPED_TEST(TraitsTest, access_list_sender)
 
 TYPED_TEST(TraitsTest, access_list_beneficiary)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -867,7 +867,7 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
 
 TYPED_TEST(TraitsTest, access_list_recipient)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -928,7 +928,7 @@ TYPED_TEST(TraitsTest, access_list_recipient)
 
 TYPED_TEST(TraitsTest, access_list_authorities)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -1002,7 +1002,7 @@ TYPED_TEST(TraitsTest, access_list_authorities)
 
 TYPED_TEST(TraitsTest, access_list_precompiles)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     InMemoryMachine machine;
     mpt::Db db{machine};
@@ -1620,7 +1620,7 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     TrieDb tdb{db};
     vm::VM vm;
 
-    BlockHeader header{.number = 0, .beneficiary = ADDR_A};
+    BlockHeader const header{.number = 0, .beneficiary = ADDR_A};
     Block const block{header, {}, {}};
 
     // Block 0

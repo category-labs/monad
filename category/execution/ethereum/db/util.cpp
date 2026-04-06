@@ -721,7 +721,7 @@ decode_storage_db_raw(byte_string_view &enc)
 
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
 {
-    BOOST_OUTCOME_TRY(auto res, decode_storage_db_raw(enc));
+    BOOST_OUTCOME_TRY(auto res, decode_storage_db_raw(enc)); // NOLINT(misc-auto-const-correctness)
     if (!enc.empty()) {
         return rlp::DecodeError::InputTooLong;
     }

@@ -577,7 +577,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             }
         }
     }();
-    CallFrame expected{
+    CallFrame const expected{
         .type = CallType::CALL,
         .flags = 0,
         .from = from,

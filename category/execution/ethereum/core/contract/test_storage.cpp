@@ -95,7 +95,7 @@ TEST_F(Storage, struct)
     s.z = s.z.native() * 2;
     var.store(s);
     ASSERT_TRUE(var.load_checked().has_value());
-    S s2 = var.load();
+    S const s2 = var.load();
     EXPECT_EQ(s2.x.native(), 8);
     EXPECT_EQ(s2.y.native(), 10);
     EXPECT_EQ(s2.z.native(), 12);

@@ -233,7 +233,7 @@ namespace monad::staking::test
     uint256_t StakingContractModel::withdrawal_reward(
         u64_be val_id, Address const &addr, u8_be id)
     {
-        auto withdraw =
+        auto const withdraw =
             contract_.vars.withdrawal_request(val_id, addr, id).load();
         if (withdraw.epoch.native() == 0) {
             return 0;
@@ -318,7 +318,7 @@ namespace monad::staking::test
         if (res.has_value()) {
             active_consensus_stake_.clear();
             active_consensus_commission_.clear();
-            auto valset_consensus = contract_.vars.valset_consensus;
+            auto const valset_consensus = contract_.vars.valset_consensus;
             uint64_t const n = valset_consensus.length();
             for (uint64_t i = 0; i < n; ++i) {
                 u64_be const val_id = valset_consensus.get(i).load();
@@ -349,7 +349,7 @@ namespace monad::staking::test
         auto res = contract_.syscall_reward<traits>(input, reward.native());
         post_call(res);
         if (res.has_value()) {
-            u64_be v = contract_.vars.val_id(addr).load();
+            u64_be const v = contract_.vars.val_id(addr).load();
             auto const p = active_consensus_commission_[v.native()];
             auto const c = (reward.native() * p) / MON;
             auto const a = contract_.vars.val_execution(v).auth_address();
@@ -615,7 +615,7 @@ namespace monad::staking::test
         uint64_t val_id, Address const &addr, uint64_t epoch)
     {
         auto const &m = delegator_stake_[{val_id, addr}];
-        auto it = m.lower_bound(epoch);
+        auto const it = m.lower_bound(epoch);
         return it == m.end() ? uint256_t{} : it->second;
     }
 
@@ -666,7 +666,7 @@ namespace monad::staking::test
 
         uint256_t computed_total_stake;
         for (auto const &a : dels) {
-            auto x = get_delegator_stake(v, a, epoch) +
+            auto const x = get_delegator_stake(v, a, epoch) +
                      get_withdrawal_stake(v, a, epoch);
             unit_bias_rewards_[{v, a}] += x * rr;
             computed_total_stake += x;

@@ -235,7 +235,7 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk()) {
         auto const src_prefix = proposal_prefix(block_id);
-        auto root = (block_number_ == block_number)
+        auto const root = (block_number_ == block_number)
                         ? curr_root_
                         : db_.load_root_for_version(block_number);
         MONAD_ASSERT(db_.find(root, src_prefix, block_number).has_value());

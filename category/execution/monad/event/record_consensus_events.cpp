@@ -88,7 +88,7 @@ void record_block_finalized(bytes32_t const &block_id, uint64_t block_number)
 void record_block_verified(std::span<uint64_t const> verified_blocks)
 {
     if (auto *const exec_recorder = g_exec_event_recorder.get()) {
-        for (uint64_t b : verified_blocks) {
+        for (uint64_t const b : verified_blocks) {
             if (b == 0) {
                 continue;
             }

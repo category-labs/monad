@@ -62,7 +62,7 @@ namespace
 
         TempDir()
         {
-            std::filesystem::path tmpl =
+            std::filesystem::path const tmpl =
                 MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
                 "monad_snapshot_test_XXXXXX";
             char *const result = ::mkdtemp((char *)tmpl.native().data());
@@ -159,7 +159,7 @@ TEST(DbBinarySnapshot, Basic)
 
         {
             OnDiskMachine machine;
-            mpt::Db dest_init{
+            mpt::Db const dest_init{
                 machine, OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
         }
         char const *dbname_paths_new[] = {dest_db.path.c_str()};
@@ -310,7 +310,7 @@ TEST(DbBinarySnapshot, MultipleShards)
         EXPECT_EQ(total_shards_copied, 256u);
         {
             OnDiskMachine machine;
-            mpt::Db dest_init{
+            mpt::Db const dest_init{
                 machine, OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
         }
         char const *dbname_paths_new[] = {dest_db.path.c_str()};

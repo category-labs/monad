@@ -237,6 +237,9 @@ public:
     unsigned number_of_children() const noexcept;
 
     //! fnext array that stores physical chunk offset of each child
+    std::span<unaligned_t<chunk_offset_t>> child_fnext_data() noexcept;
+    std::span<unaligned_t<chunk_offset_t> const>
+    child_fnext_data() const noexcept;
     chunk_offset_t const fnext(unsigned index) const noexcept;
     void set_fnext(unsigned index, chunk_offset_t) noexcept;
 
@@ -270,8 +273,8 @@ public:
     void set_subtrie_min_version(unsigned index, int64_t version) noexcept;
 
     //! data_offset array
-    unsigned char *child_off_data() noexcept;
-    unsigned char const *child_off_data() const noexcept;
+    std::span<unaligned_t<uint16_t>> child_off_data() noexcept;
+    std::span<unaligned_t<uint16_t> const> child_off_data() const noexcept;
     uint16_t child_data_offset(unsigned index) const noexcept;
 
     unsigned child_data_len(unsigned index) const;
@@ -307,6 +310,9 @@ public:
     void set_child_data(unsigned index, byte_string_view data) noexcept;
 
     //! next pointers
+    std::span<SharedPtr> child_next_data() noexcept;
+    std::span<SharedPtr const> child_next_data() const noexcept;
+
 private:
     unsigned char *next_data() noexcept;
     unsigned char const *next_data() const noexcept;
@@ -425,8 +431,9 @@ deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
                             number_of_children * sizeof(Node::SharedPtr);
     auto node = Node::make_shared(alloc_size);
     std::copy_n(read_pos, base_size, (unsigned char *)node.get());
-    for (unsigned i = 0; i < node->number_of_children(); ++i) {
-        new (node->child_ptr(i)) Node::SharedPtr();
+    auto const sp = node->child_next_data();
+    for (size_t i = 0; i < sp.size(); ++i) {
+        new (sp.data() + i) Node::SharedPtr();
     }
     MONAD_ASSERT(alloc_size == node->get_mem_size());
     return node;

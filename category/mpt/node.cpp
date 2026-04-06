@@ -67,10 +67,8 @@ Node::Node(
 
 Node::~Node()
 {
-    for (unsigned index = 0; index < number_of_children(); ++index) {
-        if (next(index)) {
-            child_ptr(index)->~SharedPtr();
-        }
+    for (Node::SharedPtr &sp : child_next_data()) {
+        sp.~SharedPtr();
     }
 }
 
@@ -86,19 +84,26 @@ unsigned Node::number_of_children() const noexcept
     return static_cast<unsigned>(std::popcount(mask));
 }
 
+std::span<unaligned_t<chunk_offset_t>> Node::child_fnext_data() noexcept
+{
+    return as_unaligned_span<chunk_offset_t>(fnext_data, number_of_children());
+}
+
+std::span<unaligned_t<chunk_offset_t> const>
+Node::child_fnext_data() const noexcept
+{
+    return as_unaligned_span<chunk_offset_t>(fnext_data, number_of_children());
+}
+
 chunk_offset_t const Node::fnext(unsigned const index) const noexcept
 {
     MONAD_ASSERT(index < number_of_children());
-    return unaligned_load<chunk_offset_t>(
-        fnext_data + index * sizeof(chunk_offset_t));
+    return child_fnext_data()[index];
 }
 
 void Node::set_fnext(unsigned const index, chunk_offset_t const off) noexcept
 {
-    std::memcpy(
-        fnext_data + index * sizeof(chunk_offset_t),
-        &off,
-        sizeof(chunk_offset_t));
+    child_fnext_data()[index] = off;
 }
 
 std::span<unaligned_t<compact_virtual_chunk_offset_t>>
@@ -203,18 +208,24 @@ void Node::set_subtrie_min_version(
     child_min_version_data()[index] = min_version;
 }
 
-unsigned char *Node::child_off_data() noexcept
+std::span<unaligned_t<uint16_t>> Node::child_off_data() noexcept
 {
+    unsigned const n = number_of_children();
     auto const versions = child_min_version_data();
-    return reinterpret_cast<unsigned char *>(versions.data()) +
-           versions.size_bytes();
+    return as_unaligned_span<uint16_t>(
+        reinterpret_cast<unsigned char *>(versions.data()) +
+            versions.size_bytes(),
+        n);
 }
 
-unsigned char const *Node::child_off_data() const noexcept
+std::span<unaligned_t<uint16_t> const> Node::child_off_data() const noexcept
 {
+    unsigned const n = number_of_children();
     auto const versions = child_min_version_data();
-    return reinterpret_cast<unsigned char const *>(versions.data()) +
-           versions.size_bytes();
+    return as_unaligned_span<uint16_t>(
+        reinterpret_cast<unsigned char const *>(versions.data()) +
+            versions.size_bytes(),
+        n);
 }
 
 uint16_t Node::child_data_offset(unsigned const index) const noexcept
@@ -223,8 +234,7 @@ uint16_t Node::child_data_offset(unsigned const index) const noexcept
     if (index == 0) {
         return 0;
     }
-    return unaligned_load<uint16_t>(
-        child_off_data() + (index - 1) * sizeof(uint16_t));
+    return child_off_data()[index - 1];
 }
 
 unsigned Node::child_data_len(unsigned const index) const
@@ -239,12 +249,15 @@ unsigned Node::child_data_len()
 
 unsigned char *Node::path_data() noexcept
 {
-    return child_off_data() + number_of_children() * sizeof(uint16_t);
+    auto const off = child_off_data();
+    return reinterpret_cast<unsigned char *>(off.data()) + off.size_bytes();
 }
 
 unsigned char const *Node::path_data() const noexcept
 {
-    return child_off_data() + number_of_children() * sizeof(uint16_t);
+    auto const off = child_off_data();
+    return reinterpret_cast<unsigned char const *>(off.data()) +
+           off.size_bytes();
 }
 
 unsigned Node::path_nibbles_len() const noexcept
@@ -388,43 +401,56 @@ uint32_t Node::get_disk_size() const noexcept
     return total_disk_size;
 }
 
+std::span<Node::SharedPtr> Node::child_next_data() noexcept
+{
+    return {
+        reinterpret_cast<SharedPtr *>(next_data_aligned()),
+        number_of_children()};
+}
+
+std::span<Node::SharedPtr const> Node::child_next_data() const noexcept
+{
+    return {
+        reinterpret_cast<SharedPtr const *>(next_data_aligned()),
+        number_of_children()};
+}
+
 Node::SharedPtr *Node::child_ptr(unsigned index) noexcept
 {
-    return reinterpret_cast<SharedPtr *>(
-        next_data_aligned() + index * sizeof(SharedPtr));
+    return child_next_data().data() + index;
 }
 
 Node::SharedPtr const *Node::child_ptr(unsigned index) const noexcept
 {
-    return reinterpret_cast<SharedPtr const *>(
-        next_data_aligned() + index * sizeof(SharedPtr));
+    return child_next_data().data() + index;
 }
 
 Node::SharedPtr &Node::next(unsigned index) noexcept
 {
-    return *child_ptr(index);
+    return child_next_data()[index];
 }
 
 Node::SharedPtr const &Node::next(unsigned index) const noexcept
 {
-    return *child_ptr(index);
+    return child_next_data()[index];
 }
 
 void Node::set_next(unsigned index, Node::SharedPtr p) noexcept
 {
-    *child_ptr(index) = std::move(p);
+    child_next_data()[index] = std::move(p);
 }
 
 Node::SharedPtr Node::move_next(unsigned const index) noexcept
 {
-    return std::exchange(*child_ptr(index), SharedPtr{});
+    return std::exchange(child_next_data()[index], SharedPtr{});
 }
 
 unsigned Node::get_mem_size() const noexcept
 {
-    auto const *const end =
-        next_data_aligned() + sizeof(Node::SharedPtr) * number_of_children();
-    auto const mem_size = static_cast<unsigned>(end - (unsigned char *)this);
+    auto const ptrs = child_next_data();
+    auto const mem_size = static_cast<unsigned>(
+        reinterpret_cast<unsigned char const *>(ptrs.data() + ptrs.size()) -
+        reinterpret_cast<unsigned char const *>(this));
     MONAD_ASSERT(mem_size <= Node::max_size);
     return mem_size;
 }
@@ -504,11 +530,13 @@ Node::SharedPtr make_node(
         node->data_data());
 
     // Must initialize child pointers after copying child_data_offset
-    for (unsigned i = 0; i < node->number_of_children(); ++i) {
-        new (node->child_ptr(i)) Node::SharedPtr();
+    auto const node_ptrs = node->child_next_data();
+    for (size_t i = 0; i < node_ptrs.size(); ++i) {
+        new (node_ptrs.data() + i) Node::SharedPtr();
     }
-    for (unsigned i = 0; i < from.number_of_children(); ++i) {
-        node->set_next(i, from.move_next(i));
+    auto const from_ptrs = from.child_next_data();
+    for (unsigned i = 0; i < from_ptrs.size(); ++i) {
+        node_ptrs[i] = std::move(from_ptrs[i]);
     }
 
     return node;
@@ -547,19 +575,28 @@ Node::SharedPtr make_node(
     std::copy_n(
         (byte_string_view::pointer)child_data_offsets.data(),
         child_data_offsets.size() * sizeof(uint16_t),
-        node->child_off_data());
+        reinterpret_cast<unsigned char *>(node->child_off_data().data()));
 
     // Must initialize child pointers after copying child_data_offset
-    for (unsigned i = 0; i < node->number_of_children(); ++i) {
-        new (node->child_ptr(i)) Node::SharedPtr();
+    {
+        auto const sp = node->child_next_data();
+        for (size_t i = 0; i < sp.size(); ++i) {
+            new (sp.data() + i) Node::SharedPtr();
+        }
     }
 
+    auto const fnext_s = node->child_fnext_data();
+    auto const fast_s = node->child_min_offset_fast_data();
+    auto const slow_s = node->child_min_offset_slow_data();
+    auto const ver_s = node->child_min_version_data();
+    auto const ptrs_s = node->child_next_data();
     for (unsigned index = 0; auto &child : children) {
         if (child.is_valid()) {
-            node->set_fnext(index, child.offset);
-            node->set_min_offsets(index, child.min_offsets);
-            node->set_subtrie_min_version(index, child.subtrie_min_version);
-            node->set_next(index, std::move(child.ptr));
+            fnext_s[index] = child.offset;
+            fast_s[index] = child.min_offsets.fast;
+            slow_s[index] = child.min_offsets.slow;
+            ver_s[index] = child.subtrie_min_version;
+            ptrs_s[index] = std::move(child.ptr);
             node->set_child_data(index, {child.data, child.len});
             ++index;
         }

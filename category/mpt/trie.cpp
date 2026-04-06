@@ -454,10 +454,14 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
     std::vector<uint16_t> child_data_offsets;
     orig_indexes.reserve(number_of_children);
     child_data_offsets.reserve(number_of_children);
+    auto const orig_off = orig->child_off_data();
     for (auto const [orig_index, branch] : NodeChildrenRange(orig->mask)) {
         if (mask & (1u << branch)) {
             orig_indexes.push_back(orig_index);
-            total_child_data_size += (uint16_t)orig->child_data_len(orig_index);
+            uint16_t const len = static_cast<uint16_t>(
+                orig_off[orig_index] -
+                (orig_index > 0 ? (uint16_t)orig_off[orig_index - 1] : 0));
+            total_child_data_size += len;
             child_data_offsets.push_back(total_child_data_size);
         }
     }
@@ -477,28 +481,35 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
     std::copy_n(
         (byte_string_view::pointer)child_data_offsets.data(),
         child_data_offsets.size() * sizeof(uint16_t),
-        node->child_off_data());
+        reinterpret_cast<unsigned char *>(node->child_off_data().data()));
 
     // Must initialize child pointers after copying child_data_offset
-    for (unsigned i = 0; i < node->number_of_children(); ++i) {
-        new (node->child_ptr(i)) Node::SharedPtr();
+    {
+        auto const sp = node->child_next_data();
+        for (size_t i = 0; i < sp.size(); ++i) {
+            new (sp.data() + i) Node::SharedPtr();
+        }
     }
+    auto const orig_fnext = orig->child_fnext_data();
     auto const orig_fast = orig->child_min_offset_fast_data();
     auto const orig_slow = orig->child_min_offset_slow_data();
     auto const orig_ver = orig->child_min_version_data();
+    auto const orig_ptrs = orig->child_next_data();
+    auto const node_fnext = node->child_fnext_data();
     auto const node_fast = node->child_min_offset_fast_data();
     auto const node_slow = node->child_min_offset_slow_data();
     auto const node_ver = node->child_min_version_data();
+    auto const node_ptrs = node->child_next_data();
     for (unsigned j = 0; j < number_of_children; ++j) {
         auto const orig_j = orig_indexes[j];
-        node->set_fnext(j, orig->fnext(orig_j));
+        node_fnext[j] = orig_fnext[orig_j];
         node_fast[j] = orig_fast[orig_j];
         node_slow[j] = orig_slow[orig_j];
         auto const ver = orig_ver[orig_j];
         MONAD_ASSERT(ver >= aux.curr_upsert_auto_expire_version);
         node_ver[j] = ver;
         if (tnode->cache_mask & (1u << orig_j)) {
-            node->set_next(j, orig->move_next(orig_j));
+            node_ptrs[j] = std::exchange(orig_ptrs[orig_j], Node::SharedPtr{});
         }
         node->set_child_data(j, orig->child_data_view(orig_j));
     }
@@ -1258,10 +1269,12 @@ void compact_(
         compact_node.get_disk_size());
 
     unsigned const n = compact_node.number_of_children();
+    auto const fnext = compact_node.child_fnext_data();
     auto const fast = compact_node.child_min_offset_fast_data();
     auto const slow = compact_node.child_min_offset_slow_data();
+    auto const ptrs = compact_node.child_next_data();
     for (unsigned j = 0; j < n; ++j) {
-        auto child_ptr = compact_node.move_next(j);
+        auto child_ptr = std::exchange(ptrs[j], Node::SharedPtr{});
         compact_offset_pair const child_min_offsets{fast[j], slow[j]};
         if (sm.compact() && child_min_offsets.any_below(aux.compact_offsets)) {
             compact_(
@@ -1270,7 +1283,7 @@ void compact_(
                 *tnode,
                 j,
                 std::move(child_ptr),
-                compact_node.fnext(j),
+                fnext[j],
                 child_min_offsets.fast_below(aux.compact_offsets));
         }
         else {

@@ -220,7 +220,7 @@ namespace
                         total_read - total_processed);
                     total_read -= total_processed;
                     total_processed = 0;
-                    updates.clear();
+                    updates.clear(); // NOLINT(bugprone-use-after-move) intentional reuse
                 }
             }
 

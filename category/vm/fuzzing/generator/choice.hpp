@@ -31,9 +31,9 @@ namespace monad::vm::fuzzing
         void for_each_tuple(Tuple &&t, Func &&f)
         {
             [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                (std::forward<Func>(f)(std::get<Is>(std::forward<Tuple>(t))),
-                 ...);
-            }(std::make_index_sequence<std::tuple_size_v<Tuple>>());
+                (f(std::get<Is>(t)), ...);
+            }(std::make_index_sequence<
+                std::tuple_size_v<std::remove_reference_t<Tuple>>>());
         }
     }
 
@@ -64,11 +64,10 @@ namespace monad::vm::fuzzing
             std::forward_as_tuple(
                 choices..., Choice(1.0, std::forward<Default>(d))),
             [&](auto &&choice) {
-                using Choice = decltype(choice);
-
-                cumulative += std::forward<Choice>(choice).probability;
+                cumulative += choice.probability;
                 if (!result && cumulative >= cutoff) {
-                    result = Result{std::forward<Choice>(choice).action(eng)};
+                    result = Result{
+                        std::forward<decltype(choice)>(choice).action(eng)};
                 }
             });
 

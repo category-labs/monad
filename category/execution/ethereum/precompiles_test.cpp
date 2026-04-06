@@ -183,7 +183,7 @@ namespace
     transform_test_cases(std::span<test_case const> source, Callable &&f)
     {
         auto res = std::vector<test_case>{};
-        for (auto &t : source) {
+        for (const auto &t : source) {
             test_case copy{t};
             f(copy);
             res.emplace_back(std::move(copy));

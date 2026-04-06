@@ -57,7 +57,7 @@ namespace monad::staking::test
 
         using DelegatorStakeMap = std::unordered_map<
             std::tuple<uint64_t, Address>,
-            std::map<uint64_t, uint256_t, std::greater<uint64_t>>,
+            std::map<uint64_t, uint256_t, std::greater<>>,
             boost::hash<std::tuple<uint64_t, Address>>>;
 
         // delegator_stake[{v, a, e}] is the stake of delegator(v, a)

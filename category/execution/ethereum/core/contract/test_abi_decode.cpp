@@ -21,11 +21,11 @@
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 
-#include <limits>
+#include <gtest/gtest.h>
 
 #include <evmc/evmc.hpp>
-#include <gtest/gtest.h>
 #include <intx/intx.hpp>
+#include <limits>
 
 using namespace monad;
 using namespace intx::literals;

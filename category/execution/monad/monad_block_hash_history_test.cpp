@@ -20,8 +20,9 @@
 #include <category/vm/utils/evm-as.hpp>
 #include <monad/test/traits_test.hpp>
 
-#include <evmc/evmc.h>
 #include <gtest/gtest.h>
+
+#include <evmc/evmc.h>
 
 using namespace monad;
 

@@ -202,21 +202,21 @@ void run_revert_transaction_test(
         senders.push_back(SENDER);
     }
     else {
-        senders.push_back(Address{2});
+        senders.push_back(Address{2}); // NOLINT(modernize-use-emplace)
     }
     senders.emplace_back(SENDER);
     std::vector<std::vector<std::optional<Address>>> authorities = {};
     if (prevent_dip_bitset & (1 << AuthorityInBlock)) {
-        authorities.push_back({SENDER});
+        authorities.emplace_back(std::initializer_list<std::optional<Address>>{SENDER});
     }
     else {
-        authorities.push_back({});
+        authorities.emplace_back();
     }
     if (prevent_dip_bitset & (1 << AuthorityInTransaction)) {
-        authorities.push_back({SENDER});
+        authorities.emplace_back(std::initializer_list<std::optional<Address>>{SENDER});
     }
     else {
-        authorities.push_back({});
+        authorities.emplace_back();
     }
 
     // Create sets for the new ChainContext structure

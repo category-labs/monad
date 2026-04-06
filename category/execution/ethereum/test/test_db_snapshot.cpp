@@ -24,12 +24,11 @@
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
-
 #include <test_resource_data.h>
 
-#include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 
+#include <ankerl/unordered_dense.h>
 #include <filesystem>
 
 namespace

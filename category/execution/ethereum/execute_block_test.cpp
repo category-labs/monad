@@ -90,7 +90,7 @@ namespace
             std::make_move_iterator(chunks.begin()),
             std::make_move_iterator(chunks.end()),
             byte_string{},
-            [](byte_string const acc, KeyedChunk const chunk) {
+            [](byte_string acc, KeyedChunk chunk) {
                 return std::move(acc) + std::move(chunk.second);
             });
 

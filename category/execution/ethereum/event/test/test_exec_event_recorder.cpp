@@ -128,8 +128,10 @@ TEST(ExecEventRecorder, Basic)
 
     auto const *const written_log = static_cast<monad_exec_txn_log const *>(
         monad_event_ring_payload_peek(exec_recorder->get_event_ring(), &event));
+    // NOLINTBEGIN(bugprone-suspicious-memory-comparison)
     ASSERT_EQ(memcmp(written_log, log_event.payload, sizeof *written_log), 0);
     ASSERT_EQ(memcmp(written_log + 1, log_topics, sizeof log_topics), 0);
+    // NOLINTEND(bugprone-suspicious-memory-comparison)
     ASSERT_EQ(
         memcmp(
             reinterpret_cast<std::byte const *>(written_log + 1) +
@@ -142,6 +144,7 @@ TEST(ExecEventRecorder, Basic)
 TEST(ExecEventRecorder, Overflow)
 {
     std::vector<uint8_t> truncated;
+    truncated.reserve(ExecutionEventRecorder::RECORD_ERROR_TRUNCATED_SIZE);
     Address const log_address = static_cast<Address>(0x12345678UL);
     uint32_t const txn_num = 30;
 
@@ -208,6 +211,7 @@ TEST(ExecEventRecorder, Overflow)
 
     // `*log_event.payload` is still copied into the error event, into the
     // truncation area
+    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
     ASSERT_EQ(
         memcmp(
             written_error + 1, log_event.payload, sizeof(*log_event.payload)),

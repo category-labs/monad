@@ -20,8 +20,9 @@
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
+
+#include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
 
 using namespace monad;

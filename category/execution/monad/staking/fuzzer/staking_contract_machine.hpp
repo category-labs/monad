@@ -135,7 +135,7 @@ namespace monad::staking::test
             std::numeric_limits<fuzzing::seed_t>::max() ==
             std::numeric_limits<uint64_t>::max());
 
-        StakingContractMachine(fuzzing::seed_t, Config const & = {});
+        explicit StakingContractMachine(fuzzing::seed_t, Config const & = {});
 
         void assert_all_invariants();
 

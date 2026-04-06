@@ -295,8 +295,8 @@ void run_dipped_into_reserve_test(
     senders.push_back(BUNDLER);
     senders.emplace_back(BUNDLER);
     std::vector<std::vector<std::optional<Address>>> authorities = {};
-    authorities.push_back({});
-    authorities.push_back({});
+    authorities.emplace_back();
+    authorities.emplace_back();
 
     // Create sets for the new MonadChainContext structure
     ankerl::unordered_dense::segmented_set<Address>

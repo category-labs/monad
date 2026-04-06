@@ -131,7 +131,7 @@ namespace
     }
 }
 
-int main(int argc, char **argv)
+int main(int argc, char **argv) // NOLINT(bugprone-exception-escape)
 {
     auto const args = parse_args(argc, argv);
 

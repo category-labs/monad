@@ -108,7 +108,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
         EXPECT_TRUE(result.has_value());
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "0x0000000000000000000000000000000000001000": {
                 "balance": "0x0"
             },
@@ -143,7 +143,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
         EXPECT_TRUE(result.has_value());
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "0x0000000000000000000000000000000000001000": {
                 "balance": "0x0",
                 "storage": {
@@ -216,7 +216,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
         EXPECT_TRUE(result.has_value());
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "post": {
                 "0x0000000000000000000000000000000000001000": {
                     "balance": "0x0",
@@ -257,7 +257,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
         EXPECT_TRUE(result.has_value());
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "post": {
                 "0x0000000000000000000000000000000000001000": {
                     "storage": {

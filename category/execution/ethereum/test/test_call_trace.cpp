@@ -72,7 +72,7 @@ TEST(CallFrame, to_json)
         .status = EVMC_SUCCESS,
     };
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "from":"0x5353535353535353535353535353535353535353",
         "gas":"0x186a0",

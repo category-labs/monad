@@ -196,7 +196,7 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
     // always return success because these transactions can't revert.
     Receipt receipt{.status = 1u, .gas_used = 0, .type = tx_.type};
     for (auto const &log : state.logs()) {
-        receipt.add_log(std::move(log));
+        receipt.add_log(log);
     }
     call_tracer_.on_finish(receipt.gas_used);
     trace::run_tracer<traits>(state_tracer_, state);
@@ -231,8 +231,9 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
         return contract.syscall_snapshot(calldata, value);
     case SyscallSelector::ON_EPOCH_CHANGE:
         return contract.syscall_on_epoch_change(calldata, value);
+    default:
+        return staking::StakingError::MethodNotSupported;
     }
-    return staking::StakingError::MethodNotSupported;
 }
 
 EXPLICIT_MONAD_TRAITS_CLASS(ExecuteSystemTransaction);

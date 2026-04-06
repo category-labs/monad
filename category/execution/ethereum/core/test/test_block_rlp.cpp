@@ -753,7 +753,7 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
         0xfc, 0xe5, 0xed, 0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53, 0x31, 0x67,
         0x7e, 0x6e, 0xbf, 0x0b, 0x82, 0x27, 0x10};
 
-    auto const encoded_block_copy = encoded_block;
+    auto const &encoded_block_copy = encoded_block;
     byte_string_view encoded_block_view{encoded_block};
 
     auto const decoded_block = rlp::decode_block(encoded_block_view);
@@ -927,7 +927,7 @@ TEST(Rlp_Block, DecodeEncodeCancun)
         0xe5, 0xed, 0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53, 0x31, 0x67, 0x7e,
         0x6e, 0xbf, 0x0b, 0x82, 0x27, 0x10};
 
-    auto const encoded_block_copy = encoded_block;
+    auto const &encoded_block_copy = encoded_block;
     byte_string_view encoded_block_view{encoded_block};
 
     auto const decoded_block = rlp::decode_block(encoded_block_view);

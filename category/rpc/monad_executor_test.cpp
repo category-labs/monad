@@ -5134,7 +5134,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
                      {std::nullopt,
                       Account{
                           .balance = uint256_t{11} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                          // Nonce starts at 1 so the EIP-7702 auth entry
+                          // (nonce=0) won't match during execution, preventing
+                          // the delegation designation from being set on
+                          // sender_x. The authority is still recovered from the
+                          // signature and enters the combined
+                          // senders_and_authorities set.
+                          .nonce = 1}}}},
             {other,
              StateDelta{
                  .account =
@@ -5399,7 +5405,9 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         EXPECT_EQ(output[4]["number"], "0x6");
 
         // Sixth block: sender_x dips -> succeeds as the authority has been
-        // pushed out of `K = 3` window by 2 empty synthetic blocks.
+        // pushed out of the K = 3 window by 2 empty synthetic blocks.
+        // sender_x is NOT delegated because its nonce (1) didn't match the
+        // auth entry's nonce (0), so the delegation was skipped.
         ASSERT_EQ(output[5]["calls"].size(), 1);
         EXPECT_EQ(output[5]["calls"][0]["status"], "0x1");
         EXPECT_EQ(output[5]["number"], "0x7");
@@ -5628,5 +5636,161 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
 
     monad_block_override_destroy(bo);
     monad_state_override_destroy(so);
+    monad_executor_destroy(executor);
+}
+
+// Test that simulated state changes persist across blocks within the same
+// eth_simulate call. Specifically:
+//
+//   Block 1: account_a sends 60 MON to recipient -> success (has 100 MON)
+//   Block 2: account_a sends 60 MON to recipient -> failure (only ~40 MON left)
+//   Block 3: account_b sends 50 MON to account_a (refund)
+//   Block 4: account_a sends 60 MON to recipient -> success (~90 MON after
+//            refund)
+TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
+{
+    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
+
+    static constexpr Address account_a =
+        0x00000000000000000000000000000000aaaaaa01_address;
+    static constexpr Address account_b =
+        0x00000000000000000000000000000000bbbbbb01_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {account_a,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {account_b,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {recipient,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 0, .nonce = 0}}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    // Transactions.
+    Transaction const tx_a_sends_60{
+        .gas_limit = 200'000'000,
+        .value = uint256_t{60} * WEI_PER_MON,
+        .to = recipient,
+    };
+    Transaction const tx_b_refunds_a{
+        .gas_limit = 200'000'000,
+        .value = uint256_t{50} * WEI_PER_MON,
+        .to = account_a,
+    };
+
+    auto const enc_a = rlp::encode_address(std::make_optional(account_a));
+    auto const enc_b = rlp::encode_address(std::make_optional(account_b));
+
+    // Block 1: A sends 60 MON
+    // Block 2: A sends 60 MON (will fail)
+    // Block 3: B sends 50 MON to A
+    // Block 4: A sends 60 MON (will succeed after refund)
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_a),
+        rlp::encode_list2(enc_a),
+        rlp::encode_list2(enc_b),
+        rlp::encode_list2(enc_a)));
+
+    auto const enc_tx_a =
+        rlp::encode_string2(rlp::encode_transaction(tx_a_sends_60));
+    auto const enc_tx_b =
+        rlp::encode_string2(rlp::encode_transaction(tx_b_refunds_a));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_tx_a),
+        rlp::encode_list2(enc_tx_a),
+        rlp::encode_list2(enc_tx_b),
+        rlp::encode_list2(enc_tx_a)));
+
+    BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    std::vector<monad_state_override *> so = {
+        monad_state_override_create(),
+        monad_state_override_create(),
+        monad_state_override_create(),
+        monad_state_override_create()};
+    std::vector<monad_block_override *> bo = {
+        monad_block_override_create(),
+        monad_block_override_create(),
+        monad_block_override_create(),
+        monad_block_override_create()};
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        so.data(),
+        so.size(),
+        bo.data(),
+        bo.size(),
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 4);
+
+    // Block 1: A sends 60 MON -> succeeds (A has 100 MON).
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+
+    // Block 2: A sends 60 MON -> reverts (A has ~40 MON after block 1).
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x0");
+
+    // Block 3: B sends 50 MON to A -> succeeds (B has 100 MON).
+    ASSERT_EQ(output[2]["calls"].size(), 1);
+    EXPECT_EQ(output[2]["calls"][0]["status"], "0x1");
+
+    // Block 4: A sends 60 MON -> succeeds (A has ~90 MON after refund).
+    ASSERT_EQ(output[3]["calls"].size(), 1);
+    EXPECT_EQ(output[3]["calls"][0]["status"], "0x1");
+
+    for (auto *o : bo) {
+        monad_block_override_destroy(o);
+    }
+    for (auto *o : so) {
+        monad_state_override_destroy(o);
+    }
     monad_executor_destroy(executor);
 }

@@ -664,6 +664,8 @@ namespace
         auto result = nlohmann::json::array();
         BlockHeader previous_header = header;
         std::vector<std::vector<CallFrame>> const empty_call_frames{};
+
+        auto block_state = BlockState{tdb, vm};
         for (size_t block_idx = 0; block_idx < calls.size(); ++block_idx) {
             // SAFETY: By `eth_simulate_validate_inputs`, we know that both
             // block overrides and state overrides are non-null.
@@ -684,8 +686,6 @@ namespace
                         .timestamp = previous_header.timestamp +
                                      DEFAULT_TIMESTAMP_INCREMENT,
                     }};
-
-                auto block_state = BlockState{tdb, vm};
                 State state{
                     block_state, Incarnation{previous_header.number, 0}};
 
@@ -752,7 +752,6 @@ namespace
             };
 
             // Construct state
-            auto block_state = BlockState{tdb, vm};
             // State overrides are applied with an incarnation in the *previous*
             // block, rather than with the current header's block number.
             auto const override_incarnation = Incarnation{

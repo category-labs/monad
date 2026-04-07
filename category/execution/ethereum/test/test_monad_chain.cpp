@@ -207,13 +207,15 @@ void run_revert_transaction_test(
     senders.emplace_back(SENDER);
     std::vector<std::vector<std::optional<Address>>> authorities = {};
     if (prevent_dip_bitset & (1 << AuthorityInBlock)) {
-        authorities.emplace_back(std::initializer_list<std::optional<Address>>{SENDER});
+        authorities.emplace_back(
+            std::initializer_list<std::optional<Address>>{SENDER});
     }
     else {
         authorities.emplace_back();
     }
     if (prevent_dip_bitset & (1 << AuthorityInTransaction)) {
-        authorities.emplace_back(std::initializer_list<std::optional<Address>>{SENDER});
+        authorities.emplace_back(
+            std::initializer_list<std::optional<Address>>{SENDER});
     }
     else {
         authorities.emplace_back();
@@ -255,7 +257,8 @@ void run_revert_transaction_test(
             1, // transaction index
             state,
             chain_context);
-        bool const should_revert_cached = revert_transaction_cached<traits>(state);
+        bool const should_revert_cached =
+            revert_transaction_cached<traits>(state);
 
         EXPECT_EQ(should_revert, expected)
             << std::bitset<64>{prevent_dip_bitset};

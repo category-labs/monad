@@ -390,7 +390,8 @@ namespace monad::staking::test
 
             uint256_t actual_withdrawal_stake;
             for (uint8_t const i : withdrawal_ids) {
-                auto const withdrawal = model_.withdrawal_request(v, a, i).load();
+                auto const withdrawal =
+                    model_.withdrawal_request(v, a, i).load();
                 if (withdrawal.epoch.native() > this_epoch) {
                     actual_withdrawal_stake += withdrawal.amount.native();
                 }
@@ -1165,7 +1166,8 @@ namespace monad::staking::test
 
         auto const auth_address = get_add_validator_message_auth_address(msg);
 
-        auto const ins1 = all_delegators_.insert({val_id.native(), auth_address});
+        auto const ins1 =
+            all_delegators_.insert({val_id.native(), auth_address});
         MONAD_ASSERT(ins1);
 
         auto [_, ins2] = val_id_to_signer_.insert({val_id.native(), signer});
@@ -1283,7 +1285,8 @@ namespace monad::staking::test
     void StakingContractMachine<traits>::model_precompile_delegate(
         u64_be val_id, Address const &sender, evmc_uint256be const &value)
     {
-        auto const result = model_.precompile_delegate<traits>(val_id, sender, value);
+        auto const result =
+            model_.precompile_delegate<traits>(val_id, sender, value);
         MONAD_ASSERT(result.has_value());
 
         if (intx::be::load<uint256_t>(value) == 0) {
@@ -1431,7 +1434,7 @@ namespace monad::staking::test
             wis = it;
         }
 
-        auto  const&wi = wis->second;
+        auto const &wi = wis->second;
         MONAD_ASSERT(!wi.empty());
 
         auto const w = wi[gen() % wi.size()];

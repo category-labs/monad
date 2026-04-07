@@ -299,10 +299,10 @@ void run_dipped_into_reserve_test(
     authorities.emplace_back();
 
     // Create sets for the new MonadChainContext structure
-    ankerl::unordered_dense::segmented_set<Address>
-        const grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address>
-        const parent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        grandparent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        parent_senders_and_authorities;
     ankerl::unordered_dense::segmented_set<Address> const
         senders_and_authorities = {EOA};
     ChainContext<traits> const chain_context{
@@ -738,13 +738,14 @@ TYPED_TEST(
         std::array<uint8_t, 2> short2 = {s[0], s[1]};
         std::array<uint8_t, 1> short1 = {s[0]};
         std::array<uint8_t, 0> short0 = {};
-        std::vector<std::pair<uint8_t *, size_t>> const short_calldata_variants = {
-            {short3.data(), short3.size()},
-            {short2.data(), short2.size()},
-            {short1.data(), short1.size()},
-            {short0.data(), short0.size()},
-            {nullptr, 0},
-        };
+        std::vector<std::pair<uint8_t *, size_t>> const
+            short_calldata_variants = {
+                {short3.data(), short3.size()},
+                {short2.data(), short2.size()},
+                {short1.data(), short1.size()},
+                {short0.data(), short0.size()},
+                {nullptr, 0},
+            };
         for (auto const &[data, size] : short_calldata_variants) {
             msg.input_data = data;
             msg.input_size = size;

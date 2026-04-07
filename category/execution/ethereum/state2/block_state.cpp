@@ -152,7 +152,7 @@ bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);
     auto const &original = state.original();
-    for (const auto &kv : original) {
+    for (auto const &kv : original) {
         Address const &address = kv.first;
         OriginalAccountState const &account_state = kv.second;
         auto const &account = account_state.account_;

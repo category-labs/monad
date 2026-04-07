@@ -2564,7 +2564,8 @@ TEST_F(StakeLatest, delegate_undelegate_withdraw_redelegate)
         contract.vars.delegator(val.id, d1).rewards().load().native(),
         REWARD / 3);
 
-    auto const acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    auto const acc =
+        contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 

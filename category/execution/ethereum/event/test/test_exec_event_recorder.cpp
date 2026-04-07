@@ -50,7 +50,8 @@ namespace
         constexpr uint8_t PAYLOAD_BUF_SHIFT = 28; // 256 MiB
         constexpr char MEMFD_NAME[] = "exec_recorder_test";
 
-        int ring_fd [[gnu::cleanup(cleanup_close)]] = // NOLINT(misc-auto-const-correctness)
+        int ring_fd [[gnu::cleanup(
+            cleanup_close)]] = // NOLINT(misc-auto-const-correctness)
             memfd_create(MEMFD_NAME, 0);
         ASSERT_NE(ring_fd, -1);
         monad_event_ring_simple_config const simple_cfg = {

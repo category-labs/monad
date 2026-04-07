@@ -240,7 +240,8 @@ public:
                 u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } const key{.ns = Namespace::ValExecution, .val_id = id, .slots = {}};
+            } const key{
+                .ns = Namespace::ValExecution, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -257,7 +258,8 @@ public:
                 u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } const key{.ns = Namespace::ConsensusStake, .val_id = id, .slots = {}};
+            } const key{
+                .ns = Namespace::ConsensusStake, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -273,7 +275,8 @@ public:
                 u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } const key{.ns = Namespace::SnapshotStake, .val_id = id, .slots = {}};
+            } const key{
+                .ns = Namespace::SnapshotStake, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }

@@ -236,8 +236,8 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
     if (db_.is_on_disk()) {
         auto const src_prefix = proposal_prefix(block_id);
         auto const root = (block_number_ == block_number)
-                        ? curr_root_
-                        : db_.load_root_for_version(block_number);
+                              ? curr_root_
+                              : db_.load_root_for_version(block_number);
         MONAD_ASSERT(db_.find(root, src_prefix, block_number).has_value());
         curr_root_ = db_.copy_trie(
             root, src_prefix, root, finalized_nibbles, block_number, true);

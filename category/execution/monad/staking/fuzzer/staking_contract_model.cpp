@@ -667,7 +667,7 @@ namespace monad::staking::test
         uint256_t computed_total_stake;
         for (auto const &a : dels) {
             auto const x = get_delegator_stake(v, a, epoch) +
-                     get_withdrawal_stake(v, a, epoch);
+                           get_withdrawal_stake(v, a, epoch);
             unit_bias_rewards_[{v, a}] += x * rr;
             computed_total_stake += x;
         }

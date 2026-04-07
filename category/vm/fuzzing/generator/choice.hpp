@@ -57,8 +57,8 @@ namespace monad::vm::fuzzing
         auto result = std::optional<Result>{};
         auto cumulative = 0.0;
 
-        auto dist = std::uniform_real_distribution<double>(
-            0.0, 1.0); // NOLINT(misc-auto-const-correctness)
+        // NOLINTNEXTLINE(misc-auto-const-correctness)
+        auto dist = std::uniform_real_distribution<double>(0.0, 1.0);
         auto const cutoff = dist(eng);
 
         detail::for_each_tuple(
@@ -80,8 +80,8 @@ namespace monad::vm::fuzzing
     void
     with_probability(Engine &eng, double const probability, Action &&action)
     {
-        auto dist = std::uniform_real_distribution<double>(
-            0.0, 1.0); // NOLINT(misc-auto-const-correctness)
+        // NOLINTNEXTLINE(misc-auto-const-correctness)
+        auto dist = std::uniform_real_distribution<double>(0.0, 1.0);
         auto const cutoff = dist(eng);
 
         if (probability >= cutoff) {
@@ -95,8 +95,8 @@ namespace monad::vm::fuzzing
         using diff_t = std::iterator_traits<Iterator>::difference_type;
 
         MONAD_VM_DEBUG_ASSERT(begin != end);
-        auto dist = std::uniform_int_distribution<diff_t>(
-            0, end - begin - 1); // NOLINT(misc-auto-const-correctness)
+        // NOLINTNEXTLINE(misc-auto-const-correctness)
+        auto dist = std::uniform_int_distribution<diff_t>(0, end - begin - 1);
         return *(begin + dist(eng));
     }
 

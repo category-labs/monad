@@ -117,10 +117,9 @@ PrecompileResult sha256_execute(byte_string_view const input)
         // Passing a null pointer to the Silkpre sha256 implementation invokes
         // undefined behaviour. We sidestep the UB here by passing a pointer to
         // the empty string instead.
+        // NOLINTNEXTLINE(bugprone-string-constructor)
         byte_string_view const nonnull{
-            // NOLINT(bugprone-string-constructor)
-            reinterpret_cast<unsigned char const *>(""),
-            0UL};
+            reinterpret_cast<unsigned char const *>(""), 0UL};
         return silkpre_execute<silkpre_sha256_run>(nonnull);
     }
     return silkpre_execute<silkpre_sha256_run>(input);

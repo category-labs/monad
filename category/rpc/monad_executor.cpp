@@ -430,6 +430,7 @@ namespace
 
     void store_output_header(
         Block const &block, std::vector<Receipt> const &receipts,
+        bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes,
         nlohmann::json &output)
     {
         auto const format_hex = [](auto const &b) {
@@ -441,11 +442,8 @@ namespace
         // TODO(dhil): Computing the correct information for some of these
         // fields currently requires a roundtrip to the db. However, in
         // simulation mode we only have readonly access to the db.
-        {
-            bytes32_t block_hash =
-                to_bytes(keccak256(rlp::encode_block_header(header)));
-            output["hash"] = format_hex(block_hash);
-        }
+
+        output["hash"] = format_hex(block_hash);
         output["parentHash"] = format_hex(header.parent_hash);
         output["sha3Uncles"] = format_hex(header.ommers_hash);
         output["miner"] = format_hex(header.beneficiary);
@@ -481,9 +479,8 @@ namespace
         }
         {
             output["transactions"] = nlohmann::json::array();
-            for (auto const &txn : block.transactions) {
-                output["transactions"].emplace_back(format_hex(
-                    to_bytes(keccak256(rlp::encode_transaction(txn)))));
+            for (auto const &txn_hash : txn_hashes) {
+                output["transactions"].emplace_back(format_hex(txn_hash));
             }
         }
         {
@@ -585,9 +582,17 @@ namespace
     void save_eth_simulate_log_entry(
         Block const &block, std::vector<Receipt> const &receipts,
         std::vector<std::vector<CallFrame>> const &call_frames,
+        bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes,
         nlohmann::json &result)
     {
         MONAD_ASSERT(call_frames.size() == block.transactions.size());
+        MONAD_ASSERT(receipts.size() == block.transactions.size());
+        MONAD_ASSERT(txn_hashes.size() == block.transactions.size());
+
+        auto const format_hex = [](auto const &b) {
+            return std::format("0x{}", evmc::hex(b));
+        };
+
         // TODO(dhil): Add native transfer logs.
         auto entry = nlohmann::json::object();
 
@@ -602,12 +607,35 @@ namespace
                 "0x{:x}",
                 call_frames[tx_idx][0].status == EVMC_SUCCESS ? 1 : 0);
             call_result["returnData"] =
-                std::format("0x{}", evmc::hex(call_frames[tx_idx][0].output));
+                format_hex(call_frames[tx_idx][0].output);
             call_result["gasUsed"] =
                 std::format("0x{:x}", call_frames[tx_idx][0].gas_used);
 
             if (call_frames[tx_idx][0].status == EVMC_SUCCESS) {
                 call_result["logs"] = nlohmann::json::array();
+                for (auto const &log : receipts[tx_idx].logs) {
+                    call_result["logs"].emplace_back(nlohmann::json{
+                        {"address", format_hex(log.address)},
+                        {"topics", nlohmann::json::array()},
+                        {"data", format_hex(log.data)},
+                        {"blockNumber",
+                         std::format("0x{:x}", block.header.number)},
+                        {
+                            "transactionHash",
+                            format_hex(txn_hashes[tx_idx]),
+                        },
+                        {"transactionIndex", std::format("0x{:x}", tx_idx)},
+                        {"blockHash", format_hex(block_hash)},
+                        {"logIndex", std::format("0x{:x}", tx_idx)},
+                        // NOTE(dhil): Geth always emits logs with "removed"
+                        // fixed to `false`.
+                        {"removed", false},
+                    });
+                    for (auto const &topic : log.topics) {
+                        call_result["logs"].back()["topics"].emplace_back(
+                            format_hex(topic));
+                    }
+                }
             }
             else {
                 call_result["error"] = {{"message", "execution reverted"}};
@@ -615,7 +643,7 @@ namespace
 
             txns.emplace_back(std::move(call_result));
         }
-        store_output_header(block, receipts, entry);
+        store_output_header(block, receipts, block_hash, txn_hashes, entry);
         result.emplace_back(std::move(entry));
     }
 
@@ -715,7 +743,13 @@ namespace
                         chain_context));
 
                 save_eth_simulate_log_entry(
-                    synthetic_block, receipts, empty_call_frames, result);
+                    synthetic_block,
+                    receipts,
+                    empty_call_frames,
+                    {}, /* NOTE(dhil): Synthetic blocks do not have any
+                          transactions, hence there can be no log emissions */
+                    {},
+                    result);
 
                 previous_header = synthetic_block.header;
             }
@@ -839,7 +873,18 @@ namespace
                 }
             }
 
-            save_eth_simulate_log_entry(block, receipts, call_frames, result);
+            bytes32_t const block_hash =
+                to_bytes(keccak256(rlp::encode_block_header(block.header)));
+
+            std::vector<bytes32_t> txn_hashes{};
+            txn_hashes.reserve(block.transactions.size());
+            for (Transaction const &txn : block.transactions) {
+                txn_hashes.emplace_back(
+                    to_bytes(keccak256(rlp::encode_transaction(txn))));
+            }
+
+            save_eth_simulate_log_entry(
+                block, receipts, call_frames, block_hash, txn_hashes, result);
 
             previous_header = current_header;
         }

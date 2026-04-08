@@ -849,8 +849,7 @@ int main(int argc, char *argv[])
 
                     uint64_t ops{0};
                     bool signal_done{false};
-                    inflight_map_t inflights;
-                    auto find = [n_slices, &ops, &signal_done, &inflights](
+                    auto find = [n_slices, &ops, &signal_done](
                                     UpdateAuxImpl *aux,
                                     NodeCursor state_start,
                                     unsigned n) {
@@ -866,7 +865,7 @@ int main(int argc, char *argv[])
                                 monad::mpt::find_cursor_result_type>
                                 promise;
                             find_notify_fiber_future(
-                                *aux, inflights, promise, state_start, key);
+                                *aux, promise, state_start, key);
                             auto const [node_cursor, errc] =
                                 promise.get_future().get();
                             MONAD_ASSERT(node_cursor.is_valid());
@@ -975,7 +974,6 @@ int main(int argc, char *argv[])
                     };
 
                     auto poll = [&signal_done, &req](UpdateAuxImpl *aux) {
-                        inflight_map_t inflights;
                         fiber_find_request_t request;
                         for (;;) {
                             boost::this_fiber::yield();
@@ -990,7 +988,6 @@ int main(int argc, char *argv[])
                             if (req.try_dequeue(request)) {
                                 find_notify_fiber_future(
                                     *aux,
-                                    inflights,
                                     *request.promise,
                                     request.start,
                                     request.key);
@@ -1023,12 +1020,10 @@ int main(int argc, char *argv[])
                     while (signal_done <
                            int(random_read_benchmark_threads + 1)) {
                         boost::this_fiber::yield();
-                        inflight_map_t inflights;
                         fiber_find_request_t request;
                         if (req.try_dequeue(request)) {
                             find_notify_fiber_future(
                                 aux,
-                                inflights,
                                 *request.promise,
                                 request.start,
                                 request.key);

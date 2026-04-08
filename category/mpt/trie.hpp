@@ -675,12 +675,6 @@ using find_result_type = std::pair<T, find_result>;
 using find_cursor_result_type = find_result_type<NodeCursor>;
 using find_owning_cursor_result_type = find_result_type<NodeCursor>;
 
-using inflight_map_t = ankerl::unordered_dense::segmented_map<
-    chunk_offset_t,
-    std::vector<
-        std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor const &)>>,
-    chunk_offset_t_hasher>;
-
 using inflight_map_owning_t = ankerl::unordered_dense::segmented_map<
     virtual_chunk_offset_t,
     std::vector<
@@ -705,8 +699,7 @@ class NodeCache;
 // during execution, DO NOT invoke it directly from a transaction fiber, as is
 // not race free.
 void find_notify_fiber_future(
-    UpdateAuxImpl &, inflight_map_t &,
-    threadsafe_boost_fibers_promise<find_cursor_result_type> &,
+    UpdateAuxImpl &, threadsafe_boost_fibers_promise<find_cursor_result_type> &,
     NodeCursor const &start, NibblesView key);
 
 // rodb

@@ -530,7 +530,6 @@ struct OnDiskWithWorkerThreadImpl
         // Runs in the triedb worker thread
         void rwdb_run()
         {
-            inflight_map_t inflights;
             ::boost::container::deque<
                 threadsafe_boost_fibers_promise<find_cursor_result_type>>
                 find_promises;
@@ -558,11 +557,7 @@ struct OnDiskWithWorkerThreadImpl
                         find_promises.emplace_back(std::move(*req->promise));
                         req->promise = &find_promises.back();
                         find_notify_fiber_future(
-                            aux,
-                            inflights,
-                            *req->promise,
-                            req->start,
-                            req->key);
+                            aux, *req->promise, req->start, req->key);
                     }
                     else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {

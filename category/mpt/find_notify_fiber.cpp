@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <utility>
 
@@ -48,7 +49,7 @@ namespace
     {
         static constexpr bool lifetime_managed_internally = true;
 
-        inflight_map_t &inflights;
+        std::function<result<void>(NodeCursor const &)> cont;
         Node::SharedPtr parent;
         chunk_offset_t rd_offset; // required for sender
         unsigned bytes_to_read; // required for sender too
@@ -56,9 +57,9 @@ namespace
         unsigned const branch_index;
 
         find_receiver(
-            inflight_map_t &inflights, Node::SharedPtr parent_,
-            unsigned char const branch)
-            : inflights(inflights)
+            std::function<result<void>(NodeCursor const &)> cont_,
+            Node::SharedPtr parent_, unsigned char const branch)
+            : cont(std::move(cont_))
             , parent(std::move(parent_))
             , rd_offset(0, 0)
             , branch_index(parent->to_child_index(branch))
@@ -75,28 +76,19 @@ namespace
             buffer_off = uint16_t(offset.offset - rd_offset.offset);
         }
 
-        //! notify a list of requests pending on this node
         template <class ResultType>
         void set_value(
             MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state,
             ResultType buffer_)
         {
             MONAD_ASSERT(buffer_);
-            auto const offset = parent->fnext(branch_index);
             auto node = parent->next(branch_index);
             if (node == nullptr) {
                 node = detail::deserialize_node_from_receiver_result(
                     std::move(buffer_), buffer_off, io_state);
                 parent->set_next(branch_index, node);
             }
-            auto const it = inflights.find(offset);
-            if (it != inflights.end()) {
-                auto const pendings = std::move(it->second);
-                inflights.erase(it);
-                for (auto const &cont : pendings) {
-                    MONAD_ASSERT(cont(NodeCursor{node}));
-                }
-            }
+            MONAD_ASSERT(cont(NodeCursor{node}));
         }
     };
 
@@ -193,12 +185,8 @@ namespace
     }
 }
 
-// Use a hashtable for inflight requests, it maps a file offset to a list of
-// requests. If a read request exists in the hash table, simply append to an
-// existing inflight read, Otherwise, send a read request and put itself on the
-// map
 void find_notify_fiber_future(
-    UpdateAuxImpl &aux, inflight_map_t &inflights,
+    UpdateAuxImpl &aux,
     threadsafe_boost_fibers_promise<find_cursor_result_type> &promise,
     NodeCursor const &root, NibblesView const key)
 {
@@ -238,7 +226,7 @@ void find_notify_fiber_future(
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
         if (auto const &next = node->next(child_index); next != nullptr) {
-            find_notify_fiber_future(aux, inflights, promise, next, next_key);
+            find_notify_fiber_future(aux, promise, next, next_key);
             return;
         }
         if (aux.io->owning_thread_id() != get_tl_tid()) {
@@ -247,19 +235,12 @@ void find_notify_fiber_future(
                  find_result::need_to_continue_in_io_thread});
             return;
         }
-        chunk_offset_t const offset = node->fnext(child_index);
-        auto cont = [&aux, &inflights, &promise, next_key](
+        auto cont = [&aux, &promise, next_key](
                         NodeCursor const &node_cursor) -> result<void> {
-            find_notify_fiber_future(
-                aux, inflights, promise, node_cursor, next_key);
+            find_notify_fiber_future(aux, promise, node_cursor, next_key);
             return success();
         };
-        if (auto const lt = inflights.find(offset); lt != inflights.end()) {
-            lt->second.emplace_back(cont);
-            return;
-        }
-        inflights[offset].emplace_back(cont);
-        find_receiver receiver(inflights, std::move(node), branch);
+        find_receiver receiver(std::move(cont), std::move(node), branch);
         detail::initiate_async_read_update(
             *aux.io, std::move(receiver), receiver.bytes_to_read);
     }

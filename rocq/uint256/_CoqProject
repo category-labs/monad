@@ -1,4 +1,5 @@
--R theories Uint256
+-Q theories Uint256
+-Q _build/default/theories Uint256
 -arg -w -arg -notation-overridden
 -arg -w -arg -redundant-canonical-projection
 

@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -5700,28 +5701,28 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         .to = account_a,
     };
 
-    auto const enc_a = rlp::encode_address(std::make_optional(account_a));
-    auto const enc_b = rlp::encode_address(std::make_optional(account_b));
+    auto const encoded_a = rlp::encode_address(std::make_optional(account_a));
+    auto const encoded_b = rlp::encode_address(std::make_optional(account_b));
 
     // Block 1: A sends 60 MON
     // Block 2: A sends 60 MON (will fail)
     // Block 3: B sends 50 MON to A
     // Block 4: A sends 60 MON (will succeed after refund)
     auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(enc_a),
-        rlp::encode_list2(enc_a),
-        rlp::encode_list2(enc_b),
-        rlp::encode_list2(enc_a)));
+        rlp::encode_list2(encoded_a),
+        rlp::encode_list2(encoded_a),
+        rlp::encode_list2(encoded_b),
+        rlp::encode_list2(encoded_a)));
 
-    auto const enc_tx_a =
+    auto const encoded_tx_a =
         rlp::encode_string2(rlp::encode_transaction(tx_a_sends_60));
-    auto const enc_tx_b =
+    auto const encoded_tx_b =
         rlp::encode_string2(rlp::encode_transaction(tx_b_refunds_a));
     auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(enc_tx_a),
-        rlp::encode_list2(enc_tx_a),
-        rlp::encode_list2(enc_tx_b),
-        rlp::encode_list2(enc_tx_a)));
+        rlp::encode_list2(encoded_tx_a),
+        rlp::encode_list2(encoded_tx_a),
+        rlp::encode_list2(encoded_tx_b),
+        rlp::encode_list2(encoded_tx_a)));
 
     BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -5770,21 +5771,262 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
 
     ASSERT_EQ(output.size(), 4);
 
-    // Block 1: A sends 60 MON -> succeeds (A has 100 MON).
+    // First simulated block: A sends 60 MON -> succeeds (A has 100 MON).
     ASSERT_EQ(output[0]["calls"].size(), 1);
     EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
 
-    // Block 2: A sends 60 MON -> reverts (A has ~40 MON after block 1).
+    // Second simulated block: A sends 60 MON -> reverts (A has ~40 MON after
+    // block 1).
     ASSERT_EQ(output[1]["calls"].size(), 1);
     EXPECT_EQ(output[1]["calls"][0]["status"], "0x0");
 
-    // Block 3: B sends 50 MON to A -> succeeds (B has 100 MON).
+    // Third simulated block: B sends 50 MON to A -> succeeds (B has 100 MON).
     ASSERT_EQ(output[2]["calls"].size(), 1);
     EXPECT_EQ(output[2]["calls"][0]["status"], "0x1");
 
-    // Block 4: A sends 60 MON -> succeeds (A has ~90 MON after refund).
+    // Fourth simulated block: A sends 60 MON -> succeeds (A has ~90 MON after
+    // refund).
     ASSERT_EQ(output[3]["calls"].size(), 1);
     EXPECT_EQ(output[3]["calls"][0]["status"], "0x1");
+
+    for (auto *o : bo) {
+        monad_block_override_destroy(o);
+    }
+    for (auto *o : so) {
+        monad_state_override_destroy(o);
+    }
+    monad_executor_destroy(executor);
+}
+
+// Test contract deployment in one block followed by a call to the deployed
+// contract in a subsequent block. The deployed contract sends half its received
+// value to a beneficiary and returns the amount sent.
+//
+//   Block 1: deploy the contract (CREATE tx)
+//   Block 2: call the deployed contract with 10 MON
+//   Block 3: call a balance-checker contract that returns the beneficiary's
+//            balance.
+//
+// We verify the call succeeds and the return data contains 5 MON (half the
+// Deploy a contract in block 1 and call it in block 2. The deployed contract
+// sends half its received value to a beneficiary (proving the code executes)
+// and returns the amount sent.
+TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address beneficiary =
+        0x00000000000000000000000000000000cafef00d_address;
+
+    // The deployed contract code computes msg.value / 2, logs it, sends it to
+    // the beneficiary, and returns it. Morally equivalent to the following
+    // pseudocode:
+    // let half = CALLVALUE / 2;
+    // LOG0(half);
+    // CALL(beneficiary, half, gas());
+    // RETURN(half)
+    auto const eb_contract = evm_as::latest()
+                                 .push(2)
+                                 .callvalue()
+                                 .div()
+                                 .push0()
+                                 .mstore()
+                                 .log0(0, 32)
+                                 .push0()
+                                 .push0()
+                                 .push0()
+                                 .push0()
+                                 .mload(0)
+                                 .push(beneficiary)
+                                 .gas()
+                                 .call()
+                                 .pop()
+                                 .return_(0, 32);
+
+    std::vector<uint8_t> contract_bytecode{};
+    ASSERT_TRUE(evm_as::validate(eb_contract));
+    evm_as::compile(eb_contract, contract_bytecode);
+
+    // Init code: copy runtime to memory, return it to deploy.
+    // Layout: [init_code (10 bytes)] [runtime_code]
+    static constexpr size_t INIT_CODE_SIZE = 10;
+    auto const init_eb = evm_as::latest()
+                             .push(contract_bytecode.size())
+                             .push(INIT_CODE_SIZE)
+                             .push0()
+                             .codecopy()
+                             .return_(0, contract_bytecode.size());
+
+    std::vector<uint8_t> init_bytecode{};
+    ASSERT_TRUE(evm_as::validate(init_eb));
+    evm_as::compile(init_eb, init_bytecode);
+    ASSERT_EQ(init_bytecode.size(), INIT_CODE_SIZE);
+
+    // Full deploy payload: init_code ++ runtime_code.
+    byte_string deploy_data(init_bytecode.begin(), init_bytecode.end());
+    deploy_data.insert(
+        deploy_data.end(), contract_bytecode.begin(), contract_bytecode.end());
+
+    // Compute the address of the deployed contract.
+    Address const deployed = create_contract_address(sender, 0);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {beneficiary,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 0, .nonce = 0}}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    // Block 1: deploy (to = nullopt).
+    Transaction const deploy_tx{
+        .gas_limit = 200'000'000,
+        .value = 0,
+        .to = std::nullopt,
+        .data = deploy_data,
+    };
+    // Block 2: call deployed contract with 10 MON.
+    Transaction const call_tx{
+        .gas_limit = 200'000'000,
+        .value = uint256_t{10} * WEI_PER_MON,
+        .to = deployed,
+    };
+
+    // Block 3: call a balance-checker contract (planted via state override)
+    // that returns BALANCE(beneficiary).
+    static constexpr Address checker =
+        0x0000000000000000000000000000000000C0FFEE_address;
+    auto const checker_eb = evm_as::latest()
+                                .push(beneficiary)
+                                .balance()
+                                .push0()
+                                .mstore()
+                                .return_(0, 32);
+    std::vector<uint8_t> checker_bytecode{};
+    ASSERT_TRUE(evm_as::validate(checker_eb));
+    evm_as::compile(checker_eb, checker_bytecode);
+
+    Transaction const check_tx{
+        .gas_limit = 200'000'000,
+        .value = 0,
+        .to = checker,
+    };
+
+    auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(encoded_sender),
+        rlp::encode_list2(encoded_sender),
+        rlp::encode_list2(encoded_sender)));
+
+    auto const encoded_deploy =
+        rlp::encode_string2(rlp::encode_transaction(deploy_tx));
+    auto const encoded_call =
+        rlp::encode_string2(rlp::encode_transaction(call_tx));
+    auto const encoded_check =
+        rlp::encode_string2(rlp::encode_transaction(check_tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(encoded_deploy),
+        rlp::encode_list2(encoded_call),
+        rlp::encode_list2(encoded_check)));
+
+    BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    std::vector<monad_state_override *> so = {
+        monad_state_override_create(),
+        monad_state_override_create(),
+        monad_state_override_create()};
+    std::vector<monad_block_override *> bo = {
+        monad_block_override_create(),
+        monad_block_override_create(),
+        monad_block_override_create()};
+
+    // Plant the balance-checker bytecode at the checker address for block 3.
+    add_override_address(so[2], checker.bytes, sizeof(checker.bytes));
+    set_override_code(
+        so[2],
+        checker.bytes,
+        sizeof(checker.bytes),
+        checker_bytecode.data(),
+        checker_bytecode.size());
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        so.data(),
+        so.size(),
+        bo.data(),
+        bo.size(),
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 3);
+
+    // First simulated block: deployment succeeds.
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+
+    // Second simulated block: calling the deployed contract succeeds and
+    // returns value/2.
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+
+    auto const expected_half = uint256_t{5} * WEI_PER_MON;
+    auto const expected_bytes = intx::be::store<bytes32_t>(expected_half);
+    auto const expected_return_data =
+        std::format("0x{}", evmc::hex(expected_bytes));
+    EXPECT_EQ(output[1]["calls"][0]["returnData"], expected_return_data);
+
+    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["data"], expected_return_data);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["topics"].size(), 0);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["blockNumber"], "0x3");
+
+    // Third simulated block: balance checker confirms beneficiary received 5
+    // MON.
+    ASSERT_EQ(output[2]["calls"].size(), 1);
+    EXPECT_EQ(output[2]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[2]["calls"][0]["returnData"], expected_return_data);
 
     for (auto *o : bo) {
         monad_block_override_destroy(o);

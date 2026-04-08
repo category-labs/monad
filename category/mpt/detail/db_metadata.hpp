@@ -30,7 +30,7 @@
 #include <type_traits>
 
 MONAD_MPT_NAMESPACE_BEGIN
-class UpdateAuxImpl;
+class UpdateAux;
 
 namespace detail
 {
@@ -65,7 +65,7 @@ namespace detail
         static constexpr char const *MAGIC = "MONAD007";
         static constexpr unsigned MAGIC_STRING_LEN = 8;
 
-        friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
+        friend class MONAD_MPT_NAMESPACE::UpdateAux;
         friend inline void
         db_copy(db_metadata *dest, db_metadata const *src, size_t bytes);
 

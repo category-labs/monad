@@ -66,7 +66,7 @@ namespace detail
 
     // current implementation does not contaminate triedb node caching
     inline bool preorder_traverse_blocking_impl(
-        UpdateAuxImpl &aux, unsigned char const branch, Node const &node,
+        UpdateAux &aux, unsigned char const branch, Node const &node,
         TraverseMachine &traverse, uint64_t const version)
     {
         ++traverse.level;
@@ -201,7 +201,7 @@ namespace detail
 
         using result_type = async::result<bool>;
 
-        UpdateAuxImpl &aux;
+        UpdateAux &aux;
         Node::SharedPtr traverse_root;
         std::unique_ptr<TraverseMachine> machine;
         uint64_t const version;
@@ -215,7 +215,7 @@ namespace detail
         bool version_expired_before_complete{false};
 
         TraverseSender(
-            UpdateAuxImpl &aux, Node::SharedPtr traverse_root,
+            UpdateAux &aux, Node::SharedPtr traverse_root,
             std::unique_ptr<TraverseMachine> machine, uint64_t const version,
             size_t const concurrency_limit)
             : aux(aux)
@@ -372,7 +372,7 @@ namespace detail
 
 // return value indicates if we have done the full traversal or not
 inline bool preorder_traverse_blocking(
-    UpdateAuxImpl &aux, Node const &node, TraverseMachine &traverse,
+    UpdateAux &aux, Node const &node, TraverseMachine &traverse,
     uint64_t const version)
 {
     auto const ret = detail::preorder_traverse_blocking_impl(
@@ -382,7 +382,7 @@ inline bool preorder_traverse_blocking(
 }
 
 inline bool preorder_traverse_ondisk(
-    UpdateAuxImpl &aux, Node::SharedPtr node, TraverseMachine &machine,
+    UpdateAux &aux, Node::SharedPtr node, TraverseMachine &machine,
     uint64_t const version, size_t const concurrency_limit = 4096)
 {
     MONAD_ASSERT(aux.is_on_disk());

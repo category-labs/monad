@@ -236,7 +236,7 @@ namespace monad::test
         EmptyCompute, StateMachineConfig{.variable_length_start_depth = 0}>;
 
     inline Node::SharedPtr upsert_vector(
-        UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
+        UpdateAux &aux, StateMachine &sm, Node::SharedPtr old,
         std::vector<Update> &&update_vec, uint64_t const version = 0)
     {
         UpdateList update_ls;
@@ -248,7 +248,7 @@ namespace monad::test
 
     template <class... Updates>
     [[nodiscard]] constexpr Node::SharedPtr upsert_updates_with_version(
-        UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
+        UpdateAux &aux, StateMachine &sm, Node::SharedPtr old,
         uint64_t const version, Updates... updates)
     {
         UpdateList update_ls;
@@ -258,7 +258,7 @@ namespace monad::test
 
     template <class... Updates>
     [[nodiscard]] constexpr Node::SharedPtr upsert_updates(
-        UpdateAuxImpl &aux, StateMachine &sm, Node::SharedPtr old,
+        UpdateAux &aux, StateMachine &sm, Node::SharedPtr old,
         Updates... updates)
     {
         return upsert_updates_with_version(

@@ -27,7 +27,7 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 find_cursor_result_type find_blocking(
-    UpdateAuxImpl const &aux, NodeCursor root, NibblesView const key,
+    UpdateAux const &aux, NodeCursor root, NibblesView const key,
     uint64_t const version)
 {
     if (!root.is_valid()) {

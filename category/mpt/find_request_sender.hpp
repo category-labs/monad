@@ -62,7 +62,7 @@ private:
     struct find_receiver;
     friend struct find_receiver;
 
-    UpdateAuxImpl &aux_;
+    UpdateAux &aux_;
     NodeCache &node_cache_;
     NodeCursor root_;
     uint64_t version_;
@@ -91,9 +91,9 @@ public:
     using result_type = MONAD_ASYNC_NAMESPACE::result<find_result_type<T>>;
 
     constexpr find_request_sender(
-        UpdateAuxImpl &aux, NodeCache &node_cache,
-        AsyncInflightNodes &inflights, NodeCursor root, uint64_t version,
-        NibblesView const key, bool const return_value)
+        UpdateAux &aux, NodeCache &node_cache, AsyncInflightNodes &inflights,
+        NodeCursor root, uint64_t version, NibblesView const key,
+        bool const return_value)
         : aux_(aux)
         , node_cache_(node_cache)
         , root_(root)

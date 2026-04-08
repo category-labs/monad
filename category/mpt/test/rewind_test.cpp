@@ -148,7 +148,7 @@ TEST_F(
     ASSERT_TRUE(ci != nullptr);
     auto const idx = ci->index(aux.db_metadata());
     aux.remove(idx);
-    aux.append(monad::mpt::UpdateAuxImpl::chunk_list::fast, idx);
+    aux.append(monad::mpt::UpdateAux::chunk_list::fast, idx);
     monad::async::chunk_offset_t const new_fast_writer_offset{idx, 0};
     aux.advance_db_offsets_to(
         new_fast_writer_offset, aux.node_writer_slow->sender().offset());

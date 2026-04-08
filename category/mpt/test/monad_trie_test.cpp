@@ -124,7 +124,7 @@ Node::SharedPtr batch_upsert_commit(
     uint64_t const key_offset, uint64_t const nkeys,
     std::vector<monad::byte_string> &keccak_keys,
     std::vector<monad::byte_string> &keccak_values, bool const erase,
-    bool compaction, Node::SharedPtr prev_root, UpdateAuxImpl &aux,
+    bool compaction, Node::SharedPtr prev_root, UpdateAux &aux,
     StateMachine &sm)
 {
 
@@ -850,7 +850,7 @@ int main(int argc, char *argv[])
                     uint64_t ops{0};
                     bool signal_done{false};
                     auto find = [n_slices, &ops, &signal_done](
-                                    UpdateAuxImpl *aux,
+                                    UpdateAux *aux,
                                     NodeCursor state_start,
                                     unsigned n) {
                         monad::small_prng rand(n);
@@ -973,7 +973,7 @@ int main(int argc, char *argv[])
                         }
                     };
 
-                    auto poll = [&signal_done, &req](UpdateAuxImpl *aux) {
+                    auto poll = [&signal_done, &req](UpdateAux *aux) {
                         fiber_find_request_t request;
                         for (;;) {
                             boost::this_fiber::yield();

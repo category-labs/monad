@@ -41,8 +41,8 @@ namespace
     using namespace MONAD_ASYNC_NAMESPACE;
 
     void find(
-        UpdateAuxImpl *aux, Node::SharedPtr root,
-        monad::byte_string_view const key, monad::byte_string_view const value)
+        UpdateAux *aux, Node::SharedPtr root, monad::byte_string_view const key,
+        monad::byte_string_view const value)
     {
         monad::threadsafe_boost_fibers_promise<
             monad::mpt::find_cursor_result_type>

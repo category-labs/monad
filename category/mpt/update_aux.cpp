@@ -82,7 +82,7 @@ namespace
 // INVALID_VIRTUAL_OFFSET if the input offset is invalid or the offset refers to
 // a chunk in the free list.
 virtual_chunk_offset_t
-UpdateAuxImpl::physical_to_virtual(chunk_offset_t const offset) const noexcept
+UpdateAux::physical_to_virtual(chunk_offset_t const offset) const noexcept
 {
     if (offset == INVALID_OFFSET) {
         return INVALID_VIRTUAL_OFFSET;
@@ -101,8 +101,8 @@ UpdateAuxImpl::physical_to_virtual(chunk_offset_t const offset) const noexcept
     return INVALID_VIRTUAL_OFFSET;
 }
 
-std::pair<UpdateAuxImpl::chunk_list, detail::unsigned_20>
-UpdateAuxImpl::chunk_list_and_age(uint32_t const idx) const noexcept
+std::pair<UpdateAux::chunk_list, detail::unsigned_20>
+UpdateAux::chunk_list_and_age(uint32_t const idx) const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto const *ci = db_metadata()->at(idx);
@@ -122,7 +122,7 @@ UpdateAuxImpl::chunk_list_and_age(uint32_t const idx) const noexcept
     return ret;
 }
 
-void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx)
+void UpdateAux::append(chunk_list const list, uint32_t const idx)
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
@@ -161,7 +161,7 @@ void UpdateAuxImpl::append(chunk_list const list, uint32_t const idx)
     }
 }
 
-void UpdateAuxImpl::remove(uint32_t const idx) noexcept
+void UpdateAux::remove(uint32_t const idx) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     bool const is_free_list =
@@ -179,7 +179,7 @@ void UpdateAuxImpl::remove(uint32_t const idx) noexcept
     }
 }
 
-void UpdateAuxImpl::advance_db_offsets_to(
+void UpdateAux::advance_db_offsets_to(
     chunk_offset_t const fast_offset, chunk_offset_t const slow_offset) noexcept
 {
     MONAD_ASSERT(is_on_disk());
@@ -195,8 +195,7 @@ void UpdateAuxImpl::advance_db_offsets_to(
     do_(db_metadata_[1].main);
 }
 
-void UpdateAuxImpl::append_root_offset(
-    chunk_offset_t const root_offset) noexcept
+void UpdateAux::append_root_offset(chunk_offset_t const root_offset) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
@@ -207,7 +206,7 @@ void UpdateAuxImpl::append_root_offset(
     do_(db_metadata_[1].main);
 }
 
-void UpdateAuxImpl::update_root_offset(
+void UpdateAux::update_root_offset(
     size_t const i, chunk_offset_t const root_offset) noexcept
 {
     MONAD_ASSERT(is_on_disk());
@@ -225,8 +224,7 @@ void UpdateAuxImpl::update_root_offset(
     do_(db_metadata_[1].main);
 }
 
-void UpdateAuxImpl::fast_forward_next_version(
-    uint64_t const new_version) noexcept
+void UpdateAux::fast_forward_next_version(uint64_t const new_version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
@@ -251,7 +249,7 @@ void UpdateAuxImpl::fast_forward_next_version(
     do_(db_metadata_[1].main);
 }
 
-void UpdateAuxImpl::update_history_length_metadata(
+void UpdateAux::update_history_length_metadata(
     uint64_t const history_len) noexcept
 {
     MONAD_ASSERT(is_on_disk());
@@ -266,7 +264,7 @@ void UpdateAuxImpl::update_history_length_metadata(
     do_(db_metadata_[1].main);
 }
 
-uint64_t UpdateAuxImpl::get_latest_finalized_version() const noexcept
+uint64_t UpdateAux::get_latest_finalized_version() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     return start_lifetime_as<std::atomic_uint64_t const>(
@@ -274,7 +272,7 @@ uint64_t UpdateAuxImpl::get_latest_finalized_version() const noexcept
         ->load(std::memory_order_acquire);
 }
 
-uint64_t UpdateAuxImpl::get_latest_verified_version() const noexcept
+uint64_t UpdateAux::get_latest_verified_version() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     return start_lifetime_as<std::atomic_uint64_t const>(
@@ -282,7 +280,7 @@ uint64_t UpdateAuxImpl::get_latest_verified_version() const noexcept
         ->load(std::memory_order_acquire);
 }
 
-uint64_t UpdateAuxImpl::get_latest_voted_version() const noexcept
+uint64_t UpdateAux::get_latest_voted_version() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     return start_lifetime_as<std::atomic_uint64_t const>(
@@ -290,13 +288,13 @@ uint64_t UpdateAuxImpl::get_latest_voted_version() const noexcept
         ->load(std::memory_order_acquire);
 }
 
-bytes32_t UpdateAuxImpl::get_latest_voted_block_id() const noexcept
+bytes32_t UpdateAux::get_latest_voted_block_id() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     return db_metadata()->latest_voted_block_id;
 }
 
-uint64_t UpdateAuxImpl::get_latest_proposed_version() const noexcept
+uint64_t UpdateAux::get_latest_proposed_version() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     return start_lifetime_as<std::atomic_uint64_t const>(
@@ -304,14 +302,13 @@ uint64_t UpdateAuxImpl::get_latest_proposed_version() const noexcept
         ->load(std::memory_order_acquire);
 }
 
-bytes32_t UpdateAuxImpl::get_latest_proposed_block_id() const noexcept
+bytes32_t UpdateAux::get_latest_proposed_block_id() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     return db_metadata()->latest_proposed_block_id;
 }
 
-void UpdateAuxImpl::set_latest_finalized_version(
-    uint64_t const version) noexcept
+void UpdateAux::set_latest_finalized_version(uint64_t const version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
@@ -323,7 +320,7 @@ void UpdateAuxImpl::set_latest_finalized_version(
     do_(db_metadata_[1].main);
 }
 
-void UpdateAuxImpl::set_latest_verified_version(uint64_t const version) noexcept
+void UpdateAux::set_latest_verified_version(uint64_t const version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
@@ -335,7 +332,7 @@ void UpdateAuxImpl::set_latest_verified_version(uint64_t const version) noexcept
     do_(db_metadata_[1].main);
 }
 
-void UpdateAuxImpl::set_latest_voted(
+void UpdateAux::set_latest_voted(
     uint64_t const version, bytes32_t const &block_id) noexcept
 {
     MONAD_ASSERT(is_on_disk());
@@ -348,7 +345,7 @@ void UpdateAuxImpl::set_latest_voted(
     }
 }
 
-void UpdateAuxImpl::set_latest_proposed(
+void UpdateAux::set_latest_proposed(
     uint64_t const version, bytes32_t const &block_id) noexcept
 {
     MONAD_ASSERT(is_on_disk());
@@ -361,7 +358,7 @@ void UpdateAuxImpl::set_latest_proposed(
     }
 }
 
-int64_t UpdateAuxImpl::get_auto_expire_version_metadata() const noexcept
+int64_t UpdateAux::get_auto_expire_version_metadata() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     return start_lifetime_as<std::atomic_int64_t const>(
@@ -369,8 +366,7 @@ int64_t UpdateAuxImpl::get_auto_expire_version_metadata() const noexcept
         ->load(std::memory_order_acquire);
 }
 
-void UpdateAuxImpl::set_auto_expire_version_metadata(
-    int64_t const version) noexcept
+void UpdateAux::set_auto_expire_version_metadata(int64_t const version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
@@ -383,7 +379,7 @@ void UpdateAuxImpl::set_auto_expire_version_metadata(
 }
 
 int64_t
-UpdateAuxImpl::calc_auto_expire_version(uint64_t const upsert_version) noexcept
+UpdateAux::calc_auto_expire_version(uint64_t const upsert_version) noexcept
 {
     MONAD_ASSERT(is_on_disk());
     if (db_history_max_version() == INVALID_BLOCK_NUM) {
@@ -403,7 +399,7 @@ UpdateAuxImpl::calc_auto_expire_version(uint64_t const upsert_version) noexcept
         static_cast<int64_t>(min_valid_version_post_upsert));
 }
 
-void UpdateAuxImpl::rewind_to_match_offsets()
+void UpdateAux::rewind_to_match_offsets()
 {
     MONAD_ASSERT(is_on_disk());
 
@@ -484,7 +480,7 @@ void UpdateAuxImpl::rewind_to_match_offsets()
     reset_node_writers();
 }
 
-void UpdateAuxImpl::clear_ondisk_db()
+void UpdateAux::clear_ondisk_db()
 {
     MONAD_ASSERT(is_on_disk());
     auto do_ = [&](detail::db_metadata *m) {
@@ -507,7 +503,7 @@ void UpdateAuxImpl::clear_ondisk_db()
     return;
 }
 
-void UpdateAuxImpl::rewind_to_version(uint64_t const version)
+void UpdateAux::rewind_to_version(uint64_t const version)
 {
     MONAD_ASSERT(is_on_disk());
     MONAD_ASSERT(version_is_valid_ondisk(version));
@@ -551,7 +547,7 @@ void UpdateAuxImpl::rewind_to_version(uint64_t const version)
     rewind_to_match_offsets();
 }
 
-UpdateAuxImpl::~UpdateAuxImpl()
+UpdateAux::~UpdateAux()
 {
     if (io != nullptr) {
         unset_io();
@@ -562,8 +558,7 @@ UpdateAuxImpl::~UpdateAuxImpl()
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
-void UpdateAuxImpl::set_io(
-    AsyncIO &io_, std::optional<uint64_t> const history_len)
+void UpdateAux::set_io(AsyncIO &io_, std::optional<uint64_t> const history_len)
 {
     io = &io_;
     auto const chunk_count = io->chunk_count();
@@ -847,7 +842,7 @@ void UpdateAuxImpl::set_io(
         // since chunk 0 is used for db_metadata
         auto const root_offsets_chunk_count =
             io->storage_pool().devices()[0].cnv_chunks() -
-            UpdateAuxImpl::cnv_chunks_for_db_metadata;
+            UpdateAux::cnv_chunks_for_db_metadata;
         MONAD_ASSERT(
             root_offsets_chunk_count > 0 &&
                 (root_offsets_chunk_count & (root_offsets_chunk_count - 1)) ==
@@ -1025,7 +1020,7 @@ void UpdateAuxImpl::set_io(
     #pragma GCC diagnostic pop
 #endif
 
-void UpdateAuxImpl::unset_io()
+void UpdateAux::unset_io()
 {
     node_writer_fast.reset();
     node_writer_slow.reset();
@@ -1052,7 +1047,7 @@ void UpdateAuxImpl::unset_io()
     io = nullptr;
 }
 
-void UpdateAuxImpl::reset_node_writers()
+void UpdateAux::reset_node_writers()
 {
     auto init_node_writer = [&](chunk_offset_t const node_writer_offset)
         -> node_writer_unique_ptr_type {
@@ -1093,7 +1088,7 @@ version + 1. However, we do not assume that the version history is continuous
 because user can move_trie_version_forward(), which can invalidate versions in
 the middle of a continuous history.
 */
-Node::SharedPtr UpdateAuxImpl::do_update(
+Node::SharedPtr UpdateAux::do_update(
     Node::SharedPtr prev_root, StateMachine &sm, UpdateList &&updates,
     uint64_t const version, bool const compaction, bool const can_write_to_fast,
     bool const write_root)
@@ -1174,7 +1169,7 @@ Node::SharedPtr UpdateAuxImpl::do_update(
     return root;
 }
 
-void UpdateAuxImpl::release_unreferenced_chunks()
+void UpdateAux::release_unreferenced_chunks()
 {
     auto const min_valid_version = db_history_min_valid_version();
     if (min_valid_version == INVALID_BLOCK_NUM) {
@@ -1204,14 +1199,14 @@ void UpdateAuxImpl::release_unreferenced_chunks()
     free_compacted_chunks();
 }
 
-void UpdateAuxImpl::erase_versions_up_to_and_including(uint64_t const version)
+void UpdateAux::erase_versions_up_to_and_including(uint64_t const version)
 {
     LOG_INFO_CFORMAT("Erase versions up to and including %lu", version);
     clear_root_offsets_up_to_and_including(version);
     release_unreferenced_chunks();
 }
 
-double UpdateAuxImpl::calculate_disk_usage_if_erased_up_to_and_including(
+double UpdateAux::calculate_disk_usage_if_erased_up_to_and_including(
     uint64_t const version_to_erase) const
 {
     MONAD_ASSERT(is_on_disk());
@@ -1245,7 +1240,7 @@ double UpdateAuxImpl::calculate_disk_usage_if_erased_up_to_and_including(
     return (num_fast_chunks + num_slow_chunks) / (double)io->chunk_count();
 }
 
-void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
+void UpdateAux::adjust_history_length_based_on_disk_usage()
 {
     constexpr double upper_bound = 0.8;
     constexpr double lower_bound = 0.6;
@@ -1311,8 +1306,7 @@ void UpdateAuxImpl::adjust_history_length_based_on_disk_usage()
     }
 }
 
-void UpdateAuxImpl::clear_root_offsets_up_to_and_including(
-    uint64_t const version)
+void UpdateAux::clear_root_offsets_up_to_and_including(uint64_t const version)
 {
     for (uint64_t v = db_history_range_lower_bound();
          v != INVALID_BLOCK_NUM && v <= version;
@@ -1321,7 +1315,7 @@ void UpdateAuxImpl::clear_root_offsets_up_to_and_including(
     }
 }
 
-void UpdateAuxImpl::move_trie_version_forward(
+void UpdateAux::move_trie_version_forward(
     uint64_t const src, uint64_t const dest)
 {
     MONAD_ASSERT(is_on_disk());
@@ -1345,7 +1339,7 @@ void UpdateAuxImpl::move_trie_version_forward(
     }
 }
 
-void UpdateAuxImpl::update_disk_growth_data()
+void UpdateAux::update_disk_growth_data()
 {
     compact_virtual_chunk_offset_t const curr_fast_writer_offset{
         physical_to_virtual(node_writer_fast->sender().offset())};
@@ -1359,7 +1353,7 @@ void UpdateAuxImpl::update_disk_growth_data()
     last_block_end_offset_slow_ = curr_slow_writer_offset;
 }
 
-void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
+void UpdateAux::advance_compact_offsets(Node::SharedPtr const prev_root)
 {
     /* Note on ring based compaction:
     Fast list compaction is steady pace based on disk growth over recent blocks,
@@ -1503,19 +1497,19 @@ void UpdateAuxImpl::advance_compact_offsets(Node::SharedPtr const prev_root)
     }
 }
 
-uint64_t UpdateAuxImpl::version_history_max_possible() const noexcept
+uint64_t UpdateAux::version_history_max_possible() const noexcept
 {
     return root_offsets().capacity();
 }
 
-uint64_t UpdateAuxImpl::version_history_length() const noexcept
+uint64_t UpdateAux::version_history_length() const noexcept
 {
     return start_lifetime_as<std::atomic_uint64_t const>(
                &db_metadata()->history_length)
         ->load(std::memory_order_relaxed);
 }
 
-uint64_t UpdateAuxImpl::db_history_min_valid_version() const noexcept
+uint64_t UpdateAux::db_history_min_valid_version() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto const offsets = root_offsets();
@@ -1528,7 +1522,7 @@ uint64_t UpdateAuxImpl::db_history_min_valid_version() const noexcept
     return min_version;
 }
 
-uint64_t UpdateAuxImpl::db_history_range_lower_bound() const noexcept
+uint64_t UpdateAux::db_history_range_lower_bound() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     auto const max_version = db_history_max_version();
@@ -1547,13 +1541,13 @@ uint64_t UpdateAuxImpl::db_history_range_lower_bound() const noexcept
     }
 }
 
-uint64_t UpdateAuxImpl::db_history_max_version() const noexcept
+uint64_t UpdateAux::db_history_max_version() const noexcept
 {
     MONAD_ASSERT(is_on_disk());
     return root_offsets().max_version();
 }
 
-void UpdateAuxImpl::free_compacted_chunks()
+void UpdateAux::free_compacted_chunks()
 {
     auto free_chunks_from_ci_till_count =
         [&](detail::db_metadata::chunk_info_t const *ci,
@@ -1570,9 +1564,8 @@ void UpdateAuxImpl::free_compacted_chunks()
                 io->storage_pool()
                     .chunk(monad::async::storage_pool::seq, idx)
                     .destroy_contents();
-                append(
-                    UpdateAuxImpl::chunk_list::free,
-                    idx); // append not prepend
+                append(UpdateAux::chunk_list::free,
+                       idx); // append not prepend
                 // NOLINTNEXTLINE(bugprone-lambda-function-name)
                 LOG_INFO_CFORMAT(
                     "Free compacted chunk id %u, time elapsed: %ld us",
@@ -1592,7 +1585,7 @@ void UpdateAuxImpl::free_compacted_chunks()
         db_metadata()->slow_list_begin(), chunks_to_remove_before_count_slow_);
 }
 
-uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
+uint32_t UpdateAux::num_chunks(chunk_list const list) const noexcept
 {
     switch (list) {
     case chunk_list::free:
@@ -1623,7 +1616,7 @@ uint32_t UpdateAuxImpl::num_chunks(chunk_list const list) const noexcept
     return 0;
 }
 
-void UpdateAuxImpl::print_update_stats(uint64_t const version)
+void UpdateAux::print_update_stats(uint64_t const version)
 {
 #if MONAD_MPT_COLLECT_STATS
     if (stats.nodes_updated_expire > 50'000) {
@@ -1771,19 +1764,19 @@ void UpdateAuxImpl::print_update_stats(uint64_t const version)
 #endif
 }
 
-void UpdateAuxImpl::reset_stats()
+void UpdateAux::reset_stats()
 {
     stats.reset();
 }
 
-void UpdateAuxImpl::collect_number_nodes_created_stats()
+void UpdateAux::collect_number_nodes_created_stats()
 {
 #if MONAD_MPT_COLLECT_STATS
     ++stats.nodes_created_or_updated;
 #endif
 }
 
-void UpdateAuxImpl::collect_compaction_read_stats(
+void UpdateAux::collect_compaction_read_stats(
     chunk_offset_t const physical_node_offset, unsigned const bytes_to_read)
 {
 #if MONAD_MPT_COLLECT_STATS
@@ -1808,7 +1801,7 @@ void UpdateAuxImpl::collect_compaction_read_stats(
 #endif
 }
 
-void UpdateAuxImpl::collect_expire_stats(bool const is_read)
+void UpdateAux::collect_expire_stats(bool const is_read)
 {
 #if MONAD_MPT_COLLECT_STATS
     if (is_read) {
@@ -1822,7 +1815,7 @@ void UpdateAuxImpl::collect_expire_stats(bool const is_read)
 #endif
 }
 
-void UpdateAuxImpl::collect_compacted_nodes_stats(
+void UpdateAux::collect_compacted_nodes_stats(
     bool const copy_node_for_fast, bool const rewrite_to_fast,
     virtual_chunk_offset_t node_offset, uint32_t node_disk_size)
 {

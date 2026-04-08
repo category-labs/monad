@@ -169,7 +169,7 @@ public:
 
 private:
     friend struct test::DbAccessor;
-    UpdateAuxImpl const &aux() const;
+    UpdateAux const &aux() const;
 };
 
 // The following are not threadsafe. Please use async get from the RODb owning

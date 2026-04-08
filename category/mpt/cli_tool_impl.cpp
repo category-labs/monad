@@ -434,7 +434,7 @@ public:
 
     template <class T = void>
     MONAD_ASYNC_NAMESPACE::file_offset_t print_list_info(
-        MONAD_MPT_NAMESPACE::UpdateAuxImpl &aux,
+        MONAD_MPT_NAMESPACE::UpdateAux &aux,
         MONAD_MPT_NAMESPACE::detail::db_metadata::chunk_info_t const
             *const item_,
         char const *name, T *list = nullptr)
@@ -482,7 +482,7 @@ public:
         return total_used;
     }
 
-    void print_db_history_summary(MONAD_MPT_NAMESPACE::UpdateAuxImpl &aux)
+    void print_db_history_summary(MONAD_MPT_NAMESPACE::UpdateAux &aux)
     {
         cout << "MPT database has "
              << (1 + aux.db_history_max_version() -
@@ -980,14 +980,13 @@ public:
         size_t fast_chunks_inserted = 0;
         auto override_insertion_count =
             [](monad::mpt::detail::db_metadata *db,
-               monad::mpt::UpdateAuxImpl::chunk_list type,
+               monad::mpt::UpdateAux::chunk_list type,
                monad::mpt::detail::unsigned_20 initial_insertion_count) {
-                MONAD_ASSERT(
-                    type != monad::mpt::UpdateAuxImpl::chunk_list::free);
+                MONAD_ASSERT(type != monad::mpt::UpdateAux::chunk_list::free);
                 auto const g = db->hold_dirty();
                 auto *i =
                     const_cast<monad::mpt::detail::db_metadata::chunk_info_t *>(
-                        type == monad::mpt::UpdateAuxImpl::chunk_list::fast
+                        type == monad::mpt::UpdateAux::chunk_list::fast
                             ? db->fast_list_begin()
                             : db->slow_list_begin());
                 i->insertion_count0_ =
@@ -999,23 +998,21 @@ public:
             if (i.type == monad::async::storage_pool::seq) {
                 if (i.metadata.in_fast_list) {
                     aux.append(
-                        monad::mpt::UpdateAuxImpl::chunk_list::fast,
-                        i.chunk_id);
+                        monad::mpt::UpdateAux::chunk_list::fast, i.chunk_id);
                     if (0 == fast_chunks_inserted++) {
                         aux.modify_metadata(
                             override_insertion_count,
-                            monad::mpt::UpdateAuxImpl::chunk_list::fast,
+                            monad::mpt::UpdateAux::chunk_list::fast,
                             fast_list_base_insertion_count);
                     }
                 }
                 else if (i.metadata.in_slow_list) {
                     aux.append(
-                        monad::mpt::UpdateAuxImpl::chunk_list::slow,
-                        i.chunk_id);
+                        monad::mpt::UpdateAux::chunk_list::slow, i.chunk_id);
                     if (0 == slow_chunks_inserted++) {
                         aux.modify_metadata(
                             override_insertion_count,
-                            monad::mpt::UpdateAuxImpl::chunk_list::slow,
+                            monad::mpt::UpdateAux::chunk_list::slow,
                             slow_list_base_insertion_count);
                     }
                 }
@@ -1033,8 +1030,7 @@ public:
             todecompress.size() - 1);
         if (fast_chunks_inserted == 0) {
             aux.append(
-                monad::mpt::UpdateAuxImpl::chunk_list::fast,
-                fast_list_begin_index);
+                monad::mpt::UpdateAux::chunk_list::fast, fast_list_begin_index);
             auto const it =
                 std::find(chunks.begin(), chunks.end(), fast_list_begin_index);
             MONAD_ASSERT(it != chunks.end());
@@ -1042,7 +1038,7 @@ public:
             // override the first insertion count
             aux.modify_metadata(
                 override_insertion_count,
-                monad::mpt::UpdateAuxImpl::chunk_list::fast,
+                monad::mpt::UpdateAux::chunk_list::fast,
                 fast_list_base_insertion_count);
         }
         MONAD_ASSERT(
@@ -1051,8 +1047,7 @@ public:
 
         if (slow_chunks_inserted == 0) {
             aux.append(
-                monad::mpt::UpdateAuxImpl::chunk_list::slow,
-                slow_list_begin_index);
+                monad::mpt::UpdateAux::chunk_list::slow, slow_list_begin_index);
             auto const it =
                 std::find(chunks.begin(), chunks.end(), slow_list_begin_index);
             MONAD_ASSERT(it != chunks.end());
@@ -1060,7 +1055,7 @@ public:
             // override the first insertion count
             aux.modify_metadata(
                 override_insertion_count,
-                monad::mpt::UpdateAuxImpl::chunk_list::slow,
+                monad::mpt::UpdateAux::chunk_list::slow,
                 slow_list_base_insertion_count);
         }
         MONAD_ASSERT(
@@ -1069,7 +1064,7 @@ public:
 
         for (unsigned int const &chunk : chunks) {
             if (chunk != UINT32_MAX) {
-                aux.append(monad::mpt::UpdateAuxImpl::chunk_list::free, chunk);
+                aux.append(monad::mpt::UpdateAux::chunk_list::free, chunk);
             }
         }
 
@@ -1501,7 +1496,7 @@ opened.
                 impl.allow_dirty || !impl.archive_database.empty();
             impl.flags.num_cnv_chunks =
                 impl.root_offsets_chunk_count +
-                monad::mpt::UpdateAuxImpl::cnv_chunks_for_db_metadata;
+                monad::mpt::UpdateAux::cnv_chunks_for_db_metadata;
             if (!impl.restore_database.empty()) {
                 if (!impl.archive_database.empty()) {
                     impl.cli_ask_question(

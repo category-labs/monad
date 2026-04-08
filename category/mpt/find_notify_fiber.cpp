@@ -96,7 +96,7 @@ namespace
     {
         static constexpr bool lifetime_managed_internally = true;
 
-        UpdateAuxImpl &aux;
+        UpdateAux &aux;
         NodeCache &node_cache;
         inflight_map_owning_t &inflights;
         chunk_offset_t offset;
@@ -106,7 +106,7 @@ namespace
         uint16_t buffer_off;
 
         find_owning_receiver(
-            UpdateAuxImpl &aux, NodeCache &node_cache,
+            UpdateAux &aux, NodeCache &node_cache,
             inflight_map_owning_t &inflights, chunk_offset_t const offset,
             virtual_chunk_offset_t const virtual_offset)
             : aux(aux)
@@ -160,8 +160,7 @@ namespace
     };
 
     void async_read_with_continuation(
-        UpdateAuxImpl &aux, NodeCache &node_cache,
-        inflight_map_owning_t &inflights,
+        UpdateAux &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
         threadsafe_boost_fibers_promise<find_owning_cursor_result_type>
             &promise,
         auto &&cont, chunk_offset_t const read_offset,
@@ -186,7 +185,7 @@ namespace
 }
 
 void find_notify_fiber_future(
-    UpdateAuxImpl &aux,
+    UpdateAux &aux,
     threadsafe_boost_fibers_promise<find_cursor_result_type> &promise,
     NodeCursor const &root, NibblesView const key)
 {
@@ -254,7 +253,7 @@ void find_notify_fiber_future(
 // Look up from node_cache first, issue read if miss and not in inflight
 // Upon read completion, deserialize node and add to node_cache
 void find_owning_notify_fiber_future(
-    UpdateAuxImpl &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
+    UpdateAux &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
     NodeCursor const &start, NibblesView const key, uint64_t const version)
 {
@@ -355,7 +354,7 @@ void find_owning_notify_fiber_future(
 }
 
 void load_root_notify_fiber_future(
-    UpdateAuxImpl &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
+    UpdateAux &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
     uint64_t const version)
 {

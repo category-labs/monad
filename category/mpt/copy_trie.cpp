@@ -34,7 +34,7 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 Node::SharedPtr create_node_add_new_branch(
-    UpdateAuxImpl &aux, Node *const node, unsigned char const new_branch,
+    UpdateAux &aux, Node *const node, unsigned char const new_branch,
     Node::SharedPtr new_child, uint64_t const new_version,
     std::optional<byte_string_view> opt_value)
 {
@@ -74,7 +74,7 @@ Node::SharedPtr create_node_add_new_branch(
 }
 
 Node::SharedPtr create_node_with_two_children(
-    UpdateAuxImpl &aux, NibblesView const path, unsigned char const branch0,
+    UpdateAux &aux, NibblesView const path, unsigned char const branch0,
     Node::SharedPtr child0, unsigned char const branch1, Node::SharedPtr child1,
     uint64_t const new_version, std::optional<byte_string_view> opt_value)
 {
@@ -110,7 +110,7 @@ Node::SharedPtr create_node_with_two_children(
 }
 
 Node::SharedPtr copy_trie_impl(
-    UpdateAuxImpl &aux, Node::SharedPtr src_root, NibblesView const src_prefix,
+    UpdateAux &aux, Node::SharedPtr src_root, NibblesView const src_prefix,
     Node::SharedPtr dest_root, NibblesView const dest_prefix,
     uint64_t const dest_version)
 {
@@ -267,7 +267,7 @@ Node::SharedPtr copy_trie_impl(
 }
 
 Node::SharedPtr copy_trie_to_dest(
-    UpdateAuxImpl &aux, Node::SharedPtr src_root, NibblesView const src_prefix,
+    UpdateAux &aux, Node::SharedPtr src_root, NibblesView const src_prefix,
     Node::SharedPtr dest_root, NibblesView const dest_prefix,
     uint64_t const dest_version, bool const write_root)
 {

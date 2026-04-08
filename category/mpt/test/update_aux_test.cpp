@@ -85,7 +85,7 @@ TEST(update_aux_test, set_io_reader_dirty)
         const_cast<monad::mpt::detail::db_metadata *>(aux_writer.db_metadata())
             ->is_dirty());
 
-    struct TestAux : public monad::mpt::UpdateAuxImpl
+    struct TestAux : public monad::mpt::UpdateAux
     {
         monad::mpt::UpdateAux &write_aux;
         bool was_dirty{false};

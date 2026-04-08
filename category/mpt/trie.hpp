@@ -164,17 +164,15 @@ public:
     }
 };
 
-chunk_offset_t
-async_write_node_set_spare(UpdateAuxImpl &, Node &, bool is_fast);
+chunk_offset_t async_write_node_set_spare(UpdateAux &, Node &, bool is_fast);
 
-chunk_offset_t
-write_new_root_node(UpdateAuxImpl &, Node &root, uint64_t version);
+chunk_offset_t write_new_root_node(UpdateAux &, Node &root, uint64_t version);
 
 node_writer_unique_ptr_type
-replace_node_writer(UpdateAuxImpl &, node_writer_unique_ptr_type const &);
+replace_node_writer(UpdateAux &, node_writer_unique_ptr_type const &);
 
 // \class Auxiliaries for triedb update
-class UpdateAuxImpl
+class UpdateAux
 {
     uint32_t initial_insertion_count_on_pool_creation_{0};
     bool enable_dynamic_history_length_{true};
@@ -254,17 +252,17 @@ public:
     detail::TrieUpdateCollectedStats stats;
 
     // in-memory
-    UpdateAuxImpl() = default;
+    UpdateAux() = default;
 
     // on-disk
-    explicit UpdateAuxImpl(
+    explicit UpdateAux(
         MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
         std::optional<uint64_t> const history_len = {})
     {
         set_io(io_, history_len);
     }
 
-    virtual ~UpdateAuxImpl();
+    virtual ~UpdateAux();
 
     void set_io(
         MONAD_ASYNC_NAMESPACE::AsyncIO &,
@@ -582,29 +580,8 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 144 + sizeof(detail::TrieUpdateCollectedStats));
-static_assert(alignof(UpdateAuxImpl) == 8);
-
-class UpdateAux final : public UpdateAuxImpl
-{
-public:
-    // in-memory
-    UpdateAux() = default;
-
-    // on-disk
-    explicit UpdateAux(
-        MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
-        std::optional<uint64_t> const history_len = {})
-        : UpdateAuxImpl(io_, history_len)
-    {
-    }
-
-    ~UpdateAux()
-    {
-        // Prevent race on vptr
-        std::atomic_thread_fence(std::memory_order_acq_rel);
-    }
-};
+    sizeof(UpdateAux) == 144 + sizeof(detail::TrieUpdateCollectedStats));
+static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>
     requires(
@@ -613,7 +590,7 @@ template <receiver Receiver>
         MONAD_ASYNC_NAMESPACE::compatible_sender_receiver<
             read_long_update_sender, Receiver> &&
         Receiver::lifetime_managed_internally)
-void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
+void async_read(UpdateAux &aux, Receiver &&receiver)
 {
     [[likely]] if (
         receiver.bytes_to_read <=
@@ -639,7 +616,7 @@ void async_read(UpdateAuxImpl &aux, Receiver &&receiver)
 
 // batch upsert, updates can be nested
 Node::SharedPtr upsert(
-    UpdateAuxImpl &, uint64_t version, StateMachine &, Node::SharedPtr old,
+    UpdateAux &, uint64_t version, StateMachine &, Node::SharedPtr old,
     UpdateList &&, bool write_root = true);
 
 // Performs a deep copy of a subtrie from `src_root` trie at
@@ -648,12 +625,12 @@ Node::SharedPtr upsert(
 // Any pre-existing trie at `dest_prefix` will be overwritten.
 // The in-memory effect is similar to a move operation.
 Node::SharedPtr copy_trie_to_dest(
-    UpdateAuxImpl &, Node::SharedPtr src_root, NibblesView src_prefix,
+    UpdateAux &, Node::SharedPtr src_root, NibblesView src_prefix,
     Node::SharedPtr dest_root, NibblesView dest_prefix, uint64_t dest_version,
     bool write_root = true);
 
 // load all nodes as far as caching policy would allow
-size_t load_all(UpdateAuxImpl &, StateMachine &, NodeCursor const &);
+size_t load_all(UpdateAux &, StateMachine &, NodeCursor const &);
 
 //////////////////////////////////////////////////////////////////////////////
 // find
@@ -699,18 +676,18 @@ class NodeCache;
 // during execution, DO NOT invoke it directly from a transaction fiber, as is
 // not race free.
 void find_notify_fiber_future(
-    UpdateAuxImpl &, threadsafe_boost_fibers_promise<find_cursor_result_type> &,
+    UpdateAux &, threadsafe_boost_fibers_promise<find_cursor_result_type> &,
     NodeCursor const &start, NibblesView key);
 
 // rodb
 void find_owning_notify_fiber_future(
-    UpdateAuxImpl &, NodeCache &, inflight_map_owning_t &,
+    UpdateAux &, NodeCache &, inflight_map_owning_t &,
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
     NodeCursor const &start, NibblesView, uint64_t version);
 
 // rodb load root
 void load_root_notify_fiber_future(
-    UpdateAuxImpl &, NodeCache &, inflight_map_owning_t &,
+    UpdateAux &, NodeCache &, inflight_map_owning_t &,
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
     uint64_t version);
 
@@ -722,8 +699,8 @@ the node through blocking read.
 synchronization is provided, and user code should make sure no other place is
 modifying trie.
 */
-find_cursor_result_type find_blocking(
-    UpdateAuxImpl const &, NodeCursor, NibblesView key, uint64_t version);
+find_cursor_result_type
+find_blocking(UpdateAux const &, NodeCursor, NibblesView key, uint64_t version);
 
 /* This function reads a node from the specified physical offset `node_offset`,
 where the spare bits indicate the number of pages to read. It returns a valid
@@ -731,7 +708,7 @@ where the spare bits indicate the number of pages to read. It returns a valid
 becomes invalid.
 */
 Node::SharedPtr read_node_blocking(
-    UpdateAuxImpl const &, chunk_offset_t node_offset, uint64_t version);
+    UpdateAux const &, chunk_offset_t node_offset, uint64_t version);
 
 //////////////////////////////////////////////////////////////////////////////
 // helpers

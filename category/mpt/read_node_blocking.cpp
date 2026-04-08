@@ -30,7 +30,7 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 Node::SharedPtr read_node_blocking(
-    UpdateAuxImpl const &aux, chunk_offset_t const node_offset,
+    UpdateAux const &aux, chunk_offset_t const node_offset,
     uint64_t const version)
 {
     MONAD_ASSERT(aux.is_on_disk());

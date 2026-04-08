@@ -1313,7 +1313,7 @@ bool Db::is_read_only() const
     return is_on_disk() && impl_->aux().io->is_read_only();
 }
 
-UpdateAuxImpl const &Db::aux() const
+UpdateAux const &Db::aux() const
 {
     MONAD_ASSERT(impl_);
     return impl_->aux();

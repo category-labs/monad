@@ -104,7 +104,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
     struct TraverseCalculateAndVerifyMinTruncatedOffsets
         : public TraverseMachine
     {
-        UpdateAuxImpl &aux; // for chunk count lookup
+        UpdateAux &aux; // for chunk count lookup
         size_t level{0};
 
         struct traverse_record_t
@@ -117,8 +117,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
 
         std::stack<traverse_record_t> root_to_node_records;
 
-        explicit TraverseCalculateAndVerifyMinTruncatedOffsets(
-            UpdateAuxImpl &aux)
+        explicit TraverseCalculateAndVerifyMinTruncatedOffsets(UpdateAux &aux)
             : aux(aux)
         {
         }

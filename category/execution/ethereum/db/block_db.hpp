@@ -32,7 +32,7 @@ class BlockDb
 public:
     BlockDb() = delete;
     BlockDb(Block const &) = delete;
-    BlockDb(BlockDb &&) = default;
+    BlockDb(BlockDb &&) noexcept = default;
     explicit BlockDb(std::filesystem::path const &);
     ~BlockDb() = default;
 

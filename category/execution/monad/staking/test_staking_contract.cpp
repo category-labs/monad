@@ -114,7 +114,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
             Code{},
             BlockHeader{});
         state.add_to_balance(STAKING_CA, 0); // create account like a txn would
-        u64_be start_epoch{1};
+        u64_be const start_epoch{1};
         contract.vars.epoch.store(start_epoch);
     }
 
@@ -385,7 +385,7 @@ TEST_F(StakeLatest, accumulator_is_monotonic_again)
     for (size_t i = 0; i < NUM_ITERATIONS; ++i) {
         EXPECT_FALSE(syscall_reward(val.value().sign_address).has_error());
         auto validator = contract.vars.val_execution(val.value().id);
-        auto current_accumulator =
+        auto const current_accumulator =
             validator.accumulated_reward_per_token().load().native();
         fmt::println(
             "Iteration {} - accumulator: {}",
@@ -585,7 +585,7 @@ TEST_F(StakeLatest, add_validator_revert_invalid_input_size)
     auto const sender = 0xdeadbeef_address;
     auto const value = intx::be::store<evmc_uint256be>(MIN_VALIDATE_STAKE);
 
-    byte_string_view too_short{};
+    byte_string_view const too_short{};
     auto res =
         contract.precompile_add_validator<Trait>(too_short, sender, value);
     EXPECT_EQ(res.assume_error(), AbiDecodeError::InputTooShort);
@@ -678,7 +678,7 @@ TEST_F(StakeLatest, nonpayable_functions_revert)
         StakingError::ValueNonZero);
 
     // precompiles
-    evmc_uint256be value = intx::be::store<evmc_uint256be>(5 * MON);
+    evmc_uint256be const value = intx::be::store<evmc_uint256be>(5 * MON);
     EXPECT_EQ(
         contract.precompile_undelegate<Trait>({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
@@ -731,7 +731,7 @@ TEST_F(StakeLatest, nonpayable_functions_revert)
 TEST_F(StakeLatest, auth_address_conflicts_with_linked_list)
 {
     // empty pointer
-    Address empty{};
+    Address const empty{};
     EXPECT_TRUE(add_validator(empty, ACTIVE_VALIDATOR_STAKE).has_error());
 
     // sentinel
@@ -1730,7 +1730,7 @@ TEST_F(StakeLatest, validator_removes_self)
         delegate(val.id, 0xabab_address, ACTIVE_VALIDATOR_STAKE).has_error());
     skip_to_next_epoch();
 
-    uint8_t withdrawal_id{1};
+    uint8_t const withdrawal_id{1};
     EXPECT_FALSE(
         undelegate(val.id, auth_address, withdrawal_id, MIN_VALIDATE_STAKE)
             .has_error());
@@ -1905,7 +1905,7 @@ TEST_F(StakeLatest, validator_joining_boundary_rewards)
     // nodes will not reward him, indicated by the BLOCK_AUTHOR_NOT_IN_SET
     // error code, producing a state root mismatch on that block.
     EXPECT_FALSE(syscall_snapshot().has_error());
-    unsigned DELAY_WINDOW = 6000;
+    unsigned const DELAY_WINDOW = 6000;
     for (unsigned i = 0; i < DELAY_WINDOW; ++i) {
         EXPECT_EQ(
             StakingError::NotInValidatorSet,
@@ -2018,7 +2018,7 @@ TEST_F(StakeLatest, validator_external_rewards_uniform_reward_pool)
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
 
-    std::array<Address, 5> delegators = {
+    std::array<Address, 5> const delegators = {
         auth_address,
         0xaaaa_address,
         0xbbbb_address,
@@ -2564,11 +2564,12 @@ TEST_F(StakeLatest, delegate_undelegate_withdraw_redelegate)
         contract.vars.delegator(val.id, d1).rewards().load().native(),
         REWARD / 3);
 
-    auto acc = contract.vars.accumulated_reward_per_token(3, val.id).load();
+    auto const acc =
+        contract.vars.accumulated_reward_per_token(3, val.id).load();
     EXPECT_EQ(acc.value.native(), 0);
     EXPECT_EQ(acc.refcount.native(), 0);
 
-    auto acc_boundary =
+    auto const acc_boundary =
         contract.vars.accumulated_reward_per_token(4, val.id).load();
     EXPECT_EQ(acc_boundary.value.native(), 0);
     EXPECT_EQ(acc_boundary.refcount.native(), 0);
@@ -2650,7 +2651,7 @@ TEST_F(StakeLatest, delegator_delegates_in_epoch_delay_period)
     // take snapshot and reward during the window. delegator *should not*
     // receive rewards.
     EXPECT_FALSE(syscall_snapshot().has_error());
-    unsigned DELAY_WINDOW = 6000;
+    unsigned const DELAY_WINDOW = 6000;
 
     for (unsigned i = 0; i < DELAY_WINDOW; ++i) {
         EXPECT_EQ(
@@ -3000,7 +3001,7 @@ TEST_F(StakeLatest, validator_exit_delegator_boundary_nz_accumulator)
     // will be out of the set in N+2 and will therefore not push his
     // accumulator.
     auto const auth_address = 0xdeadbeef_address;
-    auto del = 0xaaaabbbb_address;
+    auto const del = 0xaaaabbbb_address;
     auto const res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
     ASSERT_FALSE(res.has_error());
     auto const val = res.value();
@@ -4108,7 +4109,7 @@ TEST_F(StakeLatest, contract_bootstrap)
 TEST_F(StakeLatest, zero_reward_epochs)
 {
     auto const auth_address = 0xdeadbeef_address;
-    std::array<Address, 4> delegators{
+    std::array<Address, 4> const delegators{
         0xdead_address, 0xbeef_address, 0x600d_address, 0xbadd_address};
     std::vector<ValResult> validators;
     uint256_t const DELEGATOR_STAKE = 1000000 * MON;
@@ -4349,7 +4350,7 @@ TEST_F(StakeLatest, get_valset_paginated_reads)
 {
     auto const auth_address = 0xdeadbeef_address;
     for (uint32_t i = 0; i < 999; ++i) {
-        auto res = add_validator(
+        auto const res = add_validator(
             auth_address, ACTIVE_VALIDATOR_STAKE, 0, bytes32_t{i + 1});
         ASSERT_FALSE(res.has_error());
     }

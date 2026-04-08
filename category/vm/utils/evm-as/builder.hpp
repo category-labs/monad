@@ -123,7 +123,7 @@ namespace monad::vm::utils::evm_as
 
         EvmBuilder &push(runtime::uint256_t const &imm) noexcept
         {
-            size_t n = byte_width(imm);
+            size_t const n = byte_width(imm);
             MONAD_VM_ASSERT(n <= 32);
             return push(n, imm);
         }

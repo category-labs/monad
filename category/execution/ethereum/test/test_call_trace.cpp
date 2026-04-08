@@ -61,7 +61,7 @@ namespace
 
 TEST(CallFrame, to_json)
 {
-    CallFrame call_frame{
+    CallFrame const call_frame{
         .type = CallType::CALL,
         .from = a,
         .to = std::make_optional(b),
@@ -72,7 +72,7 @@ TEST(CallFrame, to_json)
         .status = EVMC_SUCCESS,
     };
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "from":"0x5353535353535353535353535353535353535353",
         "gas":"0x186a0",
@@ -154,7 +154,7 @@ TYPED_TEST(TraitsTest, execute_success)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -174,7 +174,7 @@ TYPED_TEST(TraitsTest, execute_success)
     EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 1);
 
-    CallFrame expected{
+    CallFrame const expected{
         .type = CallType::CALL,
         .flags = 0,
         .from = sender,
@@ -231,7 +231,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -251,7 +251,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
     ASSERT_TRUE(call_frames.size() == 1);
 
-    CallFrame expected{
+    CallFrame const expected{
         .type = CallType::CALL,
         .flags = 0,
         .from = sender,
@@ -313,7 +313,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -429,7 +429,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -509,7 +509,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
     auto const &beneficiary = ADDR_C;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -598,7 +598,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -670,7 +670,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -778,7 +778,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     auto const &beneficiary = ADDR_C;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -881,7 +881,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     auto const &beneficiary = ADDR_C;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -1023,7 +1023,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     };
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -1082,7 +1082,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     // `SELFDESTRUCT_CONTRACT_ADDR` to `INTERMEDIARY_CONTRACT_ADDR` with value
     // 1'000'000 due to the selfdestruct.
     {
-        std::vector<bytes32_t> expected_topics{
+        std::vector<bytes32_t> const expected_topics{
             transfer_signature,
             abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR),
             abi_encode_address(INTERMEDIARY_CONTRACT_ADDR),
@@ -1103,7 +1103,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     // `INTERMEDIARY_CONTRACT_ADDR` to `SELFDESTRUCT_CONTRACT_ADDR` with value
     // 1'000'000 due to the call, which revives the selfdestruct contract.
     {
-        std::vector<bytes32_t> expected_topics{
+        std::vector<bytes32_t> const expected_topics{
             transfer_signature,
             abi_encode_address(INTERMEDIARY_CONTRACT_ADDR),
             abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR)};
@@ -1120,7 +1120,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     // `SELFDESTRUCT_CONTRACT_ADDR` to `INTERMEDIARY_CONTRACT_ADDR` with value
     // 1'000'000 due to the selfdestruct.
     {
-        std::vector<bytes32_t> expected_topics{
+        std::vector<bytes32_t> const expected_topics{
             transfer_signature,
             abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR),
             abi_encode_address(INTERMEDIARY_CONTRACT_ADDR),
@@ -1237,7 +1237,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
         .to = SELFDESTRUCT_CONTRACT_ADDR};
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -1400,7 +1400,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             .data = calldata};
 
         evmc_tx_context const tx_context{};
-        BlockHashBufferFinalized buffer{};
+        BlockHashBufferFinalized const buffer{};
         std::vector<CallFrame> call_frames;
         CallTracer call_tracer{tx, call_frames};
 
@@ -1442,7 +1442,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             ASSERT_TRUE(call_frames[1].logs.has_value());
             ASSERT_EQ(call_frames[1].logs->size(), 1);
 
-            std::vector<bytes32_t> expected_topics{
+            std::vector<bytes32_t> const expected_topics{
                 abi_encode_event_signature("Transfer(address,address,uint256)"),
                 abi_encode_address(ADDR_A),
                 abi_encode_address(ADDR_B)};

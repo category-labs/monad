@@ -388,7 +388,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
         .gas_used = gas_used,
         .type = tx_.type};
     for (auto const &log : state.logs()) {
-        receipt.add_log(std::move(log));
+        receipt.add_log(log);
     }
 
     call_tracer_.on_finish(receipt.gas_used);

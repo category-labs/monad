@@ -1,0 +1,10 @@
+---
+  # Inherits the root .clang-tidy config and suppresses checks that have
+  # not yet been fixed in category/execution/.
+  #
+  # misc-include-cleaner: ~1100 violations across 93 files. Fixing these
+  # requires careful include graph analysis to avoid breaking transitive
+  # include chains. Tracked for follow-up work.
+  InheritParentConfig: true
+  Checks: '-misc-include-cleaner'
+...

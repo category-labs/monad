@@ -117,6 +117,7 @@ PrecompileResult sha256_execute(byte_string_view const input)
         // Passing a null pointer to the Silkpre sha256 implementation invokes
         // undefined behaviour. We sidestep the UB here by passing a pointer to
         // the empty string instead.
+        // NOLINTNEXTLINE(bugprone-string-constructor)
         byte_string_view const nonnull{
             reinterpret_cast<unsigned char const *>(""), 0UL};
         return silkpre_execute<silkpre_sha256_run>(nonnull);
@@ -184,7 +185,7 @@ PrecompileResult point_evaluation_execute(byte_string_view input)
     auto const *const proof =
         reinterpret_cast<KZGProof const *>(input.substr(144).data());
 
-    KZGCommitment commitment{*commitment_data};
+    KZGCommitment const commitment{*commitment_data};
     if (versioned_hash != kzg_to_version_hashed(commitment)) {
         return PrecompileResult::failure();
     }
@@ -195,10 +196,10 @@ PrecompileResult point_evaluation_execute(byte_string_view input)
         return PrecompileResult::failure();
     }
 
-    auto *const output = static_cast<uint8_t *>(std::malloc(sizeof(bytes64_t)));
+    constexpr auto output_size = sizeof(bytes64_t);
+    auto *const output = static_cast<uint8_t *>(std::malloc(output_size));
     MONAD_ASSERT(output != nullptr);
-    std::memcpy(
-        output, blob_precompile_return_value().bytes, sizeof(bytes64_t));
+    std::memcpy(output, blob_precompile_return_value().bytes, output_size);
 
     return {
         .status_code = EVMC_SUCCESS,
@@ -259,13 +260,13 @@ PrecompileResult p256_verify_execute(byte_string_view const input)
         return empty_result;
     }
 
-    Integer h(input.data(), 32);
-    Integer r(input.data() + 32, 32);
-    Integer s(input.data() + 64, 32);
-    Integer qx(input.data() + 96, 32);
-    Integer qy(input.data() + 128, 32);
+    Integer const h(input.data(), 32);
+    Integer const r(input.data() + 32, 32);
+    Integer const s(input.data() + 64, 32);
+    Integer const qx(input.data() + 96, 32);
+    Integer const qy(input.data() + 128, 32);
 
-    DL_GroupParameters_EC<ECP> params(ASN1::secp256r1());
+    DL_GroupParameters_EC<ECP> const params(ASN1::secp256r1());
     auto const &ec = params.GetCurve();
     auto const &n = params.GetSubgroupOrder();
     auto const p_mod = ec.FieldSize();
@@ -308,7 +309,7 @@ PrecompileResult p256_verify_execute(byte_string_view const input)
 
     auto const p1 = ec.Multiply(u1, G);
     auto const p2 = ec.Multiply(u2, {qx, qy});
-    auto const r_prime = ec.Add(p1, p2);
+    auto const &r_prime = ec.Add(p1, p2);
 
     // If R' is at infinity: return
     if (r_prime.identity) {

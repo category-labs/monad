@@ -32,7 +32,7 @@ class FileDb final
 public:
     FileDb() = delete;
     FileDb(FileDb const &) = delete;
-    FileDb(FileDb &&);
+    FileDb(FileDb &&) noexcept;
     explicit FileDb(char const *dir);
     ~FileDb();
 

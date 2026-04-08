@@ -140,7 +140,7 @@ TYPED_TEST(TraitsTest, emit_log)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -180,7 +180,7 @@ TYPED_TEST(TraitsTest, access_precompile)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};

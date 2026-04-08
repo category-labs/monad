@@ -36,7 +36,7 @@ class Secp256k1Pubkey
     int parse_result_;
 
 public:
-    Secp256k1Pubkey(byte_string_fixed<33> const &serialized)
+    explicit Secp256k1Pubkey(byte_string_fixed<33> const &serialized)
     {
         parse_result_ = secp256k1_ec_pubkey_parse(
             get_secp_context(), &pubkey_, serialized.data(), serialized.size());
@@ -73,7 +73,7 @@ class Secp256k1Signature
     int parse_result_;
 
 public:
-    Secp256k1Signature(byte_string_fixed<64> const &serialized)
+    explicit Secp256k1Signature(byte_string_fixed<64> const &serialized)
     {
         parse_result_ = secp256k1_ecdsa_signature_parse_compact(
             get_secp_context(), &sig_, serialized.data());
@@ -88,7 +88,7 @@ public:
         const noexcept
     {
         bytes32_t const digest = to_bytes(blake3(message));
-        int res = secp256k1_ecdsa_verify(
+        int const res = secp256k1_ecdsa_verify(
             get_secp_context(), &sig_, digest.bytes, &pubkey.get());
         return res == 1;
     }

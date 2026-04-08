@@ -324,7 +324,7 @@ static_assert(LINKED_LIST_GETTER_OP_COST == 814000);
 
 byte_string_view consume_bytes(byte_string_view &data, size_t const num_bytes)
 {
-    byte_string_view ret = data.substr(0, num_bytes);
+    byte_string_view const ret = data.substr(0, num_bytes);
     data.remove_prefix(num_bytes);
     return ret;
 }
@@ -1179,11 +1179,11 @@ Result<byte_string> StakingContract::precompile_add_validator(
     }
 
     // Verify SECP signature
-    Secp256k1Pubkey secp_pubkey(secp_pubkey_compressed);
+    Secp256k1Pubkey const secp_pubkey(secp_pubkey_compressed);
     if (MONAD_UNLIKELY(!secp_pubkey.is_valid())) {
         return StakingError::InvalidSecpPubkey;
     }
-    Secp256k1Signature secp_sig(secp_signature_compressed);
+    Secp256k1Signature const secp_sig(secp_signature_compressed);
     if (MONAD_UNLIKELY(!secp_sig.is_valid())) {
         return StakingError::InvalidSecpSignature;
     }
@@ -1193,7 +1193,7 @@ Result<byte_string> StakingContract::precompile_add_validator(
     }
 
     // Verify BLS signature
-    BlsPubkey bls_pubkey(bls_pubkey_compressed);
+    BlsPubkey const bls_pubkey(bls_pubkey_compressed);
     if (MONAD_UNLIKELY(!bls_pubkey.is_valid())) {
         return StakingError::InvalidBlsPubkey;
     }
@@ -1376,7 +1376,7 @@ Result<byte_string> StakingContract::precompile_undelegate(
         return StakingError::UnknownValidator;
     }
 
-    auto withdrawal_request =
+    auto const withdrawal_request =
         vars.withdrawal_request(val_id, msg_sender, withdrawal_id)
             .load_checked();
     if (MONAD_UNLIKELY(withdrawal_request.has_value())) {
@@ -1503,7 +1503,7 @@ Result<byte_string> StakingContract::precompile_withdraw(
         return StakingError::WithdrawalNotReady;
     }
 
-    auto withdraw_acc =
+    auto const withdraw_acc =
         decrement_accumulator_refcount(withdrawal_request->epoch, val_id)
             .native();
     auto withdrawal_amount = withdrawal_request->amount.native();
@@ -1596,7 +1596,7 @@ Result<byte_string> StakingContract::precompile_external_reward(
     }
 
     // 1. Only validators in the consensus set can invoke this method.
-    auto val_execution = vars.val_execution(val_id);
+    auto const val_execution = vars.val_execution(val_id);
     if (MONAD_UNLIKELY(!val_execution.exists())) {
         return StakingError::UnknownValidator;
     }
@@ -1717,7 +1717,7 @@ Result<void> StakingContract::syscall_reward(
         checked_mul_div(raw_reward, commission_rate, MON));
 
     // 4. Send commission to the auth address
-    auto val_execution = vars.val_execution(val_id.value());
+    auto const val_execution = vars.val_execution(val_id.value());
     auto auth = vars.delegator(val_id.value(), val_execution.auth_address());
     BOOST_OUTCOME_TRY(
         auto const auth_reward,

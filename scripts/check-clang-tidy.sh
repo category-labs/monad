@@ -44,17 +44,18 @@ CONST_CORRECTNESS_PLUGIN="${BUILD_DIR}/utils/clang-tidy-auto-const/libConstCorre
 
 if [ -f $CONST_CORRECTNESS_PLUGIN ]; then
   CUSTOM_PASS_OPTIONS=( -load $CONST_CORRECTNESS_PLUGIN \
-                        -checks='-misc-const-correctness,misc-auto-const-correctness' )
+                        -checks='-misc-const-correctness' )
 fi
 
 
 mapfile -t inputs < <(\
   find \
-    category/async \
-    category/core  \
-    category/mpt   \
-    category/rpc   \
-    category/vm    \
+    category/async     \
+    category/core      \
+    category/execution \
+    category/mpt       \
+    category/rpc       \
+    category/vm        \
     \( -name '*.cpp' -or -name '*.c' \))
 
 "${RUN_CLANG_TIDY}"                               \

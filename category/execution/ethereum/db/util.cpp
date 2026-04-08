@@ -220,7 +220,8 @@ namespace
                         total_read - total_processed);
                     total_read -= total_processed;
                     total_processed = 0;
-                    updates.clear();
+                    updates.clear(); // NOLINT(bugprone-use-after-move)
+                                     // intentional reuse
                 }
             }
 
@@ -721,6 +722,7 @@ decode_storage_db_raw(byte_string_view &enc)
 
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
 {
+    // NOLINTNEXTLINE(misc-auto-const-correctness)
     BOOST_OUTCOME_TRY(auto res, decode_storage_db_raw(enc));
     if (!enc.empty()) {
         return rlp::DecodeError::InputTooLong;

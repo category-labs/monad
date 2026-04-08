@@ -80,7 +80,7 @@ namespace monad::staking::test
                      digest.bytes,
                      seckey.bytes,
                      secp256k1_nonce_function_default,
-                     NULL));
+                     nullptr));
 
         byte_string_fixed<64> serialized;
         MONAD_ASSERT(

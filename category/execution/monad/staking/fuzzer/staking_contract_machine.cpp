@@ -31,7 +31,7 @@ namespace
     byte_string_view
     consume_bytes(byte_string_view &data, size_t const num_bytes)
     {
-        byte_string_view ret = data.substr(0, num_bytes);
+        byte_string_view const ret = data.substr(0, num_bytes);
         data.remove_prefix(num_bytes);
         return ret;
     }
@@ -123,7 +123,7 @@ namespace monad::staking::test
     void StakingContractMachine<traits>::assert_valset_invariants()
     {
         std::unordered_set<uint64_t> valset_execution;
-        auto model_valset_execution = model_.valset_execution();
+        auto const model_valset_execution = model_.valset_execution();
         auto const valset_execution_length = model_valset_execution.length();
         for (uint64_t i = 0; i < valset_execution_length; ++i) {
             auto const v = model_valset_execution.get(i).load().native();
@@ -131,7 +131,7 @@ namespace monad::staking::test
         }
 
         std::unordered_set<uint64_t> valset_snapshot;
-        auto model_valset_snapshot = model_.valset_snapshot();
+        auto const model_valset_snapshot = model_.valset_snapshot();
         auto const valset_snapshot_length = model_valset_snapshot.length();
         for (uint64_t i = 0; i < valset_snapshot_length; ++i) {
             auto const v = model_valset_snapshot.get(i).load().native();
@@ -139,7 +139,7 @@ namespace monad::staking::test
         }
 
         std::unordered_set<uint64_t> valset_consensus;
-        auto model_valset_consensus = model_.valset_consensus();
+        auto const model_valset_consensus = model_.valset_consensus();
         auto const valset_consensus_length = model_valset_consensus.length();
         for (uint64_t i = 0; i < valset_consensus_length; ++i) {
             auto const v = model_valset_consensus.get(i).load().native();
@@ -149,7 +149,7 @@ namespace monad::staking::test
         // pairwise distinct elements:
         MONAD_ASSERT(valset_execution.size() == valset_execution_length);
 
-        for (uint64_t v : valset_execution) {
+        for (uint64_t const v : valset_execution) {
             MONAD_ASSERT(model_.val_execution(v).auth_address() != Address{});
         }
 
@@ -163,7 +163,7 @@ namespace monad::staking::test
 
         MONAD_ASSERT(valset_snapshot_length <= ACTIVE_VALSET_SIZE);
 
-        for (uint64_t v : valset_consensus) {
+        for (uint64_t const v : valset_consensus) {
             MONAD_ASSERT(valset_execution.contains(v));
         }
 
@@ -390,7 +390,8 @@ namespace monad::staking::test
 
             uint256_t actual_withdrawal_stake;
             for (uint8_t const i : withdrawal_ids) {
-                auto withdrawal = model_.withdrawal_request(v, a, i).load();
+                auto const withdrawal =
+                    model_.withdrawal_request(v, a, i).load();
                 if (withdrawal.epoch.native() > this_epoch) {
                     actual_withdrawal_stake += withdrawal.amount.native();
                 }
@@ -425,7 +426,7 @@ namespace monad::staking::test
                     model_.accumulated_reward_per_token(e, v).refcount.native();
                 uint256_t computed_refcount;
                 for_all_addresses([&, this](Address const &a) {
-                    auto del = model_.delegator(v, a);
+                    auto const del = model_.delegator(v, a);
                     if (e > 0 && del.get_delta_epoch().native() == e) {
                         computed_refcount += 1;
                     }
@@ -435,7 +436,7 @@ namespace monad::staking::test
                     auto const &withdrawal_ids =
                         model_.active_withdrawal_ids(v, a);
                     for (uint8_t const i : withdrawal_ids) {
-                        auto withdrawal =
+                        auto const withdrawal =
                             model_.withdrawal_request(v, a, u8_be{i}).load();
                         if (e > 0 && withdrawal.epoch.native() == e) {
                             computed_refcount += 1;
@@ -471,7 +472,7 @@ namespace monad::staking::test
             for_all_addresses([&, this](Address const &a) {
                 auto const &withdrawal_ids = model_.active_withdrawal_ids(v, a);
                 for (uint8_t const i : withdrawal_ids) {
-                    auto withdrawal =
+                    auto const withdrawal =
                         model_.withdrawal_request(v, a, u8_be{i}).load();
                     auto const upper_acc =
                         model_.accumulated_reward_per_token(withdrawal.epoch, v)
@@ -613,7 +614,7 @@ namespace monad::staking::test
     void StakingContractMachine<traits>::for_all_val_ids(
         std::function<void(u64_be)> f)
     {
-        uint64_t n = model_.last_val_id() + 3;
+        uint64_t const n = model_.last_val_id() + 3;
         for (uint64_t i = 0; i < n; ++i) {
             f(i);
         }
@@ -1024,7 +1025,7 @@ namespace monad::staking::test
         }
 
         std::unordered_set<uint64_t> valset_consensus;
-        auto model_valset_consensus = model_.valset_consensus();
+        auto const model_valset_consensus = model_.valset_consensus();
         auto const valset_consensus_length = model_valset_consensus.length();
         for (uint64_t i = 0; i < valset_consensus_length; ++i) {
             auto const v = model_valset_consensus.get(i).load().native();
@@ -1165,7 +1166,8 @@ namespace monad::staking::test
 
         auto const auth_address = get_add_validator_message_auth_address(msg);
 
-        auto ins1 = all_delegators_.insert({val_id.native(), auth_address});
+        auto const ins1 =
+            all_delegators_.insert({val_id.native(), auth_address});
         MONAD_ASSERT(ins1);
 
         auto [_, ins2] = val_id_to_signer_.insert({val_id.native(), signer});
@@ -1214,7 +1216,7 @@ namespace monad::staking::test
 
         (void)signed_stake;
 
-        auto keys = model_.val_execution(v).keys().load();
+        auto const keys = model_.val_execution(v).keys().load();
         MONAD_ASSERT(keys.secp_pubkey == secp_pubkey_compressed);
         MONAD_ASSERT(keys.bls_pubkey == bls_pubkey_compressed);
 
@@ -1283,7 +1285,8 @@ namespace monad::staking::test
     void StakingContractMachine<traits>::model_precompile_delegate(
         u64_be val_id, Address const &sender, evmc_uint256be const &value)
     {
-        auto result = model_.precompile_delegate<traits>(val_id, sender, value);
+        auto const result =
+            model_.precompile_delegate<traits>(val_id, sender, value);
         MONAD_ASSERT(result.has_value());
 
         if (intx::be::load<uint256_t>(value) == 0) {
@@ -1431,7 +1434,7 @@ namespace monad::staking::test
             wis = it;
         }
 
-        auto &wi = wis->second;
+        auto const &wi = wis->second;
         MONAD_ASSERT(!wi.empty());
 
         auto const w = wi[gen() % wi.size()];
@@ -1448,7 +1451,7 @@ namespace monad::staking::test
     {
         MONAD_ASSERT(model_.val_execution(val_id).exists());
 
-        auto result = model_.precompile_undelegate<traits>(
+        auto const result = model_.precompile_undelegate<traits>(
             val_id, stake, wid, sender, value);
         MONAD_ASSERT(result.has_value());
 
@@ -1457,7 +1460,7 @@ namespace monad::staking::test
         }
 
         std::tuple<uint64_t, Address> const key{val_id.native(), sender};
-        auto wis = available_withdrawal_ids_.find(key);
+        auto const wis = available_withdrawal_ids_.find(key);
         auto const pos = std::find(wis->second.begin(), wis->second.end(), wid);
         MONAD_ASSERT(pos != wis->second.end());
         wis->second.erase(pos);
@@ -1756,7 +1759,7 @@ namespace monad::staking::test
         u64_be val_id, u8_be wid, Address const &sender,
         evmc_uint256be const &value)
     {
-        auto result =
+        auto const result =
             model_.precompile_withdraw<traits>(val_id, wid, sender, value);
         MONAD_ASSERT(result.has_value());
 

@@ -2162,7 +2162,7 @@ namespace
             finalized_proposal_seed_ = proposal_seed;
             // remove block and proposals
             for (auto const r : s1) {
-                auto it3 = proposals_.find(r);
+                auto const it3 = proposals_.find(r);
                 MONAD_ASSERT(it3 != proposals_.end());
                 proposals_.erase(it3);
             }
@@ -2177,7 +2177,7 @@ namespace
                     MONAD_ASSERT(
                         blocks_.find(it3->second.first) != blocks_.end());
                     auto &s2 = blocks_[it3->second.first];
-                    auto it4 = s2.find(it3->first);
+                    auto const it4 = s2.find(it3->first);
                     MONAD_ASSERT(it4 != s2.end());
                     s2.erase(it4);
                 }
@@ -2190,7 +2190,7 @@ namespace
             for (uint8_t const i : ADDR) {
                 Address const addr(i);
                 auto account1 = db1_.read_account(addr);
-                auto account2 = db2_.read_account(addr);
+                auto const account2 = db2_.read_account(addr);
                 if (account1) {
                     LOG_INFO(
                         "Check_account_ a_{} {:08} {}",

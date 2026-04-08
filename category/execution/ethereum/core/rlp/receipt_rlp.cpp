@@ -68,7 +68,7 @@ byte_string encode_receipt(Receipt const &receipt)
         log_result += encode_log(i);
     }
 
-    auto const receipt_bytes = encode_list2(
+    auto receipt_bytes = encode_list2(
         encode_unsigned(receipt.status),
         encode_unsigned(receipt.gas_used),
         encode_bloom(receipt.bloom),

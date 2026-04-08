@@ -192,7 +192,8 @@ bool ReserveBalance::subject_account(Address const &address)
         return false;
     }
 
-    OriginalAccountState &orig_state = state_->original_account_state(address);
+    OriginalAccountState const &orig_state =
+        state_->original_account_state(address);
     bytes32_t const effective_code_hash = use_recent_code_hash_
                                               ? state_->get_code_hash(address)
                                               : orig_state.get_code_hash();

@@ -50,7 +50,7 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
         non_zero_since(rev<EVMC_HOMESTEAD>{}, 32'000);
 
     {
-        Transaction t{};
+        Transaction const t{};
         EXPECT_EQ(
             intrinsic_gas<typename TestFixture::Trait>(t), 21'000 + empty_to);
     }

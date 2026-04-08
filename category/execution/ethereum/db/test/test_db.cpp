@@ -129,7 +129,7 @@ namespace
             std::make_move_iterator(chunks.begin()),
             std::make_move_iterator(chunks.end()),
             byte_string{},
-            [](byte_string const acc, KeyedChunk const chunk) {
+            [](byte_string acc, KeyedChunk chunk) {
                 return std::move(acc) + std::move(chunk.second);
             });
 
@@ -682,7 +682,7 @@ TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
     std::vector<Receipt> receipts;
     receipts.resize(transactions.size());
     call_frames.resize(receipts.size());
-    std::vector<Address> senders = recover_senders(transactions);
+    std::vector<Address> const senders = recover_senders(transactions);
     commit_sequential(
         tdb,
         StateDeltas{},
@@ -696,7 +696,7 @@ TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
     auto verify_transactions = [&](auto &db) {
         auto const txs_res = get_transactions(db, block_number);
         ASSERT_TRUE(txs_res.has_value());
-        auto const txs = txs_res.value();
+        auto const &txs = txs_res.value();
         EXPECT_EQ(txs.size(), transactions.size());
         for (size_t i = 0; i < txs.size(); ++i) {
             EXPECT_EQ(txs[i], transactions[i]);
@@ -828,7 +828,7 @@ TYPED_TEST(DBTest, load_from_binary)
 {
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
     std::ifstream code(test_resource::checkpoint_dir / "code");
-    auto root = load_from_binary(this->db, accounts, code);
+    auto const root = load_from_binary(this->db, accounts, code);
     TrieDb tdb{this->db};
     tdb.reset_root(root, 0);
     EXPECT_EQ(
@@ -897,12 +897,14 @@ TYPED_TEST(DBTest, commit_call_frames)
     static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
     std::vector<CallFrame> const call_frame{call_frame1, call_frame2};
     std::vector<std::vector<CallFrame>> call_frames;
+    call_frames.reserve(NUM_TXNS);
     for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
         call_frames.emplace_back(call_frame);
     }
     std::vector<Receipt> const receipts(call_frames.size());
     // need to increment the nonce of transactions
     std::vector<Transaction> transactions;
+    transactions.reserve(call_frames.size());
     for (uint64_t nonce = 0; nonce < call_frames.size(); ++nonce) {
         transactions.push_back(Transaction{.nonce = nonce});
     }

@@ -95,10 +95,10 @@ void set_beacon_root(State &state, BlockHeader const &header)
     constexpr uint256_t HISTORY_BUFFER_LENGTH{8191};
 
     if (state.account_exists(BEACON_ROOTS_ADDRESS)) {
-        uint256_t timestamp{header.timestamp};
-        bytes32_t k1{
+        uint256_t const timestamp{header.timestamp};
+        bytes32_t const k1{
             to_bytes(to_big_endian(timestamp % HISTORY_BUFFER_LENGTH))};
-        bytes32_t k2{to_bytes(to_big_endian(
+        bytes32_t const k2{to_bytes(to_big_endian(
             timestamp % HISTORY_BUFFER_LENGTH + HISTORY_BUFFER_LENGTH))};
         state.set_storage(
             BEACON_ROOTS_ADDRESS, k1, to_bytes(to_big_endian(timestamp)));
@@ -117,7 +117,7 @@ std::vector<std::optional<Address>> recover_senders(
 {
     std::vector<std::optional<Address>> senders{transactions.size()};
 
-    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+    std::shared_ptr<boost::fibers::promise<void>[]> const promises{
         new boost::fibers::promise<void>[transactions.size()]};
 
     for (unsigned i = 0; i < transactions.size(); ++i) {
@@ -226,7 +226,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
 
-    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+    std::shared_ptr<boost::fibers::promise<void>[]> const promises{
         new boost::fibers::promise<void>[transactions.size() + 1]};
     promises[0].set_value();
 

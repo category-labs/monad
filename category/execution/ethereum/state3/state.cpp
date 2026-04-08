@@ -132,7 +132,7 @@ void State::pop_accept()
     MONAD_ASSERT(version_);
     MONAD_ASSERT(dirty_.size() == version_);
 
-    auto accounts = std::move(dirty_.back());
+    auto const accounts = std::move(dirty_.back());
     dirty_.pop_back();
     for (auto const &dirty_address : accounts) {
         auto const it = current_.find(dirty_address);
@@ -154,7 +154,7 @@ void State::pop_reject()
     MONAD_ASSERT(dirty_.size() == version_);
 
     std::vector<Address> removals;
-    auto accounts = std::move(dirty_.back());
+    auto const accounts = std::move(dirty_.back());
     dirty_.pop_back();
     for (auto const &dirty_address : accounts) {
         auto const it = current_.find(dirty_address);

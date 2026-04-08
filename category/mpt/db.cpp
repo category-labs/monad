@@ -114,6 +114,7 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
           read_ring, options.rd_buffers,
           async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
     , io{pool, buffers}
+    , db_id{options.db_id}
 {
     io.set_capture_io_latencies(options.capture_io_latencies);
     io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -123,6 +124,8 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
 AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     : pool{[&] -> async::storage_pool {
         async::storage_pool::creation_flags pool_options;
+        // DB1 bootstrap: derive num_cnv_chunks from root_offsets_chunk_count.
+        // Can be removed once callers set num_cnv_chunks directly.
         pool_options.num_cnv_chunks = options.root_offsets_chunk_count + 1;
         auto const len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
         if (options.dbname_paths.empty()) {
@@ -157,7 +160,21 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
           async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
           async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE)}
     , io{pool, buffers}
+    , db_id{options.db_id}
+    , max_seq_chunks{options.max_seq_chunks}
 {
+    if (!options.append) {
+        MONAD_ASSERT_PRINTF(
+            pool.find_db_slot(options.db_id) == nullptr,
+            "db with id \"%u\" already exists",
+            options.db_id);
+        pool.register_db_slot(async::storage_pool::db_slot{
+            .db_id = options.db_id,
+            .metadata_cnv = 0,
+            .root_offset_cnv_start = 1,
+            .root_offset_cnv_count =
+                static_cast<uint16_t>(options.root_offsets_chunk_count)});
+    }
     io.set_capture_io_latencies(options.capture_io_latencies);
     io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
     io.set_eager_completions(options.eager_completions);
@@ -169,7 +186,7 @@ class Db::ROOnDiskBlocking final : public Db::Impl
 
 public:
     explicit ROOnDiskBlocking(AsyncIOContext &io_ctx)
-        : aux_(io_ctx.io)
+        : aux_(io_ctx.io, io_ctx.db_id)
     {
     }
 
@@ -403,7 +420,7 @@ struct OnDiskWithWorkerThreadImpl
             ReadOnlyOnDiskDbConfig const &options)
             : parent(parent)
             , async_io(options)
-            , aux(async_io.io)
+            , aux(async_io.io, async_io.db_id)
         {
         }
 
@@ -412,8 +429,11 @@ struct OnDiskWithWorkerThreadImpl
             OnDiskDbConfig const &options)
             : parent(parent)
             , async_io(options)
-            , aux{async_io.io, options.fixed_history_length}
+            , aux{async_io.io, async_io.db_id, options.fixed_history_length}
         {
+            if (async_io.max_seq_chunks.has_value()) {
+                aux.set_max_seq_chunks(*async_io.max_seq_chunks);
+            }
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id = aux.get_latest_finalized_version();
                 if (latest_block_id == INVALID_BLOCK_NUM) {

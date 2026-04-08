@@ -248,6 +248,7 @@ public:
 
     // On disk stuff
     MONAD_ASYNC_NAMESPACE::AsyncIO *io{nullptr};
+    uint8_t db_id_{};
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
 
@@ -258,16 +259,16 @@ public:
 
     // on-disk
     explicit UpdateAuxImpl(
-        MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
+        MONAD_ASYNC_NAMESPACE::AsyncIO &io_, uint8_t db_id,
         std::optional<uint64_t> const history_len = {})
     {
-        set_io(io_, history_len);
+        set_io(io_, db_id, history_len);
     }
 
     virtual ~UpdateAuxImpl();
 
     void set_io(
-        MONAD_ASYNC_NAMESPACE::AsyncIO &,
+        MONAD_ASYNC_NAMESPACE::AsyncIO &, uint8_t db_id,
         std::optional<uint64_t> history_length = {});
 
     void unset_io();
@@ -433,10 +434,6 @@ public:
     // translate between virtual and physical addresses chunk_offset_t
     virtual_chunk_offset_t physical_to_virtual(chunk_offset_t) const noexcept;
 
-    // age is relative to the beginning chunk's count
-    std::pair<chunk_list, detail::unsigned_20>
-    chunk_list_and_age(uint32_t idx) const noexcept;
-
     void append(chunk_list list, uint32_t idx);
     void remove(uint32_t idx) noexcept;
 
@@ -479,6 +476,15 @@ public:
     void rewind_to_version(uint64_t version);
     void clear_ondisk_db();
 
+    void set_max_seq_chunks(uint32_t limit) noexcept;
+    void assert_seq_chunk_budget() const noexcept;
+
+    uint32_t effective_chunk_budget() const noexcept
+    {
+        auto const limit = db_metadata()->max_seq_chunks;
+        return limit != 0 ? limit : static_cast<uint32_t>(io->chunk_count());
+    }
+
     void set_initial_insertion_count_unit_testing_only(uint32_t count)
     {
         initial_insertion_count_on_pool_creation_ = count;
@@ -518,8 +524,9 @@ public:
 
     double disk_usage() const
     {
-        return 1.0 -
-               (double)num_chunks(chunk_list::free) / (double)io->chunk_count();
+        auto const owned =
+            num_chunks(chunk_list::fast) + num_chunks(chunk_list::slow);
+        return (double)owned / (double)effective_chunk_budget();
     }
 
     chunk_offset_t get_latest_root_offset() const noexcept
@@ -563,7 +570,8 @@ public:
     file_offset_t get_lower_bound_free_space() const noexcept
     {
         MONAD_ASSERT(this->is_on_disk());
-        return db_metadata()->capacity_in_free_list;
+        return io->storage_pool().free_seq_chunk_count() *
+               io->chunk_capacity(0);
     }
 
     uint32_t num_chunks(chunk_list const list) const noexcept;
@@ -582,7 +590,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAuxImpl) == 144 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAuxImpl) == 152 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAuxImpl) == 8);
 
 class UpdateAux final : public UpdateAuxImpl
@@ -593,9 +601,9 @@ public:
 
     // on-disk
     explicit UpdateAux(
-        MONAD_ASYNC_NAMESPACE::AsyncIO &io_,
+        MONAD_ASYNC_NAMESPACE::AsyncIO &io_, uint8_t db_id,
         std::optional<uint64_t> const history_len = {})
-        : UpdateAuxImpl(io_, history_len)
+        : UpdateAuxImpl(io_, db_id, history_len)
     {
     }
 

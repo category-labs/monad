@@ -1381,9 +1381,9 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     auto *sender = &node_writer->sender();
     bool const in_fast_list =
         aux.db_metadata()->at(sender->offset().id)->in_fast_list;
-    auto const *ci_ = aux.db_metadata()->free_list_end();
-    MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
-    auto const idx = ci_->index(aux.db_metadata());
+    aux.assert_seq_chunk_budget();
+    auto const idx = aux.io->storage_pool().allocate_seq_chunk(aux.db_id_);
+    MONAD_ASSERT(idx != MONAD_ASYNC_NAMESPACE::storage_pool::ALLOC_FAILED);
     chunk_offset_t const offset_of_new_writer{idx, 0};
     // Pad buffer of existing node write that is about to get initiated so it's
     // O_DIRECT i/o aligned
@@ -1441,13 +1441,14 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
             "%d max_count = %d",
             my_reentrancy_count,
             reentrancy_detection.max_count);
+        aux.io->storage_pool().free_seq_chunk(idx);
         return {};
     }
-    aux.remove(idx);
     aux.append(
         in_fast_list ? UpdateAuxImpl::chunk_list::fast
                      : UpdateAuxImpl::chunk_list::slow,
         idx);
+    aux.io->storage_pool().commit_seq_chunk(idx);
     return ret;
 }
 
@@ -1465,14 +1466,15 @@ node_writer_unique_ptr_type replace_node_writer(
     auto const chunk_capacity =
         aux.io->chunk_capacity(offset_of_next_writer.id);
     MONAD_ASSERT(offset <= chunk_capacity);
-    detail::db_metadata::chunk_info_t const *ci_ = nullptr;
+    bool new_chunk = false;
     uint32_t idx;
     if (offset == chunk_capacity) {
         // If after the current write buffer we're hitting chunk capacity, we
         // replace writer to the start of next chunk.
-        ci_ = aux.db_metadata()->free_list_end();
-        MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
-        idx = ci_->index(aux.db_metadata());
+        aux.assert_seq_chunk_budget();
+        idx = aux.io->storage_pool().allocate_seq_chunk(aux.db_id_);
+        MONAD_ASSERT(idx != MONAD_ASYNC_NAMESPACE::storage_pool::ALLOC_FAILED);
+        new_chunk = true;
         offset_of_next_writer.id = idx & 0xfffffU;
         offset_of_next_writer.offset = 0;
     }
@@ -1486,15 +1488,17 @@ node_writer_unique_ptr_type replace_node_writer(
         write_operation_io_receiver{bytes_to_write});
     if (node_writer.get() != node_writer_ptr) {
         // We reentered, please retry
+        if (new_chunk) {
+            aux.io->storage_pool().free_seq_chunk(idx);
+        }
         return {};
     }
-    if (ci_ != nullptr) {
-        MONAD_ASSERT(ci_ == aux.db_metadata()->free_list_end());
-        aux.remove(idx);
+    if (new_chunk) {
         aux.append(
             in_fast_list ? UpdateAuxImpl::chunk_list::fast
                          : UpdateAuxImpl::chunk_list::slow,
             idx);
+        aux.io->storage_pool().commit_seq_chunk(idx);
     }
     return ret;
 }

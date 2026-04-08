@@ -43,10 +43,14 @@ struct OnDiskDbConfig
     // fixed history length if contains value, otherwise rely on db to adjust
     // history length upon disk usage
     std::optional<uint64_t> fixed_history_length{std::nullopt};
-    // Number of chunks to allocate for root offsets when initializing the disk.
-    // Each chunk can hold 1 << 24 = 16777216 historical entries.
-    // This field must be power of 2.
+    // Number of CNV chunks for root offsets. Used to compute
+    // num_cnv_chunks and register the DB's catalog slot at open time.
     uint32_t root_offsets_chunk_count{2};
+    // DB identity. Must be registered in the pool catalog.
+    uint8_t db_id{1};
+    // Maximum seq chunks this DB may own. nullopt = leave persisted value,
+    // 0 = unlimited.
+    std::optional<uint32_t> max_seq_chunks{};
 };
 
 struct ReadOnlyOnDiskDbConfig
@@ -63,6 +67,8 @@ struct ReadOnlyOnDiskDbConfig
     std::vector<std::filesystem::path> dbname_paths;
     unsigned concurrent_read_io_limit{600};
     uint64_t node_lru_max_mem{100ul << 20}; // 100MB
+    // See OnDiskDbConfig::db_id for semantics and Phase 0 limitations.
+    uint8_t db_id{1};
 };
 
 MONAD_MPT_NAMESPACE_END

@@ -36,6 +36,7 @@
 #include <CLI/CLI.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cctype>
 #include <cerrno>
@@ -394,6 +395,15 @@ struct impl_t
     MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
     uint8_t chunk_capacity = flags.chunk_capacity;
     uint32_t root_offsets_chunk_count = 16;
+    uint32_t num_dbs = 1;
+
+    struct per_db_config
+    {
+        uint32_t root_offsets_chunk_count{16};
+        std::optional<uint32_t> max_seq_chunks;
+    };
+
+    std::array<per_db_config, 4> db_configs;
     bool allow_dirty = false;
     bool no_prompt = false;
     bool create_database = false;
@@ -402,6 +412,7 @@ struct impl_t
     std::optional<uint64_t> rewind_database_to;
     std::optional<uint64_t> reset_history_length;
     bool create_chunk_increasing = false;
+    std::optional<uint32_t> set_max_seq_chunks;
     bool debug_printing = false;
     std::filesystem::path archive_database;
     std::filesystem::path restore_database;
@@ -730,7 +741,7 @@ public:
                     MONAD_ASYNC_NAMESPACE::AsyncIO::
                         MONAD_IO_BUFFERS_WRITE_SIZE);
             auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
-            MONAD_MPT_NAMESPACE::UpdateAux aux(io);
+            MONAD_MPT_NAMESPACE::UpdateAux aux(io, 1);
             for (;;) {
                 auto const *item = aux.db_metadata()->fast_list_begin();
                 if (item == nullptr) {
@@ -751,15 +762,14 @@ public:
                 aux.remove(chunkid);
                 chunks.push_back(chunkid);
             }
+            // Drain remaining free chunks from pool
             for (;;) {
-                auto const *item = aux.db_metadata()->free_list_begin();
-                if (item == nullptr) {
+                auto const id = pool->allocate_seq_chunk(1);
+                if (id == MONAD_ASYNC_NAMESPACE::storage_pool::ALLOC_FAILED) {
                     break;
                 }
-                auto const chunkid = item->index(aux.db_metadata());
-                MONAD_ASSERT(chunkid != UINT32_MAX);
-                aux.remove(chunkid);
-                chunks.push_back(chunkid);
+                pool->commit_seq_chunk(id);
+                chunks.push_back(id);
             }
         }
 
@@ -834,6 +844,9 @@ public:
                               "version.";
                         throw std::runtime_error(ss.str());
                     }
+                    // TODO(phase0): archive restore still hardcodes CNV chunk 0
+                    // for metadata. Thread db_id through here when
+                    // archive/export support for non-legacy DBs is added.
                     auto &cnv_chunk =
                         pool->chunk(monad::async::storage_pool::cnv, 0);
                     auto [wfd, offset] = cnv_chunk.write_fd(0);
@@ -975,7 +988,7 @@ public:
             2,
             MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
-        MONAD_MPT_NAMESPACE::UpdateAux aux(io);
+        MONAD_MPT_NAMESPACE::UpdateAux aux(io, 1);
         size_t slow_chunks_inserted = 0;
         size_t fast_chunks_inserted = 0;
         auto override_insertion_count =
@@ -1069,7 +1082,10 @@ public:
 
         for (unsigned int const &chunk : chunks) {
             if (chunk != UINT32_MAX) {
-                aux.append(monad::mpt::UpdateAuxImpl::chunk_list::free, chunk);
+                pool->begin_free_seq_chunk(chunk);
+                pool->chunk(MONAD_ASYNC_NAMESPACE::storage_pool::seq, chunk)
+                    .destroy_contents();
+                pool->free_seq_chunk(chunk);
             }
         }
 
@@ -1466,6 +1482,45 @@ opened.
                     }
                     return "";
                 });
+            cli.add_option(
+                   "--num-dbs",
+                   impl.num_dbs,
+                   "Number of DBs to register in the pool catalog at creation "
+                   "(default 1, max 4).")
+                ->check([](std::string const &s) -> std::string {
+                    auto const v = std::stoul(s);
+                    if (v < 1 || v > 4) {
+                        return "Must be between 1 and 4";
+                    }
+                    return "";
+                });
+            for (unsigned i = 0; i < 4; ++i) {
+                auto const n = std::to_string(i + 1);
+                cli.add_option(
+                       "--root-offsets-chunk-count-db" + n,
+                       impl.db_configs[i].root_offsets_chunk_count,
+                       "Root offset chunk count for DB" + n +
+                           " (default 16, power of 2).")
+                    ->check([](std::string const &s) {
+                        auto const v = std::stoll(s);
+                        if (v <= 0) {
+                            return "Value must be positive";
+                        }
+                        if ((v & (v - 1)) != 0) {
+                            return "Value must be a power of 2";
+                        }
+                        return "";
+                    });
+                cli.add_option(
+                    "--max-seq-chunks-db" + n,
+                    impl.db_configs[i].max_seq_chunks,
+                    "Max seq chunks DB" + n + " may own (0 = unlimited).");
+            }
+            cli.add_option(
+                "--set-max-seq-chunks",
+                impl.set_max_seq_chunks,
+                "Set the max seq chunk limit for DB1 on an existing pool "
+                "(0 = unlimited). Takes effect immediately.");
             cli.add_flag(
                 "--chunk-increasing",
                 impl.create_chunk_increasing,
@@ -1499,9 +1554,15 @@ opened.
             impl.flags.open_read_only = true;
             impl.flags.open_read_only_allow_dirty =
                 impl.allow_dirty || !impl.archive_database.empty();
-            impl.flags.num_cnv_chunks =
-                impl.root_offsets_chunk_count +
-                monad::mpt::UpdateAuxImpl::cnv_chunks_for_db_metadata;
+            // Compute total CNV chunks needed for all DBs
+            {
+                uint32_t total_cnv = 0;
+                for (uint32_t i = 0; i < impl.num_dbs; ++i) {
+                    total_cnv +=
+                        1 + impl.db_configs[i].root_offsets_chunk_count;
+                }
+                impl.flags.num_cnv_chunks = total_cnv;
+            }
             if (!impl.restore_database.empty()) {
                 if (!impl.archive_database.empty()) {
                     impl.cli_ask_question(
@@ -1542,7 +1603,15 @@ opened.
                 ss << ". Are you sure?\n";
                 impl.cli_ask_question(ss.str().c_str());
             }
-            else if (impl.rewind_database_to || impl.reset_history_length) {
+            else if (
+                impl.rewind_database_to || impl.reset_history_length ||
+                impl.set_max_seq_chunks.has_value() ||
+                std::any_of(
+                    impl.db_configs.begin(),
+                    impl.db_configs.begin() + impl.num_dbs,
+                    [](auto const &c) {
+                        return c.max_seq_chunks.has_value();
+                    })) {
                 impl.flags.open_read_only = false;
                 impl.flags.open_read_only_allow_dirty = false;
             }
@@ -1553,6 +1622,62 @@ opened.
                 mode = MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
             }
             impl.pool.emplace(std::span{impl.storage_paths}, mode, impl.flags);
+            // Register any missing DB slots (writable only)
+            if (!impl.pool->is_read_only()) {
+                uint16_t cnv_cursor = 0;
+                for (uint32_t i = 0; i < impl.num_dbs; ++i) {
+                    auto const db_id = static_cast<uint8_t>(i + 1);
+                    auto const *existing = impl.pool->find_db_slot(db_id);
+                    if (existing != nullptr) {
+                        // Advance cursor past this DB's existing allocation
+                        auto const end = existing->root_offset_cnv_start +
+                                         existing->root_offset_cnv_count;
+                        if (end > cnv_cursor) {
+                            cnv_cursor = static_cast<uint16_t>(end);
+                        }
+                    }
+                    else {
+                        auto const ro_count = static_cast<uint16_t>(
+                            impl.num_dbs == 1
+                                ? impl.root_offsets_chunk_count
+                                : impl.db_configs[i].root_offsets_chunk_count);
+                        impl.pool->register_db_slot(
+                            MONAD_ASYNC_NAMESPACE::storage_pool::db_slot{
+                                .db_id = db_id,
+                                .metadata_cnv = cnv_cursor,
+                                .root_offset_cnv_start =
+                                    static_cast<uint16_t>(cnv_cursor + 1),
+                                .root_offset_cnv_count = ro_count});
+                        cnv_cursor =
+                            static_cast<uint16_t>(cnv_cursor + 1 + ro_count);
+                    }
+                }
+            }
+            // Apply per-DB chunk limits
+            if (!impl.pool->is_read_only()) {
+                for (uint32_t i = 0; i < impl.num_dbs; ++i) {
+                    if (!impl.db_configs[i].max_seq_chunks.has_value()) {
+                        continue;
+                    }
+                    auto const limit = *impl.db_configs[i].max_seq_chunks;
+                    auto const db_id = static_cast<uint8_t>(i + 1);
+                    monad::io::Ring r{monad::io::RingConfig{1}};
+                    monad::io::Ring w{monad::io::RingConfig{4}};
+                    auto buf =
+                        monad::io::make_buffers_for_segregated_read_write(
+                            r,
+                            w,
+                            2,
+                            4,
+                            MONAD_ASYNC_NAMESPACE::AsyncIO::
+                                MONAD_IO_BUFFERS_READ_SIZE,
+                            MONAD_ASYNC_NAMESPACE::AsyncIO::
+                                MONAD_IO_BUFFERS_WRITE_SIZE);
+                    auto aio = MONAD_ASYNC_NAMESPACE::AsyncIO{*impl.pool, buf};
+                    MONAD_MPT_NAMESPACE::UpdateAux aux{aio, db_id};
+                    aux.set_max_seq_chunks(limit);
+                }
+            }
         }
 
         if (!impl.restore_database.empty()) {
@@ -1582,7 +1707,11 @@ opened.
                       MONAD_ASYNC_NAMESPACE::AsyncIO::
                           MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*impl.pool, rwbuf};
-        MONAD_MPT_NAMESPACE::UpdateAux aux(io);
+        MONAD_MPT_NAMESPACE::UpdateAux aux(io, 1);
+
+        if (impl.set_max_seq_chunks.has_value()) {
+            aux.set_max_seq_chunks(*impl.set_max_seq_chunks);
+        }
 
         {
             cout << R"(MPT database on storages:
@@ -1602,13 +1731,40 @@ opened.
             cout << std::setw(default_width) << std::setprecision(default_prec)
                  << std::endl;
 
+            // Show registered DBs
+            {
+                cout << "Pool catalog:";
+                for (uint8_t db_id = 1; db_id <= 4; ++db_id) {
+                    auto const *slot = impl.pool->find_db_slot(db_id);
+                    if (slot == nullptr) {
+                        break;
+                    }
+                    cout << "\n     DB" << db_id << ": metadata=cnv"
+                         << slot->metadata_cnv << ", root_offsets=cnv"
+                         << slot->root_offset_cnv_start << ".."
+                         << (slot->root_offset_cnv_start +
+                             slot->root_offset_cnv_count - 1);
+                }
+                cout << "\n";
+            }
+
             cout << "MPT database internal lists:\n";
             impl.total_used += impl.print_list_info(
                 aux, aux.db_metadata()->fast_list_begin(), "Fast", &impl.fast);
             impl.total_used += impl.print_list_info(
                 aux, aux.db_metadata()->slow_list_begin(), "Slow", &impl.slow);
-            impl.print_list_info(
-                aux, aux.db_metadata()->free_list_begin(), "Free");
+            {
+                auto const limit = aux.db_metadata()->max_seq_chunks;
+                if (limit != 0) {
+                    auto const owned =
+                        aux.num_chunks(MONAD_MPT_NAMESPACE::UpdateAuxImpl::
+                                           chunk_list::fast) +
+                        aux.num_chunks(MONAD_MPT_NAMESPACE::UpdateAuxImpl::
+                                           chunk_list::slow);
+                    cout << "     Seq chunk limit: " << owned << " / " << limit
+                         << "\n";
+                }
+            }
             impl.print_db_history_summary(aux);
 
             if (impl.reset_history_length) {
@@ -1628,7 +1784,7 @@ opened.
                     impl.cli_ask_question(ss.str().c_str());
                 }
                 aux.unset_io();
-                aux.set_io(io, impl.reset_history_length);
+                aux.set_io(io, 1, impl.reset_history_length);
                 cout << "Success! Done resetting history to "
                      << impl.reset_history_length.value() << ".\n";
                 impl.print_db_history_summary(aux);
@@ -1660,8 +1816,6 @@ opened.
                         aux, aux.db_metadata()->fast_list_begin(), "Fast");
                     impl.print_list_info(
                         aux, aux.db_metadata()->slow_list_begin(), "Slow");
-                    impl.print_list_info(
-                        aux, aux.db_metadata()->free_list_begin(), "Free");
                     return 0;
                 }
             }

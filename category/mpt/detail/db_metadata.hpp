@@ -62,7 +62,7 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MONAD007";
+        static constexpr char const *MAGIC = "MONAD008";
         static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::UpdateAuxImpl;
@@ -77,8 +77,8 @@ namespace detail
         uint64_t unused0_ : 36; // next item MUST be on a byte boundary
         uint64_t reserved_for_is_dirty_ : 8; // for is_dirty below
         // DO NOT INSERT ANYTHING IN HERE
-        uint64_t capacity_in_free_list; // used to detect when free space is
-                                        // running low
+        uint32_t max_seq_chunks; // 0 = unlimited
+        uint32_t reserved_;
 
         // Thread safe ring buffer containing root offsets on disk. One thread
         // is both the producer and the consumer. Other threads may query
@@ -166,13 +166,13 @@ namespace detail
             static_assert(bitfield_layout_check());
 #endif
             return *start_lifetime_as<std::atomic<uint8_t>>(
-                (std::byte *)&capacity_in_free_list - 1);
+                (std::byte *)&max_seq_chunks - 1);
         }
 
         struct id_pair
         {
             uint32_t begin, end;
-        } free_list, fast_list, slow_list;
+        } unused_free_list_, fast_list, slow_list;
 
         struct chunk_info_t
         {
@@ -278,22 +278,6 @@ namespace detail
                 ->load(load_ord);
         }
 
-        chunk_info_t const *free_list_begin() const noexcept
-        {
-            if (free_list.begin == UINT32_MAX) {
-                return nullptr;
-            }
-            return at(free_list.begin);
-        }
-
-        chunk_info_t const *free_list_end() const noexcept
-        {
-            if (free_list.end == UINT32_MAX) {
-                return nullptr;
-            }
-            return at(free_list.end);
-        }
-
         chunk_info_t const *fast_list_begin() const noexcept
         {
             if (fast_list.begin == UINT32_MAX) {
@@ -378,10 +362,8 @@ namespace detail
                 if (i->in_fast_list) {
                     return fast_list;
                 }
-                if (i->in_slow_list) {
-                    return slow_list;
-                }
-                return free_list;
+                MONAD_ASSERT(i->in_slow_list);
+                return slow_list;
             };
             auto const g = hold_dirty();
             if (i->prev_chunk_id == chunk_info_t::INVALID_CHUNK_ID &&
@@ -431,18 +413,6 @@ namespace detail
             i->prev_chunk_id = i->next_chunk_id =
                 chunk_info_t::INVALID_CHUNK_ID;
 #endif
-        }
-
-        void free_capacity_add_(uint64_t bytes) noexcept
-        {
-            auto const g = hold_dirty();
-            capacity_in_free_list += bytes;
-        }
-
-        void free_capacity_sub_(uint64_t bytes) noexcept
-        {
-            auto const g = hold_dirty();
-            capacity_in_free_list -= bytes;
         }
 
         void advance_db_offsets_to_(

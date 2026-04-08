@@ -131,43 +131,43 @@
     template struct c<::monad::MonadTraits<MONAD_NEXT>>;
 
 // Template member functions
+//
+// The old approach used a namespace-scope variable template whose initializer
+// took &Class::member<traits>. clang-21 rejects this because the initializer
+// is access-checked at namespace scope ([temp.spec.general]/6 exempts most
+// names in explicit instantiation declarations, but NOT variable template
+// initializers).
+//
+// The new approach explicitly instantiates a local function template with the
+// member pointer as an NTTP. The NTTP appears in the explicit instantiation
+// declaration itself (not in a function body or initializer), so access
+// checking is relaxed per the standard.
 
-#define EXPLICIT_TRAITS_MEMBER_HEADER(f, id)                                   \
-    template <::monad::Traits traits>                                          \
-    constexpr auto id = &f<traits>;
+#define EXPLICIT_TRAITS_MEMBER_FN(id)                                          \
+    template <auto Ptr>                                                        \
+    void id()                                                                  \
+    {                                                                          \
+        [[gnu::used]] static constexpr auto _ptr = Ptr;                        \
+    }
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_LIST(f, id)                                 \
-    template decltype(id<::monad::EvmTraits<EVMC_HOMESTEAD>>)                  \
-        id<::monad::EvmTraits<EVMC_HOMESTEAD>>;                                \
-    template decltype(id<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>)          \
-        id<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>;                        \
-    template decltype(id<::monad::EvmTraits<EVMC_SPURIOUS_DRAGON>>)            \
-        id<::monad::EvmTraits<EVMC_SPURIOUS_DRAGON>>;                          \
-    template decltype(id<::monad::EvmTraits<EVMC_BYZANTIUM>>)                  \
-        id<::monad::EvmTraits<EVMC_BYZANTIUM>>;                                \
-    template decltype(id<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>)             \
-        id<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>;                           \
-    template decltype(id<::monad::EvmTraits<EVMC_PETERSBURG>>)                 \
-        id<::monad::EvmTraits<EVMC_PETERSBURG>>;                               \
-    template decltype(id<::monad::EvmTraits<EVMC_ISTANBUL>>)                   \
-        id<::monad::EvmTraits<EVMC_ISTANBUL>>;                                 \
-    template decltype(id<::monad::EvmTraits<EVMC_BERLIN>>)                     \
-        id<::monad::EvmTraits<EVMC_BERLIN>>;                                   \
-    template decltype(id<::monad::EvmTraits<EVMC_LONDON>>)                     \
-        id<::monad::EvmTraits<EVMC_LONDON>>;                                   \
-    template decltype(id<::monad::EvmTraits<EVMC_PARIS>>)                      \
-        id<::monad::EvmTraits<EVMC_PARIS>>;                                    \
-    template decltype(id<::monad::EvmTraits<EVMC_SHANGHAI>>)                   \
-        id<::monad::EvmTraits<EVMC_SHANGHAI>>;                                 \
-    template decltype(id<::monad::EvmTraits<EVMC_CANCUN>>)                     \
-        id<::monad::EvmTraits<EVMC_CANCUN>>;                                   \
-    template decltype(id<::monad::EvmTraits<EVMC_PRAGUE>>)                     \
-        id<::monad::EvmTraits<EVMC_PRAGUE>>;                                   \
-    template decltype(id<::monad::EvmTraits<EVMC_OSAKA>>)                      \
-        id<::monad::EvmTraits<EVMC_OSAKA>>;
+    template void id<&f<::monad::EvmTraits<EVMC_HOMESTEAD>>>();                \
+    template void id<&f<::monad::EvmTraits<EVMC_TANGERINE_WHISTLE>>>();        \
+    template void id<&f<::monad::EvmTraits<EVMC_SPURIOUS_DRAGON>>>();          \
+    template void id<&f<::monad::EvmTraits<EVMC_BYZANTIUM>>>();                \
+    template void id<&f<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>>();           \
+    template void id<&f<::monad::EvmTraits<EVMC_PETERSBURG>>>();               \
+    template void id<&f<::monad::EvmTraits<EVMC_ISTANBUL>>>();                 \
+    template void id<&f<::monad::EvmTraits<EVMC_BERLIN>>>();                   \
+    template void id<&f<::monad::EvmTraits<EVMC_LONDON>>>();                   \
+    template void id<&f<::monad::EvmTraits<EVMC_PARIS>>>();                    \
+    template void id<&f<::monad::EvmTraits<EVMC_SHANGHAI>>>();                 \
+    template void id<&f<::monad::EvmTraits<EVMC_CANCUN>>>();                   \
+    template void id<&f<::monad::EvmTraits<EVMC_PRAGUE>>>();                   \
+    template void id<&f<::monad::EvmTraits<EVMC_OSAKA>>>();
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_HELPER(f, id)                               \
-    EXPLICIT_TRAITS_MEMBER_HEADER(f, id)                                       \
+    EXPLICIT_TRAITS_MEMBER_FN(id)                                              \
     EXPLICIT_EVM_TRAITS_MEMBER_LIST(f, id)
 
 #define EXPLICIT_EVM_TRAITS_MEMBER(f)                                          \
@@ -175,31 +175,20 @@
         f, MONAD_CORE_CONCAT(_member_fn_ptr_, __COUNTER__))
 
 #define EXPLICIT_MONAD_TRAITS_MEMBER_LIST(f, id)                               \
-    template decltype(id<::monad::MonadTraits<MONAD_ZERO>>)                    \
-        id<::monad::MonadTraits<MONAD_ZERO>>;                                  \
-    template decltype(id<::monad::MonadTraits<MONAD_ONE>>)                     \
-        id<::monad::MonadTraits<MONAD_ONE>>;                                   \
-    template decltype(id<::monad::MonadTraits<MONAD_TWO>>)                     \
-        id<::monad::MonadTraits<MONAD_TWO>>;                                   \
-    template decltype(id<::monad::MonadTraits<MONAD_THREE>>)                   \
-        id<::monad::MonadTraits<MONAD_THREE>>;                                 \
-    template decltype(id<::monad::MonadTraits<MONAD_FOUR>>)                    \
-        id<::monad::MonadTraits<MONAD_FOUR>>;                                  \
-    template decltype(id<::monad::MonadTraits<MONAD_FIVE>>)                    \
-        id<::monad::MonadTraits<MONAD_FIVE>>;                                  \
-    template decltype(id<::monad::MonadTraits<MONAD_SIX>>)                     \
-        id<::monad::MonadTraits<MONAD_SIX>>;                                   \
-    template decltype(id<::monad::MonadTraits<MONAD_SEVEN>>)                   \
-        id<::monad::MonadTraits<MONAD_SEVEN>>;                                 \
-    template decltype(id<::monad::MonadTraits<MONAD_EIGHT>>)                   \
-        id<::monad::MonadTraits<MONAD_EIGHT>>;                                 \
-    template decltype(id<::monad::MonadTraits<MONAD_NINE>>)                    \
-        id<::monad::MonadTraits<MONAD_NINE>>;                                  \
-    template decltype(id<::monad::MonadTraits<MONAD_NEXT>>)                    \
-        id<::monad::MonadTraits<MONAD_NEXT>>;
+    template void id<&f<::monad::MonadTraits<MONAD_ZERO>>>();                  \
+    template void id<&f<::monad::MonadTraits<MONAD_ONE>>>();                   \
+    template void id<&f<::monad::MonadTraits<MONAD_TWO>>>();                   \
+    template void id<&f<::monad::MonadTraits<MONAD_THREE>>>();                 \
+    template void id<&f<::monad::MonadTraits<MONAD_FOUR>>>();                  \
+    template void id<&f<::monad::MonadTraits<MONAD_FIVE>>>();                  \
+    template void id<&f<::monad::MonadTraits<MONAD_SIX>>>();                   \
+    template void id<&f<::monad::MonadTraits<MONAD_SEVEN>>>();                 \
+    template void id<&f<::monad::MonadTraits<MONAD_EIGHT>>>();                 \
+    template void id<&f<::monad::MonadTraits<MONAD_NINE>>>();                  \
+    template void id<&f<::monad::MonadTraits<MONAD_NEXT>>>();
 
 #define EXPLICIT_MONAD_TRAITS_MEMBER_HELPER(f, id)                             \
-    EXPLICIT_TRAITS_MEMBER_HEADER(f, id)                                       \
+    EXPLICIT_TRAITS_MEMBER_FN(id)                                              \
     EXPLICIT_MONAD_TRAITS_MEMBER_LIST(f, id)
 
 #define EXPLICIT_MONAD_TRAITS_MEMBER(f)                                        \
@@ -207,7 +196,7 @@
         f, MONAD_CORE_CONCAT(_member_fn_ptr_, __COUNTER__))
 
 #define EXPLICIT_TRAITS_MEMBER_HELPER(f, id)                                   \
-    EXPLICIT_TRAITS_MEMBER_HEADER(f, id)                                       \
+    EXPLICIT_TRAITS_MEMBER_FN(id)                                              \
     EXPLICIT_EVM_TRAITS_MEMBER_LIST(f, id)                                     \
     EXPLICIT_MONAD_TRAITS_MEMBER_LIST(f, id)
 

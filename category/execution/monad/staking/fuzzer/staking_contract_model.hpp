@@ -17,6 +17,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/functional/hash.hpp>
@@ -25,6 +26,8 @@ namespace monad::staking::test
 {
     class StakingContractModel
     {
+        friend struct ::monad::detail::ExplicitTraitsMemberAccess;
+
         vm::VM vm_;
         OnDiskMachine mpt_machine_;
         mpt::Db mpt_db_{mpt_machine_};

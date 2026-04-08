@@ -22,6 +22,20 @@
 
 #include <evmc/evmc.h>
 
+namespace monad::detail
+{
+    // Friend target for EXPLICIT_*_TRAITS_MEMBER macros. clang-21 enforces that
+    // namespace-scope variable templates cannot access private members, even
+    // when the macro is invoked from the class's own .cpp file. Classes with
+    // private templated members that use these macros declare this struct as a
+    // friend.
+    struct ExplicitTraitsMemberAccess
+    {
+        template <auto Ptr>
+        static constexpr auto value = Ptr;
+    };
+} // namespace monad::detail
+
 // Template free functions
 
 #define EXPLICIT_EVM_TRAITS(f)                                                 \

@@ -29,6 +29,7 @@
 #include <category/execution/monad/staking/util/delegator.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/staking/util/val_execution.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -47,6 +48,8 @@ MONAD_STAKING_NAMESPACE_BEGIN
 
 class StakingContract
 {
+    friend struct ::monad::detail::ExplicitTraitsMemberAccess;
+
     State &state_;
     CallTracerBase &call_tracer_;
 

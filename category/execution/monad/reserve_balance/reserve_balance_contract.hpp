@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -31,6 +32,8 @@ inline constexpr Address RESERVE_BALANCE_CA = Address{0x1001};
 
 class ReserveBalanceContract
 {
+    friend struct ::monad::detail::ExplicitTraitsMemberAccess;
+
     State &state_;
     // TODO(dhil): Remove annotation once used in event emission.
     [[maybe_unused]] CallTracerBase &call_tracer_;

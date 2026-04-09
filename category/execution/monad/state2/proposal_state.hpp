@@ -193,22 +193,19 @@ private:
         int depth = 1;
         bytes32_t block_id = block_id_;
         uint64_t block_number = block_;
+        if (block_id == finalized_block_id_ ||
+            (block_number == finalized_block_ && block_id == bytes32_t{})) {
+            return false;
+        }
+        else if (block_number <= finalized_block_) {
+            truncated = true;
+            return false;
+        }
         while (true) {
             if (block_id == finalized_block_id_) {
+                // stop if reached last finalized without match in proposal map
                 break;
             }
-            MONAD_ASSERT_PRINTF(
-                block_number > finalized_block_,
-                "block_number %lu is not greater than last finalized block "
-                "%lu. block_id = %s, block_ %lu, block_id_ %s, "
-                "finalized_block_id_ = %s, depth = %d",
-                block_number,
-                finalized_block_,
-                to_hex(to_byte_string_view(block_id.bytes)).c_str(),
-                block_,
-                to_hex(to_byte_string_view(block_id_.bytes)).c_str(),
-                to_hex(to_byte_string_view(finalized_block_id_.bytes)).c_str(),
-                depth);
             auto const it =
                 proposal_map_.find(std::make_pair(block_number, block_id));
             if (it == proposal_map_.end()) {

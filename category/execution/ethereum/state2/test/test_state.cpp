@@ -1606,6 +1606,9 @@ TEST_F(OnDiskStateTest, proposal_basics)
     EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
     db_cache.finalize(12, bytes32_t{12});
     EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
+    // read an older block's state
+    db_cache.set_block_and_prefix(11); // set to block 11 finalized
+    EXPECT_EQ(db_cache.read_account(a).value().balance, 30'000);
 }
 
 TEST_F(OnDiskStateTest, undecided_proposals)

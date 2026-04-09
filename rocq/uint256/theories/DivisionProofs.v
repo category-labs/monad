@@ -1574,7 +1574,254 @@ Lemma knuth_div_subtract_correct : forall u_seg q_hat v n,
   /\ 0 <= to_Z_words (firstn n u_after) < to_Z_words v
   /\ length u_after = (n + 1)%nat
   /\ get_word u_after n = U64.zero.
-Proof. Admitted.
+Proof.
+  intros u_seg q_hat v n Hlen_u Hlen_v Hvpos Hqhat Hlb Hub.
+  unfold knuth_div_subtract.
+  change (MakeProofs.get_word) with get_word in *.
+  change (MakeProofs.set_word) with set_word in *.
+  set (Bpow := modulus_words n).
+  assert (HBpow_pos : Bpow > 0).
+  { unfold Bpow. apply modulus_words_pos. }
+  assert (Hv_lt_Bpow : to_Z_words v < Bpow).
+  { unfold Bpow. rewrite <- Hlen_v. pose proof (to_Z_words_bound v). lia. }
+  assert (Hdecomp_top : forall ws,
+    length ws = (n + 1)%nat ->
+    to_Z_words ws =
+      to_Z_words (firstn n ws) + to_Z (get_word ws n) * Bpow).
+  { intros ws Hlen_ws.
+    rewrite (to_Z_words_firstn_skipn ws n) by lia.
+    assert (Hskip_top : to_Z_words (skipn n ws) = to_Z (get_word ws n)).
+    { destruct (skipn n ws) as [|w rest] eqn:Hsk.
+      - exfalso.
+        assert (length (skipn n ws) = 0%nat) by (rewrite Hsk; reflexivity).
+        rewrite length_skipn in H by lia.
+        lia.
+      - assert (rest = []).
+        { assert (length (w :: rest) = 1%nat).
+          { rewrite <- Hsk, length_skipn. lia. }
+          destruct rest; [reflexivity|simpl in *; lia]. }
+        subst rest. cbn [to_Z_words].
+        assert (w = get_word ws n).
+        { unfold get_word. change w with (nth 0 (w :: []) U64.zero).
+          rewrite <- Hsk, nth_skipn. f_equal. lia. }
+        rewrite H. lia. }
+    rewrite Hskip_top. unfold Bpow. ring. }
+  assert (Hfirstn_zero_top : forall ws,
+    length ws = (n + 1)%nat ->
+    get_word ws n = U64.zero ->
+    to_Z_words (firstn n ws) = to_Z_words ws).
+  { intros ws Hlen_ws Htop0.
+    apply to_Z_words_firstn_trailing_zeros; [lia|].
+    intros i Hi.
+    assert (i = n)%nat by lia.
+    subst i. rewrite Htop0, spec_zero. reflexivity. }
+  pose proof (U128.spec_zero) as Hzero128.
+  assert (Hk0 : U128.to_Z U128.zero <= base width).
+  { rewrite Hzero128. unfold base. rewrite width_is_64. simpl. lia. }
+  assert (Hlen_subloop : (0 + length v <= length u_seg)%nat).
+  { rewrite Hlen_v, Hlen_u. lia. }
+  destruct (knuth_sub_loop u_seg q_hat v 0%nat U128.zero) as [u_sub k] eqn:Hsubloop.
+  pose proof (knuth_sub_loop_correct u_seg q_hat v 0%nat U128.zero Hqhat Hk0 Hlen_subloop)
+    as Hsub.
+  rewrite Hsubloop in Hsub. cbn [Nat.add] in Hsub.
+  destruct Hsub as [Hsub_val [Hsub_len [_ Hk_bound]]].
+  set (R0 := to_Z_words u_seg - U128.to_Z q_hat * to_Z_words v).
+  assert (Hsub_val' : to_Z_words u_sub - U128.to_Z k * Bpow = R0).
+  { unfold R0, Bpow in *.
+    rewrite Hzero128, Z.add_0_r, Z.pow_0_r in Hsub_val by lia.
+    rewrite Hlen_v in Hsub_val.
+    rewrite Z.mul_1_r in Hsub_val.
+    exact Hsub_val. }
+  assert (Hlow_bound : 0 <= to_Z_words (firstn n u_sub) < Bpow).
+  { unfold Bpow.
+    pose proof (to_Z_words_bound (firstn n u_sub)) as Hlow.
+    rewrite firstn_length_le in Hlow by (rewrite Hsub_len, Hlen_u; lia).
+    exact Hlow. }
+  set (low := to_Z_words (firstn n u_sub)).
+  set (top := to_Z (get_word u_sub n)).
+  set (d := top - U128.to_Z k).
+  assert (Hu_sub_decomp : to_Z_words u_sub = low + top * Bpow).
+  { unfold low, top. rewrite Hdecomp_top.
+    - reflexivity.
+    - rewrite Hsub_len. exact Hlen_u. }
+  assert (HR0_eq : R0 = low + d * Bpow).
+  { unfold d. rewrite <- Hsub_val'. rewrite Hu_sub_decomp. nia. }
+  assert (HR0_bounds : - Bpow < R0 < Bpow).
+  { unfold R0, Bpow.
+    assert (0 <= to_Z_words u_seg) by (pose proof (to_Z_words_bound u_seg); lia).
+    nia. }
+  assert (Hd_cases : d = -1 \/ d = 0).
+  { nia. }
+  set (t := U128.sub (widen (get_word u_sub n)) k).
+  set (u_after := set_word u_sub n (trunc t)).
+  assert (Ht_d : U128.to_Z t = d mod base U128.width).
+  { unfold t, d, top. rewrite U128.spec_sub, spec_widen. reflexivity. }
+  assert (Hbase_lt_128 : base width < base U128.width).
+  { unfold base. rewrite width_is_64, U128.width_is_128. simpl. lia. }
+  pose proof (to_Z_words_bound u_seg) as [Hseg_nonneg _].
+  pose proof (U128.spec_to_Z q_hat) as [Hq_nonneg Hq128].
+  assert (Hsign_neg : d = -1 -> U128.eqb (U128.shr t 127) U128.one = true).
+  { intro Hd.
+    rewrite U128.spec_eqb, U128.spec_shr, U128.spec_one.
+    rewrite Ht_d, Hd, U128.width_is_128.
+    vm_compute. reflexivity. }
+  assert (Hsign_zero : d = 0 -> U128.eqb (U128.shr t 127) U128.one = false).
+  { intro Hd.
+    rewrite U128.spec_eqb, U128.spec_shr, U128.spec_one.
+    rewrite Ht_d, Hd, U128.width_is_128.
+    vm_compute. reflexivity. }
+  assert (Htrunc_neg : d = -1 -> to_Z (trunc t) = base width - 1).
+  { intro Hd. rewrite spec_trunc, Ht_d, Hd.
+    unfold base. rewrite width_is_64, U128.width_is_128.
+    vm_compute. reflexivity. }
+  assert (Htrunc_zero : d = 0 -> to_Z (trunc t) = 0).
+  { intro Hd. rewrite spec_trunc, Ht_d, Hd.
+    unfold base. rewrite width_is_64, U128.width_is_128.
+    vm_compute. reflexivity. }
+  destruct (U128.eqb (U128.shr t 127) U128.one) eqn:Hsign.
+  - assert (Hd : d = -1).
+    { destruct Hd_cases as [Hd|Hd]; [exact Hd|].
+      pose proof (Hsign_zero Hd) as Hs.
+      rewrite Hs in Hsign. discriminate. }
+    assert (HR0_neg : R0 < 0).
+    { rewrite HR0_eq, Hd. nia. }
+    assert (Hq_pos : 0 < U128.to_Z q_hat).
+    { destruct (Z.eq_dec (U128.to_Z q_hat) 0) as [Hq0|Hq0]; [|lia].
+      unfold R0 in HR0_neg. rewrite Hq0, Z.mul_0_l in HR0_neg. lia. }
+    assert (Hq_final :
+      to_Z (trunc (U128.sub q_hat U128.one)) = U128.to_Z q_hat - 1).
+    { rewrite spec_trunc, U128.spec_sub, U128.spec_one.
+      assert (Hqm1_128 : 0 <= U128.to_Z q_hat - 1 < base U128.width) by lia.
+      assert (Hqm1_64 : 0 <= U128.to_Z q_hat - 1 < base width) by lia.
+      rewrite (Z.mod_small (U128.to_Z q_hat - 1) (base U128.width)) by exact Hqm1_128.
+      rewrite (Z.mod_small (U128.to_Z q_hat - 1) (base width)) by exact Hqm1_64.
+      reflexivity. }
+    assert (Hu_after_len : length u_after = (n + 1)%nat).
+    { unfold u_after. rewrite set_word_length, Hsub_len, Hlen_u. reflexivity. }
+    assert (Hafter_top : get_word u_after n = trunc t).
+    { unfold u_after. rewrite get_set_word_same by (rewrite Hsub_len, Hlen_u; lia).
+      reflexivity. }
+    assert (Htrunc_max : to_Z (trunc t) = base width - 1).
+    { apply Htrunc_neg. exact Hd. }
+    assert (Hu_after_val : to_Z_words u_after = low + (base width - 1) * Bpow).
+    { unfold u_after.
+      rewrite (to_Z_words_set_word u_sub n (trunc t)) by (rewrite Hsub_len, Hlen_u; lia).
+      rewrite Htrunc_max, Hu_sub_decomp.
+      unfold top, Bpow, modulus_words. nia. }
+    assert (Hlen_add : (0 + length v <= length u_after)%nat).
+    { rewrite Hlen_v, Hu_after_len. lia. }
+    destruct (knuth_addback_loop u_after v 0%nat U128.zero) as [u_corr k_add] eqn:Hadd.
+    pose proof (knuth_addback_loop_correct u_after v 0%nat U128.zero Hlen_add) as Hadd_corr.
+    assert (Hk0_add : U128.to_Z U128.zero <= 1).
+    { rewrite Hzero128. lia. }
+    specialize (Hadd_corr Hk0_add).
+    rewrite Hadd in Hadd_corr. cbn [Nat.add] in Hadd_corr.
+    destruct Hadd_corr as [Hadd_val [Hcorr_len [Hcorr_unchanged Hkadd_bound]]].
+    assert (Hadd_val' :
+      to_Z_words u_corr + U128.to_Z k_add * Bpow =
+      to_Z_words u_after + to_Z_words v).
+    { unfold Bpow in *.
+      rewrite Hzero128, Z.add_0_r, Z.pow_0_r in Hadd_val by lia.
+      rewrite Hlen_v in Hadd_val.
+      rewrite Z.mul_1_r in Hadd_val.
+      exact Hadd_val. }
+    assert (Hcorr_top : get_word u_corr n = get_word u_after n).
+    { apply Hcorr_unchanged. right. rewrite Hlen_v. lia. }
+    set (low_corr := to_Z_words (firstn n u_corr)).
+    assert (Hlow_corr_bound : 0 <= low_corr < Bpow).
+    { unfold low_corr, Bpow.
+      pose proof (to_Z_words_bound (firstn n u_corr)) as Hlow.
+      rewrite firstn_length_le in Hlow by (rewrite Hcorr_len, Hu_after_len; lia).
+      exact Hlow. }
+    assert (Hcorr_top_val : to_Z (get_word u_corr n) = base width - 1).
+    { rewrite Hcorr_top, Hafter_top, Htrunc_max. reflexivity. }
+    assert (Hu_corr_decomp :
+      to_Z_words u_corr = low_corr + (base width - 1) * Bpow).
+    { unfold low_corr. rewrite Hdecomp_top.
+      - rewrite Hcorr_top_val. ring.
+      - rewrite Hcorr_len, Hu_after_len. reflexivity. }
+    assert (Hadd_low_eq :
+      low_corr + U128.to_Z k_add * Bpow = low + to_Z_words v).
+    { rewrite Hu_corr_decomp, Hu_after_val in Hadd_val'. nia. }
+    pose proof (U128.spec_to_Z k_add) as [Hkadd_nonneg Hkadd_lt].
+    assert (Hrem_bounds : 0 <= R0 + to_Z_words v < to_Z_words v).
+    { split.
+      - unfold R0. nia.
+      - nia. }
+    assert (Hlow_eq : low = R0 + Bpow).
+    { rewrite HR0_eq, Hd. nia. }
+    assert (Hsum_bounds : Bpow <= low + to_Z_words v < 2 * Bpow).
+    { rewrite Hlow_eq. nia. }
+    assert (Hkadd_one : U128.to_Z k_add = 1).
+    { nia. }
+    assert (Hlow_corr_val : low_corr = R0 + to_Z_words v).
+    { rewrite Hkadd_one, Hlow_eq in Hadd_low_eq. nia. }
+    set (u_final := set_word u_corr n
+      (trunc (U128.add (widen (get_word u_corr n)) k_add))).
+    assert (Htop_final_val :
+      to_Z (trunc (U128.add (widen (get_word u_corr n)) k_add)) = 0).
+    { rewrite spec_trunc, U128.spec_add, spec_widen, Hcorr_top_val, Hkadd_one.
+      replace (base width - 1 + 1) with (base width) by lia.
+      rewrite (Z.mod_small (base width) (base U128.width)).
+      2:{ split; [lia|exact Hbase_lt_128]. }
+      rewrite Z.mod_same by (unfold base; rewrite width_is_64; simpl; lia).
+      reflexivity. }
+    assert (Htop_final : get_word u_final n = U64.zero).
+    { unfold u_final.
+      rewrite get_set_word_same by (rewrite Hcorr_len, Hu_after_len; lia).
+      apply spec_to_Z_inj.
+      rewrite Htop_final_val, spec_zero. reflexivity. }
+    assert (Hu_final_len : length u_final = (n + 1)%nat).
+    { unfold u_final. rewrite set_word_length, Hcorr_len, Hu_after_len. reflexivity. }
+    assert (Hu_final_firstn : to_Z_words (firstn n u_final) = to_Z_words u_final).
+    { apply Hfirstn_zero_top; assumption. }
+    assert (Hu_final_val : to_Z_words u_final = R0 + to_Z_words v).
+    { unfold u_final.
+      rewrite (to_Z_words_set_word u_corr n
+        (trunc (U128.add (widen (get_word u_corr n)) k_add)))
+        by (rewrite Hcorr_len, Hu_after_len; lia).
+      rewrite Hu_corr_decomp, Hcorr_top_val, Htop_final_val.
+      unfold Bpow, modulus_words in *. nia. }
+    split.
+    + rewrite Hu_final_firstn, Hu_final_val, Hq_final.
+      unfold R0. nia.
+    + split.
+      * rewrite Hu_final_firstn, Hu_final_val. exact Hrem_bounds.
+      * split; [exact Hu_final_len|exact Htop_final].
+  - assert (Hd : d = 0).
+    { destruct Hd_cases as [Hd|Hd].
+      - pose proof (Hsign_neg Hd) as Hs.
+        rewrite Hs in Hsign. discriminate.
+      - exact Hd. }
+    assert (Htrunc0 : to_Z (trunc t) = 0).
+    { apply Htrunc_zero. exact Hd. }
+    assert (Hq_final : to_Z (trunc q_hat) = U128.to_Z q_hat).
+    { rewrite spec_trunc. rewrite Z.mod_small; lia. }
+    assert (Hu_after_len : length u_after = (n + 1)%nat).
+    { unfold u_after. rewrite set_word_length, Hsub_len, Hlen_u. reflexivity. }
+    assert (Htop0 : get_word u_after n = U64.zero).
+    { unfold u_after.
+      rewrite get_set_word_same by (rewrite Hsub_len, Hlen_u; lia).
+      apply spec_to_Z_inj.
+      rewrite Htrunc0, spec_zero. reflexivity. }
+    assert (Hu_after_firstn : to_Z_words (firstn n u_after) = to_Z_words u_after).
+    { apply Hfirstn_zero_top; assumption. }
+    assert (HR0_bounds' : 0 <= R0 < to_Z_words v).
+    { split.
+      - rewrite HR0_eq, Hd. nia.
+      - unfold R0. nia. }
+    assert (Hu_after_val : to_Z_words u_after = R0).
+    { unfold u_after.
+      rewrite (to_Z_words_set_word u_sub n (trunc t)) by (rewrite Hsub_len, Hlen_u; lia).
+      rewrite Htrunc0, Hu_sub_decomp, HR0_eq, Hd.
+      unfold top, Bpow, modulus_words. nia. }
+    split.
+    + rewrite Hu_after_firstn, Hu_after_val, Hq_final.
+      unfold R0. nia.
+    + split.
+      * rewrite Hu_after_firstn, Hu_after_val. exact HR0_bounds'.
+      * split; [exact Hu_after_len|exact Htop0].
+Qed.
 
 (** ** Knuth Division — Estimate Bounds *)
 

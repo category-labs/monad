@@ -3033,10 +3033,10 @@ Proof.
           rewrite spec_shr in Heq. rewrite Z.shiftr_0_r in Heq.
           rewrite Z.mod_small in Heq by (pose proof (spec_to_Z y); unfold base in *; lia).
           lia.
-        + replace
-            (S (S pos'') - S (S (countl_zero_go y (S pos''))))%nat
-            with (S pos'' - S (countl_zero_go y (S pos''))) by lia.
-          apply IH; lia.
+	        + replace
+	            (S (S pos'') - S (S (countl_zero_go y (S pos''))))%nat
+	            with (S pos'' - S (countl_zero_go y (S pos'')))%nat by lia.
+	          apply IH; lia.
       - rewrite spec_eqb in Heq. apply Z.eqb_neq in Heq. rewrite spec_zero in Heq.
         replace (S pos' - S 0)%nat with pos' by lia.
         exact Heq. }
@@ -3045,25 +3045,51 @@ Proof.
     { apply (Hpivot_gen (Pos.to_nat U64.width) x); [exact Hmsw_pos | lia]. }
     assert (Hxlow :
       2 ^ Z.of_nat (Pos.to_nat U64.width - S (countl_zero x)) <= to_Z x).
-    { pose proof (spec_to_Z x) as [Hx_nn Hx_lt].
-      destruct (shr_zero_iff x (Pos.to_nat U64.width - S (countl_zero x))
-        ltac:(pose proof (countl_zero_bound x Hmsw_pos); lia)) as [Hshr0 _].
-      assert (~ to_Z x < 2 ^ Z.of_nat (Pos.to_nat U64.width - S (countl_zero x))).
-      { intro Hlt. apply Hpivot. apply Hshr0. exact Hlt. }
-      lia. }
+	    { pose proof (spec_to_Z x) as [Hx_nn Hx_lt].
+	      destruct (shr_zero_iff x (Pos.to_nat U64.width - S (countl_zero x))
+	        ltac:(pose proof (countl_zero_bound x Hmsw_pos); lia)) as [_ Hshr0].
+	      assert (~ to_Z x < 2 ^ Z.of_nat (Pos.to_nat U64.width - S (countl_zero x))).
+	      { intro Hlt. apply Hpivot. apply Hshr0. exact Hlt. }
+	      lia. }
     pose proof (countl_zero_bound x Hmsw_pos) as Hc_lt.
     rewrite width_is_64 in Hc_lt. simpl in Hc_lt.
     unfold x, s, shift.
-    set (c := countl_zero (get_word v (n - 1))) in *.
-    assert (Hpow_split :
-      2 ^ Z.of_nat (64 - S c) * 2 ^ Z.of_nat c = 2 ^ 63).
-    { rewrite <- Z.pow_add_r by lia. f_equal. lia. }
-    assert (Hhalf :
-      2 ^ 63 <= to_Z (get_word v (n - 1)) * 2 ^ Z.of_nat c).
-    { apply Z.mul_le_mono_nonneg_r with (p := 2 ^ Z.of_nat c) in Hxlow.
-      2:{ apply Z.pow_nonneg. lia. }
-      rewrite Hpow_split in Hxlow. exact Hxlow. }
-    unfold base. rewrite width_is_64. simpl. nia. }
+	    set (c := countl_zero (get_word v (n - 1))) in *.
+	    assert (Hpow_split :
+	      2 ^ Z.of_nat (64 - S c) * 2 ^ Z.of_nat c = 2 ^ 63).
+	    { rewrite <- Z.pow_add_r by lia.
+	      replace (Z.of_nat (64 - S c) + Z.of_nat c) with 63.
+	      - reflexivity.
+	      - replace 63 with (Z.of_nat 63) by reflexivity.
+	        rewrite <- Nat2Z.inj_add.
+	        assert (Hsum_nat : (64 - S c + c)%nat = 63%nat).
+	        { assert (Hsum_succ : (64 - S c + S c)%nat = 64%nat).
+	          { assert (Hc_le : (S c <= 64)%nat).
+	            { unfold c.
+	              unfold x in Hc_lt.
+	              simpl in Hc_lt.
+	              lia. }
+	            rewrite Nat.sub_add by exact Hc_le.
+	            reflexivity. }
+	          lia. }
+	        rewrite Hsum_nat. reflexivity. }
+	    assert (Hhalf :
+	      2 ^ 63 <= to_Z (get_word v (n - 1)) * 2 ^ Z.of_nat c).
+	    { apply Z.mul_le_mono_nonneg_r with (p := 2 ^ Z.of_nat c) in Hxlow.
+	      2:{ apply Z.pow_nonneg. lia. }
+	      rewrite width_is_64 in Hxlow.
+	      replace (Pos.to_nat 64) with 64%nat in Hxlow by reflexivity.
+	      unfold x in Hxlow.
+	      change (countl_zero (get_word v (n - 1))) with c in Hxlow.
+	      rewrite Hpow_split in Hxlow.
+	      exact Hxlow. }
+	    unfold base. rewrite width_is_64. simpl.
+	    assert (Hdouble :
+	      2 * 2 ^ 63 <= 2 * (to_Z (get_word v (n - 1)) * 2 ^ Z.of_nat c)).
+	    { apply Z.mul_le_mono_nonneg_l; lia. }
+	    replace (2 * 2 ^ 63) with (2 ^ 64) in Hdouble by reflexivity.
+	    ring_simplify in Hdouble.
+	    exact Hdouble. }
   assert (Hvn_val_lb_s : to_Z_words v_norm >= modulus_words (n - 1) * s).
   { rewrite Hv_norm_val.
     pose proof (count_significant_words_lower_bound v Hn_pos) as Hv_lb.
@@ -3094,43 +3120,87 @@ Proof.
   set (vlow := to_Z_words (firstn (n - 1) v_norm)) in *.
   set (vmsw := to_Z (get_word v_norm (n - 1))) in *.
   assert (Hv_norm_msw_ge_s : s <= vmsw).
-  { destruct (Z.le_gt_cases s vmsw); [assumption|].
-    exfalso.
-    assert (H0_MW: 0 <= MW) by lia.
-    assert (H0_le: vmsw <= s - 1) by lia.
-    pose proof (Z.mul_le_mono_nonneg_l vmsw (s - 1) MW H0_MW H0_le).
-    eapply (Z_mul_le_contradiction vlow MW vmsw s);
-      [exact HM | exact Hlow_v | exact Hvn_val_lb_s | exact H]. }
+	  { destruct (Z.le_gt_cases s vmsw); [assumption|].
+	    exfalso.
+	    assert (H0_MW: 0 <= MW) by lia.
+	    assert (H0_le: vmsw <= s - 1) by lia.
+	    assert (Hmul_le : MW * vmsw <= MW * (s - 1)).
+	    { apply Z.mul_le_mono_nonneg_l; lia. }
+	    eapply (Z_mul_le_contradiction vlow MW vmsw s);
+	      [exact HM | exact Hlow_v | exact Hvn_val_lb_s | exact Hmul_le]. }
   assert (Hv_norm_norm : base width <= 2 * to_Z (get_word v_norm (n - 1))).
   { assert (Hhalf_shift : base width / 2 <= to_Z (get_word v (n - 1)) * s).
-    { unfold s in Hmsw_shift_lb.
+    { set (t := to_Z (get_word v (n - 1)) * s) in *.
+      assert (Ht_nonneg : 0 <= t).
+      { subst t.
+        pose proof (spec_to_Z (get_word v (n - 1))) as [Hword_nn _].
+        apply Z.mul_nonneg_nonneg; [exact Hword_nn|].
+        unfold s. apply Z.pow_nonneg. lia. }
+      replace (2 * to_Z (get_word v (n - 1)) * s) with (2 * t) in Hmsw_shift_lb.
+      2:{ subst t. ring. }
       unfold base in Hmsw_shift_lb |- *. rewrite width_is_64 in Hmsw_shift_lb |- *.
-      simpl in Hmsw_shift_lb |- *. nia. }
+      change (18446744073709551616 <= 2 * t) in Hmsw_shift_lb.
+      change (9223372036854775808 <= t).
+      nia. }
     assert (Hvn_val_lb_half : to_Z_words v_norm >= MW * (base width / 2)).
     { rewrite Hv_norm_val.
-      pose proof (count_significant_words_lower_bound v Hn_pos) as Hv_lb.
       pose proof (count_significant_words_preserves_value v) as Hcsv.
-      fold n in Hv_lb, Hcsv. rewrite <- Hcsv in Hv_lb.
-      nia. }
+      fold n in Hcsv. rewrite Hcsv.
+      set (vhi := to_Z (get_word v (n - 1))) in *.
+      assert (Hv_decomp : to_Z_words v >= MW * vhi).
+      { unfold MW, vhi.
+        rewrite (to_Z_words_firstn_skipn v (n - 1)) by lia.
+        pose proof (to_Z_words_bound (firstn (n - 1) v)) as Hlow_orig.
+        rewrite firstn_length_le in Hlow_orig by lia.
+        assert (Hskip_ge : to_Z_words (skipn (n - 1) v) >= to_Z (get_word v (n - 1))).
+        { destruct (skipn (n - 1) v) as [|w rest] eqn:Hsk.
+          { exfalso.
+            assert (length (skipn (n - 1) v) = 0%nat) by (rewrite Hsk; reflexivity).
+            rewrite length_skipn in H. lia. }
+          { cbn [to_Z_words].
+            pose proof (spec_to_Z w) as Hw_bound.
+            pose proof (to_Z_words_bound rest) as Hrest_bound.
+            assert (Hwv : w = get_word v (n - 1)).
+            { unfold get_word. change w with (nth 0 (w :: rest) U64.zero).
+              rewrite <- Hsk, nth_skipn. f_equal. lia. }
+            rewrite <- Hwv.
+            pose proof (modulus_words_pos (length rest)) as Hrest_mod_pos.
+            nia. } }
+        nia. }
+      assert (Hs_nonneg : 0 <= s).
+      { unfold s. apply Z.pow_nonneg. lia. }
+      assert (Hv_mul : MW * (vhi * s) <= to_Z_words v * s).
+      { replace (MW * (vhi * s)) with ((MW * vhi) * s) by ring.
+        apply Z.mul_le_mono_nonneg_r; lia. }
+      assert (Hhalf_mul : MW * (base width / 2) <= MW * (vhi * s)).
+      { apply Z.mul_le_mono_nonneg_l; lia. }
+      unfold vhi in Hhalf_mul. nia. }
     destruct (Z.le_gt_cases (base width / 2) vmsw) as [Hhalf|Hhalf].
     - unfold vmsw. unfold base in Hhalf |- *. rewrite width_is_64 in Hhalf |- *.
-      simpl in Hhalf |- *. lia.
+      change (9223372036854775808 <= to_Z (get_word v_norm (n - 1))) in Hhalf.
+      change (18446744073709551616 <= 2 * to_Z (get_word v_norm (n - 1))).
+      nia.
     - exfalso.
+      assert (Hv_norm_decomp : to_Z_words v_norm = vlow + MW * vmsw).
+      { unfold vlow, MW.
+        rewrite (to_Z_words_firstn_skipn v_norm (n - 1)) by lia.
+        rewrite Hskip_eq. reflexivity. }
       assert (Hvmsw_upper : vmsw <= base width / 2 - 1) by lia.
       assert (vlow + MW * vmsw < MW * (base width / 2)) by nia.
+      rewrite Hv_norm_decomp in Hvn_val_lb_half.
       nia. }
   assert (Hu_norm_msw: to_Z (get_word u_norm m) < to_Z (get_word v_norm (n - 1))).
   { pose proof (shift_left_words_msw_bound (firstn m u) shift
       Hshift_bound ltac:(rewrite firstn_length_le by lia; lia)) as Hu_msw_lt.
     unfold u_norm in Hu_msw_lt.
     rewrite firstn_length_le in Hu_msw_lt by lia.
-    nia. }
+    eapply Z.lt_le_trans; [exact Hu_msw_lt | exact Hv_norm_msw_ge_s]. }
   assert (Hu_norm_seg_small :
     to_Z_words (get_segment u_norm (m - n) (n + 1)) < base width * to_Z_words v_norm).
   { pose proof (to_Z_words_firstn_segment u_norm (m - n) (n + 1)
       ltac:(rewrite Hu_norm_len; lia)) as Hseg_decomp.
     replace (m - n + (n + 1))%nat with (m + 1)%nat in Hseg_decomp by lia.
-    rewrite firstn_length_le in Hseg_decomp by (rewrite Hu_norm_len; lia).
+    rewrite firstn_all2 in Hseg_decomp by (rewrite Hu_norm_len; lia).
     assert (Hlow_nonneg : 0 <= to_Z_words (firstn (m - n) u_norm)).
     { pose proof (to_Z_words_bound (firstn (m - n) u_norm)). lia. }
     assert (Hu_norm_bound : to_Z_words u_norm < modulus_words m * s).
@@ -3145,17 +3215,37 @@ Proof.
     assert (Hseg_scaled : to_Z_words (get_segment u_norm (m - n) (n + 1)) < modulus_words n * s).
     { rewrite Hseg_decomp in Hu_norm_bound.
       rewrite Hmod_split in Hu_norm_bound.
-      nia. }
+      pose proof (modulus_words_pos (m - n)) as Hmod_pos.
+      destruct (Z_lt_ge_dec (to_Z_words (get_segment u_norm (m - n) (n + 1)))
+        (modulus_words n * s)) as [Hlt|Hge].
+      { exact Hlt. }
+      { exfalso.
+        assert (Hmul_ge :
+          modulus_words (m - n) * (modulus_words n * s) <=
+          modulus_words (m - n) * to_Z_words (get_segment u_norm (m - n) (n + 1))).
+        { apply Z.mul_le_mono_nonneg_l; lia. }
+        lia. } }
     assert (Hv_norm_scaled_lb : modulus_words n * s <= base width * to_Z_words v_norm).
     { rewrite Hv_norm_val.
       pose proof (count_significant_words_lower_bound v Hn_pos) as Hv_lb.
       pose proof (count_significant_words_preserves_value v) as Hcsv.
       fold n in Hv_lb, Hcsv. rewrite <- Hcsv in Hv_lb.
       pose proof (modulus_words_pos (n - 1)).
-      replace (modulus_words n) with (base width * modulus_words (n - 1)).
-      2:{ apply modulus_words_succ. }
-      nia. }
-    nia. }
+      replace n with (S (n - 1)) by lia.
+      rewrite (modulus_words_succ (n - 1)).
+      assert (Hs_nonneg : 0 <= s).
+      { unfold s. apply Z.pow_nonneg. lia. }
+      assert (Hv_lb_le : modulus_words (n - 1) <= to_Z_words (firstn n v)) by lia.
+      assert (Hscaled_lb :
+        modulus_words (n - 1) * s <= to_Z_words (firstn (S (n - 1)) v) * s).
+      { replace (S (n - 1)) with n by lia.
+        apply Z.mul_le_mono_nonneg_r; [exact Hs_nonneg | exact Hv_lb_le]. }
+      replace (base width * modulus_words (n - 1) * s)
+        with (base width * (modulus_words (n - 1) * s)) by ring.
+      apply Z.mul_le_mono_nonneg_l.
+      - unfold base. lia.
+      - exact Hscaled_lb. }
+    eapply Z.lt_le_trans; [exact Hseg_scaled | exact Hv_norm_scaled_lb]. }
   (* Apply knuth_div_correct *)
   pose proof (knuth_div_correct m n u_norm v_norm
     Hu_norm_len Hv_norm_len ltac:(lia) ltac:(lia) Hv_norm_pos
@@ -3174,7 +3264,14 @@ Proof.
   pose proof (Z_div_mod_eq_full (to_Z_words (firstn n u_after)) s) as Hdm.
   rewrite Hrem_div, Z.add_0_r in Hdm.
   split.
-  - nia.
+  - rewrite Hdm in Hknuth_eq.
+    replace
+      (to_Z_words quot * (to_Z_words (firstn n v) * s) +
+         s * (to_Z_words (firstn n u_after) / s))
+      with ((to_Z_words quot * to_Z_words (firstn n v) +
+               to_Z_words (firstn n u_after) / s) * s) in Hknuth_eq
+      by ring.
+    apply (Z.mul_reg_r _ _ s); [lia | exact Hknuth_eq].
   - split.
     + apply Z.div_pos; lia.
     + apply Z.div_lt_upper_bound; lia.

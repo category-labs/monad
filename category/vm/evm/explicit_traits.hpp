@@ -138,16 +138,17 @@
 // names in explicit instantiation declarations, but NOT variable template
 // initializers).
 //
-// The new approach explicitly instantiates a local function template with the
-// member pointer as an NTTP. The NTTP appears in the explicit instantiation
-// declaration itself (not in a function body or initializer), so access
-// checking is relaxed per the standard.
+// The new approach explicitly instantiates a helper function template with the
+// member pointer as an NTTP. The helper template is declared at namespace
+// scope by the macro expansion, and the NTTP appears in the explicit
+// instantiation declaration itself (not in a function body or initializer),
+// so access checking is relaxed per the standard.
 
 #define EXPLICIT_TRAITS_MEMBER_FN(id)                                          \
     template <auto Ptr>                                                        \
     void id()                                                                  \
     {                                                                          \
-        [[gnu::used]] static constexpr auto _ptr = Ptr;                        \
+        [[gnu::used]] static constexpr auto ptr_ = Ptr;                        \
     }
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_LIST(f, id)                                 \

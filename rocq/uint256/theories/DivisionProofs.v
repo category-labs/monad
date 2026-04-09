@@ -1093,18 +1093,296 @@ Qed.
 
 (** ** Knuth Subtract-and-Correct *)
 
+(** One subtraction step in [knuth_sub_loop].
+    The incoming borrow [k] is subtracted from the current word, and the
+    outgoing borrow [k'] remains bounded by one word. *)
+Lemma knuth_sub_step_correct : forall uj q_hat vj k,
+  U128.to_Z q_hat < base width ->
+  U128.to_Z k <= base width ->
+  let prod := U128.mul q_hat (widen vj) in
+  let t := U128.sub (U128.sub (widen uj) k) (widen (trunc prod)) in
+  let k' := U128.sub (widen (hi prod)) (U128.asr t (Pos.to_nat U64.width)) in
+  to_Z (trunc t) - U128.to_Z k' * base width =
+    to_Z uj - (U128.to_Z q_hat * to_Z vj + U128.to_Z k)
+  /\ U128.to_Z k' <= base width.
+Proof.
+  intros uj q_hat vj k Hqhat Hk.
+  set (B := base width).
+  set (M := base U128.width).
+  set (prod := U128.mul q_hat (widen vj)).
+  set (t := U128.sub (U128.sub (widen uj) k) (widen (trunc prod))).
+  set (k' := U128.sub (widen (hi prod)) (U128.asr t (Pos.to_nat U64.width))).
+  pose proof (spec_to_Z uj) as [Huj_nn Huj_lt].
+  pose proof (spec_to_Z vj) as [Hvj_nn Hvj_lt].
+  pose proof (U128.spec_to_Z k) as [Hk_nn Hk_lt].
+  pose proof (spec_trunc prod) as Hprod_lo.
+  pose proof (spec_hi prod) as Hprod_hi.
+  assert (HBpos : B > 0).
+  { unfold B, base. rewrite width_is_64. simpl. lia. }
+  assert (HBge4 : 4 <= B).
+  { unfold B, base. rewrite width_is_64. simpl. lia. }
+  assert (HMpos : M > 0).
+  { unfold M, base. rewrite U128.width_is_128. simpl. lia. }
+  assert (HBM : M = B * B).
+  { unfold B, M, base. rewrite width_is_64, U128.width_is_128. simpl. lia. }
+  assert (Hprod_exact : U128.to_Z prod = U128.to_Z q_hat * to_Z vj).
+  { unfold prod. rewrite U128.spec_mul, spec_widen.
+    apply Z.mod_small.
+    pose proof (U128.spec_to_Z q_hat) as [Hq_nn Hq_lt].
+    split; [apply Z.mul_nonneg_nonneg; lia|].
+    replace (base U128.width) with M by reflexivity.
+    rewrite HBM. nia. }
+  assert (Hprod_parts :
+    to_Z (trunc prod) + to_Z (hi prod) * B = U128.to_Z q_hat * to_Z vj).
+  { pose proof (Z_div_mod_eq_full (U128.to_Z prod) B) as Hdm.
+    assert (HmodB : U128.to_Z prod mod B = to_Z (trunc prod)).
+    { unfold B. rewrite Hprod_lo. reflexivity. }
+    assert (HdivB : U128.to_Z prod / B = to_Z (hi prod)).
+    { unfold B. symmetry. exact Hprod_hi. }
+    rewrite HmodB, HdivB in Hdm.
+    rewrite Hprod_exact in Hdm. nia. }
+  assert (Hhi_le : to_Z (hi prod) <= B - 2).
+  { destruct (Z_le_gt_dec (to_Z (hi prod)) (B - 2)); [exact l|].
+    assert (Hhi_ge : B - 1 <= to_Z (hi prod)) by lia.
+    pose proof (spec_to_Z (trunc prod)) as [Hlo_nn Hlo_lt].
+    assert (Hbig : (B - 1) * B <= to_Z (hi prod) * B + to_Z (trunc prod)) by nia.
+    replace (to_Z (hi prod) * B + to_Z (trunc prod))
+      with (to_Z (trunc prod) + to_Z (hi prod) * B) in Hbig by lia.
+    rewrite Hprod_parts in Hbig.
+    assert (Hsmall : U128.to_Z q_hat * to_Z vj < (B - 1) * B).
+    { assert (Hvj_le : to_Z vj <= B - 1) by lia.
+      assert (Hmul_le : U128.to_Z q_hat * to_Z vj <= (B - 1) * to_Z vj) by nia.
+      assert (Hmul_lt : (B - 1) * to_Z vj < (B - 1) * B).
+      { assert (HBgt1 : 0 < B - 1) by (unfold B, base; rewrite width_is_64; simpl; lia).
+        apply Zmult_gt_0_lt_compat_l; lia. }
+      lia. }
+    lia. }
+  set (s := to_Z uj - U128.to_Z k - to_Z (trunc prod)).
+  assert (Hs_bounds : -(2 * B) <= s < B).
+  { unfold s. pose proof (spec_to_Z (trunc prod)) as [Hlo_nn Hlo_lt]. nia. }
+  assert (Ht_val : U128.to_Z t = s mod M).
+  { unfold t, s.
+    rewrite U128.spec_sub, U128.spec_sub, (spec_widen uj), (spec_widen (trunc prod)).
+    change (base U128.width) with M.
+    replace (((to_Z uj - U128.to_Z k) mod M) mod M)
+      with ((to_Z uj - U128.to_Z k) mod M).
+    2:{ rewrite Z.mod_mod by lia. reflexivity. }
+    assert (Hlo_modM : to_Z (trunc prod) mod M = to_Z (trunc prod)).
+    { pose proof (spec_to_Z (trunc prod)) as [Hlo_nn Hlo_lt].
+      apply Z.mod_small. split; [exact Hlo_nn|].
+      rewrite HBM. nia. }
+    rewrite <- Hlo_modM.
+    rewrite <- Zminus_mod by lia.
+    rewrite Hlo_modM.
+    reflexivity. }
+  assert (Htrunc_val : to_Z (trunc t) = s mod B).
+  { rewrite spec_trunc, Ht_val.
+    apply Z.mod_mod_divide.
+    exists B. rewrite HBM. ring. }
+  set (q := s / B).
+  set (r := s mod B).
+  assert (Hr_range : 0 <= r < B).
+  { unfold r. apply Z.mod_pos_bound. lia. }
+  assert (Hs_decomp : s = q * B + r).
+  { unfold q, r. rewrite Z.mod_eq by lia. ring. }
+  assert (Hq_range : -2 <= q <= 0).
+  { split.
+    - apply Z.div_le_lower_bound; [lia|].
+      unfold q. rewrite HBM in HMpos. nia.
+    - assert (Hq_lt1 : q < 1).
+      { unfold q. apply Z.div_lt_upper_bound; lia. }
+      lia. }
+  assert (Hq_cases : q = -2 \/ q = -1 \/ q = 0) by lia.
+  subst r.
+  destruct Hq_cases as [Hq|[Hq|Hq]]; subst q.
+  - assert (Hs_lt0 : s < 0) by nia.
+    assert (Hs_gtM : - M < s) by (rewrite HBM; nia).
+    assert (Ht_nonneg : U128.to_Z t = M + s).
+    { rewrite Ht_val.
+      assert (Hs_div : s / M = -1).
+      { symmetry. apply Z.div_unique with (r := M + s); lia. }
+      rewrite Z.mod_eq by lia.
+      rewrite Hs_div. lia. }
+    assert (Hasr_val : U128.to_Z (U128.asr t (Pos.to_nat U64.width)) = M - 2).
+    { rewrite U128.spec_asr, Ht_nonneg.
+      change (base U128.width) with M.
+      assert (Ht_sign : (M + s <? M / 2) = false).
+      { assert (Hhalf_le : M / 2 <= M - 2 * B).
+        { apply Z.div_le_upper_bound; [lia|].
+          rewrite HBM. nia. }
+        assert (HMs_lb : M - 2 * B <= M + s) by nia.
+        apply Z.ltb_ge. nia. }
+      rewrite Ht_sign.
+      replace (M + s - M) with s by lia.
+      rewrite Z.shiftr_div_pow2 by lia.
+      assert (Hs_div : s / 2 ^ Z.of_nat (Pos.to_nat width) = -2).
+      { rewrite positive_nat_Z.
+        unfold B, base in Hq. exact Hq. }
+      rewrite Hs_div.
+      assert (Hmod_neg2 : (-2) mod M = M - 2).
+      { rewrite Z.mod_eq by lia.
+        assert (((-2) / M) = -1).
+        { symmetry. apply Z.div_unique with (r := M - 2); lia. }
+        lia. }
+      rewrite Hmod_neg2. reflexivity. }
+    assert (Hk'_val : U128.to_Z k' = to_Z (hi prod) + 2).
+    { unfold k'. rewrite U128.spec_sub, spec_widen, Hasr_val.
+      change (base U128.width) with M.
+      pose proof (spec_to_Z (hi prod)) as [Hhi_nn Hhi_lt].
+      assert (Hhi2_range : 0 <= to_Z (hi prod) + 2 < M).
+      { rewrite HBM. nia. }
+      replace (to_Z (hi prod) - (M - 2)) with (to_Z (hi prod) + 2 - M) by lia.
+      rewrite Zminus_mod by lia.
+      rewrite Z.mod_same by lia.
+      rewrite Z.sub_0_r.
+      rewrite Z.mod_mod by lia.
+      rewrite Z.mod_small by exact Hhi2_range.
+      reflexivity. }
+    split.
+    + fold t. fold k'. rewrite Htrunc_val, Hk'_val, Hs_decomp.
+      unfold s in *.
+      rewrite Hq.
+      assert (Hs_shift :
+        (-2 * B + (to_Z uj - U128.to_Z k - to_Z (trunc prod)) mod B) mod B =
+          (to_Z uj - U128.to_Z k - to_Z (trunc prod)) mod B).
+      { rewrite Zplus_mod_idemp_r.
+        rewrite Zplus_mod by lia.
+        rewrite Z.mod_mul by lia.
+        rewrite Z.add_0_l.
+        rewrite Z.mod_mod by lia.
+        reflexivity. }
+      rewrite Hs_shift.
+      assert (Hs_mod' :
+        (to_Z uj - U128.to_Z k - to_Z (trunc prod)) mod B =
+          to_Z uj - U128.to_Z k - to_Z (trunc prod) + 2 * B).
+      { rewrite Z.mod_eq by lia.
+        rewrite Hq.
+        lia. }
+      rewrite Hs_mod'.
+      nia.
+    + fold t. fold k'. rewrite Hk'_val. nia.
+  - assert (Hs_lt0 : s < 0) by nia.
+    assert (Hs_gtM : - M < s) by (rewrite HBM; nia).
+    assert (Ht_nonneg : U128.to_Z t = M + s).
+    { rewrite Ht_val.
+      assert (Hs_div : s / M = -1).
+      { symmetry. apply Z.div_unique with (r := M + s); lia. }
+      rewrite Z.mod_eq by lia.
+      rewrite Hs_div. lia. }
+    assert (Hasr_val : U128.to_Z (U128.asr t (Pos.to_nat U64.width)) = M - 1).
+    { rewrite U128.spec_asr, Ht_nonneg.
+      change (base U128.width) with M.
+      assert (Ht_sign : (M + s <? M / 2) = false).
+      { assert (Hhalf_le : M / 2 <= M - B).
+        { apply Z.div_le_upper_bound; [lia|].
+          rewrite HBM. nia. }
+        assert (HMs_lb : M - B <= M + s) by nia.
+        apply Z.ltb_ge. nia. }
+      rewrite Ht_sign.
+      replace (M + s - M) with s by lia.
+      rewrite Z.shiftr_div_pow2 by lia.
+      assert (Hs_div : s / 2 ^ Z.of_nat (Pos.to_nat width) = -1).
+      { rewrite positive_nat_Z.
+        unfold B, base in Hq. exact Hq. }
+      rewrite Hs_div.
+      assert (Hmod_neg1 : (-1) mod M = M - 1).
+      { rewrite Z.mod_eq by lia.
+        assert (((-1) / M) = -1).
+        { symmetry. apply Z.div_unique with (r := M - 1); lia. }
+        lia. }
+      rewrite Hmod_neg1. reflexivity. }
+    assert (Hk'_val : U128.to_Z k' = to_Z (hi prod) + 1).
+    { unfold k'. rewrite U128.spec_sub, spec_widen, Hasr_val.
+      change (base U128.width) with M.
+      pose proof (spec_to_Z (hi prod)) as [Hhi_nn Hhi_lt].
+      assert (Hhi1_range : 0 <= to_Z (hi prod) + 1 < M).
+      { rewrite HBM. nia. }
+      replace (to_Z (hi prod) - (M - 1)) with (to_Z (hi prod) + 1 - M) by lia.
+      rewrite Zminus_mod by lia.
+      rewrite Z.mod_same by lia.
+      rewrite Z.sub_0_r.
+      rewrite Z.mod_mod by lia.
+      rewrite Z.mod_small by exact Hhi1_range.
+      reflexivity. }
+    split.
+    + fold t. fold k'. rewrite Htrunc_val, Hk'_val, Hs_decomp.
+      unfold s in *.
+      rewrite Hq.
+      assert (Hs_shift :
+        (-1 * B + (to_Z uj - U128.to_Z k - to_Z (trunc prod)) mod B) mod B =
+          (to_Z uj - U128.to_Z k - to_Z (trunc prod)) mod B).
+      { rewrite Zplus_mod_idemp_r.
+        rewrite Zplus_mod by lia.
+        rewrite Z.mod_mul by lia.
+        rewrite Z.add_0_l.
+        rewrite Z.mod_mod by lia.
+        reflexivity. }
+      rewrite Hs_shift.
+      assert (Hs_mod' :
+        (to_Z uj - U128.to_Z k - to_Z (trunc prod)) mod B =
+          to_Z uj - U128.to_Z k - to_Z (trunc prod) + B).
+      { rewrite Z.mod_eq by lia.
+        rewrite Hq.
+        lia. }
+      rewrite Hs_mod'.
+      nia.
+    + fold t. fold k'. rewrite Hk'_val. nia.
+  - assert (Hs_nonneg : 0 <= s) by nia.
+    assert (Ht_nonneg : U128.to_Z t = s).
+    { rewrite Ht_val. apply Z.mod_small. split.
+      - exact Hs_nonneg.
+      - rewrite HBM. nia. }
+    assert (Hasr_val : U128.to_Z (U128.asr t (Pos.to_nat U64.width)) = 0).
+    { rewrite U128.spec_asr, Ht_nonneg.
+      change (base U128.width) with M.
+      assert (Ht_sign : (s <? M / 2) = true).
+      { assert (HB_lt_half : B <= M / 2).
+        { apply Z.div_le_lower_bound; [lia|].
+          rewrite HBM. nia. }
+        apply Z.ltb_lt. nia. }
+      rewrite Ht_sign.
+      replace (s - 0) with s by lia.
+      rewrite Z.shiftr_div_pow2 by lia.
+      assert (Hs_div : s / 2 ^ Z.of_nat (Pos.to_nat width) = 0).
+      { rewrite positive_nat_Z.
+        unfold B, base in Hq. exact Hq. }
+      rewrite Hs_div. reflexivity. }
+    assert (Hk'_val : U128.to_Z k' = to_Z (hi prod)).
+    { unfold k'. rewrite U128.spec_sub, spec_widen, Hasr_val.
+      change (base U128.width) with M.
+      rewrite Z.sub_0_r. apply Z.mod_small.
+      pose proof (spec_to_Z (hi prod)) as [Hhi_nn Hhi_lt].
+      rewrite HBM. nia. }
+    split.
+    + fold t. fold k'. rewrite Htrunc_val, Hk'_val, Hs_decomp.
+      unfold s in *.
+      rewrite Hq.
+      rewrite Z.mul_0_l, Z.add_0_l.
+      rewrite Z.mod_mod by lia.
+      assert (Hs_mod' :
+        (to_Z uj - U128.to_Z k - to_Z (trunc prod)) mod B =
+          to_Z uj - U128.to_Z k - to_Z (trunc prod)).
+      { apply Z.mod_small. lia. }
+      rewrite Hs_mod'.
+      nia.
+    + fold t. fold k'. rewrite Hk'_val. nia.
+Qed.
+
 (** knuth_sub_loop computes [u_seg - q_hat * v] with borrow propagation.
     The mathematical value of the segment decreases by [q_hat * v_val],
     modulo the segment width, with the borrow [k] tracking the overflow. *)
 Lemma knuth_sub_loop_correct : forall u_seg q_hat vs j k,
+  U128.to_Z q_hat < base width ->
+  U128.to_Z k <= base width ->
   (j + length vs <= length u_seg)%nat ->
   let '(u', k') := knuth_sub_loop u_seg q_hat vs j k in
-  to_Z_words u' + U128.to_Z k' * modulus_words (j + length vs) =
-    to_Z_words u_seg - (U128.to_Z q_hat * to_Z_words vs - U128.to_Z k) *
+  to_Z_words u' - U128.to_Z k' * modulus_words (j + length vs) =
+    to_Z_words u_seg - (U128.to_Z q_hat * to_Z_words vs + U128.to_Z k) *
       base width ^ (Z.of_nat j)
   /\ length u' = length u_seg
   /\ (forall i, (i < j \/ j + length vs <= i)%nat ->
-        get_word u' i = get_word u_seg i).
+        get_word u' i = get_word u_seg i)
+  /\ U128.to_Z k' <= base width.
 Proof.
 Admitted.
 

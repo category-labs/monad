@@ -213,7 +213,11 @@ class UpdateAuxImpl
 
     void set_auto_expire_version_metadata(int64_t) noexcept;
 
-    void update_disk_growth_data();
+    // Snapshot per-block disk growth rates and slow list GC efficiency
+    // after a compaction upsert. These metrics feed the next call to
+    // advance_compact_offsets() and must be captured before a subsequent
+    // non-compaction upsert resets the stats counters.
+    void update_compaction_state();
 
     /******** Compaction ********/
     uint32_t chunks_to_remove_before_count_fast_{0};
@@ -227,6 +231,8 @@ class UpdateAuxImpl
         MIN_COMPACT_VIRTUAL_OFFSET};
     compact_virtual_chunk_offset_t last_block_disk_growth_slow_{
         MIN_COMPACT_VIRTUAL_OFFSET};
+    // Slow list compaction efficiency from the last compaction upsert
+    uint32_t last_block_slow_list_gc_efficiency_{0};
     // compaction range
     compact_virtual_chunk_offset_t compact_offset_range_fast_{
         MIN_COMPACT_VIRTUAL_OFFSET};

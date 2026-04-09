@@ -1370,13 +1370,12 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             bytes32_t{10},
             BlockHeader{.number = 10});
         this->tdb.finalize(10, bytes32_t{10});
-
+        this->tdb.set_block_and_prefix(10);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value2);
-
-        this->tdb.set_block_and_prefix(10, bytes32_t{10});
     }
     { // Commit to Block 11 Round 6, on top of block 10 round 5
+        this->tdb.set_block_and_prefix(10, bytes32_t{10});
         BlockState bs{this->tdb, this->vm};
         State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));

@@ -356,6 +356,70 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
     }
 }
 
+// Tests the !is_current_block path in finalize: commit two blocks as proposals,
+// then finalize the earlier one while the in-memory trie is at the later block.
+// Verifies that the in-memory trie is preserved and that set_block_and_prefix
+// correctly reloads the finalized state from disk.
+TEST_F(OnDiskTrieDbFixture, finalize_earlier_block_preserves_in_memory_trie)
+{
+    Account const acct_10{.balance = 100};
+    Account const acct_11{.balance = 200};
+
+    TrieDb tdb{db};
+    load_header({}, db, BlockHeader{.number = 9});
+
+    // Commit block 10 as a proposal
+    tdb.set_block_and_prefix(9);
+    bytes32_t const p10{10};
+    commit_simple(
+        tdb,
+        StateDeltas{{ADDR_A, StateDelta{.account = {std::nullopt, acct_10}}}},
+        Code{},
+        p10,
+        BlockHeader{.number = 10});
+
+    // Finalize block 10 and advance to finalized state
+    tdb.finalize(10, p10);
+    tdb.set_block_and_prefix(10); // finalized
+    EXPECT_EQ(tdb.read_account(ADDR_A).value().balance, 100);
+
+    // Commit block 11 as a proposal — block_number_ becomes 11
+    bytes32_t const p11{11};
+    commit_simple(
+        tdb,
+        StateDeltas{{ADDR_A, StateDelta{.account = {acct_10, acct_11}}}},
+        Code{},
+        p11,
+        BlockHeader{.number = 11});
+    EXPECT_EQ(tdb.get_block_number(), 11);
+
+    // Commit block 12 as a proposal on top of block 11
+    Account const acct_12{.balance = 300};
+    bytes32_t const p12{12};
+    tdb.set_block_and_prefix(11, p11);
+    commit_simple(
+        tdb,
+        StateDeltas{{ADDR_A, StateDelta{.account = {acct_11, acct_12}}}},
+        Code{},
+        p12,
+        BlockHeader{.number = 12});
+    EXPECT_EQ(tdb.get_block_number(), 12);
+
+    // Finalizing a different block (11) than current block (12) should only
+    // persist finalized state to disk without disturbing the in-memory trie for
+    // block 12.
+    tdb.finalize(11, p11);
+    EXPECT_EQ(tdb.get_block_number(), 12);
+
+    // The in-memory trie for block 12 is still valid
+    tdb.set_block_and_prefix(12, p12);
+    EXPECT_EQ(tdb.read_account(ADDR_A).value().balance, 300);
+
+    // set to finalized block 11 should reload from disk
+    tdb.set_block_and_prefix(11);
+    EXPECT_EQ(tdb.read_account(ADDR_A).value().balance, 200);
+}
+
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
 {
     Account acct{.balance = 1'000'000, .code_hash = {}, .nonce = 1337};

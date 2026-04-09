@@ -46,6 +46,11 @@ MONAD_NAMESPACE_BEGIN
 class TrieDb final : public ::monad::Db
 {
     ::monad::mpt::Db &db_;
+    // Invariants (on-disk mode):
+    //   curr_root_         whole root trie at version block_number_
+    //   prefix_            path to the proposal trie under
+    //                      proposal_block_id_, or finalized_nibbles when
+    //                      proposal_block_id_ is bytes32_t{}
     uint64_t block_number_;
     // bytes32_t{} represent finalized
     bytes32_t proposal_block_id_;

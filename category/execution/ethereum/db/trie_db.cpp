@@ -294,7 +294,10 @@ void TrieDb::set_block_and_prefix(
     proposal_block_id_ = block_id;
 }
 
-// also changes internal state to the finalized state
+// Copies the proposal trie for `block_id` into the finalized prefix on disk.
+// Preserves the member invariants in trie_db.hpp: curr_root_ is replaced only
+// when block_number == block_number_, so it stays the root trie at version
+// block_number_ and cached nodes survive for later reads.
 void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
 {
     auto const latest_finalized = db_.get_latest_finalized_version();
@@ -310,15 +313,16 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk()) {
         auto const src_prefix = proposal_prefix(block_id);
-        auto root = (block_number_ == block_number)
-                        ? curr_root_
-                        : db_.load_root_for_version(block_number);
+        bool const is_current_block = block_number_ == block_number;
+        auto root = is_current_block ? curr_root_
+                                     : db_.load_root_for_version(block_number);
         MONAD_ASSERT(db_.find(root, src_prefix, block_number).has_value());
-        curr_root_ = db_.copy_trie(
+        root = db_.copy_trie(
             root, src_prefix, root, finalized_nibbles, block_number, true);
-        prefix_ = finalized_nibbles;
+        if (is_current_block) {
+            curr_root_ = std::move(root);
+        }
     }
-    block_number_ = block_number;
     db_.update_finalized_version(block_number);
     if (cache_) {
         cache_->on_finalize(block_number, block_id);

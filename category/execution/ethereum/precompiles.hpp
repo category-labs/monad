@@ -28,6 +28,7 @@
 #include <bit>
 #include <cstring>
 #include <optional>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -163,11 +164,15 @@ PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view);
 // Rollup precompiles
 PrecompileResult p256_verify_execute(byte_string_view);
 
-using ImplOutput = std::tuple<uint8_t*, size_t>;
+struct PrecompileImplResult
+{
+    uint8_t *data;
+    size_t size;
+};
 
-ImplOutput ecrecover_impl(const uint8_t msg[32],
-                          const uint8_t sig[64],
-                          uint8_t recid,
-                          uint8_t out[20]);
+PrecompileImplResult ecrecover_impl(
+    std::span<uint8_t const, 32> const msg,
+    std::span<uint8_t const, 64> const sig, uint8_t recid,
+    std::span<uint8_t, 32> const out);
 
 MONAD_NAMESPACE_END

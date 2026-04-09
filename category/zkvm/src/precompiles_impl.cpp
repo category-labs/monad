@@ -137,29 +137,32 @@ bool init_trusted_setup()
     return true;
 }
 
-ImplOutput ecrecover_impl(const uint8_t msg[32],
-                          const uint8_t sig[64],
-                          uint8_t recid,
-                          uint8_t out[20])
+PrecompileImplResult ecrecover_impl(
+    std::span<uint8_t const, 32> const msg,
+    std::span<uint8_t const, 64> const sig, uint8_t recid,
+    std::span<uint8_t, 32> const out)
 {
-    auto const *msg_hash = reinterpret_cast<zkvm_bytes_32 const *>(&msg[0]);
+    auto const *msg_hash = reinterpret_cast<zkvm_bytes_32 const *>(msg.data());
+    // TODO(dhil): Check `sig` is well-formed; the patch
+    // before had subscript 64 on a `uint8_t[64]`, which I think was copy-pasted
+    // from the previous implementation, but it used an array of length 128.
     auto const *signature =
-        reinterpret_cast<zkvm_secp256k1_signature const *>(&sig[64]);
+        reinterpret_cast<zkvm_secp256k1_signature const *>(sig.data());
 
     zkvm_secp256k1_pubkey pubkey;
 
     if (zkvm_secp256k1_ecrecover(msg_hash, signature, recid, &pubkey) !=
         ZKVM_EOK) {
-        return {out, 0};
+        return {out.data(), 0};
     }
 
     zkvm_bytes_32 key_hash;
     if (zkvm_keccak256(pubkey.data, 64, &key_hash) != ZKVM_EOK) {
-        return {out, 0};
+        return {out.data(), 0};
     }
 
-    std::memcpy(out + 12, key_hash.data + 12, 20);
-    return {out, 32};
+    std::memcpy(out.data() + 12, key_hash.data + 12, 20);
+    return {out.data(), 32};
 }
 
 PrecompileResult sha256_execute(byte_string_view const input)
@@ -543,7 +546,8 @@ PrecompileResult p256_verify_execute(byte_string_view const input)
         return {EVMC_SUCCESS, nullptr, 0};
     }
 
-    auto const *msg = reinterpret_cast<zkvm_secp256r1_hash const *>(input.data());
+    auto const *msg =
+        reinterpret_cast<zkvm_secp256r1_hash const *>(input.data());
     auto const *sig =
         reinterpret_cast<zkvm_secp256r1_signature const *>(input.data() + 32);
     auto const *pubkey =

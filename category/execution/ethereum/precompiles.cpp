@@ -190,15 +190,17 @@ check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
 
 EXPLICIT_EVM_TRAITS(check_call_precompile);
 
-static void right_pad(std::basic_string<uint8_t>& str, const size_t min_size) noexcept {
+static void
+right_pad(std::basic_string<uint8_t> &str, size_t const min_size) noexcept
+{
     if (str.length() < min_size) {
         str.resize(min_size, '\0');
     }
 }
 
-PrecompileResult from_ImplOutput(ImplOutput result)
+PrecompileResult from_impl_result(PrecompileImplResult result)
 {
-    const auto [data, size] = result;
+    auto const [data, size] = result;
     if (data == nullptr) {
         MONAD_DEBUG_ASSERT(size == 0);
         return PrecompileResult::failure();
@@ -213,13 +215,13 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
     static constexpr auto kSecp256k1n =
         0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
 
-    uint8_t* out{static_cast<uint8_t*>(std::malloc(32))};
+    uint8_t *out{static_cast<uint8_t *>(std::malloc(32))};
 
     std::basic_string<uint8_t> d(input.data(), input.size());
     right_pad(d, 128);
-    const auto v{intx::be::unsafe::load<intx::uint256>(&d[32])};
-    const auto r{intx::be::unsafe::load<intx::uint256>(&d[64])};
-    const auto s{intx::be::unsafe::load<intx::uint256>(&d[96])};
+    auto const v{intx::be::unsafe::load<intx::uint256>(&d[32])};
+    auto const r{intx::be::unsafe::load<intx::uint256>(&d[64])};
+    auto const s{intx::be::unsafe::load<intx::uint256>(&d[96])};
 
     if (!r || !s || r >= kSecp256k1n || s >= kSecp256k1n) {
         return {EVMC_SUCCESS, out, 0};
@@ -229,7 +231,11 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
         return {EVMC_SUCCESS, out, 0};
     }
 
-    return from_ImplOutput(ecrecover_impl(&d[0], &d[64], v != 27, out));
+    return from_impl_result(ecrecover_impl(
+        std::span<uint8_t const, 32>{&d[0], 32},
+        std::span<uint8_t const, 64>{&d[64], 64},
+        v != 27,
+        std::span<uint8_t, 32>{out, 32}));
 }
 
 MONAD_NAMESPACE_END

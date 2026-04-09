@@ -107,17 +107,18 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
     return {EVMC_SUCCESS, output, output_size};
 }
 
-ImplOutput ecrecover_impl(
-    uint8_t const msg[32], uint8_t const sig[64], uint8_t recid,
-    uint8_t out[20])
+PrecompileImplResult ecrecover_impl(
+    std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
+    uint8_t recid, std::span<uint8_t, 32> const out)
 {
-    std::memset(out, 0, 12);
+    std::memset(out.data(), 0, 12);
     thread_local secp256k1_context *context{
         secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS)};
-    if (!silkpre_recover_address(out + 12, msg, sig, recid, context)) {
-        return {out, 0};
+    if (!silkpre_recover_address(
+            out.data() + 12, msg.data(), sig.data(), recid, context)) {
+        return {out.data(), 0};
     }
-    return {out, 32};
+    return {out.data(), 32};
 }
 
 PrecompileResult sha256_execute(byte_string_view const input)

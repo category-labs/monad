@@ -27,7 +27,7 @@ use std::{
 use futures::channel::oneshot::Sender;
 use tracing::{debug, error};
 
-use self::ffi::{validator_data, validator_set};
+use self::ffi::{validator_data, validator_set, TraverseCallbackKind};
 
 pub mod ffi;
 
@@ -139,48 +139,58 @@ unsafe extern "C" fn traverse_callback(
     value_ptr: *const u8,
     value_len: usize,
 ) {
-    let traverse_context = unsafe { Box::from_raw(context as *mut TraverseContext) };
+    let context = context as *mut TraverseContext;
 
-    if op_kind == ffi::triedb_async_traverse_callback_triedb_async_traverse_callback_finished_early
-    {
-        let _ = traverse_context.sender.send(None);
-        // traverse_context is freed here, because we don't call Box::into_raw
+    let Some(op_kind) = TraverseCallbackKind::from_c(op_kind) else {
+        error!(
+            "traverse_callback: unexpected op_kind value: {}",
+            op_kind as i32
+        );
+        let _ctx = unsafe { Box::from_raw(context) };
         return;
-    }
-    if op_kind
-        == ffi::triedb_async_traverse_callback_triedb_async_traverse_callback_finished_normally
-    {
-        // completed
-        let mut lock = traverse_context.data.lock().expect("mutex poisoned");
-        let _ = traverse_context
-            .sender
-            .send(Some(std::mem::take(&mut *lock)));
-        // traverse_context is freed here, because we don't call Box::into_raw
-        return;
-    }
-    assert_eq!(
-        op_kind,
-        ffi::triedb_async_traverse_callback_triedb_async_traverse_callback_value
-    );
+    };
 
-    let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len).to_vec() };
-    let value = unsafe { std::slice::from_raw_parts(value_ptr, value_len).to_vec() };
+    match op_kind {
+        TraverseCallbackKind::FinishedEarly => {
+            let ctx = unsafe { Box::from_raw(context) };
+            let _ = ctx.sender.send(None);
+        }
+        TraverseCallbackKind::FinishedNormally => {
+            let ctx = unsafe { Box::from_raw(context) };
+            let data = {
+                let mut lock = ctx.data.lock().expect("mutex poisoned");
+                std::mem::take(&mut *lock)
+            };
+            let _ = ctx.sender.send(Some(data));
+        }
+        TraverseCallbackKind::Value => {
+            let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len).to_vec() };
+            let value = unsafe { std::slice::from_raw_parts(value_ptr, value_len).to_vec() };
 
-    {
-        let mut lock = traverse_context.data.lock().expect("mutex poisoned");
-        lock.push(TraverseEntry { key, value });
+            let mut lock = unsafe { &mut *context }
+                .data
+                .lock()
+                .expect("mutex poisoned");
+
+            lock.push(TraverseEntry { key, value });
+        }
     }
-
-    // prevent Box<TraverseContext> from dropping
-    let _ = Box::into_raw(traverse_context);
 }
+
+// Compile-time assertion that traverse_callback signature matches triedb_async_traverse_callback_fn
+const _: () = {
+    #[allow(dead_code)]
+    const fn check_signature() {
+        let _: ffi::triedb_async_traverse_callback_fn = Some(traverse_callback);
+    }
+};
 
 impl TriedbHandle {
     pub fn try_new(dbdir_path: &Path, node_lru_max_mem: u64) -> Option<Self> {
         monad_cxx::init_cxx_logging(tracing::Level::WARN);
 
-        let path = CString::new(dbdir_path.to_str().expect("invalid path"))
-            .expect("failed to create CString");
+        let path_str = dbdir_path.to_str()?;
+        let path = CString::new(path_str).ok()?;
 
         let mut db_ptr = null_mut();
 
@@ -232,15 +242,6 @@ impl TriedbHandle {
         Some(value)
     }
 
-    /// This is used to make an async read call to TrieDB.
-    /// It creates a oneshot channel and Boxes its sender and the completed_counter
-    /// into a context struct and passes it to TrieDB. When TrieDB completes processing
-    /// the call, it will call the `read_async_callback` which will unwrap the context
-    /// struct, increment the completed_counter, and send the retrieved TrieDB value
-    /// through the channel.
-    /// The user needs to poll TrieDB using the `triedb_poll` function to pump the async
-    /// reads and wait on the returned receiver for the value.
-    /// NOTE: the returned receiver must be resolved before key is dropped
     pub fn read_async(
         &self,
         key: &[u8],

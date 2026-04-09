@@ -54,21 +54,21 @@ enum triedb_async_traverse_callback
     triedb_async_traverse_callback_finished_early
 };
 
-typedef void (*callback_func)(
+typedef void (*triedb_async_traverse_callback_fn)(
     enum triedb_async_traverse_callback kind, void *context,
     uint8_t const *path, size_t path_len, uint8_t const *value,
     size_t value_len);
 bool triedb_traverse(
     triedb *, uint8_t const *key, uint8_t key_len_nibbles, uint64_t block_id,
-    void *context, callback_func callback);
+    void *context, triedb_async_traverse_callback_fn callback);
 void triedb_async_traverse(
     triedb *, uint8_t const *key, uint8_t key_len_nibbles, uint64_t block_id,
-    void *context, callback_func callback);
+    void *context, triedb_async_traverse_callback_fn callback);
 void triedb_async_ranged_get(
     triedb *, uint8_t const *prefix_key, uint8_t prefix_len_nibbles,
     uint8_t const *min_key, uint8_t min_len_nibbles, uint8_t const *max_key,
     uint8_t max_len_nibbles, uint64_t block_id, void *context,
-    callback_func callback);
+    triedb_async_traverse_callback_fn callback);
 // pumps async reads, processing no
 // more than count maximum, returning
 // how many were processed.

@@ -46,7 +46,7 @@ namespace monad::vm
         /// no stack objects with uninvoked destructor.
         [[noreturn]] void stack_unwind() const
         {
-            MONAD_VM_ASSERT(active_exception_);
+            MONAD_ASSERT(active_exception_);
             // rethrow exceptions when running outside of vm execution context
             // (i.e. when runtime_context_ is unset)
             if (runtime_context_ == nullptr) {
@@ -62,7 +62,7 @@ namespace monad::vm
         [[gnu::always_inline]]
         void rethrow_on_active_exception()
         {
-            if (MONAD_VM_UNLIKELY(active_exception_)) {
+            if (MONAD_UNLIKELY(active_exception_)) {
                 auto e = active_exception_;
                 active_exception_ = std::exception_ptr{};
                 std::rethrow_exception(std::move(e));

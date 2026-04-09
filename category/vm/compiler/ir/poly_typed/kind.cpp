@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/poly_typed/kind.hpp>
-#include <category/vm/core/assert.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -247,7 +247,7 @@ namespace
             if (generic->front.size() > specific->front.size()) {
                 return false;
             }
-            MONAD_VM_DEBUG_ASSERT(min_size == generic->front.size());
+            MONAD_DEBUG_ASSERT(min_size == generic->front.size());
             VarName const v = std::get<ContVar>(generic->tail).var;
             auto const it = su.cont_map.find(v);
             if (it != su.cont_map.end()) {

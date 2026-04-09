@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 
 #include <tbb/concurrent_hash_map.h>
 
@@ -145,7 +145,7 @@ namespace monad::vm::utils
                 int64_t evicted_weight = 0;
                 while (evicted_weight < delta_weight) {
                     ListNode const *target = lru_.evict();
-                    if (MONAD_VM_UNLIKELY(!target)) {
+                    if (MONAD_UNLIKELY(!target)) {
                         break;
                     }
                     int64_t const n = evict(target);
@@ -166,7 +166,7 @@ namespace monad::vm::utils
         {
             Accessor acc;
             bool const found = hmap_.find(acc, target->first);
-            MONAD_VM_ASSERT(found);
+            MONAD_ASSERT(found);
             uint32_t const wt = acc->second.cache_weight_;
             hmap_.erase(acc);
             return wt;
@@ -280,7 +280,7 @@ namespace monad::vm::utils
                     }
                     ConstAccessor acc;
                     bool found = hmap.find(acc, node->first);
-                    MONAD_VM_ASSERT(found);
+                    MONAD_ASSERT(found);
                     node_weight += acc->second.cache_weight_;
                     node = node->second.next_;
                 }

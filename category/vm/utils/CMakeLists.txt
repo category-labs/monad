@@ -48,7 +48,6 @@ target_include_directories(monad-vm-utils
 )
 
 target_link_libraries(monad-vm-utils
-    PUBLIC monad-vm::monad-vm-core
     PUBLIC monad-vm::monad-vm-runtime
     PRIVATE monad-vm::monad-vm-evm
 )

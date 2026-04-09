@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/local_stacks.hpp>
@@ -21,7 +22,6 @@
 #include <category/vm/compiler/ir/poly_typed/kind.hpp>
 #include <category/vm/compiler/ir/untyped.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/core/assert.h>
 
 #include <cstddef>
 #include <format>
@@ -59,7 +59,7 @@ namespace monad::vm::compiler::untyped
         }
         if (std::holds_alternative<poly_typed::Cont>(*output_stack_kind[i])) {
             if (i < dest_block_kind.size()) {
-                MONAD_VM_ASSERT(
+                MONAD_ASSERT(
                     std::holds_alternative<poly_typed::Cont>(
                         *dest_block_kind[i]) ||
                     std::holds_alternative<poly_typed::KindVar>(
@@ -79,9 +79,9 @@ namespace monad::vm::compiler::untyped
         }
         else {
             if (i < dest_block_kind.size()) {
-                MONAD_VM_ASSERT(!std::holds_alternative<poly_typed::Cont>(
+                MONAD_ASSERT(!std::holds_alternative<poly_typed::Cont>(
                     *dest_block_kind[i]));
-                MONAD_VM_ASSERT(!std::holds_alternative<poly_typed::WordCont>(
+                MONAD_ASSERT(!std::holds_alternative<poly_typed::WordCont>(
                     *dest_block_kind[i]));
             }
 
@@ -116,7 +116,7 @@ namespace monad::vm::compiler::untyped
         case poly_typed::ValueIs::LITERAL:
             return Word{};
         case poly_typed::ValueIs::PARAM_ID: {
-            MONAD_VM_ASSERT(output_stack[i].param < input_stack_kind.size());
+            MONAD_ASSERT(output_stack[i].param < input_stack_kind.size());
             poly_typed::Kind const &kind =
                 input_stack_kind[output_stack[i].param];
 
@@ -152,7 +152,7 @@ namespace monad::vm::compiler::untyped
                 else if (
                     std::holds_alternative<Addr>(current) &&
                     std::holds_alternative<Word>(expected)) {
-                    MONAD_VM_ASSERT(false);
+                    MONAD_ABORT();
                 }
                 // current == Addr, jumpdest_type_may == Addr - nothing to do
                 // current == Word, jumpdest_type_may == Word - nothing to do
@@ -269,18 +269,17 @@ namespace monad::vm::compiler::untyped
                 t = FallThrough{coerce_to_addr, fallthrough.fallthrough_dest};
             }
             else {
-                MONAD_VM_ASSERT(tb.output.size() > 0);
+                MONAD_ASSERT(tb.output.size() > 0);
                 auto const &jump_dest_value = tb.output.front();
                 std::optional<poly_typed::ContKind> jump_dest_kind;
                 JumpDest jump_dest;
 
                 switch (jump_dest_value.is) {
                 case poly_typed::ValueIs::COMPUTED: {
-                    MONAD_VM_ASSERT(false);
+                    MONAD_ABORT();
                 }
                 case poly_typed::ValueIs::PARAM_ID: {
-                    MONAD_VM_ASSERT(
-                        jump_dest_value.param < tb.kind->front.size());
+                    MONAD_ASSERT(jump_dest_value.param < tb.kind->front.size());
                     poly_typed::Kind const &kind =
                         tb.kind->front[jump_dest_value.param];
                     if (std::holds_alternative<poly_typed::Cont>(*kind)) {
@@ -297,7 +296,7 @@ namespace monad::vm::compiler::untyped
                         // If the block kind is not Word... -> Exit
                         // then the jump dest can only be a Cont or a
                         // WordCont
-                        MONAD_VM_ASSERT(false);
+                        MONAD_ABORT();
                     }
                     break;
                 }
@@ -312,7 +311,7 @@ namespace monad::vm::compiler::untyped
                                 static_cast<size_t>(jump_dest_value.literal));
                             block_offset_id != jumpdests.end()) {
                             jump_dest = block_offset_id->second;
-                            MONAD_VM_ASSERT(
+                            MONAD_ASSERT(
                                 block_offset_id->second < typed_blocks.size());
                             jump_dest_kind =
                                 typed_blocks[block_offset_id->second].kind;
@@ -356,8 +355,7 @@ namespace monad::vm::compiler::untyped
                                              jumpi.jump_kind->front,
                                              padded_output_stack)
                                        : std::vector<size_t>{};
-                    MONAD_VM_ASSERT(
-                        jumpi.fallthrough_dest < typed_blocks.size());
+                    MONAD_ASSERT(jumpi.fallthrough_dest < typed_blocks.size());
 
                     auto const padded_output_stack_fallthrough =
                         pad_output_stack(

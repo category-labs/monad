@@ -13,11 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/likely.h>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
@@ -104,9 +105,9 @@ namespace monad::vm
         auto const &icode = vcode->intercode();
         auto const &ncode = vcode->nativecode();
         auto const msg_gas = rt_ctx.gas_remaining;
-        if (MONAD_VM_LIKELY(ncode != nullptr)) {
+        if (MONAD_LIKELY(ncode != nullptr)) {
             // The bytecode is compiled.
-            if (MONAD_VM_UNLIKELY(ncode->chain_id() != traits::id())) {
+            if (MONAD_UNLIKELY(ncode->chain_id() != traits::id())) {
                 // Revision change. The bytecode was compiled pre revision
                 // change, so start async compilation immediately for the
                 // new revision. Execute with interpreter in the meantime.
@@ -115,7 +116,7 @@ namespace monad::vm
                 return execute_intercode_raw<traits>(rt_ctx, icode);
             }
             auto const entry = ncode->entrypoint();
-            if (MONAD_VM_UNLIKELY(entry == nullptr)) {
+            if (MONAD_UNLIKELY(entry == nullptr)) {
                 // Compilation has failed in this revision, so just execute
                 // with interpreter.
                 return execute_intercode_raw<traits>(rt_ctx, icode);
@@ -136,8 +137,8 @@ namespace monad::vm
         auto result = execute_intercode_raw<traits>(rt_ctx, icode);
         auto const bound = compiler::native::max_code_size(
             compiler_config_.max_code_size_offset, icode->code_size());
-        MONAD_VM_DEBUG_ASSERT(result.gas_left >= 0);
-        MONAD_VM_DEBUG_ASSERT(msg_gas >= result.gas_left);
+        MONAD_DEBUG_ASSERT(result.gas_left >= 0);
+        MONAD_DEBUG_ASSERT(msg_gas >= result.gas_left);
         uint64_t const gas_used =
             static_cast<uint64_t>(msg_gas - result.gas_left);
         // Note that execution gas is counted for the second time via the

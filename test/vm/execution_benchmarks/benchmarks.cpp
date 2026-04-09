@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 
 #include <test_resource_data.h>
 
@@ -126,13 +126,13 @@ namespace
 
     auto load_benchmark(TestMemory &test_memory, fs::path const &path)
     {
-        MONAD_VM_DEBUG_ASSERT(fs::is_directory(path));
+        MONAD_DEBUG_ASSERT(fs::is_directory(path));
 
         auto const contract_path = path / "contract";
-        MONAD_VM_DEBUG_ASSERT(fs::is_regular_file(contract_path));
+        MONAD_DEBUG_ASSERT(fs::is_regular_file(contract_path));
 
         auto const calldata_path = path / "calldata";
-        MONAD_VM_DEBUG_ASSERT(fs::is_regular_file(calldata_path));
+        MONAD_DEBUG_ASSERT(fs::is_regular_file(calldata_path));
 
         return make_benchmark(
             test_memory,
@@ -174,7 +174,7 @@ namespace
             auto const result = evmc::Result{vm_ptr->execute(
                 interface, ctx, rev, &msg, code.data(), code.size())};
 
-            MONAD_VM_ASSERT(result.status_code == EVMC_SUCCESS);
+            MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
         }
     }
 
@@ -219,10 +219,10 @@ namespace
                 interface, ctx, rev, &msg, code.data(), code.size())};
 
             if (assert_success) {
-                MONAD_VM_ASSERT(result.status_code == EVMC_SUCCESS);
+                MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
             }
             else {
-                MONAD_VM_ASSERT(result.status_code != EVMC_SUCCESS);
+                MONAD_ASSERT(result.status_code != EVMC_SUCCESS);
             }
         }
     }

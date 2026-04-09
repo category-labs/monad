@@ -383,7 +383,7 @@ static double execute_iteration(
 
     auto const stop = std::chrono::steady_clock::now();
 
-    MONAD_VM_ASSERT(result.status_code == EVMC_SUCCESS);
+    MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
     return static_cast<double>((stop - start).count());
 }
@@ -463,7 +463,7 @@ static std::optional<BenchmarkResult> run_implementation_benchmark(
         compile(bench.assemble(seq), bytecode);
         auto const calldata = [&] {
             if (auto const &ss = bench.effect_free_subject_seqs) {
-                MONAD_VM_ASSERT(ss->size() == bench.subject_seqs.size());
+                MONAD_ASSERT(ss->size() == bench.subject_seqs.size());
                 return bench.calldata_generate((*ss)[i]);
             }
             else {
@@ -661,7 +661,7 @@ BenchmarkBuilder &BenchmarkBuilder::run_throughput_benchmark()
 {
     using KB = KernelBuilder<traits>;
 
-    MONAD_VM_ASSERT(calldata_.size());
+    MONAD_ASSERT(calldata_.size());
 
     KB base_builder;
     for (size_t i = 1; i < num_inputs_; ++i) {
@@ -703,9 +703,9 @@ BenchmarkBuilder &BenchmarkBuilder::run_latency_benchmark()
 {
     using KB = KernelBuilder<traits>;
 
-    MONAD_VM_ASSERT(calldata_.size());
-    MONAD_VM_ASSERT(has_output_);
-    MONAD_VM_ASSERT(num_inputs_ >= 1);
+    MONAD_ASSERT(calldata_.size());
+    MONAD_ASSERT(has_output_);
+    MONAD_ASSERT(num_inputs_ >= 1);
 
     KB base_builder;
     if (num_inputs_ == 1) {

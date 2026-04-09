@@ -15,10 +15,10 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/instruction_data.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -514,7 +514,7 @@ namespace monad::vm::fuzzing
             1.0 - (focus.push_weight + focus.dup_weight + focus.call_weight +
                    focus.returndatacopy_weight + focus.create_weight +
                    focus.uncommon_non_term_weight);
-        MONAD_VM_ASSERT(common_non_term_weight >= 0);
+        MONAD_ASSERT(common_non_term_weight >= 0);
 
         auto push_prob = focus.total_non_term_prob * focus.push_weight;
         auto dup_prob = focus.total_non_term_prob * focus.dup_weight;
@@ -529,7 +529,7 @@ namespace monad::vm::fuzzing
 
         auto terminate_prob =
             (1 - focus.total_non_term_prob) - focus.random_byte_prob;
-        MONAD_VM_ASSERT(terminate_prob > 0);
+        MONAD_ASSERT(terminate_prob > 0);
 
         with_probability(eng, 0.66, [&](auto &) {
             program.push_back(NonTerminator{JUMPDEST});
@@ -696,7 +696,7 @@ namespace monad::vm::fuzzing
                         256});
             }
             else {
-                MONAD_VM_ASSERT(false);
+                MONAD_ABORT();
             }
         }();
 
@@ -878,7 +878,7 @@ namespace monad::vm::fuzzing
     {
         auto patches = std::vector<std::size_t>{};
         compile_push(eng, program, push, valid_addresses, patches);
-        MONAD_VM_DEBUG_ASSERT(patches.empty());
+        MONAD_DEBUG_ASSERT(patches.empty());
     }
 
     template <typename Engine>
@@ -901,7 +901,7 @@ namespace monad::vm::fuzzing
 
                     auto const byte_size =
                         count_significant_bytes(safe_value.value);
-                    MONAD_VM_DEBUG_ASSERT(byte_size <= 32);
+                    MONAD_DEBUG_ASSERT(byte_size <= 32);
 
                     program.push_back(
                         PUSH0 + static_cast<std::uint8_t>(byte_size));
@@ -948,8 +948,8 @@ namespace monad::vm::fuzzing
         std::vector<std::size_t> const &jumpdest_patches,
         std::vector<std::uint32_t> const &valid_jumpdests)
     {
-        MONAD_VM_DEBUG_ASSERT(std::ranges::is_sorted(jumpdest_patches));
-        MONAD_VM_DEBUG_ASSERT(std::ranges::is_sorted(valid_jumpdests));
+        MONAD_DEBUG_ASSERT(std::ranges::is_sorted(jumpdest_patches));
+        MONAD_DEBUG_ASSERT(std::ranges::is_sorted(valid_jumpdests));
 
         // The valid jumpdests and path locations in this program appear in
         // sorted order, so we can bias the generator towards "forwards" jumps
@@ -961,8 +961,8 @@ namespace monad::vm::fuzzing
         auto const forward_jds_end = valid_jumpdests.end();
 
         for (auto const patch : jumpdest_patches) {
-            MONAD_VM_DEBUG_ASSERT(patch + 4 < program.size());
-            MONAD_VM_DEBUG_ASSERT(program[patch] == PUSH4);
+            MONAD_DEBUG_ASSERT(patch + 4 < program.size());
+            MONAD_DEBUG_ASSERT(program[patch] == PUSH4);
 
             forward_jds_begin = std::find_if(
                 forward_jds_begin, forward_jds_end, [patch](auto jd) {
@@ -993,7 +993,7 @@ namespace monad::vm::fuzzing
             auto const *bs = reinterpret_cast<uint8_t const *>(&jd);
             for (auto i = 0u; i < 4; ++i) {
                 auto &dest = program[patch + i + 1];
-                MONAD_VM_DEBUG_ASSERT(dest == 0xFF);
+                MONAD_DEBUG_ASSERT(dest == 0xFF);
 
                 dest = bs[3 - i];
             }
@@ -1079,9 +1079,9 @@ namespace monad::vm::fuzzing
 
         auto const gas = base_gas + static_cast<double>(factor) * scale;
 
-        MONAD_VM_DEBUG_ASSERT(
+        MONAD_DEBUG_ASSERT(
             gas <= static_cast<double>(std::numeric_limits<gas_t>::max()));
-        MONAD_VM_DEBUG_ASSERT(gas >= 0);
+        MONAD_DEBUG_ASSERT(gas >= 0);
 
         return static_cast<gas_t>(gas);
     }
@@ -1127,7 +1127,7 @@ namespace monad::vm::fuzzing
 
         auto *const return_buf = new std::uint8_t[size];
 
-        MONAD_VM_DEBUG_ASSERT(data.size() >= size);
+        MONAD_DEBUG_ASSERT(data.size() >= size);
         std::copy_n(data.begin(), size, &return_buf[0]);
 
         return return_buf;

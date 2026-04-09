@@ -18,8 +18,8 @@
 #include "state.hpp"
 #include "test_state.hpp"
 
+#include <category/core/assert.h>
 #include <category/vm/compiler/ir/x86.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
 #include <category/vm/vm.hpp>

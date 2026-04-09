@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -46,7 +46,7 @@ namespace monad::vm::runtime
         uint256_t const &size_word, uint256_t const &salt_word,
         evmc_call_kind kind, std::int64_t remaining_block_base_gas)
     {
-        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
+        if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
 
@@ -70,7 +70,7 @@ namespace monad::vm::runtime
         }
 
         if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
-            if (MONAD_VM_UNLIKELY(*size > traits::max_initcode_size())) {
+            if (MONAD_UNLIKELY(*size > traits::max_initcode_size())) {
                 ctx->exit(StatusCode::OutOfGas);
             }
         }
@@ -82,7 +82,7 @@ namespace monad::vm::runtime
 
         ctx->deduct_gas(min_words * word_cost);
 
-        if (MONAD_VM_UNLIKELY(ctx->env.depth >= 1024)) {
+        if (MONAD_UNLIKELY(ctx->env.depth >= 1024)) {
             return 0;
         }
 

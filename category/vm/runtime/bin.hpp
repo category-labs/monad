@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 
 #include <algorithm>
 #include <bit>
@@ -78,7 +78,7 @@ namespace monad::vm::runtime
         constexpr explicit Bin(std::uint32_t x) noexcept
             : value_{x}
         {
-            MONAD_VM_DEBUG_ASSERT(x < (1ULL << N));
+            MONAD_DEBUG_ASSERT(x < (1ULL << N));
         }
 
         std::uint32_t value_;

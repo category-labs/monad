@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 
 #include <functional>
 #include <iterator>
@@ -72,7 +72,7 @@ namespace monad::vm::fuzzing
                 }
             });
 
-        MONAD_VM_DEBUG_ASSERT(result.has_value());
+        MONAD_DEBUG_ASSERT(result.has_value());
         return *result;
     }
 
@@ -93,7 +93,7 @@ namespace monad::vm::fuzzing
     {
         using diff_t = std::iterator_traits<Iterator>::difference_type;
 
-        MONAD_VM_DEBUG_ASSERT(begin != end);
+        MONAD_DEBUG_ASSERT(begin != end);
         auto dist = std::uniform_int_distribution<diff_t>(0, end - begin - 1);
         return *(begin + dist(eng));
     }
@@ -126,7 +126,7 @@ namespace monad::vm::fuzzing
             if (e == map_.end()) {
                 return false;
             }
-            MONAD_VM_DEBUG_ASSERT(!vec_.empty());
+            MONAD_DEBUG_ASSERT(!vec_.empty());
             auto const i = e->second;
             map_.at(vec_.back()) = i;
             vec_[i] = vec_.back();
@@ -153,7 +153,7 @@ namespace monad::vm::fuzzing
         template <typename Engine>
         T sample(Engine &eng)
         {
-            MONAD_VM_ASSERT(!empty());
+            MONAD_ASSERT(!empty());
             return uniform_sample(eng, vec_);
         }
 

@@ -18,8 +18,8 @@
 #include <category/vm/compiler/ir/local_stacks.hpp>
 #include <category/vm/compiler/types.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -273,8 +273,7 @@ namespace monad::vm::compiler::local_stacks
             break;
         case ValueIs::PARAM_ID:
             static_assert(sizeof(size_t) <= sizeof(uint64_t));
-            MONAD_VM_ASSERT(
-                data <= uint256_t{std::numeric_limits<size_t>::max()});
+            MONAD_ASSERT(data <= uint256_t{std::numeric_limits<size_t>::max()});
             param = data[0];
         default:
             // do nothing

@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>

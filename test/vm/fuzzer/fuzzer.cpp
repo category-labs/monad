@@ -25,9 +25,9 @@
 #include "test_state.hpp"
 #include "transaction.hpp"
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/generator.hpp>
@@ -228,7 +228,7 @@ static evmc::address deploy_contract(
 
     auto const create_address =
         compute_create_address(from, state.get_or_insert(from).nonce++);
-    MONAD_VM_DEBUG_ASSERT(state.find(create_address) == nullptr);
+    MONAD_DEBUG_ASSERT(state.find(create_address) == nullptr);
 
     state.insert(
         create_address,
@@ -240,7 +240,7 @@ static evmc::address deploy_contract(
             .transient_storage = {},
             .code = code});
 
-    MONAD_VM_ASSERT(state.find(create_address) != nullptr);
+    MONAD_ASSERT(state.find(create_address) != nullptr);
 
     return create_address;
 }
@@ -250,7 +250,7 @@ static evmc::address deploy_delegated_contract(
 {
     std::vector<uint8_t> code = {0xef, 0x01, 0x00};
     code.append_range(delegatee.bytes);
-    MONAD_VM_ASSERT(code.size() == 23);
+    MONAD_ASSERT(code.size() == 23);
     return deploy_contract(state, from, code);
 }
 
@@ -260,7 +260,7 @@ static evmc::address deploy_delegated_contracts(
 {
     auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
     auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
-    MONAD_VM_ASSERT(a == a1);
+    MONAD_ASSERT(a == a1);
     assert_equal(evmone_state, monad_state);
     return a;
 }
@@ -560,7 +560,7 @@ static void do_run(
                 deploy_contract(evmone_state, genesis_address, contract);
             auto const a1 =
                 deploy_contract(monad_state, genesis_address, contract);
-            MONAD_VM_ASSERT(a == a1);
+            MONAD_ASSERT(a == a1);
 
             assert_equal(evmone_state, monad_state);
 

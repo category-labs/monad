@@ -13,11 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
+#include <category/core/likely.h>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -44,8 +45,8 @@ static_assert(std::is_standard_layout_v<Bin<31>>);
 extern "C" void monad_vm_runtime_increase_capacity(
     Context *ctx, uint32_t old_size, Bin<30> new_size)
 {
-    MONAD_VM_DEBUG_ASSERT((*new_size & 31) == 0);
-    MONAD_VM_DEBUG_ASSERT(old_size < *new_size);
+    MONAD_DEBUG_ASSERT((*new_size & 31) == 0);
+    MONAD_DEBUG_ASSERT(old_size < *new_size);
 
     Bin<30> const parent_total_size = ctx->memory.parent_total_size();
 
@@ -53,15 +54,15 @@ extern "C" void monad_vm_runtime_increase_capacity(
         parent_total_size + Bin<30>::unsafe_from(old_size);
     Bin<31> const new_total_size = parent_total_size + new_size;
 
-    MONAD_VM_DEBUG_ASSERT((*new_total_size & 31) == 0);
+    MONAD_DEBUG_ASSERT((*new_total_size & 31) == 0);
 
     Bin<32> const new_total_capacity = shl<1>(new_total_size);
 
-    MONAD_VM_DEBUG_ASSERT((*new_total_capacity & 31) == 0);
+    MONAD_DEBUG_ASSERT((*new_total_capacity & 31) == 0);
 
     auto *const new_handle =
         static_cast<uint8_t *>(std::aligned_alloc(32, *new_total_capacity));
-    MONAD_VM_ASSERT(new_handle);
+    MONAD_ASSERT(new_handle);
 
     non_temporal_memcpy(new_handle, ctx->memory.data_handle, *old_total_size);
     non_temporal_bzero(
@@ -79,7 +80,7 @@ namespace monad::vm::runtime
     {
         void release_result(evmc_result const *result)
         {
-            MONAD_VM_DEBUG_ASSERT(result);
+            MONAD_DEBUG_ASSERT(result);
             std::free(const_cast<std::uint8_t *>(result->output_data));
         }
     }
@@ -211,8 +212,7 @@ namespace monad::vm::runtime
             std::memcpy(output_buf, memory.data + *offset, *size);
         }
         else {
-            if (MONAD_VM_UNLIKELY(
-                    !is_memory_size_in_bound<traits>(memory_end))) {
+            if (MONAD_UNLIKELY(!is_memory_size_in_bound<traits>(memory_end))) {
                 // Return out-of-gas error code, similar to when an
                 // `is_bounded_by_bits` check fails.
                 return EVMC_OUT_OF_GAS;
@@ -249,15 +249,14 @@ namespace monad::vm::runtime
     {
         using enum StatusCode;
 
-        if (MONAD_VM_UNLIKELY(result.status == Error)) {
+        if (MONAD_UNLIKELY(result.status == Error)) {
             return evmc_error_result(EVMC_FAILURE);
         }
-        if (MONAD_VM_UNLIKELY(result.status == OutOfGas)) {
+        if (MONAD_UNLIKELY(result.status == OutOfGas)) {
             return evmc_error_result(EVMC_OUT_OF_GAS);
         }
 
-        MONAD_VM_DEBUG_ASSERT(
-            result.status == Success || result.status == Revert);
+        MONAD_DEBUG_ASSERT(result.status == Success || result.status == Revert);
 
         return std::visit(
             Cases{

@@ -633,7 +633,7 @@ namespace monad::staking::test
         auto const prev = get_delegator_stake(val_id, addr, epoch);
         m[epoch] = prev + delta;
         auto it = m.find(epoch);
-        MONAD_VM_ASSERT(it != m.end());
+        MONAD_ASSERT(it != m.end());
         // Update stake of all elements with key > epoch:
         for (;;) {
             if (it == m.begin()) {

@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -46,7 +46,7 @@ namespace monad::vm::runtime
     inline void
     tstore(Context *ctx, uint256_t const *key_ptr, uint256_t const *val_ptr)
     {
-        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
+        if (MONAD_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
 

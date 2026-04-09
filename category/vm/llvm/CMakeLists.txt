@@ -44,7 +44,6 @@ target_link_libraries(monad-vm-llvm
     PUBLIC monad-vm::monad-vm-runtime
     PUBLIC monad-vm::monad-vm-utils
     PUBLIC monad-vm::monad-vm-compiler
-    PRIVATE monad-vm::monad-vm-core
 )
 
 add_library(monad-vm::monad-vm-llvm ALIAS monad-vm-llvm)

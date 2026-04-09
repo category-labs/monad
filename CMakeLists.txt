@@ -321,7 +321,6 @@ target_link_libraries(
          monad_rpc
          monad_statesync
          monad-vm
-         monad-vm-core
          monad-vm-compiler
          monad-vm-evm
          monad-vm-interpreter

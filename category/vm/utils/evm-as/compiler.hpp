@@ -15,10 +15,10 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
@@ -242,7 +242,7 @@ namespace monad::vm::utils::evm_as
                         emit_byte(mc::EvmOpCode::JUMPDEST);
                     },
                     [&](InvalidI const &) -> void { emit_byte(0xFE); },
-                    [&](auto const &) -> void { MONAD_VM_ASSERT(false); }}
+                    [&](auto const &) -> void { MONAD_ABORT(); }}
 
                 ,
                 ins);

@@ -31,7 +31,7 @@ namespace monad::vm::test
             : data{reinterpret_cast<std::uint8_t *>(
                   std::aligned_alloc(32, capacity))}
         {
-            MONAD_VM_ASSERT(data != nullptr);
+            MONAD_ASSERT(data != nullptr);
             static_assert((capacity & 31) == 0);
             runtime::non_temporal_bzero(data, capacity);
         }

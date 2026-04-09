@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as.hpp>
@@ -288,7 +288,7 @@ namespace monad::vm::utils
                                 auto const d = std::distance(
                                     pushops,
                                     std::find(pushops, pushops + 33, op));
-                                MONAD_VM_ASSERT(d >= 0);
+                                MONAD_ASSERT(d >= 0);
                                 size_t const n = static_cast<size_t>(d);
                                 if (n == 0) {
                                     eb.push0();

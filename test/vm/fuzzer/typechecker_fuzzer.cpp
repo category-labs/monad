@@ -128,7 +128,7 @@ static arguments parse_args(int const argc, char **const argv)
 static void
 fuzz_iteration(std::vector<uint8_t> const &contract, evmc_revision const)
 {
-    MONAD_VM_ASSERT(contract.size() <= *code_size_t::max());
+    MONAD_ASSERT(contract.size() <= *code_size_t::max());
     basic_blocks::BasicBlocksIR const ir2 =
         basic_blocks::BasicBlocksIR::unsafe_from(contract);
     local_stacks::LocalStacksIR ir3{ir2};

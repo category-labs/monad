@@ -16,7 +16,6 @@
 # Subcomponents
 
 add_subdirectory(compiler)
-add_subdirectory(core)
 add_subdirectory(evm)
 add_subdirectory(fuzzing)
 add_subdirectory(interpreter)
@@ -57,7 +56,6 @@ target_link_libraries(monad-vm
     PUBLIC quill::quill
     PUBLIC monad-vm::monad-vm-compiler
     PUBLIC monad-vm::monad-vm-interpreter
-    PRIVATE monad-vm::monad-vm-core
     PRIVATE monad-vm::monad-vm-runtime
     PRIVATE monad-vm::monad-vm-utils
 )

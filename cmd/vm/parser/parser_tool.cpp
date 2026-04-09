@@ -139,7 +139,7 @@ int main(int argc, char **argv)
         if (args.binary) {
             do_binary(config, "<stdin>", opcodes);
         }
-        MONAD_VM_ASSERT(opcodes.size() <= *code_size_t::max());
+        MONAD_ASSERT(opcodes.size() <= *code_size_t::max());
         if (args.compile) {
             auto rt = asmjit::JitRuntime{};
             monad::vm::compiler::native::compile<

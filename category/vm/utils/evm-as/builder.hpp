@@ -15,10 +15,10 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
@@ -117,14 +117,14 @@ namespace monad::vm::utils::evm_as
         EvmBuilder &push(uint64_t const imm) noexcept
         {
             size_t const n = byte_width(imm);
-            MONAD_VM_ASSERT(n <= 32);
+            MONAD_ASSERT(n <= 32);
             return push(n, runtime::uint256_t{imm});
         }
 
         EvmBuilder &push(runtime::uint256_t const &imm) noexcept
         {
             size_t n = byte_width(imm);
-            MONAD_VM_ASSERT(n <= 32);
+            MONAD_ASSERT(n <= 32);
             return push(n, imm);
         }
 

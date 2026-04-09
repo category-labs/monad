@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 
 #include <memory>
 #include <utility>
@@ -142,7 +142,7 @@ namespace monad::vm::utils
         // Note: undefined when RcPtr is nullptr.
         T *get() const
         {
-            MONAD_VM_DEBUG_ASSERT(rc_object != nullptr);
+            MONAD_DEBUG_ASSERT(rc_object != nullptr);
             return &rc_object->object;
         }
 

@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/varcode_cache.hpp>
 
 #include <cstdint>
@@ -51,8 +51,8 @@ namespace monad::vm
         bytes32_t const &code_hash, SharedIntercode const &icode,
         SharedNativecode const &ncode)
     {
-        MONAD_VM_ASSERT(icode != nullptr);
-        MONAD_VM_ASSERT(ncode != nullptr);
+        MONAD_ASSERT(icode != nullptr);
+        MONAD_ASSERT(ncode != nullptr);
         auto const weight = code_size_to_cache_weight(
             *(icode->code_size() + ncode->code_size_estimate()));
         auto const vcode = std::make_shared<Varcode>(icode, ncode);
@@ -62,7 +62,7 @@ namespace monad::vm
     SharedVarcode VarcodeCache::try_set(
         bytes32_t const &code_hash, SharedIntercode const &icode)
     {
-        MONAD_VM_ASSERT(icode != nullptr);
+        MONAD_ASSERT(icode != nullptr);
         auto const weight = code_size_to_cache_weight(*icode->code_size());
         auto vcode = std::make_shared<Varcode>(icode);
         (void)weight_cache_.try_insert(code_hash, vcode, weight);

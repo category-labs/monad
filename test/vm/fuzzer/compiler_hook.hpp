@@ -177,11 +177,11 @@ namespace monad::vm::fuzzing
                 }
                 if (!gen && e->general_reg()) {
                     auto *s = stack.spill_general_reg(e);
-                    MONAD_VM_ASSERT(s == nullptr);
+                    MONAD_ASSERT(s == nullptr);
                 }
                 if (!avx && e->avx_reg()) {
                     auto *s = stack.spill_avx_reg(e);
-                    MONAD_VM_ASSERT(s == nullptr);
+                    MONAD_ASSERT(s == nullptr);
                 }
                 if (!sta && e->stack_offset()) {
                     stack.spill_stack_offset(e);
@@ -257,13 +257,13 @@ namespace monad::vm::fuzzing
                     }
 
                     auto const &ixs = e->stack_indices();
-                    MONAD_VM_ASSERT(!ixs.empty());
+                    MONAD_ASSERT(!ixs.empty());
                     auto ix = *ixs.begin();
                     if (!e->literal() && !e->stack_offset() && !e->avx_reg()) {
                         emit.mov_stack_index_to_stack_offset(ix);
                     }
                     auto *s = stack.spill_general_reg(e);
-                    MONAD_VM_ASSERT(s == nullptr);
+                    MONAD_ASSERT(s == nullptr);
                 }
             });
 

@@ -72,7 +72,7 @@ namespace
             return random_byte();
         });
 
-        MONAD_VM_ASSERT(
+        MONAD_ASSERT(
             program.size() <= *monad::vm::interpreter::code_size_t::max());
         auto rt = asmjit::JitRuntime{};
 
@@ -112,7 +112,7 @@ namespace
         file.read(buffer.data(), size);
 
         auto program = monad::vm::utils::parse_hex_program(buffer);
-        MONAD_VM_ASSERT(
+        MONAD_ASSERT(
             program.size() <= *monad::vm::interpreter::code_size_t::max());
 
         auto rt = asmjit::JitRuntime{};

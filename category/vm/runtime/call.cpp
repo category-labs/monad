@@ -13,9 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -115,7 +116,7 @@ namespace monad::vm::runtime
         }
 
         if (call_kind == EVMC_CALL) {
-            if (MONAD_VM_UNLIKELY(
+            if (MONAD_UNLIKELY(
                     has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
                 auto const error_code =
                     ctx->gas_remaining + remaining_block_base_gas < 0
@@ -137,7 +138,7 @@ namespace monad::vm::runtime
         auto const gas_left_here =
             ctx->gas_remaining + remaining_block_base_gas;
 
-        if (MONAD_VM_UNLIKELY(gas_left_here < 0)) {
+        if (MONAD_UNLIKELY(gas_left_here < 0)) {
             ctx->exit(StatusCode::OutOfGas);
         }
 
@@ -147,7 +148,7 @@ namespace monad::vm::runtime
             gas = std::min(gas, gas_left_here - (gas_left_here / 64));
         }
         else {
-            if (MONAD_VM_UNLIKELY(gas > gas_left_here)) {
+            if (MONAD_UNLIKELY(gas > gas_left_here)) {
                 ctx->exit(StatusCode::OutOfGas);
             }
         }
@@ -157,7 +158,7 @@ namespace monad::vm::runtime
             ctx->gas_remaining += 2300;
         }
 
-        if (MONAD_VM_UNLIKELY(ctx->env.depth >= 1024)) {
+        if (MONAD_UNLIKELY(ctx->env.depth >= 1024)) {
             return 0;
         }
 
@@ -282,7 +283,7 @@ namespace monad::vm::runtime
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, std::int64_t remaining_block_base_gas)
     {
-        MONAD_VM_DEBUG_ASSERT(traits::evm_rev() >= EVMC_BYZANTIUM);
+        MONAD_DEBUG_ASSERT(traits::evm_rev() >= EVMC_BYZANTIUM);
         *result_ptr = call_impl<traits>(
             ctx,
             *gas_ptr,

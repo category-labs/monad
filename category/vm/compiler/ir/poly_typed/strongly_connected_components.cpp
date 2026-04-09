@@ -13,10 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/vm/compiler/ir/poly_typed/infer_state.hpp>
 #include <category/vm/compiler/ir/poly_typed/strongly_connected_components.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/core/assert.h>
 
 #include <algorithm>
 #include <utility>
@@ -61,7 +61,7 @@ namespace monad::vm::compiler::poly_typed
                 pst.lowlink = std::min(pst.lowlink, bst.lowlink);
             }
             else {
-                MONAD_VM_DEBUG_ASSERT(
+                MONAD_DEBUG_ASSERT(
                     b.successors_visited < bst.successors.size());
                 block_id const s = bst.successors[b.successors_visited];
                 ++b.successors_visited;

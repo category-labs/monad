@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
@@ -84,11 +84,11 @@ namespace monad::vm::llvm
         void set_contract_addr_from_disk(std::string_view fn)
         {
             auto ObjectBuffer = MemoryBuffer::getFile(fn);
-            MONAD_VM_ASSERT(ObjectBuffer);
+            MONAD_ASSERT(ObjectBuffer);
             ExitOnErr(lljit->addObjectFile(std::move(*ObjectBuffer)));
             JITDylib &jd = lljit->getMainJITDylib();
 
-            MONAD_VM_ASSERT(!jd.define(absoluteSymbols(opcode_syms)));
+            MONAD_ASSERT(!jd.define(absoluteSymbols(opcode_syms)));
 
             Expected<ExecutorAddr> expected_contract_addr =
                 lljit->lookup("contract");
@@ -143,10 +143,10 @@ namespace monad::vm::llvm
 
             JITDylib &jd = lljit->getMainJITDylib();
 
-            MONAD_VM_ASSERT(!jd.define(absoluteSymbols(opcode_syms)));
+            MONAD_ASSERT(!jd.define(absoluteSymbols(opcode_syms)));
 
             if (!do_optimize) {
-                MONAD_VM_ASSERT(
+                MONAD_ASSERT(
                     verifyModule(*llvm_module)); // this fails when O2 and O3
                                                  // are applied.  Why?
             }
@@ -156,14 +156,14 @@ namespace monad::vm::llvm
 
             ExitOnErr(lljit->addIRModule(std::move(tsm)));
 
-            MONAD_VM_ASSERT(lljit);
+            MONAD_ASSERT(lljit);
 
             Expected<ExecutorAddr> expected_contract_addr =
                 lljit->lookup("contract");
 
             if (auto err = expected_contract_addr.takeError()) {
                 errs() << "error:" << toString(std::move(err)) << '\n';
-                MONAD_VM_ASSERT(false);
+                MONAD_ABORT();
             }
 
             contract_addr = reinterpret_cast<void (*)()>(
@@ -222,7 +222,7 @@ namespace monad::vm::llvm
 
         void restore_insert()
         {
-            MONAD_VM_ASSERT(insert_lbls.size() > 0);
+            MONAD_ASSERT(insert_lbls.size() > 0);
             insert_at(insert_lbls.back());
             insert_lbls.pop_back();
         };
@@ -634,7 +634,7 @@ namespace monad::vm::llvm
         GlobalVariable *
         const_array(std::vector<Constant *> const vals, std::string_view nm)
         {
-            MONAD_VM_ASSERT(vals.size() > 0);
+            MONAD_ASSERT(vals.size() > 0);
 
             Type *ty = vals[0]->getType();
             ArrayType *arr_ty = array_ty(ty, vals.size());

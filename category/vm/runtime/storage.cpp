@@ -14,8 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/bytes.hpp>
+#include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/storage.hpp>
@@ -59,7 +59,7 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         std::int64_t remaining_block_base_gas)
     {
-        if (MONAD_VM_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
+        if (MONAD_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
 

@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 
 #include <evmc/evmc.hpp>
 
@@ -176,13 +176,13 @@ namespace monad::vm::compiler
         , stack_increase_(stack_increase)
         , dynamic_gas_(dynamic_gas)
     {
-        MONAD_VM_DEBUG_ASSERT(immediate_value == 0 || opcode() == OpCode::Push);
+        MONAD_DEBUG_ASSERT(immediate_value == 0 || opcode() == OpCode::Push);
     }
 
     constexpr runtime::uint256_t const &
     Instruction::immediate_value() const noexcept
     {
-        MONAD_VM_ASSERT(opcode() == OpCode::Push);
+        MONAD_ASSERT(opcode() == OpCode::Push);
         return immediate_value_;
     }
 
@@ -208,7 +208,7 @@ namespace monad::vm::compiler
 
     constexpr std::uint8_t Instruction::index() const noexcept
     {
-        MONAD_VM_ASSERT(
+        MONAD_ASSERT(
             opcode() == OpCode::Push || opcode() == OpCode::Swap ||
             opcode() == OpCode::Dup || opcode() == OpCode::Log);
         return index_;

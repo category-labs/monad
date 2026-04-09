@@ -122,7 +122,7 @@ namespace monad::vm::dependency_blocks
         std::vector<EvmValue>
         pop_args(uint8_t n, std::vector<EvmValue> &value_stack)
         {
-            MONAD_VM_ASSERT(value_stack.size() >= n);
+            MONAD_ASSERT(value_stack.size() >= n);
 
             std::vector<EvmValue> args;
 
@@ -247,7 +247,7 @@ namespace monad::vm::dependency_blocks
             high = high_;
 
             int64_t remaining_block_base_gas = blk_base_gas;
-            MONAD_VM_DEBUG_ASSERT(remaining_block_base_gas >= 0);
+            MONAD_DEBUG_ASSERT(remaining_block_base_gas >= 0);
 
             std::optional<InstrIdx> last_stmt = std::nullopt;
             std::vector<InstrIdx> dependencies;

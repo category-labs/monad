@@ -15,10 +15,10 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -76,7 +76,7 @@ namespace monad::vm::runtime
         void set_return_data(
             std::uint8_t const *output_data, std::size_t output_size)
         {
-            MONAD_VM_DEBUG_ASSERT(return_data_size == 0);
+            MONAD_DEBUG_ASSERT(return_data_size == 0);
             return_data = output_data;
             return_data_size = output_size;
         }
@@ -135,8 +135,8 @@ namespace monad::vm::runtime
             , parent_capacity{cap}
             , parent_handle{han}
         {
-            MONAD_VM_DEBUG_ASSERT(han != nullptr);
-            MONAD_VM_DEBUG_ASSERT(dat != nullptr);
+            MONAD_DEBUG_ASSERT(han != nullptr);
+            MONAD_DEBUG_ASSERT(dat != nullptr);
         }
 
         Memory(Memory &&m) = delete;
@@ -150,9 +150,9 @@ namespace monad::vm::runtime
             // necessary, because the `Context::return_to` function will take
             // care of clearing and freeing memory. However relying on calling
             // `Context::return_to` seems unreasonable in general.
-            if (MONAD_VM_UNLIKELY(data_handle)) {
-                MONAD_VM_ASSERT(size <= capacity);
-                MONAD_VM_ASSERT(data == data_handle);
+            if (MONAD_UNLIKELY(data_handle)) {
+                MONAD_ASSERT(size <= capacity);
+                MONAD_ASSERT(data == data_handle);
                 clear();
             }
         }
@@ -160,11 +160,11 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         Bin<30> parent_total_size() const
         {
-            MONAD_VM_DEBUG_ASSERT(data >= data_handle);
+            MONAD_DEBUG_ASSERT(data >= data_handle);
 
             auto const x = static_cast<std::uintptr_t>(data - data_handle);
 
-            MONAD_VM_DEBUG_ASSERT((x & 31) == 0);
+            MONAD_DEBUG_ASSERT((x & 31) == 0);
 
             // The following check is a non-debug assertion, because it is not
             // an internal invariant, and not part of the fast path. The check
@@ -189,7 +189,7 @@ namespace monad::vm::runtime
             // This means that more than 2 billion gas must have been consumed
             // already by the current transaction for the following assertion
             // to fail:
-            MONAD_VM_ASSERT(x <= Bin<30>::upper);
+            MONAD_ASSERT(x <= Bin<30>::upper);
 
             return Bin<30>::unsafe_from(static_cast<std::uint32_t>(x));
         }
@@ -197,7 +197,7 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         void clear()
         {
-            if (MONAD_VM_LIKELY(parent_handle == data_handle)) {
+            if (MONAD_LIKELY(parent_handle == data_handle)) {
                 non_temporal_bzero(data_handle, size);
             }
             else {
@@ -209,7 +209,7 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         void release()
         {
-            if (MONAD_VM_UNLIKELY(data_handle != parent_handle)) {
+            if (MONAD_UNLIKELY(data_handle != parent_handle)) {
                 // Only free if data_handle is not the parent_handle. The
                 // parent_handle is potentially used for call data.
                 // Note that data_handle will never be the initial memory
@@ -251,7 +251,7 @@ namespace monad::vm::runtime
         constexpr void deduct_gas(std::int64_t const gas) noexcept
         {
             gas_remaining -= gas;
-            if (MONAD_VM_UNLIKELY(gas_remaining < 0)) {
+            if (MONAD_UNLIKELY(gas_remaining < 0)) {
                 exit(StatusCode::OutOfGas);
             }
         }
@@ -320,14 +320,14 @@ namespace monad::vm::runtime
                 Bin<30> const new_size = word_count_to_memory_size(word_count);
 
                 // Bound check before increasing size or capacity:
-                if (MONAD_VM_UNLIKELY(
+                if (MONAD_UNLIKELY(
                         !is_memory_size_in_bound<traits>(new_size))) {
                     // Return out-of-gas error code, similar to when the
                     // `get_memory_offset` functions fails.
                     exit(StatusCode::OutOfGas);
                 }
 
-                MONAD_VM_DEBUG_ASSERT(new_cost >= memory.cost);
+                MONAD_DEBUG_ASSERT(new_cost >= memory.cost);
                 std::int64_t const expansion_cost = new_cost - memory.cost;
 
                 // Gas check before increasing size or capacity:
@@ -336,7 +336,7 @@ namespace monad::vm::runtime
                 memory.size = *new_size;
                 memory.cost = new_cost;
 
-                if (MONAD_VM_UNLIKELY(memory.capacity < *new_size)) {
+                if (MONAD_UNLIKELY(memory.capacity < *new_size)) {
                     increase_capacity(old_size, new_size);
                 }
             }
@@ -345,7 +345,7 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         Memory::Offset get_memory_offset(uint256_t const &offset)
         {
-            if (MONAD_VM_UNLIKELY(
+            if (MONAD_UNLIKELY(
                     !is_bounded_by_bits<Memory::offset_bits>(offset))) {
                 exit(StatusCode::OutOfGas);
             }
@@ -359,8 +359,8 @@ namespace monad::vm::runtime
             if (parent != nullptr) {
                 non_temporal_bzero(memory.data, memory.size);
                 auto &p = parent->memory;
-                MONAD_VM_DEBUG_ASSERT(memory.parent_handle == p.data_handle);
-                if (MONAD_VM_UNLIKELY(
+                MONAD_DEBUG_ASSERT(memory.parent_handle == p.data_handle);
+                if (MONAD_UNLIKELY(
                         memory.data_handle != memory.parent_handle)) {
                     p.release();
                     p.data = memory.data - p.size;
@@ -379,7 +379,7 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         void propagate_stack_unwind() noexcept
         {
-            if (MONAD_VM_UNLIKELY(is_stack_unwinding_active)) {
+            if (MONAD_UNLIKELY(is_stack_unwinding_active)) {
                 stack_unwind();
             }
         }

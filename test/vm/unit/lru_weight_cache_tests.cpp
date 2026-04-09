@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
 #include <gtest/gtest.h>
@@ -117,9 +117,9 @@ namespace
             size_t rereader_count)
         {
             for (auto &[_, b] : is_updated) {
-                MONAD_VM_ASSERT(!b.test());
+                MONAD_ASSERT(!b.test());
             }
-            MONAD_VM_ASSERT(is_updated.size() == elems.size());
+            MONAD_ASSERT(is_updated.size() == elems.size());
             auto r = [this, &is_updated](size_t start_index) {
                 size_t i = start_index;
                 for (;;) {

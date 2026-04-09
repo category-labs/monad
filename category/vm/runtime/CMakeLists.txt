@@ -63,7 +63,6 @@ target_link_libraries(monad-vm-runtime
     PUBLIC ethash::keccak
     PUBLIC intx::intx
     PUBLIC monad_core
-    PUBLIC monad-vm::monad-vm-core
     PUBLIC monad-vm::monad-vm-evm
 )
 

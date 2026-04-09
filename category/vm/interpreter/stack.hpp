@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/types.hpp>
 
@@ -39,7 +39,7 @@ namespace monad::vm::interpreter
         if constexpr (info.min_gas > 0) {
             gas_remaining -= info.min_gas;
 
-            if (MONAD_VM_UNLIKELY(gas_remaining < 0)) {
+            if (MONAD_UNLIKELY(gas_remaining < 0)) {
                 ctx.exit(OutOfGas);
             }
         }
@@ -49,10 +49,10 @@ namespace monad::vm::interpreter
         }
 
         auto const stack_size = stack_top - stack_bottom;
-        MONAD_VM_DEBUG_ASSERT(stack_size <= 1024);
+        MONAD_DEBUG_ASSERT(stack_size <= 1024);
 
         if constexpr (info.min_stack > 0) {
-            if (MONAD_VM_UNLIKELY(stack_size < info.min_stack)) {
+            if (MONAD_UNLIKELY(stack_size < info.min_stack)) {
                 ctx.exit(Error);
             }
         }
@@ -66,7 +66,7 @@ namespace monad::vm::interpreter
             // the stack with >1024 elements if it _began_ with >1024, then we
             // assume that the input stack was valid and elide the check.
             if constexpr (max_safe_size < 1024) {
-                if (MONAD_VM_UNLIKELY(stack_size > max_safe_size)) {
+                if (MONAD_UNLIKELY(stack_size > max_safe_size)) {
                     ctx.exit(Error);
                 }
             }

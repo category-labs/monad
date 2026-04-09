@@ -14,8 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/bytes.hpp>
+#include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -167,7 +167,7 @@ namespace monad::vm::runtime
         auto const offset = clamp_cast<std::uint32_t>(*offset_ptr);
 
         std::uint32_t end;
-        if (MONAD_VM_UNLIKELY(
+        if (MONAD_UNLIKELY(
                 __builtin_add_overflow(offset, *size, &end) ||
                 end > ctx->env.return_data_size)) {
             ctx->exit(StatusCode::OutOfGas);

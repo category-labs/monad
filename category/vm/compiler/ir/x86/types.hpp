@@ -59,7 +59,7 @@ namespace monad::vm::compiler::native
             , entrypoint_{entry}
             , code_size_estimate_{code_size_estimate}
         {
-            MONAD_VM_DEBUG_ASSERT(
+            MONAD_DEBUG_ASSERT(
                 !!entrypoint_ ==
                 std::holds_alternative<native_code_size_t>(code_size_estimate));
         }
@@ -101,15 +101,14 @@ namespace monad::vm::compiler::native
         ErrorCode error_code() const
         {
             if (entrypoint_) {
-                MONAD_VM_DEBUG_ASSERT(
-                    std::holds_alternative<native_code_size_t>(
-                        code_size_estimate_));
+                MONAD_DEBUG_ASSERT(std::holds_alternative<native_code_size_t>(
+                    code_size_estimate_));
                 return NoError;
             }
             if (std::holds_alternative<size_t>(code_size_estimate_)) {
                 return SizeOutOfBound;
             }
-            MONAD_VM_DEBUG_ASSERT(
+            MONAD_DEBUG_ASSERT(
                 std::holds_alternative<std::monostate>(code_size_estimate_));
             return Unexpected;
         }

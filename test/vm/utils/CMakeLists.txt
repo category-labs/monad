@@ -31,7 +31,6 @@ target_link_libraries(monad-vm-test-utils
     PUBLIC quill::quill
     PUBLIC monad-vm::monad-vm-compiler
     PUBLIC monad-vm::monad-vm-interpreter
-    PUBLIC monad-vm::monad-vm-core
     PUBLIC monad-vm::monad-vm-runtime
     PUBLIC monad-vm::monad-vm-utils
 )

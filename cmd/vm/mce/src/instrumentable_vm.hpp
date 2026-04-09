@@ -16,9 +16,9 @@
 #include <instrumentation_device.hpp>
 #include <stopwatch.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>

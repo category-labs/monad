@@ -30,7 +30,6 @@ target_include_directories(monad-vm-fuzzing
 
 target_link_libraries(monad-vm-fuzzing
   PUBLIC monad-vm::monad-vm-compiler
-  PUBLIC monad-vm::monad-vm-core
   PUBLIC monad-vm::monad-vm-utils
 )
 

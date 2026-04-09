@@ -1501,13 +1501,13 @@ namespace monad::vm::interpreter
             runtime::Context &ctx, Intercode const &analysis,
             runtime::uint256_t const &target)
         {
-            if (MONAD_VM_UNLIKELY(
+            if (MONAD_UNLIKELY(
                     target > std::numeric_limits<std::size_t>::max())) {
                 ctx.exit(Error);
             }
 
             auto const jd = static_cast<std::size_t>(target);
-            if (MONAD_VM_UNLIKELY(!analysis.is_jumpdest(jd))) {
+            if (MONAD_UNLIKELY(!analysis.is_jumpdest(jd))) {
                 ctx.exit(Error);
             }
 

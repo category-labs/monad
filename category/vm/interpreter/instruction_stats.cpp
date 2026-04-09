@@ -15,7 +15,7 @@
 
 #ifdef MONAD_VM_INTERPRETER_STATS
 
-    #include <category/vm/core/assert.h>
+    #include <category/core/assert.h>
     #include <category/vm/evm/opcodes.hpp>
     #include <category/vm/interpreter/instruction_stats.hpp>
     #include <category/vm/utils/scope_exit.hpp>
@@ -81,7 +81,7 @@ namespace monad::vm::interpreter::stats
     {
         auto const end = std::chrono::high_resolution_clock::now();
 
-        MONAD_VM_DEBUG_ASSERT(current_op.has_value());
+        MONAD_DEBUG_ASSERT(current_op.has_value());
         auto const opcode = *current_op;
         current_op = std::nullopt;
 

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/local_stacks.hpp>
@@ -21,7 +22,6 @@
 #include <category/vm/compiler/ir/poly_typed/infer.hpp>
 #include <category/vm/compiler/ir/poly_typed/kind.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/core/assert.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -53,7 +53,7 @@ namespace
         if (jd == ir.jumpdests.end()) {
             return cont_kind({}, 0);
         }
-        MONAD_VM_DEBUG_ASSERT(jd->second < ir.blocks.size());
+        MONAD_DEBUG_ASSERT(jd->second < ir.blocks.size());
         return ir.blocks[jd->second].kind;
     }
 
@@ -151,7 +151,7 @@ namespace
             }
         }
         else {
-            MONAD_VM_DEBUG_ASSERT(x.is == ValueIs::COMPUTED);
+            MONAD_DEBUG_ASSERT(x.is == ValueIs::COMPUTED);
             if (!weak_equal(k, word)) {
                 throw TypeError{};
             }
@@ -162,8 +162,8 @@ namespace
         Block const &block, size_t output_offset, ContKind out_kind,
         std::vector<Kind> const &output_stack)
     {
-        MONAD_VM_DEBUG_ASSERT(block.output.size() >= output_offset);
-        MONAD_VM_DEBUG_ASSERT(output_stack.size() >= block.output.size());
+        MONAD_DEBUG_ASSERT(block.output.size() >= output_offset);
+        MONAD_DEBUG_ASSERT(output_stack.size() >= block.output.size());
         size_t const min_size = std::min(
             output_stack.size() - output_offset, out_kind->front.size());
         for (size_t i = 0; i < min_size; ++i) {
@@ -227,7 +227,7 @@ namespace
         ContKind out_kind, std::vector<Kind> const &output_stack)
     {
         check_output_stack(block, output_offset, out_kind, output_stack);
-        MONAD_VM_DEBUG_ASSERT(block.output.size() >= output_offset);
+        MONAD_DEBUG_ASSERT(block.output.size() >= output_offset);
         size_t const arg_count = block.output.size() - output_offset;
         std::vector<Kind> out_front = out_kind->front;
         if (out_front.size() < arg_count) {
@@ -410,13 +410,13 @@ namespace
     {
         std::vector<Kind> const output_stack = check_instructions(block);
         if (std::holds_alternative<Jump>(block.terminator)) {
-            MONAD_VM_DEBUG_ASSERT(!block.output.empty());
+            MONAD_DEBUG_ASSERT(!block.output.empty());
             auto const &jump = std::get<Jump>(block.terminator);
             check_dest(ir, block, block.output[0], jump.jump_kind);
             check_output(ir, block, 1, jump.jump_kind, output_stack);
         }
         else if (std::holds_alternative<JumpI>(block.terminator)) {
-            MONAD_VM_DEBUG_ASSERT(block.output.size() >= 2);
+            MONAD_DEBUG_ASSERT(block.output.size() >= 2);
             auto const &jumpi = std::get<JumpI>(block.terminator);
             check_dest(ir, block, block.output[0], jumpi.jump_kind);
             check_output(ir, block, 2, jumpi.jump_kind, output_stack);

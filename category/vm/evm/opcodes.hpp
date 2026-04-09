@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.hpp>
@@ -254,7 +254,7 @@ namespace monad::vm::compiler
 
     consteval evmc_revision previous_evm_revision(evmc_revision rev)
     {
-        MONAD_VM_DEBUG_ASSERT(std::to_underlying(rev) > 0);
+        MONAD_DEBUG_ASSERT(std::to_underlying(rev) > 0);
         return evmc_revision(std::to_underlying(rev) - 1);
     }
 
@@ -285,7 +285,7 @@ namespace monad::vm::compiler
         std::uint8_t opcode, std::array<OpCodeInfo, 256> &table,
         OpCodeInfo info)
     {
-        MONAD_VM_DEBUG_ASSERT(table[opcode] == unknown_opcode_info);
+        MONAD_DEBUG_ASSERT(table[opcode] == unknown_opcode_info);
         table[opcode] = info;
     }
 
@@ -888,7 +888,7 @@ namespace monad::vm::compiler
      */
     constexpr uint8_t get_dup_opcode_index(uint8_t const opcode)
     {
-        MONAD_VM_DEBUG_ASSERT(is_dup_opcode(opcode));
+        MONAD_DEBUG_ASSERT(is_dup_opcode(opcode));
         uint8_t const diff = opcode - DUP1;
         return diff + 1;
     }
@@ -899,7 +899,7 @@ namespace monad::vm::compiler
      */
     constexpr uint8_t get_swap_opcode_index(uint8_t const opcode)
     {
-        MONAD_VM_DEBUG_ASSERT(is_swap_opcode(opcode));
+        MONAD_DEBUG_ASSERT(is_swap_opcode(opcode));
         uint8_t const diff = opcode - SWAP1;
         return diff + 1;
     }
@@ -910,7 +910,7 @@ namespace monad::vm::compiler
      */
     constexpr uint8_t get_push_opcode_index(uint8_t const opcode)
     {
-        MONAD_VM_DEBUG_ASSERT(is_push_opcode(opcode));
+        MONAD_DEBUG_ASSERT(is_push_opcode(opcode));
         return opcode - PUSH0;
     }
 
@@ -920,7 +920,7 @@ namespace monad::vm::compiler
      */
     constexpr uint8_t get_log_opcode_index(uint8_t const opcode)
     {
-        MONAD_VM_DEBUG_ASSERT(is_log_opcode(opcode));
+        MONAD_DEBUG_ASSERT(is_log_opcode(opcode));
         return opcode - LOG0;
     }
 

@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/poly_typed/exceptions.hpp>
 #include <category/vm/compiler/ir/poly_typed/kind.hpp>
 #include <category/vm/compiler/ir/poly_typed/subst_map.hpp>
-#include <category/vm/core/assert.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -65,7 +65,7 @@ namespace monad::vm::compiler::poly_typed
 
     void SubstMap::link_literal_vars(VarName v1, VarName v2)
     {
-        MONAD_VM_DEBUG_ASSERT(
+        MONAD_DEBUG_ASSERT(
             !literal_map.contains(v1) && !literal_map.contains(v2));
 
         auto links1 = literal_links.find_or_default(v1);
@@ -88,7 +88,7 @@ namespace monad::vm::compiler::poly_typed
                 continue;
             }
             __attribute__((unused)) bool const ins = literal_map.put(v, t);
-            MONAD_VM_DEBUG_ASSERT(ins || t == LiteralType::Word);
+            MONAD_DEBUG_ASSERT(ins || t == LiteralType::Word);
             auto const lit = literal_links.find(v);
             if (lit != literal_links.end()) {
                 for (auto const w : lit->second) {

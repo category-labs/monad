@@ -15,10 +15,10 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -232,7 +232,7 @@ namespace monad::vm::compiler::basic_blocks
             std::initializer_list<std::uint8_t const> bytes,
             ChainMarker<traits> rm = {})
         {
-            MONAD_VM_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
+            MONAD_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
             return BasicBlocksIR(
                 std::data(bytes),
                 interpreter::code_size_t::unsafe_from(
@@ -245,7 +245,7 @@ namespace monad::vm::compiler::basic_blocks
         static constexpr BasicBlocksIR unsafe_from(
             std::span<std::uint8_t const> bytes, ChainMarker<traits> rm = {})
         {
-            MONAD_VM_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
+            MONAD_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
             return BasicBlocksIR(
                 bytes.data(),
                 interpreter::code_size_t::unsafe_from(
@@ -332,7 +332,7 @@ namespace monad::vm::compiler::basic_blocks
          */
         void add_jump_dest()
         {
-            MONAD_VM_DEBUG_ASSERT(blocks_.back().instrs.empty());
+            MONAD_DEBUG_ASSERT(blocks_.back().instrs.empty());
             jump_dests_.emplace(curr_block_offset(), curr_block_id());
         }
 
@@ -365,7 +365,7 @@ namespace monad::vm::compiler::basic_blocks
     std::variant<Instruction, Terminator, JumpDest> BasicBlocksIR::scan_from(
         std::span<std::uint8_t const> bytes, std::uint32_t &current_offset)
     {
-        MONAD_VM_DEBUG_ASSERT(current_offset < bytes.size());
+        MONAD_DEBUG_ASSERT(current_offset < bytes.size());
 
         auto const opcode = bytes[current_offset];
         auto const opcode_offset = current_offset;
@@ -470,11 +470,11 @@ namespace monad::vm::compiler::basic_blocks
                 }
             }
             else {
-                MONAD_VM_ASSERT(st == St::INSIDE_BLOCK);
+                MONAD_ASSERT(st == St::INSIDE_BLOCK);
 
                 auto handle_terminator = [&](Terminator t) {
                     using enum Terminator;
-                    MONAD_VM_ASSERT(t != FallThrough);
+                    MONAD_ASSERT(t != FallThrough);
 
                     if (t == JumpI) {
                         add_fallthrough_terminator(JumpI);

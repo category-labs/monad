@@ -13,11 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/likely.h>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -148,10 +149,10 @@ namespace monad::vm
                !stop_flag_.test(std::memory_order_acquire)) {
             CompileJobAccessor acc;
             bool const find_ok = compile_job_map_.find(acc, code_hash);
-            MONAD_VM_ASSERT(find_ok);
+            MONAD_ASSERT(find_ok);
             auto const &[compile_fn, chain_id, icode, config] = acc->second;
 
-            if (MONAD_VM_LIKELY(enable_async_compilation_)) {
+            if (MONAD_LIKELY(enable_async_compilation_)) {
                 // It is possible that a new async compile request with the same
                 // intercode arrives right after we erase from
                 // `compile_job_map_` below. Therefore we use `cached_compile`,
@@ -168,7 +169,7 @@ namespace monad::vm
             }
 
             bool const erase_ok = compile_job_map_.erase(acc);
-            MONAD_VM_ASSERT(erase_ok);
+            MONAD_ASSERT(erase_ok);
         }
     }
 

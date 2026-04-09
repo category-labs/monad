@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/is_specialization_of.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/monad/revision.h>
 
 #include <evmc/evmc.h>

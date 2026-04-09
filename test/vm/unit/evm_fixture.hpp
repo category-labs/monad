@@ -142,7 +142,7 @@ namespace monad::vm::compiler::test
                         rt_ctx, icode);
             }
             else {
-                MONAD_VM_ASSERT(impl == Evmone);
+                MONAD_ASSERT(impl == Evmone);
                 evmc::VM const evmone_vm{evmc_create_evmone()};
 
                 result_ = evmc::Result{::evmone::baseline::execute(

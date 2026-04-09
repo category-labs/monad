@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -46,7 +46,7 @@ namespace monad::vm::runtime
     inline uint256_t
     uint256_load_bounded_le(std::uint8_t const *bytes, std::int64_t max_len)
     {
-        if (MONAD_VM_LIKELY(max_len >= 32)) {
+        if (MONAD_LIKELY(max_len >= 32)) {
             return uint256_t::load_le_unsafe(bytes);
         }
         return uint256_t{monad_vm_runtime_load_bounded_le(bytes, max_len)};

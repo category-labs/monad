@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 
 #include <algorithm>
 #include <cstdlib>
@@ -64,7 +64,7 @@ namespace monad::vm::runtime
 
         CachedAllocatorElement *pop()
         {
-            MONAD_VM_DEBUG_ASSERT(!empty());
+            MONAD_DEBUG_ASSERT(!empty());
             auto *ptr = elements;
             elements = ptr->next;
             return ptr;

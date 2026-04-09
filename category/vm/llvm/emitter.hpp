@@ -182,7 +182,7 @@ namespace monad::vm::llvm
 
         std::tuple<byte_offset, byte_offset, byte_offset> init_jumptable()
         {
-            MONAD_VM_ASSERT(!jumpdest_tbl.empty());
+            MONAD_ASSERT(!jumpdest_tbl.empty());
 
             byte_offset min_offset = std::numeric_limits<byte_offset>::max();
             byte_offset max_offset = 0;
@@ -304,7 +304,7 @@ namespace monad::vm::llvm
                 selfdestruct_(args[0]);
                 return;
             default:
-                MONAD_VM_ASSERT(term == InvalidInstruction);
+                MONAD_ASSERT(term == InvalidInstruction);
                 llvm.br(error_lbl());
                 return;
             };
@@ -706,7 +706,7 @@ namespace monad::vm::llvm
         void contract_finish()
         {
             llvm.insert_at(entry);
-            MONAD_VM_ASSERT(!dep_ir.blocks.empty());
+            MONAD_ASSERT(!dep_ir.blocks.empty());
             llvm.br(get_block_lbl(dep_ir.blocks.front().offset));
         };
 
@@ -1589,7 +1589,7 @@ namespace monad::vm::llvm
                 instr_name(instr), llvm.void_ty, arg_tys);
 
             Value *mem_data_offset = llvm_memory_pre(32, f, arg);
-            MONAD_VM_ASSERT(mem_data_offset);
+            MONAD_ASSERT(mem_data_offset);
 
             Value *value;
             value = arg[5];
@@ -1798,7 +1798,7 @@ namespace monad::vm::llvm
                     return ffi_runtime(instr, log3);
 
                 default:
-                    MONAD_VM_ASSERT(instr.index() == 4);
+                    MONAD_ASSERT(instr.index() == 4);
                     return ffi_runtime(instr, log4);
                 }
 
@@ -1941,7 +1941,7 @@ namespace monad::vm::llvm
                 return llvm_unop(instr, &LLVMState::clz);
 
             default:
-                MONAD_VM_ASSERT(op == Add);
+                MONAD_ASSERT(op == Add);
                 return llvm_binop(instr, &LLVMState::add);
             }
         };

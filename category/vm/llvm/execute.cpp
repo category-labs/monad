@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/llvm/dependency_blocks.hpp>
@@ -152,7 +152,7 @@ namespace monad::vm::llvm
             out.close();
         }
 
-        MONAD_VM_ASSERT(ir.is_valid());
+        MONAD_ASSERT(ir.is_valid());
 
         llvm.insert_symbol("rt_EXIT", (void *)&rt_exit);
 
@@ -225,7 +225,7 @@ namespace monad::vm::llvm
             return load_from_disk_impl<EvmTraits<EVMC_OSAKA>>(fn);
 
         default:
-            MONAD_VM_ASSERT(
+            MONAD_ASSERT(
                 false && "Tried to load unsupported EVM revision from disk");
         }
     }
@@ -285,8 +285,7 @@ namespace monad::vm::llvm
             return compile_impl<EvmTraits<EVMC_OSAKA>>(code, dbg_nm);
 
         default:
-            MONAD_VM_ASSERT(
-                false && "Tried to compile unsupported EVM revision");
+            MONAD_ASSERT(false && "Tried to compile unsupported EVM revision");
         }
     }
 }

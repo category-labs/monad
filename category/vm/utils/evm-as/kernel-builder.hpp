@@ -37,7 +37,7 @@ namespace monad::vm::utils::evm_as
             // leave plenty of stack space for the instruction sequence.
             size_t const total_args_per_inner_loop_iter =
                 inner_loop_unroll * (args_size == 0 ? 1 : args_size);
-            MONAD_VM_ASSERT(total_args_per_inner_loop_iter <= 1000);
+            MONAD_ASSERT(total_args_per_inner_loop_iter <= 1000);
             return total_args_per_inner_loop_iter *
                    (1000 / total_args_per_inner_loop_iter);
         }
@@ -86,7 +86,7 @@ namespace monad::vm::utils::evm_as
                           << std::endl;
                 std::abort();
             }
-            MONAD_VM_ASSERT(address_store.size() <= max_address_store_size);
+            MONAD_ASSERT(address_store.size() <= max_address_store_size);
             this->push(target).push(static_cast<uint64_t>(offset)).mstore();
             return *this;
         }

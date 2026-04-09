@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/local_stacks.hpp>
@@ -20,7 +21,6 @@
 #include <category/vm/compiler/ir/poly_typed/infer_state.hpp>
 #include <category/vm/compiler/ir/poly_typed/kind.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/core/assert.h>
 
 #include <cstdint>
 #include <iterator>
@@ -145,7 +145,7 @@ namespace monad::vm::compiler::poly_typed
     ContKind InferState::get_type(block_id bid)
     {
         auto const it = block_types.find(bid);
-        MONAD_VM_DEBUG_ASSERT(it != block_types.end());
+        MONAD_DEBUG_ASSERT(it != block_types.end());
         PolyVarSubstMap su;
         return refresh(*this, su, it->second);
     }
@@ -182,14 +182,14 @@ namespace monad::vm::compiler::poly_typed
                 ret, *this, block.output.begin(), block.output.end());
             break;
         case basic_blocks::Terminator::JumpI:
-            MONAD_VM_DEBUG_ASSERT(block.output.size() >= 2);
+            MONAD_DEBUG_ASSERT(block.output.size() >= 2);
             ret.push_back(block.fallthrough_dest);
             push_static_jumpdest(ret, *this, block.output[0]);
             push_static_jumpdests(
                 ret, *this, block.output.begin() + 2, block.output.end());
             break;
         case basic_blocks::Terminator::Jump:
-            MONAD_VM_DEBUG_ASSERT(block.output.size() >= 1);
+            MONAD_DEBUG_ASSERT(block.output.size() >= 1);
             push_static_jumpdests(
                 ret, *this, block.output.begin(), block.output.end());
             break;

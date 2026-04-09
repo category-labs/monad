@@ -29,8 +29,7 @@ namespace monad::vm::test
         };
 
         explicit KernelCalldata(size_t calldata_size)
-            : data_(calldata_size >> 5){MONAD_VM_ASSERT(
-                  (calldata_size & 31) == 0)}
+            : data_(calldata_size >> 5){MONAD_ASSERT((calldata_size & 31) == 0)}
 
             uint8_t
             & operator[](size_t i)
@@ -73,8 +72,8 @@ namespace monad::vm::test
         auto const outer_step = max_stack_values * 32;
         auto const n = args_size == 0 ? 1 : args_size;
 
-        MONAD_VM_ASSERT(base_calldata.size() % 32 == 0);
-        MONAD_VM_ASSERT(base_calldata.size() >= outer_step);
+        MONAD_ASSERT(base_calldata.size() % 32 == 0);
+        MONAD_ASSERT(base_calldata.size() >= outer_step);
 
         KernelCalldata ret(base_calldata.size());
 
@@ -122,9 +121,9 @@ namespace monad::vm::test
         size_t n = 32 * args_size *
                    KB::get_sequence_repetition_count(
                        args_size, throughput_calldata.size());
-        MONAD_VM_ASSERT(ctx->result.status == runtime::StatusCode::Success);
-        MONAD_VM_ASSERT(runtime::uint256_t::load_le(ctx->result.size) == n);
-        MONAD_VM_ASSERT(runtime::uint256_t::load_le(ctx->result.offset) == 0);
+        MONAD_ASSERT(ctx->result.status == runtime::StatusCode::Success);
+        MONAD_ASSERT(runtime::uint256_t::load_le(ctx->result.size) == n);
+        MONAD_ASSERT(runtime::uint256_t::load_le(ctx->result.offset) == 0);
 
         KernelCalldata ret{throughput_calldata.size()};
         std::memcpy(ret.data(), ctx->memory.data, n);

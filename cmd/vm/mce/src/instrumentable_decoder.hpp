@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/core/assert.h>
+#include <category/core/assert.h>
 #include <category/vm/utils/load_program.hpp>
 #include <category/vm/utils/parser.hpp>
 #include <stopwatch.hpp>
@@ -123,7 +123,7 @@ private:
         // Get the file size
         std::streamsize size = file.tellg();
         file.seekg(0, std::ios::beg);
-        MONAD_VM_ASSERT(size >= 0);
+        MONAD_ASSERT(size >= 0);
 
         // Allocate buffer and read file contents
         std::vector<char> contents(static_cast<size_t>(size), 0);

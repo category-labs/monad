@@ -18,11 +18,11 @@
 #include <test_state.hpp>
 #include <test_vm.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/switch_traits.hpp>
 
 #include <category/vm/vm.hpp>
@@ -117,7 +117,7 @@ BlockchainTestVM::BlockchainTestVM(
     , base_config{.runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(), .max_code_size_offset = code_size_t::max(), .post_instruction_emit_hook = post_hook}
     , rt_ctx_{nullptr}
 {
-    MONAD_VM_ASSERT(!debug_dir_ || fs::is_directory(debug_dir_));
+    MONAD_ASSERT(!debug_dir_ || fs::is_directory(debug_dir_));
 }
 
 evmc::Result BlockchainTestVM::execute(
@@ -125,7 +125,7 @@ evmc::Result BlockchainTestVM::execute(
     evmc_revision rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
 {
-    MONAD_VM_ASSERT(rev >= constants::EARLIEST_SUPPORTED_EVM_FORK);
+    MONAD_ASSERT(rev >= constants::EARLIEST_SUPPORTED_EVM_FORK);
     auto *const prev_rt_ctx = rt_ctx_;
     auto new_rt_ctx =
         runtime::Context::from(host, context, msg, {code, code_size});
@@ -139,7 +139,7 @@ evmc::Result BlockchainTestVM::execute(
         else if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2) {
             SWITCH_EVM_TRAITS(
                 monad_vm_.execute_bytecode_raw, *rt_ctx_, {code, code_size});
-            MONAD_VM_ASSERT(false);
+            MONAD_ABORT();
         }
         else if (impl_ == Implementation::Evmone) {
             return execute_evmone(host, context, rev, msg, code, code_size);
@@ -153,7 +153,7 @@ evmc::Result BlockchainTestVM::execute(
         }
 #endif
         else {
-            MONAD_VM_ASSERT(impl_ == Implementation::Interpreter);
+            MONAD_ASSERT(impl_ == Implementation::Interpreter);
             return execute_interpreter(
                 host, context, rev, msg, code, code_size);
         }
@@ -174,7 +174,7 @@ evmone::baseline::CodeAnalysis const &BlockchainTestVM::get_code_analysis(
     }
     auto [it2, b] = code_analyses_.insert(
         {code_hash, evmone::baseline::analyze({code, code_size})});
-    MONAD_VM_ASSERT(b);
+    MONAD_ASSERT(b);
     return it2->second;
 }
 
@@ -187,7 +187,7 @@ monad::vm::SharedIntercode const &BlockchainTestVM::get_intercode(
     }
     auto [it2, b] = intercodes_.insert(
         {code_hash, monad::vm::make_shared_intercode(code, code_size)});
-    MONAD_VM_ASSERT(b);
+    MONAD_ASSERT(b);
     return it2->second;
 }
 
@@ -211,7 +211,7 @@ BlockchainTestVM::get_intercode_nativecode(
         ncode = [&] {
             SWITCH_EVM_TRAITS(
                 monad_vm_.compiler().cached_compile, code_hash, icode, config);
-            MONAD_VM_ASSERT(false);
+            MONAD_ABORT();
         }();
     }
     else {
@@ -221,7 +221,7 @@ BlockchainTestVM::get_intercode_nativecode(
                 code_hash,
                 icode,
                 base_config);
-            MONAD_VM_ASSERT(false);
+            MONAD_ABORT();
         }();
     }
 
@@ -279,10 +279,10 @@ evmc::Result BlockchainTestVM::execute_compiler(
                   << to_hex(code_hash) << std::endl;
     }
 
-    MONAD_VM_ASSERT(ncode->entrypoint() != nullptr)
+    MONAD_ASSERT(ncode->entrypoint() != nullptr)
     SWITCH_EVM_TRAITS(
         monad_vm_.execute_native_entrypoint_raw, *rt_ctx_, ncode->entrypoint());
-    MONAD_VM_ASSERT(false);
+    MONAD_ABORT();
 }
 
 #ifdef MONAD_COMPILER_LLVM
@@ -313,5 +313,5 @@ evmc::Result BlockchainTestVM::execute_interpreter(
     auto code_hash = host->get_code_hash(context, &msg->code_address);
     auto const &icode = get_intercode(code_hash, code, code_size);
     SWITCH_EVM_TRAITS(monad_vm_.execute_intercode_raw, *rt_ctx_, icode);
-    MONAD_VM_ASSERT(false);
+    MONAD_ABORT();
 }

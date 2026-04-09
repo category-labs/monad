@@ -13,13 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
+#include <category/core/likely.h>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/types.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -280,7 +281,7 @@ namespace
                 emit.log4<traits>(remaining_base_gas);
                 break;
             default:
-                MONAD_VM_ASSERT(false);
+                MONAD_ABORT();
             }
             break;
         case Create:
@@ -309,7 +310,7 @@ namespace
         Emitter &emit, native_code_size_t max_native_size)
     {
         size_t const size_estimate = emit.estimate_size();
-        if (MONAD_VM_UNLIKELY(size_estimate > *max_native_size)) {
+        if (MONAD_UNLIKELY(size_estimate > *max_native_size)) {
             throw Nativecode::SizeEstimateOutOfBounds{size_estimate};
         }
     }
@@ -334,8 +335,7 @@ namespace
     {
         int64_t remaining_base_gas = instr_gas;
         for (auto const &instr : block.instrs) {
-            MONAD_VM_DEBUG_ASSERT(
-                remaining_base_gas >= instr.static_gas_cost());
+            MONAD_DEBUG_ASSERT(remaining_base_gas >= instr.static_gas_cost());
             remaining_base_gas -= instr.static_gas_cost();
             emit_instr<traits>(emit, instr, remaining_base_gas);
             require_code_size_in_bound(emit, max_native_size);
@@ -356,7 +356,7 @@ namespace
             emit.fallthrough();
             break;
         case JumpI:
-            MONAD_VM_DEBUG_ASSERT(block.fallthrough_dest != INVALID_BLOCK_ID);
+            MONAD_DEBUG_ASSERT(block.fallthrough_dest != INVALID_BLOCK_ID);
             emit.jumpi(ir.blocks()[block.fallthrough_dest]);
             break;
         case Jump:
@@ -454,7 +454,7 @@ namespace monad::vm::compiler::native
         }
         size_t const size_estimate = emit.estimate_size();
         auto entry = emit.finish_contract(rt);
-        MONAD_VM_DEBUG_ASSERT(size_estimate <= *max_native_size);
+        MONAD_DEBUG_ASSERT(size_estimate <= *max_native_size);
         return std::make_shared<Nativecode>(
             rt,
             traits::id(),

@@ -15,9 +15,9 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/core/assert.h>
 #include <category/vm/evm/opcodes.hpp>
 
 #include <cstdint>

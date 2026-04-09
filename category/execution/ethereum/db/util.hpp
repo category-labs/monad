@@ -52,6 +52,7 @@ struct MachineBase : public mpt::StateMachine
         Proposal
     };
 
+    // Order matches nibble values: TableType(nibble + 1)
     enum class TableType : uint8_t
     {
         Prefix,
@@ -59,11 +60,11 @@ struct MachineBase : public mpt::StateMachine
         Code,
         Receipt,
         Transaction,
+        BlockHeader,
         Withdrawal,
+        Ommer,
         TxHash,
         BlockHash,
-        BlockHeader,
-        Ommer,
         CallFrame,
     };
 

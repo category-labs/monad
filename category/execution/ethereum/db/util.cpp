@@ -541,48 +541,13 @@ void MachineBase::down(unsigned char const nibble)
     MONAD_ASSERT(trie_section != TrieType::Undefined);
     auto const prefix_length = prefix_len();
     MONAD_ASSERT(depth <= max_depth(prefix_length));
-    MONAD_ASSERT(
-        (nibble == STATE_NIBBLE || nibble == CODE_NIBBLE ||
-         nibble == RECEIPT_NIBBLE || nibble == CALL_FRAME_NIBBLE ||
-         nibble == TRANSACTION_NIBBLE || nibble == BLOCKHEADER_NIBBLE ||
-         nibble == WITHDRAWAL_NIBBLE || nibble == OMMER_NIBBLE ||
-         nibble == TX_HASH_NIBBLE || nibble == BLOCK_HASH_NIBBLE) ||
-        depth != prefix_length);
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
-        if (nibble == STATE_NIBBLE) {
-            table = TableType::State;
-        }
-        else if (nibble == RECEIPT_NIBBLE) {
-            table = TableType::Receipt;
-        }
-        else if (nibble == TRANSACTION_NIBBLE) {
-            table = TableType::Transaction;
-        }
-        else if (nibble == CODE_NIBBLE) {
-            table = TableType::Code;
-        }
-        else if (nibble == WITHDRAWAL_NIBBLE) {
-            table = TableType::Withdrawal;
-        }
-        else if (nibble == TX_HASH_NIBBLE) {
-            table = TableType::TxHash;
-        }
-        else if (nibble == BLOCK_HASH_NIBBLE) {
-            table = TableType::BlockHash;
-        }
-        else if (nibble == BLOCKHEADER_NIBBLE) {
-            table = TableType::BlockHeader;
-        }
-        else if (nibble == OMMER_NIBBLE) {
-            table = TableType::Ommer;
-        }
-        else if (nibble == CALL_FRAME_NIBBLE) {
-            table = TableType::CallFrame;
-        }
-        else {
-            MONAD_ABORT_PRINTF("Invalid nibble %u", (unsigned)nibble);
-        }
+        MONAD_ASSERT_PRINTF(
+            nibble <= CALL_FRAME_NIBBLE,
+            "Invalid nibble %u",
+            static_cast<unsigned>(nibble));
+        table = static_cast<TableType>(nibble + 1);
     }
 }
 

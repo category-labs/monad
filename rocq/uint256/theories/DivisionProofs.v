@@ -1384,7 +1384,67 @@ Lemma knuth_sub_loop_correct : forall u_seg q_hat vs j k,
         get_word u' i = get_word u_seg i)
   /\ U128.to_Z k' <= base width.
 Proof.
-Admitted.
+  intros u_seg q_hat vs.
+  revert u_seg q_hat.
+  induction vs as [|vj vs_rest IH]; intros u_seg q_hat j k Hqhat Hk Hlen;
+    simpl knuth_sub_loop.
+  - split; [|split; [reflexivity|split; [intros; reflexivity|exact Hk]]].
+    replace (j + 0)%nat with j by lia.
+    cbn [to_Z_words length Nat.add].
+    unfold modulus_words.
+    replace (Z.of_nat (j + 0)) with (Z.of_nat j) by lia.
+    rewrite Z.mul_0_r, Z.add_0_l.
+    reflexivity.
+  - change (MakeProofs.set_word) with set_word.
+    change (MakeProofs.get_word) with get_word.
+    set (prod := U128.mul q_hat (widen vj)).
+    set (t := U128.sub (U128.sub (widen (get_word u_seg j)) k)
+      (widen (trunc prod))).
+    set (k1 := U128.sub (widen (hi prod))
+      (U128.asr t (Pos.to_nat U64.width))).
+    pose proof (knuth_sub_step_correct (get_word u_seg j) q_hat vj k Hqhat Hk)
+      as [Hstep Hk1].
+    assert (Hj_lt : (j < length u_seg)%nat).
+    { simpl in Hlen. lia. }
+    assert (Hstep_iso :
+      to_Z (trunc t) =
+        to_Z (get_word u_seg j) -
+          (U128.to_Z q_hat * to_Z vj + U128.to_Z k) +
+          U128.to_Z k1 * base width).
+    { replace (to_Z (trunc t))
+        with (to_Z (trunc t) - U128.to_Z k1 * base width +
+              U128.to_Z k1 * base width) by ring.
+      fold prod in Hstep.
+      fold t in Hstep.
+      fold k1 in Hstep.
+      rewrite Hstep.
+      ring. }
+    specialize (IH (set_word u_seg j (trunc t)) q_hat (S j) k1 Hqhat Hk1).
+    assert (Hlen_set :
+      (S j + length vs_rest <= length (set_word u_seg j (trunc t)))%nat).
+    { rewrite set_word_length. simpl in Hlen. lia. }
+    specialize (IH Hlen_set).
+    destruct (knuth_sub_loop (set_word u_seg j (trunc t)) q_hat vs_rest
+      (S j) k1) as [u' k''] eqn:Hrec.
+    destruct IH as [Hval [Hlen_u [Hunchanged Hk'']]].
+    split; [|split; [|split]].
+    + replace (j + length (vj :: vs_rest))%nat with (S j + length vs_rest)%nat.
+      2:{ simpl. lia. }
+      rewrite Hval.
+      rewrite (to_Z_words_set_word u_seg j (trunc t) Hj_lt).
+      cbn [to_Z_words].
+      rewrite Nat2Z.inj_succ, Z.pow_succ_r by lia.
+      rewrite Hstep_iso.
+      ring.
+    + rewrite Hlen_u, set_word_length. reflexivity.
+    + intros i Hi.
+      rewrite Hunchanged by (simpl in *; lia).
+      assert (Hij : j <> i).
+      { simpl in Hi. lia. }
+      rewrite get_set_word_other by exact Hij.
+      reflexivity.
+    + exact Hk''.
+Qed.
 
 (** knuth_addback_loop computes [u_seg + v] with carry propagation.
     Used when the trial quotient overestimated by 1. *)

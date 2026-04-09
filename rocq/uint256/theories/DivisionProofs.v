@@ -2034,7 +2034,10 @@ Proof.
           nia. }
         assert (HV_upper : to_Z_words v <= M * (B * (to_Z v_hi + 1)) - 1).
         { rewrite Hv_decomp.
-          unfold M, modulus_words in *.
+          assert (Hvlow_le : v_low <= M - 1) by lia.
+          assert (Hvsnd_le : to_Z v_snd <= B - 1) by lia.
+          replace (M * (B * (to_Z v_hi + 1)) - 1)
+            with ((M - 1) + M * ((B - 1) + B * to_Z v_hi)) by ring.
           nia. }
         assert (HMB_pos : 0 <= M * B) by nia.
         assert (Hstep : (B - 2) * (to_Z v_hi + 1) <= B * to_Z v_hi).
@@ -2042,17 +2045,19 @@ Proof.
           nia. }
         assert (Hq_lower : (B - 2) * to_Z_words v <= M * B * B * to_Z v_hi).
         { apply Z.le_trans with ((B - 2) * (M * (B * (to_Z v_hi + 1)) - 1)).
-          - nia.
+          - apply Z.mul_le_mono_nonneg_l; lia.
           - apply Z.le_trans with ((B - 2) * (M * (B * (to_Z v_hi + 1)))).
-            + nia.
+            + apply Z.mul_le_mono_nonneg_l; lia.
             + replace ((B - 2) * (M * (B * (to_Z v_hi + 1))))
                 with (M * B * ((B - 2) * (to_Z v_hi + 1))) by ring.
               replace (M * B * B * to_Z v_hi)
                 with (M * B * (B * to_Z v_hi)) by ring.
               apply Z.mul_le_mono_nonneg_l; lia. }
         lia.
-      * rewrite Hqhat_val. exact Hseg_small.
-  - rewrite spec_eqb in Heq_hi. apply Z.eqb_neq in Heq_hi.
+	      * rewrite Hqhat_val. replace (B - 1 + 1) with B by lia.
+	        exact Hseg_small.
+  - assert (Heq_hi_false : U64.eqb u_hi v_hi = false) by exact Heq_hi.
+    rewrite spec_eqb in Heq_hi. apply Z.eqb_neq in Heq_hi.
     assert (Hu_lt_vhi : to_Z u_hi < to_Z v_hi) by lia.
     assert (Hvhi_pos : to_Z v_hi > 0) by lia.
     pose proof (spec_div u_hi u_mid v_hi Hvhi_pos Hu_lt_vhi)
@@ -2061,7 +2066,8 @@ Proof.
     destruct (U64.eqb q0 U64.zero) eqn:Hq0.
     + cbn in Hqhat_def. subst q_hat.
       rewrite U128.spec_eqb, U128.spec_zero, Z.eqb_refl in Hq_nz. discriminate.
-    + rewrite spec_eqb in Hq0. rewrite spec_zero in Hq0. apply Z.eqb_neq in Hq0.
+	    + assert (Hq0_false : U64.eqb q0 U64.zero = false) by exact Hq0.
+	      rewrite spec_eqb in Hq0. rewrite spec_zero in Hq0. apply Z.eqb_neq in Hq0.
       pose proof (spec_to_Z q0) as [Hq0_nn Hq0_lt_word].
       assert (Hq0_pos : 0 < to_Z q0) by lia.
       assert (Hq0_small : to_Z q0 < B).
@@ -2069,38 +2075,243 @@ Proof.
       assert (Hdiv_main :
         to_Z u_mid + B * to_Z u_hi = to_Z q0 * to_Z v_hi + to_Z r0).
       { unfold B in *. nia. }
-      destruct (U128.gtb (U128.mul (widen q0) (widen v_snd)) (combine r0 u_lo)) eqn:Href.
-      * rewrite Href in Hqhat_def. cbn in Hqhat_def. subst q_hat.
-        rewrite U128.spec_gtb, U128.spec_mul, spec_widen, spec_combine in Href.
-        rewrite Z.mod_small in Href by (clear - Hq0_small Hvsnd_nn Hvsnd_lt Hbase_lt_128; unfold B in *; lia).
+	      lazymatch type of Hqhat_def with
+	      | q_hat = (if ?b then _ else _) => destruct b eqn:Href
+	      end.
+	      * cbn in Hqhat_def. subst q_hat.
+	        rewrite U128.spec_gtb, U128.spec_mul, !spec_widen, spec_combine in Href.
+	        assert (Hmul_small : 0 <= to_Z q0 * to_Z v_snd < base U128.width).
+	        { split.
+	          - apply Z.mul_nonneg_nonneg; lia.
+	          - unfold B in Hq0_small.
+	            unfold base in Hq0_small, Hvsnd_lt |- *.
+	            rewrite width_is_64 in Hq0_small, Hvsnd_lt.
+	            rewrite U128.width_is_128.
+	            simpl in Hq0_small, Hvsnd_lt |- *.
+	            nia. }
+	        rewrite Z.mod_small in Href by exact Hmul_small.
         apply Z.gtb_lt in Href.
         assert (Hqhat_val : U128.to_Z (U128.sub (widen q0) U128.one) = to_Z q0 - 1).
         { rewrite U128.spec_sub, spec_widen, U128.spec_one.
           apply Z.mod_small. split; [lia|].
           assert (to_Z q0 - 1 < base U128.width) by (clear - Hq0_small Hbase_lt_128; unfold B in *; lia).
           lia. }
+	        split.
+	        { rewrite Hqhat_val. unfold B in *. lia. }
+	        split.
+	        { rewrite Hqhat_val, Hu_decomp, Hv_decomp.
+	          rewrite Hdiv_main.
+	          assert (Hdiff :
+	            0 <=
+	              u_low + M * (to_Z u_lo + B * (to_Z q0 * to_Z v_hi + to_Z r0)) -
+	              (to_Z q0 - 2) * (v_low + M * (to_Z v_snd + B * to_Z v_hi))).
+	          { replace
+	              (u_low + M * (to_Z u_lo + B * (to_Z q0 * to_Z v_hi + to_Z r0)) -
+	               (to_Z q0 - 2) * (v_low + M * (to_Z v_snd + B * to_Z v_hi)))
+	              with
+	                (u_low - (to_Z q0 - 2) * v_low +
+	                 M * (to_Z u_lo + B * to_Z r0 + 2 * B * to_Z v_hi -
+	                      (to_Z q0 - 2) * to_Z v_snd)) by ring.
+	            assert (Hvlow_le : v_low <= M - 1) by lia.
+	            destruct (Z_lt_ge_dec (to_Z q0) 2) as [Hq0_lt2 | Hq0_ge2].
+	            - assert (Hq0_eq1 : to_Z q0 = 1) by lia.
+	              rewrite Hq0_eq1.
+	              assert (HBr0_nonneg : 0 <= B * to_Z r0).
+	              { apply Z.mul_nonneg_nonneg; lia. }
+	              assert (HBvhi_nonneg : 0 <= 2 * B * to_Z v_hi).
+	              { apply Z.mul_nonneg_nonneg; lia. }
+	              assert (HMinner_nonneg :
+	                0 <= M * (to_Z u_lo + B * to_Z r0 + 2 * B * to_Z v_hi + to_Z v_snd)).
+	              { apply Z.mul_nonneg_nonneg; lia. }
+	              replace
+	                (u_low - (1 - 2) * v_low +
+	                 M * (to_Z u_lo + B * to_Z r0 + 2 * B * to_Z v_hi -
+	                      (1 - 2) * to_Z v_snd))
+	                with (u_low + v_low +
+	                      M * (to_Z u_lo + B * to_Z r0 + 2 * B * to_Z v_hi + to_Z v_snd))
+	                by ring.
+	              nia.
+	            - assert (Hq0m2_nonneg : 0 <= to_Z q0 - 2) by lia.
+	              assert (Hq0m2_le : to_Z q0 - 2 <= B - 2) by lia.
+	              assert (Hvsnd1_le : to_Z v_snd + 1 <= B) by lia.
+	              assert (Hstep1 :
+	                (to_Z q0 - 2) * (to_Z v_snd + 1) <= (B - 2) * B).
+	              { apply Z.mul_le_mono_nonneg; lia. }
+	              assert (Hstep2 :
+	                (to_Z q0 - 2) * (to_Z v_snd + 1) <= B * B).
+	              { apply Z.le_trans with ((B - 2) * B).
+	                - exact Hstep1.
+	                - apply Z.mul_le_mono_nonneg_r; lia. }
+	              assert (Hvhi_big : B * B <= 2 * B * to_Z v_hi).
+	              { replace (2 * B * to_Z v_hi) with (B * (2 * to_Z v_hi)) by ring.
+	                apply Z.mul_le_mono_nonneg_l; lia. }
+	              assert (Hinner :
+	                to_Z q0 - 2 <=
+	                  to_Z u_lo + B * to_Z r0 + 2 * B * to_Z v_hi -
+	                  (to_Z q0 - 2) * to_Z v_snd).
+	              { apply Z.le_trans with (2 * B * to_Z v_hi - (to_Z q0 - 2) * to_Z v_snd).
+	                - lia.
+	                - assert (Htmp :
+	                      (to_Z q0 - 2) * to_Z v_snd + (to_Z q0 - 2) <=
+	                      2 * B * to_Z v_hi).
+	                  { eapply Z.le_trans.
+	                    - replace
+	                        ((to_Z q0 - 2) * to_Z v_snd + (to_Z q0 - 2))
+	                        with ((to_Z q0 - 2) * (to_Z v_snd + 1)) by ring.
+	                      exact Hstep2.
+	                    - exact Hvhi_big. }
+	                  lia. }
+	              assert (HMinner :
+	                M * (to_Z q0 - 2) <=
+	                  M * (to_Z u_lo + B * to_Z r0 + 2 * B * to_Z v_hi -
+	                       (to_Z q0 - 2) * to_Z v_snd)).
+	              { apply Z.mul_le_mono_nonneg_l; lia. }
+	              apply Z.le_trans with
+	                (u_low - (to_Z q0 - 2) * v_low + M * (to_Z q0 - 2)).
+	              + replace
+	                  (u_low - (to_Z q0 - 2) * v_low + M * (to_Z q0 - 2))
+	                  with (u_low + (to_Z q0 - 2) * (M - v_low)) by ring.
+	                apply Z.add_nonneg_nonneg.
+	                * lia.
+	                * apply Z.mul_nonneg_nonneg; lia.
+	              + lia. }
+	          lia. }
+	        { rewrite Hqhat_val, Hu_decomp, Hv_decomp.
+	          assert (Href1 :
+	            to_Z q0 * to_Z v_snd >= to_Z r0 * B + to_Z u_lo + 1) by lia.
+	          rewrite Hdiv_main.
+	          assert (Hu_low_le : u_low <= M - 1) by lia.
+	          assert (Hgap :
+	            1 <= to_Z q0 * to_Z v_snd - (to_Z r0 * B + to_Z u_lo)) by lia.
+	          assert (HMgap :
+	            M <= M * (to_Z q0 * to_Z v_snd - (to_Z r0 * B + to_Z u_lo))).
+	          { assert (HMgap1 :
+	              M * 1 <= M * (to_Z q0 * to_Z v_snd - (to_Z r0 * B + to_Z u_lo))).
+	            { apply Z.mul_le_mono_nonneg_l; lia. }
+	            replace (M * 1) with M in HMgap1 by ring.
+	            exact HMgap1. }
+	          assert (Hdiff :
+	            1 <=
+	              to_Z q0 * (v_low + M * (to_Z v_snd + B * to_Z v_hi)) -
+	              (u_low + M * (to_Z u_lo + B * (to_Z q0 * to_Z v_hi + to_Z r0)))).
+	          { replace
+	              (to_Z q0 * (v_low + M * (to_Z v_snd + B * to_Z v_hi)) -
+	               (u_low + M * (to_Z u_lo + B * (to_Z q0 * to_Z v_hi + to_Z r0))))
+	              with
+	                (to_Z q0 * v_low - u_low +
+	                 M * (to_Z q0 * to_Z v_snd - (to_Z r0 * B + to_Z u_lo))) by ring.
+	            apply Z.le_trans with (to_Z q0 * v_low - u_low + M).
+	            - lia.
+	            - assert (Hq0vlow_nonneg : 0 <= to_Z q0 * v_low).
+	              { apply Z.mul_nonneg_nonneg; lia. }
+	              lia. }
+	          lia. }
+	      * cbn in Hqhat_def. subst q_hat.
+	        rewrite U128.spec_gtb, U128.spec_mul, !spec_widen, spec_combine in Href.
+	        assert (Hmul_small : 0 <= to_Z q0 * to_Z v_snd < base U128.width).
+	        { split.
+	          - apply Z.mul_nonneg_nonneg; lia.
+	          - unfold B in Hq0_small.
+	            unfold base in Hq0_small, Hvsnd_lt |- *.
+	            rewrite width_is_64 in Hq0_small, Hvsnd_lt.
+	            rewrite U128.width_is_128.
+	            simpl in Hq0_small, Hvsnd_lt |- *.
+		            nia. }
+		        rewrite Z.mod_small in Href by exact Hmul_small.
+	        change (base width) with B in Href.
+	        assert (Href_le :
+	          to_Z q0 * to_Z v_snd <= to_Z r0 * B + to_Z u_lo).
+	        { destruct
+	            (Z.gtb_spec (to_Z q0 * to_Z v_snd) (to_Z r0 * B + to_Z u_lo))
+	            as [Hgt | Hle].
+	          - apply Z.gtb_lt in Hgt. congruence.
+	          - exact Hle. }
+	        split.
+	        { rewrite spec_widen. exact Hq0_small. }
         split.
-        { rewrite Hqhat_val. unfold B in *. lia. }
-        split.
-        { rewrite Hqhat_val, Hu_decomp, Hv_decomp.
-          unfold B, M, modulus_words in *.
-          nia. }
-        { rewrite Hqhat_val, Hu_decomp, Hv_decomp.
-          unfold B, M, modulus_words in *.
-          nia. }
-      * rewrite Href in Hqhat_def. cbn in Hqhat_def. subst q_hat.
-        rewrite U128.spec_gtb, U128.spec_mul, spec_widen, spec_combine in Href.
-        rewrite Z.mod_small in Href by (clear - Hq0_small Hvsnd_nn Hvsnd_lt Hbase_lt_128; unfold B in *; lia).
-        apply Z.gtb_ge in Href.
-        split.
-        { rewrite spec_widen. exact Hq0_small. }
-        split.
-        { rewrite spec_widen, Hu_decomp, Hv_decomp.
-          unfold B, M, modulus_words in *.
-          nia. }
-        { rewrite spec_widen, Hu_decomp, Hv_decomp.
-          unfold B, M, modulus_words in *.
-          nia. }
+	        { rewrite spec_widen, Hu_decomp, Hv_decomp.
+	          rewrite Hdiv_main.
+	          assert (Hvlow_le : v_low <= M - 1) by lia.
+	          assert (Hq0m1_nonneg : 0 <= to_Z q0 - 1) by lia.
+	          assert (Hq0m1_le : to_Z q0 - 1 <= B - 1) by lia.
+	          assert (Hdiff :
+	            0 <=
+	              u_low + M * (to_Z u_lo + B * (to_Z q0 * to_Z v_hi + to_Z r0)) -
+	              (to_Z q0 - 1) * (v_low + M * (to_Z v_snd + B * to_Z v_hi))).
+	          { replace
+	              (u_low + M * (to_Z u_lo + B * (to_Z q0 * to_Z v_hi + to_Z r0)) -
+	               (to_Z q0 - 1) * (v_low + M * (to_Z v_snd + B * to_Z v_hi)))
+	              with
+	                (u_low - (to_Z q0 - 1) * v_low +
+	                 M * (to_Z u_lo + B * to_Z r0 + B * to_Z v_hi -
+	                      (to_Z q0 - 1) * to_Z v_snd)) by ring.
+	            assert (HBvhi_ge_B : B <= B * to_Z v_hi).
+	            { assert (HBvhi_ge_B1 : B * 1 <= B * to_Z v_hi).
+	              { apply Z.mul_le_mono_nonneg_l; lia. }
+	              replace (B * 1) with B in HBvhi_ge_B1 by ring.
+	              exact HBvhi_ge_B1. }
+	            assert (Hinner :
+	              to_Z q0 - 1 <=
+	                to_Z u_lo + B * to_Z r0 + B * to_Z v_hi -
+	                (to_Z q0 - 1) * to_Z v_snd).
+	            { assert (HBvhi_vsnd_ge_B : B <= B * to_Z v_hi + to_Z v_snd) by lia.
+	              apply Z.le_trans with (B * to_Z v_hi + to_Z v_snd); lia. }
+	            assert (HMinner :
+	              M * (to_Z q0 - 1) <=
+	                M * (to_Z u_lo + B * to_Z r0 + B * to_Z v_hi -
+	                     (to_Z q0 - 1) * to_Z v_snd)).
+	            { apply Z.mul_le_mono_nonneg_l; lia. }
+	            apply Z.le_trans with
+	              (u_low - (to_Z q0 - 1) * v_low + M * (to_Z q0 - 1)).
+	            - replace
+	                (u_low - (to_Z q0 - 1) * v_low + M * (to_Z q0 - 1))
+	                with (u_low + (to_Z q0 - 1) * (M - v_low)) by ring.
+	              apply Z.add_nonneg_nonneg.
+	              + lia.
+	              + apply Z.mul_nonneg_nonneg; lia.
+	            - lia. }
+	          lia. }
+	        { rewrite spec_widen, Hu_decomp, Hv_decomp.
+	          rewrite Hdiv_main.
+	          assert (Hu_low_le : u_low <= M - 1) by lia.
+	          assert (Hr0_le : to_Z r0 <= to_Z v_hi - 1) by lia.
+	          assert (HB_r_le : B * to_Z r0 <= B * (to_Z v_hi - 1)).
+	          { apply Z.mul_le_mono_nonneg_l; lia. }
+	          assert (Hulo_le : to_Z u_lo <= B - 1) by lia.
+	          assert (Hdeficit_le : B * to_Z r0 + to_Z u_lo <= B * to_Z v_hi - 1).
+	          { replace (B * to_Z v_hi - 1) with (B * (to_Z v_hi - 1) + (B - 1)) by ring.
+	            lia. }
+	          assert (Hinner_ge1 :
+	            1 <=
+	              to_Z q0 * to_Z v_snd + to_Z v_snd + B * to_Z v_hi -
+	              (to_Z u_lo + B * to_Z r0)).
+	          { lia. }
+	          assert (HMinner :
+	            M <=
+	              M * (to_Z q0 * to_Z v_snd + to_Z v_snd + B * to_Z v_hi -
+	                   (to_Z u_lo + B * to_Z r0))).
+	          { assert (HMinner1 :
+	              M * 1 <=
+	                M * (to_Z q0 * to_Z v_snd + to_Z v_snd + B * to_Z v_hi -
+	                     (to_Z u_lo + B * to_Z r0))).
+	            { apply Z.mul_le_mono_nonneg_l; lia. }
+	            replace (M * 1) with M in HMinner1 by ring.
+	            exact HMinner1. }
+	          assert (Hdiff :
+	            1 <=
+	              (to_Z q0 + 1) * (v_low + M * (to_Z v_snd + B * to_Z v_hi)) -
+	              (u_low + M * (to_Z u_lo + B * (to_Z q0 * to_Z v_hi + to_Z r0)))).
+	          { replace
+	              ((to_Z q0 + 1) * (v_low + M * (to_Z v_snd + B * to_Z v_hi)) -
+	               (u_low + M * (to_Z u_lo + B * (to_Z q0 * to_Z v_hi + to_Z r0))))
+	              with
+	                (to_Z q0 * v_low + v_low - u_low +
+	                 M * (to_Z q0 * to_Z v_snd + to_Z v_snd + B * to_Z v_hi -
+	                      (to_Z u_lo + B * to_Z r0))) by ring.
+	            apply Z.le_trans with (v_low - u_low + M).
+	            - lia.
+	            - lia. }
+	          lia. }
 Qed.
 
 (** ** Knuth Division — Single Step and Loop *)

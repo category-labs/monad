@@ -1829,10 +1829,80 @@ Qed.
     and brackets the true quotient: [(q_hat - 1) * v <= seg < (q_hat + 1) * v].
     This follows from normalization and the one-step refinement in
     [knuth_div_estimate]. *)
+Lemma to_Z_words_len1 : forall ws,
+  length ws = 1%nat ->
+  to_Z_words ws = to_Z (get_word ws 0).
+Proof.
+  intros ws Hlen.
+  destruct ws as [|a [|b rest]]; simpl in Hlen; try discriminate.
+  cbn [to_Z_words get_word nth].
+  ring.
+Qed.
+
+Lemma to_Z_words_len2 : forall ws,
+  length ws = 2%nat ->
+  to_Z_words ws =
+    to_Z (get_word ws 0) + base width * to_Z (get_word ws 1).
+Proof.
+  intros ws Hlen.
+  destruct ws as [|a [|b [|c rest]]]; simpl in Hlen; try discriminate.
+  cbn [to_Z_words get_word nth].
+  ring.
+Qed.
+
+Lemma to_Z_words_len3 : forall ws,
+  length ws = 3%nat ->
+  to_Z_words ws =
+    to_Z (get_word ws 0) +
+      base width * (to_Z (get_word ws 1) + base width * to_Z (get_word ws 2)).
+Proof.
+  intros ws Hlen.
+  destruct ws as [|a [|b [|c [|d rest]]]]; simpl in Hlen; try discriminate.
+  cbn [to_Z_words get_word nth].
+  ring.
+Qed.
+
+Lemma to_Z_words_get_segment_step : forall ws i n,
+  (i + n < length ws)%nat ->
+  to_Z_words (get_segment ws i (n + 1)) =
+    to_Z (get_word ws i) +
+      base width * to_Z_words (firstn n (get_segment ws (S i) (n + 1))).
+Proof.
+  intros ws i n Hlt.
+  set (seg := get_segment ws i (n + 1)).
+  assert (Hseg_len : length seg = (n + 1)%nat).
+  { unfold seg. rewrite get_segment_length by lia. reflexivity. }
+  rewrite (to_Z_words_firstn_skipn seg 1) by (rewrite Hseg_len; lia).
+  rewrite (to_Z_words_len1 (firstn 1 seg)).
+  2:{ rewrite firstn_length_le by (rewrite Hseg_len; lia). reflexivity. }
+  rewrite modulus_words_succ, modulus_words_0.
+  assert (Hgw : get_word (firstn 1 seg) 0 = get_word ws i).
+  { unfold seg, get_word. rewrite nth_firstn.
+    replace ((0 <? 1)%nat) with true by reflexivity.
+    unfold get_segment. rewrite nth_firstn.
+    replace ((0 <? n + 1)%nat) with true
+      by (symmetry; apply Nat.ltb_lt; lia).
+    rewrite nth_skipn.
+    replace (i + 0)%nat with i by lia. reflexivity. }
+  rewrite Hgw. unfold seg, get_segment.
+  rewrite skipn_firstn_comm.
+  replace (n + 1 - 1)%nat with n by lia.
+  rewrite skipn_skipn.
+  replace (1 + i)%nat with (S i) by lia.
+  replace (firstn n (skipn (S i) ws))
+    with (firstn n (firstn (n + 1) (skipn (S i) ws))).
+  2:{ rewrite firstn_firstn.
+      replace (Nat.min n (n + 1)) with n by lia.
+      reflexivity. }
+  ring.
+Qed.
+
 Lemma knuth_div_estimate_bounds : forall u v i n,
   length v = n -> (n > 1)%nat ->
   (i + n < length u)%nat ->
   to_Z_words v > 0 ->
+  base width <= 2 * to_Z (get_word v (n - 1)) ->
+  to_Z_words (get_segment u i (n + 1)) < base width * to_Z_words v ->
   to_Z (get_word u (i + n)) <= to_Z (get_word v (n - 1)) ->
   forall q_hat,
   q_hat = knuth_div_estimate (get_word u (i + n)) (get_word u (i + n - 1))
@@ -1841,7 +1911,197 @@ Lemma knuth_div_estimate_bounds : forall u v i n,
   U128.to_Z q_hat < base width
   /\ (U128.to_Z q_hat - 1) * to_Z_words v <= to_Z_words (get_segment u i (n + 1))
   /\ to_Z_words (get_segment u i (n + 1)) < (U128.to_Z q_hat + 1) * to_Z_words v.
-Proof. Admitted.
+Proof.
+  intros u v i n Hlv Hn Hi Hvpos Hnorm Hseg_small Hmsw q_hat Hqhat_def Hq_nz.
+  change (MakeProofs.get_word) with get_word in *.
+  change (MakeProofs.get_segment) with get_segment in *.
+  set (B := base width).
+  set (M := modulus_words (n - 2)).
+  set (u_seg := get_segment u i (n + 1)).
+  set (u_low := to_Z_words (firstn (n - 2) u_seg)).
+  set (v_low := to_Z_words (firstn (n - 2) v)).
+  set (u_hi := get_word u (i + n)).
+  set (u_mid := get_word u (i + n - 1)).
+  set (u_lo := get_word u (i + n - 2)).
+  set (v_hi := get_word v (n - 1)).
+  set (v_snd := get_word v (n - 2)).
+  change (get_word u (i + n)) with u_hi in Hqhat_def.
+  change (get_word u (i + n - 1)) with u_mid in Hqhat_def.
+  change (get_word u (i + n - 2)) with u_lo in Hqhat_def.
+  change (get_word v (n - 1)) with v_hi in Hqhat_def.
+  change (get_word v (n - 2)) with v_snd in Hqhat_def.
+  change (get_word u (i + n)) with u_hi in Hmsw.
+  change (get_word v (n - 1)) with v_hi in Hmsw.
+  change (get_segment u i (n + 1)) with u_seg in Hseg_small.
+  change (get_word v (n - 1)) with v_hi in Hnorm.
+  assert (HB_pos : B > 0).
+  { unfold B, base. rewrite width_is_64. simpl. lia. }
+  assert (Hbase_lt_128 : B < base U128.width).
+  { unfold B, base. rewrite width_is_64, U128.width_is_128. simpl. lia. }
+  assert (HM_pos : M > 0).
+  { unfold M. apply modulus_words_pos. }
+  assert (Hu_seg_len : length u_seg = (n + 1)%nat).
+  { unfold u_seg. rewrite get_segment_length by lia. reflexivity. }
+  pose proof (spec_to_Z u_hi) as [Huhi_nn Huhi_lt].
+  pose proof (spec_to_Z u_mid) as [Humid_nn Humid_lt].
+  pose proof (spec_to_Z u_lo) as [Hulo_nn Hulo_lt].
+  pose proof (spec_to_Z v_hi) as [Hvhi_nn Hvhi_lt].
+  pose proof (spec_to_Z v_snd) as [Hvsnd_nn Hvsnd_lt].
+  assert (Hu_low_bound : 0 <= u_low < M).
+  { unfold u_low, M.
+    pose proof (to_Z_words_bound (firstn (n - 2) u_seg)) as Hlow.
+    rewrite firstn_length_le in Hlow by (rewrite Hu_seg_len; lia).
+    exact Hlow. }
+  assert (Hv_low_bound : 0 <= v_low < M).
+  { unfold v_low, M.
+    pose proof (to_Z_words_bound (firstn (n - 2) v)) as Hlow.
+    rewrite firstn_length_le in Hlow by lia.
+    exact Hlow. }
+  assert (Hskip_v :
+    to_Z_words (skipn (n - 2) v) = to_Z v_snd + B * to_Z v_hi).
+  { assert (Hlen_skip_v : length (skipn (n - 2) v) = 2%nat).
+    { rewrite length_skipn, Hlv. lia. }
+    pose proof (to_Z_words_len2 (skipn (n - 2) v) Hlen_skip_v) as Hskip_v0.
+    change (base width) with B in Hskip_v0.
+    unfold v_snd, v_hi, get_word in Hskip_v0.
+    rewrite !nth_skipn in Hskip_v0.
+    replace (n - 2 + 0)%nat with (n - 2)%nat in Hskip_v0 by lia.
+    replace (n - 2 + 1)%nat with (n - 1)%nat in Hskip_v0 by lia.
+    exact Hskip_v0. }
+  assert (Hskip_u :
+    to_Z_words (skipn (n - 2) u_seg) =
+      to_Z u_lo + B * (to_Z u_mid + B * to_Z u_hi)).
+  { assert (Hlen_skip_u : length (skipn (n - 2) u_seg) = 3%nat).
+    { rewrite length_skipn, Hu_seg_len. lia. }
+    pose proof (to_Z_words_len3 (skipn (n - 2) u_seg) Hlen_skip_u) as Hskip_u0.
+    change (base width) with B in Hskip_u0.
+    unfold get_word in Hskip_u0.
+    rewrite !nth_skipn in Hskip_u0.
+    replace (n - 2 + 0)%nat with (n - 2)%nat in Hskip_u0 by lia.
+    replace (n - 2 + 1)%nat with (n - 1)%nat in Hskip_u0 by lia.
+    replace (n - 2 + 2)%nat with n in Hskip_u0 by lia.
+    replace
+      (to_Z (nth (n - 2) u_seg U64.zero) +
+         B * (to_Z (nth (n - 1) u_seg U64.zero) + B * to_Z (nth n u_seg U64.zero)))
+      with
+      (to_Z (get_word u_seg (n - 2)) +
+         B * (to_Z (get_word u_seg (n - 1)) + B * to_Z (get_word u_seg n)))
+      in Hskip_u0
+      by reflexivity.
+    unfold u_seg in Hskip_u0.
+    change (MakeProofs.get_segment) with get_segment in Hskip_u0.
+    rewrite !get_word_get_segment in Hskip_u0 by lia.
+    unfold u_lo, u_mid, u_hi in Hskip_u0.
+    replace (i + (n - 2))%nat with (i + n - 2)%nat in Hskip_u0 by lia.
+    replace (i + (n - 1))%nat with (i + n - 1)%nat in Hskip_u0 by lia.
+    exact Hskip_u0. }
+  assert (Hv_decomp :
+    to_Z_words v = v_low + M * (to_Z v_snd + B * to_Z v_hi)).
+  { unfold v_low. rewrite (to_Z_words_firstn_skipn v (n - 2)) by lia.
+    rewrite Hskip_v. reflexivity. }
+  assert (Hu_decomp :
+    to_Z_words u_seg = u_low + M * (to_Z u_lo + B * (to_Z u_mid + B * to_Z u_hi))).
+  { unfold u_low. rewrite (to_Z_words_firstn_skipn u_seg (n - 2)) by lia.
+    rewrite Hskip_u. reflexivity. }
+  unfold knuth_div_estimate in Hqhat_def.
+  destruct (U64.eqb u_hi v_hi) eqn:Heq_hi.
+  - subst q_hat.
+    rewrite spec_eqb in Heq_hi. apply Z.eqb_eq in Heq_hi.
+    assert (Hqhat_val : U128.to_Z (widen u64_max_val) = B - 1).
+    { rewrite spec_widen. unfold u64_max_val.
+      rewrite spec_sub, spec_zero, spec_one.
+      unfold B, base. rewrite width_is_64.
+      replace (0 - 1) with (-1) by lia.
+      assert ((-1) mod 2 ^ Z.pos 64 = 2 ^ Z.pos 64 - 1).
+      { rewrite Z.mod_eq by lia.
+        assert ((-1 / 2 ^ Z.pos 64) = -1).
+        { replace (-1) with ((-1) * 2 ^ Z.pos 64 + (2 ^ Z.pos 64 - 1)) by lia.
+          rewrite Z.div_add_l by lia.
+          assert (Hpow_pos : 0 < 2 ^ Z.pos 64) by (apply Z.pow_pos_nonneg; lia).
+          rewrite Z.div_small by lia.
+          lia. }
+        lia. }
+      lia. }
+    split.
+    + rewrite Hqhat_val. unfold B. lia.
+    + split.
+      * rewrite Hqhat_val.
+        assert (HB_ge_2 : 2 <= B).
+        { unfold B, base. rewrite width_is_64. simpl. lia. }
+        assert (HU_lower : M * B * B * to_Z v_hi <= to_Z_words u_seg).
+        { rewrite Hu_decomp, Heq_hi.
+          unfold M, modulus_words in *.
+          nia. }
+        assert (HV_upper : to_Z_words v <= M * (B * (to_Z v_hi + 1)) - 1).
+        { rewrite Hv_decomp.
+          unfold M, modulus_words in *.
+          nia. }
+        assert (HMB_pos : 0 <= M * B) by nia.
+        assert (Hstep : (B - 2) * (to_Z v_hi + 1) <= B * to_Z v_hi).
+        { unfold B in Hnorm |- *.
+          nia. }
+        assert (Hq_lower : (B - 2) * to_Z_words v <= M * B * B * to_Z v_hi).
+        { apply Z.le_trans with ((B - 2) * (M * (B * (to_Z v_hi + 1)) - 1)).
+          - nia.
+          - apply Z.le_trans with ((B - 2) * (M * (B * (to_Z v_hi + 1)))).
+            + nia.
+            + replace ((B - 2) * (M * (B * (to_Z v_hi + 1))))
+                with (M * B * ((B - 2) * (to_Z v_hi + 1))) by ring.
+              replace (M * B * B * to_Z v_hi)
+                with (M * B * (B * to_Z v_hi)) by ring.
+              apply Z.mul_le_mono_nonneg_l; lia. }
+        lia.
+      * rewrite Hqhat_val. exact Hseg_small.
+  - rewrite spec_eqb in Heq_hi. apply Z.eqb_neq in Heq_hi.
+    assert (Hu_lt_vhi : to_Z u_hi < to_Z v_hi) by lia.
+    assert (Hvhi_pos : to_Z v_hi > 0) by lia.
+    pose proof (spec_div u_hi u_mid v_hi Hvhi_pos Hu_lt_vhi)
+      as [q0 [r0 [Hdiv_eq [Hdiv_val [Hr0_nn Hr0_lt]]]]].
+    rewrite Hdiv_eq in Hqhat_def.
+    destruct (U64.eqb q0 U64.zero) eqn:Hq0.
+    + cbn in Hqhat_def. subst q_hat.
+      rewrite U128.spec_eqb, U128.spec_zero, Z.eqb_refl in Hq_nz. discriminate.
+    + rewrite spec_eqb in Hq0. rewrite spec_zero in Hq0. apply Z.eqb_neq in Hq0.
+      pose proof (spec_to_Z q0) as [Hq0_nn Hq0_lt_word].
+      assert (Hq0_pos : 0 < to_Z q0) by lia.
+      assert (Hq0_small : to_Z q0 < B).
+      { unfold B. exact Hq0_lt_word. }
+      assert (Hdiv_main :
+        to_Z u_mid + B * to_Z u_hi = to_Z q0 * to_Z v_hi + to_Z r0).
+      { unfold B in *. nia. }
+      destruct (U128.gtb (U128.mul (widen q0) (widen v_snd)) (combine r0 u_lo)) eqn:Href.
+      * rewrite Href in Hqhat_def. cbn in Hqhat_def. subst q_hat.
+        rewrite U128.spec_gtb, U128.spec_mul, spec_widen, spec_combine in Href.
+        rewrite Z.mod_small in Href by (clear - Hq0_small Hvsnd_nn Hvsnd_lt Hbase_lt_128; unfold B in *; lia).
+        apply Z.gtb_lt in Href.
+        assert (Hqhat_val : U128.to_Z (U128.sub (widen q0) U128.one) = to_Z q0 - 1).
+        { rewrite U128.spec_sub, spec_widen, U128.spec_one.
+          apply Z.mod_small. split; [lia|].
+          assert (to_Z q0 - 1 < base U128.width) by (clear - Hq0_small Hbase_lt_128; unfold B in *; lia).
+          lia. }
+        split.
+        { rewrite Hqhat_val. unfold B in *. lia. }
+        split.
+        { rewrite Hqhat_val, Hu_decomp, Hv_decomp.
+          unfold B, M, modulus_words in *.
+          nia. }
+        { rewrite Hqhat_val, Hu_decomp, Hv_decomp.
+          unfold B, M, modulus_words in *.
+          nia. }
+      * rewrite Href in Hqhat_def. cbn in Hqhat_def. subst q_hat.
+        rewrite U128.spec_gtb, U128.spec_mul, spec_widen, spec_combine in Href.
+        rewrite Z.mod_small in Href by (clear - Hq0_small Hvsnd_nn Hvsnd_lt Hbase_lt_128; unfold B in *; lia).
+        apply Z.gtb_ge in Href.
+        split.
+        { rewrite spec_widen. exact Hq0_small. }
+        split.
+        { rewrite spec_widen, Hu_decomp, Hv_decomp.
+          unfold B, M, modulus_words in *.
+          nia. }
+        { rewrite spec_widen, Hu_decomp, Hv_decomp.
+          unfold B, M, modulus_words in *.
+          nia. }
+Qed.
 
 (** ** Knuth Division — Single Step and Loop *)
 

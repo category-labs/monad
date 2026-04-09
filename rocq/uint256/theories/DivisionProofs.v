@@ -3277,7 +3277,10 @@ Proof.
     + apply Z.div_lt_upper_bound; lia.
 Qed.
 
+Print Assumptions udivrem_correct.
+
 (*
+
 Axioms:
 U128.zero : U128.t
 zero : t
@@ -3296,16 +3299,20 @@ sub : t -> t -> t
 U128.spec_zero : U128.to_Z U128.zero = 0
 spec_zero : to_Z 0 = 0
 spec_widen : forall x : t, U128.to_Z (widen x) = to_Z x
+spec_trunc : forall x : U128.t, to_Z (trunc x) = U128.to_Z x mod base width
 spec_to_Z_inj : forall x y : t, to_Z x = to_Z y -> x = y
+U128.spec_to_Z : forall x : U128.t, 0 <= U128.to_Z x < base U128.width
 spec_to_Z : forall x : t, 0 <= to_Z x < base width
 U128.spec_sub : forall x y : U128.t, U128.to_Z (U128.sub x y) = (U128.to_Z x - U128.to_Z y) mod base U128.width
 spec_sub : forall x y : t, to_Z (x - y)%Uint = (to_Z x - to_Z y) mod base width
+U128.spec_shr : forall (x : U128.t) (n : nat), U128.to_Z (U128.shr x n) = Z.shiftr (U128.to_Z x) (Z.of_nat n) mod base U128.width
 spec_shr : forall (x : t) (n : nat), to_Z (shr x n) = Z.shiftr (to_Z x) (Z.of_nat n) mod base width
 spec_shl : forall (x : t) (n : nat), to_Z (shl x n) = Z.shiftl (to_Z x) (Z.of_nat n) mod base width
 spec_or : forall x y : t, to_Z (or x y) = Z.lor (to_Z x) (to_Z y) mod base width
 U128.spec_one : U128.to_Z U128.one = 1
 spec_one : to_Z 1 = 1
 U128.spec_mul : forall x y : U128.t, U128.to_Z (U128.mul x y) = (U128.to_Z x * U128.to_Z y) mod base U128.width
+spec_hi : forall x : U128.t, to_Z (hi x) = U128.to_Z x / base width
 U128.spec_gtb : forall x y : U128.t, U128.gtb x y = (U128.to_Z x >? U128.to_Z y)
 U128.spec_eqb : forall x y : U128.t, U128.eqb x y = (U128.to_Z x =? U128.to_Z y)
 spec_eqb : forall x y : t, (x =? y)%Uint = (to_Z x =? to_Z y)
@@ -3313,9 +3320,13 @@ spec_div :
   forall u_hi u_lo v : t,
   to_Z v > 0 ->
   to_Z u_hi < to_Z v ->
-  exists q r : t,
-    div u_hi u_lo v = Some (q, r) /\ to_Z u_hi * base width + to_Z u_lo = to_Z q * to_Z v + to_Z r /\ 0 <= to_Z r < to_Z v
+  exists q r : t, div u_hi u_lo v = Some (q, r) /\ to_Z u_hi * base width + to_Z u_lo = to_Z q * to_Z v + to_Z r /\ 0 <= to_Z r < to_Z v
 spec_combine : forall h l : t, U128.to_Z (combine h l) = to_Z h * base width + to_Z l
+U128.spec_asr :
+  forall (x : U128.t) (n : nat),
+  U128.to_Z (U128.asr x n) =
+  Z.shiftr (U128.to_Z x - (if U128.to_Z x <? base U128.width / 2 then 0 else base U128.width)) (Z.of_nat n) mod base U128.width
+U128.spec_add : forall x y : U128.t, U128.to_Z (U128.add x y) = (U128.to_Z x + U128.to_Z y) mod base U128.width
 U128.shr : U128.t -> nat -> U128.t
 shr : t -> nat -> t
 shl : t -> nat -> t
@@ -3323,32 +3334,6 @@ or : t -> t -> t
 U128.one : U128.t
 one : t
 U128.mul : U128.t -> U128.t -> U128.t
-knuth_div_subtract_correct :
-  forall (u_seg : list t) (q_hat : U128.t) (v : list t) (n : nat),
-  length u_seg = (n + 1)%nat ->
-  length v = n ->
-  to_Z_words v > 0 ->
-  U128.to_Z q_hat < base width ->
-  (U128.to_Z q_hat - 1) * to_Z_words v <= to_Z_words u_seg ->
-  to_Z_words u_seg < (U128.to_Z q_hat + 1) * to_Z_words v ->
-  let
-  '(u_after, q_final) := knuth_div_subtract u_seg q_hat v n in
-   to_Z_words u_seg = to_Z q_final * to_Z_words v + to_Z_words (firstn n u_after) /\
-   0 <= to_Z_words (firstn n u_after) < to_Z_words v /\ length u_after = (n + 1)%nat /\ get_word u_after n = 0
-knuth_div_estimate_bounds :
-  forall (u v : list t) (i n : nat),
-  length v = n ->
-  (n > 1)%nat ->
-  (i + n < length u)%nat ->
-  to_Z_words v > 0 ->
-  to_Z (get_word u (i + n)) <= to_Z (get_word v (n - 1)) ->
-  forall q_hat : U128.t,
-  q_hat =
-  knuth_div_estimate (get_word u (i + n)) (get_word u (i + n - 1)) (get_word u (i + n - 2)) (get_word v (n - 1))
-    (get_word v (n - 2)) ->
-  U128.eqb q_hat U128.zero = false ->
-  U128.to_Z q_hat < base width /\
-  (U128.to_Z q_hat - 1) * to_Z_words v <= to_Z_words (get_segment u i (n + 1)) < (U128.to_Z q_hat + 1) * to_Z_words v
 hi : U128.t -> t
 U128.gtb : U128.t -> U128.t -> bool
 U128.eqb : U128.t -> U128.t -> bool
@@ -3357,7 +3342,9 @@ div : t -> t -> t -> option (t * t)
 combine : t -> t -> U128.t
 U128.asr : U128.t -> nat -> U128.t
 U128.add : U128.t -> U128.t -> U128.t
-*)
+
+ *)
+
 
 
 (** Specialization to 256-bit (4-word) operands.

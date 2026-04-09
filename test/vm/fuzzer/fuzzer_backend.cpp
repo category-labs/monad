@@ -13,25 +13,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#pragma once
-
 #include "fuzzer_backend.hpp"
-#include "fuzzer_view.hpp"
 
-#include <evmc/evmc.hpp>
+#include <category/core/assert.h>
+#include <category/vm/evm/delegation.hpp>
+
+#include <cstdint>
+#include <vector>
 
 namespace monad::vm::fuzzing
 {
-    void assert_equal(
-        evmc::Result const &evmone_result, evmc::Result const &compiler_result,
-        bool strict_out_of_gas);
-
-    /// Walk two state views in lockstep and assert all accounts and storage
-    /// slots are equal. Aborts on the first mismatch.
-    void
-    assert_states_equal(SortedStateView const &a, SortedStateView const &b);
-
-    /// Convenience: construct sorted views from two backends and compare.
-    void
-    assert_backend_states_equal(FuzzerBackend const &a, FuzzerBackend const &b);
+    Address FuzzerBackend::deploy_delegated(
+        Address const &from, Address const &delegatee)
+    {
+        auto const prefix = vm::evm::delegation_indicator_prefix();
+        std::vector<uint8_t> code(prefix.begin(), prefix.end());
+        code.append_range(delegatee.bytes);
+        MONAD_ASSERT(code.size() == 23);
+        return deploy(from, code);
+    }
 }

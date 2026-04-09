@@ -19,7 +19,12 @@ target_sources(monad-compiler-fuzzer PRIVATE
   assertions.cpp
   assertions.hpp
   compiler_hook.hpp
-  fuzzer.cpp)
+  evmone_backend.hpp
+  evmone_backend.cpp
+  fuzzer.cpp
+  fuzzer_backend.hpp
+  fuzzer_backend.cpp
+  fuzzer_view.hpp)
 
 target_link_libraries(monad-compiler-fuzzer
   PRIVATE evmone::state

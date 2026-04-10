@@ -88,13 +88,12 @@ Proof.
 Qed.
 
 Lemma base_width_pos : 0 < base width.
-Proof.
-  unfold base. rewrite width_is_64. simpl. lia.
-Qed.
+Proof. unfold base. apply Z.pow_pos_nonneg; lia. Qed.
 
 Lemma base_width_ge_2 : 2 <= base width.
 Proof.
-  unfold base. rewrite width_is_64. simpl. lia.
+  unfold base. change 2 with (2 ^ 1) at 1.
+  apply Z.pow_le_mono_r; lia.
 Qed.
 
 Lemma pow64_modulus_words : forall n,
@@ -176,6 +175,125 @@ Proof.
   rewrite Zplus_mod_idemp_l.
   reflexivity.
 Qed.
+
+Lemma two_limb_shift_mod : forall a i,
+  ((a mod (base width * base width)) * 2 ^ (64 * Z.of_nat i))
+    mod modulus_words (S (S i))
+  = (a * 2 ^ (64 * Z.of_nat i)) mod modulus_words (S (S i)).
+Proof.
+  intros a i.
+  rewrite !pow64_modulus_words.
+  rewrite (Z_div_mod_eq_full a (base width * base width)) at 2.
+  rewrite Z.mul_add_distr_r.
+  rewrite Z.add_mod by (pose proof (modulus_words_pos (S (S i))); lia).
+  replace ((base width * base width) * (a / (base width * base width)) *
+           modulus_words i)
+    with ((a / (base width * base width)) * modulus_words (S (S i))).
+  2:{ rewrite !modulus_words_succ. ring. }
+  assert (Hm : modulus_words (S (S i)) <> 0).
+  { pose proof (modulus_words_pos (S (S i))). lia. }
+  rewrite Z.mod_mul by exact Hm.
+  rewrite Z.add_0_l.
+  rewrite Z.mod_mod by exact Hm.
+  reflexivity.
+Qed.
+
+Lemma set_word_add_last_mod : forall result pos c,
+  length result = S pos ->
+  to_Z_words (set_word result pos (add (get_word result pos) c))
+    mod modulus_words (S pos)
+  = (to_Z_words result + to_Z c * 2 ^ (64 * Z.of_nat pos))
+    mod modulus_words (S pos).
+Proof.
+  intros result pos c Hlen.
+  rewrite to_Z_words_set_word_local.
+  2:{ rewrite Hlen. lia. }
+  rewrite spec_add.
+  change ((base width) ^ Z.of_nat pos) with (modulus_words pos).
+  rewrite <- pow64_modulus_words.
+  replace
+    (to_Z_words result - to_Z (get_word result pos) * 2 ^ (64 * Z.of_nat pos)
+     + (to_Z (get_word result pos) + to_Z c) mod base width *
+       2 ^ (64 * Z.of_nat pos))
+    with
+      ((to_Z_words result - to_Z (get_word result pos) *
+         2 ^ (64 * Z.of_nat pos))
+       + (to_Z (get_word result pos) + to_Z c) mod base width *
+         2 ^ (64 * Z.of_nat pos)) by ring.
+  rewrite <- Zplus_mod_idemp_r.
+  rewrite low_limb_shift_mod.
+  rewrite Zplus_mod_idemp_r.
+  rewrite get_word_eq_local.
+  replace
+    (to_Z_words result - to_Z (WL.get_word result pos) * 2 ^ (64 * Z.of_nat pos)
+     + (to_Z (WL.get_word result pos) + to_Z c) * 2 ^ (64 * Z.of_nat pos))
+    with
+      (to_Z_words result + to_Z c * 2 ^ (64 * Z.of_nat pos)) by ring.
+  reflexivity.
+Qed.
+
+Lemma set_word_add_last_with_high_mod : forall result pos c_hi c_lo,
+  length result = S pos ->
+  to_Z_words (set_word result pos (add (get_word result pos) c_lo))
+    mod modulus_words (S pos)
+  = (to_Z_words result
+     + (to_Z c_hi * base width + to_Z c_lo) * 2 ^ (64 * Z.of_nat pos))
+    mod modulus_words (S pos).
+Proof.
+  intros result pos c_hi c_lo Hlen.
+  rewrite set_word_add_last_mod by exact Hlen.
+  replace
+    (to_Z_words result +
+     (to_Z c_hi * base width + to_Z c_lo) * 2 ^ (64 * Z.of_nat pos))
+    with
+      (to_Z_words result + to_Z c_lo * 2 ^ (64 * Z.of_nat pos)
+       + to_Z c_hi * 2 ^ (64 * Z.of_nat (S pos)))
+    by (rewrite pow64_succ; ring).
+  rewrite add_shifted_term_mod.
+  reflexivity.
+Qed.
+
+Lemma mul_add_line_recur_nil_correct :
+  forall (y_i : t) result J I R (c_hi c_lo : t),
+  length result = R ->
+  (R <= I + J + 1)%nat ->
+  to_Z_words (mul_add_line_recur nil y_i result J I R c_hi c_lo)
+    mod modulus_words R
+  = (to_Z_words result
+     + (to_Z c_hi * base width + to_Z c_lo) *
+       2 ^ (64 * Z.of_nat (I + J)))
+    mod modulus_words R.
+Proof.
+  intros y_i result J I R c_hi c_lo Hlen HRbound.
+  cbn [mul_add_line_recur to_Z_words].
+  destruct (Nat.ltb (I + J + 1) R) eqn:HI1.
+  - apply Nat.ltb_lt in HI1. exfalso. lia.
+  - destruct (Nat.ltb (I + J) R) eqn:HI.
+    + apply Nat.ltb_lt in HI.
+      apply Nat.ltb_ge in HI1.
+      assert (HR : R = S (I + J)) by lia.
+      rewrite HR.
+      apply set_word_add_last_with_high_mod.
+      rewrite HR in Hlen. exact Hlen.
+    + apply Nat.ltb_ge in HI.
+      rewrite <- Zplus_mod_idemp_r.
+      rewrite shifted_term_mod_0 by lia.
+      cbn. rewrite Z.add_0_r. reflexivity.
+Qed.
+
+Lemma adc_2_full_mul_step_mod_words :
+  forall result pos x y c_hi c_lo c_lo' res,
+  length result = S (S pos) ->
+  adc_2_full (mul x y) (get_word result pos) c_hi c_lo = (c_lo', res) ->
+  (to_Z_words (set_word result pos res)
+   + to_Z c_lo' * modulus_words (S pos))
+    mod modulus_words (S (S pos))
+  = (to_Z_words result
+     + (to_Z (mul x y) * base width
+        + to_Z c_hi * base width + to_Z c_lo)
+       * modulus_words pos)
+    mod modulus_words (S (S pos)).
+Proof. Admitted.
 
 Lemma mulx_hi_bound : forall x y hi lo,
   mulx x y = (hi, lo) ->
@@ -425,8 +543,12 @@ Proof.
         rewrite <- Zplus_mod_idemp_l.
         subst R.
         rewrite HSR.
+        rewrite (Z.mod_small (to_Z_words result) (modulus_words (S I))).
+        2:{ pose proof (to_Z_words_bound result) as Hbound.
+            rewrite HSR in Hbound. exact Hbound. }
         rewrite <- Zplus_mod_idemp_r.
         rewrite low_limb_shift_mod.
+        rewrite add_low_limb_shift_mod.
         rewrite Zplus_mod_idemp_r.
         replace (to_Z_words (x :: rest))
           with (to_Z x + base width * to_Z_words rest) by reflexivity.

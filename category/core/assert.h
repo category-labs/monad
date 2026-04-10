@@ -115,14 +115,14 @@ extern "C"
             buf);                                                              \
     }
 
-#ifdef NDEBUG
+#if !defined(NDEBUG) || defined(MONAD_CORE_FORCE_DEBUG_ASSERT)
+    #define MONAD_DEBUG_ASSERT(x) MONAD_ASSERT(x)
+#else
     #define MONAD_DEBUG_ASSERT(x)                                              \
         do {                                                                   \
             (void)sizeof(x);                                                   \
         }                                                                      \
         while (0)
-#else
-    #define MONAD_DEBUG_ASSERT(x) MONAD_ASSERT(x)
 #endif
 
 #ifdef __cplusplus

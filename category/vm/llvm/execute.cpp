@@ -225,8 +225,7 @@ namespace monad::vm::llvm
             return load_from_disk_impl<EvmTraits<EVMC_OSAKA>>(fn);
 
         default:
-            MONAD_ASSERT(
-                false && "Tried to load unsupported EVM revision from disk");
+            MONAD_ABORT("Tried to load unsupported EVM revision from disk");
         }
     }
 
@@ -285,7 +284,7 @@ namespace monad::vm::llvm
             return compile_impl<EvmTraits<EVMC_OSAKA>>(code, dbg_nm);
 
         default:
-            MONAD_ASSERT(false && "Tried to compile unsupported EVM revision");
+            MONAD_ABORT("Tried to compile unsupported EVM revision");
         }
     }
 }

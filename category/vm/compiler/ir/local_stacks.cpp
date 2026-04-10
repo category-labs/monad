@@ -275,6 +275,7 @@ namespace monad::vm::compiler::local_stacks
             static_assert(sizeof(size_t) <= sizeof(uint64_t));
             MONAD_ASSERT(data <= uint256_t{std::numeric_limits<size_t>::max()});
             param = data[0];
+            break;
         default:
             // do nothing
             break;

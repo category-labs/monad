@@ -142,6 +142,7 @@ struct PrecompileResult
 using precompiled_execute_fn = PrecompileResult(byte_string_view);
 
 PrecompileResult ecrecover_execute(byte_string_view);
+PrecompileResult sha256_execute(byte_string_view);
 
 struct PrecompileImplResult
 {
@@ -153,5 +154,8 @@ PrecompileImplResult ecrecover_impl(
     std::span<uint8_t const, 32> const msg,
     std::span<uint8_t const, 64> const sig, uint8_t recid,
     std::span<uint8_t, 32> const out);
+
+PrecompileImplResult
+sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out);
 
 MONAD_NAMESPACE_END

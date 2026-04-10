@@ -129,18 +129,19 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
     return {out.data(), 32};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-sha256_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out)
 {
     if (MONAD_UNLIKELY(input.data() == nullptr)) {
         // Passing a null pointer to the Silkpre sha256 implementation invokes
         // undefined behaviour. We sidestep the UB here by passing a pointer to
         // the empty string instead.
-        byte_string_view const nonnull{
-            reinterpret_cast<unsigned char const *>(""), 0UL};
-        return silkpre_execute<silkpre_sha256_run>(nonnull);
+        input =
+            byte_string_view{reinterpret_cast<unsigned char const *>(""), 0UL};
     }
-    return silkpre_execute<silkpre_sha256_run>(input);
+    silkpre_sha256(
+        out.data(), input.data(), input.size(), true /* use_cpu_extensions */);
+    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

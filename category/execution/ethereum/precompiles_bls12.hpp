@@ -71,7 +71,8 @@ namespace bls12
         pairing_check(byte_string_view, std::span<uint8_t, 32>);
 
     template <typename Group>
-    PrecompileResult map_fp_to_g(byte_string_view);
+    PrecompileImplResult
+        map_fp_to_g(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 #endif
     // The BLST library is implemented as an internal C static library with
     // language-specific bindings applied on top. The implementation and

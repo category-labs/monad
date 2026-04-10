@@ -292,14 +292,23 @@ PrecompileImplResult bls12_pairing_check_impl(
     return bls12::pairing_check(input, out);
 }
 
-PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const input)
+PrecompileImplResult bls12_map_fp_to_g1_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
 {
-    return bls12::map_fp_to_g<bls12::G1>(input);
+    return bls12::map_fp_to_g<bls12::G1>(input, out);
 }
 
 PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view const input)
 {
-    return bls12::map_fp_to_g<bls12::G2>(input);
+    auto *const out = static_cast<uint8_t *>(std::malloc(256));
+    MONAD_ASSERT(out != nullptr);
+    auto const result =
+        bls12::map_fp_to_g<bls12::G2>(input, std::span<uint8_t, 256>{out, 256});
+    if (result.data == nullptr) {
+        std::free(out);
+        return PrecompileResult::failure();
+    }
+    return {EVMC_SUCCESS, out, result.size};
 }
 
 // Rollup precompiles

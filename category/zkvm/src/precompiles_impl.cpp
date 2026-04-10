@@ -252,25 +252,26 @@ ecmul_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     return {out.data(), 64};
 }
 
-PrecompileResult snarkv_execute(byte_string_view const input)
+PrecompileImplResult
+snarkv_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
     auto const k = input.size() / 192;
 
-    auto result = alloc_success(32);
+    std::memset(out.data(), 0, 32);
     if (k == 0) {
-        result.obuf[31] = 1;
-        return result;
+        out.data()[31] = 1;
+        return {out.data(), 32};
     }
 
     auto const *pairs =
         reinterpret_cast<zkvm_bn254_pairing_pair const *>(input.data());
     bool verified = false;
     if (zkvm_bn254_pairing(pairs, k, &verified) != ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
-    result.obuf[31] = verified ? 1 : 0;
-    return result;
+    out.data()[31] = verified ? 1 : 0;
+    return {out.data(), 32};
 }
 
 PrecompileResult blake2bf_execute(byte_string_view const input)

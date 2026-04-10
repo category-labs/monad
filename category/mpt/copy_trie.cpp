@@ -124,9 +124,9 @@ Node::SharedPtr copy_trie_impl(
         aux.metadata_ctx().db_history_max_version(tid),
         tid);
     MONAD_ASSERT(res == find_result::success);
-    Node &src_node = *src_cursor.node;
+    Node const &src_node = *src_cursor.node;
     if (!dest_root) {
-        auto new_node = make_node(
+        auto new_node = make_node_copy_children(
             src_node,
             dest_prefix.substr(1),
             src_node.opt_value(),
@@ -160,8 +160,8 @@ Node::SharedPtr copy_trie_impl(
         parents_and_indexes{std::move(vec_pairs)};
 
     // Insert `dest` to trie, create the `dest` node to have the same
-    // children as node at `src`. Disconnect src_node's in memory children to
-    // avoid double references
+    // children as node at `src`. Child pointers are copied (not moved) so
+    // the in-memory subtrie under `src` remains cached after the call.
     while (prefix_index < dest_prefix.nibble_size()) {
         auto const nibble = dest_prefix.get(prefix_index);
         if (node_prefix_index < node->path_nibbles_len()) {
@@ -176,9 +176,8 @@ Node::SharedPtr copy_trie_impl(
             MONAD_ASSERT(
                 prefix_index < std::numeric_limits<unsigned char>::max());
             auto const node_path = node->path_nibble_view();
-            // copy children of src_node to under `dest` prefix, move the in
-            // memory children to `dest` node
-            auto dest_latter_half = make_node(
+            // copy children of src_node to under `dest` prefix
+            auto dest_latter_half = make_node_copy_children(
                 src_node,
                 dest_prefix.substr(
                     static_cast<unsigned char>(prefix_index) + 1u),
@@ -222,7 +221,7 @@ Node::SharedPtr copy_trie_impl(
             continue;
         }
         MONAD_ASSERT(prefix_index < std::numeric_limits<unsigned char>::max());
-        auto dest_node = make_node(
+        auto dest_node = make_node_copy_children(
             src_node,
             dest_prefix.substr(static_cast<unsigned char>(prefix_index) + 1u),
             src_node.opt_value(),
@@ -242,7 +241,7 @@ Node::SharedPtr copy_trie_impl(
     if (prefix_index ==
         dest_prefix.nibble_size()) { // replace existing `dest` trie
         MONAD_ASSERT(node_prefix_index == node->path_nibbles_len());
-        new_node = make_node(
+        new_node = make_node_copy_children(
             src_node,
             node->path_nibble_view(),
             src_node.opt_value(),

@@ -556,26 +556,25 @@ point_evaluation_impl(byte_string_view input, std::span<uint8_t, 64> const out)
     return {out.data(), 32};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-bls12_map_fp_to_g1_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult bls12_map_fp_to_g1_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
 {
     if (input.size() != 64) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
     zkvm_bls12_381_fp fp;
     if (!evm_fp_to_raw(input.data(), fp.data)) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
     zkvm_bls12_381_g1_point result_point;
     if (zkvm_bls12_map_fp_to_g1(&fp, &result_point) != ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
-    auto result = alloc_success(128);
-    zkvm_g1_to_evm(result_point.data, result.obuf);
-    return result;
+    zkvm_g1_to_evm(result_point.data, out.data());
+    return {out.data(), 128};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

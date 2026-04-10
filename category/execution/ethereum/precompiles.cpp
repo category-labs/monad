@@ -17,8 +17,8 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
-#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_impl.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -256,6 +256,31 @@ PrecompileResult ripemd160_execute(byte_string_view const input)
     MONAD_ASSERT(out != nullptr);
     return from_impl_result(
         ripemd160_impl(input, std::span<uint8_t, 32>{out, 32}), out);
+}
+
+PrecompileResult expmod_execute(byte_string_view const input)
+{
+    std::basic_string<uint8_t> padded_input(input.data(), input.size());
+    right_pad(padded_input, 96);
+
+    uint64_t const mod_len = load_be_unsafe<uint64_t>(&padded_input[88]);
+
+    if (mod_len == 0) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
+    uint64_t const base_len = load_be_unsafe<uint64_t>(&padded_input[24]);
+    uint64_t const exp_len = load_be_unsafe<uint64_t>(&padded_input[56]);
+
+    right_pad(padded_input, 96 + base_len + exp_len + mod_len);
+
+    auto *const out = static_cast<uint8_t *>(std::malloc(mod_len));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        expmod_impl(
+            byte_string_view{padded_input.data(), padded_input.size()},
+            std::span<uint8_t>{out, mod_len}),
+        out);
 }
 
 MONAD_NAMESPACE_END

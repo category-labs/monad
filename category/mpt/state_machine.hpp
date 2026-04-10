@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/mpt/config.hpp>
+#include <category/mpt/nibbles_view.hpp>
 
 #include <memory>
 #include <stddef.h>
@@ -29,6 +30,14 @@ struct StateMachine
     virtual ~StateMachine() = default;
     virtual std::unique_ptr<StateMachine> clone() const = 0;
     virtual void down(unsigned char nibble) = 0;
+
+    virtual void down(NibblesView path)
+    {
+        for (unsigned i = 0; i < path.nibble_size(); ++i) {
+            down(path.get(i));
+        }
+    }
+
     virtual void up(size_t) = 0;
     virtual Compute &get_compute() const = 0;
     virtual bool cache() const = 0;

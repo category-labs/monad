@@ -551,6 +551,57 @@ void MachineBase::down(unsigned char const nibble)
     }
 }
 
+void MachineBase::down(mpt::NibblesView const path)
+{
+    auto const n = static_cast<unsigned>(path.nibble_size());
+    unsigned i = 0;
+
+    // Handle trie_section nibble (depth == TOP_NIBBLE_PREFIX_LEN)
+    if (MONAD_UNLIKELY(depth < TOP_NIBBLE_PREFIX_LEN && i < n)) {
+        MONAD_ASSERT(trie_section == TrieType::Undefined);
+        MONAD_ASSERT(table == TableType::Prefix);
+        trie_section = (path.get(i) == PROPOSAL_NIBBLE) ? TrieType::Proposal
+                                                        : TrieType::Finalized;
+        MONAD_ASSERT(
+            path.get(i) == PROPOSAL_NIBBLE || path.get(i) == FINALIZED_NIBBLE);
+        ++depth;
+        ++i;
+    }
+
+    // Handle table nibble (depth == prefix_len())
+    MONAD_ASSERT(trie_section != TrieType::Undefined || i == n);
+    auto const pl = prefix_len();
+    if (MONAD_UNLIKELY(depth < pl && i < n)) {
+        auto const nibbles_to_table = static_cast<unsigned>(pl - depth);
+        if (nibbles_to_table <= n - i) {
+            // Bulk-advance intermediate prefix nibbles, then process table
+            // nibble
+            depth += static_cast<uint8_t>(nibbles_to_table - 1);
+            i += nibbles_to_table - 1;
+            MONAD_ASSERT_PRINTF(
+                path.get(i) <= CALL_FRAME_NIBBLE,
+                "Invalid nibble %u",
+                static_cast<unsigned>(path.get(i)));
+            MONAD_ASSERT(table == TableType::Prefix);
+            table = static_cast<TableType>(path.get(i) + 1);
+            ++depth;
+            ++i;
+        }
+        else {
+            // Path ends before reaching table nibble
+            auto const new_depth = static_cast<unsigned>(depth) + (n - i);
+            MONAD_ASSERT(new_depth <= max_depth(pl));
+            depth = static_cast<uint8_t>(new_depth);
+            return;
+        }
+    }
+
+    // Bulk advance: all remaining nibbles just increment depth
+    auto const new_depth = static_cast<unsigned>(depth) + (n - i);
+    MONAD_ASSERT(new_depth <= max_depth(pl));
+    depth = static_cast<uint8_t>(new_depth);
+}
+
 void MachineBase::up(size_t const n)
 {
     MONAD_ASSERT(n <= depth);

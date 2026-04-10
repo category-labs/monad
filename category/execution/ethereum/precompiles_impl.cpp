@@ -136,9 +136,19 @@ sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out)
     return {out.data(), 32};
 }
 
-PrecompileResult ripemd160_execute(byte_string_view const input)
+PrecompileImplResult
+ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    return silkpre_execute<silkpre_rip160_run>(input);
+    // TODO(dhil): Consider a design that allows us to avoid the copy here.
+    auto const [output, output_size] =
+        silkpre_rip160_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {out.data(), 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), 32};
 }
 
 PrecompileResult ecadd_execute(byte_string_view const input)

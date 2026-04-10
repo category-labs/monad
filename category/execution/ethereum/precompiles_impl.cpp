@@ -219,9 +219,18 @@ snarkv_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
     return {out.data(), 32};
 }
 
-PrecompileResult blake2bf_execute(byte_string_view const input)
+PrecompileImplResult
+blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
-    return silkpre_execute<silkpre_blake2_f_run>(input);
+    auto const [output, output_size] =
+        silkpre_blake2_f_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), 64};
 }
 
 PrecompileResult point_evaluation_execute(byte_string_view const input)

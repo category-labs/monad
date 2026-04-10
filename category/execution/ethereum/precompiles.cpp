@@ -316,4 +316,13 @@ PrecompileResult ecadd_execute(byte_string_view const input)
         ecadd_impl(clamped_input, std::span<uint8_t, 64>{out, 64}), out);
 }
 
+PrecompileResult ecmul_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::aligned_alloc(8, 64));
+    MONAD_ASSERT(out != nullptr);
+    auto const clamped_input = input.substr(0, 96);
+    return from_impl_result(
+        ecmul_impl(clamped_input, std::span<uint8_t, 64>{out, 64}), out);
+}
+
 MONAD_NAMESPACE_END

@@ -73,7 +73,8 @@ namespace bls12
     void write_g2(blst_p2_affine const &, uint8_t *);
 
     template <typename Group>
-    PrecompileResult add(byte_string_view);
+    PrecompileImplResult
+        add(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 
     template <typename Group>
     PrecompileResult msm(byte_string_view);

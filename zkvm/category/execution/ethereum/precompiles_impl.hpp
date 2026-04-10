@@ -180,15 +180,17 @@ sha256_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
     return {out.data(), 32};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-ripemd160_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    auto result = alloc_success(32);
-    zkvm_ripemd160(
-        input.data(),
-        input.size(),
-        reinterpret_cast<zkvm_ripemd160_hash *>(result.obuf));
-    return result;
+    std::memset(out.data(), 0, 32);
+    if (zkvm_ripemd160(
+            input.data(),
+            input.size(),
+            reinterpret_cast<zkvm_ripemd160_hash *>(out.data())) != ZKVM_EOK) {
+        return {nullptr, 0};
+    }
+    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

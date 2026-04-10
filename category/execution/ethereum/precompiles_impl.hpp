@@ -141,18 +141,15 @@ sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out)
     return {out.data(), 32};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-ripemd160_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    auto *const output = static_cast<uint8_t *>(std::malloc(32));
-    MONAD_ASSERT(output != nullptr);
-
     // Ethereum's RIPEMD-160 precompile returns the 20-byte digest left-padded
     // with 12 zero bytes to a 32-byte ABI word.
-    std::memset(output, 0, 12);
-    monad_rmd160(output + 12, input.data(), input.size());
+    std::memset(out.data(), 0, 12);
+    monad_rmd160(&out[12], input.data(), input.size());
 
-    return {EVMC_SUCCESS, output, 32};
+    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

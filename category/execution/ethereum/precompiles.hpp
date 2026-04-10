@@ -153,6 +153,7 @@ PrecompileResult point_evaluation_execute(byte_string_view);
 PrecompileResult bls12_g1_add_execute(byte_string_view);
 PrecompileResult bls12_g1_msm_execute(byte_string_view);
 PrecompileResult bls12_g2_add_execute(byte_string_view);
+PrecompileResult bls12_g2_msm_execute(byte_string_view);
 
 struct PrecompileImplResult
 {
@@ -196,5 +197,8 @@ bls12_g1_msm_impl(byte_string_view input, std::span<uint8_t, 128> const out);
 
 PrecompileImplResult
 bls12_g2_add_impl(byte_string_view input, std::span<uint8_t, 256> const out);
+
+PrecompileImplResult
+bls12_g2_msm_impl(byte_string_view input, std::span<uint8_t, 256> const out);
 
 MONAD_NAMESPACE_END

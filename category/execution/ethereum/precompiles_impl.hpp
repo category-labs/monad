@@ -351,10 +351,10 @@ blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     return bls12::msm<bls12::G2>(input, out);
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-bls12_pairing_check_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult bls12_pairing_check_impl(
+    byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    return bls12::pairing_check(input);
+    return bls12::pairing_check(input, out);
 }
 
 [[gnu::always_inline]] inline PrecompileResult

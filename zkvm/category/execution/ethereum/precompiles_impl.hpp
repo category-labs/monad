@@ -485,23 +485,23 @@ point_evaluation_impl(byte_string_view input, std::span<uint8_t, 64> const out)
     return {out.data(), 256};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-bls12_g2_msm_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult bls12_g2_msm_impl(
+    byte_string_view const input, std::span<uint8_t, 256> const out)
 {
     auto const k = input.size() / 288;
     if (k == 0 || input.size() % 288 != 0) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
     auto *pairs = static_cast<zkvm_bls12_381_g2_msm_pair *>(
-        std::malloc(k * sizeof(zkvm_bls12_381_g2_msm_pair)));
+        std::aligned_alloc(8, k * sizeof(zkvm_bls12_381_g2_msm_pair)));
     MONAD_ASSERT(pairs != nullptr);
 
     for (size_t i = 0; i < k; ++i) {
         auto const *entry = input.data() + i * 288;
         if (!evm_g2_to_zkvm(entry, pairs[i].point.data)) {
             std::free(pairs);
-            return PrecompileResult::failure();
+            return PrecompileImplResult::failure();
         }
         std::memcpy(pairs[i].scalar.data, entry + 256, 32);
     }
@@ -511,12 +511,11 @@ bls12_g2_msm_execute(byte_string_view const input)
     std::free(pairs);
 
     if (status != ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
-    auto result = alloc_success(256);
-    zkvm_g2_to_evm(result_point.data, result.obuf);
-    return result;
+    zkvm_g2_to_evm(result_point.data, out.data());
+    return {out.data(), 256};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

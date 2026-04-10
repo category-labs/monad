@@ -169,9 +169,18 @@ PrecompileResult identity_execute(byte_string_view const input)
     return {EVMC_SUCCESS, output, input.size()};
 }
 
-PrecompileResult expmod_execute(byte_string_view const input)
+PrecompileImplResult
+expmod_impl(byte_string_view const input, std::span<uint8_t> const out)
 {
-    return silkpre_execute<silkpre_expmod_run>(input);
+    auto const [output, output_size] =
+        silkpre_expmod_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {out.data(), 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), out.size()};
 }
 
 PrecompileResult snarkv_execute(byte_string_view const input)

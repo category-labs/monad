@@ -254,4 +254,33 @@ PrecompileResult ripemd160_execute(byte_string_view const input)
         ripemd160_impl(input, std::span<uint8_t, 32>{out, 32}));
 }
 
+static void right_pad_copy(
+    uint8_t *dst, size_t dst_size, uint8_t const *src, size_t src_size,
+    size_t offset) noexcept
+{
+    std::memset(dst, 0, dst_size);
+    if (offset < src_size) {
+        auto const avail = src_size - offset;
+        auto const to_copy = std::min(avail, dst_size);
+        std::memcpy(dst, src + offset, to_copy);
+    }
+}
+
+PrecompileResult expmod_execute(byte_string_view const input)
+{
+    uint8_t lengths[96];
+    right_pad_copy(lengths, 96, input.data(), input.size(), 0);
+
+    uint64_t const mod_len = intx::be::unsafe::load<uint64_t>(&lengths[88]);
+
+    if (mod_len == 0) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
+    auto *const out = static_cast<uint8_t *>(std::malloc(mod_len));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        expmod_impl(input, std::span<uint8_t>{out, mod_len}));
+}
+
 MONAD_NAMESPACE_END

@@ -268,9 +268,10 @@ PrecompileImplResult point_evaluation_impl(
     return {out.data(), 64};
 }
 
-PrecompileResult bls12_g1_add_execute(byte_string_view const input)
+PrecompileImplResult bls12_g1_add_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
 {
-    return bls12::add<bls12::G1>(input);
+    return bls12::add<bls12::G1>(input, out);
 }
 
 PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
@@ -280,7 +281,15 @@ PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
 
 PrecompileResult bls12_g2_add_execute(byte_string_view const input)
 {
-    return bls12::add<bls12::G2>(input);
+    auto *const out = static_cast<uint8_t *>(std::malloc(256));
+    MONAD_ASSERT(out != nullptr);
+    auto const result =
+        bls12::add<bls12::G2>(input, std::span<uint8_t, 256>{out, 256});
+    if (result.data == nullptr) {
+        std::free(out);
+        return PrecompileResult::failure();
+    }
+    return {EVMC_SUCCESS, out, result.size};
 }
 
 PrecompileResult bls12_g2_msm_execute(byte_string_view const input)

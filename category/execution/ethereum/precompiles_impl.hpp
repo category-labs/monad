@@ -130,19 +130,15 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
     return {out.data(), 32};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-sha256_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out)
 {
-    auto *const output = static_cast<uint8_t *>(std::malloc(32));
-    MONAD_ASSERT(output != nullptr);
-
     monad_sha256(
-        output,
+        out.data(),
         input.data(),
         input.size(),
         /*use_cpu_extensions=*/true);
-
-    return {EVMC_SUCCESS, output, 32};
+    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

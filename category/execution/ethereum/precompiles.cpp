@@ -242,4 +242,12 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
         out);
 }
 
+PrecompileResult sha256_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        sha256_impl(input, std::span<uint8_t, 32>{out, 32}), out);
+}
+
 MONAD_NAMESPACE_END

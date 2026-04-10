@@ -72,7 +72,6 @@ namespace bls12
         static constexpr auto element_encoded_size =
             2 * G1::element_encoded_size;
         static constexpr auto encoded_size = 2 * element_encoded_size;
-
     };
 } // namespace bls12
 

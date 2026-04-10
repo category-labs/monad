@@ -167,17 +167,17 @@ bool init_trusted_setup()
     return {out.data(), 32};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-sha256_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+sha256_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    auto result = alloc_success(32);
+    std::memset(out.data(), 0, 32);
     if (zkvm_sha256(
             input.data(),
             input.size(),
-            reinterpret_cast<zkvm_bytes_32 *>(result.obuf)) != ZKVM_EOK) {
-        return {EVMC_SUCCESS, nullptr, 0};
+            reinterpret_cast<zkvm_bytes_32 *>(out.data())) != ZKVM_EOK) {
+        return {nullptr, 0};
     }
-    return result;
+    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

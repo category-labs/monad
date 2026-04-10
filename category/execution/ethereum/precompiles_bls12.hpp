@@ -56,13 +56,16 @@ namespace bls12
         add(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 
     template <typename Group>
-    PrecompileResult msm(byte_string_view);
+    PrecompileImplResult
+        msm(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 
     template <typename Group>
-    PrecompileResult mul(byte_string_view);
+    PrecompileImplResult
+        mul(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 
     template <typename Group>
-    PrecompileResult msm_pippenger(byte_string_view, uint64_t);
+    PrecompileImplResult msm_pippenger(
+        byte_string_view, uint64_t, std::span<uint8_t, Group::encoded_size>);
 
     PrecompileResult pairing_check(byte_string_view);
 

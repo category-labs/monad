@@ -208,10 +208,18 @@ expmod_impl(byte_string_view const input, std::span<uint8_t> const out)
     return {out.data(), output_size};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-snarkv_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+snarkv_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    return silkpre_execute<silkpre_snarkv_run>(input);
+    auto const [output, output_size] =
+        silkpre_snarkv_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), output_size};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

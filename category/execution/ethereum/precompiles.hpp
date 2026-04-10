@@ -206,4 +206,7 @@ bls12_g1_msm_impl(byte_string_view input, std::span<uint8_t, 128> const out);
 
 PrecompileImplResult
 bls12_g2_add_impl(byte_string_view input, std::span<uint8_t, 256> const out);
+
+PrecompileImplResult
+bls12_g2_msm_impl(byte_string_view input, std::span<uint8_t, 256> const out);
 MONAD_NAMESPACE_END

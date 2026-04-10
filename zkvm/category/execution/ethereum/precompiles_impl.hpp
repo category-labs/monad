@@ -361,52 +361,51 @@ blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     return {out.data(), 64};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-point_evaluation_execute(byte_string_view input)
+[[gnu::always_inline]] inline PrecompileImplResult
+point_evaluation_impl(byte_string_view input, std::span<uint8_t, 64> const out)
 {
     if (input.size() != 192) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
-    evmc::bytes32 versioned_hash;
-    std::memcpy(versioned_hash.bytes, input.data(), sizeof(evmc::bytes32));
+    auto *aligned_input =
+        static_cast<uint8_t *>(std::aligned_alloc(8, input.size()));
+    MONAD_ASSERT(aligned_input != nullptr);
+    std::memcpy(aligned_input, input.data(), input.size());
 
-    auto const *const z = reinterpret_cast<zkvm_kzg_field_element const *>(
-        input.substr(32).data());
-    auto const *const y = reinterpret_cast<zkvm_kzg_field_element const *>(
-        input.substr(64).data());
-    auto const *const commitment_data = input.substr(96).data();
+    auto const *const versioned_hash =
+        reinterpret_cast<zkvm_bytes_32 const *>(aligned_input);
+    auto const *const z =
+        reinterpret_cast<zkvm_kzg_field_element const *>(aligned_input + 32);
+    auto const *const y =
+        reinterpret_cast<zkvm_kzg_field_element const *>(aligned_input + 64);
     auto const *const commitment =
-        reinterpret_cast<zkvm_kzg_commitment const *>(commitment_data);
+        reinterpret_cast<zkvm_kzg_commitment const *>(aligned_input + 96);
     auto const *const proof =
-        reinterpret_cast<zkvm_kzg_proof const *>(input.substr(144).data());
+        reinterpret_cast<zkvm_kzg_proof const *>(aligned_input + 144);
 
     auto const commitment_versioned_hash =
-        kzg_to_version_hashed(commitment_data);
+        kzg_to_version_hashed(commitment->data);
     if (!std::equal(
-            std::begin(versioned_hash.bytes),
-            std::end(versioned_hash.bytes),
+            std::begin(versioned_hash->data),
+            std::end(versioned_hash->data),
             std::begin(commitment_versioned_hash.data))) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
     bool ok{false};
-    zkvm_kzg_point_eval(commitment, z, y, proof, &ok);
+    if (zkvm_kzg_point_eval(commitment, z, y, proof, &ok) != ZKVM_EOK) {
+        return PrecompileImplResult::failure();
+    }
     if (!ok) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
-    auto *const output =
-        static_cast<uint8_t *>(std::malloc(sizeof(zkvm_bytes_64)));
-    MONAD_ASSERT(output != nullptr);
     std::memcpy(
-        output, blob_precompile_return_value().bytes, sizeof(zkvm_bytes_64));
-
-    return {
-        .status_code = EVMC_SUCCESS,
-        .obuf = output,
-        .output_size = sizeof(zkvm_bytes_64),
-    };
+        out.data(),
+        blob_precompile_return_value().bytes,
+        sizeof(zkvm_bytes_64));
+    return {out.data(), 64};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

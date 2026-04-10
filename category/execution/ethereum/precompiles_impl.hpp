@@ -292,11 +292,11 @@ blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     return {out.data(), 64};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-point_evaluation_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult point_evaluation_impl(
+    byte_string_view const input, std::span<uint8_t, 64> const out)
 {
     if (input.size() != 192) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
     bytes32_t versioned_hash;
@@ -313,25 +313,18 @@ point_evaluation_execute(byte_string_view const input)
 
     KZGCommitment commitment{*commitment_data};
     if (versioned_hash != kzg_to_version_hashed(commitment)) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
     bool ok{false};
     verify_kzg_proof(&ok, &commitment, z, y, proof, &g_trustedSetup.value());
     if (!ok) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
-    auto *const output = static_cast<uint8_t *>(std::malloc(sizeof(bytes64_t)));
-    MONAD_ASSERT(output != nullptr);
     std::memcpy(
-        output, blob_precompile_return_value().bytes, sizeof(bytes64_t));
-
-    return {
-        .status_code = EVMC_SUCCESS,
-        .obuf = output,
-        .output_size = sizeof(bytes64_t),
-    };
+        out.data(), blob_precompile_return_value().bytes, sizeof(bytes64_t));
+    return {out.data(), 64};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

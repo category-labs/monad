@@ -27,6 +27,7 @@
 #include <category/core/config.hpp>
 #include <category/core/event/event_recorder.h>
 #include <category/core/event/event_ring.h>
+#include <category/core/mem/align.h>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 
 #include <array>
@@ -207,7 +208,8 @@ ReservedExecEvent<T> ExecutionEventRecorder::reserve_block_event(
     // diagnostic truncated payloads on overflow
 
     size_t const payload_size = (size(trailing_bufs) + ... + sizeof(T));
-    if (payload_size > std::numeric_limits<uint32_t>::max()) [[unlikely]] {
+    if (monad_round_size_to_align(payload_size, MONAD_EVENT_PAYLOAD_ALIGN) >
+        std::numeric_limits<uint32_t>::max()) [[unlikely]] {
         std::array<std::span<std::byte const>, sizeof...(trailing_bufs)> const
             trailing_bufs_array = {trailing_bufs...};
         auto const [event, header_buf, seqno] = setup_record_error_event(

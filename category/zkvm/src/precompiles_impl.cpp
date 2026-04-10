@@ -303,10 +303,11 @@ blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     return {out.data(), 64};
 }
 
-PrecompileResult point_evaluation_execute(byte_string_view input)
+PrecompileImplResult
+point_evaluation_impl(byte_string_view input, std::span<uint8_t, 64> const out)
 {
     if (input.size() != 192) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
     evmc::bytes32 versioned_hash;
@@ -323,26 +324,20 @@ PrecompileResult point_evaluation_execute(byte_string_view input)
         reinterpret_cast<zkvm_kzg_proof const *>(input.substr(144).data());
 
     if (versioned_hash != kzg_to_version_hashed(commitment_data)) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
     bool ok{false};
     zkvm_kzg_point_eval(commitment, z, y, proof, &ok);
     if (!ok) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
-    auto *const output =
-        static_cast<uint8_t *>(std::malloc(sizeof(zkvm_bytes_64)));
-    MONAD_ASSERT(output != nullptr);
     std::memcpy(
-        output, blob_precompile_return_value().bytes, sizeof(zkvm_bytes_64));
-
-    return {
-        .status_code = EVMC_SUCCESS,
-        .obuf = output,
-        .output_size = sizeof(zkvm_bytes_64),
-    };
+        out.data(),
+        blob_precompile_return_value().bytes,
+        sizeof(zkvm_bytes_64));
+    return {out.data(), 64};
 }
 
 PrecompileResult bls12_g1_add_execute(byte_string_view const input)

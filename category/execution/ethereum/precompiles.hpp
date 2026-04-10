@@ -141,6 +141,7 @@ using precompiled_execute_fn = PrecompileResult(byte_string_view);
 PrecompileResult ecrecover_execute(byte_string_view);
 PrecompileResult sha256_execute(byte_string_view);
 PrecompileResult ripemd160_execute(byte_string_view);
+PrecompileResult expmod_execute(byte_string_view);
 
 struct PrecompileImplResult
 {
@@ -165,5 +166,9 @@ sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out);
 
 PrecompileImplResult
 ripemd160_impl(byte_string_view input, std::span<uint8_t, 32> const out);
+
+PrecompileImplResult expmod_impl(
+    std::span<uint8_t> const base, std::span<uint8_t> const exp,
+    std::span<uint8_t> const modulus, std::span<uint8_t> out);
 
 MONAD_NAMESPACE_END

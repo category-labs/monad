@@ -353,18 +353,19 @@ namespace bls12
     template PrecompileImplResult msm_pippenger<G2>(
         byte_string_view, uint64_t, std::span<uint8_t, G2::encoded_size>);
 
-    PrecompileResult pairing_check(byte_string_view const input)
+    PrecompileImplResult pairing_check(
+        byte_string_view const input, std::span<uint8_t, 32> const out)
     {
         static constexpr auto pair_size = G1::encoded_size + G2::encoded_size;
 
         if (MONAD_UNLIKELY(input.size() % pair_size != 0)) {
-            return PrecompileResult::failure();
+            return {nullptr, 0};
         }
 
         auto const k = input.size() / pair_size;
 
         if (MONAD_UNLIKELY(k == 0)) {
-            return PrecompileResult::failure();
+            return {nullptr, 0};
         }
 
         auto result = *blst_fp12_one();
@@ -373,20 +374,20 @@ namespace bls12
         for (auto const *ptr = input.data(); ptr != end_ptr; ptr += pair_size) {
             auto const maybe_g1 = G1::read(ptr);
             if (MONAD_UNLIKELY(!maybe_g1.has_value())) {
-                return PrecompileResult::failure();
+                return {nullptr, 0};
             }
 
             auto const maybe_g2 = G2::read(ptr + G1::encoded_size);
             if (MONAD_UNLIKELY(!maybe_g2.has_value())) {
-                return PrecompileResult::failure();
+                return {nullptr, 0};
             }
 
             if (MONAD_UNLIKELY(!G1::affine_point_in_group(&*maybe_g1))) {
-                return PrecompileResult::failure();
+                return {nullptr, 0};
             }
 
             if (MONAD_UNLIKELY(!G2::affine_point_in_group(&*maybe_g2))) {
-                return PrecompileResult::failure();
+                return {nullptr, 0};
             }
 
             if (G1::affine_point_is_inf(&*maybe_g1)) {
@@ -404,22 +405,13 @@ namespace bls12
 
         blst_final_exp(&result, &result);
 
-        static constexpr auto bool_encoded_size = 32;
-
-        auto *const output_buf =
-            static_cast<uint8_t *>(std::malloc(bool_encoded_size));
-        MONAD_ASSERT(output_buf != nullptr);
-        std::memset(output_buf, 0, bool_encoded_size);
+        std::memset(out.data(), 0, 32);
 
         if (blst_fp12_is_one(&result)) {
-            output_buf[bool_encoded_size - 1] = 1;
+            out.data()[31] = 1;
         }
 
-        return {
-            .status_code = EVMC_SUCCESS,
-            .obuf = output_buf,
-            .output_size = bool_encoded_size,
-        };
+        return {out.data(), 32};
     }
 
     template <typename Group>

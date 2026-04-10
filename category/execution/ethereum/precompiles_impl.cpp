@@ -286,9 +286,10 @@ PrecompileImplResult bls12_g2_msm_impl(
     return bls12::msm<bls12::G2>(input, out);
 }
 
-PrecompileResult bls12_pairing_check_execute(byte_string_view const input)
+PrecompileImplResult bls12_pairing_check_impl(
+    byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    return bls12::pairing_check(input);
+    return bls12::pairing_check(input, out);
 }
 
 PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const input)

@@ -20,7 +20,7 @@
 #include <category/execution/ethereum/precompiles.hpp>
 
 #ifndef MONAD_ZKVM
-#include <blst.h>
+    #include <blst.h>
 #endif
 #include <intx/intx.hpp>
 
@@ -52,7 +52,8 @@ namespace bls12
     void write_g2(blst_p2_affine const &, uint8_t *);
 
     template <typename Group>
-    PrecompileResult add(byte_string_view);
+    PrecompileImplResult
+        add(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 
     template <typename Group>
     PrecompileResult msm(byte_string_view);
@@ -101,7 +102,6 @@ namespace bls12
         using Point = blst_p1;
         using AffinePoint = blst_p1_affine;
 
-
         DECLARE_GROUP_FN(read, read_g1);
         DECLARE_GROUP_FN(read_element, read_fp);
         DECLARE_GROUP_FN(write, write_g1);
@@ -146,6 +146,7 @@ namespace bls12
         DECLARE_GROUP_FN(from_affine, blst_p2_from_affine);
 #endif
     };
+
 #undef DECLARE_GROUP_FN
 } // namespace bls12
 

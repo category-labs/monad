@@ -286,23 +286,22 @@ ecadd_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     return {out.data(), 64};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-ecmul_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+ecmul_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
-    uint8_t d[96];
+    alignas(8) uint8_t d[96];
     safe_copy(d, 96, input.data(), input.size(), 0);
 
     auto const *point = reinterpret_cast<zkvm_bn254_g1_point const *>(&d[0]);
     auto const *scalar = reinterpret_cast<zkvm_bn254_scalar const *>(&d[64]);
 
-    auto result = alloc_success(64);
     if (zkvm_bn254_g1_mul(
             point,
             scalar,
-            reinterpret_cast<zkvm_bn254_g1_point *>(result.obuf)) != ZKVM_EOK) {
-        return PrecompileResult::failure();
+            reinterpret_cast<zkvm_bn254_g1_point *>(out.data())) != ZKVM_EOK) {
+        return PrecompileImplResult::failure();
     }
-    return result;
+    return {out.data(), 64};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

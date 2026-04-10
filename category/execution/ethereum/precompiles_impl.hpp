@@ -172,11 +172,18 @@ ecadd_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     return {out.data(), output_size};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-ecmul_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+ecmul_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
-    auto const clamped_input = input.substr(0, 96);
-    return silkpre_execute<silkpre_bn_mul_run>(clamped_input);
+    auto const [output, output_size] =
+        silkpre_bn_mul_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return PrecompileImplResult::failure();
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), output_size};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

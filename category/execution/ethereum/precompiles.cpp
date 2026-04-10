@@ -323,4 +323,12 @@ PrecompileResult blake2bf_execute(byte_string_view const input)
         blake2bf_impl(input, std::span<uint8_t, 64>{out, 64}), out);
 }
 
+PrecompileResult point_evaluation_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(64));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        point_evaluation_impl(input, std::span<uint8_t, 64>{out, 64}), out);
+}
+
 MONAD_NAMESPACE_END

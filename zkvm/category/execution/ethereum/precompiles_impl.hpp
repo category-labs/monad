@@ -328,34 +328,37 @@ snarkv_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
     return {out.data(), 32};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-blake2bf_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
     if (input.size() != 213) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
     uint8_t const f = input[212];
     if (f != 0 && f != 1) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
     uint32_t const rounds = u32_be::unsafe_from(input.data()).native();
 
-    auto result = alloc_success(64);
-    std::memcpy(result.obuf, input.data() + 4, 64);
+    std::memcpy(out.data(), input.data() + 4, 64);
 
-    auto *h = reinterpret_cast<zkvm_blake2f_state *>(result.obuf);
-    auto const *m =
-        reinterpret_cast<zkvm_blake2f_message const *>(input.data() + 68);
-    auto const *t =
-        reinterpret_cast<zkvm_blake2f_offset const *>(input.data() + 196);
+    auto *h = reinterpret_cast<zkvm_blake2f_state *>(out.data());
+    auto *m = static_cast<zkvm_blake2f_message *>(
+        std::aligned_alloc(8, sizeof(zkvm_blake2f_message)));
+    MONAD_ASSERT(m != nullptr);
+    std::memcpy(m, input.data() + 68, sizeof(zkvm_blake2f_message));
+    auto *t = static_cast<zkvm_blake2f_offset *>(
+        std::aligned_alloc(8, sizeof(zkvm_blake2f_offset)));
+    MONAD_ASSERT(t != nullptr);
+    std::memcpy(t, input.data() + 196, sizeof(zkvm_blake2f_offset));
 
     if (zkvm_blake2f(rounds, h, m, t, f) != ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
-    return result;
+    return {out.data(), 64};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

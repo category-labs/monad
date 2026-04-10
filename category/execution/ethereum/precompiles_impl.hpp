@@ -259,16 +259,16 @@ snarkv_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
     return {out.data(), output_size};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-blake2bf_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
     if (input.size() != 213) {
-        return {EVMC_PRECOMPILE_FAILURE, nullptr, 0};
+        return PrecompileImplResult::failure();
     }
 
     uint8_t const f{input[212]};
     if (f != 0 && f != 1) {
-        return {EVMC_PRECOMPILE_FAILURE, nullptr, 0};
+        return PrecompileImplResult::failure();
     }
 
     MonadBlake2bState state{};
@@ -288,11 +288,8 @@ blake2bf_execute(byte_string_view const input)
     uint32_t const r{load_be_unsafe<uint32_t>(input.data())};
     monad_blake2b_compress(&state, block, r);
 
-    auto *const output = static_cast<uint8_t *>(std::malloc(64));
-    MONAD_ASSERT(output != nullptr);
-
-    std::memcpy(&output[0], &state.h[0], 8 * 8);
-    return {EVMC_SUCCESS, output, 64};
+    std::memcpy(out.data(), &state.h[0], 8 * 8);
+    return {out.data(), 64};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

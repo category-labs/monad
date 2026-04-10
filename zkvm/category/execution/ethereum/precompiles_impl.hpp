@@ -232,22 +232,20 @@ expmod_impl(byte_string_view const input, std::span<uint8_t> const out)
     return {out.data(), out.size()};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-ecadd_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+ecadd_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
     uint8_t d[128];
     safe_copy(d, 128, input.data(), input.size(), 0);
-
     auto const *p1 = reinterpret_cast<zkvm_bn254_g1_point const *>(&d[0]);
     auto const *p2 = reinterpret_cast<zkvm_bn254_g1_point const *>(&d[64]);
 
-    auto result = alloc_success(64);
     if (zkvm_bn254_g1_add(
-            p1, p2, reinterpret_cast<zkvm_bn254_g1_point *>(result.obuf)) !=
+            p1, p2, reinterpret_cast<zkvm_bn254_g1_point *>(out.data())) !=
         ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
-    return result;
+    return {out.data(), 64};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

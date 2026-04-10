@@ -142,6 +142,7 @@ PrecompileResult ecrecover_execute(byte_string_view);
 PrecompileResult sha256_execute(byte_string_view);
 PrecompileResult ripemd160_execute(byte_string_view);
 PrecompileResult expmod_execute(byte_string_view);
+PrecompileResult ecadd_execute(byte_string_view);
 
 struct PrecompileImplResult
 {
@@ -161,5 +162,8 @@ ripemd160_impl(byte_string_view input, std::span<uint8_t, 32> const out);
 
 PrecompileImplResult
 expmod_impl(byte_string_view input, std::span<uint8_t> const out);
+
+PrecompileImplResult
+ecadd_impl(byte_string_view input, std::span<uint8_t, 64> const out);
 
 MONAD_NAMESPACE_END

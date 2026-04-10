@@ -500,7 +500,8 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
 
 Node::SharedPtr make_node(
     Node &from, NibblesView const path,
-    std::optional<byte_string_view> const value, int64_t const version)
+    std::optional<byte_string_view> const value, int64_t const version,
+    bool const is_move)
 {
     auto const value_size =
         value.transform(&byte_string_view::size).value_or(0);
@@ -536,7 +537,12 @@ Node::SharedPtr make_node(
     }
     auto const from_ptrs = from.child_next_data();
     for (unsigned i = 0; i < from_ptrs.size(); ++i) {
-        node_ptrs[i] = std::move(from_ptrs[i]);
+        if (is_move) {
+            node_ptrs[i] = std::move(from_ptrs[i]);
+        }
+        else {
+            node_ptrs[i] = from_ptrs[i];
+        }
     }
 
     return node;

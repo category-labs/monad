@@ -405,26 +405,26 @@ PrecompileImplResult bls12_g1_msm_impl(
     return {out.data(), 128};
 }
 
-PrecompileResult bls12_g2_add_execute(byte_string_view const input)
+PrecompileImplResult bls12_g2_add_impl(
+    byte_string_view const input, std::span<uint8_t, 256> const out)
 {
     if (input.size() != 512) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
     zkvm_bls12_381_g2_point p1, p2;
     if (!evm_g2_to_zkvm(input.data(), p1.data) ||
         !evm_g2_to_zkvm(input.data() + 256, p2.data)) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
     zkvm_bls12_381_g2_point result_point;
     if (zkvm_bls12_g2_add(&p1, &p2, &result_point) != ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
-    auto result = alloc_success(256);
-    zkvm_g2_to_evm(result_point.data, result.obuf);
-    return result;
+    zkvm_g2_to_evm(result_point.data, out.data());
+    return {out.data(), 256};
 }
 
 PrecompileResult bls12_g2_msm_execute(byte_string_view const input)

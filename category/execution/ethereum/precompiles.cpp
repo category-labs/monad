@@ -315,5 +315,12 @@ PrecompileResult snarkv_execute(byte_string_view const input)
         snarkv_impl(input, std::span<uint8_t, 32>{out, 32}), out);
 }
 
+PrecompileResult blake2bf_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(64));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        blake2bf_impl(input, std::span<uint8_t, 64>{out, 64}), out);
+}
 
 MONAD_NAMESPACE_END

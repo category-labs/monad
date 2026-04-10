@@ -167,14 +167,15 @@ sha256_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
     return {out.data(), 32};
 }
 
-PrecompileResult ripemd160_execute(byte_string_view const input)
+PrecompileImplResult
+ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    auto result = alloc_success(32);
+    std::memset(out.data(), 0, 32);
     zkvm_ripemd160(
         input.data(),
         input.size(),
-        reinterpret_cast<zkvm_ripemd160_hash *>(result.obuf));
-    return result;
+        reinterpret_cast<zkvm_ripemd160_hash *>(out.data()));
+    return {out.data(), 32};
 }
 
 PrecompileResult identity_execute(byte_string_view const input)

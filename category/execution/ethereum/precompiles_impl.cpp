@@ -41,6 +41,7 @@
 
 #include <silkpre/ecdsa.h>
 #include <silkpre/precompile.h>
+#include <silkpre/rmd160.h>
 #include <silkpre/sha256.h>
 
 #include <cstring>
@@ -136,9 +137,12 @@ sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out)
     return {out.data(), 32};
 }
 
-PrecompileResult ripemd160_execute(byte_string_view const input)
+PrecompileImplResult
+ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    return silkpre_execute<silkpre_rip160_run>(input);
+    std::memset(out.data(), 0, 12);
+    silkpre_rmd160(&out[12], input.data(), input.size());
+    return {out.data(), 32};
 }
 
 PrecompileResult ecadd_execute(byte_string_view const input)

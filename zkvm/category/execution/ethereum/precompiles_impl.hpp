@@ -253,33 +253,21 @@ identity_execute(byte_string_view const input)
     return {EVMC_SUCCESS, output, input.size()};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-expmod_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult expmod_impl(
+    std::span<uint8_t> const base, std::span<uint8_t> const exp,
+    std::span<uint8_t> const modulus, std::span<uint8_t> out)
 {
-    uint8_t lengths[96];
-    safe_copy(lengths, 96, input.data(), input.size(), 0);
-
-    uint64_t const base_len = u64_be::unsafe_from(&lengths[24]).native();
-    uint64_t const exp_len = u64_be::unsafe_from(&lengths[56]).native();
-    uint64_t const mod_len = u64_be::unsafe_from(&lengths[88]).native();
-
-    if (mod_len == 0) {
-        return {EVMC_SUCCESS, static_cast<uint8_t *>(std::malloc(1)), 0};
+    if (zkvm_modexp(
+            base.data(),
+            base.size(),
+            exp.data(),
+            exp.size(),
+            modulus.data(),
+            modulus.size(),
+            out.data()) != ZKVM_EOK) {
+        return PrecompileImplResult::failure();
     }
-
-    MONAD_ASSERT(input.size() >= 96 + base_len + exp_len + mod_len);
-
-    auto const data = input.data() + 96;
-    auto result = alloc_success(mod_len);
-    zkvm_modexp(
-        data,
-        base_len,
-        data + base_len,
-        exp_len,
-        data + base_len + exp_len,
-        mod_len,
-        result.obuf);
-    return result;
+    return {out.data(), out.size()};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

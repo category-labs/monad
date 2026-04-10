@@ -459,17 +459,18 @@ PrecompileImplResult bls12_g2_msm_impl(
     return {out.data(), 256};
 }
 
-PrecompileResult bls12_pairing_check_execute(byte_string_view const input)
+PrecompileImplResult bls12_pairing_check_impl(
+    byte_string_view const input, std::span<uint8_t, 32> const out)
 {
     auto const k = input.size() / 384;
     if (input.size() % 384 != 0) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
-    auto result = alloc_success(32);
     if (k == 0) {
-        result.obuf[31] = 1;
-        return result;
+        std::memset(out.data(), 0, 32);
+        out.data()[31] = 1;
+        return {out.data(), 32};
     }
 
     auto *pairs = static_cast<zkvm_bls12_381_pairing_pair *>(
@@ -480,7 +481,7 @@ PrecompileResult bls12_pairing_check_execute(byte_string_view const input)
         if (!evm_g1_to_zkvm(entry, pairs[i].g1.data) ||
             !evm_g2_to_zkvm(entry + 128, pairs[i].g2.data)) {
             std::free(pairs);
-            return PrecompileResult::failure();
+            return {nullptr, 0};
         }
     }
 
@@ -489,11 +490,12 @@ PrecompileResult bls12_pairing_check_execute(byte_string_view const input)
     std::free(pairs);
 
     if (status != ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
-    result.obuf[31] = verified ? 1 : 0;
-    return result;
+    std::memset(out.data(), 0, 32);
+    out.data()[31] = verified ? 1 : 0;
+    return {out.data(), 32};
 }
 
 PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const input)

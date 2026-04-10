@@ -67,7 +67,8 @@ namespace bls12
     PrecompileImplResult msm_pippenger(
         byte_string_view, uint64_t, std::span<uint8_t, Group::encoded_size>);
 
-    PrecompileResult pairing_check(byte_string_view);
+    PrecompileImplResult
+        pairing_check(byte_string_view, std::span<uint8_t, 32>);
 
     template <typename Group>
     PrecompileResult map_fp_to_g(byte_string_view);

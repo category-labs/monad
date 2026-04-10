@@ -304,17 +304,10 @@ PrecompileImplResult bls12_map_fp_to_g1_impl(
     return bls12::map_fp_to_g<bls12::G1>(input, out);
 }
 
-PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view const input)
+PrecompileImplResult bls12_map_fp2_to_g2_impl(
+    byte_string_view const input, std::span<uint8_t, 256> const out)
 {
-    auto *const out = static_cast<uint8_t *>(std::malloc(256));
-    MONAD_ASSERT(out != nullptr);
-    auto const result =
-        bls12::map_fp_to_g<bls12::G2>(input, std::span<uint8_t, 256>{out, 256});
-    if (result.data == nullptr) {
-        std::free(out);
-        return PrecompileResult::failure();
-    }
-    return {EVMC_SUCCESS, out, result.size};
+    return bls12::map_fp_to_g<bls12::G2>(input, out);
 }
 
 // Rollup precompiles

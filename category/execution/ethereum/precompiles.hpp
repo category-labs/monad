@@ -150,6 +150,7 @@ PrecompileResult ecmul_execute(byte_string_view);
 PrecompileResult snarkv_execute(byte_string_view);
 PrecompileResult blake2bf_execute(byte_string_view);
 PrecompileResult point_evaluation_execute(byte_string_view);
+PrecompileResult bls12_g1_add_execute(byte_string_view);
 
 struct PrecompileImplResult
 {
@@ -184,5 +185,8 @@ blake2bf_impl(byte_string_view input, std::span<uint8_t, 64> const out);
 
 PrecompileImplResult
 point_evaluation_impl(byte_string_view input, std::span<uint8_t, 64> const out);
+
+PrecompileImplResult
+bls12_g1_add_impl(byte_string_view input, std::span<uint8_t, 128> const out);
 
 MONAD_NAMESPACE_END

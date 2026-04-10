@@ -144,6 +144,7 @@ PrecompileResult ripemd160_execute(byte_string_view);
 PrecompileResult expmod_execute(byte_string_view);
 PrecompileResult ecadd_execute(byte_string_view);
 PrecompileResult ecmul_execute(byte_string_view);
+PrecompileResult snarkv_execute(byte_string_view);
 
 struct PrecompileImplResult
 {
@@ -169,5 +170,8 @@ ecadd_impl(byte_string_view input, std::span<uint8_t, 64> const out);
 
 PrecompileImplResult
 ecmul_impl(byte_string_view input, std::span<uint8_t, 64> const out);
+
+PrecompileImplResult
+snarkv_impl(byte_string_view input, std::span<uint8_t, 32> const out);
 
 MONAD_NAMESPACE_END

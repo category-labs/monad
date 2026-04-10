@@ -518,22 +518,20 @@ point_evaluation_impl(byte_string_view input, std::span<uint8_t, 64> const out)
     return {out.data(), 256};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-bls12_pairing_check_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult bls12_pairing_check_impl(
+    byte_string_view const input, std::span<uint8_t, 32> const out)
 {
     auto const k = input.size() / 384;
     if (input.size() % 384 != 0) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
-    auto result = alloc_success(32);
     if (k == 0) {
-        result.obuf[31] = 1;
-        return result;
+        return PrecompileImplResult::failure();
     }
 
     auto *pairs = static_cast<zkvm_bls12_381_pairing_pair *>(
-        std::malloc(k * sizeof(zkvm_bls12_381_pairing_pair)));
+        std::aligned_alloc(8, k * sizeof(zkvm_bls12_381_pairing_pair)));
     MONAD_ASSERT(pairs != nullptr);
 
     for (size_t i = 0; i < k; ++i) {
@@ -541,7 +539,7 @@ bls12_pairing_check_execute(byte_string_view const input)
         if (!evm_g1_to_zkvm(entry, pairs[i].g1.data) ||
             !evm_g2_to_zkvm(entry + 128, pairs[i].g2.data)) {
             std::free(pairs);
-            return PrecompileResult::failure();
+            return PrecompileImplResult::failure();
         }
     }
 
@@ -550,11 +548,12 @@ bls12_pairing_check_execute(byte_string_view const input)
     std::free(pairs);
 
     if (status != ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return PrecompileImplResult::failure();
     }
 
-    result.obuf[31] = verified ? 1 : 0;
-    return result;
+    std::memset(out.data(), 0, 32);
+    out.data()[31] = verified ? 1 : 0;
+    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

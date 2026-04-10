@@ -49,6 +49,8 @@
 #include <silkpre/ecdsa.h>
 #include <silkpre/precompile.h>
 
+#include <gmp.h>
+
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
@@ -183,10 +185,50 @@ identity_execute(byte_string_view const input)
     return {EVMC_SUCCESS, output, input.size()};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-expmod_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult expmod_impl(
+    std::span<uint8_t> const base, std::span<uint8_t> const exp,
+    std::span<uint8_t> const modulus, std::span<uint8_t> out)
 {
-    return silkpre_execute<silkpre_expmod_run>(input);
+    mpz_t b;
+    mpz_init(b);
+    if (base.size()) {
+        mpz_import(b, base.size(), 1, 1, 0, 0, base.data());
+    }
+
+    mpz_t e;
+    mpz_init(e);
+    if (exp.size()) {
+        mpz_import(e, exp.size(), 1, 1, 0, 0, exp.data());
+    }
+
+    mpz_t m;
+    mpz_init(m);
+    mpz_import(m, modulus.size(), 1, 1, 0, 0, modulus.data());
+
+    if (mpz_sgn(m) == 0) {
+        mpz_clear(m);
+        mpz_clear(e);
+        mpz_clear(b);
+
+        return {out.data(), static_cast<size_t>(modulus.size())};
+    }
+
+    mpz_t result;
+    mpz_init(result);
+
+    mpz_powm(result, b, e, m);
+
+    // export as little-endian
+    mpz_export(out.data(), nullptr, -1, 1, 0, 0, result);
+    // and convert to big-endian
+    std::reverse(out.begin(), out.end());
+
+    mpz_clear(result);
+    mpz_clear(m);
+    mpz_clear(e);
+    mpz_clear(b);
+
+    return {out.data(), modulus.size()};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

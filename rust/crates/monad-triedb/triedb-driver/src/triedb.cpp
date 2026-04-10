@@ -13,14 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <cassert>
-#include <filesystem>
-#include <iostream>
-#include <limits>
-#include <memory>
-#include <optional>
-#include <utility>
-#include <vector>
+#include "triedb.h"
 
 #include <category/core/byte_string.hpp>
 #include <category/core/nibble.h>
@@ -30,7 +23,16 @@
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
 
-#include "triedb.h"
+#include <cassert>
+#include <filesystem>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include <quill/Quill.h>
 
 // Convert a nibble path into a packed byte array.
 void nibbles_to_bytes(
@@ -63,23 +65,26 @@ struct triedb
 int triedb_open(
     char const *dbdirpath, triedb **db, uint64_t const node_lru_max_mem)
 {
-    if (db == nullptr || *db != nullptr) {
+    if (dbdirpath == nullptr || db == nullptr || *db != nullptr) {
         return -1;
     }
 
     std::vector<std::filesystem::path> paths;
-    if (std::filesystem::is_block_file(dbdirpath)) {
+    std::error_code ec;
+
+    if (std::filesystem::is_block_file(dbdirpath, ec)) {
         paths.emplace_back(dbdirpath);
     }
-    else {
-        std::error_code ec;
+    else if (!ec) {
         for (auto const &file :
              std::filesystem::directory_iterator(dbdirpath, ec)) {
             paths.emplace_back(file.path());
         }
-        if (ec) {
-            return -2;
-        }
+    }
+
+    if (ec) {
+        LOG_ERROR("Failed to inspect database path: {} ({})", dbdirpath, ec);
+        return -2;
     }
 
     try {
@@ -102,6 +107,12 @@ int triedb_read(
     triedb *db, uint8_t const *const key, uint8_t const key_len_nibbles,
     uint8_t const **value, uint64_t const block_id)
 {
+    if (db == nullptr || value == nullptr) {
+        return -3;
+    }
+
+    *value = nullptr;
+
     auto result = db->db_.find(
         monad::mpt::NibblesView{0, key_len_nibbles, key}, block_id);
     if (!result.has_value()) {
@@ -125,12 +136,11 @@ int triedb_read(
 
 void triedb_async_read(
     triedb *db, uint8_t const *const key, uint8_t const key_len_nibbles,
-    uint64_t const block_id,
-    void (*completed)(uint8_t const *value, int length, void *user), void *user)
+    uint64_t const block_id, triedb_async_read_callback_fn callback, void *user)
 {
     struct receiver_t
     {
-        void (*completed_)(uint8_t const *value, int length, void *user);
+        triedb_async_read_callback_fn callback_;
         void *user_;
 
         void set_value(
@@ -139,7 +149,7 @@ void triedb_async_read(
         {
             uint8_t const *value = nullptr;
             int length = 0;
-            auto const completed = completed_;
+            triedb_async_read_callback_fn const callback = callback_;
             void *const user = user_;
             if (!result) {
                 length = -1;
@@ -164,7 +174,7 @@ void triedb_async_read(
                 }
             }
             delete state;
-            completed(value, length, user);
+            callback(value, length, user);
         }
     };
 
@@ -173,7 +183,7 @@ void triedb_async_read(
             db->ctx_.get(),
             monad::mpt::NibblesView{0, key_len_nibbles, key},
             block_id),
-        receiver_t{completed, user}));
+        receiver_t{callback, user}));
     state->initiate();
 }
 
@@ -182,12 +192,12 @@ namespace detail
     class Traverse final : public monad::mpt::TraverseMachine
     {
         void *context_;
-        callback_func callback_;
+        triedb_async_traverse_callback_fn callback_;
         monad::mpt::Nibbles path_;
 
     public:
         Traverse(
-            void *context, callback_func callback,
+            void *context, triedb_async_traverse_callback_fn callback,
             monad::mpt::NibblesView const initial_path)
             : context_(context)
             , callback_(callback)
@@ -252,7 +262,7 @@ namespace detail
     struct TraverseReceiver
     {
         void *context;
-        callback_func callback;
+        triedb_async_traverse_callback_fn callback;
 
         void set_value(
             monad::async::erased_connected_operation *state,
@@ -284,7 +294,7 @@ namespace detail
         TraverseReceiver traverse_receiver;
 
         GetNodeReceiver(
-            void *context, callback_func callback,
+            void *context, triedb_async_traverse_callback_fn callback,
             monad::mpt::detail::TraverseSender traverse_sender_)
             : traverse_sender(std::move(traverse_sender_))
             , traverse_receiver(context, callback)
@@ -316,7 +326,8 @@ namespace detail
 
 bool triedb_traverse(
     triedb *db, uint8_t const *const key, uint8_t const key_len_nibbles,
-    uint64_t const block_id, void *context, callback_func callback)
+    uint64_t const block_id, void *context,
+    triedb_async_traverse_callback_fn callback)
 {
     monad::mpt::NibblesView const prefix{0, key_len_nibbles, key};
     auto cursor = db->db_.find(prefix, block_id);
@@ -351,7 +362,7 @@ void triedb_async_ranged_get(
     uint8_t const prefix_len_nibbles, uint8_t const *const min_key,
     uint8_t const min_len_nibbles, uint8_t const *const max_key,
     uint8_t const max_len_nibbles, uint64_t const block_id, void *context,
-    callback_func callback)
+    triedb_async_traverse_callback_fn callback)
 {
     monad::mpt::NibblesView const prefix{0, prefix_len_nibbles, prefix_key};
     monad::mpt::NibblesView const min{0, min_len_nibbles, min_key};
@@ -392,7 +403,8 @@ void triedb_async_ranged_get(
 
 void triedb_async_traverse(
     triedb *db, uint8_t const *const key, uint8_t const key_len_nibbles,
-    uint64_t const block_id, void *context, callback_func callback)
+    uint64_t const block_id, void *context,
+    triedb_async_traverse_callback_fn callback)
 {
     monad::mpt::NibblesView const prefix{0, key_len_nibbles, key};
     auto machine = std::make_unique<detail::Traverse>(

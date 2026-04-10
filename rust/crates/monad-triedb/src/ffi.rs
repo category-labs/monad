@@ -14,8 +14,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub(crate) use self::bindings::{
-    monad_c_bytes32, triedb, triedb_async_ranged_get, triedb_async_read, triedb_async_traverse,
-    triedb_async_traverse_callback,
+    monad_c_bytes32, triedb, triedb_async_ranged_get, triedb_async_read,
+    triedb_async_read_callback_fn, triedb_async_traverse, triedb_async_traverse_callback,
+    triedb_async_traverse_callback_fn,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_early,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_normally,
     triedb_async_traverse_callback_triedb_async_traverse_callback_value, triedb_close,
@@ -26,7 +27,12 @@ pub(crate) use self::bindings::{
 };
 pub use self::bindings::{validator_data, validator_set};
 
-#[allow(dead_code, non_camel_case_types, non_upper_case_globals)]
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    non_upper_case_globals,
+    non_snake_case
+)]
 mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }

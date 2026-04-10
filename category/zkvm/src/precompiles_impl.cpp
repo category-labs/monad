@@ -274,33 +274,33 @@ snarkv_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
     return {out.data(), 32};
 }
 
-PrecompileResult blake2bf_execute(byte_string_view const input)
+PrecompileImplResult
+blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
     if (input.size() != 213) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
     uint8_t const f = input[212];
     if (f != 0 && f != 1) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
     uint32_t const rounds = u32_be::unsafe_from(input.data()).native();
 
-    auto result = alloc_success(64);
-    std::memcpy(result.obuf, input.data() + 4, 64);
+    std::memcpy(out.data(), input.data() + 4, 64);
 
-    auto *h = reinterpret_cast<zkvm_blake2f_state *>(result.obuf);
+    auto *h = reinterpret_cast<zkvm_blake2f_state *>(out.data());
     auto const *m =
         reinterpret_cast<zkvm_blake2f_message const *>(input.data() + 68);
     auto const *t =
         reinterpret_cast<zkvm_blake2f_offset const *>(input.data() + 196);
 
     if (zkvm_blake2f(rounds, h, m, t, f) != ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
-    return result;
+    return {out.data(), 64};
 }
 
 PrecompileResult point_evaluation_execute(byte_string_view input)

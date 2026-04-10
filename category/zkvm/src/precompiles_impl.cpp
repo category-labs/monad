@@ -201,8 +201,10 @@ PrecompileResult identity_execute(byte_string_view const input)
     return {EVMC_SUCCESS, output, input.size()};
 }
 
-PrecompileResult expmod_execute(byte_string_view const input)
+PrecompileImplResult
+expmod_impl(byte_string_view const input, std::span<uint8_t> const out)
 {
+    // TODO(dhil): This duplicates some of the work of _execute.
     uint8_t lengths[96];
     safe_copy(lengths, 96, input.data(), input.size(), 0);
 
@@ -211,11 +213,11 @@ PrecompileResult expmod_execute(byte_string_view const input)
     uint64_t const mod_len = u64_be::unsafe_from(&lengths[88]).native();
 
     if (mod_len == 0) {
-        return {EVMC_SUCCESS, static_cast<uint8_t *>(std::malloc(1)), 0};
+        return {out.data(), 0};
     }
 
     auto const data = input.data() + 96;
-    auto result = alloc_success(mod_len);
+    std::memset(out.data(), 0, out.size());
     zkvm_modexp(
         data,
         base_len,
@@ -223,8 +225,8 @@ PrecompileResult expmod_execute(byte_string_view const input)
         exp_len,
         data + base_len + exp_len,
         mod_len,
-        result.obuf);
-    return result;
+        out.data());
+    return {out.data(), out.size()};
 }
 
 PrecompileResult ecadd_execute(byte_string_view const input)

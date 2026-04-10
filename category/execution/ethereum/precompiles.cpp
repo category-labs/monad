@@ -387,4 +387,12 @@ PrecompileResult bls12_pairing_check_execute(byte_string_view const input)
         bls12_pairing_check_impl(input, std::span<uint8_t, 32>{out, 32}));
 }
 
+PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(128));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_map_fp_to_g1_impl(input, std::span<uint8_t, 128>{out, 128}));
+}
+
 MONAD_NAMESPACE_END

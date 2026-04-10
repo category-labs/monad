@@ -415,15 +415,17 @@ namespace bls12
     }
 
     template <typename Group>
-    PrecompileResult map_fp_to_g(byte_string_view const input)
+    PrecompileImplResult map_fp_to_g(
+        byte_string_view const input,
+        std::span<uint8_t, Group::encoded_size> const out)
     {
         if (MONAD_UNLIKELY(input.size() != Group::element_encoded_size)) {
-            return PrecompileResult::failure();
+            return {nullptr, 0};
         }
 
         auto const maybe_fp = Group::read_element(input.data());
         if (MONAD_UNLIKELY(!maybe_fp.has_value())) {
-            return PrecompileResult::failure();
+            return {nullptr, 0};
         }
 
         typename Group::Point point;
@@ -432,21 +434,15 @@ namespace bls12
         typename Group::AffinePoint result;
         Group::to_affine(&result, &point);
 
-        auto *const output_buf =
-            static_cast<uint8_t *>(std::malloc(Group::encoded_size));
-        MONAD_ASSERT(output_buf != nullptr);
+        Group::write(result, out.data());
 
-        Group::write(result, output_buf);
-
-        return {
-            .status_code = EVMC_SUCCESS,
-            .obuf = output_buf,
-            .output_size = Group::encoded_size,
-        };
+        return {out.data(), Group::encoded_size};
     }
 
-    template PrecompileResult map_fp_to_g<G1>(byte_string_view);
-    template PrecompileResult map_fp_to_g<G2>(byte_string_view);
+    template PrecompileImplResult
+        map_fp_to_g<G1>(byte_string_view, std::span<uint8_t, G1::encoded_size>);
+    template PrecompileImplResult
+        map_fp_to_g<G2>(byte_string_view, std::span<uint8_t, G2::encoded_size>);
 } // namespace bls12
 
 MONAD_NAMESPACE_END

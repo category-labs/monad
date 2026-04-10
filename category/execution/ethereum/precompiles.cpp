@@ -355,4 +355,12 @@ PrecompileResult bls12_g1_add_execute(byte_string_view const input)
         bls12_g1_add_impl(input, std::span<uint8_t, 128>{out, 128}));
 }
 
+PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(128));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_g1_msm_impl(input, std::span<uint8_t, 128>{out, 128}));
+}
+
 MONAD_NAMESPACE_END

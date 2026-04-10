@@ -362,11 +362,12 @@ PrecompileImplResult bls12_g1_add_impl(
     return {out.data(), 128};
 }
 
-PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
+PrecompileImplResult bls12_g1_msm_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
 {
     auto const k = input.size() / 160;
     if (k == 0 || input.size() % 160 != 0) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
     auto *pairs = static_cast<zkvm_bls12_381_g1_msm_pair *>(
@@ -376,7 +377,7 @@ PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
         auto const *entry = input.data() + i * 160;
         if (!evm_g1_to_zkvm(entry, pairs[i].point.data)) {
             std::free(pairs);
-            return PrecompileResult::failure();
+            return {nullptr, 0};
         }
         std::memcpy(pairs[i].scalar.data, entry + 128, 32);
     }
@@ -386,12 +387,11 @@ PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
     std::free(pairs);
 
     if (status != ZKVM_EOK) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
-    auto result = alloc_success(128);
-    zkvm_g1_to_evm(result_point.data, result.obuf);
-    return result;
+    zkvm_g1_to_evm(result_point.data, out.data());
+    return {out.data(), 128};
 }
 
 PrecompileResult bls12_g2_add_execute(byte_string_view const input)

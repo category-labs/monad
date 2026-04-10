@@ -1427,6 +1427,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "monad-ethcall"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-rlp",
+ "alloy-sol-types",
+ "bindgen",
+ "futures",
+ "hex",
+ "monad-cxx",
+ "serde",
+ "tracing",
+]
+
+[[package]]
 name = "monad-event-ring"
 version = "0.1.0"
 dependencies = [

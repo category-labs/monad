@@ -207,17 +207,24 @@ bool init_trusted_setup()
     return {out.data(), 32};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-sha256_execute(byte_string_view const input)
+// Substitute a pointer to the empty string when `input.data()` is null.
+static inline uint8_t const *nonnull_input_data(byte_string_view const input)
 {
-    auto result = alloc_success(32);
+    return input.data() != nullptr ? input.data()
+                                   : reinterpret_cast<uint8_t const *>("");
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult
+sha256_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
+{
+    std::memset(out.data(), 0, 32);
     if (zkvm_sha256(
-            input.data(),
+            nonnull_input_data(input),
             input.size(),
-            reinterpret_cast<zkvm_bytes_32 *>(result.obuf)) != ZKVM_EOK) {
-        return {EVMC_SUCCESS, nullptr, 0};
+            reinterpret_cast<zkvm_bytes_32 *>(out.data())) != ZKVM_EOK) {
+        return PrecompileImplResult::failure();
     }
-    return result;
+    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

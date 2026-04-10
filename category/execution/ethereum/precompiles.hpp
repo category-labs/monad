@@ -213,4 +213,7 @@ PrecompileImplResult bls12_pairing_check_impl(
 
 PrecompileImplResult bls12_map_fp_to_g1_impl(
     byte_string_view input, std::span<uint8_t, 128> const out);
+
+PrecompileImplResult bls12_map_fp2_to_g2_impl(
+    byte_string_view input, std::span<uint8_t, 256> const out);
 MONAD_NAMESPACE_END

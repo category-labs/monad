@@ -188,13 +188,23 @@ Module Type Uint <: UintOps.
     let '(hi, lo) := mulx x y in
     to_Z hi * base width + to_Z lo = to_Z x * to_Z y.
 
-  (** [adc_2_short] exact double-width addition.
-      Precondition: [to_Z x1 <= wB - 2] ensures no overflow. *)
+  (** [adc_2_short] exact double-width addition when no top carry is lost.
+      Precondition: [to_Z x1 <= wB - 2] ensures no overflow past [wB^2]. *)
   Axiom spec_adc_2_short : forall x1 x0 y0,
     to_Z x1 <= base width - 2 ->
     let '(r1, r0) := adc_2_short x1 x0 y0 in
     to_Z r1 * base width + to_Z r0 =
       to_Z x1 * base width + to_Z x0 + to_Z y0.
+
+  (** [adc_2_short] always matches the underlying machine instruction modulo
+      double-word width. This is the faithful semantics of the 3-argument
+      [adc_2] overload in uint256.hpp, implemented as [addq] followed by
+      [adcq $0]. *)
+  Axiom spec_adc_2_short_mod : forall x1 x0 y0,
+    let '(r1, r0) := adc_2_short x1 x0 y0 in
+    to_Z r1 * base width + to_Z r0 =
+      (to_Z x1 * base width + to_Z x0 + to_Z y0)
+        mod (base width * base width).
 
   (** [adc_2_full] truncating double-width addition.
       The result is the sum modulo [wB^2]. *)

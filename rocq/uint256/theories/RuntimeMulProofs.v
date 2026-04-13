@@ -349,6 +349,161 @@ Proof.
   - lia.
 Qed.
 
+Definition carry_pair_bounded (c_hi c_lo : t) : Prop :=
+  to_Z c_hi * base width + to_Z c_lo <=
+    base width * base width - base width.
+
+Lemma add_modulus_words_term_mod : forall a z n,
+  (a + z * modulus_words n) mod modulus_words n = a mod modulus_words n.
+Proof.
+  intros a z n.
+  rewrite <- Zplus_mod_idemp_r.
+  rewrite Z.mod_mul by (pose proof (modulus_words_pos n); lia).
+  rewrite Z.add_0_r.
+  reflexivity.
+Qed.
+
+Lemma mulx_carry_pair_bounded : forall x y hi lo,
+  mulx x y = (hi, lo) ->
+  carry_pair_bounded hi lo.
+Proof.
+  intros x y hi lo Hmulx.
+  pose proof (spec_mulx x y) as Hmul.
+  pose proof (spec_to_Z x) as Hx.
+  pose proof (spec_to_Z y) as Hy.
+  pose proof base_width_ge_2 as HB.
+  unfold carry_pair_bounded.
+  rewrite Hmulx in Hmul.
+  nia.
+Qed.
+
+Lemma adc_2_short_exact_pair_bound : forall c_hi c_lo y0 r1 r0,
+  carry_pair_bounded c_hi c_lo ->
+  adc_2_short c_hi c_lo y0 = (r1, r0) ->
+  to_Z r1 * base width + to_Z r0 =
+    to_Z c_hi * base width + to_Z c_lo + to_Z y0.
+Proof.
+  intros c_hi c_lo y0 r1 r0 Hbound Hadc.
+  pose proof (spec_adc_2_short_mod c_hi c_lo y0) as Hspec.
+  pose proof (spec_to_Z c_hi) as Hhi.
+  pose proof (spec_to_Z c_lo) as Hlo.
+  pose proof (spec_to_Z y0) as Hy.
+  pose proof base_width_pos as HB.
+  unfold carry_pair_bounded in Hbound.
+  rewrite Hadc in Hspec.
+  rewrite Z.mod_small in Hspec by lia.
+  exact Hspec.
+Qed.
+
+Lemma adc_3_carry_pair_bounded :
+  forall x y x0 c_hi c_lo hi lo c_hi' c_lo' r0,
+  mulx x y = (hi, lo) ->
+  carry_pair_bounded c_hi c_lo ->
+  adc_3 hi lo x0 c_hi c_lo = (c_hi', c_lo', r0) ->
+  carry_pair_bounded c_hi' c_lo'.
+Proof.
+  intros x y x0 c_hi c_lo hi lo c_hi' c_lo' r0 Hmulx Hbound Hadc.
+  pose proof (spec_mulx x y) as Hmul.
+  pose proof (spec_to_Z x) as Hx.
+  pose proof (spec_to_Z y) as Hy.
+  pose proof (spec_to_Z x0) as Hx0.
+  pose proof (spec_to_Z c_hi') as Hhi'.
+  pose proof (spec_to_Z c_lo') as Hlo'.
+  pose proof (spec_to_Z r0) as Hr0.
+  pose proof base_width_ge_2 as HB.
+  pose proof base_width_pos as HBpos.
+  pose proof (spec_adc_3 hi lo x0 c_hi c_lo (mulx_hi_bound _ _ _ _ Hmulx))
+    as Hadc_spec.
+  unfold carry_pair_bounded in *.
+  rewrite Hmulx in Hmul.
+  rewrite Hadc in Hadc_spec.
+  assert (Hprod : to_Z hi * base width + to_Z lo <=
+                  base width * base width - 2 * base width + 1).
+  { rewrite Hmul. nia. }
+  assert (Hsum :
+    (to_Z c_hi' * base width + to_Z c_lo') * base width + to_Z r0 <=
+      (base width * base width - base width) * base width +
+      (base width - 1)).
+  { replace ((to_Z c_hi' * base width + to_Z c_lo') * base width + to_Z r0)
+      with (to_Z c_hi' * base width * base width
+            + to_Z c_lo' * base width + to_Z r0) by ring.
+    rewrite Hadc_spec. nia. }
+  nia.
+Qed.
+
+Lemma adc_3_mul_step_mod_words :
+  forall result pos R x y hi lo c_hi c_lo c_hi' c_lo' res,
+  length result = R ->
+  (pos < R)%nat ->
+  mulx x y = (hi, lo) ->
+  adc_3 hi lo (get_word result pos) c_hi c_lo = (c_hi', c_lo', res) ->
+  (to_Z_words (set_word result pos res)
+   + (to_Z c_hi' * base width + to_Z c_lo') * modulus_words (S pos))
+    mod modulus_words R
+  = (to_Z_words result
+     + (to_Z x * to_Z y * base width
+        + to_Z c_hi * base width + to_Z c_lo)
+       * modulus_words pos)
+    mod modulus_words R.
+Proof.
+  intros result pos R x y hi lo c_hi c_lo c_hi' c_lo' res Hlen Hpos Hmulx
+    Hadc.
+  rewrite to_Z_words_set_word_local by (rewrite Hlen; lia).
+  change ((base width) ^ Z.of_nat pos) with (modulus_words pos).
+  rewrite modulus_words_succ.
+  pose proof (spec_mulx x y) as Hmul.
+  pose proof (spec_adc_3 hi lo (get_word result pos) c_hi c_lo
+    (mulx_hi_bound _ _ _ _ Hmulx)) as Hadc_spec.
+  rewrite Hmulx in Hmul.
+  rewrite Hadc in Hadc_spec.
+  assert (Heq :
+    to_Z_words result - to_Z (get_word result pos) * modulus_words pos
+    + to_Z res * modulus_words pos
+    + (to_Z c_hi' * base width + to_Z c_lo') *
+      (base width * modulus_words pos)
+    = to_Z_words result
+      + (to_Z x * to_Z y * base width + to_Z c_hi * base width + to_Z c_lo) *
+        modulus_words pos).
+  { nia. }
+  apply (f_equal (fun z => z mod modulus_words R)) in Heq.
+  exact Heq.
+Qed.
+
+Lemma adc_2_short_carry_step_zero_mod :
+  forall result pos R c_hi c_lo r1 r0,
+  length result = R ->
+  (S pos < R)%nat ->
+  carry_pair_bounded c_hi c_lo ->
+  get_word result (S pos) = zero ->
+  adc_2_short c_hi c_lo (get_word result pos) = (r1, r0) ->
+  to_Z_words (set_word (set_word result pos r0) (S pos) r1)
+    mod modulus_words R
+  = (to_Z_words result
+     + (to_Z c_hi * base width + to_Z c_lo) * modulus_words pos)
+    mod modulus_words R.
+Proof. Admitted.
+
+Lemma zero_tail_before_set_word_local :
+  forall result I R res_I,
+  (forall j, (S I <= j)%nat -> (j < R)%nat -> get_word result j = zero) ->
+  forall j, (S I <= j)%nat -> (j < R)%nat ->
+    get_word (MakeProofs.set_word result I res_I) j = zero.
+Proof.
+  intros result I R res_I Hzero j Hij HjR.
+  rewrite get_set_word_other_local by lia.
+  apply Hzero; lia.
+Qed.
+
+Lemma mul_add_line_recur_zero_tail :
+  forall xs_tail (y_i : t) result J I R (c_hi c_lo : t),
+  length result = R ->
+  (R <= I + J + length xs_tail + 1)%nat ->
+  (forall j, (I + J + length xs_tail <= j)%nat -> (j < R)%nat ->
+     get_word result j = zero) ->
+  forall j, (I + J + S (length xs_tail) <= j)%nat -> (j < R)%nat ->
+    get_word (mul_add_line_recur xs_tail y_i result J I R c_hi c_lo) j = zero.
+Proof. Admitted.
+
 (** * Structural Helpers *)
 
 Lemma mul_line_recur_length : forall xs (y : t) result I R (carry : t),
@@ -588,23 +743,49 @@ Lemma mul_add_line_recur_correct :
         + to_Z c_hi * base width + to_Z c_lo)
        * 2^(64 * Z.of_nat (I + J)))
     mod modulus_words R.
+Proof. Admitted.
+
+Lemma mul_add_line_recur_full_correct :
+  forall xs_tail (y_i : t) result J I R (c_hi c_lo : t),
+  length result = R ->
+  carry_pair_bounded c_hi c_lo ->
+  (forall j, (I + J + length xs_tail + 1 <= j)%nat -> (j < R)%nat ->
+     get_word result j = zero) ->
+  to_Z_words (mul_add_line_recur xs_tail y_i result J I R c_hi c_lo)
+    mod modulus_words R
+  = (to_Z_words result
+     + (to_Z_words xs_tail * to_Z y_i * base width
+        + to_Z c_hi * base width + to_Z c_lo)
+       * 2 ^ (64 * Z.of_nat (I + J)))
+    mod modulus_words R
+  /\
+  (forall j, (I + J + S (length xs_tail) + 1 <= j)%nat -> (j < R)%nat ->
+     get_word (mul_add_line_recur xs_tail y_i result J I R c_hi c_lo) j = zero).
+Proof. Admitted.
+
+Lemma mul_line_recur_zero_tail : forall xs (y : t) result I R (carry : t),
+  length result = R ->
+  (forall j, (I <= j)%nat -> (j < R)%nat -> get_word result j = zero) ->
+  forall j, (I + length xs + 1 <= j)%nat -> (j < R)%nat ->
+    get_word (mul_line_recur xs y result I R carry) j = zero.
+Proof. Admitted.
+
+Lemma mul_line_zero_tail : forall R xs (y : t),
+  (0 < length xs)%nat ->
+  (0 < R)%nat ->
+  forall j, (S (length xs) <= j)%nat -> (j < R)%nat ->
+    get_word (mul_line R xs y) j = zero.
 Proof.
-  induction xs_tail as [|x rest IH];
-    intros y_i result J I R c_hi c_lo Hlen HRbound;
-    cbn [mul_add_line_recur to_Z_words].
-  - destruct (Nat.ltb (I + J + 1) R) eqn:HI1.
-    + admit.
-    + destruct (Nat.ltb (I + J) R) eqn:HI.
-      * admit.
-      * admit.
-  - destruct (Nat.ltb (I + J) R) eqn:HI.
-    + destruct (Nat.ltb (I + J + 2) R) eqn:HI2.
-      * admit.
-      * destruct (Nat.ltb (I + J + 1) R) eqn:HI1.
-        { admit. }
-        { admit. }
-    + admit.
 Admitted.
+
+Lemma mul_add_line_zero_tail : forall I R xs (y_i : t) result,
+  (0 < length xs)%nat ->
+  length result = R ->
+  (forall j, (I + length xs <= j)%nat -> (j < R)%nat ->
+     get_word result j = zero) ->
+  forall j, (I + S (length xs) <= j)%nat -> (j < R)%nat ->
+    get_word (mul_add_line I R xs y_i result) j = zero.
+Proof. Admitted.
 
 (** * Row-Level Correctness *)
 
@@ -613,39 +794,51 @@ Lemma mul_line_correct : forall R xs (y : t),
   (0 < R)%nat ->
   to_Z_words (mul_line R xs y) mod modulus_words R
   = (to_Z y * to_Z_words xs) mod modulus_words R.
-Proof. Admitted.
+Proof.
+Admitted.
 
 Lemma mul_add_line_correct : forall I R xs (y_i : t) result,
   (0 < length xs)%nat ->
   length result = R ->
+  (forall j, (I + length xs <= j)%nat -> (j < R)%nat ->
+     get_word result j = zero) ->
   to_Z_words (mul_add_line I R xs y_i result) mod modulus_words R
   = (to_Z_words result + to_Z y_i * to_Z_words xs * 2^(64 * Z.of_nat I))
     mod modulus_words R.
-Proof. Admitted.
+Proof.
+Admitted.
 
 (** * General Word-List Theorem *)
 
 Lemma truncating_mul_runtime_recur_correct : forall xs ys_tail result I R,
   (0 < length xs)%nat ->
   length result = R ->
+  (forall j, (I + length xs <= j)%nat -> (j < R)%nat ->
+     get_word result j = zero) ->
   to_Z_words (truncating_mul_runtime_recur xs ys_tail result I R)
     mod modulus_words R
   = (to_Z_words result
       + to_Z_words xs * to_Z_words ys_tail * 2^(64 * Z.of_nat I))
     mod modulus_words R.
 Proof.
-  induction ys_tail as [|y_i rest IH]; intros result I R Hxs Hlen.
+  induction ys_tail as [|y_i rest IH]; intros result I R Hxs Hlen Hzero.
   - cbn [truncating_mul_runtime_recur to_Z_words].
     rewrite Z.mul_0_r, Z.add_0_r.
     reflexivity.
   - cbn [truncating_mul_runtime_recur].
-    pose proof (mul_add_line_correct I R xs y_i result Hxs Hlen) as Hrow.
+    pose proof (mul_add_line_correct I R xs y_i result Hxs Hlen Hzero) as Hrow.
     pose proof
       (IH (mul_add_line I R xs y_i result) (S I) R Hxs
-          (mul_add_line_length I R xs y_i result Hlen))
-      as Hrest.
-    admit.
-Admitted.
+          (mul_add_line_length I R xs y_i result Hlen)
+          (fun j Hj HjR => mul_add_line_zero_tail I R xs y_i result Hxs Hlen
+             Hzero j ltac:(lia) HjR)) as Hrest.
+    rewrite Hrest, Zplus_mod, Hrow.
+    rewrite <- Zplus_mod.
+    cbn [to_Z_words].
+    rewrite pow64_succ, width_is_64; unfold base.
+    f_equal.
+    ring.
+Qed.
 
 Theorem truncating_mul_runtime_correct : forall xs ys R,
   (0 < length xs)%nat ->
@@ -662,7 +855,8 @@ Proof.
     pose proof (mul_line_correct R xs y Hxs HR) as Hline.
     pose proof
       (truncating_mul_runtime_recur_correct
-         xs ys_tail (mul_line R xs y) 1 R Hxs (mul_line_length R xs y))
+         xs ys_tail (mul_line R xs y) 1 R Hxs (mul_line_length R xs y)
+         (fun j Hj HjR => mul_line_zero_tail R xs y Hxs HR j Hj HjR))
       as Htail.
     rewrite Htail, Zplus_mod, Hline.
     rewrite <- Zplus_mod.

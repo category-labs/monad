@@ -163,7 +163,8 @@ namespace detail
                 MONAD_ASSERT(buffer_);
                 --sender->outstanding_reads;
                 if (sender->version_expired_before_complete ||
-                    !sender->aux.version_is_valid_ondisk(sender->version)) {
+                    !sender->aux.metadata_ctx().version_is_valid_ondisk(
+                        sender->version)) {
                     // async read failure or stopping initiated
                     sender->version_expired_before_complete = true;
                     sender->reads_to_initiate.clear();
@@ -313,7 +314,8 @@ namespace detail
                 if (next == nullptr) {
                     MONAD_ASSERT(sender.aux.is_on_disk());
                     // verify version before read
-                    if (!sender.aux.version_is_valid_ondisk(sender.version)) {
+                    if (!sender.aux.metadata_ctx().version_is_valid_ondisk(
+                            sender.version)) {
                         sender.version_expired_before_complete = true;
                         sender.reads_to_initiate.clear();
                         sender.reads_to_initiate_sidx = 0;

@@ -557,11 +557,13 @@ int main(int argc, char *argv[])
                 if (append) {
                     root = read_node_blocking(
                         aux,
-                        aux.get_latest_root_offset(),
-                        aux.db_history_max_version());
+                        aux.metadata_ctx().get_latest_root_offset(),
+                        aux.metadata_ctx().db_history_max_version());
                 }
                 auto block_id =
-                    in_memory ? 0 : (aux.db_history_max_version() + 1);
+                    in_memory
+                        ? 0
+                        : (aux.metadata_ctx().db_history_max_version() + 1);
                 printf("starting block id %lu\n", block_id);
 
                 auto begin_test = std::chrono::steady_clock::now();
@@ -701,14 +703,17 @@ int main(int argc, char *argv[])
                     Node::SharedPtr &root = std::get<1>(*ret);
                     NodeCursor &state_start = std::get<2>(*ret);
                     if (!in_memory) {
-                        aux.set_io(io, history_len);
+                        aux.init(io, history_len);
                     }
                     root = read_node_blocking(
                         aux,
-                        aux.get_latest_root_offset(),
-                        aux.db_history_max_version());
+                        aux.metadata_ctx().get_latest_root_offset(),
+                        aux.metadata_ctx().db_history_max_version());
                     auto [res, errc] = find_blocking(
-                        aux, root, state_nibbles, aux.db_history_max_version());
+                        aux,
+                        root,
+                        state_nibbles,
+                        aux.metadata_ctx().db_history_max_version());
                     MONAD_ASSERT(errc == find_result::success);
                     state_start = res;
                     return ret;
@@ -797,7 +802,7 @@ int main(int argc, char *argv[])
                                 node_cache,
                                 inflights,
                                 NodeCursor{start_node},
-                                aux.db_history_max_version(),
+                                aux.metadata_ctx().db_history_max_version(),
                                 NibblesView{},
                                 true},
                             receiver_t(

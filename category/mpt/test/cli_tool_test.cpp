@@ -227,21 +227,26 @@ struct cli_tool_fixture
                 monad::mpt::UpdateAux const aux{testio};
                 monad::mpt::Node::SharedPtr const root_ptr{read_node_blocking(
                     aux,
-                    aux.get_latest_root_offset(),
-                    aux.db_history_max_version())};
+                    aux.metadata_ctx().get_latest_root_offset(),
+                    aux.metadata_ctx().db_history_max_version())};
                 monad::mpt::NodeCursor const root(root_ptr);
 
                 for (auto const &key : this->state()->keys) {
                     auto const ret = monad::mpt::find_blocking(
-                        aux, root, key.first, aux.db_history_max_version());
+                        aux,
+                        root,
+                        key.first,
+                        aux.metadata_ctx().db_history_max_version());
                     EXPECT_EQ(ret.second, monad::mpt::find_result::success);
                 }
                 EXPECT_EQ(
-                    this->state()->aux.db_history_min_valid_version(),
-                    aux.db_history_min_valid_version());
+                    this->state()
+                        ->aux.metadata_ctx()
+                        .db_history_min_valid_version(),
+                    aux.metadata_ctx().db_history_min_valid_version());
                 EXPECT_EQ(
-                    this->state()->aux.db_history_max_version(),
-                    aux.db_history_max_version());
+                    this->state()->aux.metadata_ctx().db_history_max_version(),
+                    aux.metadata_ctx().db_history_max_version());
             }).get();
         }
         if (Config.interleave_multiple_sources) {
@@ -331,21 +336,28 @@ struct cli_tool_fixture
                     monad::mpt::Node::SharedPtr const root_ptr{
                         read_node_blocking(
                             aux,
-                            aux.get_latest_root_offset(),
-                            aux.db_history_max_version())};
+                            aux.metadata_ctx().get_latest_root_offset(),
+                            aux.metadata_ctx().db_history_max_version())};
                     monad::mpt::NodeCursor const root(root_ptr);
 
                     for (auto const &key : this->state()->keys) {
                         auto const ret = monad::mpt::find_blocking(
-                            aux, root, key.first, aux.db_history_max_version());
+                            aux,
+                            root,
+                            key.first,
+                            aux.metadata_ctx().db_history_max_version());
                         EXPECT_EQ(ret.second, monad::mpt::find_result::success);
                     }
                     EXPECT_EQ(
-                        this->state()->aux.db_history_min_valid_version(),
-                        aux.db_history_min_valid_version());
+                        this->state()
+                            ->aux.metadata_ctx()
+                            .db_history_min_valid_version(),
+                        aux.metadata_ctx().db_history_min_valid_version());
                     EXPECT_EQ(
-                        this->state()->aux.db_history_max_version(),
-                        aux.db_history_max_version());
+                        this->state()
+                            ->aux.metadata_ctx()
+                            .db_history_max_version(),
+                        aux.metadata_ctx().db_history_max_version());
                 }).get();
             }
         }

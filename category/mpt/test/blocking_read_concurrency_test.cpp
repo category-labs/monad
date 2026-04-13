@@ -97,10 +97,11 @@ struct DbConcurrencyTest1
 TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
 {
     // Load root of most recent version
-    auto const latest_version = state()->aux.db_history_max_version();
+    auto const latest_version =
+        state()->aux.metadata_ctx().db_history_max_version();
     Node::SharedPtr root = read_node_blocking(
         state()->aux,
-        state()->aux.get_root_offset_at_version(latest_version),
+        state()->aux.metadata_ctx().get_root_offset_at_version(latest_version),
         latest_version);
     ASSERT_TRUE(root);
     auto const &key = state()->keys.front().first;
@@ -153,8 +154,10 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
     }
     // Erase the version being read should trigger a find failure and ends the
     // reader thread
-    state()->aux.update_root_offset(latest_version, INVALID_OFFSET);
-    EXPECT_FALSE(state()->aux.version_is_valid_ondisk(latest_version));
+    state()->aux.metadata_ctx().update_root_offset(
+        latest_version, INVALID_OFFSET);
+    EXPECT_FALSE(
+        state()->aux.metadata_ctx().version_is_valid_ondisk(latest_version));
 
     // Wait for completion with timeout
     auto const status = completion_future.wait_for(std::chrono::seconds(5));
@@ -177,10 +180,11 @@ struct DbConcurrencyTest2
 TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
 {
     // Load root of most recent version
-    auto const latest_version = state()->aux.db_history_max_version();
+    auto const latest_version =
+        state()->aux.metadata_ctx().db_history_max_version();
     Node::SharedPtr root = read_node_blocking(
         state()->aux,
-        state()->aux.get_root_offset_at_version(latest_version),
+        state()->aux.metadata_ctx().get_root_offset_at_version(latest_version),
         latest_version);
     ASSERT_TRUE(root);
 
@@ -225,8 +229,10 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
         cond.wait(g);
     }
     // Erase the version being read should stop traverse in the reader thread
-    state()->aux.update_root_offset(latest_version, INVALID_OFFSET);
-    EXPECT_FALSE(state()->aux.version_is_valid_ondisk(latest_version));
+    state()->aux.metadata_ctx().update_root_offset(
+        latest_version, INVALID_OFFSET);
+    EXPECT_FALSE(
+        state()->aux.metadata_ctx().version_is_valid_ondisk(latest_version));
 
     // Wait for completion with timeout
     auto const status = completion_future.wait_for(std::chrono::seconds(5));

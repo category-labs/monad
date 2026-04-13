@@ -448,7 +448,7 @@ public:
         uint32_t count = 0;
         auto const *item = item_;
         do {
-            auto const chunkid = item->index(aux.db_metadata());
+            auto const chunkid = item->index(aux.metadata_ctx().main());
             count++;
             auto &chunk = pool->chunk(pool->seq, chunkid);
             MONAD_ASSERT(chunk.zone_id().second == chunkid);
@@ -461,7 +461,7 @@ public:
             }
             total_capacity += chunk.capacity();
             total_used += chunk.size();
-            item = item->next(aux.db_metadata());
+            item = item->next(aux.metadata_ctx().main());
         }
         while (item != nullptr);
         cout << "     " << name << ": " << count << " chunks with capacity "
@@ -471,10 +471,10 @@ public:
             std::cerr << "        ";
             item = item_;
             do {
-                auto const chunkid = item->index(aux.db_metadata());
+                auto const chunkid = item->index(aux.metadata_ctx().main());
                 std::cerr << " " << chunkid << " ("
                           << uint32_t(item->insertion_count()) << ")";
-                item = item->next(aux.db_metadata());
+                item = item->next(aux.metadata_ctx().main());
             }
             while (item != nullptr);
             std::cerr << std::endl;
@@ -485,25 +485,29 @@ public:
     void print_db_history_summary(MONAD_MPT_NAMESPACE::UpdateAux &aux)
     {
         cout << "MPT database has "
-             << (1 + aux.db_history_max_version() -
-                 aux.db_history_min_valid_version())
-             << " history, earliest is " << aux.db_history_min_valid_version()
-             << " latest is " << aux.db_history_max_version()
+             << (1 + aux.metadata_ctx().db_history_max_version() -
+                 aux.metadata_ctx().db_history_min_valid_version())
+             << " history, earliest is "
+             << aux.metadata_ctx().db_history_min_valid_version()
+             << " latest is " << aux.metadata_ctx().db_history_max_version()
              << ".\n     It has been configured to retain no more than "
-             << aux.version_history_length() << ".\n     Latest proposed is ("
-             << aux.get_latest_proposed_version() << ", "
+             << aux.metadata_ctx().version_history_length()
+             << ".\n     Latest proposed is ("
+             << aux.metadata_ctx().get_latest_proposed_version() << ", "
              << monad::to_hex(monad::byte_string_view(
-                    aux.get_latest_proposed_block_id().bytes,
+                    aux.metadata_ctx().get_latest_proposed_block_id().bytes,
                     sizeof(monad::bytes32_t)))
-             << ").\n     Latest voted is (" << aux.get_latest_voted_version()
-             << ", "
+             << ").\n     Latest voted is ("
+             << aux.metadata_ctx().get_latest_voted_version() << ", "
              << monad::to_hex(monad::byte_string_view(
-                    aux.get_latest_voted_block_id().bytes,
+                    aux.metadata_ctx().get_latest_voted_block_id().bytes,
                     sizeof(monad::bytes32_t)))
              << ").\n     Latest finalized is "
-             << aux.get_latest_finalized_version() << ", latest verified is "
-             << aux.get_latest_verified_version() << ", auto expire version is "
-             << aux.get_auto_expire_version_metadata() << "\n";
+             << aux.metadata_ctx().get_latest_finalized_version()
+             << ", latest verified is "
+             << aux.metadata_ctx().get_latest_verified_version()
+             << ", auto expire version is "
+             << aux.metadata_ctx().get_auto_expire_version_metadata() << "\n";
     }
 
     void do_restore_database()
@@ -732,33 +736,33 @@ public:
             auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
             MONAD_MPT_NAMESPACE::UpdateAux aux(io);
             for (;;) {
-                auto const *item = aux.db_metadata()->fast_list_begin();
+                auto const *item = aux.metadata_ctx().main()->fast_list_begin();
                 if (item == nullptr) {
                     break;
                 }
-                auto const chunkid = item->index(aux.db_metadata());
+                auto const chunkid = item->index(aux.metadata_ctx().main());
                 MONAD_ASSERT(chunkid != UINT32_MAX);
-                aux.remove(chunkid);
+                aux.metadata_ctx().remove(chunkid);
                 chunks.push_back(chunkid);
             }
             for (;;) {
-                auto const *item = aux.db_metadata()->slow_list_begin();
+                auto const *item = aux.metadata_ctx().main()->slow_list_begin();
                 if (item == nullptr) {
                     break;
                 }
-                auto const chunkid = item->index(aux.db_metadata());
+                auto const chunkid = item->index(aux.metadata_ctx().main());
                 MONAD_ASSERT(chunkid != UINT32_MAX);
-                aux.remove(chunkid);
+                aux.metadata_ctx().remove(chunkid);
                 chunks.push_back(chunkid);
             }
             for (;;) {
-                auto const *item = aux.db_metadata()->free_list_begin();
+                auto const *item = aux.metadata_ctx().main()->free_list_begin();
                 if (item == nullptr) {
                     break;
                 }
-                auto const chunkid = item->index(aux.db_metadata());
+                auto const chunkid = item->index(aux.metadata_ctx().main());
                 MONAD_ASSERT(chunkid != UINT32_MAX);
-                aux.remove(chunkid);
+                aux.metadata_ctx().remove(chunkid);
                 chunks.push_back(chunkid);
             }
         }
@@ -997,20 +1001,20 @@ public:
         for (auto const &i : todecompress) {
             if (i.type == monad::async::storage_pool::seq) {
                 if (i.metadata.in_fast_list) {
-                    aux.append(
+                    aux.metadata_ctx().append(
                         monad::mpt::UpdateAux::chunk_list::fast, i.chunk_id);
                     if (0 == fast_chunks_inserted++) {
-                        aux.modify_metadata(
+                        aux.metadata_ctx().modify_metadata(
                             override_insertion_count,
                             monad::mpt::UpdateAux::chunk_list::fast,
                             fast_list_base_insertion_count);
                     }
                 }
                 else if (i.metadata.in_slow_list) {
-                    aux.append(
+                    aux.metadata_ctx().append(
                         monad::mpt::UpdateAux::chunk_list::slow, i.chunk_id);
                     if (0 == slow_chunks_inserted++) {
-                        aux.modify_metadata(
+                        aux.metadata_ctx().modify_metadata(
                             override_insertion_count,
                             monad::mpt::UpdateAux::chunk_list::slow,
                             slow_list_base_insertion_count);
@@ -1029,42 +1033,47 @@ public:
                 max_chunk_id[monad::async::storage_pool::cnv] ==
             todecompress.size() - 1);
         if (fast_chunks_inserted == 0) {
-            aux.append(
+            aux.metadata_ctx().append(
                 monad::mpt::UpdateAux::chunk_list::fast, fast_list_begin_index);
             auto const it =
                 std::find(chunks.begin(), chunks.end(), fast_list_begin_index);
             MONAD_ASSERT(it != chunks.end());
             *it = UINT32_MAX;
             // override the first insertion count
-            aux.modify_metadata(
+            aux.metadata_ctx().modify_metadata(
                 override_insertion_count,
                 monad::mpt::UpdateAux::chunk_list::fast,
                 fast_list_base_insertion_count);
         }
         MONAD_ASSERT(
-            aux.db_metadata()->fast_list.begin == fast_list_begin_index);
-        MONAD_ASSERT(aux.db_metadata()->fast_list.end == fast_list_end_index);
+            aux.metadata_ctx().main()->fast_list.begin ==
+            fast_list_begin_index);
+        MONAD_ASSERT(
+            aux.metadata_ctx().main()->fast_list.end == fast_list_end_index);
 
         if (slow_chunks_inserted == 0) {
-            aux.append(
+            aux.metadata_ctx().append(
                 monad::mpt::UpdateAux::chunk_list::slow, slow_list_begin_index);
             auto const it =
                 std::find(chunks.begin(), chunks.end(), slow_list_begin_index);
             MONAD_ASSERT(it != chunks.end());
             *it = UINT32_MAX;
             // override the first insertion count
-            aux.modify_metadata(
+            aux.metadata_ctx().modify_metadata(
                 override_insertion_count,
                 monad::mpt::UpdateAux::chunk_list::slow,
                 slow_list_base_insertion_count);
         }
         MONAD_ASSERT(
-            aux.db_metadata()->slow_list.begin == slow_list_begin_index);
-        MONAD_ASSERT(aux.db_metadata()->slow_list.end == slow_list_end_index);
+            aux.metadata_ctx().main()->slow_list.begin ==
+            slow_list_begin_index);
+        MONAD_ASSERT(
+            aux.metadata_ctx().main()->slow_list.end == slow_list_end_index);
 
         for (unsigned int const &chunk : chunks) {
             if (chunk != UINT32_MAX) {
-                aux.append(monad::mpt::UpdateAux::chunk_list::free, chunk);
+                aux.metadata_ctx().append(
+                    monad::mpt::UpdateAux::chunk_list::free, chunk);
             }
         }
 
@@ -1599,21 +1608,27 @@ opened.
 
             cout << "MPT database internal lists:\n";
             impl.total_used += impl.print_list_info(
-                aux, aux.db_metadata()->fast_list_begin(), "Fast", &impl.fast);
+                aux,
+                aux.metadata_ctx().main()->fast_list_begin(),
+                "Fast",
+                &impl.fast);
             impl.total_used += impl.print_list_info(
-                aux, aux.db_metadata()->slow_list_begin(), "Slow", &impl.slow);
+                aux,
+                aux.metadata_ctx().main()->slow_list_begin(),
+                "Slow",
+                &impl.slow);
             impl.print_list_info(
-                aux, aux.db_metadata()->free_list_begin(), "Free");
+                aux, aux.metadata_ctx().main()->free_list_begin(), "Free");
             impl.print_db_history_summary(aux);
 
             if (impl.reset_history_length) {
                 // set to fixed history length, database will prune any outdated
                 // versions outside of new history length window
                 cout << "\nResetting history length from "
-                     << aux.version_history_length() << " to "
+                     << aux.metadata_ctx().version_history_length() << " to "
                      << impl.reset_history_length.value() << "... \n";
                 if (impl.reset_history_length.value() <
-                    aux.version_history_length()) {
+                    aux.metadata_ctx().version_history_length()) {
                     std::stringstream ss;
                     ss << "WARNING: --reset-history-length can potentially "
                           "prune "
@@ -1622,8 +1637,7 @@ opened.
                        << " versions. Are you sure?\n";
                     impl.cli_ask_question(ss.str().c_str());
                 }
-                aux.unset_io();
-                aux.set_io(io, impl.reset_history_length);
+                aux.init(io, impl.reset_history_length);
                 cout << "Success! Done resetting history to "
                      << impl.reset_history_length.value() << ".\n";
                 impl.print_db_history_summary(aux);
@@ -1631,32 +1645,40 @@ opened.
             }
             if (impl.rewind_database_to) {
                 if (*impl.rewind_database_to <
-                    aux.db_history_min_valid_version()) {
+                    aux.metadata_ctx().db_history_min_valid_version()) {
                     cout << "\nWARNING: Cannot rewind database to before "
-                         << aux.db_history_min_valid_version()
+                         << aux.metadata_ctx().db_history_min_valid_version()
                          << ", ignoring request.\n";
                 }
                 else if (
-                    *impl.rewind_database_to >= aux.db_history_max_version()) {
+                    *impl.rewind_database_to >=
+                    aux.metadata_ctx().db_history_max_version()) {
                     cout << "\nWARNING: Cannot rewind database to after or "
                             "equal "
-                         << aux.db_history_max_version()
+                         << aux.metadata_ctx().db_history_max_version()
                          << ", ignoring request.\n";
                 }
                 else {
                     std::stringstream ss;
                     ss << "\nWARNING: --rewind-to will destroy history "
                        << (*impl.rewind_database_to + 1) << " - "
-                       << aux.db_history_max_version() << ". Are you sure?\n";
+                       << aux.metadata_ctx().db_history_max_version()
+                       << ". Are you sure?\n";
                     impl.cli_ask_question(ss.str().c_str());
                     aux.rewind_to_version(*impl.rewind_database_to);
                     cout << "\nSuccess! Now:\n";
                     impl.print_list_info(
-                        aux, aux.db_metadata()->fast_list_begin(), "Fast");
+                        aux,
+                        aux.metadata_ctx().main()->fast_list_begin(),
+                        "Fast");
                     impl.print_list_info(
-                        aux, aux.db_metadata()->slow_list_begin(), "Slow");
+                        aux,
+                        aux.metadata_ctx().main()->slow_list_begin(),
+                        "Slow");
                     impl.print_list_info(
-                        aux, aux.db_metadata()->free_list_begin(), "Free");
+                        aux,
+                        aux.metadata_ctx().main()->free_list_begin(),
+                        "Free");
                     return 0;
                 }
             }

@@ -523,42 +523,45 @@ namespace monad::test
                           << " consumed = " << v.second
                           << " chunks = " << pool.chunks(pool.seq);
                 auto const diff =
-                    (int64_t(aux.get_lower_bound_free_space()) -
+                    (int64_t(aux.metadata_ctx().get_lower_bound_free_space()) -
                      int64_t(v.first - v.second));
                 std::cout << "\n   DB thinks there is a lower bound of "
-                          << aux.get_lower_bound_free_space()
+                          << aux.metadata_ctx().get_lower_bound_free_space()
                           << " bytes free whereas the syscall thinks there is "
                           << (v.first - v.second)
                           << " bytes free, which is a difference of " << diff
                           << ".\n";
                 std::cout << "   Fast list:";
-                for (auto const *ci = aux.db_metadata()->fast_list_begin();
+                for (auto const *ci =
+                         aux.metadata_ctx().main()->fast_list_begin();
                      ci != nullptr;
-                     ci = ci->next(aux.db_metadata())) {
-                    auto const idx = ci->index(aux.db_metadata());
+                     ci = ci->next(aux.metadata_ctx().main())) {
+                    auto const idx = ci->index(aux.metadata_ctx().main());
                     auto const &chunk = pool.chunk(pool.seq, idx);
                     std::cout << "\n      Chunk " << idx
                               << " has capacity = " << chunk.capacity()
                               << " consumed = " << chunk.size();
                 }
                 std::cout << "\n\n   Slow list:";
-                for (auto const *ci = aux.db_metadata()->slow_list_begin();
+                for (auto const *ci =
+                         aux.metadata_ctx().main()->slow_list_begin();
                      ci != nullptr;
-                     ci = ci->next(aux.db_metadata())) {
-                    auto const idx = ci->index(aux.db_metadata());
+                     ci = ci->next(aux.metadata_ctx().main())) {
+                    auto const idx = ci->index(aux.metadata_ctx().main());
                     auto const chunk = pool.chunk(pool.seq, idx);
                     std::cout << "\n      Chunk " << idx
                               << " has capacity = " << chunk.capacity()
                               << " consumed = " << chunk.size();
                 }
                 std::cout << "\n\n   Free list: "
-                          << aux.db_metadata()->capacity_in_free_list
+                          << aux.metadata_ctx().main()->capacity_in_free_list
                           << " bytes.";
-                auto const ro = aux.root_offsets();
+                auto const ro = aux.metadata_ctx().root_offsets();
                 auto const most_recent_offset = ro[ro.max_version()];
                 std::cout << "\n\n   DB version history is "
-                          << aux.db_history_min_valid_version() << " - "
-                          << aux.db_history_max_version()
+                          << aux.metadata_ctx().db_history_min_valid_version()
+                          << " - "
+                          << aux.metadata_ctx().db_history_max_version()
                           << ". Most recent DB history is id "
                           << most_recent_offset.id << " offset "
                           << most_recent_offset.offset;
@@ -582,7 +585,7 @@ namespace monad::test
                             }
                             keys.emplace_back(
                                 std::move(key),
-                                aux.get_latest_root_offset().id);
+                                aux.metadata_ctx().get_latest_root_offset().id);
                         }
                         updates.push_back(make_update(
                             keys.back().first, keys.back().first, false));
@@ -595,9 +598,10 @@ namespace monad::test
                         version++,
                         true);
                     size_t count = 0;
-                    for (auto const *ci = aux.db_metadata()->fast_list_begin();
+                    for (auto const *ci =
+                             aux.metadata_ctx().main()->fast_list_begin();
                          ci != nullptr;
-                         count++, ci = ci->next(aux.db_metadata())) {
+                         count++, ci = ci->next(aux.metadata_ctx().main())) {
                     }
                     if (count >= chunks) {
                         break;
@@ -614,11 +618,13 @@ namespace monad::test
                     MONAD_MPT_NAMESPACE::detail::unsigned_20>>
                     ret;
                 ret.reserve(4);
-                for (auto const *ci = aux.db_metadata()->fast_list_begin();
+                for (auto const *ci =
+                         aux.metadata_ctx().main()->fast_list_begin();
                      ci != nullptr;
-                     ci = ci->next(aux.db_metadata())) {
+                     ci = ci->next(aux.metadata_ctx().main())) {
                     ret.emplace_back(
-                        ci->index(aux.db_metadata()), ci->insertion_count());
+                        ci->index(aux.metadata_ctx().main()),
+                        ci->insertion_count());
                 }
                 return ret;
             }
@@ -632,11 +638,13 @@ namespace monad::test
                     MONAD_MPT_NAMESPACE::detail::unsigned_20>>
                     ret;
                 ret.reserve(4);
-                for (auto const *ci = aux.db_metadata()->slow_list_begin();
+                for (auto const *ci =
+                         aux.metadata_ctx().main()->slow_list_begin();
                      ci != nullptr;
-                     ci = ci->next(aux.db_metadata())) {
+                     ci = ci->next(aux.metadata_ctx().main())) {
                     ret.emplace_back(
-                        ci->index(aux.db_metadata()), ci->insertion_count());
+                        ci->index(aux.metadata_ctx().main()),
+                        ci->insertion_count());
                 }
                 return ret;
             }

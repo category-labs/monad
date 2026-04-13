@@ -67,7 +67,8 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                         *(uint32_t *)(key.data() + n) = rand();
                     }
                     keys.emplace_back(
-                        std::move(key), aux.get_latest_root_offset().id);
+                        std::move(key),
+                        aux.metadata_ctx().get_latest_root_offset().id);
                 }
                 updates.push_back(
                     make_update(keys.back().first, keys.back().first));
@@ -76,14 +77,14 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
             root = upsert(
                 aux, block_id, *sm, std::move(root), std::move(update_ls));
             size_t count_fast = 0;
-            for (auto const *ci = aux.db_metadata()->fast_list_begin();
+            for (auto const *ci = aux.metadata_ctx().main()->fast_list_begin();
                  ci != nullptr;
-                 count_fast++, ci = ci->next(aux.db_metadata())) {
+                 count_fast++, ci = ci->next(aux.metadata_ctx().main())) {
             }
             size_t count_slow = 0;
-            for (auto const *ci = aux.db_metadata()->slow_list_begin();
+            for (auto const *ci = aux.metadata_ctx().main()->slow_list_begin();
                  ci != nullptr;
-                 count_slow++, ci = ci->next(aux.db_metadata())) {
+                 count_slow++, ci = ci->next(aux.metadata_ctx().main())) {
             }
             if (count_fast >= fast_chunks &&
                 aux.node_writer_fast->sender().offset().offset >=
@@ -162,7 +163,8 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                 // verify that offset equals calculated one in traversal
                 auto const expected_min_offsets = calc_min_offsets(
                     *const_cast<Node *>(&node),
-                    aux.physical_to_virtual(aux.get_latest_root_offset()));
+                    aux.physical_to_virtual(
+                        aux.metadata_ctx().get_latest_root_offset()));
                 EXPECT_EQ(node_record.test_min_offsets, expected_min_offsets);
             }
             else {

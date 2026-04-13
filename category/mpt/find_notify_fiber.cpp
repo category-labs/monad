@@ -257,7 +257,7 @@ void find_owning_notify_fiber_future(
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
     NodeCursor const &start, NibblesView const key, uint64_t const version)
 {
-    if (!aux.version_is_valid_ondisk(version)) {
+    if (!aux.metadata_ctx().version_is_valid_ondisk(version)) {
         promise.set_value({start, find_result::version_no_longer_exist});
         return;
     }
@@ -300,7 +300,7 @@ void find_owning_notify_fiber_future(
         auto const next_virtual_offset =
             aux.physical_to_virtual(next_node_offset);
         // version validity check must be after the virtual offset translation
-        if (!aux.version_is_valid_ondisk(version) ||
+        if (!aux.metadata_ctx().version_is_valid_ondisk(version) ||
             next_virtual_offset == INVALID_VIRTUAL_OFFSET) {
             promise.set_value({start, find_result::version_no_longer_exist});
             return;
@@ -358,10 +358,11 @@ void load_root_notify_fiber_future(
     threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
     uint64_t const version)
 {
-    auto const root_offset = aux.get_root_offset_at_version(version);
+    auto const root_offset =
+        aux.metadata_ctx().get_root_offset_at_version(version);
     auto const root_virtual_offset = aux.physical_to_virtual(root_offset);
     // version validity check must be after the virtual offset translation
-    if (!aux.version_is_valid_ondisk(version) ||
+    if (!aux.metadata_ctx().version_is_valid_ondisk(version) ||
         root_virtual_offset == INVALID_VIRTUAL_OFFSET) {
         promise.set_value({NodeCursor{}, find_result::version_no_longer_exist});
         return;

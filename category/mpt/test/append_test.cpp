@@ -44,12 +44,14 @@ TYPED_TEST_SUITE(AppendTest, AppendTestTypes);
 
 TYPED_TEST(AppendTest, works)
 {
-    auto const last_root_version = this->state()->aux.db_history_max_version();
-    auto const last_root_off = this->state()->aux.get_latest_root_offset();
+    auto const last_root_version =
+        this->state()->aux.metadata_ctx().db_history_max_version();
+    auto const last_root_off =
+        this->state()->aux.metadata_ctx().get_latest_root_offset();
     auto const last_slow_off =
-        this->state()->aux.get_start_of_wip_slow_offset();
+        this->state()->aux.metadata_ctx().get_start_of_wip_slow_offset();
     auto const last_fast_off =
-        this->state()->aux.get_start_of_wip_fast_offset();
+        this->state()->aux.metadata_ctx().get_start_of_wip_fast_offset();
     auto const root_hash_before = this->state()->root_hash();
 
     this->state()->keys.clear();
@@ -62,9 +64,15 @@ TYPED_TEST(AppendTest, works)
     // Reset version, discarding all newer versions
     this->state()->aux.rewind_to_version(last_root_version);
     this->state()->version = last_root_version;
-    EXPECT_EQ(last_root_off, this->state()->aux.get_latest_root_offset());
-    EXPECT_EQ(last_slow_off, this->state()->aux.get_start_of_wip_slow_offset());
-    EXPECT_EQ(last_fast_off, this->state()->aux.get_start_of_wip_fast_offset());
+    EXPECT_EQ(
+        last_root_off,
+        this->state()->aux.metadata_ctx().get_latest_root_offset());
+    EXPECT_EQ(
+        last_slow_off,
+        this->state()->aux.metadata_ctx().get_start_of_wip_slow_offset());
+    EXPECT_EQ(
+        last_fast_off,
+        this->state()->aux.metadata_ctx().get_start_of_wip_fast_offset());
 
     // Get new current root
     this->state()->root = read_node_blocking(
@@ -75,9 +83,15 @@ TYPED_TEST(AppendTest, works)
     // Check number of chunks in use and current starting offsets are of the
     // same as before rewind
     EXPECT_EQ(this->state()->fast_list_ids().size(), 2);
-    EXPECT_EQ(this->state()->aux.get_latest_root_offset(), last_root_off);
-    EXPECT_EQ(this->state()->aux.get_start_of_wip_fast_offset(), last_fast_off);
-    EXPECT_EQ(this->state()->aux.get_start_of_wip_slow_offset(), last_slow_off);
+    EXPECT_EQ(
+        this->state()->aux.metadata_ctx().get_latest_root_offset(),
+        last_root_off);
+    EXPECT_EQ(
+        this->state()->aux.metadata_ctx().get_start_of_wip_fast_offset(),
+        last_fast_off);
+    EXPECT_EQ(
+        this->state()->aux.metadata_ctx().get_start_of_wip_slow_offset(),
+        last_slow_off);
     EXPECT_EQ(
         this->state()->aux.node_writer_fast->sender().offset(), last_fast_off);
     EXPECT_EQ(

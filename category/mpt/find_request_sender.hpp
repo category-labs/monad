@@ -250,7 +250,7 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             virtual_chunk_offset_t const virt_offset =
                 aux_.physical_to_virtual(offset);
             // Verify version after translating address
-            if (!aux_.version_is_valid_ondisk(version_)) {
+            if (!aux_.metadata_ctx().version_is_valid_ondisk(version_)) {
                 res_ = {T{}, find_result::version_no_longer_exist};
                 io_state->completed(success());
                 return success();

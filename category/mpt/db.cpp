@@ -31,6 +31,7 @@
 #include <category/core/result.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_error.hpp>
+#include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -173,12 +174,6 @@ public:
     {
     }
 
-    virtual ~ROOnDiskBlocking()
-    {
-        // must be destroyed before aux is destroyed
-        aux_.unset_io();
-    }
-
     virtual UpdateAux &aux() override
     {
         return aux_;
@@ -198,12 +193,12 @@ public:
             return {NodeCursor{}, find_result::root_node_is_null_failure};
         }
         // the root we last loaded does not contain the version we want to find
-        if (!aux().version_is_valid_ondisk(version)) {
+        if (!aux().metadata_ctx().version_is_valid_ondisk(version)) {
             return {NodeCursor{}, find_result::version_no_longer_exist};
         }
         auto const res = find_blocking(aux(), root, key, version);
         // verify version still valid in history after success
-        return aux().version_is_valid_ondisk(version)
+        return aux().metadata_ctx().version_is_valid_ondisk(version)
                    ? res
                    : find_cursor_result_type{
                          NodeCursor{}, find_result::version_no_longer_exist};
@@ -243,7 +238,8 @@ public:
     virtual Node::SharedPtr
     load_root_for_version(uint64_t const version) override
     {
-        auto const root_offset = aux().get_root_offset_at_version(version);
+        auto const root_offset =
+            aux().metadata_ctx().get_root_offset_at_version(version);
         if (root_offset == INVALID_OFFSET) {
             return nullptr;
         }
@@ -415,7 +411,8 @@ struct OnDiskWithWorkerThreadImpl
             , aux{async_io.io, options.fixed_history_length}
         {
             if (options.rewind_to_latest_finalized) {
-                auto const latest_block_id = aux.get_latest_finalized_version();
+                auto const latest_block_id =
+                    aux.metadata_ctx().get_latest_finalized_version();
                 if (latest_block_id == INVALID_BLOCK_NUM) {
                     aux.clear_ondisk_db();
                 }
@@ -472,7 +469,8 @@ struct OnDiskWithWorkerThreadImpl
                             std::move(*req->promise));
                         req->promise = &traverse_promises.back();
                         // verify version is valid
-                        if (aux.version_is_valid_ondisk(req->version)) {
+                        if (aux.metadata_ctx().version_is_valid_ondisk(
+                                req->version)) {
                             req->promise->set_value(preorder_traverse_ondisk(
                                 aux,
                                 std::move(req->root),
@@ -589,7 +587,8 @@ struct OnDiskWithWorkerThreadImpl
                             std::move(*req->promise));
                         req->promise = &traverse_promises.back();
                         // verify version is valid
-                        if (aux.version_is_valid_ondisk(req->version)) {
+                        if (aux.metadata_ctx().version_is_valid_ondisk(
+                                req->version)) {
                             req->promise->set_value(preorder_traverse_ondisk(
                                 aux,
                                 std::move(req->root),
@@ -616,7 +615,8 @@ struct OnDiskWithWorkerThreadImpl
                         upsert_promises.emplace_back(std::move(*req->promise));
                         req->promise = &upsert_promises.back();
                         auto const root_offset =
-                            aux.get_root_offset_at_version(req->version);
+                            aux.metadata_ctx().get_root_offset_at_version(
+                                req->version);
                         MONAD_ASSERT(root_offset != INVALID_OFFSET);
                         req->promise->set_value(
                             read_node_blocking(aux, root_offset, req->version));
@@ -786,7 +786,7 @@ public:
         // lookup, because RWDb never performs upserts concurrently with reads.
         // Skip version check if looking up from an unflushed version
         if (unflushed_version_ != version &&
-            !aux().version_is_valid_ondisk(version)) {
+            !aux().metadata_ctx().version_is_valid_ondisk(version)) {
             return {NodeCursor{}, find_result::version_no_longer_exist};
         }
         threadsafe_boost_fibers_promise<find_cursor_result_type> promise;
@@ -897,7 +897,7 @@ public:
     virtual Node::SharedPtr
     load_root_for_version(uint64_t const version) override
     {
-        if (!aux().version_is_valid_ondisk(version)) {
+        if (!aux().metadata_ctx().version_is_valid_ondisk(version)) {
             return nullptr;
         }
         threadsafe_boost_fibers_promise<Node::SharedPtr> promise;
@@ -981,7 +981,8 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
 
     NodeCursor load_root_fiber_blocking(uint64_t version)
     {
-        auto const root_offset = aux().get_root_offset_at_version(version);
+        auto const root_offset =
+            aux().metadata_ctx().get_root_offset_at_version(version);
         if (root_offset == INVALID_OFFSET) {
             return {};
         }
@@ -1024,13 +1025,13 @@ RODb::~RODb() = default;
 uint64_t RODb::get_latest_version() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->aux().db_history_max_version();
+    return impl_->aux().metadata_ctx().db_history_max_version();
 }
 
 uint64_t RODb::get_earliest_version() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->aux().db_history_min_valid_version();
+    return impl_->aux().metadata_ctx().db_history_min_valid_version();
 }
 
 DbError find_result_to_db_error(find_result const result) noexcept
@@ -1199,7 +1200,7 @@ void Db::update_finalized_version(uint64_t const version)
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(!is_read_only());
     if (is_on_disk()) {
-        impl_->aux().set_latest_finalized_version(version);
+        impl_->aux().metadata_ctx().set_latest_finalized_version(version);
     } // noop for in memory db
 }
 
@@ -1208,8 +1209,9 @@ void Db::update_verified_version(uint64_t const version)
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(!is_read_only());
     if (is_on_disk()) {
-        MONAD_ASSERT(version <= impl_->aux().db_history_max_version());
-        impl_->aux().set_latest_verified_version(version);
+        MONAD_ASSERT(
+            version <= impl_->aux().metadata_ctx().db_history_max_version());
+        impl_->aux().metadata_ctx().set_latest_verified_version(version);
     } // noop for in memory db
 }
 
@@ -1218,7 +1220,7 @@ void Db::update_voted_metadata(
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(is_on_disk() && !is_read_only());
-    impl_->aux().set_latest_voted(version, block_id);
+    impl_->aux().metadata_ctx().set_latest_voted(version, block_id);
 }
 
 void Db::update_proposed_metadata(
@@ -1226,63 +1228,65 @@ void Db::update_proposed_metadata(
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(is_on_disk() && !is_read_only());
-    impl_->aux().set_latest_proposed(version, block_id);
+    impl_->aux().metadata_ctx().set_latest_proposed(version, block_id);
 }
 
 uint64_t Db::get_latest_finalized_version() const
 {
     MONAD_ASSERT(impl_);
-    return is_on_disk() ? impl_->aux().get_latest_finalized_version()
-                        : INVALID_BLOCK_NUM;
+    return is_on_disk()
+               ? impl_->aux().metadata_ctx().get_latest_finalized_version()
+               : INVALID_BLOCK_NUM;
 }
 
 uint64_t Db::get_latest_verified_version() const
 {
     MONAD_ASSERT(impl_);
-    return is_on_disk() ? impl_->aux().get_latest_verified_version()
-                        : INVALID_BLOCK_NUM;
+    return is_on_disk()
+               ? impl_->aux().metadata_ctx().get_latest_verified_version()
+               : INVALID_BLOCK_NUM;
 }
 
 bytes32_t Db::get_latest_voted_block_id() const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(is_on_disk());
-    return impl_->aux().get_latest_voted_block_id();
+    return impl_->aux().metadata_ctx().get_latest_voted_block_id();
 }
 
 uint64_t Db::get_latest_voted_version() const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(is_on_disk());
-    return impl_->aux().get_latest_voted_version();
+    return impl_->aux().metadata_ctx().get_latest_voted_version();
 }
 
 bytes32_t Db::get_latest_proposed_block_id() const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(is_on_disk());
-    return impl_->aux().get_latest_proposed_block_id();
+    return impl_->aux().metadata_ctx().get_latest_proposed_block_id();
 }
 
 uint64_t Db::get_latest_proposed_version() const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(is_on_disk());
-    return impl_->aux().get_latest_proposed_version();
+    return impl_->aux().metadata_ctx().get_latest_proposed_version();
 }
 
 uint64_t Db::get_latest_version() const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(is_on_disk());
-    return impl_->aux().db_history_max_version();
+    return impl_->aux().metadata_ctx().db_history_max_version();
 }
 
 uint64_t Db::get_earliest_version() const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(is_on_disk());
-    return impl_->aux().db_history_min_valid_version();
+    return impl_->aux().metadata_ctx().db_history_min_valid_version();
 }
 
 size_t Db::prefetch(Node::SharedPtr const &root)
@@ -1321,7 +1325,8 @@ UpdateAux const &Db::aux() const
 
 uint64_t Db::get_history_length() const
 {
-    return is_on_disk() ? impl_->aux().version_history_length() : 1;
+    return is_on_disk() ? impl_->aux().metadata_ctx().version_history_length()
+                        : 1;
 }
 
 AsyncContext::AsyncContext(Db &db, size_t node_lru_max_mem)
@@ -1383,7 +1388,8 @@ namespace detail
             inflights.erase(it);
             std::shared_ptr<Node> root{};
             bool const block_alive_after_read =
-                sender->context.aux.version_is_valid_ondisk(sender->block_id);
+                sender->context.aux.metadata_ctx().version_is_valid_ondisk(
+                    sender->block_id);
             if (block_alive_after_read) {
                 sender->root = detail::deserialize_node_from_receiver_result(
                     std::move(buffer_), buffer_off, io_state);
@@ -1427,7 +1433,7 @@ namespace detail
                 delete this_io_state;
                 return;
             }
-            get_result = aux.version_is_valid_ondisk(version)
+            get_result = aux.metadata_ctx().version_is_valid_ondisk(version)
                              ? std::move(res).assume_value()
                              : find_result_type<T>{
                                    T{}, find_result::version_no_longer_exist};
@@ -1446,7 +1452,7 @@ namespace detail
         case op_t::op_get_data1:
         case op_t::op_get_node1: {
             chunk_offset_t const offset =
-                context.aux.get_root_offset_at_version(block_id);
+                context.aux.metadata_ctx().get_root_offset_at_version(block_id);
             auto const virt_offset = context.aux.physical_to_virtual(offset);
             NodeCache::ConstAccessor acc;
             if (context.node_cache.find(acc, virt_offset)) {
@@ -1489,7 +1495,7 @@ namespace detail
         case op_t::op_get_data2:
         case op_t::op_get_node2: {
             // verify version is valid in db history before doing anything
-            if (!context.aux.version_is_valid_ondisk(block_id)) {
+            if (!context.aux.metadata_ctx().version_is_valid_ondisk(block_id)) {
                 get_result = {T{}, find_result::version_no_longer_exist};
                 io_state->completed(async::success());
                 return async::success();

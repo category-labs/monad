@@ -115,8 +115,8 @@ Node::SharedPtr copy_trie_impl(
     uint64_t const dest_version)
 {
     MONAD_ASSERT(aux.is_on_disk());
-    auto [src_cursor, res] =
-        find_blocking(aux, src_root, src_prefix, aux.db_history_max_version());
+    auto [src_cursor, res] = find_blocking(
+        aux, src_root, src_prefix, aux.metadata_ctx().db_history_max_version());
     MONAD_ASSERT(res == find_result::success);
     Node &src_node = *src_cursor.node;
     if (!dest_root) {
@@ -284,7 +284,8 @@ Node::SharedPtr copy_trie_to_dest(
         dest_version);
     if (write_root) {
         write_new_root_node(aux, *dest_root, dest_version);
-        MONAD_ASSERT(aux.db_history_max_version() >= dest_version);
+        MONAD_ASSERT(
+            aux.metadata_ctx().db_history_max_version() >= dest_version);
     }
     // invariant: copy_trie must preserve compaction offsets
     MONAD_ASSERT(

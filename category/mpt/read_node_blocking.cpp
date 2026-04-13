@@ -34,7 +34,7 @@ Node::SharedPtr read_node_blocking(
     uint64_t const version)
 {
     MONAD_ASSERT(aux.is_on_disk());
-    if (!aux.version_is_valid_ondisk(version)) {
+    if (!aux.metadata_ctx().version_is_valid_ondisk(version)) {
         return {};
     }
     auto &pool = aux.io->storage_pool();
@@ -67,7 +67,7 @@ Node::SharedPtr read_node_blocking(
             rd_offset,
             strerror(errno));
     }
-    return aux.version_is_valid_ondisk(version)
+    return aux.metadata_ctx().version_is_valid_ondisk(version)
                ? deserialize_node_from_buffer(
                      buffer + buffer_off, size_t(bytes_read) - buffer_off)
                : Node::SharedPtr{};

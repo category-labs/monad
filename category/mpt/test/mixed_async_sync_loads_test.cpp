@@ -63,9 +63,11 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     monad::test::UpdateAux aux{state()->io};
     monad::test::StateMachineAlwaysMerkle const sm;
     // Load its root
-    auto const latest_version = aux.db_history_max_version();
+    auto const latest_version = aux.metadata_ctx().db_history_max_version();
     monad::mpt::Node::SharedPtr const root{monad::mpt::read_node_blocking(
-        aux, aux.get_root_offset_at_version(latest_version), latest_version)};
+        aux,
+        aux.metadata_ctx().get_root_offset_at_version(latest_version),
+        latest_version)};
     auto const &key = state()->keys.front().first;
     auto const &value = state()->keys.front().first;
 

@@ -1391,10 +1391,10 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
 {
     auto *sender = &node_writer->sender();
     bool const in_fast_list =
-        aux.db_metadata()->at(sender->offset().id)->in_fast_list;
-    auto const *ci_ = aux.db_metadata()->free_list_end();
+        aux.metadata_ctx().main()->at(sender->offset().id)->in_fast_list;
+    auto const *ci_ = aux.metadata_ctx().main()->free_list_end();
     MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
-    auto const idx = ci_->index(aux.db_metadata());
+    auto const idx = ci_->index(aux.metadata_ctx().main());
     chunk_offset_t const offset_of_new_writer{idx, 0};
     // Pad buffer of existing node write that is about to get initiated so it's
     // O_DIRECT i/o aligned
@@ -1454,8 +1454,8 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
             reentrancy_detection.max_count);
         return {};
     }
-    aux.remove(idx);
-    aux.append(
+    aux.metadata_ctx().remove(idx);
+    aux.metadata_ctx().append(
         in_fast_list ? UpdateAux::chunk_list::fast
                      : UpdateAux::chunk_list::slow,
         idx);
@@ -1469,7 +1469,7 @@ node_writer_unique_ptr_type replace_node_writer(
     // capacity
     auto offset_of_next_writer = node_writer->sender().offset();
     bool const in_fast_list =
-        aux.db_metadata()->at(offset_of_next_writer.id)->in_fast_list;
+        aux.metadata_ctx().main()->at(offset_of_next_writer.id)->in_fast_list;
     file_offset_t offset = offset_of_next_writer.offset;
     offset += node_writer->sender().written_buffer_bytes();
     offset_of_next_writer.offset = offset & chunk_offset_t::max_offset;
@@ -1481,9 +1481,9 @@ node_writer_unique_ptr_type replace_node_writer(
     if (offset == chunk_capacity) {
         // If after the current write buffer we're hitting chunk capacity, we
         // replace writer to the start of next chunk.
-        ci_ = aux.db_metadata()->free_list_end();
+        ci_ = aux.metadata_ctx().main()->free_list_end();
         MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
-        idx = ci_->index(aux.db_metadata());
+        idx = ci_->index(aux.metadata_ctx().main());
         offset_of_next_writer.id = idx & 0xfffffU;
         offset_of_next_writer.offset = 0;
     }
@@ -1500,9 +1500,9 @@ node_writer_unique_ptr_type replace_node_writer(
         return {};
     }
     if (ci_ != nullptr) {
-        MONAD_ASSERT(ci_ == aux.db_metadata()->free_list_end());
-        aux.remove(idx);
-        aux.append(
+        MONAD_ASSERT(ci_ == aux.metadata_ctx().main()->free_list_end());
+        aux.metadata_ctx().remove(idx);
+        aux.metadata_ctx().append(
             in_fast_list ? UpdateAux::chunk_list::fast
                          : UpdateAux::chunk_list::slow,
             idx);
@@ -1647,8 +1647,10 @@ async_write_node_set_spare(UpdateAux &aux, Node &node, bool write_to_fast)
                    node)
                    .offset_written_to;
     MONAD_ASSERT(
-        (write_to_fast && aux.db_metadata()->at(off.id)->in_fast_list) ||
-        (!write_to_fast && aux.db_metadata()->at(off.id)->in_slow_list));
+        (write_to_fast &&
+         aux.metadata_ctx().main()->at(off.id)->in_fast_list) ||
+        (!write_to_fast &&
+         aux.metadata_ctx().main()->at(off.id)->in_slow_list));
     unsigned const pages = num_pages(off.offset, node.get_disk_size());
     off.set_spare(static_cast<uint16_t>(node_disk_pages_spare_15{pages}));
     return off;
@@ -1693,41 +1695,45 @@ write_new_root_node(UpdateAux &aux, Node &root, uint64_t const version)
     auto const offset_written_to = async_write_node_set_spare(aux, root, true);
     flush_buffered_writes(aux);
     // advance fast and slow ring's latest offset in db metadata
-    aux.advance_db_offsets_to(
+    aux.metadata_ctx().advance_db_offsets_to(
         aux.node_writer_fast->sender().offset(),
         aux.node_writer_slow->sender().offset());
     // update root offset
-    auto const max_version_in_db = aux.db_history_max_version();
+    auto const max_version_in_db = aux.metadata_ctx().db_history_max_version();
     if (MONAD_UNLIKELY(max_version_in_db == INVALID_BLOCK_NUM)) {
-        aux.fast_forward_next_version(version);
-        aux.append_root_offset(offset_written_to);
-        MONAD_ASSERT(aux.db_history_range_lower_bound() == version);
+        aux.metadata_ctx().fast_forward_next_version(version);
+        aux.metadata_ctx().append_root_offset(offset_written_to);
+        MONAD_ASSERT(
+            aux.metadata_ctx().db_history_range_lower_bound() == version);
     }
     else if (version <= max_version_in_db) {
         MONAD_ASSERT(
             version >=
-            ((max_version_in_db >= aux.version_history_length())
-                 ? max_version_in_db - aux.version_history_length() + 1
+            ((max_version_in_db >= aux.metadata_ctx().version_history_length())
+                 ? max_version_in_db -
+                       aux.metadata_ctx().version_history_length() + 1
                  : 0));
-        auto const prev_lower_bound = aux.db_history_range_lower_bound();
-        aux.update_root_offset(version, offset_written_to);
+        auto const prev_lower_bound =
+            aux.metadata_ctx().db_history_range_lower_bound();
+        aux.metadata_ctx().update_root_offset(version, offset_written_to);
         MONAD_ASSERT(
-            aux.db_history_range_lower_bound() ==
+            aux.metadata_ctx().db_history_range_lower_bound() ==
             std::min(version, prev_lower_bound));
     }
     else {
         MONAD_ASSERT(version == max_version_in_db + 1);
         // Erase the earliest valid version if it is going to be outdated after
         // writing a new version, must happen before appending new root offset
-        if (version - aux.db_history_min_valid_version() >=
-            aux.version_history_length()) { // if exceed history length
+        if (version - aux.metadata_ctx().db_history_min_valid_version() >=
+            aux.metadata_ctx()
+                .version_history_length()) { // if exceed history length
             aux.erase_versions_up_to_and_including(
-                version - aux.version_history_length());
+                version - aux.metadata_ctx().version_history_length());
             MONAD_ASSERT(
-                version - aux.db_history_min_valid_version() <
-                aux.version_history_length());
+                version - aux.metadata_ctx().db_history_min_valid_version() <
+                aux.metadata_ctx().version_history_length());
         }
-        aux.append_root_offset(offset_written_to);
+        aux.metadata_ctx().append_root_offset(offset_written_to);
     }
     return offset_written_to;
 }

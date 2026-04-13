@@ -163,7 +163,7 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
             this->aux,
             *this->root,
             traverse,
-            this->aux.db_history_max_version());
+            this->aux.metadata_ctx().db_history_max_version());
         EXPECT_EQ(traverse.records.empty(), true);
     }
 
@@ -206,7 +206,7 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
             this->aux,
             *this->root,
             traverse,
-            this->aux.db_history_max_version());
+            this->aux.metadata_ctx().db_history_max_version());
         EXPECT_EQ(traverse.records.empty(), true);
     }
 }

@@ -2232,7 +2232,7 @@ TEST(DbTest, move_trie_version_forward_history_ring_wrap_around)
     Node::SharedPtr root;
 
     uint64_t const root_offsets_ring_capacity =
-        test::DbAccessor::aux(db).root_offsets().capacity();
+        test::DbAccessor::aux(db).metadata_ctx().root_offsets().capacity();
 
     auto const prefix = 0x0012_bytes;
     monad::byte_string const kv = keccak_int_to_string(10);
@@ -2295,7 +2295,7 @@ TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
     }
 
     uint64_t const root_offsets_ring_capacity =
-        test::DbAccessor::aux(db).root_offsets().capacity();
+        test::DbAccessor::aux(db).metadata_ctx().root_offsets().capacity();
     std::cout << root_offsets_ring_capacity << std::endl;
 
     auto const version_begin = root_offsets_ring_capacity * 2;
@@ -2865,7 +2865,11 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_updates_auto_expire)
         nullptr, db, prefix, 0, make_update(key0, key0));
 
     // After upsert at version 0, auto_expire_version_metadata should be 0
-    EXPECT_EQ(test::DbAccessor::aux(db).get_auto_expire_version_metadata(), 0);
+    EXPECT_EQ(
+        test::DbAccessor::aux(db)
+            .metadata_ctx()
+            .get_auto_expire_version_metadata(),
+        0);
 
     // Move trie from version 0 to version 1000
     constexpr uint64_t start_version = 1000;
@@ -2873,7 +2877,9 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_updates_auto_expire)
 
     // After move, auto_expire_version_metadata should be updated to 1000
     EXPECT_EQ(
-        test::DbAccessor::aux(db).get_auto_expire_version_metadata(),
+        test::DbAccessor::aux(db)
+            .metadata_ctx()
+            .get_auto_expire_version_metadata(),
         start_version)
         << "auto_expire_version_metadata should be moved forward with "
            "move_trie_version_forward";

@@ -605,17 +605,17 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
         // check db maintain expected historical versions
         if (this->aux.is_on_disk()) {
             if (block_id - start_block_id <
-                this->aux.version_history_length()) {
+                this->aux.metadata_ctx().version_history_length()) {
                 EXPECT_EQ(
-                    this->aux.db_history_max_version() -
-                        this->aux.db_history_min_valid_version(),
+                    this->aux.metadata_ctx().db_history_max_version() -
+                        this->aux.metadata_ctx().db_history_min_valid_version(),
                     block_id - start_block_id);
             }
             else {
                 EXPECT_EQ(
-                    this->aux.db_history_max_version() -
-                        this->aux.db_history_min_valid_version(),
-                    this->aux.version_history_length());
+                    this->aux.metadata_ctx().db_history_max_version() -
+                        this->aux.metadata_ctx().db_history_min_valid_version(),
+                    this->aux.metadata_ctx().version_history_length());
             }
         }
     };

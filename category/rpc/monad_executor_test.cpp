@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
@@ -83,6 +84,7 @@
 #include <cstring>
 #include <deque>
 #include <filesystem>
+#include <format>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -90,6 +92,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <unistd.h>
@@ -4797,7 +4800,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
     ASSERT_EQ(output.size(), 256);
     for (size_t i = 0; i < 256; i++) {
         EXPECT_EQ(output[i]["number"], std::format("0x{:x}", 256 + i));
-        std::string expected_timestamp = std::format("0x{:x}", 256 + i * 10);
+        std::string const expected_timestamp =
+            std::format("0x{:x}", 256 + i * 10);
         EXPECT_EQ(output[i]["timestamp"], expected_timestamp);
     }
 
@@ -6014,7 +6018,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     auto const expected_half = uint256_t{5} * WEI_PER_MON;
     auto const expected_bytes = intx::be::store<bytes32_t>(expected_half);
     auto const expected_return_data =
-        std::format("0x{}", evmc::hex(expected_bytes));
+        std::format("0x{}", to_hex(expected_bytes));
     EXPECT_EQ(output[1]["calls"][0]["returnData"], expected_return_data);
 
     ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);

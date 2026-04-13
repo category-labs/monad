@@ -42,6 +42,7 @@
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -714,11 +715,8 @@ namespace
                         .timestamp = previous_header.timestamp +
                                      DEFAULT_TIMESTAMP_INCREMENT,
                     }};
-                State state{
-                    block_state, Incarnation{previous_header.number, 0}};
 
                 auto block_metrics = BlockMetrics{};
-                auto call_frames = std::vector<std::vector<CallFrame>>{};
                 auto call_tracers =
                     std::vector<std::unique_ptr<CallTracerBase>>{};
                 auto state_tracers =
@@ -837,10 +835,10 @@ namespace
                 .header = current_header,
                 .transactions = std::move(calls[block_idx]),
                 .withdrawals =
-                    // Apply the final block override for withdrawals, if it is
+                    // Apply the block override for withdrawals, if it is
                     // present.
                 block_overrides[block_idx]->withdrawals.has_value()
-                    ? std::move(*block_overrides[block_idx]->withdrawals)
+                    ? block_overrides[block_idx]->withdrawals
                     : std::optional<
                           std::vector<monad::Withdrawal>>{std::nullopt},
             };
@@ -2233,13 +2231,13 @@ namespace
                     BOOST_OUTCOME_TRY(
                         auto item_payload,
                         rlp::parse_string_metadata(inner_payload));
-                    BOOST_OUTCOME_TRY(Item item, Decoder(item_payload));
+                    BOOST_OUTCOME_TRY(Item const item, Decoder(item_payload));
                     ret.back().emplace_back(std::move(item));
                 }
             }
             else {
                 while (!inner_payload.empty()) {
-                    BOOST_OUTCOME_TRY(Item item, Decoder(inner_payload));
+                    BOOST_OUTCOME_TRY(Item const item, Decoder(inner_payload));
                     ret.back().emplace_back(std::move(item));
                 }
             }

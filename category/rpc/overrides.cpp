@@ -25,6 +25,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 using namespace monad;
 

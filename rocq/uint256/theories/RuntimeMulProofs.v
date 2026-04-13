@@ -585,7 +585,50 @@ Lemma mul_add_line_recur_zero_tail :
      get_word result j = zero) ->
   forall j, (I + J + S (length xs_tail) <= j)%nat -> (j < R)%nat ->
     get_word (mul_add_line_recur xs_tail y_i result J I R c_hi c_lo) j = zero.
-Proof. Admitted.
+Proof.
+  induction xs_tail as [|x rest IH];
+    intros y_i result J I R c_hi c_lo Hlen HRbound Hzero j Hj HjR;
+    cbn [mul_add_line_recur].
+  - exfalso. lia.
+  - remember (I + J)%nat as pos eqn:Hpos_def in *.
+    destruct (Nat.ltb pos R) eqn:Hpos.
+    + destruct (Nat.ltb (pos + 2) R) eqn:Hpos2.
+      * destruct (mulx x y_i) as [hi lo] eqn:Hmulx.
+        destruct (adc_3 hi lo (MakeProofs.get_word result pos) c_hi c_lo)
+          as [[c_hi' c_lo'] res] eqn:Hadc.
+        change (MakeProofs.set_word result pos res) with (set_word result pos res).
+        eapply IH;
+          [rewrite set_word_length_local; exact Hlen
+          |cbn [length] in HRbound; subst pos; lia
+          |intros k Hk HkR;
+             rewrite get_set_word_other_local by lia;
+             apply Hzero; subst pos; lia
+          |cbn [length] in Hj; subst pos; lia
+          |exact HjR].
+      * destruct (Nat.ltb (pos + 1) R) eqn:Hpos1.
+        -- destruct (adc_2_full (mul x y_i) (MakeProofs.get_word result pos)
+                     c_hi c_lo) as [c_lo' res] eqn:Hadc.
+           change (MakeProofs.set_word result pos res)
+             with (set_word result pos res).
+           eapply IH;
+             [rewrite set_word_length_local; exact Hlen
+             |cbn [length] in HRbound; subst pos; lia
+             |intros k Hk HkR;
+                rewrite get_set_word_other_local by lia;
+                apply Hzero; subst pos; lia
+             |cbn [length] in Hj; subst pos; lia
+             |exact HjR].
+        -- change MakeProofs.set_word with set_word.
+           eapply IH;
+             [rewrite set_word_length_local; exact Hlen
+             |cbn [length] in HRbound; subst pos; lia
+             |intros k Hk HkR;
+                rewrite get_set_word_other_local by lia;
+                apply Hzero; subst pos; lia
+             |cbn [length] in Hj; subst pos; lia
+             |exact HjR].
+    + apply Hzero; subst pos; lia.
+Qed.
 
 (** * Structural Helpers *)
 
@@ -1009,7 +1052,276 @@ Lemma mul_add_line_recur_full_correct :
   /\
   (forall j, (I + J + S (length xs_tail) + 1 <= j)%nat -> (j < R)%nat ->
      get_word (mul_add_line_recur xs_tail y_i result J I R c_hi c_lo) j = zero).
-Proof. Admitted.
+Proof.
+  induction xs_tail as [|x rest IH];
+    intros y_i result J I R c_hi c_lo Hlen Hbound Hzero.
+  - remember (I + J)%nat as pos eqn:Hpos_def in *.
+    cbn [mul_add_line_recur to_Z_words].
+    cbn [length] in Hzero.
+    destruct (Nat.ltb (pos + 1) R) eqn:Hpos1.
+    + apply Nat.ltb_lt in Hpos1.
+      destruct (adc_2_short c_hi c_lo (MakeProofs.get_word result pos))
+        as [r1 r0] eqn:Hadc.
+      change (MakeProofs.set_word (MakeProofs.set_word result pos r0)
+        (pos + 1) r1) with (set_word (set_word result pos r0) (pos + 1) r1).
+      split.
+      * assert (Hzero1 : get_word result (S pos) = zero).
+        { replace (pos + 0 + 1)%nat with (pos + 1)%nat in Hzero by lia.
+          replace (S pos) with (pos + 1)%nat by lia.
+          exact (Hzero (pos + 1)%nat (Nat.le_refl _) Hpos1). }
+        replace (I + J)%nat with pos by exact Hpos_def.
+        assert (Hpos1_eq : (pos + 1 <? R)%nat = true)
+          by (apply Nat.ltb_lt; exact Hpos1).
+        rewrite Hpos1_eq.
+        rewrite Hadc.
+        replace (pos + 1)%nat with (S pos) by lia.
+        replace
+          (to_Z_words result
+           + (0 * to_Z y_i * base width + to_Z c_hi * base width + to_Z c_lo) *
+             2 ^ (64 * Z.of_nat pos))
+          with
+            (to_Z_words result
+             + (to_Z c_hi * base width + to_Z c_lo) * modulus_words pos).
+        2:{ rewrite <- pow64_modulus_words. ring. }
+        assert (Hpos1' : (S pos < R)%nat) by lia.
+        eapply adc_2_short_carry_step_zero_mod.
+        -- exact Hlen.
+        -- exact Hpos1'.
+        -- exact Hbound.
+        -- exact Hzero1.
+        -- exact Hadc.
+      * intros j Hj HjR.
+        replace (I + J)%nat with pos by exact Hpos_def.
+        assert (Hpos1_eq : (pos + 1 <? R)%nat = true)
+          by (apply Nat.ltb_lt; exact Hpos1).
+        rewrite Hpos1_eq.
+        rewrite Hadc.
+        rewrite get_set_word_other_local by lia.
+        rewrite get_set_word_other_local by lia.
+        apply Hzero; subst pos; lia.
+    + destruct (Nat.ltb pos R) eqn:Hpos.
+      * apply Nat.ltb_lt in Hpos.
+        apply Nat.ltb_ge in Hpos1.
+        assert (HR : R = S pos) by lia.
+        split.
+        -- replace (I + J)%nat with pos by exact Hpos_def.
+           replace (pos + 1 <? R)%nat with false
+             by (symmetry; apply Nat.ltb_ge; lia).
+           replace (pos <? R)%nat with true
+             by (symmetry; apply Nat.ltb_lt; lia).
+           change MakeProofs.set_word with set_word.
+           change MakeProofs.get_word with get_word.
+           rewrite HR.
+           rewrite set_word_add_last_with_high_mod with (c_hi := c_hi) by lia.
+           rewrite width_is_64; unfold base.
+           f_equal; lia.
+        -- intros j Hj HjR. subst pos. exfalso. lia.
+      * apply Nat.ltb_ge in Hpos.
+        split.
+        -- rewrite <- Zplus_mod_idemp_r.
+           replace (I + J + 1 <? R)%nat with false
+             by (symmetry; apply Nat.ltb_ge; lia).
+           replace (I + J <? R)%nat with false
+             by (symmetry; apply Nat.ltb_ge; lia).
+           rewrite shifted_term_mod_0 by (subst pos; lia).
+           rewrite Z.add_0_r. reflexivity.
+        -- intros j Hj HjR. subst pos. exfalso. lia.
+  - remember (I + J)%nat as pos eqn:Hpos_def in *.
+    cbn [mul_add_line_recur to_Z_words].
+    change MakeProofs.set_word with set_word.
+    change MakeProofs.get_word with get_word.
+    destruct (Nat.ltb pos R) eqn:Hpos.
+    + apply Nat.ltb_lt in Hpos.
+      destruct (Nat.ltb (pos + 2) R) eqn:Hpos2.
+      * apply Nat.ltb_lt in Hpos2.
+        destruct (mulx x y_i) as [hi lo] eqn:Hmulx.
+        destruct (adc_3 hi lo (get_word result pos) c_hi c_lo)
+          as [[c_hi' c_lo'] res] eqn:Hadc.
+        destruct (IH y_i (set_word result pos res) (S J) I R c_hi' c_lo')
+          as [Hcorr Htail].
+        1:{ rewrite set_word_length_local. exact Hlen. }
+        1:{ eapply adc_3_carry_pair_bounded; eauto. }
+        1:{ intros k Hk HkR.
+            rewrite get_set_word_other_local by lia.
+            apply Hzero; subst pos; simpl; lia. }
+        split.
+        -- replace ((I + J <? R)%nat) with true
+             by (symmetry; apply Nat.ltb_lt; lia).
+           replace ((I + J + 2 <? R)%nat) with true
+             by (symmetry; apply Nat.ltb_lt; lia).
+           replace (I + J)%nat with pos by lia.
+           rewrite Hadc.
+           rewrite Hcorr.
+           replace (I + S J)%nat with (S pos) by (subst pos; lia).
+           replace
+             (to_Z_words (set_word result pos res)
+              + (to_Z_words rest * to_Z y_i * base width
+                 + to_Z c_hi' * base width + to_Z c_lo') *
+                2 ^ (64 * Z.of_nat (S pos)))
+             with
+               ((to_Z_words (set_word result pos res)
+                 + (to_Z c_hi' * base width + to_Z c_lo') *
+                   2 ^ (64 * Z.of_nat (S pos)))
+                + to_Z_words rest * to_Z y_i *
+                  2 ^ (64 * Z.of_nat (S (S pos)))).
+           2:{ replace (2 ^ (64 * Z.of_nat (S (S pos))))
+                 with (base width * 2 ^ (64 * Z.of_nat (S pos)))
+                 by (symmetry; apply pow64_succ).
+               ring. }
+           rewrite <- Zplus_mod_idemp_l.
+           rewrite pow64_modulus_words.
+           rewrite (adc_3_mul_step_mod_words result pos R x y_i hi lo c_hi c_lo
+             c_hi' c_lo' res Hlen Hpos Hmulx Hadc).
+           rewrite Zplus_mod_idemp_l.
+           rewrite !pow64_modulus_words.
+           rewrite !modulus_words_succ.
+           subst pos.
+           replace (to_Z_words (x :: rest))
+             with (to_Z x + base width * to_Z_words rest) by reflexivity.
+           apply (f_equal (fun z => z mod modulus_words R)).
+           ring.
+        -- intros j Hj HjR.
+           replace ((I + J <? R)%nat) with true
+             by (symmetry; apply Nat.ltb_lt; lia).
+           replace ((I + J + 2 <? R)%nat) with true
+             by (symmetry; apply Nat.ltb_lt; lia).
+           replace (I + J)%nat with pos by lia.
+           rewrite Hadc.
+           apply Htail; [subst pos; simpl in *; lia | exact HjR].
+      * apply Nat.ltb_ge in Hpos2.
+        destruct (Nat.ltb (pos + 1) R) eqn:Hpos1.
+        -- apply Nat.ltb_lt in Hpos1.
+           assert (HR : R = S (S pos)) by lia.
+           assert (Hlen2 : length result = S (S pos)).
+           { rewrite <- HR. exact Hlen. }
+           destruct (adc_2_full (mul x y_i) (MakeProofs.get_word result pos)
+                      c_hi c_lo) as [c_lo' res] eqn:Hadc.
+           replace ((I + J <? R)%nat) with true
+             by (symmetry; apply Nat.ltb_lt; lia).
+           replace ((I + J + 2 <? R)%nat) with false
+             by (symmetry; apply Nat.ltb_ge; lia).
+           replace ((I + J + 1 <? R)%nat) with true
+             by (symmetry; apply Nat.ltb_lt; lia).
+           replace (I + J)%nat with pos by lia.
+           change MakeProofs.get_word with get_word in Hadc.
+           rewrite Hadc.
+           change (set_word result pos res)
+             with (set_word result pos res).
+           rewrite (mul_add_line_recur_correct
+             rest y_i (set_word result pos res) (S J) I R c_hi c_lo').
+           2:{ rewrite set_word_length_local. exact Hlen. }
+           2:{ cbn [length]. subst pos. lia. }
+           split.
+           ++ rewrite HR.
+              replace (I + S J)%nat with (S pos) by (subst pos; lia).
+              replace
+                (to_Z_words (set_word result pos res)
+                 + (to_Z_words rest * to_Z y_i * base width
+                    + to_Z c_hi * base width + to_Z c_lo') *
+                   2 ^ (64 * Z.of_nat (S pos)))
+                with
+                  ((to_Z_words (set_word result pos res)
+                    + to_Z c_lo' * 2 ^ (64 * Z.of_nat (S pos)))
+                   + (to_Z_words rest * to_Z y_i + to_Z c_hi) *
+                     2 ^ (64 * Z.of_nat (S (S pos))))
+                by (rewrite !pow64_succ; ring).
+              rewrite add_shifted_term_mod.
+              rewrite pow64_modulus_words.
+              rewrite (adc_2_full_mul_step_mod_words result pos x y_i c_hi c_lo
+                c_lo' res Hlen2 Hadc).
+              rewrite <- pow64_modulus_words.
+              rewrite spec_mul.
+              replace
+                (to_Z_words result
+                 + (((to_Z x * to_Z y_i) mod base width) * base width
+                    + to_Z c_hi * base width + to_Z c_lo) *
+                   2 ^ (64 * Z.of_nat pos))
+                with
+                  ((((to_Z x * to_Z y_i) mod base width + to_Z c_hi) *
+                     2 ^ (64 * Z.of_nat (S pos)))
+                    + (to_Z_words result
+                       + to_Z c_lo * 2 ^ (64 * Z.of_nat pos)))
+                by (rewrite !pow64_succ; ring).
+              rewrite <- Zplus_mod_idemp_l.
+              rewrite add_low_limb_shift_mod.
+              rewrite Zplus_mod_idemp_l.
+              replace
+                (((to_Z x * to_Z y_i + to_Z c_hi) *
+                  2 ^ (64 * Z.of_nat (S pos)))
+                 + (to_Z_words result + to_Z c_lo * 2 ^ (64 * Z.of_nat pos)))
+                with
+                  (to_Z_words result
+                   + (to_Z x * to_Z y_i * base width
+                      + to_Z c_hi * base width + to_Z c_lo) *
+                     2 ^ (64 * Z.of_nat pos))
+                by (rewrite !pow64_succ; ring).
+              replace (to_Z_words (x :: rest))
+                with (to_Z x + base width * to_Z_words rest) by reflexivity.
+              replace
+                (to_Z_words result
+                 + ((to_Z x + base width * to_Z_words rest) * to_Z y_i *
+                    base width + to_Z c_hi * base width + to_Z c_lo) *
+                   2 ^ (64 * Z.of_nat pos))
+                with
+                  ((to_Z_words result
+                    + (to_Z x * to_Z y_i * base width
+                       + to_Z c_hi * base width + to_Z c_lo) *
+                      2 ^ (64 * Z.of_nat pos))
+                   + (to_Z_words rest * to_Z y_i) *
+                     2 ^ (64 * Z.of_nat (S (S pos))))
+                by (rewrite !pow64_succ; ring).
+              rewrite add_shifted_term_mod.
+              reflexivity.
+           ++ intros j Hj HjR. exfalso. subst pos. lia.
+        -- apply Nat.ltb_ge in Hpos1.
+           assert (HR : R = S pos) by lia.
+           replace ((I + J <? R)%nat) with true
+             by (symmetry; apply Nat.ltb_lt; lia).
+           replace ((I + J + 2 <? R)%nat) with false
+             by (symmetry; apply Nat.ltb_ge; lia).
+           replace ((I + J + 1 <? R)%nat) with false
+             by (symmetry; apply Nat.ltb_ge; lia).
+           replace (I + J)%nat with pos by lia.
+           change MakeProofs.set_word with set_word.
+           change MakeProofs.get_word with get_word.
+           rewrite (mul_add_line_recur_correct
+             rest y_i (set_word result pos (get_word result pos + c_lo)%Uint)
+             (S J) I R c_hi c_lo).
+           2:{ rewrite set_word_length_local. exact Hlen. }
+           2:{ cbn [length]. subst pos. lia. }
+           split.
+           ++ rewrite HR.
+              replace (I + S J)%nat with R by (subst pos; lia).
+              rewrite <- Zplus_mod_idemp_r.
+              rewrite shifted_term_mod_0 by lia.
+              rewrite Z.add_0_r.
+              rewrite set_word_add_last_mod.
+              2:{ rewrite HR in Hlen. exact Hlen. }
+              replace (to_Z_words (x :: rest))
+                with (to_Z x + base width * to_Z_words rest) by reflexivity.
+              replace
+                (to_Z_words result
+                 + ((to_Z x + base width * to_Z_words rest) * to_Z y_i *
+                    base width + to_Z c_hi * base width + to_Z c_lo) *
+                   2 ^ (64 * Z.of_nat pos))
+                with
+                  ((to_Z_words result + to_Z c_lo * 2 ^ (64 * Z.of_nat pos))
+                   + (to_Z x * to_Z y_i
+                      + to_Z_words rest * to_Z y_i * base width + to_Z c_hi) *
+                     2 ^ (64 * Z.of_nat (S pos)))
+                by (rewrite !pow64_succ; ring).
+              rewrite add_shifted_term_mod.
+              reflexivity.
+           ++ intros j Hj HjR. exfalso. subst pos. lia.
+    + apply Nat.ltb_ge in Hpos.
+      replace ((I + J <? R)%nat) with false
+        by (symmetry; apply Nat.ltb_ge; lia).
+      split.
+      * rewrite <- Zplus_mod_idemp_r.
+        rewrite shifted_term_mod_0 by (subst pos; lia).
+        cbn. rewrite Z.add_0_r. reflexivity.
+      * intros j Hj HjR. subst pos. exfalso. lia.
+Qed.
 
 Lemma mul_line_recur_zero_tail : forall xs (y : t) result I R (carry : t),
   length result = R ->
@@ -1336,4 +1648,7 @@ Proof.
   apply truncating_mul_runtime_correct; lia.
 Qed.
 
+Print Assumptions truncating_mul_runtime_correct.
+
 End MakeProofs.
+

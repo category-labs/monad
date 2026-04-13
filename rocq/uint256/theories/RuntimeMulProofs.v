@@ -293,7 +293,55 @@ Lemma adc_2_full_mul_step_mod_words :
         + to_Z c_hi * base width + to_Z c_lo)
        * modulus_words pos)
     mod modulus_words (S (S pos)).
-Proof. Admitted.
+Proof.
+  intros result pos x y c_hi c_lo c_lo' res Hlen Hadc.
+  rewrite to_Z_words_set_word_local by (rewrite Hlen; lia).
+  change (MakeProofs.get_word result pos) with (get_word result pos).
+  change ((base width) ^ Z.of_nat pos) with (modulus_words pos).
+  rewrite modulus_words_succ.
+  pose proof (spec_adc_2_full (mul x y) (get_word result pos) c_hi c_lo)
+    as Hspec.
+  rewrite Hadc in Hspec.
+  set (P := modulus_words pos) in *.
+  set (M := modulus_words (S (S pos))) in *.
+  assert (Hpair :
+    (to_Z_words result - to_Z (get_word result pos) * P
+     + (to_Z c_lo' * base width + to_Z res) * P) mod M
+    =
+    (to_Z_words result - to_Z (get_word result pos) * P
+     + ((to_Z (mul x y) * base width + to_Z (get_word result pos)
+         + to_Z c_hi * base width + to_Z c_lo)
+        mod (base width * base width)) * P) mod M).
+  { apply (f_equal (fun z =>
+      (to_Z_words result - to_Z (get_word result pos) * P + z * P) mod M))
+      in Hspec.
+    exact Hspec. }
+  transitivity
+    ((to_Z_words result - to_Z (get_word result pos) * P
+      + (to_Z c_lo' * base width + to_Z res) * P) mod M).
+  { apply (f_equal (fun z => z mod M)). nia. }
+  transitivity
+    ((to_Z_words result - to_Z (get_word result pos) * P
+      + ((to_Z (mul x y) * base width + to_Z (get_word result pos)
+          + to_Z c_hi * base width + to_Z c_lo)
+         mod (base width * base width)) * P) mod M).
+  { exact Hpair. }
+  subst P M.
+  rewrite <- pow64_modulus_words.
+  rewrite <- Zplus_mod_idemp_r.
+  rewrite two_limb_shift_mod.
+  rewrite Zplus_mod_idemp_r.
+  transitivity
+    ((to_Z_words result
+      + (to_Z (mul x y) * base width
+         + to_Z c_hi * base width + to_Z c_lo) * modulus_words pos)
+     mod modulus_words (S (S pos))).
+  { apply (f_equal (fun z => z mod modulus_words (S (S pos)))).
+    rewrite pow64_modulus_words.
+    ring. }
+  rewrite <- pow64_modulus_words.
+  reflexivity.
+Qed.
 
 Lemma mulx_hi_bound : forall x y hi lo,
   mulx x y = (hi, lo) ->
@@ -481,7 +529,42 @@ Lemma adc_2_short_carry_step_zero_mod :
   = (to_Z_words result
      + (to_Z c_hi * base width + to_Z c_lo) * modulus_words pos)
     mod modulus_words R.
-Proof. Admitted.
+Proof.
+  intros result pos R c_hi c_lo r1 r0 Hlen Hpos Hbound Hzero Hadc.
+  rewrite to_Z_words_set_word_zero_local.
+  2:{ rewrite set_word_length_local, Hlen. lia. }
+  2:{ rewrite get_set_word_other_local by lia. exact Hzero. }
+  rewrite to_Z_words_set_word_local by (rewrite Hlen; lia).
+  change (MakeProofs.get_word result pos) with (get_word result pos).
+  change ((base width) ^ Z.of_nat pos) with (modulus_words pos).
+  rewrite pow64_succ.
+  pose proof (adc_2_short_exact_pair_bound c_hi c_lo
+    (get_word result pos) r1 r0 Hbound Hadc) as Hpair.
+  rewrite <- pow64_modulus_words.
+  transitivity
+    ((to_Z_words result - to_Z (get_word result pos) * modulus_words pos
+      + (to_Z r1 * base width + to_Z r0) * modulus_words pos)
+     mod modulus_words R).
+  { apply (f_equal (fun z => z mod modulus_words R)).
+    rewrite pow64_modulus_words.
+    ring. }
+  transitivity
+    ((to_Z_words result - to_Z (get_word result pos) * modulus_words pos
+      + (to_Z c_hi * base width + to_Z c_lo + to_Z (get_word result pos)) *
+        modulus_words pos)
+     mod modulus_words R).
+  { apply (f_equal (fun z =>
+      (to_Z_words result - to_Z (get_word result pos) * modulus_words pos
+       + z * modulus_words pos) mod modulus_words R)) in Hpair.
+    exact Hpair. }
+  transitivity
+    ((to_Z_words result
+      + (to_Z c_hi * base width + to_Z c_lo) * modulus_words pos)
+     mod modulus_words R).
+  { apply (f_equal (fun z => z mod modulus_words R)). ring. }
+  rewrite <- pow64_modulus_words.
+  reflexivity.
+Qed.
 
 Lemma zero_tail_before_set_word_local :
   forall result I R res_I,
@@ -768,7 +851,30 @@ Lemma mul_line_recur_zero_tail : forall xs (y : t) result I R (carry : t),
   (forall j, (I <= j)%nat -> (j < R)%nat -> get_word result j = zero) ->
   forall j, (I + length xs + 1 <= j)%nat -> (j < R)%nat ->
     get_word (mul_line_recur xs y result I R carry) j = zero.
-Proof. Admitted.
+Proof.
+  induction xs as [|x rest IH]; intros y result I R carry Hlen Hzero j Hj HjR;
+    simpl.
+  - destruct (Nat.ltb I R) eqn:HI.
+    + eapply zero_tail_after_set_word_local.
+      * exact Hzero.
+      * lia.
+      * exact HjR.
+    + apply Hzero; lia.
+  - destruct (Nat.ltb I R) eqn:HI.
+    + destruct (Nat.ltb (I + 1) R) eqn:HI1.
+      * destruct (mulx x y) as [hi lo].
+        destruct (adc_2_short hi lo carry) as [new_carry res_I].
+        eapply IH.
+        -- rewrite set_word_length_local. exact Hlen.
+        -- eapply zero_tail_after_set_word_local. exact Hzero.
+        -- simpl in Hj; lia.
+        -- exact HjR.
+      * eapply zero_tail_after_set_word_local.
+        -- exact Hzero.
+        -- lia.
+        -- exact HjR.
+    + apply Hzero; lia.
+Qed.
 
 Lemma mul_line_zero_tail : forall R xs (y : t),
   (0 < length xs)%nat ->
@@ -776,7 +882,22 @@ Lemma mul_line_zero_tail : forall R xs (y : t),
   forall j, (S (length xs) <= j)%nat -> (j < R)%nat ->
     get_word (mul_line R xs y) j = zero.
 Proof.
-Admitted.
+  intros R xs y Hxs HR j Hj HjR.
+  destruct xs as [|x0 rest].
+  - simpl in Hxs. lia.
+  - unfold mul_line.
+    destruct (mulx y x0) as [carry lo].
+    eapply (mul_line_recur_zero_tail
+      rest y (set_word (extend_words R) 0 lo) 1 R carry).
+    + rewrite set_word_length_local, extend_words_length_local.
+      reflexivity.
+    + intros k Hk HkR.
+      rewrite get_set_word_other_local by lia.
+      apply get_extend_words_zero.
+      exact HkR.
+    + simpl in Hj; lia.
+    + exact HjR.
+Qed.
 
 Lemma mul_add_line_zero_tail : forall I R xs (y_i : t) result,
   (0 < length xs)%nat ->

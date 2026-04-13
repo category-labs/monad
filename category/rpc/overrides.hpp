@@ -23,6 +23,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 struct monad_state_override
 {

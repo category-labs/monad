@@ -26,7 +26,7 @@ use alloy_rlp::Encodable;
 use alloy_sol_types::decode_revert_reason;
 use futures::channel::oneshot::{channel, Sender};
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use self::ffi::{monad_executor_result, PoolConfig};
 
@@ -593,12 +593,18 @@ pub async fn eth_trace_block_or_transaction(
                 })
             }
             _ => {
-                let cstr_msg = CStr::from_ptr((*result).message.cast());
-                let message = match cstr_msg.to_str() {
-                    Ok(str) => String::from(str),
-                    Err(_) => String::from(
+                let cstr_msg = (!(*result).message.is_null())
+                    .then(|| CStr::from_ptr((*result).message.cast()));
+
+                let message = match cstr_msg.map(CStr::to_str) {
+                    Some(Ok(str)) => String::from(str),
+                    Some(Err(_)) => String::from(
                         "execution error eth_trace_block_or_transaction message invalid utf-8",
                     ),
+                    None => {
+                        error!("callback from eth_trace_block_or_transaction_executor failed: message pointer is null");
+                        String::from("callback from eth_trace_block_or_transaction_executor failed: message pointer is null")
+                    }
                 };
 
                 CallResult::Failure(FailureCallResult {

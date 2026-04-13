@@ -1573,7 +1573,7 @@ Lemma knuth_div_subtract_correct : forall u_seg q_hat v n,
     to_Z q_final * to_Z_words v + to_Z_words (firstn n u_after)
   /\ 0 <= to_Z_words (firstn n u_after) < to_Z_words v
   /\ length u_after = (n + 1)%nat
-  /\ get_word u_after n = U64.zero.
+  /\ to_Z (get_word u_after n) = 0.
 Proof.
   intros u_seg q_hat v n Hlen_u Hlen_v Hvpos Hqhat Hlb Hub.
   unfold knuth_div_subtract.
@@ -1608,13 +1608,13 @@ Proof.
     rewrite Hskip_top. unfold Bpow. ring. }
   assert (Hfirstn_zero_top : forall ws,
     length ws = (n + 1)%nat ->
-    get_word ws n = U64.zero ->
+    to_Z (get_word ws n) = 0 ->
     to_Z_words (firstn n ws) = to_Z_words ws).
   { intros ws Hlen_ws Htop0.
     apply to_Z_words_firstn_trailing_zeros; [lia|].
     intros i Hi.
     assert (i = n)%nat by lia.
-    subst i. rewrite Htop0, spec_zero. reflexivity. }
+    subst i. exact Htop0. }
   pose proof (U128.spec_zero) as Hzero128.
   assert (Hk0 : U128.to_Z U128.zero <= base width).
   { rewrite Hzero128. unfold base. rewrite width_is_64. simpl. lia. }
@@ -1766,11 +1766,10 @@ Proof.
       2:{ split; [lia|exact Hbase_lt_128]. }
       rewrite Z.mod_same by (unfold base; rewrite width_is_64; simpl; lia).
       reflexivity. }
-    assert (Htop_final : get_word u_final n = U64.zero).
+    assert (Htop_final : to_Z (get_word u_final n) = 0).
     { unfold u_final.
       rewrite get_set_word_same by (rewrite Hcorr_len, Hu_after_len; lia).
-      apply spec_to_Z_inj.
-      rewrite Htop_final_val, spec_zero. reflexivity. }
+      exact Htop_final_val. }
     assert (Hu_final_len : length u_final = (n + 1)%nat).
     { unfold u_final. rewrite set_word_length, Hcorr_len, Hu_after_len. reflexivity. }
     assert (Hu_final_firstn : to_Z_words (firstn n u_final) = to_Z_words u_final).
@@ -1799,11 +1798,10 @@ Proof.
     { rewrite spec_trunc. rewrite Z.mod_small; lia. }
     assert (Hu_after_len : length u_after = (n + 1)%nat).
     { unfold u_after. rewrite set_word_length, Hsub_len, Hlen_u. reflexivity. }
-    assert (Htop0 : get_word u_after n = U64.zero).
+    assert (Htop0 : to_Z (get_word u_after n) = 0).
     { unfold u_after.
       rewrite get_set_word_same by (rewrite Hsub_len, Hlen_u; lia).
-      apply spec_to_Z_inj.
-      rewrite Htrunc0, spec_zero. reflexivity. }
+      exact Htrunc0. }
     assert (Hu_after_firstn : to_Z_words (firstn n u_after) = to_Z_words u_after).
     { apply Hfirstn_zero_top; assumption. }
     assert (HR0_bounds' : 0 <= R0 < to_Z_words v).
@@ -2335,7 +2333,7 @@ Lemma knuth_div_step_correct : forall u v i n,
   /\ (forall j, (j < i \/ i + n < j)%nat -> (j < length u)%nat ->
         get_word u' j = get_word u j)
   (* MSW of modified segment is zero — remainder fits in n words *)
-  /\ get_word u' (i + n) = U64.zero.
+  /\ to_Z (get_word u' (i + n)) = 0.
 Proof.
   intros u v i n Hlv Hn Hi Hvpos Hnorm Hseg_small Hmsw.
   unfold knuth_div_step.
@@ -2393,13 +2391,11 @@ Proof.
               [unfold base; apply Z.pow_nonneg; lia | lia]. }
           pose proof (spec_to_Z v_hi). unfold base in *. lia. }
         assert (Humid_lt: to_Z u_mid < to_Z v_hi) by lia.
-        assert (Hu_hi_eq: u_hi = U64.zero)
-          by (apply spec_to_Z_inj; rewrite spec_zero; exact Hu_hi_zero).
         rewrite spec_zero. rewrite Z.mul_0_l, Z.add_0_l.
         assert (Hseg_msw: to_Z (get_word (get_segment u i (n + 1)) n) = 0).
         { rewrite get_word_get_segment by lia.
           unfold u_hi in Hu_hi_zero. exact Hu_hi_zero. }
-        split; [|split; [|split; [reflexivity|split; [auto|exact Hu_hi_eq]]]].
+        split; [|split; [|split; [reflexivity|split; [auto|exact Hu_hi_zero]]]].
         { (* Euclidean: segment = firstn n segment since MSW = 0 *)
           rewrite (to_Z_words_firstn_skipn (get_segment u i (n + 1)) n)
             by (try rewrite Hseg_len; try (rewrite get_segment_length by lia); lia).
@@ -2533,8 +2529,6 @@ Proof.
                 [unfold base; apply Z.pow_nonneg; lia
                 | clear - Hnz; pose proof (spec_to_Z u_hi); lia]. }
             lia. }
-          assert (Hu_hi_eq: u_hi = U64.zero)
-            by (apply spec_to_Z_inj; rewrite spec_zero; exact Hu_hi_zero).
           (* Step 5-7: Prove the 5 conclusions *)
           rewrite spec_zero. rewrite Z.mul_0_l, Z.add_0_l.
           set (seg := get_segment u i (n + 1)).
@@ -2542,7 +2536,7 @@ Proof.
             by (unfold seg; rewrite get_segment_length by lia; lia).
           assert (Hseg_msw: to_Z (get_word seg n) = 0)
             by (unfold seg; rewrite get_word_get_segment by lia; exact Hu_hi_zero).
-          split; [|split; [|split; [reflexivity|split; [auto|exact Hu_hi_eq]]]].
+          split; [|split; [|split; [reflexivity|split; [auto|exact Hu_hi_zero]]]].
           { (* Euclidean *)
             rewrite (to_Z_words_firstn_skipn seg n) by lia.
             assert (Hskip0: to_Z_words (skipn n seg) = 0).
@@ -3277,9 +3271,8 @@ Proof.
     + apply Z.div_lt_upper_bound; lia.
 Qed.
 
-Print Assumptions udivrem_correct.
-
 (*
+Print Assumptions udivrem_correct.
 
 Axioms:
 U128.zero : U128.t

@@ -11,3 +11,4 @@ theories/Division.v
 theories/DivisionProofs.v
 theories/RuntimeMul.v
 theories/RuntimeMulProofs.v
+theories/UintZ.v

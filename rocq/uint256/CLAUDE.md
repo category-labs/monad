@@ -13,10 +13,12 @@ Always prefix with `opam exec --` from the project root.
 
 # Interactive Proof Development
 
-When developing Rocq proofs, use Proof General in Emacs interactively via the
-`/emacs` skill. Step through tactics one at a time and check goals after each
-step. Do not write large blocks of untested tactics — this wastes time fixing
-cascading errors.
+When developing Rocq proofs, use Proof General in Emacs interactively
+via the `/emacs` skill. Step through tactics one at a time and check
+goals after each step. Do not write large blocks of untested tactics —
+this wastes time fixing cascading errors.  Do not delegate tasks to
+subagents unless explicitly told to do so.  Do not use worktrees unless
+explicitly told to do so.
 
 When facing a new goal, try the automation cascade through PG before writing
 manual tactics. Step each one and check if it closes the goal:

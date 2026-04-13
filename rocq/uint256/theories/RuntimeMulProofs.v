@@ -1639,7 +1639,8 @@ Proof.
   apply truncating_mul_runtime_correct; lia.
 Qed.
 
-Print Assumptions truncating_mul_runtime_correct.
+(* Checked in concrete models:
+   Print Assumptions truncating_mul_runtime_correct.*)
 
 End MakeProofs.
 

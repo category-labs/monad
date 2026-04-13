@@ -125,9 +125,6 @@ Module Type Uint <: UintOps.
   (** Range: every value is in [0, wB) where [wB = base width = 2^width] *)
   Axiom spec_to_Z : forall x, 0 <= to_Z x < base width.
 
-  (** [to_Z] is injective (equal values <-> equal elements) *)
-  Axiom spec_to_Z_inj : forall x y, to_Z x = to_Z y -> x = y.
-
   (** Constant specifications *)
   Axiom spec_zero : to_Z zero = 0.
   Axiom spec_one  : to_Z one = 1.

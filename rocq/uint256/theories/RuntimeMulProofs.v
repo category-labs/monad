@@ -588,19 +588,36 @@ Lemma mul_add_line_recur_correct :
         + to_Z c_hi * base width + to_Z c_lo)
        * 2^(64 * Z.of_nat (I + J)))
     mod modulus_words R.
-Proof. Admitted.
+Proof.
+  induction xs_tail as [|x rest IH];
+    intros y_i result J I R c_hi c_lo Hlen HRbound;
+    cbn [mul_add_line_recur to_Z_words].
+  - destruct (Nat.ltb (I + J + 1) R) eqn:HI1.
+    + admit.
+    + destruct (Nat.ltb (I + J) R) eqn:HI.
+      * admit.
+      * admit.
+  - destruct (Nat.ltb (I + J) R) eqn:HI.
+    + destruct (Nat.ltb (I + J + 2) R) eqn:HI2.
+      * admit.
+      * destruct (Nat.ltb (I + J + 1) R) eqn:HI1.
+        { admit. }
+        { admit. }
+    + admit.
+Admitted.
 
 (** * Row-Level Correctness *)
 
 Lemma mul_line_correct : forall R xs (y : t),
+  (0 < length xs)%nat ->
   (0 < R)%nat ->
   to_Z_words (mul_line R xs y) mod modulus_words R
   = (to_Z y * to_Z_words xs) mod modulus_words R.
 Proof. Admitted.
 
 Lemma mul_add_line_correct : forall I R xs (y_i : t) result,
+  (0 < length xs)%nat ->
   length result = R ->
-  (R <= I + length xs)%nat ->
   to_Z_words (mul_add_line I R xs y_i result) mod modulus_words R
   = (to_Z_words result + to_Z y_i * to_Z_words xs * 2^(64 * Z.of_nat I))
     mod modulus_words R.
@@ -609,24 +626,52 @@ Proof. Admitted.
 (** * General Word-List Theorem *)
 
 Lemma truncating_mul_runtime_recur_correct : forall xs ys_tail result I R,
+  (0 < length xs)%nat ->
   length result = R ->
-  (0 < R)%nat ->
-  (length xs <= R)%nat ->
-  (R <= I + length xs)%nat ->
   to_Z_words (truncating_mul_runtime_recur xs ys_tail result I R)
     mod modulus_words R
   = (to_Z_words result
-     + to_Z_words xs * to_Z_words ys_tail * 2^(64 * Z.of_nat I))
+      + to_Z_words xs * to_Z_words ys_tail * 2^(64 * Z.of_nat I))
     mod modulus_words R.
-Proof. Admitted.
+Proof.
+  induction ys_tail as [|y_i rest IH]; intros result I R Hxs Hlen.
+  - cbn [truncating_mul_runtime_recur to_Z_words].
+    rewrite Z.mul_0_r, Z.add_0_r.
+    reflexivity.
+  - cbn [truncating_mul_runtime_recur].
+    pose proof (mul_add_line_correct I R xs y_i result Hxs Hlen) as Hrow.
+    pose proof
+      (IH (mul_add_line I R xs y_i result) (S I) R Hxs
+          (mul_add_line_length I R xs y_i result Hlen))
+      as Hrest.
+    admit.
+Admitted.
 
 Theorem truncating_mul_runtime_correct : forall xs ys R,
+  (0 < length xs)%nat ->
+  (0 < length ys)%nat ->
   (0 < R)%nat ->
-  (length xs <= R)%nat ->
-  (R <= 1 + length xs)%nat ->
+  (R <= length xs + length ys)%nat ->
   to_Z_words (truncating_mul_runtime xs ys R) mod modulus_words R
   = (to_Z_words xs * to_Z_words ys) mod modulus_words R.
-Proof. Admitted.
+Proof.
+  intros xs ys R Hxs Hys HR Hbound.
+  destruct ys as [|y ys_tail].
+  - simpl in Hys. lia.
+  - cbn [truncating_mul_runtime].
+    pose proof (mul_line_correct R xs y Hxs HR) as Hline.
+    pose proof
+      (truncating_mul_runtime_recur_correct
+         xs ys_tail (mul_line R xs y) 1 R Hxs (mul_line_length R xs y))
+      as Htail.
+    rewrite Htail, Zplus_mod, Hline.
+    rewrite <- Zplus_mod.
+    cbn [to_Z_words].
+    rewrite Z.mul_add_distr_l, Z.mul_assoc, width_is_64.
+    unfold base.
+    f_equal.
+    lia.
+Qed.
 
 (** * Main 256-bit Theorem *)
 
@@ -635,6 +680,9 @@ Theorem truncating_mul256_runtime_correct : forall (x y : words),
   length y = 4%nat ->
   to_Z_words (truncating_mul_runtime x y 4) mod modulus_words 4
   = (to_Z_words x * to_Z_words y) mod modulus_words 4.
-Proof. Admitted.
+Proof.
+  intros x y Hx Hy.
+  apply truncating_mul_runtime_correct; lia.
+Qed.
 
 End MakeProofs.

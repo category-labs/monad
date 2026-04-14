@@ -193,17 +193,13 @@ ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
     return {out.data(), 32};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-identity_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+identity_impl(byte_string_view const input, std::span<uint8_t> const out)
 {
-    if (input.empty()) {
-        return {EVMC_SUCCESS, nullptr, 0};
-    }
+    MONAD_ASSERT(!input.empty());
 
-    auto *const output = static_cast<uint8_t *>(std::malloc(input.size()));
-    MONAD_ASSERT(output != nullptr);
-    std::memcpy(output, input.data(), input.size());
-    return {EVMC_SUCCESS, output, input.size()};
+    std::memcpy(out.data(), input.data(), input.size());
+    return {out.data(), input.size()};
 }
 
 [[gnu::always_inline]] inline PrecompileImplResult

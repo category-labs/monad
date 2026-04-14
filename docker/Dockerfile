@@ -32,11 +32,12 @@ COPY . src
 ARG CC
 ARG CXX
 ARG CMAKE_BUILD_TYPE
+ARG TOOLCHAIN
 ARG GIT_COMMIT_HASH
 
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
-RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./scripts/configure.sh
+RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CMAKE_TOOLCHAIN_FILE=category/core/toolchains/${TOOLCHAIN:?}.cmake ./scripts/configure.sh
 
 RUN cd src && ./scripts/build.sh
 

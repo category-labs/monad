@@ -31,11 +31,13 @@ Execution has two kinds of dependencies on third-party libraries:
 
 2. **System**: some dependencies are expected to already be part of the
    system in a default location, i.e., they are expected to come from the
-   system's package manager. The primary development platform is Ubuntu, so
-   the required packages use the Debian/Ubuntu package names; an up-to-date
-   list of the required system dependencies can be found in the docker
-   configuration file `docker/release.Dockerfile` (you will need all
-   the packages installed via the `apt install` commands)
+   system's package manager. The primary development platform is Ubuntu.
+   The scripts `scripts/ubuntu-build/install-tools.sh`,
+   `scripts/ubuntu-build/install-deps.sh`, and
+   `scripts/ubuntu-build/install-boost.sh` install all required system
+   packages. On an Ubuntu host, first run `sudo apt-get update`, then run
+   these scripts with elevated privileges (for example, via `sudo`, or as
+   root); they are also what the `docker/Dockerfile` uses internally.
 
 ### Minimum development tool requirements
 
@@ -68,7 +70,7 @@ First, change your working directory to the root directory of the execution
 git repository root and then run:
 
 ```shell
-CC=gcc-15 CXX=g++-15 CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" \
+CC=gcc-15 CXX=g++-15 CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake \
 ./scripts/configure.sh && ./scripts/build.sh
 ```
 
@@ -76,7 +78,9 @@ The above command will do several things:
 
 - Use gcc-15 instead of the system's default compiler
 
-- Emit machine code using Haswell-era CPU extensions
+- Emit machine code using Haswell-era CPU extensions, via the toolchain
+  file `category/core/toolchains/gcc-avx2.cmake`; the toolchain file sets
+  `-march=haswell` for C, C++, and assembly sources.
 
 - Run CMake, and generate a [ninja](https://ninja-build.org/) build
   system in the `<path-to-execution-repo>/build` directory with
@@ -85,9 +89,11 @@ The above command will do several things:
 
 - Build the CMake `all` target, which builds everything
 
-The compiler and CPU options are injected via environment variables that
-are read by CMake.  If you want debug binaries instead, you can also pass
-`CMAKE_BUILD_TYPE=Debug` via the environment.
+The compiler is selected via the `CC`/`CXX` environment variables, which
+CMake reads at configuration time.  The CPU target is set via the toolchain
+file, passed through the `CMAKE_TOOLCHAIN_FILE` environment variable.  If
+you want debug binaries instead, you can also pass `CMAKE_BUILD_TYPE=Debug`
+via the environment.
 
 When finished, this will build all of the execution binaries. The main one is
 the execution daemon, `build/cmd/monad`. This binary can provide block

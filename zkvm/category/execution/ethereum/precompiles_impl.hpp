@@ -550,11 +550,11 @@ point_evaluation_impl(byte_string_view input, std::span<uint8_t, 64> const out)
     return {out.data(), 256};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-p256_verify_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
     if (input.size() != 160) {
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {nullptr, 0};
     }
 
     auto const *msg =
@@ -566,16 +566,16 @@ p256_verify_execute(byte_string_view const input)
 
     bool verified = false;
     if (zkvm_secp256r1_verify(msg, sig, pubkey, &verified) != ZKVM_EOK) {
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {nullptr, 0};
     }
 
     if (!verified) {
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {nullptr, 0};
     }
 
-    auto result = alloc_success(32);
-    result.obuf[31] = 1;
-    return result;
+    std::memset(out.data(), 0, 32);
+    out.data()[31] = 1;
+    return {out.data(), 32};
 }
 
 MONAD_NAMESPACE_END

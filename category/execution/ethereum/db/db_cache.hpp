@@ -77,12 +77,12 @@ public:
 
     virtual std::optional<Account> read_account(Address const &address) override
     {
-        bool truncated = false; // ancestors truncated
         std::optional<Account> result;
-        if (proposals_.try_read_account(address, result, truncated)) {
+        auto const res = proposals_.try_read_account(address, result);
+        if (res.found) {
             return result;
         }
-        if (!truncated) {
+        if (!res.truncated) {
             AccountsCache::ConstAccessor acc{};
             if (accounts_.find(acc, address)) {
                 return acc->second.value_;
@@ -95,13 +95,13 @@ public:
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
-        bool truncated = false;
         bytes32_t result;
-        if (proposals_.try_read_storage(
-                address, incarnation, key, result, truncated)) {
+        auto const res =
+            proposals_.try_read_storage(address, incarnation, key, result);
+        if (res.found) {
             return result;
         }
-        if (!truncated) {
+        if (!res.truncated) {
             StorageKey const skey{address, incarnation, key};
             StorageCache::ConstAccessor acc{};
             if (storage_.find(acc, skey)) {

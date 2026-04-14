@@ -403,4 +403,17 @@ PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view const input)
         bls12_map_fp2_to_g2_impl(input, std::span<uint8_t, 256>{out, 256}));
 }
 
+PrecompileResult p256_verify_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    auto const result =
+        p256_verify_impl(input, std::span<uint8_t, 32>{out, 32});
+    if (result.data == nullptr) {
+        std::free(out);
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+    return {EVMC_SUCCESS, result.data, result.size};
+}
+
 MONAD_NAMESPACE_END

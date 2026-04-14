@@ -312,8 +312,8 @@ State::get_transient_storage(Address const &address, bytes32_t const &key)
 
 bool State::is_touched(Address const &address)
 {
-    auto const &account_state = recent_account_state(address);
-    return account_state.is_touched();
+    auto const it = current_.find(address);
+    return it != current_.end() && it->second.recent().is_touched();
 }
 
 void State::set_nonce(Address const &address, uint64_t const nonce)

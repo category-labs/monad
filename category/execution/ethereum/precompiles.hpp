@@ -155,6 +155,7 @@ PrecompileResult bls12_pairing_check_execute(byte_string_view);
 PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view);
 PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view);
 PrecompileResult p256_verify_execute(byte_string_view);
+PrecompileResult identity_execute(byte_string_view);
 
 struct PrecompileImplResult
 {
@@ -222,5 +223,8 @@ PrecompileImplResult bls12_map_fp2_to_g2_impl(
 
 PrecompileImplResult
 p256_verify_impl(byte_string_view input, std::span<uint8_t, 32> const out);
+
+PrecompileImplResult
+identity_impl(byte_string_view input, std::span<uint8_t> const out);
 
 MONAD_NAMESPACE_END

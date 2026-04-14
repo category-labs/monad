@@ -221,4 +221,7 @@ PrecompileImplResult bls12_map_fp2_to_g2_impl(
 
 PrecompileImplResult
 p256_verify_impl(byte_string_view input, std::span<uint8_t, 32> const out);
+
+PrecompileImplResult
+identity_impl(byte_string_view input, std::span<uint8_t> const out);
 MONAD_NAMESPACE_END

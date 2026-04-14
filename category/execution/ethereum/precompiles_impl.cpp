@@ -307,15 +307,12 @@ PrecompileImplResult bls12_map_fp2_to_g2_impl(
 // Rollup precompiles
 
 // EIP-7951
-PrecompileResult p256_verify_execute(byte_string_view const input)
+PrecompileImplResult
+p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
     using namespace CryptoPP;
 
-    auto const empty_result = PrecompileResult{
-        .status_code = EVMC_SUCCESS,
-        .obuf = nullptr,
-        .output_size = 0,
-    };
+    static constexpr PrecompileImplResult empty_result{nullptr, 0};
 
     if (input.size() != 160) {
         return empty_result;
@@ -383,17 +380,9 @@ PrecompileResult p256_verify_execute(byte_string_view const input)
     }
 
     // Return 0x000...1
-    auto *const output_buf = static_cast<uint8_t *>(std::malloc(32));
-    MONAD_ASSERT(output_buf != nullptr);
-    std::memset(output_buf, 0, 32);
-
-    output_buf[31] = 1;
-
-    return {
-        .status_code = EVMC_SUCCESS,
-        .obuf = output_buf,
-        .output_size = 32,
-    };
+    std::memset(out.data(), 0, 32);
+    out.data()[31] = 1;
+    return {out.data(), 32};
 }
 
 MONAD_NAMESPACE_END

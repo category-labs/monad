@@ -416,4 +416,16 @@ PrecompileResult p256_verify_execute(byte_string_view const input)
     return {EVMC_SUCCESS, result.data, result.size};
 }
 
+PrecompileResult identity_execute(byte_string_view const input)
+{
+    if (input.empty()) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+    auto *const out = static_cast<uint8_t *>(std::malloc(input.size()));
+    MONAD_ASSERT(out != nullptr);
+    auto const result =
+        identity_impl(input, std::span<uint8_t>{out, input.size()});
+    return {EVMC_SUCCESS, result.data, result.size};
+}
+
 MONAD_NAMESPACE_END

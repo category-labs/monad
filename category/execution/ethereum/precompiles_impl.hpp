@@ -372,19 +372,13 @@ blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 // Rollup precompiles
 
 // EIP-7951
-[[gnu::always_inline]] inline PrecompileResult
-p256_verify_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult
+p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
     using namespace CryptoPP;
 
-    auto const empty_result = PrecompileResult{
-        .status_code = EVMC_SUCCESS,
-        .obuf = nullptr,
-        .output_size = 0,
-    };
-
     if (input.size() != 160) {
-        return empty_result;
+        return PrecompileImplResult::failure();
     }
 
     Integer h(input.data(), 32);
@@ -401,30 +395,30 @@ p256_verify_execute(byte_string_view const input)
 
     // if not (0 < r < n and 0 < s < n): return
     if (!(r > Integer::Zero() && r < n)) {
-        return empty_result;
+        return PrecompileImplResult::failure();
     }
 
     if (!(s > Integer::Zero() && s < n)) {
-        return empty_result;
+        return PrecompileImplResult::failure();
     }
 
     // if not (0 ≤ qx < p and 0 ≤ qy < p): return
     if (!(qx >= Integer::Zero() && qx < p_mod)) {
-        return empty_result;
+        return PrecompileImplResult::failure();
     }
 
     if (!(qy >= Integer::Zero() && qy < p_mod)) {
-        return empty_result;
+        return PrecompileImplResult::failure();
     }
 
     // if qy^2 ≢ qx^3 + a*qx + b (mod p): return
     if (!ec.VerifyPoint({qx, qy})) {
-        return empty_result;
+        return PrecompileImplResult::failure();
     }
 
     // if (qx, qy) == (0, 0): return
     if (qx.IsZero() && qy.IsZero()) {
-        return empty_result;
+        return PrecompileImplResult::failure();
     }
 
     // s1 = s^(-1) (mod n)
@@ -440,26 +434,18 @@ p256_verify_execute(byte_string_view const input)
 
     // If R' is at infinity: return
     if (r_prime.identity) {
-        return empty_result;
+        return PrecompileImplResult::failure();
     }
 
     // if R'.x ≢ r (mod n): return
     if (r_prime.x % n != r) {
-        return empty_result;
+        return PrecompileImplResult::failure();
     }
 
     // Return 0x000...1
-    auto *const output_buf = static_cast<uint8_t *>(std::malloc(32));
-    MONAD_ASSERT(output_buf != nullptr);
-    std::memset(output_buf, 0, 32);
-
-    output_buf[31] = 1;
-
-    return {
-        .status_code = EVMC_SUCCESS,
-        .obuf = output_buf,
-        .output_size = 32,
-    };
+    std::memset(out.data(), 0, 32);
+    out.data()[31] = 1;
+    return {out.data(), 32};
 }
 
 MONAD_NAMESPACE_END

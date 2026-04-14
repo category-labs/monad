@@ -12,7 +12,7 @@
     This file mirrors UintZ.v but with a refined carrier type. *)
 
 From Stdlib Require Import ZArith PArith Bool Lia List.
-From Stdlib Require Import DoubleType ProofIrrelevance.
+From Stdlib Require Import DoubleType.
 From Uint256 Require Import Uint RuntimeMulProofs DivisionProofs.
 
 #[local] Open Scope Z_scope.
@@ -61,23 +61,6 @@ Proof.
   ring.
 Qed.
 
-Lemma bounded_eq : forall w (x y : bounded w), val x = val y -> x = y.
-Proof.
-  intros w [x Hx] [y Hy] Hxy.
-  simpl in Hxy.
-  subst y.
-  f_equal.
-  apply proof_irrelevance.
-Qed.
-
-Lemma bounded_eq_dec : forall w (x y : bounded w), {x = y} + {x <> y}.
-Proof.
-  intros w x y.
-  destruct (Z.eq_dec (val x) (val y)) as [Hxy|Hxy].
-  - left. now apply bounded_eq.
-  - right. intro Heq. apply Hxy. now subst y.
-Defined.
-
 Lemma val_mk_small : forall w z, 0 <= z < base w -> val (mk w z) = z.
 Proof.
   intros w z Hz.
@@ -118,10 +101,6 @@ Module SigmaUint64.
   Proof. reflexivity. Qed.
 
   Definition to_Z (x : t) : Z := val x.
-
-  (** Decidable equality *)
-  Lemma t_eq_dec : forall x y : t, {x = y} + {x <> y}.
-  Proof. apply bounded_eq_dec. Defined.
 
   (** Constants *)
   Definition zero : t := mk width 0.
@@ -534,9 +513,6 @@ Module SigmaUint128.
   Proof. reflexivity. Qed.
 
   Definition to_Z (x : t) : Z := val x.
-
-  Lemma t_eq_dec : forall x y : t, {x = y} + {x <> y}.
-  Proof. apply bounded_eq_dec. Defined.
 
   Definition zero : t := mk width 0.
   Definition one  : t := mk width 1.

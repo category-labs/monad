@@ -3293,7 +3293,6 @@ U128.spec_zero : U128.to_Z U128.zero = 0
 spec_zero : to_Z 0 = 0
 spec_widen : forall x : t, U128.to_Z (widen x) = to_Z x
 spec_trunc : forall x : U128.t, to_Z (trunc x) = U128.to_Z x mod base width
-spec_to_Z_inj : forall x y : t, to_Z x = to_Z y -> x = y
 U128.spec_to_Z : forall x : U128.t, 0 <= U128.to_Z x < base U128.width
 spec_to_Z : forall x : t, 0 <= to_Z x < base width
 U128.spec_sub : forall x y : U128.t, U128.to_Z (U128.sub x y) = (U128.to_Z x - U128.to_Z y) mod base U128.width

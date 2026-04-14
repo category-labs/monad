@@ -110,9 +110,6 @@ Module ZUint64.
 
   Definition to_Z (x : t) : Z := norm width x.
 
-  (** Decidable equality *)
-  Definition t_eq_dec : forall x y : t, {x = y} + {x <> y} := Z.eq_dec.
-
   (** Constants *)
   Definition zero : t := 0.
   Definition one : t := 1.
@@ -490,7 +487,6 @@ Module ZUint128.
   Proof. reflexivity. Qed.
 
   Definition to_Z (x : t) : Z := norm width x.
-  Definition t_eq_dec : forall x y : t, {x = y} + {x <> y} := Z.eq_dec.
   Definition zero : t := 0.
   Definition one : t := 1.
   Definition add (x y : t) : t := x + y.

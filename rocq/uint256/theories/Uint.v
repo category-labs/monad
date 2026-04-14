@@ -37,9 +37,6 @@ Module Type UintOps.
   (** Fixed width in bits *)
   Parameter width : positive.
 
-  (** Carrier type has decidable equality *)
-  Parameter t_eq_dec : forall x y : t, {x = y} + {x <> y}.
-
   (** *** Constants *)
   Parameter zero : t.
   Parameter one : t.

@@ -1130,39 +1130,36 @@ namespace monad::vm::runtime
             if (MONAD_UNLIKELY(u[ix + n] == v[n - 1])) {
                 q_hat = ~uint64_t{0};
 
-                // In this branch, we have q_hat-1 <= q <= q_hat, therefore only
-                // one adjustment of the quotient is necessary, so we skip the
+                // In this branch q_hat = BASE - 1 where BASE = 2^64.
+                // We claim q_hat - 1 <= q <= q_hat, so at most one quotient
+                // correction can be necessary and we may skip the
                 // pre-adjustment phase.
                 //
-                // Suppose q >= q_hat-2, and let term = BASE*u[ix+n] + u[ix+n-1]
-                //   r_hat = term - q_hat*v[n-1]
-                //        >= term - (q-2)*v[n-1]
-                //         = term - q*v[n-1] + 2*v[n-1]
-                //        >= 2 * v[n-1]
-                //        >= BASE
-                // The last inequality follows from v[n-1] > BASE/2 and
-                // term - q*v[n-1] >= 0 follows from u[ix + n] = v[n - 1],
-                // because
-                //   BASE*u[ix+n] + u[ix+n-1] - q*v[n-1]
-                //     = BASE*v[n-1] + u[ix+n-1] - q*v[n-1]
-                //    >= BASE*v[n-1] - q*v[n-1]
-                //    >= BASE*v[n-1] - BASE*v[n-1]
-                //     = 0
-                // However, if r_hat >= BASE, then q_hat <= q. To this end
-                // it suffices to prove
-                //   u[ix+n .. ix] - v[n-1, .., 0] * q_hat >= 0
-                // because q <= q_hat
-                // and u[ix+n .. ix] - v[n-1, .., 0] * q >= 0,
-                //   u[ix+n .. ix] - v[n-1 .. 0]*q_hat
-                //     = (u[ix+n .. ix+n-1] - v[n-1]*q_hat)*B^(n-1)
-                //       + u[ix+n-2 .. ix] - v[n-2 .. 0]*q_hat
-                //     = r_hat*B^(n-1) + u[ix+n-2 .. ix] - v[n-2 .. 0]*q_hat
-                //    >= B^n + u[ix+n-2 .. ix] - v[n-2 .. 0] * q_hat
-                //    >= B^n - v[n-2 .. 0] * q_hat
-                //    >= B^n - B^(n-1) * B
-                //     = 0
-                // Therefore if q >= q_hat-2 we have q <= q_hat which is a
-                // contradiction.
+                // Let U = u[ix+n .. ix], V = v[n-1 .. 0], a = v[n-1] = u[ix+n]
+                // The upper bound q <= q_hat is immediate because q_hat is the
+                // maximal digit.
+                // For the lower bound, suppose q <= q_hat - 2. Since q is the
+                // quotient digit, we have
+                //   q * V <= U < (q + 1) * V.
+                // Hence
+                //   U < (q + 1) * V <= (q_hat - 1) * V = (BASE - 2) * V.
+                // It remains to show (BASE - 2) * V <= U. For this, note that
+                //   U >= a * BASE^n
+                // because the top digit of U is a, and
+                //   V <= (a + 1) * BASE^(n-1) - 1
+                // because the top digit of V is a. Using a >= BASE/2 (which is
+                // equivalent to Knuth's normalization condition
+                // a >= floor(BASE/2) in the case where BASE is even), we get
+                //   (BASE - 2) * (a + 1) = BASE*a - 2*a + BASE - 2
+                //                        <= BASE * a - 2 * (BASE/2) + BASE - 2
+                //                        <= BASE * a,
+                // hence
+                //   (BASE - 2) * V <= (BASE - 2)*(a + 1)*BASE^(n-1)-(BASE - 2)
+                //                  <= BASE * a * BASE^(n-1) - (BASE - 2)
+                //                  <= a * BASE^n
+                //                  <= U.
+                // Contradiction. Therefore q_hat - 1 <= q <= q_hat, so only one
+                // correction can be necessary.
             }
             else {
                 auto [q_hat0, r_hat0] = div(u[ix + n], u[ix + n - 1], v[n - 1]);

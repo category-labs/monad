@@ -37,7 +37,7 @@ Execution has two kinds of dependencies on third-party libraries:
    `scripts/ubuntu-build/install-boost.sh` install all required system
    packages. On an Ubuntu host, first run `sudo apt-get update`, then run
    these scripts with elevated privileges (for example, via `sudo`, or as
-   root); they are also what the `docker/Dockerfile` uses internally.
+   root).
 
 ### Minimum development tool requirements
 

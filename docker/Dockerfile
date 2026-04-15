@@ -36,7 +36,7 @@ ARG GIT_COMMIT_HASH
 
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
-RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" ./scripts/configure.sh
+RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CFLAGS="-march=haswell -fstack-protector-strong -fPIC" CXXFLAGS="-march=haswell -fstack-protector-strong -fPIC" ASMFLAGS="-march=haswell" LDFLAGS="-Wl,-z,relro,-z,now,-z,noexecstack,-z,separate-code" ./scripts/configure.sh
 
 RUN cd src && ./scripts/build.sh
 

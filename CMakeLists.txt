@@ -72,6 +72,10 @@ function(monad_compile_options target)
   target_compile_options(${target} PRIVATE -Wall -Wextra -Wconversion -Werror)
   target_compile_definitions(${target} PUBLIC "_GNU_SOURCE")
 
+  target_compile_options(${target} PRIVATE -fstack-protector-strong -fPIC)
+  target_compile_options(${target} PRIVATE $<$<NOT:$<CONFIG:Debug>>:-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1>)
+  target_link_options(${target} PRIVATE -Wl,-z,relro,-z,now,-z,noexecstack,-z,separate-code)
+
   target_compile_options(
     ${target} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>)
 

@@ -33,6 +33,13 @@ move to around 10 lines before the anticipated edit point, then use
 command, move point to the preceding command and use `proof-goto-point`
 to get a local retraction rather than restarting the Coq process.
 
+When a `.v` file is under active Proof General control, do not edit it
+externally on disk. In particular, do not use `apply_patch` or other
+non-Emacs file-rewrite tools on that file while the PG session is live.
+Make the edit in the live Emacs buffer, save it there, then use local
+`proof-goto-point` retraction to replay the affected region. This is an
+explicit exception to the general preference for patch-based edits.
+
 When facing a new goal, try the automation cascade through PG before writing
 manual tactics. Step each one and check if it closes the goal:
 

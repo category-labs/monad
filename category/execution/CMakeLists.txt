@@ -199,6 +199,9 @@ add_library(
 
 add_library(
   monad_execution_native OBJECT
+  # monad/db
+  "monad/db/storage_page.cpp"
+  "monad/db/storage_page.hpp"
   # monad/chain
   "monad/chain/monad_chain.cpp"
   "monad/chain/monad_chain.hpp"

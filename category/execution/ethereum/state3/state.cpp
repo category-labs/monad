@@ -208,11 +208,25 @@ bool State::account_is_dead(Address const &address)
 
 uint64_t State::get_nonce(Address const &address)
 {
+    original_account_state(address).set_validate_exact_nonce();
     auto const &account = recent_account(address);
     if (MONAD_LIKELY(account.has_value())) {
         return account.value().nonce;
     }
     return 0;
+}
+
+bool State::inc_nonce(Address const &address)
+{
+    auto &account = current_account(address);
+    if (MONAD_UNLIKELY(!account.has_value())) {
+        account = Account{.incarnation = incarnation_};
+    }
+    if (MONAD_UNLIKELY(account->nonce == std::numeric_limits<uint64_t>::max())) {
+        return false;
+    }
+    ++account->nonce;
+    return true;
 }
 
 uint256_t State::get_balance(Address const &address)
@@ -352,7 +366,7 @@ void State::subtract_from_balance(
         account = Account{.incarnation = incarnation_};
     }
 
-    MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
+    MONAD_ASSERT_THROW(check_min_balance(address, delta), "balance underflow");
 
     account.value().balance -= delta;
     account_state.touch();
@@ -654,22 +668,28 @@ bool State::try_fix_account_mismatch(
     if (original->incarnation != actual->incarnation) {
         return false;
     }
-    if (original->nonce != actual->nonce) {
-        return false;
-    }
-    MONAD_ASSERT(original->balance != actual->balance);
+    bool const nonce_mismatch = original->nonce != actual->nonce;
+    bool const balance_mismatch = original->balance != actual->balance;
+    MONAD_ASSERT(nonce_mismatch || balance_mismatch);
+
     // is relaxed merge disabled
     if (!relaxed_validation_) {
         return false;
     }
-    if (original_state.validate_exact_balance()) {
+    if (nonce_mismatch && original_state.validate_exact_nonce()) {
         return false;
     }
-    // original balance does not meet min required
-    if (actual->balance < original_state.min_balance()) {
-        return false;
+    if (balance_mismatch) {
+        if (original_state.validate_exact_balance()) {
+            return false;
+        }
+        // original balance does not meet min required
+        if (actual->balance < original_state.min_balance()) {
+            return false;
+        }
     }
-    // adjust balances
+
+    // adjust current state
     auto const current_it = current_.find(address);
     if (current_it != current_.end()) {
         MONAD_ASSERT(current_it->second.size() == 1);
@@ -678,31 +698,70 @@ bool State::try_fix_account_mismatch(
         if (!recent) {
             return false;
         }
-        if (actual->balance > original->balance) {
-            recent->balance += actual->balance - original->balance;
+        if (nonce_mismatch) {
+            MONAD_ASSERT(recent->nonce >= original->nonce);
+            uint64_t const nonce_delta = recent->nonce - original->nonce;
+            if (actual->nonce >
+                std::numeric_limits<uint64_t>::max() - nonce_delta) {
+                return false;
+            }
+            recent->nonce = actual->nonce + nonce_delta;
         }
-        else {
-            MONAD_ASSERT(
-                recent->balance >= (original->balance - actual->balance));
-            recent->balance -= original->balance - actual->balance;
+        if (balance_mismatch) {
+            if (actual->balance > original->balance) {
+                recent->balance += actual->balance - original->balance;
+            }
+            else {
+                MONAD_ASSERT(
+                    recent->balance >=
+                    (original->balance - actual->balance));
+                recent->balance -= original->balance - actual->balance;
+            }
         }
     }
-    original->balance = actual->balance;
+
+    if (nonce_mismatch) {
+        original->nonce = actual->nonce;
+    }
+    if (balance_mismatch) {
+        original->balance = actual->balance;
+    }
 
     // not necessary as can_merge() wont be called
     // anymore, but just being defensive, and this makes
     // it easier to write the class invariant
+    original_state.set_validate_exact_nonce();
     original_state.set_validate_exact_balance();
     return true;
 }
 
-bool State::record_balance_constraint_for_debit(
-    Address const &address, uint256_t const &debit)
+bool State::check_min_original_balance(
+    Address const &address, uint256_t const &value)
+{
+    auto &orig_state = original_account_state(address);
+    auto const &account = orig_state.account_;
+    return check_account_min_balance(orig_state, account, value);
+}
+
+bool State::check_min_balance(Address const &address, uint256_t const &value)
 {
     auto const &account = recent_account(address);
-    uint256_t const balance = account.has_value() ? account->balance : 0;
+    OriginalAccountState &orig_state = original_account_state(address);
+    return check_account_min_balance(orig_state, account, value);
+}
 
-    auto &original_state = original_account_state(address);
+bool State::check_min_balance(Address const &address, uint512_t const &value)
+{
+    return value > std::numeric_limits<uint256_t>::max()
+               ? false
+               : check_min_balance(address, static_cast<uint256_t>(value));
+}
+
+bool State::check_account_min_balance(
+    OriginalAccountState &original_state, std::optional<Account> const &account,
+    uint256_t const &debit)
+{
+    uint256_t const balance = account ? account->balance : 0;
     // RELAXED MERGE
     // if current balance  >= `debit`, then:
     // 1. compute the amount that current balance exceeds `debit`

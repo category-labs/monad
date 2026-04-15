@@ -48,10 +48,7 @@ namespace
     bool sender_has_balance(State &state, evmc_message const &msg) noexcept
     {
         uint256_t const value = intx::be::load<uint256_t>(msg.value);
-        // for optimistic execution, we do NOT require the original balance to
-        // match exactly, just add a lower bound constraint to suffice for this
-        // debit
-        return state.record_balance_constraint_for_debit(msg.sender, value);
+        return state.check_min_balance(msg.sender, value);
     }
 
     template <Traits traits>
@@ -183,9 +180,8 @@ evmc::Result execute_create_message(
              */
             if constexpr (traits::monad_rev() >= MONAD_FIVE) {
                 if (!msg.depth) {
-                    uint64_t const nonce = state.get_nonce(msg.sender);
-                    MONAD_ASSERT(nonce != UINT64_MAX);
-                    state.set_nonce(msg.sender, nonce + 1);
+                    bool const ok = state.inc_nonce(msg.sender);
+                    MONAD_ASSERT(ok);
                 }
             }
         }
@@ -194,17 +190,16 @@ evmc::Result execute_create_message(
         return result;
     }
 
-    auto const nonce = state.get_nonce(msg.sender);
-    if (nonce == UINT64_MAX) {
+    if (!state.inc_nonce(msg.sender)) {
         // this overflow can only happen for msg.depth != 0
         evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
-    state.set_nonce(msg.sender, nonce + 1);
 
     Address const contract_address = [&] {
         if (msg.kind == EVMC_CREATE) {
+            auto const nonce = state.get_nonce(msg.sender) - 1;
             return create_contract_address(msg.sender, nonce); // YP Eqn. 85
         }
         else { // msg.kind == EVMC_CREATE2

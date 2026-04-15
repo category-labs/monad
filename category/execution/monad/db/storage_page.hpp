@@ -1,0 +1,117 @@
+// Copyright (C) 2025 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#pragma once
+
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
+#include <category/core/int.hpp>
+
+#include <evmc/evmc.hpp>
+#include <intx/intx.hpp>
+
+#include <algorithm>
+#include <cstdint>
+
+MONAD_NAMESPACE_BEGIN
+
+using bytes32_t = ::evmc::bytes32;
+
+struct storage_page_t
+{
+    static constexpr size_t SLOTS = 128;
+    static constexpr size_t SLOT_SIZE = 32;
+    static constexpr size_t PAGE_KEY_SHIFT = 7;
+    static constexpr uint8_t SLOT_OFFSET_MASK = (1 << PAGE_KEY_SHIFT) - 1;
+
+    bytes32_t slots[SLOTS];
+
+    constexpr storage_page_t() noexcept
+        : slots{}
+    {
+    }
+
+    constexpr bool operator==(storage_page_t const &other) const = default;
+
+    bytes32_t &operator[](uint8_t const offset)
+    {
+        MONAD_DEBUG_ASSERT(offset < SLOTS);
+        return slots[offset];
+    }
+
+    bytes32_t const &operator[](uint8_t const offset) const
+    {
+        MONAD_DEBUG_ASSERT(offset < SLOTS);
+        return slots[offset];
+    }
+
+    bool is_empty() const
+    {
+        return std::all_of(
+            std::begin(slots), std::end(slots), [](bytes32_t const &s) {
+                return s == bytes32_t{};
+            });
+    }
+};
+
+static_assert(
+    sizeof(storage_page_t) ==
+    storage_page_t::SLOTS * storage_page_t::SLOT_SIZE);
+static_assert(alignof(storage_page_t) == 1);
+
+inline bytes32_t compute_page_key(bytes32_t const &storage_key)
+{
+    uint256_t const key_int = intx::be::load<uint256_t>(storage_key);
+    uint256_t const shifted = key_int >> storage_page_t::PAGE_KEY_SHIFT;
+    return intx::be::store<bytes32_t>(shifted);
+}
+
+inline uint8_t compute_slot_offset(bytes32_t const &storage_key)
+{
+    return storage_key.bytes[31] & storage_page_t::SLOT_OFFSET_MASK;
+}
+
+inline bytes32_t
+compute_slot_key(bytes32_t const &page_key, uint8_t slot_offset)
+{
+    uint256_t const page_int = intx::be::load<uint256_t>(page_key);
+    uint256_t const slot_int =
+        (page_int << storage_page_t::PAGE_KEY_SHIFT) | slot_offset;
+    return intx::be::store<bytes32_t>(slot_int);
+}
+
+bytes32_t page_commit(storage_page_t const &page);
+
+byte_string encode_storage_page(storage_page_t const &page);
+storage_page_t decode_storage_page(uint8_t const *data, size_t len);
+
+// Returns the encoded byte size of a page with the given number of
+// non-zero slots. Useful for sizing slab allocators.
+constexpr size_t encoded_page_size(size_t const slots)
+{
+    constexpr size_t SZ = storage_page_t::SLOT_SIZE;
+    if (slots < 16) {
+        return 1 + slots + slots * SZ;
+    }
+    return 1 + storage_page_t::SLOTS / 8 + slots * SZ;
+}
+
+inline storage_page_t decode_storage_page(byte_string_view enc)
+{
+    return decode_storage_page(enc.data(), enc.size());
+}
+
+MONAD_NAMESPACE_END

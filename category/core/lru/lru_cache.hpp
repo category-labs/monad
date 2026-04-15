@@ -15,6 +15,8 @@
 
 #pragma once
 
+#define MONAD_LRU_CACHE_STATS
+
 #include <category/core/assert.h>
 #include <category/core/mem/batch_mem_pool.hpp>
 #include <category/core/synchronization/spin_lock.hpp>

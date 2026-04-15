@@ -19,6 +19,7 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -165,6 +166,7 @@ bool BlockState::can_merge(State &state) const
             // state up until this transaction
             if (!state.try_fix_account_mismatch(
                     address, it->second.account.second)) {
+                LOG_INFO("can_merge: account mismatch for {}", address);
                 return false;
             }
         }
@@ -173,11 +175,15 @@ bool BlockState::can_merge(State &state) const
             StorageDeltas::const_accessor it2{};
             if (it->second.storage.find(it2, key)) {
                 if (value != it2->second.second) {
+                    LOG_INFO(
+                        "can_merge: storage mismatch for {} key {}", address, key);
                     return false;
                 }
             }
             else {
                 if (value) {
+                    LOG_INFO(
+                        "can_merge: storage mismatch for {} key {}", address, key);
                     return false;
                 }
             }

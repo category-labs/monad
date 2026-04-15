@@ -25,6 +25,7 @@
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/address.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
@@ -657,15 +658,20 @@ bool State::try_fix_account_mismatch(
     auto &original = original_state.account_;
     // verify original used and original found are otherwise the same
     if (is_dead(original)) {
+        LOG_INFO("try_fix_account_mismatch: {} original is dead", address);
         return false;
     }
     if (is_dead(actual)) {
+        LOG_INFO("try_fix_account_mismatch: {} actual is dead", address);
         return false;
     }
     if (original->code_hash != actual->code_hash) {
+        LOG_INFO("try_fix_account_mismatch: {} code_hash mismatch", address);
         return false;
     }
     if (original->incarnation != actual->incarnation) {
+        LOG_INFO(
+            "try_fix_account_mismatch: {} incarnation mismatch", address);
         return false;
     }
     bool const nonce_mismatch = original->nonce != actual->nonce;
@@ -674,17 +680,30 @@ bool State::try_fix_account_mismatch(
 
     // is relaxed merge disabled
     if (!relaxed_validation_) {
+        LOG_INFO(
+            "try_fix_account_mismatch: {} relaxed merge disabled"
+            " (nonce_mismatch={}, balance_mismatch={})",
+            address, nonce_mismatch, balance_mismatch);
         return false;
     }
     if (nonce_mismatch && original_state.validate_exact_nonce()) {
+        LOG_INFO(
+            "try_fix_account_mismatch: {} nonce mismatch requires exact",
+            address);
         return false;
     }
     if (balance_mismatch) {
         if (original_state.validate_exact_balance()) {
+            LOG_INFO(
+                "try_fix_account_mismatch: {} balance mismatch requires exact",
+                address);
             return false;
         }
         // original balance does not meet min required
         if (actual->balance < original_state.min_balance()) {
+            LOG_INFO(
+                "try_fix_account_mismatch: {} insufficient min balance",
+                address);
             return false;
         }
     }

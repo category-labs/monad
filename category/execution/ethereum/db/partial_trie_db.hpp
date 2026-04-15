@@ -149,9 +149,6 @@ class PartialTrieDb final : public Db
     CodeIndex codes_;
     uint64_t block_number_{0};
     BlockHeader last_committed_header_{};
-    bytes32_t receipts_root_{};
-    bytes32_t transactions_root_{};
-    std::optional<bytes32_t> withdrawals_root_{};
 
     PartialTrieDb(AccountTrie root, CodeIndex codes)
         : root_{std::move(root)}
@@ -168,8 +165,18 @@ public:
 
     std::optional<Account> read_account(Address const &) override;
 
+    /// Like read_account, but returns std::nullopt (outer) when the lookup
+    /// hits an unresolved HashStub.
+    std::optional<std::optional<Account>>
+    read_account_maybe(Address const &addr);
+
     bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
+
+    /// Like read_storage, but returns std::nullopt when the lookup hits an
+    /// unresolved HashStub.
+    std::optional<bytes32_t>
+    read_storage_maybe(Address const &addr, Incarnation, bytes32_t const &key);
 
     vm::SharedIntercode read_code(bytes32_t const &code_hash) override;
 

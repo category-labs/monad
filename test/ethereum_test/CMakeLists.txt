@@ -60,6 +60,11 @@ monad_compile_options(monad-ethereum-test)
 
 target_link_libraries(monad-ethereum-test PRIVATE monad_unit_test_common)
 
+set(ETHEREUM_TEST_WITNESS_DIR
+    ""
+    CACHE PATH
+          "Optional directory of .witness files; enables witness verification in ethereum tests")
+
 function(add_ethereum_test)
   set(ONE_VALUE_ARGS FORK)
   cmake_parse_arguments(ADD_ETHEREUM_TEST "" "${ONE_VALUE_ARGS}" "" ${ARGN})
@@ -72,9 +77,14 @@ function(add_ethereum_test)
   list(JOIN ${TESTS_EXCLUDED} ":" TESTS_EXCLUDED)
   set(FILTER "-:${TESTS_EXCLUDED}")
 
+  set(WITNESS_ARG "")
+  if(ETHEREUM_TEST_WITNESS_DIR)
+    set(WITNESS_ARG "--witness" "${ETHEREUM_TEST_WITNESS_DIR}")
+  endif()
+
   add_test(NAME ${ADD_ETHEREUM_TEST_FORK}_monad_ethereum_test
            COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
-                   --record-exec-events --gtest_filter=${FILTER})
+                   --record-exec-events ${WITNESS_ARG} --gtest_filter=${FILTER})
 endfunction()
 
 function(add_monad_test)

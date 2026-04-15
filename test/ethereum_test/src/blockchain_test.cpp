@@ -42,6 +42,7 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/partial_trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
@@ -51,6 +52,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -209,9 +211,177 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
     }
 }
 
+// Parses a witness file and constructs a PartialTrieDb from it.
+// Mirrors the naming scheme used by reth:
+// {network}/{dir_prefix}{safe_name}_block_{N}.witness, where dir_prefix is the
+// parent directory name of the JSON file (e.g. "vmArithmeticTest_") and
+// safe_name replaces '/', '\', ' ', ':' with '_'.
+//
+// Returns the PartialTrieDb on success, or std::nullopt if the witness file is
+// missing or parsing fails.
+std::optional<PartialTrieDb> parse_witness(
+    std::filesystem::path const &witness_dir, std::string const &network_name,
+    std::string const &dir_prefix, std::string const &name,
+    uint64_t block_number)
+{
+    std::string safe_name{name};
+    std::ranges::replace_if(
+        safe_name,
+        [](char c) { return c == '/' || c == '\\' || c == ' ' || c == ':'; },
+        '_');
+
+    auto const file_name = fmt::format(
+        "{}{}_block_{}.witness", dir_prefix, safe_name, block_number);
+    auto const witness_path = witness_dir / network_name / file_name;
+
+    std::ifstream f{witness_path, std::ios::binary | std::ios::ate};
+    if (!f) {
+        std::cerr << "[WARNING] witness file not found: " << witness_path
+                  << "\n";
+        return std::nullopt;
+    }
+    auto const sz = f.tellg();
+    f.seekg(0);
+    std::vector<uint8_t> raw(static_cast<size_t>(sz));
+    f.read(reinterpret_cast<char *>(raw.data()), sz);
+
+    auto witness_result =
+        monad::parse_execution_witness({raw.data(), raw.size()});
+    if (!witness_result) {
+        ADD_FAILURE() << "witness RLP parse failed: " << witness_path;
+        return std::nullopt;
+    }
+    auto const &w = witness_result.value();
+
+    auto db_result = monad::PartialTrieDb::from_reth_witness(
+        w.pre_state_root, w.encoded_nodes, w.encoded_codes);
+    if (!db_result.has_value()) {
+        ADD_FAILURE() << "from_reth_witness failed for " << witness_path << ": "
+                      << std::string(db_result.error().message().c_str());
+        return std::nullopt;
+    }
+
+    return std::move(db_result.value());
+}
+
+// Verifies that a PartialTrieDb pre-state matches the TrieDb pre-state.
+//
+// tdb_pre_state is the output of tdb.to_json() captured immediately before the
+// block was executed, i.e. the TrieDb view of the same pre-state the witness
+// encodes. Every account and storage slot in the TrieDb is looked up via
+// read_account / read_storage on the PartialTrieDb and compared.
+//
+// Returns true if verification passes.
+bool verify_witness(
+    PartialTrieDb &db, bytes32_t const &tdb_state_root,
+    nlohmann::json const &tdb_pre_state)
+{
+    EXPECT_EQ(db.state_root(), tdb_state_root)
+        << "witness state_root does not match tdb state_root";
+
+    if (db.state_root() != tdb_state_root) {
+        return false;
+    }
+
+    // tdb_pre_state is keyed by keccak256(addr) nibble-string; each entry has:
+    //   "address"  => "0x<40 hex>"  (raw address preimage)
+    //   "balance"  => "<decimal>"
+    //   "nonce"    => "0x<hex>"
+    //   "code"     => "0x<hex>"
+    //   "storage"  => { keccak(slot) => { "slot": "0x<hex>", "value": "0x<hex>"
+    //   } }
+    bool verified = true;
+    for (auto const &[hashed_addr_key, entry] : tdb_pre_state.items()) {
+        if (!entry.contains("address")) {
+            continue;
+        }
+        auto const maybe_addr =
+            from_hex<Address>(entry.at("address").get<std::string>());
+        if (!maybe_addr) {
+            ADD_FAILURE() << "could not parse address from tdb entry "
+                          << hashed_addr_key;
+            verified = false;
+            continue;
+        }
+
+        auto const maybe_account_or_hash_stub =
+            db.read_account_maybe(*maybe_addr);
+        if (!maybe_account_or_hash_stub.has_value()) {
+            // The witness is sparse: only nodes touched during execution are
+            // included. A nullopt result means the account's subtree is a
+            // HashStub — legitimately absent, not a bug.
+            continue;
+        }
+
+        auto const &maybe_account = *maybe_account_or_hash_stub;
+        if (!maybe_account.has_value()) {
+            ADD_FAILURE() << "account not found in witness for "
+                          << hashed_addr_key;
+            verified = false;
+            continue;
+        }
+        auto const &account = *maybe_account;
+        auto const addr_label = entry.at("address").get<std::string>();
+
+        EXPECT_EQ(
+            fmt::format("{}", account.balance),
+            entry.at("balance").get<std::string>())
+            << "balance mismatch for " << addr_label;
+
+        EXPECT_EQ(
+            fmt::format("0x{:x}", account.nonce),
+            entry.at("nonce").get<std::string>())
+            << "nonce mismatch for " << addr_label;
+
+        // code_hash: hash the bytecode stored in the TrieDb entry.
+        // The Ethereum MPT stores keccak256("") for no-code accounts, not
+        // NULL_HASH, so always compute keccak256 (including for empty code).
+        auto const code_hex = entry.at("code").get<std::string>();
+        auto const maybe_code = from_hex(code_hex);
+        MONAD_ASSERT(maybe_code.has_value());
+        auto const &code_bytes = *maybe_code;
+        bytes32_t const expected_code_hash = to_bytes(
+            keccak256(byte_string_view{code_bytes.data(), code_bytes.size()}));
+        EXPECT_EQ(account.code_hash, expected_code_hash)
+            << "code_hash mismatch for " << addr_label;
+
+        if (!entry.contains("storage")) {
+            continue;
+        }
+        for (auto const &[hashed_slot_key, slot_entry] :
+             entry.at("storage").items()) {
+            auto const raw_slot_str = slot_entry.at("slot").get<std::string>();
+            auto const maybe_slot = from_hex<bytes32_t>(raw_slot_str);
+            if (!maybe_slot) {
+                ADD_FAILURE() << "could not parse slot " << raw_slot_str;
+                verified = false;
+                continue;
+            }
+            auto const raw_val_str = slot_entry.at("value").get<std::string>();
+            auto const maybe_val = from_hex<bytes32_t>(raw_val_str);
+            if (!maybe_val) {
+                ADD_FAILURE() << "could not parse value " << raw_val_str;
+                verified = false;
+                continue;
+            }
+
+            auto const actual_val_maybe = db.read_storage_maybe(
+                *maybe_addr, Incarnation{0, 0}, *maybe_slot);
+
+            if (actual_val_maybe) {
+                EXPECT_EQ(*actual_val_maybe, *maybe_val)
+                    << "storage mismatch for " << addr_label << " slot "
+                    << raw_slot_str;
+            }
+        }
+    }
+
+    return verified;
+}
+
 template <Traits traits>
 Result<BlockExecOutput> execute(
-    Block &block, monad::TrieDb &db, vm::VM &vm,
+    Block &block, monad::Db &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
@@ -343,7 +513,7 @@ Result<BlockExecOutput> execute(
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_and_record(
-    Block &block, monad::TrieDb &db, vm::VM &vm,
+    Block &block, monad::Db &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
@@ -385,12 +555,15 @@ Result<std::vector<Receipt>> execute_and_record(
 template <Traits traits>
 void process_test(
     std::string const &name, nlohmann::json const &j_contents,
-    bool enable_tracing)
+    bool enable_tracing,
+    std::optional<std::filesystem::path> const &witness_path,
+    std::string const &dir_prefix)
 {
     using namespace test;
 
     auto const json_state = load_blockchain_json_state<traits>(j_contents);
     auto const test_state = json_state.make_test_state();
+    std::optional<PartialTrieDb> ptdb{};
     vm::VM vm;
     mpt::Db &db = test_state->db;
     monad::TrieDb &tdb = test_state->trie_db;
@@ -430,6 +603,20 @@ void process_test(
             block.value().header.number - 1, block.value().header.parent_hash);
 
         uint64_t const curr_block_number = block.value().header.number;
+        if (witness_path && !j_block.contains("expectException")) {
+            ptdb = parse_witness(
+                *witness_path,
+                j_contents.at("network").get<std::string>(),
+                dir_prefix,
+                name,
+                curr_block_number);
+            if (ptdb) {
+                if (!verify_witness(*ptdb, tdb.state_root(), db_post_state)) {
+                    ptdb.reset();
+                }
+            }
+        }
+
         auto const result = execute_and_record<traits>(
             block.value(),
             tdb,
@@ -581,6 +768,31 @@ void process_test(
                         << name;
                 }
             }
+
+            // Re-execute the block against the PartialTrieDb built from the
+            // witness. This validates that execution over the sparse
+            // witness-reconstructed pre-state produces the same result as
+            // execution over the full TrieDb.
+            if (ptdb.has_value()) {
+                auto wit_result = execute_and_record<traits>(
+                    block.value(),
+                    *ptdb,
+                    vm,
+                    block_hash_buffer,
+                    senders_and_authorities_map,
+                    false /* enable_tracing */);
+
+                EXPECT_TRUE(wit_result.has_value())
+                    << "witness re-execution failed for " << name << ": "
+                    << (wit_result.has_error()
+                            ? wit_result.error().message().c_str()
+                            : "unknown");
+
+                EXPECT_EQ(tdb.state_root(), ptdb->state_root())
+                    << "post-state root mismatch between TrieDb and "
+                       "PartialTrieDb for "
+                    << name;
+            }
         }
         else {
             // Error case: if this test failed unexpectedly, then serialize the
@@ -620,16 +832,30 @@ void process_test(
 void process_test(
     std::variant<evmc_revision, monad_revision> const &revision,
     std::string const &name, nlohmann::json const &j_contents,
-    bool const enable_tracing)
+    bool const enable_tracing,
+    std::optional<std::filesystem::path> const &witness_path,
+    std::string const &dir_prefix)
 {
     if (std::holds_alternative<evmc_revision>(revision)) {
         auto const rev = std::get<evmc_revision>(revision);
         MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-        SWITCH_EVM_TRAITS(process_test, name, j_contents, enable_tracing);
+        SWITCH_EVM_TRAITS(
+            process_test,
+            name,
+            j_contents,
+            enable_tracing,
+            witness_path,
+            dir_prefix);
     }
     else {
         auto const rev = std::get<monad_revision>(revision);
-        SWITCH_MONAD_TRAITS(process_test, name, j_contents, enable_tracing);
+        SWITCH_MONAD_TRAITS(
+            process_test,
+            name,
+            j_contents,
+            enable_tracing,
+            witness_path,
+            dir_prefix);
     }
 }
 
@@ -653,6 +879,13 @@ void BlockchainTest::TestBody()
 {
     std::ifstream f{file_};
 
+    // Compute a directory prefix from the parent directory of the JSON file,
+    // matching the naming convention used by reth when writing witness files.
+    // e.g. ".../vmArithmeticTest/not.json" -> "vmArithmeticTest_"
+    auto const dir_prefix = file_.has_parent_path()
+                                ? file_.parent_path().filename().string() + "_"
+                                : std::string{};
+
     auto const json = nlohmann::json::parse(f);
     bool executed = false;
     for (auto const &[name, j_contents] : json.items()) {
@@ -672,7 +905,8 @@ void BlockchainTest::TestBody()
 
         executed = true;
 
-        process_test(rev, name, j_contents, enable_tracing_);
+        process_test(
+            rev, name, j_contents, enable_tracing_, witness_path_, dir_prefix);
     }
 
     if (!executed && revision_.has_value()) {
@@ -687,12 +921,13 @@ void BlockchainTest::TestBody()
 void register_blockchain_tests_path(
     std::filesystem::path const &root,
     std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
-    bool const enable_tracing)
+    bool const enable_tracing,
+    std::optional<std::filesystem::path> const &witness_path)
 {
     namespace fs = std::filesystem;
     MONAD_ASSERT(fs::exists(root));
 
-    auto register_test = [&root, &revision, enable_tracing](
+    auto register_test = [&root, &revision, enable_tracing, &witness_path](
                              fs::path const &path) {
         if (path.extension() == ".json") {
             MONAD_ASSERT(fs::is_regular_file(path));
@@ -712,7 +947,7 @@ void register_blockchain_tests_path(
                 0,
                 [=] {
                     return new test::BlockchainTest(
-                        path, revision, enable_tracing);
+                        path, revision, enable_tracing, witness_path);
                 });
         }
     };
@@ -730,7 +965,8 @@ void register_blockchain_tests_path(
 
 void register_blockchain_tests(
     std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
-    bool const enable_tracing)
+    bool const enable_tracing,
+    std::optional<std::filesystem::path> const &witness_path)
 {
     // skip slow tests
     testing::FLAGS_gtest_filter +=
@@ -743,14 +979,19 @@ void register_blockchain_tests(
     register_blockchain_tests_path(
         test_resource::ethereum_tests_dir / "BlockchainTests",
         revision,
-        enable_tracing);
+        enable_tracing,
+        witness_path);
     register_blockchain_tests_path(
-        test_resource::internal_blockchain_tests_dir, revision, enable_tracing);
+        test_resource::internal_blockchain_tests_dir,
+        revision,
+        enable_tracing,
+        witness_path);
     register_blockchain_tests_path(
         test_resource::build_dir /
             "src/ExecutionSpecTestFixtures/blockchain_tests",
         revision,
-        enable_tracing);
+        enable_tracing,
+        witness_path);
 }
 
 MONAD_TEST_NAMESPACE_END

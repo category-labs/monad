@@ -17,6 +17,7 @@
 // The zkVM environment uses a bump allocator — free is a no-op.
 #ifdef MONAD_ZKVM
 
+    #include <category/core/assert.h>
     #include <category/zkvm/zkvm_allocator.h>
 
     #include <cstddef>
@@ -51,6 +52,12 @@ void *calloc(std::size_t num, std::size_t size)
         std::memset(ptr, 0, total);
     }
     return ptr;
+}
+
+void monad_assertion_failed(
+    char const *, char const *, char const *, long, char const *)
+{
+    __builtin_trap();
 }
 
 } // extern "C"

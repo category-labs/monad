@@ -85,7 +85,6 @@ target_link_libraries(monad-vm-interpreter
     PUBLIC evmc::evmc
     PUBLIC monad-vm::monad-vm-evm
     PUBLIC monad-vm::monad-vm-runtime
-    PUBLIC monad-vm::monad-vm-utils
 )
 
 if(NOT MONAD_ZKVM)

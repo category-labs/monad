@@ -85,11 +85,23 @@ set(ETHASH_TESTING OFF CACHE BOOL "" FORCE)
 set(ETHASH_INSTALL_CMAKE_CONFIG OFF CACHE BOOL "" FORCE)
 add_subdirectory("${THIRD_PARTY_DIR}/ethash" ethash)
 
+# Stub monad_core — the full target lives in category/core/CMakeLists.txt and
+# pulls in TBB, Boost, quill, etc.  The zkvm build only needs the public
+# include paths and the unordered_dense dependency that the VM runtime
+# transitively requires through monad_core.
+if(NOT TARGET monad_core)
+    add_library(monad_core INTERFACE)
+    target_include_directories(monad_core INTERFACE
+        "${MONAD_ROOT}"
+        "${THIRD_PARTY_DIR}/unordered_dense/include"
+    )
+    target_link_libraries(monad_core INTERFACE ethash::keccak evmc intx::intx)
+endif()
+
 # -------------------------------------------------------------------
 # VM component libraries
 # -------------------------------------------------------------------
 
-add_subdirectory("${MONAD_ROOT}/category/vm/core" core)
 add_subdirectory("${MONAD_ROOT}/category/vm/evm" evm)
 add_subdirectory("${MONAD_ROOT}/category/vm/runtime" runtime)
 add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
@@ -109,7 +121,7 @@ target_include_directories(monad-vm-interpreter PUBLIC "${MONAD_ROOT}")
 # For native: skip shadowing so the upstream x86-optimised uint256 is used.
 set(ZKVM_INCLUDE_DIR "${MONAD_ROOT}/category/zkvm/include")
 
-foreach(tgt monad-vm-core monad-vm-evm monad-vm-runtime monad-vm-interpreter)
+foreach(tgt monad-vm-evm monad-vm-runtime monad-vm-interpreter)
     if(MONAD_ZKVM)
         target_include_directories(${tgt} BEFORE PUBLIC "${ZKVM_INCLUDE_DIR}")
         target_compile_definitions(${tgt} PUBLIC "MONAD_ZKVM_${_ZKVM_BACKEND_UPPER}")
@@ -196,7 +208,6 @@ target_link_libraries(monad-zkvm-precompiles
     monad_zkvm_compile_options(monad-zkvm-libstdcxx)
 
     add_library(monad-zkvm STATIC
-        $<TARGET_OBJECTS:monad-vm-core>
         $<TARGET_OBJECTS:monad-vm-evm>
         $<TARGET_OBJECTS:monad-vm-runtime>
         $<TARGET_OBJECTS:monad-vm-interpreter>
@@ -236,7 +247,6 @@ else()
     )
 
     add_library(monad-zkvm STATIC
-        $<TARGET_OBJECTS:monad-vm-core>
         $<TARGET_OBJECTS:monad-vm-evm>
         $<TARGET_OBJECTS:monad-vm-runtime>
         $<TARGET_OBJECTS:monad-vm-interpreter>

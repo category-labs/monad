@@ -20,7 +20,7 @@
 
     #pragma once
 
-    #include <category/vm/core/assert.h>
+    #include <category/core/assert.h>
 
     #include <intx/intx.hpp>
 

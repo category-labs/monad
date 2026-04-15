@@ -45,17 +45,6 @@ namespace
         }
     }
 
-    // Allocate a PrecompileResult with zeroed output buffer.
-    monad::PrecompileResult alloc_success(size_t size)
-    {
-        if (size == 0) {
-            return {EVMC_SUCCESS, nullptr, 0};
-        }
-        auto *buf = static_cast<uint8_t *>(std::malloc(size));
-        std::memset(buf, 0, size);
-        return {EVMC_SUCCESS, buf, size};
-    }
-
     evmc::bytes32 kzg_to_version_hashed(uint8_t const *commitment)
     {
         constexpr uint8_t VERSION_HASH_VERSION_KZG = 1;

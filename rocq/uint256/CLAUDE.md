@@ -20,6 +20,19 @@ this wastes time fixing cascading errors.  Do not delegate tasks to
 subagents unless explicitly told to do so.  Do not use worktrees unless
 explicitly told to do so.
 
+When working in a live Proof General session, preserve the existing
+locked region whenever possible. Treat the live Emacs buffer state as
+authoritative: do not call `revert-buffer` during normal proof repair,
+and do not call `proof-retract-buffer` unless you intentionally want a
+larger reset.
+
+For local proof edits, navigate relative to the current proof position
+instead of jumping back to the top of the file. Retract only locally:
+move to around 10 lines before the anticipated edit point, then use
+`proof-goto-point` and resume stepping forward. When moving back by one
+command, move point to the preceding command and use `proof-goto-point`
+to get a local retraction rather than restarting the Coq process.
+
 When facing a new goal, try the automation cascade through PG before writing
 manual tactics. Step each one and check if it closes the goal:
 

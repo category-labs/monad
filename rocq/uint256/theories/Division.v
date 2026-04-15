@@ -282,44 +282,42 @@ Record udivrem_result := mk_udivrem_result {
     Dispatches to 4 cases based on count_significant_words.
     [M] and [N] are the output sizes for quotient and remainder.
 
-    Deviates from the C++ implementation in the case of division by
-    zero.  Rather than raising an assertion, the model returns 0 for any
-    given divisor.  In the knuth_div case, the normalisation shift is
-    only applied to the significant words (the C++ bounds the loops
-    using the template parameters so they can be unrolled -- check
-    this detail).
+    Returns [None] when the divisor is zero.  In the knuth_div case, the
+    normalisation shift is only applied to the significant words (the
+    C++ bounds the loops using the template parameters so they can be
+    unrolled -- check this detail).
 *)
-Definition udivrem (M N : nat) (u v : words) : udivrem_result :=
+Definition udivrem (M N : nat) (u v : words) : option udivrem_result :=
   let m := count_significant_words u in
   let n := count_significant_words v in
   if Nat.eqb n 0 then
-    mk_udivrem_result (extend_words M) (extend_words N)
+    None
   else if Nat.ltb m n then
-    mk_udivrem_result (extend_words M)
-      (firstn N (u ++ repeat 0 N))
+    Some (mk_udivrem_result (extend_words M)
+      (firstn N (u ++ repeat 0 N)))
   else if Nat.eqb m 1 then
     match U64.div 0 (get_word u 0) (get_word v 0) with
     | Some (q, r) =>
-        mk_udivrem_result
+        Some (mk_udivrem_result
           (set_word (extend_words M) 0 q)
-          (set_word (extend_words N) 0 r)
+          (set_word (extend_words N) 0 r))
     | None => (* unreachable: u_hi = 0 < v *)
-        mk_udivrem_result (extend_words M) (extend_words N)
+        None
     end
   else if Nat.eqb n 1 then
     let ld := long_div (firstn m u) (get_word v 0) in
-    mk_udivrem_result
+    Some (mk_udivrem_result
       (ld_quot ld ++ repeat 0 (M - length (ld_quot ld)))
-      (set_word (extend_words N) 0 (ld_rem ld))
+      (set_word (extend_words N) 0 (ld_rem ld)))
   else
     let shift := countl_zero (get_word v (n - 1)) in
     let u_norm := shift_left_words (firstn m u) shift in
     let v_norm := firstn n (shift_left_words (firstn n v) shift) in
     let '(u_after, quot) := knuth_div m n u_norm v_norm in
     let rem := shift_right_words (firstn n u_after) shift in
-    mk_udivrem_result
+    Some (mk_udivrem_result
       (quot ++ repeat 0 (M - length quot))
-      (rem ++ repeat 0 (N - length rem)).
+      (rem ++ repeat 0 (N - length rem))).
 
 (** ** Signed Division *)
 
@@ -346,15 +344,18 @@ Definition is_negative (ws : words) (n : nat) : bool :=
     Converts operands to absolute values, performs unsigned division,
     then adjusts the signs of quotient and remainder.
     C++ ref: uint256.hpp lines 1299-1316. *)
-Definition sdivrem (n : nat) (u v : words) : udivrem_result :=
+Definition sdivrem (n : nat) (u v : words) : option udivrem_result :=
   let u_neg := is_negative u n in
   let v_neg := is_negative v n in
   let u_abs := if u_neg then negate_words u else u in
   let v_abs := if v_neg then negate_words v else v in
-  let result := udivrem n n u_abs v_abs in
-  let quot_neg := xorb u_neg v_neg in
-  mk_udivrem_result
-    (if quot_neg then negate_words (ud_quot result) else ud_quot result)
-    (if u_neg then negate_words (ud_rem result) else ud_rem result).
+  match udivrem n n u_abs v_abs with
+  | None => None
+  | Some result =>
+      let quot_neg := xorb u_neg v_neg in
+      Some (mk_udivrem_result
+        (if quot_neg then negate_words (ud_quot result) else ud_quot result)
+        (if u_neg then negate_words (ud_rem result) else ud_rem result))
+  end.
 
 End Make.

@@ -2887,29 +2887,33 @@ Proof.
   nia.
 Qed.
 
-Theorem udivrem_correct : forall M N u v,
+Theorem udivrem_correct : forall M N u v r,
   length u = M -> length v = N ->
   to_Z_words v > 0 ->
-  let r := udivrem M N u v in
+  udivrem M N u v = Some r ->
   to_Z_words u =
     to_Z_words (ud_quot r) * to_Z_words v + to_Z_words (ud_rem r) /\
   0 <= to_Z_words (ud_rem r) < to_Z_words v.
 Proof.
-  intros M N u v HuLen HvLen Hv. unfold udivrem. cbv zeta.
+  intros M N u v r HuLen HvLen Hv Hudiv.
+  destruct r as [r_quot r_rem]. simpl in *.
+  unfold udivrem in Hudiv. cbv zeta in Hudiv.
   set (m := count_significant_words u).
   set (n := count_significant_words v).
-  pose proof (count_significant_words_bound u) as Hm_bound. fold m in Hm_bound.
-  pose proof (count_significant_words_bound v) as Hn_bound. fold n in Hn_bound.
+  pose proof (count_significant_words_bound u) as Hm_bound.
+  pose proof (count_significant_words_bound v) as Hn_bound.
+  fold m in Hm_bound, Hudiv.
+  fold n in Hn_bound, Hudiv.
   (* Branch 1: n = 0 — contradiction *)
-  destruct (Nat.eqb n 0) eqn:Hn0.
-  { apply Nat.eqb_eq in Hn0. exfalso.
-    apply count_significant_words_zero in Hn0. lia. }
+  destruct (Nat.eqb n 0) eqn:Hn0; [inversion Hudiv|].
   apply Nat.eqb_neq in Hn0. assert (Hn_pos: (n > 0)%nat) by lia.
   (* Branch 2: m < n — dividend < divisor *)
   destruct (Nat.ltb m n) eqn:Hmn_lt.
-  { apply Nat.ltb_lt in Hmn_lt. cbn [ud_quot ud_rem].
+  {
+    inversion Hudiv; clear Hudiv; subst.
     rewrite to_Z_extend_words.
-    rewrite (to_Z_words_firstn_pad u N m eq_refl) by lia.
+    rewrite Nat.ltb_lt in Hmn_lt.
+    rewrite (to_Z_words_firstn_pad u (length v) m eq_refl) by lia.
     split; [lia|].
     split; [pose proof (to_Z_words_bound u); lia|].
     rewrite <- (count_significant_words_preserves_value u). fold m.
@@ -2929,16 +2933,18 @@ Proof.
     assert (Hv0_pos: to_Z (get_word v 0) > 0) by lia.
     assert (H0_lt: to_Z U64.zero < to_Z (get_word v 0)) by (rewrite spec_zero; lia).
     pose proof (spec_div U64.zero (get_word u 0) (get_word v 0) Hv0_pos H0_lt)
-      as [q [r [Hdiv_eq [Hdiv_val Hdiv_lt]]]].
+      as [q [r0 [Hdiv_eq [Hdiv_val Hdiv_lt]]]].
     rewrite spec_zero in Hdiv_val.
+    change (MakeProofs.get_word) with get_word in Hudiv.
+    rewrite Hdiv_eq in Hudiv.
+    inversion Hudiv; clear Hudiv; subst.
     cbv beta iota zeta delta [ud_quot ud_rem] in |- *.
     change (MakeProofs.get_word) with get_word.
-    rewrite Hdiv_eq.
     change (MakeProofs.set_word) with set_word.
     change (MakeProofs.extend_words) with extend_words.
     rewrite !to_Z_words_set_extend by lia.
     simpl Z.of_nat. rewrite !Z.pow_0_r.
-    rewrite Hu_val, Hv_val. pose proof (spec_to_Z r). lia. }
+    rewrite Hu_val, Hv_val. pose proof (spec_to_Z r0). lia. }
   apply Nat.eqb_neq in Hm1.
   (* Branch 4: n = 1 — long division *)
   destruct (Nat.eqb n 1) eqn:Hn1.
@@ -2956,12 +2962,27 @@ Proof.
     fold ld in Hrem_lt.
     pose proof (long_div_quot_length (firstn m u) (get_word v 0)) as Hql.
     fold ld in Hql. rewrite firstn_length_le in Hql by lia.
-    cbn [ud_quot ud_rem].
+    inversion Hudiv; clear Hudiv; subst.
+    cbv beta iota zeta delta [ud_quot ud_rem] in |- *.
     rewrite to_Z_words_app_repeat_zero.
     rewrite to_Z_words_set_extend by lia. simpl Z.of_nat. rewrite Z.pow_0_r.
     cbn [ld_quot ld_rem] in Hld.
     rewrite <- (count_significant_words_preserves_value u). fold m.
-    rewrite Hv_val. pose proof (spec_to_Z (ld_rem ld)).
+    rewrite Hv_val.
+    pose proof (spec_to_Z (ld_rem ld)) as Hrem_range.
+    change
+      (rev
+         (ld_quot
+            (long_div_fold (rev (firstn m u)) (MakeProofs.get_word v 0)
+               U64.zero)))
+      with (ld_quot ld).
+    change
+      (ld_rem
+         (long_div_fold (rev (firstn m u)) (MakeProofs.get_word v 0)
+            U64.zero))
+      with (ld_rem ld).
+    rewrite !Z.mul_1_r.
+    split; [exact Hld|].
     lia. }
   apply Nat.eqb_neq in Hn1.
   (* Branch 5: Knuth division — uses knuth_div_correct (Admitted) *)
@@ -2972,7 +2993,12 @@ Proof.
   set (u_norm := shift_left_words (firstn m u) shift).
   set (v_norm := firstn n (shift_left_words (firstn n v) shift)).
   destruct (knuth_div m n u_norm v_norm) as [u_after quot] eqn:Hkd.
-  cbn [ud_quot ud_rem].
+  change (MakeProofs.get_word) with get_word in Hudiv.
+  fold shift in Hudiv.
+  fold u_norm v_norm in Hudiv.
+  rewrite Hkd in Hudiv.
+  inversion Hudiv; clear Hudiv; subst.
+  cbv beta iota zeta delta [ud_quot ud_rem] in |- *.
   rewrite !to_Z_words_app_repeat_zero.
   (* Shift bound *)
   assert (Hshift_bound: (shift < Pos.to_nat U64.width)%nat).
@@ -3337,19 +3363,17 @@ U128.add : U128.t -> U128.t -> U128.t
 
  *)
 
-
-
 (** Specialization to 256-bit (4-word) operands.
     Follows directly from udivrem_correct once it is fully proved. *)
-Theorem udivrem256_correct : forall u v,
+Theorem udivrem256_correct : forall u v r,
   length u = 4%nat -> length v = 4%nat ->
   to_Z_words v > 0 ->
-  let r := udivrem 4 4 u v in
+  udivrem 4 4 u v = Some r ->
   to_Z_words u =
     to_Z_words (ud_quot r) * to_Z_words v + to_Z_words (ud_rem r) /\
   0 <= to_Z_words (ud_rem r) < to_Z_words v.
 Proof.
-  intros. apply udivrem_correct; assumption.
+  intros. eapply udivrem_correct; eassumption.
 Qed.
 
 End MakeProofs.

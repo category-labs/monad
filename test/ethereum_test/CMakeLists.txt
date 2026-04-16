@@ -26,21 +26,20 @@ ExternalProject_Add(
   LOG_DOWNLOAD ON)
 
 add_executable(monad-ethereum-test)
-target_link_libraries(monad-ethereum-test PRIVATE nlohmann_json::nlohmann_json
-                                                  monad_execution GTest::gtest)
+target_link_libraries(monad-ethereum-test PRIVATE GTest::gtest monad-test-utils)
 target_sources(
   monad-ethereum-test
   PRIVATE include/blockchain_test.hpp
           include/event.hpp
-          include/from_json.hpp
           include/revision_map.hpp
           include/transaction_test.hpp
           src/blockchain_test.cpp
           src/event.cpp
-          src/from_json.cpp
           src/main.cpp
           src/transaction_test.cpp)
 
+target_include_directories(
+  monad-ethereum-test PUBLIC ${CATEGORY_MAIN_DIR})
 target_include_directories(
   monad-ethereum-test PUBLIC ${PROJECT_SOURCE_DIR}/test/ethereum_test/include)
 target_include_directories(

@@ -18,6 +18,7 @@ add_library(monad-vm-test-utils OBJECT)
 target_sources(monad-vm-test-utils PRIVATE
     "evm-as_utils.hpp"
     "test_context.hpp"
+    "test_host.hpp"
     "test_memory.hpp"
 )
 
@@ -33,6 +34,7 @@ target_link_libraries(monad-vm-test-utils
     PUBLIC monad-vm::monad-vm-interpreter
     PUBLIC monad-vm::monad-vm-runtime
     PUBLIC monad-vm::monad-vm-utils
+    PUBLIC monad_execution
 )
 
 add_library(monad-vm::monad-vm-test-utils ALIAS monad-vm-test-utils)

@@ -23,21 +23,14 @@ target_sources(execution-benchmarks
 target_include_directories(execution-benchmarks
     PRIVATE "${TOP_CURRENT_BINARY_DIR}/test"
     PRIVATE "${TEST_DATA_DIR}/unit/common/include"
+    PRIVATE "${CATEGORY_MAIN_DIR}"
 )
 monad_compile_options(execution-benchmarks)
 
 target_link_libraries(execution-benchmarks
     PRIVATE benchmark::benchmark
     PRIVATE blockchain-test-vm
-    PRIVATE evmone::state
-    PRIVATE evmone::statetestutils
-    PRIVATE evmone-blockchaintest-lib
     PRIVATE nlohmann_json::nlohmann_json
-    PRIVATE monad_execution
-)
-
-# TODO(BSC): fix this via evmone
-target_include_directories(execution-benchmarks
-  PRIVATE "${CATEGORY_MAIN_DIR}/third_party/evmone/test/state"
-  PRIVATE "${CATEGORY_MAIN_DIR}/third_party/evmone/test/statetest"
+    PRIVATE monad-test-utils
+    PRIVATE monad-vm::monad-vm-test-utils
 )

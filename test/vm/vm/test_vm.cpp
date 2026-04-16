@@ -215,27 +215,6 @@ BlockchainTestVM::get_intercode_nativecode(
     return {icode, ncode};
 }
 
-void BlockchainTestVM::precompile_contract(
-    evmc_revision rev, bytes32_t const &code_hash, uint8_t const *code,
-    size_t const code_size,
-    [[maybe_unused]] BlockchainTestVM::Implementation const impl)
-{
-    (void)get_code_analysis(code_hash, code, code_size);
-    (void)get_intercode_nativecode(rev, code_hash, code, code_size);
-}
-
-void BlockchainTestVM::precompile_contracts(
-    evmc_revision rev, evmone::test::TestState const &state,
-    BlockchainTestVM::Implementation const impl)
-{
-    for (auto const &[_, account] : state) {
-        auto const &code = account.code.data();
-        auto const &code_size = account.code.size();
-        auto const &code_hash = evmone::keccak256({code, code_size});
-        precompile_contract(rev, code_hash, code, code_size, impl);
-    }
-}
-
 evmc::Result BlockchainTestVM::execute_evmone(
     evmc_host_interface const *host, evmc_host_context *context,
     evmc_revision rev, evmc_message const *msg, uint8_t const *code,

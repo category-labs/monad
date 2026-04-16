@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,37 +15,27 @@
 
 #pragma once
 
-#include <category/core/address.hpp>
-
-#include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/vm/vm.hpp>
 
-#include <test/utils/from_json.hpp>
+#include <monad/test/config.hpp>
 
-#include <evmc/evmc.hpp>
+MONAD_TEST_NAMESPACE_BEGIN
 
-#include <nlohmann/json.hpp>
-
-#include <memory>
-#include <span>
-#include <vector>
-
-namespace monad::test
+struct TestState
 {
-    struct UnsupportedTestFeature : std::runtime_error
+    monad::InMemoryMachine machine;
+    monad::mpt::Db db;
+    monad::TrieDb trie_db;
+
+    TestState()
+        : db{machine}
+        , trie_db{db}
     {
-        using runtime_error::runtime_error;
-    };
+    }
+};
 
-    struct BenchmarkTest
-    {
-        std::string name;
+using TestStateRef = std::shared_ptr<TestState>;
 
-        std::vector<Block> test_blocks;
-        JsonState json_state;
-    };
-
-    std::vector<BenchmarkTest> load_benchmark_tests(std::istream &input);
-} // namespace monad::test
+MONAD_TEST_NAMESPACE_END

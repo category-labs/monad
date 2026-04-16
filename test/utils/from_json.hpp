@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,14 +15,19 @@
 
 #pragma once
 
+#include "json_state.hpp"
+
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+
+#include <monad/test/config.hpp>
 
 #include <boost/core/demangle.hpp>
 
@@ -31,6 +36,58 @@
 
 #include <charconv>
 #include <format>
+
+MONAD_TEST_NAMESPACE_BEGIN
+
+monad::BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json);
+
+template <monad::Traits traits>
+JsonState load_blockchain_json_state(nlohmann::json const &j_contents)
+{
+    using namespace ::monad;
+    using namespace ::monad::test;
+
+    auto const &genesisJson = j_contents.at("genesisBlockHeader");
+    auto header = read_genesis_blockheader(genesisJson);
+    MONAD_ASSERT(
+        NULL_ROOT == from_hex<bytes32_t>(
+                         genesisJson.at("transactionsTrie").get<std::string>())
+                         .value());
+    MONAD_ASSERT(
+        NULL_ROOT ==
+        from_hex<bytes32_t>(genesisJson.at("receiptTrie").get<std::string>())
+            .value());
+    MONAD_ASSERT(
+        NULL_LIST_HASH ==
+        from_hex<bytes32_t>(genesisJson.at("uncleHash").get<std::string>())
+            .value());
+    MONAD_ASSERT(
+        bytes32_t{} ==
+        from_hex<bytes32_t>(genesisJson.at("parentHash").get<std::string>())
+            .value());
+
+    std::optional<std::vector<Withdrawal>> withdrawals;
+    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
+        MONAD_ASSERT(
+            NULL_ROOT ==
+            from_hex<bytes32_t>(
+                genesisJson.at("withdrawalsRoot").get<std::string>())
+                .value());
+        withdrawals.emplace(std::vector<Withdrawal>{});
+    }
+
+    auto const it1 = j_contents.find("pre");
+    auto const it2 = std::next(it1, 1);
+    auto const hash =
+        from_hex<bytes32_t>(genesisJson.at("hash").get<std::string>()).value();
+    return {
+        .header = header,
+        .withdrawals = withdrawals,
+        .init_state = std::make_optional<nlohmann::json>(it1, it2),
+        .init_state_hash = hash};
+}
+
+MONAD_TEST_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 

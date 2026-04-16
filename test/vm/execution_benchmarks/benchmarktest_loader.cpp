@@ -15,8 +15,11 @@
 
 #include "benchmarktest.hpp"
 
-#include "statetest.hpp"
-#include "transaction.hpp"
+#include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/vm/evm/switch_traits.hpp>
+
+#include <test/utils/from_json.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -29,32 +32,25 @@ namespace json = nlohmann;
 
 namespace monad::test
 {
-    using namespace evmone::test;
-
     namespace
     {
-        TestBlock load_test_block(json::json const &j)
+        Block load_test_block(json::json const &j)
         {
-            using namespace evmone::state;
-            TestBlock tb;
-
-            if (auto it = j.find("transactions"); it != j.end()) {
-                for (auto const &tx : *it) {
-                    tb.transactions.emplace_back(from_json<Transaction>(tx));
-                }
-            }
-
-            return tb;
+            auto const block_rlp = j.at("rlp").get<byte_string>();
+            byte_string_view block_rlp_view{block_rlp};
+            auto block = rlp::decode_block(block_rlp_view);
+            MONAD_ASSERT(!block.has_error());
+            return block.value();
         }
 
         BenchmarkTest
         load_benchmark_test_case(std::string const &name, json::json const &j)
         {
-            using namespace evmone::state;
-
             BenchmarkTest bt;
             bt.name = name;
-            bt.pre_state = from_json<TestState>(j.at("pre"));
+
+            constexpr auto rev = EVMC_CANCUN;
+            bt.json_state = load_blockchain_json_state<EvmTraits<rev>>(j);
 
             for (auto const &el : j.at("blocks")) {
                 bt.test_blocks.emplace_back(load_test_block(el));

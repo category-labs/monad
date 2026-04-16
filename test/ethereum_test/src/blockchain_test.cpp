@@ -15,8 +15,9 @@
 
 #include <blockchain_test.hpp>
 #include <event.hpp>
-#include <from_json.hpp>
 #include <revision_map.hpp>
+
+#include <test/utils/from_json.hpp>
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
@@ -142,96 +143,6 @@ static fiber::PriorityPool *pool_ = nullptr;
 
 static ankerl::unordered_dense::segmented_set<Address> const
     empty_senders_and_authorities{};
-
-BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
-{
-    BlockHeader block_header{};
-
-    block_header.difficulty = intx::from_string<uint256_t>(
-        genesis_json["difficulty"].get<std::string>());
-
-    auto const extra_data =
-        from_hex(genesis_json["extraData"].get<std::string>());
-    MONAD_ASSERT(extra_data.has_value());
-    block_header.extra_data = extra_data.value();
-
-    block_header.gas_limit =
-        std::stoull(genesis_json["gasLimit"].get<std::string>(), nullptr, 0);
-
-    auto const mix_hash_byte_string =
-        from_hex(genesis_json["mixHash"].get<std::string>());
-    MONAD_ASSERT(mix_hash_byte_string.has_value());
-    std::copy_n(
-        mix_hash_byte_string.value().begin(),
-        mix_hash_byte_string.value().length(),
-        block_header.prev_randao.bytes);
-
-    uint64_t const nonce{
-        std::stoull(genesis_json["nonce"].get<std::string>(), nullptr, 0)};
-    intx::be::unsafe::store<uint64_t>(block_header.nonce.data(), nonce);
-
-    auto const parent_hash_byte_string =
-        from_hex(genesis_json["parentHash"].get<std::string>());
-    MONAD_ASSERT(parent_hash_byte_string.has_value());
-    std::copy_n(
-        parent_hash_byte_string.value().begin(),
-        parent_hash_byte_string.value().length(),
-        block_header.parent_hash.bytes);
-
-    block_header.timestamp =
-        std::stoull(genesis_json["timestamp"].get<std::string>(), nullptr, 0);
-
-    if (genesis_json.contains("coinbase")) {
-        auto const coinbase =
-            from_hex(genesis_json["coinbase"].get<std::string>());
-        MONAD_ASSERT(coinbase.has_value());
-        std::copy_n(
-            coinbase.value().begin(),
-            coinbase.value().length(),
-            block_header.beneficiary.bytes);
-    }
-
-    // London fork
-    if (genesis_json.contains("baseFeePerGas")) {
-        block_header.base_fee_per_gas = intx::from_string<uint256_t>(
-            genesis_json["baseFeePerGas"].get<std::string>());
-    }
-
-    // Shanghai fork
-    if (genesis_json.contains("blobGasUsed")) {
-        block_header.blob_gas_used = std::stoull(
-            genesis_json["blobGasUsed"].get<std::string>(), nullptr, 0);
-    }
-    if (genesis_json.contains("excessBlobGas")) {
-        block_header.excess_blob_gas = std::stoull(
-            genesis_json["excessBlobGas"].get<std::string>(), nullptr, 0);
-    }
-    if (genesis_json.contains("parentBeaconBlockRoot")) {
-        auto const parent_beacon_block_root =
-            from_hex(genesis_json["parentBeaconBlockRoot"].get<std::string>());
-        MONAD_ASSERT(parent_beacon_block_root.has_value());
-        auto &write_to =
-            block_header.parent_beacon_block_root.emplace(bytes32_t{});
-        std::copy_n(
-            parent_beacon_block_root.value().begin(),
-            parent_beacon_block_root.value().length(),
-            write_to.bytes);
-    }
-
-    // Prague fork
-    if (genesis_json.contains("requestsHash")) {
-        auto const requests_hash =
-            from_hex(genesis_json["requestsHash"].get<std::string>());
-        MONAD_ASSERT(requests_hash.has_value());
-        auto &write_to = block_header.requests_hash.emplace(bytes32_t{});
-        std::copy_n(
-            requests_hash.value().begin(),
-            requests_hash.value().length(),
-            write_to.bytes);
-    }
-
-    return block_header;
-}
 
 void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
 {
@@ -480,66 +391,13 @@ void process_test(
     bool enable_tracing)
 {
     using namespace test;
-    InMemoryMachine machine;
-    mpt::Db db{machine};
-    monad::TrieDb tdb{db};
+
+    auto const json_state = load_blockchain_json_state<traits>(j_contents);
+    auto const test_state = json_state.make_test_state();
     vm::VM vm;
-    {
-        auto const &genesisJson = j_contents.at("genesisBlockHeader");
-        auto header = read_genesis_blockheader(genesisJson);
-        ASSERT_EQ(
-            NULL_ROOT,
-            from_hex<bytes32_t>(
-                genesisJson.at("transactionsTrie").get<std::string>())
-                .value());
-        ASSERT_EQ(
-            NULL_ROOT,
-            from_hex<bytes32_t>(
-                genesisJson.at("receiptTrie").get<std::string>())
-                .value());
-        ASSERT_EQ(
-            NULL_LIST_HASH,
-            from_hex<bytes32_t>(genesisJson.at("uncleHash").get<std::string>())
-                .value());
-        ASSERT_EQ(
-            bytes32_t{},
-            from_hex<bytes32_t>(genesisJson.at("parentHash").get<std::string>())
-                .value());
+    mpt::Db &db = test_state->db;
+    monad::TrieDb &tdb = test_state->trie_db;
 
-        std::optional<std::vector<Withdrawal>> withdrawals;
-        if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
-            ASSERT_EQ(
-                NULL_ROOT,
-                from_hex<bytes32_t>(
-                    genesisJson.at("withdrawalsRoot").get<std::string>())
-                    .value());
-            withdrawals.emplace(std::vector<Withdrawal>{});
-        }
-
-        BlockState bs{tdb, vm};
-        State state{bs, Incarnation{0, 0}};
-        j_contents.at("pre").get_to(state);
-        bs.merge(state);
-        auto [released_state, released_code] = std::move(bs).release();
-        commit_simple(
-            tdb,
-            *released_state,
-            released_code,
-            NULL_HASH_BLAKE3,
-            header,
-            {} /* receipts */,
-            {} /* call frames */,
-            {} /* senders */,
-            {} /* transactions */,
-            {} /* ommers */,
-            withdrawals);
-        tdb.finalize(0, NULL_HASH_BLAKE3);
-        ASSERT_EQ(
-            to_bytes(
-                keccak256(rlp::encode_block_header(tdb.read_eth_header()))),
-            from_hex<bytes32_t>(genesisJson.at("hash").get<std::string>())
-                .value());
-    }
     auto db_post_state = tdb.to_json();
 
     BlockHashBufferFinalized block_hash_buffer;

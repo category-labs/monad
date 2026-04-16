@@ -16,7 +16,6 @@
 #pragma once
 
 #include "state.hpp"
-#include "test_state.hpp"
 
 #include <category/core/assert.h>
 #include <category/vm/compiler/ir/x86.hpp>
@@ -72,29 +71,10 @@ public:
         std::unreachable();
     };
 
-    void precompile_contract(
-        evmc_revision rev, monad::bytes32_t const &code_hash,
-        uint8_t const *code, size_t const code_size,
-        [[maybe_unused]] BlockchainTestVM::Implementation const impl);
-
-    void precompile_contracts(
-        evmc_revision rev, evmone::test::TestState const &state,
-        BlockchainTestVM::Implementation const impl);
-
     Implementation implementation() const
     {
         return impl_;
     }
-
-private:
-    Implementation impl_;
-    evmone::VM evmone_vm_;
-    monad::vm::VM monad_vm_;
-    char const *debug_dir_;
-    monad::vm::CompilerConfig base_config;
-    CodeMap<evmone::baseline::CodeAnalysis> code_analyses_;
-    CodeMap<monad::vm::SharedIntercode> intercodes_;
-    monad::vm::runtime::Context *rt_ctx_;
 
     evmone::baseline::CodeAnalysis const &get_code_analysis(
         monad::bytes32_t const &code_hash, uint8_t const *code,
@@ -110,6 +90,16 @@ private:
     get_intercode_nativecode(
         evmc_revision const rev, monad::bytes32_t const &code_hash,
         uint8_t const *code, size_t code_size);
+
+private:
+    Implementation impl_;
+    evmone::VM evmone_vm_;
+    monad::vm::VM monad_vm_;
+    char const *debug_dir_;
+    monad::vm::CompilerConfig base_config;
+    CodeMap<evmone::baseline::CodeAnalysis> code_analyses_;
+    CodeMap<monad::vm::SharedIntercode> intercodes_;
+    monad::vm::runtime::Context *rt_ctx_;
 
     evmc::Result execute_evmone(
         evmc_host_interface const *host, evmc_host_context *context,

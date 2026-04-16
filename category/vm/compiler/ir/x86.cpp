@@ -24,7 +24,6 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
-#include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <asmjit/core/jitruntime.h>

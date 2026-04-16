@@ -28,14 +28,7 @@ target_sources(vm-unit-tests PRIVATE
     uint256_tests.cpp
     non_temporal_memory_tests.cpp
     rc_ptr_tests.cpp
-    strongly_connected_components_tests.cpp
     transactional_unordered_map_tests.cpp
-    subst_map_tests.cpp
-    kind_tests.cpp
-    unify_tests.cpp
-    infer_tests.cpp
-    type_check_tests.cpp
-    untyped_tests.cpp
     stack_tests.cpp
     emitter_tests.cpp
     interpreter_tests.cpp

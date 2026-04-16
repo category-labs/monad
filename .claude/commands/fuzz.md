@@ -4,7 +4,6 @@ Run VM fuzzers for the monad C++ project.
 
 The user may pass arguments like:
 - `compiler` — run the compiler fuzzer (default)
-- `typechecker` — run the typechecker fuzzer
 - `staking` — run the staking contract fuzzer
 - `--seed <N>` — set the random seed
 - `--multi` — run multiple fuzzer sessions via tmux
@@ -17,7 +16,7 @@ You are running fuzzers for the monad C++ project located at $CWD.
 
 ### Build requirements
 
-The compiler and typechecker fuzzers require `MONAD_COMPILER_TESTING=ON` at configure time and `third_party/evmone` (see `/build` for evmone setup instructions). The staking contract fuzzer is always built with no special options.
+The compiler fuzzer requires `MONAD_COMPILER_TESTING=ON` at configure time and `third_party/evmone` (see `/build` for evmone setup instructions). The staking contract fuzzer is always built with no special options.
 
 If the fuzzer binaries don't exist, offer to reconfigure. The CI fuzzing configuration is:
 ```bash
@@ -37,7 +36,6 @@ cmake --build build --target monad-compiler-fuzzer --parallel
 | Binary | Target | Description |
 |--------|--------|-------------|
 | `build/test/vm/fuzzer/monad-compiler-fuzzer` | `monad-compiler-fuzzer` | Fuzzes the JIT compiler |
-| `build/test/vm/fuzzer/monad-typechecker-fuzzer` | `monad-typechecker-fuzzer` | Fuzzes the typechecker |
 | `build/category/execution/monad_staking_contract_fuzzer` | `monad_staking_contract_fuzzer` | Fuzzes the staking contract |
 
 ### Single-process run
@@ -46,8 +44,6 @@ Use the wrapper scripts which set `MONAD_COMPILER_FUZZING=1`:
 ```bash
 # Compiler fuzzer (pass --implementation compiler or --implementation interpreter, and --seed N)
 scripts/vm/fuzzer.sh --implementation compiler --seed 143
-# Typechecker fuzzer
-scripts/vm/typechecker-fuzzer.sh --seed 143
 # Staking contract fuzzer (run directly)
 build/category/execution/monad_staking_contract_fuzzer
 ```

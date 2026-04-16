@@ -173,20 +173,6 @@ scripts/tmux-fuzzer.sh kill
 ```
 to kill all the fuzzer Tmux sessions.
 
-### Directory Type Check Test
-
-After building the compiler source code, the `directory-type-check` executable
-can be used on a directory containing bytecode contracts. It will recursively
-traverse the directory and run the type inference algorithm on all the
-contracts. It will additionally run the type checking algorithm to verify the
-correctness of the inferred types. For example
-```console
-build/src/test/utils/directory-type-check my/contracts-dir
-```
-will print type inference errors to standard error and print contract type
-information to standard out. If it prints to standard error, there is bug
-somewhere.
-
 ## Benchmarks
 
 The project contains several sets of performance benchmarks that are not built

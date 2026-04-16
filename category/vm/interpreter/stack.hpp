@@ -28,11 +28,11 @@ namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
 
-    template <std::uint8_t Instr, Traits traits>
+    template <uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(
         runtime::Context &ctx, Intercode const &,
         runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
-        std::int64_t &gas_remaining)
+        int64_t &gas_remaining)
     {
         static constexpr auto info = compiler::opcode_table<traits>[Instr];
 

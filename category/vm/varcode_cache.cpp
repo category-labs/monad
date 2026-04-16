@@ -25,14 +25,13 @@
 
 namespace monad::vm
 {
-    std::uint32_t
-    VarcodeCache::code_size_to_cache_weight(std::uint32_t code_size)
+    uint32_t VarcodeCache::code_size_to_cache_weight(uint32_t code_size)
     {
         // Byte size in kB, plus 3 kB overhead:
         return (code_size >> 10) + 3;
     }
 
-    VarcodeCache::VarcodeCache(std::uint32_t max_kb, std::uint32_t warm_kb)
+    VarcodeCache::VarcodeCache(uint32_t max_kb, uint32_t warm_kb)
         : weight_cache_{max_kb}
         , warm_cache_kb_{warm_kb}
     {

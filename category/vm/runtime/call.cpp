@@ -34,18 +34,18 @@
 
 namespace monad::vm::runtime
 {
-    inline std::uint32_t message_flags(
-        std::uint32_t env_flags, bool static_call, bool delegation_indicator)
+    inline uint32_t message_flags(
+        uint32_t env_flags, bool static_call, bool delegation_indicator)
     {
         if (static_call) {
-            env_flags = static_cast<std::uint32_t>(EVMC_STATIC);
+            env_flags = static_cast<uint32_t>(EVMC_STATIC);
         }
 
         if (delegation_indicator) {
-            env_flags |= static_cast<std::uint32_t>(EVMC_DELEGATED);
+            env_flags |= static_cast<uint32_t>(EVMC_DELEGATED);
         }
         else {
-            env_flags &= ~static_cast<std::uint32_t>(EVMC_DELEGATED);
+            env_flags &= ~static_cast<uint32_t>(EVMC_DELEGATED);
         }
 
         return env_flags;
@@ -58,7 +58,7 @@ namespace monad::vm::runtime
         uint256_t const &args_offset_word, uint256_t const &args_size_word,
         uint256_t const &ret_offset_word, uint256_t const &ret_size_word,
         evmc_call_kind call_kind, bool static_call,
-        std::int64_t remaining_block_base_gas)
+        int64_t remaining_block_base_gas)
     {
         ctx->env.clear_return_data();
 
@@ -142,7 +142,7 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::OutOfGas);
         }
 
-        auto gas = clamp_cast<std::int64_t>(gas_word);
+        auto gas = clamp_cast<int64_t>(gas_word);
 
         if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
             gas = std::min(gas, gas_left_here - (gas_left_here / 64));
@@ -193,7 +193,7 @@ namespace monad::vm::runtime
         ctx->gas_refund += result.gas_refund;
 
         auto const copy_size =
-            std::min(static_cast<std::size_t>(*ret_size), result.output_size);
+            std::min(static_cast<size_t>(*ret_size), result.output_size);
         std::copy_n(
             result.output_data, copy_size, ctx->memory.data + *ret_offset);
 
@@ -208,7 +208,7 @@ namespace monad::vm::runtime
         uint256_t const *address_ptr, uint256_t const *value_ptr,
         uint256_t const *args_offset_ptr, uint256_t const *args_size_ptr,
         uint256_t const *ret_offset_ptr, uint256_t const *ret_size_ptr,
-        std::int64_t remaining_block_base_gas)
+        int64_t remaining_block_base_gas)
     {
         *result_ptr = call_impl<traits>(
             ctx,
@@ -233,7 +233,7 @@ namespace monad::vm::runtime
         uint256_t const *address_ptr, uint256_t const *value_ptr,
         uint256_t const *args_offset_ptr, uint256_t const *args_size_ptr,
         uint256_t const *ret_offset_ptr, uint256_t const *ret_size_ptr,
-        std::int64_t remaining_block_base_gas)
+        int64_t remaining_block_base_gas)
     {
         *result_ptr = call_impl<traits>(
             ctx,
@@ -257,7 +257,7 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *args_offset_ptr,
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
-        uint256_t const *ret_size_ptr, std::int64_t remaining_block_base_gas)
+        uint256_t const *ret_size_ptr, int64_t remaining_block_base_gas)
     {
         *result_ptr = call_impl<traits>(
             ctx,
@@ -281,7 +281,7 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *args_offset_ptr,
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
-        uint256_t const *ret_size_ptr, std::int64_t remaining_block_base_gas)
+        uint256_t const *ret_size_ptr, int64_t remaining_block_base_gas)
     {
         MONAD_DEBUG_ASSERT(traits::evm_rev() >= EVMC_BYZANTIUM);
         *result_ptr = call_impl<traits>(

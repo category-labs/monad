@@ -33,7 +33,7 @@ namespace monad::vm
         class Ref
         {
             MemoryPool &pool_;
-            std::uint8_t *memory_;
+            uint8_t *memory_;
 
         public:
             explicit Ref(MemoryPool &pool)
@@ -52,14 +52,14 @@ namespace monad::vm
                 pool_.dealloc(memory_);
             }
 
-            std::uint8_t *get()
+            uint8_t *get()
             {
                 return memory_;
             }
         };
 
         // Construct a memory pool with the given `alloc_capacity()`.
-        explicit MemoryPool(std::uint32_t alloc_capacity);
+        explicit MemoryPool(uint32_t alloc_capacity);
 
         MemoryPool(MemoryPool const &) = delete;
         MemoryPool &operator=(MemoryPool const &) = delete;
@@ -67,17 +67,17 @@ namespace monad::vm
         ~MemoryPool();
 
         // Capacity of memory buffer returned by `alloc()` and `alloc_ref()`.
-        std::uint32_t alloc_capacity() const
+        uint32_t alloc_capacity() const
         {
             return alloc_capacity_;
         }
 
         // Allocate zero initialized memory buffer of `alloc_capacity()` size.
-        std::uint8_t *alloc();
+        uint8_t *alloc();
 
         // Deallocate memory previous allocated with `alloc()`. Make sure
         // the entire memory buffer is zeroed before calling `dealloc()`.
-        void dealloc(std::uint8_t *);
+        void dealloc(uint8_t *);
 
         // Allocate zero initialized memory buffer of `alloc_capacity()` size.
         // The entire memory buffer must be zeroed before the `Ref` object is
@@ -89,12 +89,12 @@ namespace monad::vm
 
         // Debugging/testing:
         bool debug_check_uniqueness_invariant() const;
-        std::size_t debug_get_cache_size() const;
+        size_t debug_get_cache_size() const;
 
     private:
         Node empty_head_;
         Node *head_;
-        std::uint32_t alloc_capacity_;
+        uint32_t alloc_capacity_;
         SpinLock mutex_;
     };
 }

@@ -39,12 +39,12 @@ namespace monad::vm::interpreter::stats
 
         struct OpcodeData
         {
-            std::size_t count = 0;
+            size_t count = 0;
             std::chrono::high_resolution_clock::time_point last_start;
             std::chrono::nanoseconds cumulative_time = 0ns;
         };
 
-        std::optional<std::uint8_t> current_op = std::nullopt;
+        std::optional<uint8_t> current_op = std::nullopt;
         std::array<OpcodeData, 256> data_table = {};
 
         void print_stats()
@@ -70,7 +70,7 @@ namespace monad::vm::interpreter::stats
         auto const print_on_exit = utils::scope_exit(print_stats);
     }
 
-    void begin(std::uint8_t const opcode)
+    void begin(uint8_t const opcode)
     {
         auto &entry = data_table[opcode];
         current_op = opcode;

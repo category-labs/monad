@@ -30,7 +30,7 @@ namespace monad::vm::fuzzing
         template <typename Tuple, typename Func>
         void for_each_tuple(Tuple &&t, Func &&f)
         {
-            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            [&]<size_t... Is>(std::index_sequence<Is...>) {
                 (std::forward<Func>(f)(std::get<Is>(std::forward<Tuple>(t))),
                  ...);
             }(std::make_index_sequence<std::tuple_size_v<Tuple>>());

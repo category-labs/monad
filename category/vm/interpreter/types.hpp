@@ -64,7 +64,7 @@ namespace monad::vm::interpreter
 {
     using InstrEval = void MONAD_VM_INSTRUCTION_CALL (*)(
         runtime::Context &, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, std::int64_t, std::uint8_t const *);
+        runtime::uint256_t *, int64_t, uint8_t const *);
 
     using InstrTable = std::array<InstrEval, 256>;
 }

@@ -74,7 +74,7 @@ namespace bls12
     std::optional<blst_fp> read_fp(uint8_t const *const in)
     {
         static_assert(sizeof(blst_fp) == 48);
-        static constexpr std::size_t fp_encoded_offset = 16;
+        static constexpr size_t fp_encoded_offset = 16;
 
         auto const integer_value = intx::be::unsafe::load<intx::uint512>(in);
 
@@ -150,7 +150,7 @@ namespace bls12
     void write_fp(blst_fp const &point, uint8_t *const buf)
     {
         static_assert(sizeof(blst_fp) == 48);
-        static constexpr std::size_t fp_encoded_offset = 16;
+        static constexpr size_t fp_encoded_offset = 16;
 
         std::memset(buf, 0, fp_encoded_offset);
         blst_bendian_from_fp(buf + fp_encoded_offset, &point);

@@ -29,7 +29,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void sstore(
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
-        std::int64_t remaining_block_base_gas);
+        int64_t remaining_block_base_gas);
 
     inline void
     tload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)

@@ -21,9 +21,9 @@
 
 namespace monad::vm::compiler
 {
-    using byte_offset = std::size_t;
+    using byte_offset = size_t;
 
-    using block_id = std::size_t;
+    using block_id = size_t;
 
     using uint256_t = runtime::uint256_t;
 

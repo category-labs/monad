@@ -282,7 +282,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
             });
     }
 
-    auto const last = static_cast<std::ptrdiff_t>(transactions.size());
+    auto const last = static_cast<ptrdiff_t>(transactions.size());
     promises[last].get_future().get();
     block_metrics.tx_exec_time =
         std::chrono::duration_cast<std::chrono::microseconds>(

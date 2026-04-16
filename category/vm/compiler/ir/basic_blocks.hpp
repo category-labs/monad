@@ -61,10 +61,10 @@ namespace monad::vm::compiler::basic_blocks
 
     struct JumpDest
     {
-        std::uint32_t pc;
+        uint32_t pc;
     };
 
-    constexpr OpCode evm_op_to_opcode(std::uint8_t op)
+    constexpr OpCode evm_op_to_opcode(uint8_t op)
     {
         using enum OpCode;
 
@@ -100,7 +100,7 @@ namespace monad::vm::compiler::basic_blocks
      * Base gas usage for a given terminator.
      */
     template <Traits traits>
-    constexpr std::uint16_t terminator_static_gas(Terminator t)
+    constexpr uint16_t terminator_static_gas(Terminator t)
     {
         using enum Terminator;
         switch (t) {
@@ -135,7 +135,7 @@ namespace monad::vm::compiler::basic_blocks
      * Return the number of input stack elements consumed by each block
      * terminator.
      */
-    constexpr std::size_t terminator_inputs(Terminator t)
+    constexpr size_t terminator_inputs(Terminator t)
     {
         using enum Terminator;
         switch (t) {
@@ -195,8 +195,7 @@ namespace monad::vm::compiler::basic_blocks
          *   `JUMPI` instruction or an implicit fallthrough.
          */
         bool is_valid() const;
-        std::tuple<std::int32_t, std::int32_t, std::int32_t>
-        stack_deltas() const;
+        std::tuple<int32_t, int32_t, int32_t> stack_deltas() const;
     };
 
     bool operator==(Block const &a, Block const &b);
@@ -223,13 +222,13 @@ namespace monad::vm::compiler::basic_blocks
          */
         template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
         BasicBlocksIR(
-            std::uint8_t const *, interpreter::code_size_t,
+            uint8_t const *, interpreter::code_size_t,
             ChainMarker<traits> = {});
 
         template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
         [[gnu::always_inline]]
         static constexpr BasicBlocksIR unsafe_from(
-            std::initializer_list<std::uint8_t const> bytes,
+            std::initializer_list<uint8_t const> bytes,
             ChainMarker<traits> rm = {})
         {
             MONAD_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
@@ -242,8 +241,8 @@ namespace monad::vm::compiler::basic_blocks
 
         template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
         [[gnu::always_inline]]
-        static constexpr BasicBlocksIR unsafe_from(
-            std::span<std::uint8_t const> bytes, ChainMarker<traits> rm = {})
+        static constexpr BasicBlocksIR
+        unsafe_from(std::span<uint8_t const> bytes, ChainMarker<traits> rm = {})
         {
             MONAD_ASSERT(bytes.size() <= *interpreter::code_size_t::max());
             return BasicBlocksIR(
@@ -303,8 +302,8 @@ namespace monad::vm::compiler::basic_blocks
 
     private:
         template <Traits traits>
-        static std::variant<Instruction, Terminator, JumpDest> scan_from(
-            std::span<std::uint8_t const> bytes, std::uint32_t &current_offset);
+        static std::variant<Instruction, Terminator, JumpDest>
+        scan_from(std::span<uint8_t const> bytes, uint32_t &current_offset);
 
         std::vector<Block> blocks_;
         std::unordered_map<byte_offset, block_id> jump_dests_;
@@ -363,7 +362,7 @@ namespace monad::vm::compiler::basic_blocks
 
     template <Traits traits>
     std::variant<Instruction, Terminator, JumpDest> BasicBlocksIR::scan_from(
-        std::span<std::uint8_t const> bytes, std::uint32_t &current_offset)
+        std::span<uint8_t const> bytes, uint32_t &current_offset)
     {
         MONAD_DEBUG_ASSERT(current_offset < bytes.size());
 
@@ -434,7 +433,7 @@ namespace monad::vm::compiler::basic_blocks
 
     template <Traits traits>
     BasicBlocksIR::BasicBlocksIR(
-        std::uint8_t const *bytes, interpreter::code_size_t byte_count,
+        uint8_t const *bytes, interpreter::code_size_t byte_count,
         ChainMarker<traits>)
         : codesize(byte_count)
     {
@@ -450,7 +449,7 @@ namespace monad::vm::compiler::basic_blocks
 
         add_block(0);
 
-        auto current_offset = std::uint32_t{0};
+        auto current_offset = uint32_t{0};
         auto first = true;
 
         while (current_offset < *byte_count) {

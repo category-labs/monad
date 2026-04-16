@@ -50,20 +50,20 @@ namespace monad::vm::runtime
 
     struct Environment
     {
-        std::uint32_t evmc_flags;
-        std::int32_t depth;
+        uint32_t evmc_flags;
+        int32_t depth;
         evmc::address recipient;
         evmc::address sender;
         bytes32_t value;
         bytes32_t create2_salt;
 
-        std::uint8_t const *input_data;
-        std::uint8_t const *code;
-        std::uint8_t const *return_data;
+        uint8_t const *input_data;
+        uint8_t const *code;
+        uint8_t const *return_data;
 
-        std::uint32_t input_data_size;
-        std::uint32_t code_size;
-        std::size_t return_data_size;
+        uint32_t input_data_size;
+        uint32_t code_size;
+        size_t return_data_size;
 
         evmc_tx_context const *tx_context;
 
@@ -73,8 +73,7 @@ namespace monad::vm::runtime
         }
 
         [[gnu::always_inline]]
-        void set_return_data(
-            std::uint8_t const *output_data, std::size_t output_size)
+        void set_return_data(uint8_t const *output_data, size_t output_size)
         {
             MONAD_DEBUG_ASSERT(return_data_size == 0);
             return_data = output_data;
@@ -93,18 +92,18 @@ namespace monad::vm::runtime
     struct Memory
     {
         // Size of the memory region for current call frame:
-        std::uint32_t size;
+        uint32_t size;
         // Capacity of the memory region for current call frame:
-        std::uint32_t capacity;
+        uint32_t capacity;
         // Start of memory region for current call frame:
-        std::uint8_t *data;
+        uint8_t *data;
         // Current accumulated memory cost for current call frame:
-        std::int64_t cost;
+        int64_t cost;
         // Pointer to the beginning of the transaction wide memory:
-        std::uint8_t *data_handle;
+        uint8_t *data_handle;
         // The `parent_capacity` is the original capacity (the capacity at
         // the beginning of the current call frame).
-        std::uint32_t const parent_capacity;
+        uint32_t const parent_capacity;
         // The `parent_handle` is a pointer to the original transaction wide
         // memory (the transaction wide memory at the beginning of the
         // current call frame).
@@ -112,7 +111,7 @@ namespace monad::vm::runtime
         // memory pointed to by `parent_handle`. This memory is lazily freed,
         // because the call data for the current call frame is potentially a
         // pointer into the `parent_handle` memory.
-        std::uint8_t *const parent_handle;
+        uint8_t *const parent_handle;
 
         static constexpr auto offset_bits = 28;
 
@@ -126,7 +125,7 @@ namespace monad::vm::runtime
 
         Memory() = delete;
 
-        explicit Memory(std::uint8_t *han, std::uint8_t *dat, std::uint32_t cap)
+        explicit Memory(uint8_t *han, uint8_t *dat, uint32_t cap)
             : size{}
             , capacity{cap}
             , data{dat}
@@ -162,7 +161,7 @@ namespace monad::vm::runtime
         {
             MONAD_DEBUG_ASSERT(data >= data_handle);
 
-            auto const x = static_cast<std::uintptr_t>(data - data_handle);
+            auto const x = static_cast<uintptr_t>(data - data_handle);
 
             MONAD_DEBUG_ASSERT((x & 31) == 0);
 
@@ -191,7 +190,7 @@ namespace monad::vm::runtime
             // to fail:
             MONAD_ASSERT(x <= Bin<30>::upper);
 
-            return Bin<30>::unsafe_from(static_cast<std::uint32_t>(x));
+            return Bin<30>::unsafe_from(static_cast<uint32_t>(x));
         }
 
         [[gnu::always_inline]]
@@ -225,18 +224,16 @@ namespace monad::vm::runtime
     {
         static Context from(
             evmc_host_interface const *host, evmc_host_context *context,
-            evmc_message const *msg,
-            std::span<std::uint8_t const> code) noexcept;
+            evmc_message const *msg, std::span<uint8_t const> code) noexcept;
 
-        static Context empty(
-            std::uint8_t *const memory_handle,
-            std::uint32_t memory_capacity) noexcept;
+        static Context
+        empty(uint8_t *const memory_handle, uint32_t memory_capacity) noexcept;
 
         evmc_host_interface const *host;
         evmc_host_context *context;
 
-        std::int64_t gas_remaining;
-        std::int64_t gas_refund;
+        int64_t gas_remaining;
+        int64_t gas_refund;
 
         Environment env;
 
@@ -248,7 +245,7 @@ namespace monad::vm::runtime
         bool is_stack_unwinding_active = false;
 
         [[gnu::always_inline]]
-        constexpr void deduct_gas(std::int64_t const gas) noexcept
+        constexpr void deduct_gas(int64_t const gas) noexcept
         {
             gas_remaining -= gas;
             if (MONAD_UNLIKELY(gas_remaining < 0)) {
@@ -328,7 +325,7 @@ namespace monad::vm::runtime
                 }
 
                 MONAD_DEBUG_ASSERT(new_cost >= memory.cost);
-                std::int64_t const expansion_cost = new_cost - memory.cost;
+                int64_t const expansion_cost = new_cost - memory.cost;
 
                 // Gas check before increasing size or capacity:
                 deduct_gas(expansion_cost);
@@ -393,7 +390,7 @@ namespace monad::vm::runtime
 
     private:
         template <Traits traits>
-        std::variant<std::span<std::uint8_t const>, evmc_status_code>
+        std::variant<std::span<uint8_t const>, evmc_status_code>
         copy_result_data();
     };
 

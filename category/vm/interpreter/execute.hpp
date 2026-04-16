@@ -26,6 +26,5 @@
 namespace monad::vm::interpreter
 {
     template <Traits traits>
-    void
-    execute(runtime::Context &, Intercode const &, std::uint8_t *stack_ptr);
+    void execute(runtime::Context &, Intercode const &, uint8_t *stack_ptr);
 }

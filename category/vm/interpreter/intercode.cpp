@@ -25,7 +25,7 @@ using namespace monad::vm::compiler;
 
 namespace monad::vm::interpreter
 {
-    Intercode::Intercode(std::span<std::uint8_t const> const code)
+    Intercode::Intercode(std::span<uint8_t const> const code)
         : padded_code_(pad(code))
         , code_size_(
               code_size_t::unsafe_from(static_cast<uint32_t>(code.size())))
@@ -38,11 +38,11 @@ namespace monad::vm::interpreter
         delete[] (padded_code_ - start_padding_size);
     }
 
-    std::uint8_t const *Intercode::pad(std::span<std::uint8_t const> const code)
+    uint8_t const *Intercode::pad(std::span<uint8_t const> const code)
     {
         MONAD_ASSERT(code.size() <= *code_size_t::max());
-        auto *buffer = new std::uint8_t
-            [start_padding_size + code.size() + end_padding_size];
+        auto *buffer =
+            new uint8_t[start_padding_size + code.size() + end_padding_size];
 
         std::fill_n(&buffer[0], start_padding_size, 0);
         std::copy(code.begin(), code.end(), &buffer[start_padding_size]);
@@ -52,7 +52,7 @@ namespace monad::vm::interpreter
         return buffer + start_padding_size;
     }
 
-    auto Intercode::find_jumpdests(std::span<std::uint8_t const> const code)
+    auto Intercode::find_jumpdests(std::span<uint8_t const> const code)
         -> JumpdestMap
     {
         auto jumpdests = JumpdestMap(code.size(), false);

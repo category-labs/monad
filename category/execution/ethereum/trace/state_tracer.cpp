@@ -40,7 +40,7 @@ namespace trace
 {
     using json = nlohmann::json;
 
-    template <std::size_t N>
+    template <size_t N>
     std::string bytes_to_hex(uint8_t const (&input)[N])
     {
         return std::format("0x{}", to_hex(to_byte_string_view(input)));

@@ -30,9 +30,9 @@
 
 namespace monad::vm::compiler::native
 {
-    constexpr std::uint8_t AVX_REG_COUNT = 16;
-    constexpr std::uint8_t GENERAL_REG_COUNT = 3;
-    constexpr std::uint8_t CALLEE_SAVE_GENERAL_REG_ID = 0;
+    constexpr uint8_t AVX_REG_COUNT = 16;
+    constexpr uint8_t GENERAL_REG_COUNT = 3;
+    constexpr uint8_t CALLEE_SAVE_GENERAL_REG_ID = 0;
 
     struct Literal
     {
@@ -50,7 +50,7 @@ namespace monad::vm::compiler::native
 
     struct StackOffset
     {
-        std::int32_t offset;
+        int32_t offset;
         PrevLoc moved_from;
     };
 
@@ -58,7 +58,7 @@ namespace monad::vm::compiler::native
 
     struct AvxReg
     {
-        std::uint8_t reg;
+        uint8_t reg;
     };
 
     std::strong_ordering operator<=>(AvxReg const &a, AvxReg const &b);
@@ -67,7 +67,7 @@ namespace monad::vm::compiler::native
 
     struct GeneralReg
     {
-        std::uint8_t reg;
+        uint8_t reg;
     };
 
     std::strong_ordering operator<=>(GeneralReg const &a, GeneralReg const &b);
@@ -181,7 +181,7 @@ namespace monad::vm::compiler::native
         StackElem &operator=(StackElem const &) = delete;
         ~StackElem();
 
-        std::int32_t preferred_stack_offset() const;
+        int32_t preferred_stack_offset() const;
 
         std::optional<StackOffset> const &stack_offset() const
         {
@@ -203,7 +203,7 @@ namespace monad::vm::compiler::native
             return literal_;
         }
 
-        std::set<std::int32_t> const &stack_indices() const
+        std::set<int32_t> const &stack_indices() const
         {
             return stack_indices_;
         }
@@ -257,9 +257,9 @@ namespace monad::vm::compiler::native
         void remove_literal();
 
         Stack &stack_;
-        std::set<std::int32_t> stack_indices_;
-        std::uint32_t reserve_avx_reg_count_;
-        std::uint32_t reserve_general_reg_count_;
+        std::set<int32_t> stack_indices_;
+        uint32_t reserve_avx_reg_count_;
+        uint32_t reserve_general_reg_count_;
         std::optional<StackOffset> stack_offset_;
         std::optional<AvxReg> avx_reg_;
         std::optional<GeneralReg> general_reg_;
@@ -413,7 +413,7 @@ namespace monad::vm::compiler::native
          * and non-negative indices refer to stack elements on the basic
          * block's stack frame.
          */
-        StackElemRef get(std::int32_t index);
+        StackElemRef get(int32_t index);
 
         /**
          * Obtain a reference to the top item of the stack.
@@ -453,13 +453,13 @@ namespace monad::vm::compiler::native
          * Push a duplicate of the specified stack element to the top of the
          * stack.
          */
-        void dup(std::int32_t stack_index);
+        void dup(int32_t stack_index);
 
         /**
          * Swap the top element of the stack with the one at the specified
          * index.
          */
-        void swap(std::int32_t swap_index);
+        void swap(int32_t swap_index);
 
         /**
          * Clear deferred comparison and insert a stack offset to the
@@ -486,7 +486,7 @@ namespace monad::vm::compiler::native
         /**
          * Whether there is a deferred comparison stack element.
          */
-        bool has_deferred_comparison_at(std::int32_t stack_index) const;
+        bool has_deferred_comparison_at(int32_t stack_index) const;
         bool has_deferred_comparison() const;
 
         /**
@@ -499,7 +499,7 @@ namespace monad::vm::compiler::native
          * virtual stack item at this index, and mark that physical index as
          * allocated. Returns a stack element holding the offset.
          */
-        StackElemRef alloc_stack_offset(std::int32_t stack_index, PrevLoc);
+        StackElemRef alloc_stack_offset(int32_t stack_index, PrevLoc);
 
         /**
          * Allocate an AVX register.
@@ -523,10 +523,10 @@ namespace monad::vm::compiler::native
          * Find a stack offset for the given stack element. The given
          * `preferred_offset` will be used as offset if it is available.
          */
-        void insert_stack_offset(
-            StackElemRef, std::int32_t preferred_offset, PrevLoc);
-        void insert_stack_offset(
-            StackElem &, std::int32_t preferred_offset, PrevLoc);
+        void
+        insert_stack_offset(StackElemRef, int32_t preferred_offset, PrevLoc);
+        void
+        insert_stack_offset(StackElem &, int32_t preferred_offset, PrevLoc);
 
         /**
          * Find a stack offset for the given stack element.
@@ -706,7 +706,7 @@ namespace monad::vm::compiler::native
         spill_avx_reg_range(uint8_t first);
 
         /** Set of available stack offsets. */
-        std::set<std::int32_t> const &available_stack_offsets();
+        std::set<int32_t> const &available_stack_offsets();
 
         /** Whether there is a free avx register. */
         bool has_free_avx_reg()
@@ -733,7 +733,7 @@ namespace monad::vm::compiler::native
          * The relative size of the stack at the *lowest* point during execution
          * of a block.
          */
-        std::int32_t min_delta() const
+        int32_t min_delta() const
         {
             return min_delta_;
         }
@@ -742,7 +742,7 @@ namespace monad::vm::compiler::native
          * The relative size of the stack at the *highest* point during
          * execution of a block.
          */
-        std::int32_t max_delta() const
+        int32_t max_delta() const
         {
             return max_delta_;
         }
@@ -751,7 +751,7 @@ namespace monad::vm::compiler::native
          * The difference between the final and initial stack sizes during
          * execution of a block.
          */
-        std::int32_t delta() const
+        int32_t delta() const
         {
             return delta_;
         }
@@ -778,7 +778,7 @@ namespace monad::vm::compiler::native
          * Index of the top element on the stack. The returned value is only
          * a valid index if the stack is not empty.
          */
-        std::int32_t top_index() const
+        int32_t top_index() const
         {
             return top_index_;
         }
@@ -791,7 +791,7 @@ namespace monad::vm::compiler::native
          * Obtain a mutable reference to an item on the stack, correctly
          * handling negative values to reference input stack elements.
          */
-        StackElemRef &at(std::int32_t index);
+        StackElemRef &at(int32_t index);
 
         /**
          * Identify a stack offset that can be used to spill the specified stack
@@ -803,18 +803,18 @@ namespace monad::vm::compiler::native
          * relocate this item to.
          */
         StackOffset find_available_stack_offset(
-            std::int32_t preferred_offset, PrevLoc moved_from) const;
+            int32_t preferred_offset, PrevLoc moved_from) const;
 
         // Linked list of stack element RC objects, using `ref_count`
         // for "next" pointer:
         utils::RcObject<StackElem> *free_rc_objects_;
-        std::int32_t top_index_;
-        std::int32_t min_delta_;
-        std::int32_t max_delta_;
-        std::int32_t delta_;
+        int32_t top_index_;
+        int32_t min_delta_;
+        int32_t max_delta_;
+        int32_t delta_;
         bool did_min_delta_decrease_;
         bool did_max_delta_increase_;
-        std::set<std::int32_t> available_stack_offsets_;
+        std::set<int32_t> available_stack_offsets_;
         AvxRegQueue free_avx_regs_;
         GeneralRegQueue free_general_regs_;
         // The `avx_reg_stack_elems_` contains all the stack elements with AVX
@@ -836,9 +836,9 @@ namespace monad::vm::compiler::native
     {
         static void destroy(utils::RcObject<StackElem> *x)
         {
-            static_assert(sizeof(std::size_t) == sizeof(void *));
-            x->ref_count = reinterpret_cast<std::size_t>(
-                x->object.stack_.free_rc_objects_);
+            static_assert(sizeof(size_t) == sizeof(void *));
+            x->ref_count =
+                reinterpret_cast<size_t>(x->object.stack_.free_rc_objects_);
             x->object.stack_.free_rc_objects_ = x;
         }
 

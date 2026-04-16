@@ -25,18 +25,18 @@ namespace monad::vm
 {
     class VarcodeCache
     {
-        static constexpr std::uint32_t default_max_cache_kb =
-            std::uint32_t{1} << 22; // 4MB * 1kB = 4GB
+        static constexpr uint32_t default_max_cache_kb =
+            uint32_t{1} << 22; // 4MB * 1kB = 4GB
 
-        static constexpr std::uint32_t default_warm_cache_kb =
+        static constexpr uint32_t default_warm_cache_kb =
             (3 * default_max_cache_kb) / 4; // ~75%
 
         using WeightCache = utils::LruWeightCache<bytes32_t, SharedVarcode>;
 
     public:
         explicit VarcodeCache(
-            std::uint32_t max_cache_kb = default_max_cache_kb,
-            std::uint32_t warm_cache_kb = default_warm_cache_kb);
+            uint32_t max_cache_kb = default_max_cache_kb,
+            uint32_t warm_cache_kb = default_warm_cache_kb);
 
         /// Get varcode for given code hash.
         std::optional<SharedVarcode> get(bytes32_t const &code_hash);
@@ -62,13 +62,13 @@ namespace monad::vm
             return weight_cache_.approx_weight() >= warm_cache_kb_;
         }
 
-        void set_warm_cache_kb(std::uint32_t warm_kb)
+        void set_warm_cache_kb(uint32_t warm_kb)
         {
             warm_cache_kb_ = warm_kb;
         }
 
         // Cache weight of the given code size.
-        static std::uint32_t code_size_to_cache_weight(std::uint32_t code_size);
+        static uint32_t code_size_to_cache_weight(uint32_t code_size);
 
         /// Get approximate total weight of the cached elements.
         uint64_t approx_weight() const
@@ -84,6 +84,6 @@ namespace monad::vm
 
     private:
         WeightCache weight_cache_;
-        std::uint32_t warm_cache_kb_;
+        uint32_t warm_cache_kb_;
     };
 }

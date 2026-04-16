@@ -27,8 +27,8 @@ namespace monad::vm::runtime
 {
     struct StoreCost
     {
-        std::int64_t gas_cost;
-        std::int64_t gas_refund;
+        int64_t gas_cost;
+        int64_t gas_refund;
     };
 
     template <Traits traits>
@@ -38,7 +38,7 @@ namespace monad::vm::runtime
     };
 
     template <Traits traits>
-    static consteval std::int64_t minimum_store_gas()
+    static consteval int64_t minimum_store_gas()
     {
         constexpr auto costs = StorageCostTable<traits>::costs;
         constexpr auto min_gas =

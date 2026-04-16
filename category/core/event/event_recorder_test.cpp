@@ -430,7 +430,7 @@ TEST_F(EventRecorderDefaultFixture, LargePayloads)
 
     // Make a large buffer, 4 times larger than WINDOW_INCR
     auto const big_buffer =
-        std::make_unique<std::uint32_t[]>(MONAD_EVENT_WINDOW_INCR);
+        std::make_unique<uint32_t[]>(MONAD_EVENT_WINDOW_INCR);
     auto const big_buffer_bytes =
         std::as_bytes(std::span{big_buffer.get(), MONAD_EVENT_WINDOW_INCR});
     for (uint32_t i = 0; i < MONAD_EVENT_WINDOW_INCR; ++i) {

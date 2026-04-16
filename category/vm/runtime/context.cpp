@@ -81,13 +81,13 @@ namespace monad::vm::runtime
         void release_result(evmc_result const *result)
         {
             MONAD_DEBUG_ASSERT(result);
-            std::free(const_cast<std::uint8_t *>(result->output_data));
+            std::free(const_cast<uint8_t *>(result->output_data));
         }
     }
 
     Context Context::from(
         evmc_host_interface const *host, evmc_host_context *context,
-        evmc_message const *msg, std::span<std::uint8_t const> code) noexcept
+        evmc_message const *msg, std::span<uint8_t const> code) noexcept
     {
         return Context{
             .host = host,
@@ -105,9 +105,8 @@ namespace monad::vm::runtime
                     .input_data = msg->input_data,
                     .code = code.data(),
                     .return_data = {},
-                    .input_data_size =
-                        static_cast<std::uint32_t>(msg->input_size),
-                    .code_size = static_cast<std::uint32_t>(code.size()),
+                    .input_data_size = static_cast<uint32_t>(msg->input_size),
+                    .code_size = static_cast<uint32_t>(code.size()),
                     .return_data_size = 0,
                     .tx_context = host->get_tx_context(context),
                 },
@@ -118,8 +117,7 @@ namespace monad::vm::runtime
     }
 
     Context Context::empty(
-        std::uint8_t *const memory_handle,
-        std::uint32_t memory_capacity) noexcept
+        uint8_t *const memory_handle, uint32_t memory_capacity) noexcept
     {
         return Context{
             .host = nullptr,
@@ -167,7 +165,7 @@ namespace monad::vm::runtime
     }
 
     template <Traits traits>
-    std::variant<std::span<std::uint8_t const>, evmc_status_code>
+    std::variant<std::span<uint8_t const>, evmc_status_code>
     Context::copy_result_data()
     {
         if (gas_remaining < 0) {
@@ -182,7 +180,7 @@ namespace monad::vm::runtime
         auto const size =
             Memory::Offset::unsafe_from(static_cast<uint32_t>(size_word));
         if (*size == 0) {
-            return std::span<std::uint8_t const>({});
+            return std::span<uint8_t const>({});
         }
 
         auto const offset_word = std::bit_cast<uint256_t>(result.offset);
@@ -202,9 +200,9 @@ namespace monad::vm::runtime
         // deduplicate the two cases in which we need to allocate an output
         // buffer (when the memory is already big enough, and when we've paid
         // the cost of a necessary expansion).
-        std::uint8_t *output_buf = nullptr;
+        uint8_t *output_buf = nullptr;
         auto allocate_output_buf = [size] {
-            return reinterpret_cast<std::uint8_t *>(std::malloc(*size));
+            return reinterpret_cast<uint8_t *>(std::malloc(*size));
         };
 
         if (*memory_end <= memory.size) {
@@ -261,7 +259,7 @@ namespace monad::vm::runtime
         return std::visit(
             Cases{
                 [](evmc_status_code ec) { return evmc_error_result(ec); },
-                [this](std::span<std::uint8_t const> output) {
+                [this](std::span<uint8_t const> output) {
                     return evmc::Result{evmc_result{
                         .status_code = result.status == Success ? EVMC_SUCCESS
                                                                 : EVMC_REVERT,

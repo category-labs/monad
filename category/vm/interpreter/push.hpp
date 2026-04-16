@@ -39,7 +39,7 @@ namespace monad::vm::interpreter
 
     namespace detail
     {
-        consteval bool use_avx2_push(std::size_t const n) noexcept
+        consteval bool use_avx2_push(size_t const n) noexcept
         {
 #ifdef __AVX2__
             return n > 0;
@@ -52,18 +52,18 @@ namespace monad::vm::interpreter
         using subword_t = runtime::uint256_t::word_type;
 
         [[gnu::always_inline]] inline subword_t
-        read_unaligned(std::uint8_t const *ptr)
+        read_unaligned(uint8_t const *ptr)
         {
             return std::byteswap(unaligned_load<subword_t>(ptr));
         }
 
-        template <std::size_t N, Traits traits>
+        template <size_t N, Traits traits>
             requires(!detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void generic_push(
             runtime::Context &ctx, Intercode const &analysis,
             runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
-            std::uint8_t const *instr_ptr)
+            runtime::uint256_t *stack_top, int64_t &gas_remaining,
+            uint8_t const *instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
@@ -79,8 +79,7 @@ namespace monad::vm::interpreter
                 }
 
                 std::memcpy(
-                    reinterpret_cast<std::uint8_t *>(&word) +
-                        (8 - leading_part),
+                    reinterpret_cast<uint8_t *>(&word) + (8 - leading_part),
                     instr_ptr + 1,
                     leading_part);
 
@@ -134,13 +133,13 @@ namespace monad::vm::interpreter
             }
         }
 
-        template <std::size_t N, Traits traits>
+        template <size_t N, Traits traits>
             requires(detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void avx2_push(
             runtime::Context &ctx, Intercode const &analysis,
             runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
-            std::uint8_t const *instr_ptr)
+            runtime::uint256_t *stack_top, int64_t &gas_remaining,
+            uint8_t const *instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
@@ -184,14 +183,14 @@ namespace monad::vm::interpreter
         }
     }
 
-    template <std::size_t N, Traits traits>
+    template <size_t N, Traits traits>
     struct push_impl
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
             runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
-            std::uint8_t const *instr_ptr)
+            runtime::uint256_t *stack_top, int64_t &gas_remaining,
+            uint8_t const *instr_ptr)
         {
             detail::generic_push<N, traits>(
                 ctx,
@@ -209,8 +208,8 @@ namespace monad::vm::interpreter
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
             runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
-            std::uint8_t const *)
+            runtime::uint256_t *stack_top, int64_t &gas_remaining,
+            uint8_t const *)
         {
             check_requirements<PUSH0, traits>(
                 ctx, analysis, stack_bottom, stack_top, gas_remaining);
@@ -218,15 +217,15 @@ namespace monad::vm::interpreter
         }
     };
 
-    template <std::size_t N, Traits traits>
+    template <size_t N, Traits traits>
         requires(detail::use_avx2_push(N))
     struct push_impl<N, traits>
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
             runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, std::int64_t &gas_remaining,
-            std::uint8_t const *instr_ptr)
+            runtime::uint256_t *stack_top, int64_t &gas_remaining,
+            uint8_t const *instr_ptr)
         {
             detail::avx2_push<N, traits>(
                 ctx,

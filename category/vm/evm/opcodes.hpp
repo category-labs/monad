@@ -46,17 +46,17 @@ namespace monad::vm::compiler
          * This value is 0 for all instructions other than the `PUSHN` family,
          * each of which expects N bytes to follow.
          */
-        std::uint8_t num_args;
+        uint8_t num_args;
 
         /**
          * The minimum EVM stack size required to execute this instruction.
          */
-        std::uint8_t min_stack;
+        uint8_t min_stack;
 
         /**
          * The EVM stack size increase after executing this instruction.
          */
-        std::uint8_t stack_increase;
+        uint8_t stack_increase;
 
         /**
          * Whether the gas cost of this instruction is determined at runtime.
@@ -69,14 +69,14 @@ namespace monad::vm::compiler
          * Some instructions may also consume additional dynamic gas depending
          * on run-time properties (e.g. memory expansion or storage costs).
          */
-        std::uint32_t min_gas;
+        uint32_t min_gas;
 
         /**
          * The index within a set of related opcodes for this instruction.
          *
          * N for all PUSHN, SWAPN, DUPN and LOGN instructions, and 0 otherwise.
          */
-        std::uint8_t index;
+        uint8_t index;
     };
 
     constexpr bool operator==(OpCodeInfo const &a, OpCodeInfo const &b)
@@ -282,8 +282,7 @@ namespace monad::vm::compiler
         make_opcode_table<traits>();
 
     consteval inline void add_opcode(
-        std::uint8_t opcode, std::array<OpCodeInfo, 256> &table,
-        OpCodeInfo info)
+        uint8_t opcode, std::array<OpCodeInfo, 256> &table, OpCodeInfo info)
     {
         MONAD_DEBUG_ASSERT(table[opcode] == unknown_opcode_info);
         table[opcode] = info;

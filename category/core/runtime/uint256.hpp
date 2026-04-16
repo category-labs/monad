@@ -1432,8 +1432,7 @@ namespace monad::vm::runtime
      * to the right with zero bytes.
      */
     [[gnu::always_inline]]
-    inline uint256_t
-    from_bytes(std::size_t n, std::size_t remaining, uint8_t const *src)
+    inline uint256_t from_bytes(size_t n, size_t remaining, uint8_t const *src)
     {
         MONAD_ASSERT(n <= 32);
 
@@ -1457,7 +1456,7 @@ namespace monad::vm::runtime
      * remaining to be specified.
      */
     [[gnu::always_inline]]
-    inline uint256_t from_bytes(std::size_t const n, uint8_t const *src)
+    inline uint256_t from_bytes(size_t const n, uint8_t const *src)
     {
         return from_bytes(n, n, src);
     }

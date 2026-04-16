@@ -197,7 +197,7 @@ namespace monad::vm
             return varcode_cache_.is_warm();
         }
 
-        void set_varcode_cache_warm_kb_threshold(std::uint32_t warm_kb)
+        void set_varcode_cache_warm_kb_threshold(uint32_t warm_kb)
         {
             return varcode_cache_.set_warm_cache_kb(warm_kb);
         }

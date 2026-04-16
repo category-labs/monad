@@ -32,8 +32,7 @@ namespace monad::vm::utils
     std::vector<uint8_t> parse_hex_program(It begin, It end)
     {
         auto hex_size = std::distance(begin, end);
-        auto program =
-            std::vector<uint8_t>(static_cast<std::size_t>(hex_size / 2));
+        auto program = std::vector<uint8_t>(static_cast<size_t>(hex_size / 2));
 
         auto output_it = program.begin();
         auto out_end = program.end();

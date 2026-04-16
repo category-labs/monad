@@ -1815,7 +1815,7 @@ Result<void> StakingContract::syscall_snapshot(
         std::min(candidates.size(), limits::active_valset_size());
     std::partial_sort(
         candidates.begin(),
-        candidates.begin() + static_cast<std::ptrdiff_t>(n),
+        candidates.begin() + static_cast<ptrdiff_t>(n),
         candidates.end(),
         cmp);
     for (uint64_t i = 0; i < n; ++i) {

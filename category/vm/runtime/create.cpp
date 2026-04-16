@@ -44,7 +44,7 @@ namespace monad::vm::runtime
     uint256_t create_impl(
         Context *ctx, uint256_t const &value, uint256_t const &offset_word,
         uint256_t const &size_word, uint256_t const &salt_word,
-        evmc_call_kind kind, std::int64_t remaining_block_base_gas)
+        evmc_call_kind kind, int64_t remaining_block_base_gas)
     {
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
@@ -131,7 +131,7 @@ namespace monad::vm::runtime
     void create(
         Context *ctx, uint256_t *result_ptr, uint256_t const *value_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr,
-        std::int64_t remaining_block_base_gas)
+        int64_t remaining_block_base_gas)
     {
         *result_ptr = create_impl<traits>(
             ctx,
@@ -149,7 +149,7 @@ namespace monad::vm::runtime
     void create2(
         Context *ctx, uint256_t *result_ptr, uint256_t const *value_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr,
-        uint256_t const *salt_ptr, std::int64_t remaining_block_base_gas)
+        uint256_t const *salt_ptr, int64_t remaining_block_base_gas)
     {
         *result_ptr = create_impl<traits>(
             ctx,

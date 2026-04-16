@@ -71,8 +71,7 @@ namespace monad::vm::interpreter
 
     template <Traits traits>
     void execute(
-        runtime::Context &ctx, Intercode const &analysis,
-        std::uint8_t *stack_ptr)
+        runtime::Context &ctx, Intercode const &analysis, uint8_t *stack_ptr)
     {
         monad_vm_interpreter_trampoline(
             static_cast<void *>(&ctx.exit_stack_ptr),

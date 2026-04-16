@@ -185,8 +185,7 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
 
 template <Traits traits>
 evmc_message ExecuteTransactionNoValidation<traits>::to_message(
-    vm::MemoryPool::Ref &msg_memory,
-    std::uint32_t const msg_memory_capacity) const
+    vm::MemoryPool::Ref &msg_memory, uint32_t const msg_memory_capacity) const
 {
     auto const to_address = [this] {
         if (tx_.to) {

@@ -66,7 +66,7 @@ namespace monad::vm::runtime::detail
     template <size_t N, typename... Args>
     struct make_context_arg_t
     {
-        static constexpr std::optional<std::size_t> context_arg{};
+        static constexpr std::optional<size_t> context_arg{};
     };
 
     template <size_t N, typename A, typename... Args>
@@ -94,7 +94,7 @@ namespace monad::vm::runtime::detail
     template <size_t N, typename... Args>
     struct make_result_arg_t
     {
-        static constexpr std::optional<std::size_t> result_arg{};
+        static constexpr std::optional<size_t> result_arg{};
     };
 
     template <size_t N, typename A, typename... Args>
@@ -111,7 +111,7 @@ namespace monad::vm::runtime::detail
     };
 
     template <typename T>
-    struct is_remaining_gas : std::is_same<T, std::int64_t>
+    struct is_remaining_gas : std::is_same<T, int64_t>
     {
     };
 
@@ -121,7 +121,7 @@ namespace monad::vm::runtime::detail
     template <size_t N, typename... Args>
     struct make_remaining_gas_arg_t
     {
-        static constexpr std::optional<std::size_t> remaining_gas_arg{};
+        static constexpr std::optional<size_t> remaining_gas_arg{};
     };
 
     template <size_t N, typename A, typename... Args>

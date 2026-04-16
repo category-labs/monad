@@ -35,7 +35,7 @@ namespace monad::vm::compiler::native
      */
     template <Traits traits>
     std::shared_ptr<Nativecode> compile(
-        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
+        asmjit::JitRuntime &rt, uint8_t const *contract_code,
         interpreter::code_size_t contract_code_size,
         CompilerConfig const & = {});
 

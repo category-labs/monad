@@ -194,7 +194,7 @@ namespace monad::vm::utils
         std::stringstream ss;
         auto const &tbl = monad::vm::compiler::make_opcode_table<
             EvmTraits<EVMC_LATEST_STABLE_REVISION>>();
-        for (std::size_t i = 0; i < opcodes.size(); ++i) {
+        for (size_t i = 0; i < opcodes.size(); ++i) {
             auto c = opcodes[i];
             ss << std::format("[{:#x}] {:#x} {}\n", i, c, tbl[opcodes[i]].name);
             if (c >= PUSH1 && c <= PUSH32) {

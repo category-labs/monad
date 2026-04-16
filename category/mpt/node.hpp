@@ -454,7 +454,7 @@ public:
     {
     public:
         using value_type = std::pair<uint8_t, unsigned char>;
-        using difference_type = std::ptrdiff_t;
+        using difference_type = ptrdiff_t;
         using iterator_category = std::input_iterator_tag;
         using pointer = void;
         using reference = value_type;

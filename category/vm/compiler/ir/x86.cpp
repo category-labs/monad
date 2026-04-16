@@ -394,7 +394,7 @@ namespace
 
     template <Traits traits>
     std::shared_ptr<Nativecode> compile_contract(
-        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
+        asmjit::JitRuntime &rt, uint8_t const *contract_code,
         code_size_t contract_code_size, CompilerConfig const &config)
     {
         auto const ir =
@@ -407,7 +407,7 @@ namespace monad::vm::compiler::native
 {
     template <Traits traits>
     std::shared_ptr<Nativecode> compile(
-        asmjit::JitRuntime &rt, std::uint8_t const *contract_code,
+        asmjit::JitRuntime &rt, uint8_t const *contract_code,
         code_size_t contract_code_size, CompilerConfig const &config)
     {
         try {

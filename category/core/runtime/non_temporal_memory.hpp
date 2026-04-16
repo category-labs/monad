@@ -19,15 +19,16 @@
 
 #include <immintrin.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace monad::vm::runtime
 {
-    inline void non_temporal_bzero(void *dest, std::size_t n)
+    inline void non_temporal_bzero(void *dest, size_t n)
     {
         MONAD_ASSERT((reinterpret_cast<uintptr_t>(dest) & 31) == 0);
         MONAD_ASSERT((n & 31) == 0);
-        auto *d = static_cast<std::uint8_t *>(dest);
+        auto *d = static_cast<uint8_t *>(dest);
         auto *const e = d + n;
         __m256i const zero = _mm256_setzero_si256();
         while (d < e) {
@@ -36,13 +37,13 @@ namespace monad::vm::runtime
         }
     }
 
-    inline void non_temporal_memcpy(void *dest, void *src, std::size_t n)
+    inline void non_temporal_memcpy(void *dest, void *src, size_t n)
     {
         MONAD_ASSERT((reinterpret_cast<uintptr_t>(dest) & 31) == 0);
         MONAD_ASSERT((reinterpret_cast<uintptr_t>(src) & 31) == 0);
         MONAD_ASSERT((n & 31) == 0);
-        auto *d = static_cast<std::uint8_t *>(dest);
-        auto *s = static_cast<std::uint8_t *>(src);
+        auto *d = static_cast<uint8_t *>(dest);
+        auto *s = static_cast<uint8_t *>(src);
         auto *const e = d + n;
         while (d < e) {
             _mm256_stream_si256(

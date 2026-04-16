@@ -21,12 +21,11 @@
 
 namespace monad::vm::fuzzing
 {
-    std::vector<std::uint8_t> const &
-    memory_operands(std::uint8_t const opcode) noexcept
+    std::vector<uint8_t> const &memory_operands(uint8_t const opcode) noexcept
     {
-        static auto const empty = std::vector<std::uint8_t>{};
+        static auto const empty = std::vector<uint8_t>{};
         static auto const data =
-            std::unordered_map<std::uint8_t, std::vector<std::uint8_t>>{
+            std::unordered_map<uint8_t, std::vector<uint8_t>>{
                 {SHA3, {0, 1}},
                 {CALLDATACOPY, {0, 2}},
                 {CODECOPY, {0, 2}},
@@ -58,7 +57,7 @@ namespace monad::vm::fuzzing
         return empty;
     }
 
-    bool uses_memory(std::uint8_t const opcode) noexcept
+    bool uses_memory(uint8_t const opcode) noexcept
     {
         return !memory_operands(opcode).empty();
     }

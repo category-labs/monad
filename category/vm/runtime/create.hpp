@@ -24,11 +24,11 @@ namespace monad::vm::runtime
     void create(
         Context *ctx, uint256_t *result_ptr, uint256_t const *value_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr,
-        std::int64_t remaining_block_base_gas);
+        int64_t remaining_block_base_gas);
 
     template <Traits traits>
     void create2(
         Context *ctx, uint256_t *result_ptr, uint256_t const *value_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr,
-        uint256_t const *salt_ptr, std::int64_t remaining_block_base_gas);
+        uint256_t const *salt_ptr, int64_t remaining_block_base_gas);
 }

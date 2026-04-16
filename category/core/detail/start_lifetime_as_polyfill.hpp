@@ -17,6 +17,8 @@
 
 #include <category/core/config.hpp>
 
+#include <cstddef>
+
 #ifndef MONAD_USE_STD_START_LIFETIME_AS
     #if __cpp_lib_start_lifetime_as >= 202207L
         #define MONAD_USE_STD_START_LIFETIME_AS 1
@@ -60,27 +62,27 @@ namespace monad
     }
 
     template <class T>
-    inline T *start_lifetime_as_array(void *p, std::size_t) noexcept
+    inline T *start_lifetime_as_array(void *p, size_t) noexcept
     {
         return reinterpret_cast<T *>(p);
     }
 
     template <class T>
-    inline T const *start_lifetime_as_array(void const *p, std::size_t) noexcept
+    inline T const *start_lifetime_as_array(void const *p, size_t) noexcept
     {
         return reinterpret_cast<T const *>(p);
     }
 
     template <class T>
     inline T volatile *
-    start_lifetime_as_array(void volatile *p, std::size_t) noexcept
+    start_lifetime_as_array(void volatile *p, size_t) noexcept
     {
         return reinterpret_cast<T volatile *>(p);
     }
 
     template <class T>
     inline T const volatile *
-    start_lifetime_as_array(void const volatile *p, std::size_t) noexcept
+    start_lifetime_as_array(void const volatile *p, size_t) noexcept
     {
         return reinterpret_cast<T const volatile *>(p);
     }

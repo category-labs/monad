@@ -55,7 +55,7 @@ namespace monad::vm::runtime
     void copy_impl(
         Context *ctx, uint256_t const &dest_offset_word,
         uint256_t const &offset_word, uint256_t const &size_word,
-        std::uint8_t const *source, std::uint32_t len)
+        uint8_t const *source, uint32_t len)
     {
         auto const size = ctx->get_memory_offset(size_word);
         if (*size == 0) {
@@ -69,9 +69,9 @@ namespace monad::vm::runtime
         auto const size_in_words = shr_ceil<5>(size);
         ctx->deduct_gas(size_in_words * bin<3>);
 
-        std::uint32_t const start =
+        uint32_t const start =
             is_bounded_by_bits<32>(offset_word)
-                ? std::min(static_cast<std::uint32_t>(offset_word), len)
+                ? std::min(static_cast<uint32_t>(offset_word), len)
                 : len;
 
         auto const copy_size = std::min(*size, len - start);
@@ -143,13 +143,13 @@ namespace monad::vm::runtime
         }
 
         if (*size > 0) {
-            auto const offset = clamp_cast<std::uint32_t>(*offset_ptr);
+            auto const offset = clamp_cast<uint32_t>(*offset_ptr);
 
             auto *dest_ptr = ctx->memory.data + *dest_offset;
             auto const n = ctx->host->copy_code(
                 ctx->context, &address, offset, dest_ptr, *size);
 
-            auto *begin = dest_ptr + static_cast<std::uint32_t>(n);
+            auto *begin = dest_ptr + static_cast<uint32_t>(n);
             auto *end = dest_ptr + *size;
 
             std::fill(begin, end, 0);
@@ -164,9 +164,9 @@ namespace monad::vm::runtime
         uint256_t const *offset_ptr, uint256_t const *size_ptr)
     {
         auto const size = ctx->get_memory_offset(*size_ptr);
-        auto const offset = clamp_cast<std::uint32_t>(*offset_ptr);
+        auto const offset = clamp_cast<uint32_t>(*offset_ptr);
 
-        std::uint32_t end;
+        uint32_t end;
         if (MONAD_UNLIKELY(
                 __builtin_add_overflow(offset, *size, &end) ||
                 end > ctx->env.return_data_size)) {

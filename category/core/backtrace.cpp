@@ -47,8 +47,8 @@ namespace detail
 
     public:
         using value_type = T;
-        using size_type = std::size_t;
-        using difference_type = std::ptrdiff_t;
+        using size_type = size_t;
+        using difference_type = ptrdiff_t;
         using propagate_on_container_move_assignment = std::true_type;
         using is_always_equal = std::true_type;
 
@@ -68,7 +68,7 @@ namespace detail
         {
         }
 
-        [[nodiscard]] constexpr value_type *allocate(std::size_t n)
+        [[nodiscard]] constexpr value_type *allocate(size_t n)
         {
             auto *newp = p + sizeof(value_type) * n;
             assert(size_t(newp - buffer.data()) <= buffer.size());
@@ -77,7 +77,7 @@ namespace detail
             return ret;
         }
 
-        constexpr void deallocate(value_type *, std::size_t) {}
+        constexpr void deallocate(value_type *, size_t) {}
     };
 }
 

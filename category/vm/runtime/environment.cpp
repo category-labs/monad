@@ -33,7 +33,7 @@ namespace monad::vm::runtime
             return;
         }
 
-        auto const block_number = static_cast<std::int64_t>(*block_number_ptr);
+        auto const block_number = static_cast<int64_t>(*block_number_ptr);
         auto const &tx_context = *ctx->env.tx_context;
 
         auto const first_allowed_block =

@@ -25,7 +25,7 @@ namespace monad::vm::interpreter
     [[gnu::always_inline]]
     inline void call_runtime(
         void (*f)(FnArgs...), runtime::Context &ctx,
-        runtime::uint256_t *&stack_top, std::int64_t &gas_remaining)
+        runtime::uint256_t *&stack_top, int64_t &gas_remaining)
     {
         constexpr auto use_context = runtime::detail::uses_context_v<FnArgs...>;
         constexpr auto use_result = runtime::detail::uses_result_v<FnArgs...>;
@@ -37,10 +37,9 @@ namespace monad::vm::interpreter
             std::ranges::count(
                 std::array{use_context, use_result, use_base_gas}, true);
 
-        auto const stack_args =
-            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return std::tuple{(stack_top - Is)...};
-            }(std::make_index_sequence<stack_arg_count>());
+        auto const stack_args = [&]<size_t... Is>(std::index_sequence<Is...>) {
+            return std::tuple{(stack_top - Is)...};
+        }(std::make_index_sequence<stack_arg_count>());
 
         auto const with_result_args = [&] {
             if constexpr (use_result) {
@@ -70,7 +69,7 @@ namespace monad::vm::interpreter
         auto const all_args = [&] {
             if constexpr (use_base_gas) {
                 return std::tuple_cat(
-                    with_context_args, std::tuple(std::int64_t{0}));
+                    with_context_args, std::tuple(int64_t{0}));
             }
             else {
                 return with_context_args;
@@ -80,10 +79,9 @@ namespace monad::vm::interpreter
         ctx.gas_remaining = gas_remaining;
         std::apply(f, all_args);
 
-        static_assert(
-            stack_arg_count <= std::numeric_limits<std::ptrdiff_t>::max());
-        constexpr std::ptrdiff_t stack_adjustment =
-            static_cast<std::ptrdiff_t>(stack_arg_count) - (use_result ? 1 : 0);
+        static_assert(stack_arg_count <= std::numeric_limits<ptrdiff_t>::max());
+        constexpr ptrdiff_t stack_adjustment =
+            static_cast<ptrdiff_t>(stack_arg_count) - (use_result ? 1 : 0);
 
         stack_top -= stack_adjustment;
         gas_remaining = ctx.gas_remaining;

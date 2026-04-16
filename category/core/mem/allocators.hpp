@@ -307,8 +307,8 @@ namespace allocators
     struct variable_size_allocator
     {
         using value_type = T;
-        using size_type = std::size_t;
-        using difference_type = std::ptrdiff_t;
+        using size_type = size_t;
+        using difference_type = ptrdiff_t;
 
         //! \brief Construct allocator with total storage size
         //! \param storage_bytes Total bytes needed (sizeof(T) + trailing data)

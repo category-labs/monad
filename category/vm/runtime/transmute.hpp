@@ -44,7 +44,7 @@ namespace monad::vm::runtime
 
     [[gnu::always_inline]]
     inline uint256_t
-    uint256_load_bounded_le(std::uint8_t const *bytes, std::int64_t max_len)
+    uint256_load_bounded_le(uint8_t const *bytes, int64_t max_len)
     {
         if (MONAD_LIKELY(max_len >= 32)) {
             return uint256_t::load_le_unsafe(bytes);
@@ -54,7 +54,7 @@ namespace monad::vm::runtime
 
     [[gnu::always_inline]]
     inline uint256_t
-    uint256_load_bounded_be(std::uint8_t const *bytes, std::int64_t max_len)
+    uint256_load_bounded_be(uint8_t const *bytes, int64_t max_len)
     {
         return uint256_load_bounded_le(bytes, max_len).to_be();
     }
@@ -72,15 +72,15 @@ namespace monad::vm::runtime
     {
         auto const *bytes = x.as_bytes();
 
-        std::uint64_t t2;
+        uint64_t t2;
         std::memcpy(&t2, bytes, 8);
         t2 = std::byteswap(t2);
 
-        std::uint64_t t1;
+        uint64_t t1;
         std::memcpy(&t1, bytes + 8, 8);
         t1 = std::byteswap(t1);
 
-        std::uint32_t t0;
+        uint32_t t0;
         std::memcpy(&t0, bytes + 16, 4);
         t0 = std::byteswap(t0);
 
@@ -100,15 +100,15 @@ namespace monad::vm::runtime
     [[gnu::always_inline]]
     inline uint256_t uint256_from_address(evmc::address const &addr)
     {
-        std::uint32_t t2;
+        uint32_t t2;
         std::memcpy(&t2, addr.bytes, 4);
         t2 = std::byteswap(t2);
 
-        std::uint64_t t1;
+        uint64_t t1;
         std::memcpy(&t1, addr.bytes + 4, 8);
         t1 = std::byteswap(t1);
 
-        std::uint64_t t0;
+        uint64_t t0;
         std::memcpy(&t0, addr.bytes + 12, 8);
         t0 = std::byteswap(t0);
 
@@ -120,12 +120,12 @@ namespace monad::vm::runtime
         return std::bit_cast<uint256_t>(ret);
     }
 
-    template <std::uint64_t N>
+    template <uint64_t N>
         requires(N < 64)
     [[gnu::always_inline]]
     constexpr bool is_bounded_by_bits(uint256_t const &x)
     {
-        static constexpr std::uint64_t mask = ~((std::uint64_t{1} << N) - 1);
+        static constexpr uint64_t mask = ~((uint64_t{1} << N) - 1);
         return ((x[0] & mask) | x[1] | x[2] | x[3]) == 0;
     }
 

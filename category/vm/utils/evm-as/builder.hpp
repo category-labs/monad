@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/core/hex.hpp>
@@ -153,7 +154,7 @@ namespace monad::vm::utils::evm_as
             return push(runtime::from_bytes(sizeof(data), data.bytes));
         }
 
-        EvmBuilder &push(evmc::address const &address) noexcept
+        EvmBuilder &push(Address const &address) noexcept
         {
             auto const pushop = PushAddressI{address};
             return insert(std::move(pushop));
@@ -263,7 +264,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &call(
-            uint64_t gas, evmc::address const &address,
+            uint64_t gas, Address const &address,
             runtime::uint256_t const &value,
             runtime::uint256_t const &args_offset,
             runtime::uint256_t const &args_size,
@@ -281,7 +282,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &callcode(
-            uint64_t gas, evmc::address const &address,
+            uint64_t gas, Address const &address,
             runtime::uint256_t const &value,
             runtime::uint256_t const &args_offset,
             runtime::uint256_t const &args_size,
@@ -299,7 +300,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &delegatecall(
-            uint64_t gas, evmc::address const &address,
+            uint64_t gas, Address const &address,
             runtime::uint256_t const &args_offset,
             runtime::uint256_t const &args_size,
             runtime::uint256_t const &ret_offset,
@@ -315,7 +316,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &staticcall(
-            uint64_t gas, evmc::address const &address,
+            uint64_t gas, Address const &address,
             runtime::uint256_t const &args_offset,
             runtime::uint256_t const &args_size,
             runtime::uint256_t const &ret_offset,

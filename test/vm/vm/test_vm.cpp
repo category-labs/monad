@@ -47,7 +47,7 @@ using namespace monad::vm::interpreter;
 
 namespace runtime = monad::vm::runtime;
 
-using namespace evmc::literals;
+using namespace monad::literals;
 
 namespace fs = std::filesystem;
 

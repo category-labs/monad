@@ -15,6 +15,7 @@
 
 #include "fixture.hpp"
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -40,9 +41,9 @@ namespace
         return b;
     }
 
-    evmc::address get_test_address()
+    Address get_test_address()
     {
-        evmc::address b;
+        Address b;
         for (std::uint8_t i = 0; i < 20; ++i) {
             b.bytes[19 - i] = i + 1;
         }
@@ -70,7 +71,7 @@ TEST_F(RuntimeTest, TransmuteBytes32)
 
 TEST_F(RuntimeTest, TransmuteAddress)
 {
-    evmc::address const a = get_test_address();
+    Address const a = get_test_address();
     vm::runtime::uint256_t u = get_test_uint256();
     ASSERT_EQ(address_from_uint256(u), a);
     uint8_t *b = u.as_bytes();

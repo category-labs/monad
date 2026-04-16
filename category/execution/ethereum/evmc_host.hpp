@@ -18,7 +18,6 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
@@ -66,22 +65,23 @@ public:
     virtual ~EvmcHostBase() noexcept = default;
 
     virtual evmc::bytes32 get_storage(
-        Address const &, evmc::bytes32 const &key) const noexcept override;
+        evmc::address const &,
+        evmc::bytes32 const &key) const noexcept override;
 
     virtual evmc_storage_status set_storage(
-        Address const &, evmc::bytes32 const &key,
+        evmc::address const &, evmc::bytes32 const &key,
         evmc::bytes32 const &value) noexcept override;
 
     virtual evmc::uint256be
-    get_balance(Address const &) const noexcept override;
+    get_balance(evmc::address const &) const noexcept override;
 
-    virtual size_t get_code_size(Address const &) const noexcept override;
+    virtual size_t get_code_size(evmc::address const &) const noexcept override;
 
     virtual evmc::bytes32
-    get_code_hash(Address const &) const noexcept override;
+    get_code_hash(evmc::address const &) const noexcept override;
 
     virtual size_t copy_code(
-        Address const &, size_t offset, uint8_t *data,
+        evmc::address const &, size_t offset, uint8_t *data,
         size_t size) const noexcept override;
 
     virtual evmc_tx_context const *get_tx_context() const noexcept override;
@@ -89,17 +89,18 @@ public:
     virtual evmc::bytes32 get_block_hash(int64_t) const noexcept override;
 
     virtual void emit_log(
-        Address const &, uint8_t const *data, size_t data_size,
+        evmc::address const &, uint8_t const *data, size_t data_size,
         evmc::bytes32 const topics[], size_t num_topics) noexcept override;
 
-    virtual evmc_access_status
-    access_storage(Address const &, evmc::bytes32 const &key) noexcept override;
+    virtual evmc_access_status access_storage(
+        evmc::address const &, evmc::bytes32 const &key) noexcept override;
 
     virtual evmc::bytes32 get_transient_storage(
-        Address const &, evmc::bytes32 const &key) const noexcept override;
+        evmc::address const &,
+        evmc::bytes32 const &key) const noexcept override;
 
     virtual void set_transient_storage(
-        Address const &, evmc::bytes32 const &key,
+        evmc::address const &, evmc::bytes32 const &key,
         evmc::bytes32 const &value) noexcept override;
 };
 
@@ -128,7 +129,8 @@ struct EvmcHost final : public EvmcHostBase
     {
     }
 
-    virtual bool account_exists(Address const &address) const noexcept override
+    virtual bool
+    account_exists(evmc::address const &address) const noexcept override
     {
         try {
             if constexpr (traits::evm_rev() < EVMC_SPURIOUS_DRAGON) {
@@ -143,7 +145,8 @@ struct EvmcHost final : public EvmcHostBase
     }
 
     virtual bool selfdestruct(
-        Address const &address, Address const &beneficiary) noexcept override
+        evmc::address const &address,
+        evmc::address const &beneficiary) noexcept override
     {
         try {
             auto const [result, transferred_balance] =
@@ -191,7 +194,7 @@ struct EvmcHost final : public EvmcHostBase
     }
 
     virtual evmc_access_status
-    access_account(Address const &address) noexcept override
+    access_account(evmc::address const &address) noexcept override
     {
         try {
             if (is_precompile<traits>(address)) {

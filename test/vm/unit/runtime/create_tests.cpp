@@ -15,6 +15,7 @@
 
 #include "fixture.hpp"
 
+#include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/create.hpp>
@@ -29,7 +30,7 @@ using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;
 
 constexpr vm::runtime::uint256_t prog = 0x63FFFFFFFF6000526004601CF3_u256;
-constexpr evmc_address result_addr = {0x42};
+constexpr Address result_addr = Address{uint8_t{0x42}};
 
 TYPED_TEST(RuntimeTraitsTest, Create)
 {

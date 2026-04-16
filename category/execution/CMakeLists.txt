@@ -39,7 +39,6 @@ add_library(
   "ethereum/chain/genesis_state.hpp"
   # ethereum/core
   "ethereum/core/account.hpp"
-  "ethereum/core/address.hpp"
   "ethereum/core/base_ctypes.h"
   "ethereum/core/block.hpp"
   "ethereum/core/eth_ctypes.h"

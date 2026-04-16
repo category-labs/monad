@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/cases.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
@@ -123,7 +124,7 @@ namespace monad::vm::utils::evm_as
                                 // The compiler always emits the smallest
                                 // possible PUSH opcode.
                                 static constexpr size_t addr_size =
-                                    sizeof(evmc::address);
+                                    sizeof(Address);
                                 size_t const least_n =
                                     addr_size - countl(push.address);
                                 if (traits::evm_rev() < EVMC_SHANGHAI &&

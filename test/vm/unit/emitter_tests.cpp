@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
@@ -110,9 +111,9 @@ namespace
         }
     };
 
-    evmc::address max_address()
+    Address max_address()
     {
-        evmc::address ret;
+        Address ret;
         std::memset(ret.bytes, -1, sizeof(ret.bytes) / sizeof(*ret.bytes));
         return ret;
     }

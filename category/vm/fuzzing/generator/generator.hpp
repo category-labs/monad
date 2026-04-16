@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
@@ -37,10 +38,11 @@
 #include <vector>
 
 using json = nlohmann::json;
-using namespace evmc::literals;
 
 namespace monad::vm::fuzzing
 {
+    using namespace monad::literals;
+
     struct GeneratorFocus
     {
         // PUSH params
@@ -283,9 +285,9 @@ namespace monad::vm::fuzzing
     }
 
     template <typename Engine>
-    evmc::address random_address(Engine &eng)
+    Address random_address(Engine &eng)
     {
-        auto ret = evmc::address{};
+        auto ret = Address{};
         auto const value = random_constant<192>(eng);
 
         auto const *bytes = value.value.as_bytes();
@@ -632,8 +634,7 @@ namespace monad::vm::fuzzing
     }
 
     template <typename Engine>
-    evmc::address
-    generate_precompile_address(Engine &eng, evmc_revision const rev)
+    Address generate_precompile_address(Engine &eng, evmc_revision const rev)
     {
         auto addr = [rev, &eng]() {
             if (rev <= EVMC_SPURIOUS_DRAGON) {
@@ -701,19 +702,19 @@ namespace monad::vm::fuzzing
             }
         }();
 
-        return evmc::address{static_cast<uint64_t>(addr)};
+        return Address{static_cast<uint64_t>(addr)};
     }
 
     template <typename Engine>
     void compile_address(
         Engine &eng, evmc_revision const rev, std::vector<uint8_t> &program,
-        std::vector<evmc::address> const &valid_addresses)
+        std::vector<Address> const &valid_addresses)
     {
         auto const &addr = [&] {
             if (valid_addresses.empty()) {
                 return generate_precompile_address(eng, rev);
             }
-            return discrete_choice<evmc::address>(
+            return discrete_choice<Address>(
                 eng,
                 [&](auto &g) { return uniform_sample(g, valid_addresses); },
                 Choice(0.001, [rev](auto &g) {
@@ -766,7 +767,7 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     void compile_create(
         Engine &eng, evmc_revision const rev, std::vector<uint8_t> &program,
-        Create const &c, std::vector<evmc::address> const &valid_addresses)
+        Create const &c, std::vector<Address> const &valid_addresses)
     {
         if (!c.isTrivial) {
             if (c.opcode == CREATE2) {
@@ -807,7 +808,7 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     void compile_call(
         Engine &eng, evmc_revision const rev, std::vector<uint8_t> &program,
-        Call const &call, std::vector<evmc::address> const &valid_addresses)
+        Call const &call, std::vector<Address> const &valid_addresses)
     {
         bool isTrivial = call.isTrivial;
 
@@ -834,7 +835,7 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     void compile_push(
         Engine &eng, std::vector<uint8_t> &program, Push const &push,
-        std::vector<evmc::address> const &valid_addresses,
+        std::vector<Address> const &valid_addresses,
         std::vector<size_t> &jumpdest_patches)
     {
         std::visit(
@@ -875,7 +876,7 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     void compile_push(
         Engine &eng, std::vector<uint8_t> &program, Push const &push,
-        std::vector<evmc::address> const &valid_addresses)
+        std::vector<Address> const &valid_addresses)
     {
         auto patches = std::vector<size_t>{};
         compile_push(eng, program, push, valid_addresses, patches);
@@ -886,7 +887,7 @@ namespace monad::vm::fuzzing
     void compile_block(
         Engine &eng, evmc_revision const rev, std::vector<uint8_t> &program,
         std::vector<Instruction> const &block,
-        std::vector<evmc::address> const &valid_addresses,
+        std::vector<Address> const &valid_addresses,
         std::vector<uint32_t> &valid_jumpdests,
         std::vector<size_t> &jumpdest_patches)
     {
@@ -1014,7 +1015,7 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     std::vector<uint8_t> generate_program(
         GeneratorFocus const &focus, Engine &eng, evmc_revision const rev,
-        std::vector<evmc::address> const &valid_addresses)
+        std::vector<Address> const &valid_addresses)
     {
         auto prog = std::vector<uint8_t>{};
 
@@ -1055,8 +1056,8 @@ namespace monad::vm::fuzzing
 
     template <typename Engine, typename LookupFunc>
     auto message_gas(
-        Engine &eng, evmc::address const &target,
-        std::vector<evmc::address> const &contract_addresses,
+        Engine &eng, Address const &target,
+        std::vector<Address> const &contract_addresses,
         LookupFunc address_lookup) noexcept
     {
         using gas_t = decltype(evmc_message::gas);
@@ -1111,7 +1112,7 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     uint8_t const *generate_input_data(
         GeneratorFocus const &focus, Engine &eng, size_t const size,
-        std::vector<evmc::address> const &contract_addresses)
+        std::vector<Address> const &contract_addresses)
     {
         if (size == 0) {
             return nullptr;
@@ -1139,16 +1140,16 @@ namespace monad::vm::fuzzing
      * Returns a managed pointer to a message, rather than the message itself in
      * order that we can control the lifetime of the `input_data` buffer.
      *
-     * Additionally, the `lookup :: Address -> Code` argument here is passed as
-     * a lambda to decouple the message generator from any particular concrete
-     * state representation. The fuzzer implementation is responsible for
-     * instantiating this lookup as appropriate.
+     * Additionally, the `lookup :: Address -> Code` argument here is
+     * passed as a lambda to decouple the message generator from any particular
+     * concrete state representation. The fuzzer implementation is responsible
+     * for instantiating this lookup as appropriate.
      */
     template <typename Engine, typename LookupFunc>
     message_ptr generate_message(
         GeneratorFocus const &focus, Engine &eng,
-        std::vector<evmc::address> const &contract_addresses,
-        std::vector<evmc::address> const &known_eoas, LookupFunc address_lookup,
+        std::vector<Address> const &contract_addresses,
+        std::vector<Address> const &known_eoas, LookupFunc address_lookup,
         uint8_t *memory_handle, uint32_t const memory_capacity) noexcept
     {
         auto const kind = uniform_sample(
@@ -1175,7 +1176,7 @@ namespace monad::vm::fuzzing
         auto const recipient =
             (kind == EVMC_CALL)
                 ? target
-                : discrete_choice<evmc::address>(
+                : discrete_choice<Address>(
                       eng,
                       [&](auto &g) {
                           return uniform_sample(g, contract_addresses);
@@ -1184,7 +1185,7 @@ namespace monad::vm::fuzzing
                           0.001, [&](auto &g) { return random_address(g); }));
 
         auto const eoa_prob = known_eoas.empty() ? 0.0 : 0.5;
-        auto const sender = discrete_choice<evmc::address>(
+        auto const sender = discrete_choice<Address>(
             eng,
             [&](auto &g) { return uniform_sample(g, contract_addresses); },
             Choice(eoa_prob, [&](auto &g) {

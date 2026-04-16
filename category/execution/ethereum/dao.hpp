@@ -17,7 +17,7 @@
 
 #include <category/core/config.hpp>
 
-#include <category/execution/ethereum/core/address.hpp>
+#include <category/core/address.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 
 #include <intx/intx.hpp>

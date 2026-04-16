@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/vm/utils/evm-as/kernel-builder.hpp>
 
 #include <test/vm/utils/evm-as_utils.hpp>
@@ -316,10 +317,10 @@ print_results(std::vector<BenchmarkResult> const &results, OutputFormat format)
 }
 
 static double execute_iteration(
-    evmc::VM &vm, MemoryPool &memory_pool, evmc::address const &code_address,
+    evmc::VM &vm, MemoryPool &memory_pool, Address const &code_address,
     std::vector<uint8_t> const &bytecode, test::KernelCalldata const &calldata)
 {
-    evmc::address sender_address{200};
+    Address sender_address{200};
 
     evmone::test::TestState test_state{};
     test_state.apply(evmone::state::StateDiff{
@@ -389,12 +390,11 @@ static double execute_iteration(
 }
 
 static std::pair<double, double> execute_against_base(
-    evmc::VM &vm, MemoryPool &memory_pool,
-    evmc::address const &base_code_address,
+    evmc::VM &vm, MemoryPool &memory_pool, Address const &base_code_address,
     std::vector<uint8_t> const &base_bytecode,
-    test::KernelCalldata const &base_calldata,
-    evmc::address const &code_address, std::vector<uint8_t> const &bytecode,
-    test::KernelCalldata const &calldata, size_t iteration_count)
+    test::KernelCalldata const &base_calldata, Address const &code_address,
+    std::vector<uint8_t> const &bytecode, test::KernelCalldata const &calldata,
+    size_t iteration_count)
 {
     for (uint32_t i = 0; i < (iteration_count >> 4) + 1; ++i) {
         // warmup

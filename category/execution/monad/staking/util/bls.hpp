@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/monad/staking/config.hpp>
 
 #include <blst.h>

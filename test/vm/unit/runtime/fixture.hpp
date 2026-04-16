@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -33,7 +34,7 @@ extern "C" void tests_trampoline(void *, void (*)(void *), void *);
 namespace monad::vm::compiler::test
 {
     using namespace runtime;
-    using namespace evmc::literals;
+    using namespace monad::literals;
 
     class RuntimeTestBase
     {
@@ -53,7 +54,7 @@ namespace monad::vm::compiler::test
         success_result(std::int64_t gas_left, std::int64_t gas_refund = 0);
 
         evmc_result create_result(
-            evmc_address prog_addr, std::int64_t gas_left,
+            Address prog_addr, std::int64_t gas_left,
             std::int64_t gas_refund = 0);
 
         evmc_result failure_result(evmc_status_code = EVMC_INTERNAL_ERROR);
@@ -194,7 +195,7 @@ namespace monad::vm::compiler::test
                        : runtime::Memory::Version::V1;
         }
 
-        void assert_delegated(evmc::address const &delegate_addr)
+        void assert_delegated(Address const &delegate_addr)
         {
             ASSERT_EQ(ctx_.result.status, StatusCode::Success);
 

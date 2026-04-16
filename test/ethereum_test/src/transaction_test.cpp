@@ -17,6 +17,7 @@
 #include <revision_map.hpp>
 #include <transaction_test.hpp>
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
@@ -68,8 +69,7 @@ void process_transaction(Transaction const &txn, nlohmann::json const &expected)
             EXPECT_FALSE(expected.contains("exception"));
 
             // check sender
-            EXPECT_EQ(
-                sender.value(), expected.at("sender").get<evmc::address>());
+            EXPECT_EQ(sender.value(), expected.at("sender").get<Address>());
 
             // check gas
             EXPECT_EQ(

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
@@ -26,17 +27,6 @@
 using namespace monad;
 
 using namespace std::literals;
-
-// Defined here to avoid including category/execution/ethereum/core/address.hpp
-// in this test, which would be a circular dependency between core/ and
-// execution/.
-struct Address
-{
-    uint8_t bytes[20];
-
-    friend constexpr bool
-    operator==(Address const &a, Address const &b) noexcept = default;
-};
 
 TEST(FromHexChar, decodes_digit_characters)
 {

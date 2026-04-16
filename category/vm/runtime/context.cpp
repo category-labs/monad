@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
@@ -128,8 +129,8 @@ namespace monad::vm::runtime
                 {
                     .evmc_flags = 0,
                     .depth = 0,
-                    .recipient = evmc::address{},
-                    .sender = evmc::address{},
+                    .recipient = Address{},
+                    .sender = Address{},
                     .value = bytes32_t{},
                     .create2_salt = bytes32_t{},
                     .input_data = nullptr,

@@ -15,6 +15,7 @@
 
 #include <category/async/config.hpp>
 #include <category/async/util.hpp>
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
@@ -68,7 +69,6 @@
 #include <boost/fiber/future/promise.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -755,9 +755,9 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
 
 TEST_F(EthCallFixture, assertion_exception_depth2)
 {
-    auto const addr1 = evmc::address{253};
-    auto const addr2 = evmc::address{254};
-    auto const addr3 = evmc::address{255};
+    auto const addr1 = Address{253};
+    auto const addr2 = Address{254};
+    auto const addr3 = Address{255};
 
     EXPECT_EQ(addr3.bytes[19], 255);
     for (size_t i = 0; i < 19; ++i) {

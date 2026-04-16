@@ -260,7 +260,7 @@ TYPED_TEST(VMTraitsTest, MStore8OutOfBoundMIP3)
 // https://github.com/category-labs/monad-compiler/issues/138
 TYPED_TEST(VMTraitsTest, BeaconRootRegression_138)
 {
-    using namespace evmc::literals;
+    using namespace monad::literals;
 
     this->msg_.sender = 0xbe862ad9abfe6f22bcb087716c7d89a26051f74c_address;
 

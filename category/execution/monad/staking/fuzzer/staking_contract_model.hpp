@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -148,9 +149,9 @@ namespace monad::staking::test
 
         uint256_t withdrawal_reward(u64_be, Address const &, u8_be);
 
-        uint256_t unaccumulated_rewards(u64_be, evmc_address const &);
+        uint256_t unaccumulated_rewards(u64_be, Address const &);
 
-        uint256_t pending_rewards(u64_be, evmc_address const &);
+        uint256_t pending_rewards(u64_be, Address const &);
 
         Result<void> syscall_on_epoch_change(u64_be);
 
@@ -162,49 +163,45 @@ namespace monad::staking::test
         template <Traits traits>
         Result<u64_be> precompile_add_validator(
             byte_string_view message, byte_string_view secp_signature,
-            byte_string_view bls_signature, evmc_address const &sender,
+            byte_string_view bls_signature, Address const &sender,
             uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_delegate(
-            u64_be val_id, evmc_address const &sender,
-            uint256_be_t const &value);
+            u64_be val_id, Address const &sender, uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_undelegate(
             u64_be val_id, u256_be const &stake, u8_be withdrawal_id,
-            evmc_address const &sender, uint256_be_t const &value);
+            Address const &sender, uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_compound(
-            u64_be val_id, evmc_address const &sender,
-            uint256_be_t const &value);
+            u64_be val_id, Address const &sender, uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_withdraw(
-            u64_be val_id, u8_be withdrawal_id, evmc_address const &sender,
+            u64_be val_id, u8_be withdrawal_id, Address const &sender,
             uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_claim_rewards(
-            u64_be val_id, evmc_address const &sender,
-            uint256_be_t const &value);
+            u64_be val_id, Address const &sender, uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_change_commission(
-            u64_be val_id, u256_be const &new_commission,
-            evmc_address const &sender, uint256_be_t const &value);
+            u64_be val_id, u256_be const &new_commission, Address const &sender,
+            uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_external_reward(
-            u64_be val_id, evmc_address const &sender,
-            uint256_be_t const &value);
+            u64_be val_id, Address const &sender, uint256_be_t const &value);
 
         // Result type is not accurate. Just interested in the side
         // effects of this function on the state:
         template <Traits traits>
         Result<void> precompile_get_delegator(
-            u64_be val_id, Address const &addr, evmc_address const &sender,
+            u64_be val_id, Address const &addr, Address const &sender,
             uint256_be_t const &value);
 
     private:
@@ -224,7 +221,7 @@ namespace monad::staking::test
 
         template <Traits traits>
         Result<byte_string> dispatch(
-            byte_string const &input, evmc_address const &sender,
+            byte_string const &input, Address const &sender,
             uint256_be_t const &value);
     };
 }

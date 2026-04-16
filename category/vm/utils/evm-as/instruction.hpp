@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/core/runtime/uint256.hpp>
@@ -99,7 +100,7 @@ namespace monad::vm::utils::evm_as
 
     struct PushAddressI
     {
-        constexpr explicit PushAddressI(evmc::address const &address)
+        constexpr explicit PushAddressI(Address const &address)
             : address(address)
         {
         }
@@ -126,7 +127,7 @@ namespace monad::vm::utils::evm_as
             return *this;
         }
 
-        evmc::address address;
+        Address address;
     };
 
     struct JumpdestI

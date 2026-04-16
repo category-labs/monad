@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
 
 #include <evmc/evmc.hpp>
@@ -28,7 +29,7 @@ namespace monad::vm::utils::evm_as::sugar
     struct CallArgs
     {
         uint64_t const gas{0};
-        evmc::address const address{0};
+        Address const address{0};
         runtime::uint256_t const value{0};
         runtime::uint256_t const args_offset{0};
         runtime::uint256_t const args_size{0};
@@ -39,7 +40,7 @@ namespace monad::vm::utils::evm_as::sugar
     struct CallCodeArgs
     {
         uint64_t const gas{0};
-        evmc::address const address{0};
+        Address const address{0};
         runtime::uint256_t const value{0};
         runtime::uint256_t const args_offset{0};
         runtime::uint256_t const args_size{0};
@@ -50,7 +51,7 @@ namespace monad::vm::utils::evm_as::sugar
     struct DelegateCallArgs
     {
         uint64_t const gas{0};
-        evmc::address const address{0};
+        Address const address{0};
         runtime::uint256_t const args_offset{0};
         runtime::uint256_t const args_size{0};
         runtime::uint256_t const ret_offset{0};
@@ -60,7 +61,7 @@ namespace monad::vm::utils::evm_as::sugar
     struct StaticCallArgs
     {
         uint64_t const gas{0};
-        evmc::address const address{0};
+        Address const address{0};
         runtime::uint256_t const args_offset{0};
         runtime::uint256_t const args_size{0};
         runtime::uint256_t const ret_offset{0};

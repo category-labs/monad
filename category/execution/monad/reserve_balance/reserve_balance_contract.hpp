@@ -15,11 +15,11 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -39,7 +39,7 @@ public:
     ReserveBalanceContract(State &state, CallTracerBase &tracer);
 
     using PrecompileFunc = Result<byte_string> (ReserveBalanceContract::*)(
-        byte_string_view, evmc_address const &, uint256_be_t const &);
+        byte_string_view, Address const &, uint256_be_t const &);
 
     //
     // Precompile methods
@@ -50,10 +50,10 @@ public:
 
     template <Traits traits>
     Result<byte_string> precompile_dipped_into_reserve(
-        byte_string_view, evmc_address const &, uint256_be_t const &);
+        byte_string_view, Address const &, uint256_be_t const &);
 
     Result<byte_string> precompile_fallback(
-        byte_string_view, evmc_address const &, uint256_be_t const &);
+        byte_string_view, Address const &, uint256_be_t const &);
 };
 
 MONAD_NAMESPACE_END

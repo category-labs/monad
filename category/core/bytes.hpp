@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
@@ -125,7 +126,6 @@ namespace literals
 }
 
 using literals::operator""_bytes32;
-using evmc::literals::operator""_address;
 
 constexpr bytes32_t bytes32_from_hex(char const *const s)
 {

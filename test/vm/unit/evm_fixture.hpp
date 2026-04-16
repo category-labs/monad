@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -234,8 +235,8 @@ namespace monad::vm::compiler::test
                 expected.output_data));
 
             ASSERT_EQ(
-                evmc::address(actual.create_address),
-                evmc::address(expected.create_address));
+                Address(actual.create_address),
+                Address(expected.create_address));
         }
 
         void execute_and_compare(

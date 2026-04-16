@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -470,8 +471,7 @@ TYPED_TEST(DBTest, storage_deletion)
 TYPED_TEST(DBTest, commit_receipts_transactions)
 {
     using namespace intx;
-    using evmc::literals::operator""_address;
-    using monad::literals::operator""_bytes32;
+    using namespace monad::literals;
 
     TrieDb tdb{this->db};
     // empty receipts
@@ -651,8 +651,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
 {
     using namespace intx;
-    using evmc::literals::operator""_address;
-    using monad::literals::operator""_bytes32;
+    using namespace monad::literals;
 
     TrieDb tdb{this->db};
 

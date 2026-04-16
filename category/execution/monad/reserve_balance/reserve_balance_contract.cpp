@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
@@ -103,7 +104,7 @@ EXPLICIT_MONAD_TRAITS(ReserveBalanceContract::precompile_dispatch);
 
 template <Traits traits>
 Result<byte_string> ReserveBalanceContract::precompile_dipped_into_reserve(
-    byte_string_view input, evmc_address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
@@ -119,7 +120,7 @@ EXPLICIT_MONAD_TRAITS_MEMBER(
     ReserveBalanceContract::precompile_dipped_into_reserve);
 
 Result<byte_string> ReserveBalanceContract::precompile_fallback(
-    byte_string_view, evmc_address const &, uint256_be_t const &)
+    byte_string_view, Address const &, uint256_be_t const &)
 {
     return ReserveBalanceError::MethodNotSupported;
 }

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/delegation.hpp>
@@ -96,14 +97,14 @@ namespace monad::vm::runtime
             .flags = 0,
             .depth = ctx->env.depth + 1,
             .gas = gas,
-            .recipient = evmc::address{},
+            .recipient = {},
             .sender = ctx->env.recipient,
             .input_data = (*size > 0) ? ctx->memory.data + *offset : nullptr,
             .input_size = *size,
             .value = static_cast<evmc::bytes32>(bytes32_from_uint256(value)),
             .create2_salt =
                 static_cast<evmc::bytes32>(bytes32_from_uint256(salt_word)),
-            .code_address = evmc::address{},
+            .code_address = {},
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,

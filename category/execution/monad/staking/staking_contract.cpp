@@ -13,12 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/monad_exception.hpp>
 #include <category/core/runtime/unaligned.hpp>
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
@@ -45,7 +45,7 @@
 #include <memory>
 
 MONAD_STAKING_ANONYMOUS_NAMESPACE_BEGIN
-using monad::literals::operator""_bytes32;
+using namespace monad::literals;
 
 ////////////////////////
 // Function Selectors //
@@ -906,7 +906,7 @@ StakingContract::get_validators_for_delegator(
 }
 
 Result<byte_string> StakingContract::precompile_get_validator(
-    byte_string_view input, evmc_address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
@@ -940,7 +940,7 @@ Result<byte_string> StakingContract::precompile_get_validator(
 }
 
 Result<byte_string> StakingContract::precompile_get_delegator(
-    byte_string_view input, evmc_address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
@@ -994,7 +994,7 @@ Result<byte_string> StakingContract::get_valset(
 }
 
 Result<byte_string> StakingContract::precompile_get_consensus_valset(
-    byte_string_view const input, evmc_address const &,
+    byte_string_view const input, Address const &,
     uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
@@ -1002,7 +1002,7 @@ Result<byte_string> StakingContract::precompile_get_consensus_valset(
 }
 
 Result<byte_string> StakingContract::precompile_get_snapshot_valset(
-    byte_string_view const input, evmc_address const &,
+    byte_string_view const input, Address const &,
     uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
@@ -1010,7 +1010,7 @@ Result<byte_string> StakingContract::precompile_get_snapshot_valset(
 }
 
 Result<byte_string> StakingContract::precompile_get_execution_valset(
-    byte_string_view const input, evmc_address const &,
+    byte_string_view const input, Address const &,
     uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
@@ -1020,7 +1020,7 @@ Result<byte_string> StakingContract::precompile_get_execution_valset(
 
 template <Traits traits>
 Result<byte_string> StakingContract::precompile_get_delegations(
-    byte_string_view input, evmc_address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
@@ -1044,7 +1044,7 @@ EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_get_delegations);
 
 template <Traits traits>
 Result<byte_string> StakingContract::precompile_get_delegators(
-    byte_string_view input, evmc_address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
@@ -1070,7 +1070,7 @@ Result<byte_string> StakingContract::precompile_get_delegators(
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_get_delegators);
 
 Result<byte_string> StakingContract::precompile_get_epoch(
-    byte_string_view const, evmc_address const &, uint256_be_t const &msg_value)
+    byte_string_view const, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
@@ -1081,7 +1081,7 @@ Result<byte_string> StakingContract::precompile_get_epoch(
 }
 
 Result<byte_string> StakingContract::precompile_get_proposer_val_id(
-    byte_string_view, evmc_address const &, uint256_be_t const &msg_value)
+    byte_string_view, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
@@ -1091,7 +1091,7 @@ Result<byte_string> StakingContract::precompile_get_proposer_val_id(
 }
 
 Result<byte_string> StakingContract::precompile_get_withdrawal_request(
-    byte_string_view input, evmc_address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
 
@@ -1113,14 +1113,14 @@ Result<byte_string> StakingContract::precompile_get_withdrawal_request(
 }
 
 Result<byte_string> StakingContract::precompile_fallback(
-    byte_string_view const, evmc_address const &, uint256_be_t const &)
+    byte_string_view const, Address const &, uint256_be_t const &)
 {
     return StakingError::MethodNotSupported;
 }
 
 template <Traits traits>
 Result<byte_string> StakingContract::precompile_add_validator(
-    byte_string_view input, evmc_address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     constexpr size_t MESSAGE_SIZE = 33 /* compressed secp pubkey */ +
                                     48 /* compressed bls pubkey */ +
@@ -1328,7 +1328,7 @@ EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::delegate);
 
 template <Traits traits>
 Result<byte_string> StakingContract::precompile_delegate(
-    byte_string_view input, evmc_address const &msg_sender,
+    byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(auto const val_id, abi_decode_fixed<u64_be>(input));
@@ -1347,7 +1347,7 @@ EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_delegate);
 
 template <Traits traits>
 Result<byte_string> StakingContract::precompile_undelegate(
-    byte_string_view input, evmc_address const &msg_sender,
+    byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
@@ -1441,7 +1441,7 @@ EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_undelegate);
 // TODO: No compounds allowed if auth_address is under sufficent amount.
 template <Traits traits>
 Result<byte_string> StakingContract::precompile_compound(
-    byte_string_view input, evmc_address const &msg_sender,
+    byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
@@ -1472,7 +1472,7 @@ Result<byte_string> StakingContract::precompile_compound(
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_compound);
 
 Result<byte_string> StakingContract::precompile_withdraw(
-    byte_string_view input, evmc_address const &msg_sender,
+    byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
@@ -1521,7 +1521,7 @@ Result<byte_string> StakingContract::precompile_withdraw(
 }
 
 Result<byte_string> StakingContract::precompile_claim_rewards(
-    byte_string_view input, evmc_address const &msg_sender,
+    byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
@@ -1544,7 +1544,7 @@ Result<byte_string> StakingContract::precompile_claim_rewards(
 }
 
 Result<byte_string> StakingContract::precompile_change_commission(
-    byte_string_view input, evmc_address const &msg_sender,
+    byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
@@ -1580,7 +1580,7 @@ Result<byte_string> StakingContract::precompile_change_commission(
 }
 
 Result<byte_string> StakingContract::precompile_external_reward(
-    byte_string_view input, evmc_address const &sender,
+    byte_string_view input, Address const &sender,
     uint256_be_t const &msg_value)
 {
     auto const external_reward = intx::be::load<uint256_t>(msg_value);

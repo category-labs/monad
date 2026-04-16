@@ -25,6 +25,7 @@
 #include "test_state.hpp"
 #include "transaction.hpp"
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -65,8 +66,9 @@
 #include <vector>
 
 using namespace evmone::state;
-using namespace evmc::literals;
-using namespace monad;
+using monad::Address;
+using monad::bytes32_t;
+using namespace monad::literals;
 using namespace monad::vm::fuzzing;
 using namespace std::chrono_literals;
 
@@ -116,8 +118,8 @@ static constexpr std::string_view to_string(evmc_status_code const sc) noexcept
     }
 }
 
-static constexpr auto genesis_address =
-    0xBEEFCAFE000000000000000000000000BA5EBA11_address;
+static constexpr Address genesis_address =
+    monad::address_from_hex("0xBEEFCAFE000000000000000000000000BA5EBA11");
 
 static constexpr auto block_gas_limit = 300'000'000;
 
@@ -133,7 +135,7 @@ static evmone::test::TestState initial_state()
     return init;
 }
 
-static Transaction tx_from(State &state, evmc::address const &addr) noexcept
+static Transaction tx_from(State &state, Address const &addr) noexcept
 {
     auto tx = Transaction{};
     tx.gas_limit = block_gas_limit;
@@ -220,8 +222,8 @@ static evmc::Result transition(
     return result;
 }
 
-static evmc::address deploy_contract(
-    State &state, evmc::address const &from,
+static Address deploy_contract(
+    State &state, Address const &from,
     std::span<std::uint8_t const> const code_)
 {
     auto code = bytes{code_.data(), code_.size()};
@@ -245,8 +247,8 @@ static evmc::address deploy_contract(
     return create_address;
 }
 
-static evmc::address deploy_delegated_contract(
-    State &state, evmc::address const &from, evmc::address const &delegatee)
+static Address deploy_delegated_contract(
+    State &state, Address const &from, Address const &delegatee)
 {
     std::vector<uint8_t> code = {0xef, 0x01, 0x00};
     code.append_range(delegatee.bytes);
@@ -254,9 +256,9 @@ static evmc::address deploy_delegated_contract(
     return deploy_contract(state, from, code);
 }
 
-static evmc::address deploy_delegated_contracts(
-    State &evmone_state, State &monad_state, evmc::address const &from,
-    evmc::address delegatee)
+static Address deploy_delegated_contracts(
+    State &evmone_state, State &monad_state, Address const &from,
+    Address delegatee)
 {
     auto const a = deploy_delegated_contract(evmone_state, from, delegatee);
     auto const a1 = deploy_delegated_contract(monad_state, from, delegatee);
@@ -516,8 +518,8 @@ static void do_run(
     auto evmone_state = State{initial_state_};
     auto monad_state = State{initial_state_};
 
-    auto contract_addresses = std::vector<evmc::address>{};
-    auto known_addresses = std::vector<evmc::address>{};
+    auto contract_addresses = std::vector<Address>{};
+    auto known_addresses = std::vector<Address>{};
 
     auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
     auto total_messages = std::size_t{0};

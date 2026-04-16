@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
@@ -52,8 +53,8 @@ namespace monad::vm::runtime
     {
         uint32_t evmc_flags;
         int32_t depth;
-        evmc::address recipient;
-        evmc::address sender;
+        Address recipient;
+        Address sender;
         bytes32_t value;
         bytes32_t create2_salt;
 

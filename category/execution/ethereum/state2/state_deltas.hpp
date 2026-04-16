@@ -17,11 +17,11 @@
 
 #include <category/core/config.hpp>
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/execution/ethereum/core/account.hpp>
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/vm/vm.hpp>
 
 #pragma GCC diagnostic push

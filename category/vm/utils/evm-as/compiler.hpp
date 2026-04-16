@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/core/hex.hpp>
@@ -217,8 +218,7 @@ namespace monad::vm::utils::evm_as
                         }
                     },
                     [&](PushAddressI const &push) -> void {
-                        static constexpr size_t addr_size =
-                            sizeof(evmc::address);
+                        static constexpr size_t addr_size = sizeof(Address);
                         // Emit the smallest possible PUSH opcode
                         size_t const least_n = addr_size - countl(push.address);
                         if (least_n == 0 && traits::evm_rev() < EVMC_SHANGHAI) {
@@ -366,8 +366,7 @@ namespace monad::vm::utils::evm_as
                         }
                     },
                     [&](PushAddressI const &push) -> size_t {
-                        static constexpr size_t addr_size =
-                            sizeof(evmc::address);
+                        static constexpr size_t addr_size = sizeof(Address);
                         size_t const least_n = addr_size - countl(push.address);
                         if (least_n == 0) {
                             if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {

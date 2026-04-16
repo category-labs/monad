@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
-#include <category/execution/ethereum/core/address.hpp>
 
 #include <ankerl/unordered_dense.h>
 

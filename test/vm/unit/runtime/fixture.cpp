@@ -16,6 +16,7 @@
 #include "fixture.hpp"
 
 #include <algorithm>
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -116,7 +117,7 @@ namespace monad::vm::compiler::test
     }
 
     evmc_result RuntimeTestBase::create_result(
-        evmc_address prog_addr, std::int64_t gas_left, std::int64_t gas_refund)
+        Address prog_addr, std::int64_t gas_left, std::int64_t gas_refund)
     {
         auto output_data = result_data();
         return {

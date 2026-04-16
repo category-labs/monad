@@ -21,7 +21,7 @@
 
 #include <gtest/gtest.h>
 
-using namespace evmc::literals;
+using namespace monad::literals;
 using namespace monad;
 using namespace monad::rlp;
 

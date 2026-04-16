@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/likely.h>
@@ -85,7 +86,7 @@ namespace monad::vm::runtime
             }
         }
 
-        auto const code_address = [&]() -> evmc::address {
+        auto const code_address = [&]() -> Address {
             if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
                 // EIP-7702: if the code address starts with 0xEF0100, then
                 // treat it as a delegated call in the context of the

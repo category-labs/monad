@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/uint256.hpp>
@@ -68,7 +69,7 @@ namespace monad::vm::runtime
     }
 
     [[gnu::always_inline]]
-    inline evmc::address address_from_uint256(uint256_t const &x)
+    inline Address address_from_uint256(uint256_t const &x)
     {
         auto const *bytes = x.as_bytes();
 
@@ -84,7 +85,7 @@ namespace monad::vm::runtime
         std::memcpy(&t0, bytes + 16, 4);
         t0 = std::byteswap(t0);
 
-        evmc_address ret;
+        Address ret;
         std::memcpy(ret.bytes, &t0, 4);
         std::memcpy(ret.bytes + 4, &t1, 8);
         std::memcpy(ret.bytes + 12, &t2, 8);
@@ -98,7 +99,7 @@ namespace monad::vm::runtime
     }
 
     [[gnu::always_inline]]
-    inline uint256_t uint256_from_address(evmc::address const &addr)
+    inline uint256_t uint256_from_address(Address const &addr)
     {
         uint32_t t2;
         std::memcpy(&t2, addr.bytes, 4);

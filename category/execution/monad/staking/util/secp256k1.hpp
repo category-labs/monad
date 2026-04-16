@@ -15,11 +15,11 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/execution/ethereum/core/address.hpp>
 #include <category/execution/monad/staking/config.hpp>
 
 #include <secp256k1.h>

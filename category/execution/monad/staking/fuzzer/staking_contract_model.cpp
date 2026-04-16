@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
@@ -247,7 +248,7 @@ namespace monad::staking::test
     }
 
     uint256_t
-    StakingContractModel::unaccumulated_rewards(u64_be v, evmc_address const &a)
+    StakingContractModel::unaccumulated_rewards(u64_be v, Address const &a)
     {
         auto del = contract_.vars.delegator(v, a);
         auto const epoch = contract_.vars.epoch.load().native();
@@ -297,8 +298,7 @@ namespace monad::staking::test
         return r1 + r2 + r3;
     }
 
-    uint256_t
-    StakingContractModel::pending_rewards(u64_be v, evmc_address const &a)
+    uint256_t StakingContractModel::pending_rewards(u64_be v, Address const &a)
     {
         uint256_t sum{};
         auto const &is = delegator_to_active_withdrawal_ids_[{v.native(), a}];
@@ -365,7 +365,7 @@ namespace monad::staking::test
     template <Traits traits>
     Result<u64_be> StakingContractModel::precompile_add_validator(
         byte_string_view message, byte_string_view secp_signature,
-        byte_string_view bls_signature, evmc_address const &sender,
+        byte_string_view bls_signature, Address const &sender,
         uint256_be_t const &value)
     {
         AbiEncoder encoder;
@@ -404,7 +404,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<void> StakingContractModel::precompile_delegate(
-        u64_be val_id, evmc_address const &sender, uint256_be_t const &value)
+        u64_be val_id, Address const &sender, uint256_be_t const &value)
     {
         AbiEncoder encoder;
         encoder.add_uint<u32_be>(abi_encode_selector("delegate(uint64)"));
@@ -436,7 +436,7 @@ namespace monad::staking::test
     template <Traits traits>
     Result<void> StakingContractModel::precompile_undelegate(
         u64_be val_id, u256_be const &stake, u8_be withdrawal_id,
-        evmc_address const &sender, uint256_be_t const &value)
+        Address const &sender, uint256_be_t const &value)
     {
         AbiEncoder encoder;
         encoder.add_uint<u32_be>(
@@ -481,7 +481,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<void> StakingContractModel::precompile_compound(
-        u64_be val_id, evmc_address const &sender, uint256_be_t const &value)
+        u64_be val_id, Address const &sender, uint256_be_t const &value)
     {
         auto const stake =
             unaccumulated_rewards(val_id, sender) +
@@ -511,7 +511,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<void> StakingContractModel::precompile_withdraw(
-        u64_be val_id, u8_be withdrawal_id, evmc_address const &sender,
+        u64_be val_id, u8_be withdrawal_id, Address const &sender,
         uint256_be_t const &value)
     {
         auto const reward = withdrawal_reward(val_id, sender, withdrawal_id);
@@ -535,7 +535,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<void> StakingContractModel::precompile_claim_rewards(
-        u64_be val_id, evmc_address const &sender, uint256_be_t const &value)
+        u64_be val_id, Address const &sender, uint256_be_t const &value)
     {
         auto const stake =
             unaccumulated_rewards(val_id, sender) +
@@ -557,8 +557,8 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<void> StakingContractModel::precompile_change_commission(
-        u64_be val_id, u256_be const &new_commission,
-        evmc_address const &sender, uint256_be_t const &value)
+        u64_be val_id, u256_be const &new_commission, Address const &sender,
+        uint256_be_t const &value)
     {
         AbiEncoder encoder;
         encoder.add_uint<u32_be>(
@@ -575,7 +575,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<void> StakingContractModel::precompile_external_reward(
-        u64_be val_id, evmc_address const &sender, uint256_be_t const &value)
+        u64_be val_id, Address const &sender, uint256_be_t const &value)
     {
         AbiEncoder encoder;
         encoder.add_uint<u32_be>(abi_encode_selector("externalReward(uint64)"));
@@ -595,7 +595,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<void> StakingContractModel::precompile_get_delegator(
-        u64_be val_id, Address const &addr, evmc_address const &sender,
+        u64_be val_id, Address const &addr, Address const &sender,
         uint256_be_t const &value)
     {
         AbiEncoder encoder;
@@ -694,7 +694,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<byte_string> StakingContractModel::dispatch(
-        byte_string const &input, evmc_address const &sender,
+        byte_string const &input, Address const &sender,
         uint256_be_t const &value)
     {
         pre_call(value);

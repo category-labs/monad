@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/vm/evm/delegation.hpp>
 
 #include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <algorithm>
 #include <array>
@@ -54,9 +54,9 @@ namespace monad::vm::evm
         return std::equal(prefix.begin(), prefix.end(), code.begin());
     }
 
-    std::optional<evmc::address> resolve_delegation(
+    std::optional<Address> resolve_delegation(
         evmc_host_interface const *host, evmc_host_context *ctx,
-        evmc::address const &addr)
+        Address const &addr)
     {
         // Copy up to |code_size| bytes of the bytecode. Then test
         // whether the code begins with the prefix 0xEF0100, if so,
@@ -73,10 +73,10 @@ namespace monad::vm::evm
         }
 
         // Copy the delegate address from the code buffer.
-        evmc::address designation;
+        Address designation;
         std::ranges::copy(
             code.subspan(
-                delegation_indicator_prefix_bytes.size(), sizeof(evmc_address)),
+                delegation_indicator_prefix_bytes.size(), sizeof(Address)),
             designation.bytes);
         return designation;
     }

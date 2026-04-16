@@ -20,6 +20,7 @@
 #include "category/vm/runtime//types.hpp"
 #include "category/vm/utils/evm-as/compiler.hpp"
 #include "evmc/evmc.hpp"
+#include <category/core/address.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/opcodes.hpp>
@@ -71,9 +72,9 @@ namespace
 
     // NOTE/TODO: Copied verbatim from emitter_tests.cpp. Might be
     // useful to factor this code out into a common shared module.
-    evmc::address max_address()
+    Address max_address()
     {
-        evmc::address ret;
+        Address ret;
         std::memset(ret.bytes, -1, sizeof(ret.bytes) / sizeof(*ret.bytes));
         return ret;
     }
@@ -1303,7 +1304,7 @@ TEST(EvmAs, PushAddress)
     // 1 byte address
     {
         auto eb = evm_as::latest();
-        eb.push(evmc::address{0xBC});
+        eb.push(Address{0xBC});
         EXPECT_TRUE(evm_as::validate(eb));
 
         std::vector<uint8_t> expected{compiler::EvmOpCode::PUSH1, 0xBC};
@@ -1318,7 +1319,7 @@ TEST(EvmAs, PushAddress)
     // 2 byte address
     {
         auto eb = evm_as::latest();
-        eb.push(evmc::address{0xABBA});
+        eb.push(Address{0xABBA});
         EXPECT_TRUE(evm_as::validate(eb));
 
         std::vector<uint8_t> expected{compiler::EvmOpCode::PUSH2, 0xAB, 0xBA};
@@ -1332,7 +1333,7 @@ TEST(EvmAs, PushAddress)
 
     // 13 byte address
     {
-        using namespace evmc::literals;
+        using namespace monad::literals;
         auto eb = evm_as::latest();
         eb.push(0x0123456789ABCDEF0123456789_address);
         EXPECT_TRUE(evm_as::validate(eb));
@@ -1363,7 +1364,7 @@ TEST(EvmAs, PushAddress)
 
     // 20 byte address
     {
-        using namespace evmc::literals;
+        using namespace monad::literals;
         auto eb = evm_as::latest();
         eb.push(0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address);
         EXPECT_TRUE(evm_as::validate(eb));
@@ -1402,7 +1403,7 @@ TEST(EvmAs, PushAddress)
     // System address
     {
         auto eb = evm_as::latest();
-        eb.push(evmc::address{});
+        eb.push(Address{});
         EXPECT_TRUE(evm_as::validate(eb));
 
         std::vector<uint8_t> expected{compiler::EvmOpCode::PUSH0};
@@ -1417,7 +1418,7 @@ TEST(EvmAs, PushAddress)
     // System address, special case rev < SHANGHAI
     {
         auto eb = evm_as::paris();
-        eb.push(evmc::address{});
+        eb.push(Address{});
         EXPECT_TRUE(evm_as::validate(eb));
 
         std::vector<uint8_t> expected{compiler::EvmOpCode::PUSH1, 0x0};
@@ -1434,7 +1435,7 @@ TEST(EvmAs, PushAddressLabelResolution)
 {
     {
         auto eb = evm_as::latest();
-        eb.push(evmc::address{0}).jump("LABEL").jumpdest("LABEL");
+        eb.push(Address{0}).jump("LABEL").jumpdest("LABEL");
         EXPECT_TRUE(evm_as::validate(eb));
 
         std::vector<uint8_t> expected{
@@ -1451,7 +1452,7 @@ TEST(EvmAs, PushAddressLabelResolution)
 
     {
         auto eb = evm_as::latest();
-        eb.push(evmc::address{0xDEADC0DE}).jump("LABEL").jumpdest("LABEL");
+        eb.push(Address{0xDEADC0DE}).jump("LABEL").jumpdest("LABEL");
         EXPECT_TRUE(evm_as::validate(eb));
 
         std::vector<uint8_t> expected{
@@ -1471,9 +1472,9 @@ TEST(EvmAs, PushAddressLabelResolution)
     }
 
     {
-        static evmc::address const addr{
-            {0xaa, 0xaf, 0x53, 0x74, 0xfc, 0xe5, 0xed, 0xbc, 0x8e, 0x2a,
-             0x86, 0x97, 0xc1, 0x53, 0x31, 0x67, 0x7e, 0x6e, 0xbf, 0x0b}};
+        static Address const addr{{0xaa, 0xaf, 0x53, 0x74, 0xfc, 0xe5, 0xed,
+                                   0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53,
+                                   0x31, 0x67, 0x7e, 0x6e, 0xbf, 0x0b}};
         auto eb = evm_as::latest();
         for (size_t i = 0; i < 999; i++) {
             eb.push(addr); // 1 + 20 bytes
@@ -1516,13 +1517,7 @@ TEST(EvmAs, CallMacroExpansions)
     {
         auto eb1 = evm_as::latest();
         eb1.call(
-            0x1000,
-            evmc::address{0xABBA},
-            0x3000,
-            0x4000,
-            0x5000,
-            0x6000,
-            0x7000);
+            0x1000, Address{0xABBA}, 0x3000, 0x4000, 0x5000, 0x6000, 0x7000);
         EXPECT_TRUE(evm_as::validate(eb1));
 
         auto eb2 = evm_as::latest();
@@ -1531,7 +1526,7 @@ TEST(EvmAs, CallMacroExpansions)
             .push(0x5000) // args size
             .push(0x4000) // args offset
             .push(0x3000) // value
-            .push(evmc::address{0xabba}) // to address
+            .push(Address{0xabba}) // to address
             .push(0x1000) // gas
             .call();
         EXPECT_TRUE(evm_as::validate(eb2));
@@ -1539,7 +1534,7 @@ TEST(EvmAs, CallMacroExpansions)
         auto eb3 = evm_as::latest();
         eb3.call(evm_as::sugar::CallArgs{
             .gas = 0x1000,
-            .address = evmc::address{0xABBA},
+            .address = Address{0xABBA},
             .value = 0x3000,
             .args_offset = 0x4000,
             .args_size = 0x5000,
@@ -1573,7 +1568,7 @@ TEST(EvmAs, CallMacroExpansions)
     {
         using namespace monad::vm::utils::evm_as::sugar;
         auto eb1 = evm_as::latest();
-        eb1.call({.gas = 10'000'000, .address = evmc::address{0xDEADC0DE}});
+        eb1.call({.gas = 10'000'000, .address = Address{0xDEADC0DE}});
         EXPECT_TRUE(evm_as::validate(eb1));
 
         std::vector<uint8_t> const expected_bytecode{
@@ -1641,7 +1636,7 @@ TEST(EvmAs, CallMacroExpansions)
         auto eb1 = evm_as::latest();
         eb1.callcode(
             0x1111,
-            evmc::address{0xFEEDC0DE},
+            Address{0xFEEDC0DE},
             0x3333,
             0x4444,
             0x5555,
@@ -1655,7 +1650,7 @@ TEST(EvmAs, CallMacroExpansions)
             .push(0x5555) // args size
             .push(0x4444) // args offset
             .push(0x3333) // value
-            .push(evmc::address{0xfeedc0de}) // to address
+            .push(Address{0xfeedc0de}) // to address
             .push(0x1111) // gas
             .callcode();
         EXPECT_TRUE(evm_as::validate(eb2));
@@ -1717,7 +1712,7 @@ TEST(EvmAs, CallMacroExpansions)
     {
         auto eb1 = evm_as::latest();
         eb1.delegatecall(
-            0x123, evmc::address{0xC0FFEEC0DE}, 0x456, 0x789, 0xABC, 0xDEF);
+            0x123, Address{0xC0FFEEC0DE}, 0x456, 0x789, 0xABC, 0xDEF);
         EXPECT_TRUE(evm_as::validate(eb1));
 
         auto eb2 = evm_as::latest();
@@ -1725,7 +1720,7 @@ TEST(EvmAs, CallMacroExpansions)
             .push(0xABC) // returndata offset
             .push(0x789) // args size
             .push(0x456) // args offset
-            .push(evmc::address{0xc0ffeec0de}) // to address
+            .push(Address{0xc0ffeec0de}) // to address
             .push(0x123) // gas
             .delegatecall();
         EXPECT_TRUE(evm_as::validate(eb2));
@@ -1792,7 +1787,7 @@ TEST(EvmAs, CallMacroExpansions)
     // Static call
     {
         auto eb1 = evm_as::latest();
-        eb1.staticcall(0x1, evmc::address{0xABEEFEEC0DE}, 0x2, 0x3, 0x4, 0x5);
+        eb1.staticcall(0x1, Address{0xABEEFEEC0DE}, 0x2, 0x3, 0x4, 0x5);
         EXPECT_TRUE(evm_as::validate(eb1));
 
         auto eb2 = evm_as::latest();
@@ -1800,7 +1795,7 @@ TEST(EvmAs, CallMacroExpansions)
             .push(0x4) // returndata offset
             .push(0x3) // args size
             .push(0x2) // args offset
-            .push(evmc::address{0xabeefeec0de}) // to address
+            .push(Address{0xabeefeec0de}) // to address
             .push(0x1) // gas
             .staticcall();
         EXPECT_TRUE(evm_as::validate(eb2));

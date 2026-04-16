@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 
 #include <test_resource_data.h>
@@ -285,8 +286,7 @@ namespace
                 for (size_t i = 0; i < block.transactions.size(); ++i) {
                     auto const &tx = block.transactions[i];
 
-                    auto const recipient =
-                        tx.to.has_value() ? *tx.to : evmc::address{};
+                    auto const recipient = tx.to.value_or({});
 
                     auto msg = evmc_message{
                         .kind = tx.to.has_value() ? EVMC_CALL : EVMC_CREATE,

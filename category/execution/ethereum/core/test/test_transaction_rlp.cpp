@@ -118,8 +118,7 @@ TEST(Rlp_Transaction, EncodeAccessListMultipleEntry)
 TEST(Rlp_Transaction, DecodeEncodeLegacy)
 {
     using namespace intx;
-    using evmc::literals::operator""_address;
-    using monad::literals::operator""_bytes32;
+    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -170,8 +169,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
 TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
 {
     using namespace intx;
-    using evmc::literals::operator""_address;
-    using monad::literals::operator""_bytes32;
+    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -207,8 +205,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
 TEST(Rlp_Transaction, EncodeEip155)
 {
     using namespace intx;
-    using evmc::literals::operator""_address;
-    using monad::literals::operator""_bytes32;
+    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -262,8 +259,7 @@ TEST(Rlp_Transaction, EncodeEip155)
 TEST(Rlp_Transaction, EncodeEip2930)
 {
     using namespace intx;
-    using evmc::literals::operator""_address;
-    using monad::literals::operator""_bytes32;
+    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -351,8 +347,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
 TEST(Rlp_Transaction, EncodeEip1559TrueParity)
 {
     using namespace intx;
-    using evmc::literals::operator""_address;
-    using monad::literals::operator""_bytes32;
+    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -430,8 +425,7 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
 TEST(Rlp_Transaction, EncodeEip1559FalseParity)
 {
     using namespace intx;
-    using evmc::literals::operator""_address;
-    using monad::literals::operator""_bytes32;
+    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -509,8 +503,7 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
 TEST(Rlp_Transaction, IntTypeMismatchRegression)
 {
     using intx::operator""_u256;
-    using evmc::literals::operator""_address;
-    using monad::literals::operator""_bytes32;
+    using namespace monad::literals;
 
     static constexpr auto to_addr{
         0x3535353535353535353535353535353535353535_address};

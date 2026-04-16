@@ -42,7 +42,7 @@
 using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::compiler;
-using namespace evmc::literals;
+using namespace monad::literals;
 using namespace monad::vm::compiler::native;
 
 namespace abi_compat

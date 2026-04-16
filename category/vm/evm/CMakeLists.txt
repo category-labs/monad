@@ -36,6 +36,7 @@ target_include_directories(monad-vm-evm
 
 target_link_libraries(monad-vm-evm
     PUBLIC evmc::evmc
+    PUBLIC monad_core
 )
 
 monad_compile_options(monad-vm-evm)

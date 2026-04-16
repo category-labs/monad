@@ -17,15 +17,10 @@
 #include <stopwatch.hpp>
 
 #include <category/core/assert.h>
-#include <category/core/cases.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
-
-#ifdef MONAD_COMPILER_LLVM
-    #include <category/vm/llvm/llvm.hpp>
-#endif
 
 #include <cmd/vm/mce/src/instrumentable_compiler.hpp>
 
@@ -42,7 +37,6 @@
 
 #include <cstdint>
 #include <iostream>
-#include <variant>
 #include <vector>
 
 using namespace monad;
@@ -159,27 +153,8 @@ public:
     void dispatch_execute(
         Binary &entry, monad::vm::runtime::Context *ctx, uint8_t *stck)
     {
-        std::visit(
-            Cases{
-                [&](struct CompilerBinary &b) {
-                    entrypoint_t ep = b.ncode->entrypoint();
-                    ep(ctx, stck);
-                },
-
-                [&]([[maybe_unused]] struct LLVMBinary &b) {
-#ifdef MONAD_COMPILER_LLVM
-                    execute_compiled_llvm(b.llvm_code, ctx, stck);
-#else
-                    LOG_ERROR(
-                        "Unable to execute with LLVM.  LLVM not configured in "
-                        "build.  To use the LLVM backend, rebuild with "
-                        "-DMONAD_COMPILER_LLVM=On");
-                    quill::flush();
-                    abort();
-#endif
-                },
-            },
-            entry);
+        entrypoint_t ep = entry.ncode->entrypoint();
+        ep(ctx, stck);
     }
 
     evmc_capabilities_flagset get_capabilities() const

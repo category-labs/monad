@@ -22,10 +22,6 @@ add_subdirectory(interpreter)
 add_subdirectory(runtime)
 add_subdirectory(utils)
 
-if(MONAD_COMPILER_LLVM)
-    add_subdirectory(llvm)
-endif()
-
 # Main VM library (execution's entry point)
 
 add_library(monad-vm OBJECT)

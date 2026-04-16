@@ -17,13 +17,6 @@
 
 add_library(blockchain-test-vm STATIC)
 
-if(MONAD_COMPILER_LLVM)
-    monad_link_llvm(blockchain-test-vm)
-    target_link_libraries(blockchain-test-vm
-        PUBLIC monad-vm::monad-vm-llvm
-    )
-endif()
-
 target_sources(blockchain-test-vm
     PRIVATE
         test_vm.hpp

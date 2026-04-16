@@ -8,7 +8,7 @@ The user may pass arguments like:
 - `clean` — remove the build directory and reconfigure from scratch
 - `<target>` — build a specific cmake target (e.g., `monad`, `monad-cli`, a test name)
 - Compiler selection: `--clang` to use Clang 19+ instead of GCC 15+ (default)
-- CMake options as flags: `--llvm`, `--debug`, `--release`, `--asan`, `--tsan`, `--ubsan`, `--coverage`, `--avx512`
+- CMake options as flags: `--debug`, `--release`, `--asan`, `--tsan`, `--ubsan`, `--coverage`, `--avx512`
 
 If no arguments are given, run the full cycle: configure (if needed) + build.
 
@@ -49,7 +49,6 @@ You are helping the user configure and build the monad C++ project located at $C
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `MONAD_COMPILER_LLVM` | OFF | Build LLVM JIT backend (requires LLVM 19.1.7 installed) |
 | `MONAD_COMPILER_COVERAGE` | OFF | Build with coverage instrumentation |
 | `MONAD_COMPILER_TESTING` | OFF | Build compiler tests (requires `third_party/evmone` — see evmone note below) |
 | `MONAD_COMPILER_BENCHMARKS` | OFF | Build compiler benchmarks (requires `third_party/evmone` — see evmone note below) |
@@ -130,9 +129,8 @@ You are helping the user configure and build the monad C++ project located at $C
        - `--avx512`: `gcc-avx512.cmake` (arch-only flags are compiler-agnostic)
        - `--tsan`: `clang-tsan.cmake`
        - `--asan` / `--ubsan`: `clang-fuzz.cmake`. **Warn the user** that this toolchain also includes fuzzing instrumentation flags (sanitize-coverage, `-DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION`). There is no plain Clang ASAN toolchain. If they only want ASAN without fuzzing flags, they would need to create a custom toolchain file.
-   - Map `--llvm` to `-DMONAD_COMPILER_LLVM=ON`
    - Map `--coverage` to `-DMONAD_COMPILER_COVERAGE=ON`
-   - Skip if `build/` already exists and user didn't request `configure` or `clean` explicitly, **unless** the user passed configuration-affecting flags (`--clang`, `--asan`, `--tsan`, `--ubsan`, `--avx512`, `--debug`, `--release`, `--llvm`, `--coverage`). These flags change the toolchain, compiler, or build type — silently reusing a stale `build/` will produce a broken or mismatched build. In that case, reconfigure (wipe `build/CMakeCache.txt` first if the compiler changed, since CMake does not allow switching compilers in-place).
+   - Skip if `build/` already exists and user didn't request `configure` or `clean` explicitly, **unless** the user passed configuration-affecting flags (`--clang`, `--asan`, `--tsan`, `--ubsan`, `--avx512`, `--debug`, `--release`, `--coverage`). These flags change the toolchain, compiler, or build type — silently reusing a stale `build/` will produce a broken or mismatched build. In that case, reconfigure (wipe `build/CMakeCache.txt` first if the compiler changed, since CMake does not allow switching compilers in-place).
 
 5. **Build step** (`cmake --build build --parallel`):
    - Default target: `all`

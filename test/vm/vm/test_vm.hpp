@@ -34,10 +34,6 @@
 
 #include <unordered_map>
 
-#ifdef MONAD_COMPILER_LLVM
-    #include <category/vm/llvm/llvm.hpp>
-#endif
-
 class BlockchainTestVM : public evmc_vm
 {
 public:
@@ -46,9 +42,6 @@ public:
         Compiler,
         Interpreter,
         Evmone,
-#ifdef MONAD_COMPILER_LLVM
-        LLVM,
-#endif
     };
 
     template <typename V>
@@ -74,10 +67,6 @@ public:
             return "compiler";
         case Implementation::Evmone:
             return "evmone";
-#ifdef MONAD_COMPILER_LLVM
-        case Implementation::LLVM:
-            return "llvm";
-#endif
         }
 
         std::unreachable();
@@ -106,9 +95,6 @@ private:
     CodeMap<evmone::baseline::CodeAnalysis> code_analyses_;
     CodeMap<monad::vm::SharedIntercode> intercodes_;
     monad::vm::runtime::Context *rt_ctx_;
-#ifdef MONAD_COMPILER_LLVM
-    monad::vm::llvm::VM llvm_vm_;
-#endif
 
     evmone::baseline::CodeAnalysis const &get_code_analysis(
         monad::bytes32_t const &code_hash, uint8_t const *code,
@@ -139,15 +125,4 @@ private:
         evmc_host_interface const *host, evmc_host_context *context,
         evmc_revision rev, evmc_message const *msg, uint8_t const *code,
         size_t code_size);
-
-#ifdef MONAD_COMPILER_LLVM
-    void cache_llvm(
-        evmc_revision const rev, monad::bytes32_t const &code_hash,
-        uint8_t const *code, size_t code_size);
-
-    evmc::Result execute_llvm(
-        evmc_host_interface const *host, evmc_host_context *context,
-        evmc_revision rev, evmc_message const *msg, uint8_t const *code,
-        size_t code_size);
-#endif
 };

@@ -501,9 +501,6 @@ static BlockchainTestVM::Implementation const all_impls[] = {
     Interpreter,
     BlockchainTestVM::Implementation::Compiler,
     Evmone,
-#ifdef MONAD_COMPILER_LLVM
-    LLVM,
-#endif
 };
 
 static void run_benchmark(

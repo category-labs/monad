@@ -231,9 +231,6 @@ namespace
         Interpreter,
         Compiler,
         Evmone,
-#ifdef MONAD_COMPILER_LLVM
-        LLVM,
-#endif
     };
 
     void register_benchmark(

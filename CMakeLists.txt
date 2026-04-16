@@ -39,7 +39,6 @@ endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(MONAD_COMPILER_LLVM "Build llvm backend" OFF)
 option(MONAD_COMPILER_COVERAGE "Build with coverage" OFF)
 option(MONAD_COMPILER_TESTING "Build compiler tests" OFF)
 option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
@@ -174,19 +173,6 @@ endif()
 # komihash
 add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")
-
-# LLVM
-# Because LLVM is a large dependency, we only try to find it if it's
-# explicitly enabled as part of the VM build: regular client builds don't need
-# to use it.
-if(UTILS_CLANG_TIDY_AUTO_CONST OR MONAD_COMPILER_LLVM)
-  include(cmake/LinkLLVM.cmake)
-  find_package(LLVM 19.1.7 REQUIRED CONFIG)
-endif()
-
-if(MONAD_COMPILER_LLVM)
-  add_definitions(-DMONAD_COMPILER_LLVM)
-endif()
 
 # magic_enum
 add_subdirectory("third_party/magic_enum")

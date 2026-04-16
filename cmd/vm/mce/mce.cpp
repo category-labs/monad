@@ -65,7 +65,6 @@ struct arguments
     std::optional<std::string> asm_log_file;
     bool wall_clock_time = false;
     bool report_result = false;
-    bool use_llvm = false;
 };
 
 static arguments parse_args(int const argc, char **const argv)
@@ -114,10 +113,6 @@ static arguments parse_args(int const argc, char **const argv)
         "-u",
         args.timeunit_s,
         std::format("Wall clock time unit (default: {})", args.timeunit_s));
-    app.add_flag(
-        "--llvm",
-        args.use_llvm,
-        std::format("Use llvm backend (default: {})", args.use_llvm));
     try {
         app.parse(argc, argv);
         args.timeunit = timeunit_of_short_string(args.timeunit_s);
@@ -228,11 +223,11 @@ int mce_main(arguments const &args)
     }
     if (args.instrument_compile) {
         InstrumentableCompiler<true> compiler(rt, config);
-        bin = compiler.compile<traits>(*ir, device, args.use_llvm);
+        bin = compiler.compile<traits>(*ir, device);
     }
     else {
         InstrumentableCompiler<false> compiler(rt, config);
-        bin = compiler.compile<traits>(*ir, device, args.use_llvm);
+        bin = compiler.compile<traits>(*ir, device);
     }
 
     evmc::Result const result = [&]() {

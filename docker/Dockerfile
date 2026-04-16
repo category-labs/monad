@@ -54,7 +54,7 @@ ARG CMAKE_BUILD_TYPE
 ARG TOOLCHAIN
 
 RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CMAKE_TOOLCHAIN_FILE=category/core/toolchains/${TOOLCHAIN:?}.cmake ./scripts/configure.sh
-RUN cd src && cmake build -DMONAD_COMPILER_TESTING=On -DMONAD_COMPILER_LLVM=Off
+RUN cd src && cmake build -DMONAD_COMPILER_TESTING=On
 
 RUN cd src && ./scripts/vm/build-tests.sh
 RUN cd src && ./scripts/vm/test.sh
@@ -78,7 +78,6 @@ COPY . src
 
 RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B build           \
   -DMONAD_COMPILER_BENCHMARKS=On  \
-  -DMONAD_COMPILER_LLVM=Off       \
   -DMONAD_COMPILER_TESTING=On     \
   -DCMAKE_BUILD_TYPE=Debug        \
   -DCMAKE_C_COMPILER=clang-19     \
@@ -130,7 +129,6 @@ COPY . src
 RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B build \
   -GNinja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DMONAD_COMPILER_LLVM=Off \
   -DMONAD_COMPILER_TESTING=On \
   -DCMAKE_C_COMPILER=clang-19 \
   -DCMAKE_CXX_COMPILER=clang++-19

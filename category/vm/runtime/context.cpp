@@ -43,7 +43,7 @@ static_assert(alignof(Bin<31>) == alignof(uint32_t));
 static_assert(std::is_standard_layout_v<Bin<31>>);
 
 extern "C" void monad_vm_runtime_increase_capacity(
-    Context *ctx, uint32_t old_size, Bin<30> new_size)
+    Context *ctx, uint32_t const old_size, Bin<30> const new_size)
 {
     MONAD_DEBUG_ASSERT((*new_size & 31) == 0);
     MONAD_DEBUG_ASSERT(old_size < *new_size);
@@ -117,7 +117,7 @@ namespace monad::vm::runtime
     }
 
     Context Context::empty(
-        uint8_t *const memory_handle, uint32_t memory_capacity) noexcept
+        uint8_t *const memory_handle, uint32_t const memory_capacity) noexcept
     {
         return Context{
             .host = nullptr,
@@ -145,7 +145,8 @@ namespace monad::vm::runtime
         };
     }
 
-    void Context::increase_capacity(uint32_t old_size, Bin<30> new_size)
+    void
+    Context::increase_capacity(uint32_t const old_size, Bin<30> const new_size)
     {
         monad_vm_runtime_increase_capacity(this, old_size, new_size);
     }

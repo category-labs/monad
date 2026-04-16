@@ -57,7 +57,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void sstore(
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
-        int64_t remaining_block_base_gas)
+        int64_t const remaining_block_base_gas)
     {
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
@@ -105,8 +105,8 @@ namespace monad::vm::runtime
 
 #ifdef MONAD_COMPILER_TESTING
     bool debug_tstore_stack(
-        Context const *ctx, uint256_t const *stack, uint64_t stack_size,
-        uint64_t offset, uint64_t base_offset)
+        Context const *ctx, uint256_t const *stack, uint64_t const stack_size,
+        uint64_t const offset, uint64_t const base_offset)
     {
         auto const magic = uint256_t{0xdeb009};
         auto const base = (magic + base_offset) * 1024;
@@ -139,7 +139,8 @@ namespace monad::vm::runtime
     }
 #else
     bool debug_tstore_stack(
-        Context const *, uint256_t const *, uint64_t, uint64_t, uint64_t)
+        Context const *, uint256_t const *, uint64_t const, uint64_t const,
+        uint64_t const)
     {
         std::terminate();
     }

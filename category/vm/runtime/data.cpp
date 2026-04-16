@@ -55,7 +55,7 @@ namespace monad::vm::runtime
     void copy_impl(
         Context *ctx, uint256_t const &dest_offset_word,
         uint256_t const &offset_word, uint256_t const &size_word,
-        uint8_t const *source, uint32_t len)
+        uint8_t const *source, uint32_t const len)
     {
         auto const size = ctx->get_memory_offset(size_word);
         if (*size == 0) {

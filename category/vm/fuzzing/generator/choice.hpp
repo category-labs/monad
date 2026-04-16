@@ -43,7 +43,7 @@ namespace monad::vm::fuzzing
         double probability;
         Action action;
 
-        Choice(double p, Action a)
+        Choice(double const p, Action a)
             : probability(p)
             , action(std::move(a))
         {

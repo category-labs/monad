@@ -30,7 +30,7 @@ namespace monad::vm::runtime
     {
     public:
         [[gnu::always_inline]]
-        static constexpr Bin unsafe_from(uint32_t x) noexcept
+        static constexpr Bin unsafe_from(uint32_t const x) noexcept
         {
             return Bin(x);
         }
@@ -74,7 +74,7 @@ namespace monad::vm::runtime
 
     private:
         [[gnu::always_inline]]
-        constexpr explicit Bin(uint32_t x) noexcept
+        constexpr explicit Bin(uint32_t const x) noexcept
             : value_{x}
         {
             MONAD_DEBUG_ASSERT(x < (1ULL << N));
@@ -89,14 +89,15 @@ namespace monad::vm::runtime
 
     template <size_t M, size_t N>
     [[gnu::always_inline]]
-    constexpr Bin<std::max(M, N) + 1> operator+(Bin<M> x, Bin<N> y) noexcept
+    constexpr Bin<std::max(M, N) + 1>
+    operator+(Bin<M> const x, Bin<N> const y) noexcept
     {
         return Bin<std::max(M, N) + 1>::unsafe_from(*x + *y);
     }
 
     template <size_t M, size_t N>
     [[gnu::always_inline]]
-    constexpr Bin<M + N> operator*(Bin<M> x, Bin<N> y) noexcept
+    constexpr Bin<M + N> operator*(Bin<M> const x, Bin<N> const y) noexcept
     {
         return Bin<M + N>::unsafe_from(*x * *y);
     }
@@ -104,7 +105,7 @@ namespace monad::vm::runtime
     template <uint32_t x, size_t N>
         requires(x < 32)
     [[gnu::always_inline]]
-    constexpr Bin<N - x> shr(Bin<N> y) noexcept
+    constexpr Bin<N - x> shr(Bin<N> const y) noexcept
     {
         return Bin<N - x>::unsafe_from(*y >> x);
     }
@@ -112,7 +113,8 @@ namespace monad::vm::runtime
     template <uint32_t x, size_t N>
         requires(x < 32 && N < 32)
     [[gnu::always_inline]]
-    constexpr Bin<std::max(size_t{x}, N) + 1 - x> shr_ceil(Bin<N> y) noexcept
+    constexpr Bin<std::max(size_t{x}, N) + 1 - x>
+    shr_ceil(Bin<N> const y) noexcept
     {
         return shr<x>(y + bin<Bin<x>::upper>);
     }
@@ -120,21 +122,21 @@ namespace monad::vm::runtime
     template <uint32_t x, size_t N>
         requires(x < 32)
     [[gnu::always_inline]]
-    constexpr Bin<N + x> shl(Bin<N> y) noexcept
+    constexpr Bin<N + x> shl(Bin<N> const y) noexcept
     {
         return Bin<N + x>::unsafe_from(*y << x);
     }
 
     template <size_t M, size_t N>
     [[gnu::always_inline]]
-    constexpr Bin<std::max(M, N)> max(Bin<M> x, Bin<N> y) noexcept
+    constexpr Bin<std::max(M, N)> max(Bin<M> const x, Bin<N> const y) noexcept
     {
         return Bin<std::max(M, N)>::unsafe_from(std::max(*x, *y));
     }
 
     template <size_t M, size_t N>
     [[gnu::always_inline]]
-    constexpr Bin<std::min(M, N)> min(Bin<M> x, Bin<N> y) noexcept
+    constexpr Bin<std::min(M, N)> min(Bin<M> const x, Bin<N> const y) noexcept
     {
         return Bin<std::min(M, N)>::unsafe_from(std::min(*x, *y));
     }

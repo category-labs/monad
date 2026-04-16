@@ -44,7 +44,7 @@ namespace monad::vm::runtime
 
     [[gnu::always_inline]]
     inline uint256_t
-    uint256_load_bounded_le(uint8_t const *bytes, int64_t max_len)
+    uint256_load_bounded_le(uint8_t const *bytes, int64_t const max_len)
     {
         if (MONAD_LIKELY(max_len >= 32)) {
             return uint256_t::load_le_unsafe(bytes);
@@ -54,7 +54,7 @@ namespace monad::vm::runtime
 
     [[gnu::always_inline]]
     inline uint256_t
-    uint256_load_bounded_be(uint8_t const *bytes, int64_t max_len)
+    uint256_load_bounded_be(uint8_t const *bytes, int64_t const max_len)
     {
         return uint256_load_bounded_le(bytes, max_len).to_be();
     }

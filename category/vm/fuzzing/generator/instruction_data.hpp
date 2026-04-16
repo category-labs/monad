@@ -139,7 +139,7 @@ namespace monad::vm::fuzzing
     constexpr auto jump_terminators =
         make_opcode_array<EvmTraits<EVMC_OSAKA>, jump_terminators_all>();
 
-    constexpr bool is_exit_terminator(uint8_t opcode) noexcept
+    constexpr bool is_exit_terminator(uint8_t const opcode) noexcept
     {
         return std::find(
                    exit_terminators_all.begin(),

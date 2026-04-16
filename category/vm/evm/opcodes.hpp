@@ -252,7 +252,7 @@ namespace monad::vm::compiler
         SELFDESTRUCT = 0xFF
     };
 
-    consteval evmc_revision previous_evm_revision(evmc_revision rev)
+    consteval evmc_revision previous_evm_revision(evmc_revision const rev)
     {
         MONAD_DEBUG_ASSERT(std::to_underlying(rev) > 0);
         return evmc_revision(std::to_underlying(rev) - 1);
@@ -282,7 +282,8 @@ namespace monad::vm::compiler
         make_opcode_table<traits>();
 
     consteval inline void add_opcode(
-        uint8_t opcode, std::array<OpCodeInfo, 256> &table, OpCodeInfo info)
+        uint8_t const opcode, std::array<OpCodeInfo, 256> &table,
+        OpCodeInfo info)
     {
         MONAD_DEBUG_ASSERT(table[opcode] == unknown_opcode_info);
         table[opcode] = info;

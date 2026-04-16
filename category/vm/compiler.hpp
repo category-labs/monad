@@ -103,8 +103,8 @@ namespace monad::vm
             }
         }
 
-        std::string
-        print_stats(uint64_t cache_size, uint64_t cache_weight) const
+        std::string print_stats(
+            uint64_t const cache_size, uint64_t const cache_weight) const
         {
             if constexpr (utils::collect_monad_compiler_stats) {
                 return std::format(
@@ -197,7 +197,7 @@ namespace monad::vm
             return varcode_cache_.is_warm();
         }
 
-        void set_varcode_cache_warm_kb_threshold(uint32_t warm_kb)
+        void set_varcode_cache_warm_kb_threshold(uint32_t const warm_kb)
         {
             return varcode_cache_.set_warm_cache_kb(warm_kb);
         }

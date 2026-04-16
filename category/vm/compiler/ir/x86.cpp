@@ -48,7 +48,8 @@ namespace
 
     template <Traits traits>
     void emit_instr(
-        Emitter &emit, Instruction const &instr, int64_t remaining_base_gas)
+        Emitter &emit, Instruction const &instr,
+        int64_t const remaining_base_gas)
     {
         static constexpr auto memory_version =
             traits::mip_3_active() ? runtime::Memory::Version::MIP3
@@ -307,7 +308,7 @@ namespace
 
     [[gnu::always_inline]]
     inline void require_code_size_in_bound(
-        Emitter &emit, native_code_size_t max_native_size)
+        Emitter &emit, native_code_size_t const max_native_size)
     {
         size_t const size_estimate = emit.estimate_size();
         if (MONAD_UNLIKELY(size_estimate > *max_native_size)) {
@@ -330,8 +331,8 @@ namespace
 
     template <Traits traits>
     void emit_instrs(
-        Emitter &emit, Block const &block, int64_t instr_gas,
-        native_code_size_t max_native_size, CompilerConfig const &config)
+        Emitter &emit, Block const &block, int64_t const instr_gas,
+        native_code_size_t const max_native_size, CompilerConfig const &config)
     {
         int64_t remaining_base_gas = instr_gas;
         for (auto const &instr : block.instrs) {
@@ -382,7 +383,7 @@ namespace
 
     void emit_gas_decrement(
         Emitter &emit, BasicBlocksIR const &ir, Block const &block,
-        int64_t block_base_gas)
+        int64_t const block_base_gas)
     {
         if (ir.jump_dests().contains(block.offset)) {
             emit.gas_decrement_unbounded_work(block_base_gas + 1);
@@ -395,7 +396,7 @@ namespace
     template <Traits traits>
     std::shared_ptr<Nativecode> compile_contract(
         asmjit::JitRuntime &rt, uint8_t const *contract_code,
-        code_size_t contract_code_size, CompilerConfig const &config)
+        code_size_t const contract_code_size, CompilerConfig const &config)
     {
         auto const ir =
             basic_blocks::make_ir<traits>(contract_code, contract_code_size);
@@ -408,7 +409,7 @@ namespace monad::vm::compiler::native
     template <Traits traits>
     std::shared_ptr<Nativecode> compile(
         asmjit::JitRuntime &rt, uint8_t const *contract_code,
-        code_size_t contract_code_size, CompilerConfig const &config)
+        code_size_t const contract_code_size, CompilerConfig const &config)
     {
         try {
             return ::compile_contract<traits>(

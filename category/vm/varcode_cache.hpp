@@ -62,7 +62,7 @@ namespace monad::vm
             return weight_cache_.approx_weight() >= warm_cache_kb_;
         }
 
-        void set_warm_cache_kb(uint32_t warm_kb)
+        void set_warm_cache_kb(uint32_t const warm_kb)
         {
             warm_cache_kb_ = warm_kb;
         }

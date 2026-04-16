@@ -33,7 +33,7 @@ namespace monad::vm::runtime
         monad_vm_runtime_exit(exit_stack_ptr);
     }
 
-    void Context::exit [[noreturn]] (StatusCode code) noexcept
+    void Context::exit [[noreturn]] (StatusCode const code) noexcept
     {
         result.status = code;
         monad_vm_runtime_exit(exit_stack_ptr);

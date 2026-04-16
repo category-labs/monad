@@ -391,7 +391,7 @@ namespace monad::vm::interpreter
     [[gnu::always_inline]]
     inline void fuzz_tstore_stack(
         runtime::Context const &ctx, runtime::uint256_t const *stack_bottom,
-        runtime::uint256_t const *stack_top, uint64_t base_offset)
+        runtime::uint256_t const *stack_top, uint64_t const base_offset)
     {
         if (!utils::is_fuzzing_monad_vm) {
             return;
@@ -406,7 +406,7 @@ namespace monad::vm::interpreter
 #else
     [[gnu::always_inline]] inline void fuzz_tstore_stack(
         runtime::Context const &, runtime::uint256_t const *,
-        runtime::uint256_t const *, uint64_t)
+        runtime::uint256_t const *, uint64_t const)
     {
         // nop
     }
@@ -1725,7 +1725,7 @@ namespace monad::vm::interpreter
     {
         inline void return_impl [[noreturn]] (
             runtime::StatusCode const code, runtime::Context &ctx,
-            runtime::uint256_t *stack_top, int64_t gas_remaining)
+            runtime::uint256_t *stack_top, int64_t const gas_remaining)
         {
             for (auto *result_loc : {&ctx.result.offset, &ctx.result.size}) {
                 std::copy_n(
@@ -1784,7 +1784,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL inline void stop(
         runtime::Context &ctx, Intercode const &analysis,
         runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
-        int64_t gas_remaining, uint8_t const *)
+        int64_t const gas_remaining, uint8_t const *)
     {
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         ctx.gas_remaining = gas_remaining;
@@ -1793,7 +1793,7 @@ namespace monad::vm::interpreter
 
     MONAD_VM_INSTRUCTION_CALL inline void invalid(
         runtime::Context &ctx, Intercode const &, runtime::uint256_t const *,
-        runtime::uint256_t *, int64_t gas_remaining, uint8_t const *)
+        runtime::uint256_t *, int64_t const gas_remaining, uint8_t const *)
     {
         ctx.gas_remaining = gas_remaining;
         ctx.exit(Error);

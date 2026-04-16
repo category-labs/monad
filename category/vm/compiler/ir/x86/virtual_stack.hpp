@@ -97,7 +97,7 @@ namespace monad::vm::compiler::native
         NotEqual,
     };
 
-    constexpr Comparison negate_comparison(Comparison c)
+    constexpr Comparison negate_comparison(Comparison const c)
     {
         using enum Comparison;
         switch (c) {

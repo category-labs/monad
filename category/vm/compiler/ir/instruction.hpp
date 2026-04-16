@@ -154,8 +154,9 @@ namespace monad::vm::compiler
      */
 
     constexpr Instruction::Instruction(
-        uint32_t pc, OpCode op, uint32_t static_gas_cost, uint8_t stack_args,
-        uint8_t index, uint8_t stack_increase, bool dynamic_gas)
+        uint32_t const pc, OpCode const op, uint32_t const static_gas_cost,
+        uint8_t const stack_args, uint8_t const index,
+        uint8_t const stack_increase, bool const dynamic_gas)
         : Instruction(
               pc, op, 0, static_gas_cost, stack_args, index, stack_increase,
               dynamic_gas)
@@ -163,9 +164,11 @@ namespace monad::vm::compiler
     }
 
     constexpr Instruction::Instruction(
-        uint32_t pc, OpCode op, runtime::uint256_t immediate_value,
-        uint32_t static_gas_cost, uint8_t stack_args, uint8_t index,
-        uint8_t stack_increase, bool dynamic_gas)
+        uint32_t const pc, OpCode const op,
+        runtime::uint256_t const immediate_value,
+        uint32_t const static_gas_cost, uint8_t const stack_args,
+        uint8_t const index, uint8_t const stack_increase,
+        bool const dynamic_gas)
         : immediate_value_(immediate_value)
         , pc_(pc)
         , static_gas_cost_(static_gas_cost)
@@ -247,7 +250,7 @@ namespace monad::vm::compiler
         return a.as_tuple() == b.as_tuple();
     }
 
-    constexpr std::string_view opcode_name(OpCode op)
+    constexpr std::string_view opcode_name(OpCode const op)
     {
         using enum monad::vm::compiler::OpCode;
 

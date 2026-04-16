@@ -101,7 +101,7 @@ namespace monad::vm::compiler::native
                    : *stack_indices_.begin();
     }
 
-    void StackElem::deferred_comparison(Comparison c)
+    void StackElem::deferred_comparison(Comparison const c)
     {
         MONAD_ASSERT(stack_.deferred_comparison_.stack_elem == nullptr);
         MONAD_DEBUG_ASSERT(
@@ -362,13 +362,13 @@ namespace monad::vm::compiler::native
             this);
     }
 
-    StackElemRef Stack::get(int32_t index)
+    StackElemRef Stack::get(int32_t const index)
     {
         MONAD_ASSERT(index <= top_index_);
         return at(index);
     }
 
-    StackElemRef &Stack::at(int32_t index)
+    StackElemRef &Stack::at(int32_t const index)
     {
         if (index < 0) {
             auto const i = static_cast<size_t>(-index - 1);
@@ -408,7 +408,7 @@ namespace monad::vm::compiler::native
         at(top_index_) = std::move(e);
     }
 
-    void Stack::push_deferred_comparison(Comparison c)
+    void Stack::push_deferred_comparison(Comparison const c)
     {
         top_index_ += 1;
         auto e = new_stack_elem();
@@ -456,13 +456,13 @@ namespace monad::vm::compiler::native
         at(top_index_) = std::move(e);
     }
 
-    void Stack::dup(int32_t stack_index)
+    void Stack::dup(int32_t const stack_index)
     {
         MONAD_ASSERT(stack_index <= top_index_);
         push(at(stack_index));
     }
 
-    void Stack::swap(int32_t swap_index)
+    void Stack::swap(int32_t const swap_index)
     {
         MONAD_ASSERT(swap_index < top_index_);
 
@@ -503,7 +503,7 @@ namespace monad::vm::compiler::native
                deferred_comparison_.negated_stack_elem != nullptr;
     }
 
-    bool Stack::has_deferred_comparison_at(int32_t stack_index) const
+    bool Stack::has_deferred_comparison_at(int32_t const stack_index) const
     {
         auto const &dc = deferred_comparison_;
         if (dc.stack_elem &&
@@ -518,7 +518,7 @@ namespace monad::vm::compiler::native
     }
 
     StackOffset Stack::find_available_stack_offset(
-        int32_t preferred, PrevLoc moved_from) const
+        int32_t const preferred, PrevLoc const moved_from) const
     {
         if (available_stack_offsets_.contains(preferred)) {
             return {preferred, moved_from};
@@ -681,7 +681,7 @@ namespace monad::vm::compiler::native
     }
 
     std::vector<std::pair<AvxReg, StackOffset>>
-    Stack::spill_avx_reg_range(uint8_t first)
+    Stack::spill_avx_reg_range(uint8_t const first)
     {
         std::vector<std::pair<AvxReg, StackOffset>> ret;
         for (uint8_t i = first; i < 16; ++i) {
@@ -710,18 +710,18 @@ namespace monad::vm::compiler::native
     }
 
     void Stack::insert_stack_offset(
-        StackElemRef e, int32_t preferred, PrevLoc moved_from)
+        StackElemRef e, int32_t const preferred, PrevLoc const moved_from)
     {
         insert_stack_offset(*e, preferred, moved_from);
     }
 
-    void Stack::insert_stack_offset(StackElemRef e, PrevLoc moved_from)
+    void Stack::insert_stack_offset(StackElemRef e, PrevLoc const moved_from)
     {
         insert_stack_offset(*e, moved_from);
     }
 
     void Stack::insert_stack_offset(
-        StackElem &e, int32_t preferred, PrevLoc moved_from)
+        StackElem &e, int32_t const preferred, PrevLoc const moved_from)
     {
         if (e.stack_offset_.has_value()) {
             return;
@@ -730,7 +730,7 @@ namespace monad::vm::compiler::native
         e.insert_stack_offset(offset);
     }
 
-    void Stack::insert_stack_offset(StackElem &e, PrevLoc moved_from)
+    void Stack::insert_stack_offset(StackElem &e, PrevLoc const moved_from)
     {
         int32_t const preferred = e.preferred_stack_offset();
         insert_stack_offset(e, preferred, moved_from);
@@ -785,8 +785,8 @@ namespace monad::vm::compiler::native
         return e;
     }
 
-    StackElemRef
-    Stack::alloc_stack_offset(int32_t preferred, PrevLoc expected_prev_loc)
+    StackElemRef Stack::alloc_stack_offset(
+        int32_t const preferred, PrevLoc const expected_prev_loc)
     {
         auto e = new_stack_elem();
         insert_stack_offset(*e, preferred, expected_prev_loc);
@@ -882,7 +882,7 @@ namespace monad::vm::compiler::native
         e.remove_stack_offset();
     }
 
-    bool Stack::is_general_reg_on_stack(GeneralReg reg)
+    bool Stack::is_general_reg_on_stack(GeneralReg const reg)
     {
         auto *e = general_reg_stack_elems_[reg.reg];
         return e != nullptr && e->is_on_stack();

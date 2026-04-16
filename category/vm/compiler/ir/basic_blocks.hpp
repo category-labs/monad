@@ -64,7 +64,7 @@ namespace monad::vm::compiler::basic_blocks
         uint32_t pc;
     };
 
-    constexpr OpCode evm_op_to_opcode(uint8_t op)
+    constexpr OpCode evm_op_to_opcode(uint8_t const op)
     {
         using enum OpCode;
 
@@ -91,7 +91,7 @@ namespace monad::vm::compiler::basic_blocks
      * Return true if this terminator can implicitly fall through to the next
      * block in sequence.
      */
-    constexpr bool is_fallthrough_terminator(Terminator t)
+    constexpr bool is_fallthrough_terminator(Terminator const t)
     {
         return t == Terminator::FallThrough || t == Terminator::JumpI;
     }
@@ -100,7 +100,7 @@ namespace monad::vm::compiler::basic_blocks
      * Base gas usage for a given terminator.
      */
     template <Traits traits>
-    constexpr uint16_t terminator_static_gas(Terminator t)
+    constexpr uint16_t terminator_static_gas(Terminator const t)
     {
         using enum Terminator;
         switch (t) {
@@ -135,7 +135,7 @@ namespace monad::vm::compiler::basic_blocks
      * Return the number of input stack elements consumed by each block
      * terminator.
      */
-    constexpr size_t terminator_inputs(Terminator t)
+    constexpr size_t terminator_inputs(Terminator const t)
     {
         using enum Terminator;
         switch (t) {

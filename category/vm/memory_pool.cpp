@@ -25,7 +25,7 @@
 
 namespace monad::vm
 {
-    MemoryPool::MemoryPool(uint32_t alloc_capacity)
+    MemoryPool::MemoryPool(uint32_t const alloc_capacity)
         : empty_head_{.next = &empty_head_}
         , head_{&empty_head_}
         , alloc_capacity_{alloc_capacity}

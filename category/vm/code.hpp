@@ -60,7 +60,7 @@ namespace monad::vm
         Varcode(Varcode const &) = delete;
         Varcode &operator=(Varcode const &) = delete;
 
-        uint64_t intercode_gas_used(uint64_t gas_used)
+        uint64_t intercode_gas_used(uint64_t const gas_used)
         {
             return gas_used + intercode_gas_used_.fetch_add(
                                   gas_used, std::memory_order_acq_rel);

@@ -89,19 +89,19 @@ namespace monad::vm::compiler::basic_blocks
      * IR: Private construction methods
      */
 
-    void BasicBlocksIR::add_block(byte_offset offset)
+    void BasicBlocksIR::add_block(byte_offset const offset)
     {
         blocks_.push_back(Block{.offset = offset});
         blocks_.back().instrs.reserve(16);
     }
 
-    void BasicBlocksIR::add_terminator(Terminator t)
+    void BasicBlocksIR::add_terminator(Terminator const t)
     {
         blocks_.back().instrs.shrink_to_fit();
         blocks_.back().terminator = t;
     }
 
-    void BasicBlocksIR::add_fallthrough_terminator(Terminator t)
+    void BasicBlocksIR::add_fallthrough_terminator(Terminator const t)
     {
         add_terminator(t);
         blocks_.back().fallthrough_dest = curr_block_id() + 1;

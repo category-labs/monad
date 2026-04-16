@@ -73,7 +73,8 @@ namespace monad::vm::runtime
         }
 
         [[gnu::always_inline]]
-        void set_return_data(uint8_t const *output_data, size_t output_size)
+        void
+        set_return_data(uint8_t const *output_data, size_t const output_size)
         {
             MONAD_DEBUG_ASSERT(return_data_size == 0);
             return_data = output_data;
@@ -125,7 +126,7 @@ namespace monad::vm::runtime
 
         Memory() = delete;
 
-        explicit Memory(uint8_t *han, uint8_t *dat, uint32_t cap)
+        explicit Memory(uint8_t *han, uint8_t *dat, uint32_t const cap)
             : size{}
             , capacity{cap}
             , data{dat}
@@ -227,7 +228,7 @@ namespace monad::vm::runtime
             evmc_message const *msg, std::span<uint8_t const> code) noexcept;
 
         static Context
-        empty(uint8_t *const memory_handle, uint32_t memory_capacity) noexcept;
+        empty(uint8_t *memory_handle, uint32_t memory_capacity) noexcept;
 
         evmc_host_interface const *host;
         evmc_host_context *context;
@@ -287,14 +288,14 @@ namespace monad::vm::runtime
 
         [[gnu::always_inline]]
         static constexpr Bin<30>
-        word_count_to_memory_size(Bin<25> word_count) noexcept
+        word_count_to_memory_size(Bin<25> const word_count) noexcept
         {
             return shl<5>(word_count);
         }
 
         template <Traits traits>
         [[gnu::always_inline]]
-        bool is_memory_size_in_bound(Bin<30> mem_size)
+        bool is_memory_size_in_bound(Bin<30> const mem_size)
         {
             if constexpr (traits::mip_3_active()) {
                 Bin<31> const total_size =
@@ -308,7 +309,7 @@ namespace monad::vm::runtime
         void increase_capacity(uint32_t old_size, Bin<30> new_size);
 
         template <Traits traits>
-        void expand_memory(Bin<29> min_size)
+        void expand_memory(Bin<29> const min_size)
         {
             if (memory.size < *min_size) {
                 auto const word_count = memory_size_to_word_count(min_size);

@@ -52,7 +52,7 @@ namespace monad::vm::runtime
     }
 
     template <Traits traits>
-    constexpr StoreCost store_cost(evmc_storage_status status)
+    constexpr StoreCost store_cost(evmc_storage_status const status)
     {
         return StorageCostTable<traits>::costs[status];
     }

@@ -62,7 +62,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: "--model claude-opus-4-6 --max-turns 30 --allowedTools Bash,Read,Glob,Grep"
-          prompt: "Review this pull request for code quality, correctness, and security. Analyze the diff carefully, check for potential bugs, security issues, and code style problems. Post your findings as review comments."
+          prompt: "First, read REVIEW.md at the repo root and follow it exactly. Then review this pull request using that document's process, priority scale, comment style, and repo-specific guidance (traits system, FFI boundary, C++ correctness, testing, style, PR hygiene, security). Post findings as inline review comments and end with the overall verdict as specified in REVIEW.md."
 
       - name: Run Claude Code (mention)
         if: >

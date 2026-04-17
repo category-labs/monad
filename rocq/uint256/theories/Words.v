@@ -65,7 +65,7 @@ Definition zero_uint256 : uint256 :=
 Definition uint256_to_words (x : uint256) : words :=
   [w0 x; w1 x; w2 x; w3 x].
 
-(** Convert words list to uint256 record, fail if input longer. *)
+(** Convert words list to uint256 record, truncating ws if necessary. *)
 Definition words_to_uint256 (ws : words) : uint256 :=
   match fit_words 4 ws with
   | [w0; w1; w2; w3] => mk_uint256 w0 w1 w2 w3

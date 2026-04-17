@@ -14,7 +14,7 @@ Always prefix with `opam exec --` from the project root.
 # Interactive Proof Development
 
 When developing Rocq proofs, use Proof General in Emacs interactively
-via the `/emacs` skill. Step through tactics one at a time and check
+via Emacs. Step through tactics one at a time and check
 goals after each step. Do not write large blocks of untested tactics —
 this wastes time fixing cascading errors.  Do not delegate tasks to
 subagents unless explicitly told to do so.  Do not use worktrees unless
@@ -49,18 +49,62 @@ manual tactics. Step each one and check if it closes the goal:
 Only write structural tactics (destruct, induction, rewrite, replace) after
 the cascade fails on the current goal.
 
-# MCP Limitation
+# Arithmetic Proof Workflow
 
-The Rocq MCP tools (`rocq_start_proof`, `rocq_check`, `rocq_step_multi`) do
-not work reliably with this codebase due to its module functor structure:
+For proof files such as `ArithmeticProofs.v`, `RuntimeMulProofs.v`,
+`DivisionProofs.v`, and other parameterized developments under `theories/`,
+use a live Proof General session as the primary workflow.
 
-```coq
-Module MakeProofs (Import U64 : Uint64).
-Include RuntimeMul.Make(U64).
-Module WL := WordsLemmas.MakeProofs(U64).
-```
+- Open the target `.v` file in Emacs and step to the theorem of interest.
+- Edit in the live buffer, save there, and retract locally with
+  `proof-goto-point`.
+- Prefer small tactic steps with goal inspection after each step.
+- Use `Search`, `Check`, and `Print` from the Rocq toplevel / Proof General
+  when you need local context-aware exploration.
+- Validate each edited file with `opam exec -- dune build theories/Foo.vo`.
 
-Do not waste time retrying MCP proof sessions. Use Proof General via Emacs
-for all interactive proof development. MCP `rocq_query` may still work for
-standalone `Search`/`Check`/`Print` commands that don't require the module
-context.
+If you need a concrete sanity-check file for computation or reduction, keep it
+separate from the generic proof file.  Do not rewrite the generic development
+around tool limitations unless explicitly asked.
+
+# Rocq MCP Status
+
+The Rocq MCP launcher can be configured to start correctly in this project, but
+the remaining blocker is theorem reopening, not process startup.
+
+Current findings:
+
+- `rocq_start` / `rocq_check` work on some simple top-level theorems.
+- The theorem-reopen path does **not** work reliably for parameterized
+  developments in this repo.
+- The failure reproduces with:
+  - module functors over `Uint64`
+  - `Section` variables
+  - first-class records such as `UintR`
+- The failing pattern is theorem statements that depend on:
+  - functor parameters or section parameters
+  - record interfaces such as `UintR`
+  - projections such as `width`
+  - local definitions built from those parameters/projections
+- Position-based `rocq_start(file, line, character)` has not been a reliable
+  workaround in these files; it often returns `proof_finished = true` with no
+  usable local proof state.
+
+Representative repro files in this repo:
+
+- `theories/McpFunctorRepro.v`
+- `theories/McpRecordRepro.v`
+- `rocq-mcp-functor-repro.md`
+- `rocq-mcp-record-repro.md`
+
+Practical guidance:
+
+- Do not spend time retrying MCP interactive proof sessions in
+  `ArithmeticProofs.v`, `RuntimeMulProofs.v`, `UintRecordsMetatheorems.v`, or
+  similar parameterized files.
+- Use Proof General via Emacs for all real interactive proof development.
+- MCP is still acceptable for:
+  - `rocq_toc`
+  - `rocq_compile_file`
+  - small standalone `rocq_query` calls with an explicit preamble
+  - tiny non-parameterized toy files used only for reproducing tool bugs

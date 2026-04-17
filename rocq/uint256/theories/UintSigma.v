@@ -1004,7 +1004,6 @@ End SigmaBridge.
 Module RuntimeMulConsistency.
   Module P := RuntimeMulProofs.MakeProofs(SigmaUint64).
   Include P.
-  Print truncating_mul_runtime_correct.
   Print Assumptions truncating_mul_runtime_correct.
 End RuntimeMulConsistency.
 

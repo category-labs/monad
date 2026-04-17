@@ -319,43 +319,4 @@ Definition udivrem (M N : nat) (u v : words) : option udivrem_result :=
       (quot ++ repeat 0 (M - length quot))
       (rem ++ repeat 0 (N - length rem))).
 
-(** ** Signed Division *)
-
-(** Two's complement negation of a word list via borrow-chain
-    subtraction from zero.  Each word is subtracted from 0 with
-    borrow propagation, equivalent to bitwise complement + 1. *)
-Fixpoint negate_words_aux (ws : words) (borrow : bool) : words :=
-  match ws with
-  | [] => []
-  | w :: rest =>
-      let r := subb64 0 w borrow in
-      value64 r :: negate_words_aux rest (carry64 r)
-  end.
-
-Definition negate_words (ws : words) : words :=
-  negate_words_aux ws false.
-
-(** Test whether the sign bit (MSB of the top word) is set.
-    [n] is the number of words in the representation. *)
-Definition is_negative (ws : words) (n : nat) : bool :=
-  U64.shr (get_word ws (n - 1)) (Pos.to_nat U64.width - 1) =? 1.
-
-(** Signed division of [n]-word two's complement integers.
-    Converts operands to absolute values, performs unsigned division,
-    then adjusts the signs of quotient and remainder.
-    C++ ref: uint256.hpp lines 1299-1316. *)
-Definition sdivrem (n : nat) (u v : words) : option udivrem_result :=
-  let u_neg := is_negative u n in
-  let v_neg := is_negative v n in
-  let u_abs := if u_neg then negate_words u else u in
-  let v_abs := if v_neg then negate_words v else v in
-  match udivrem n n u_abs v_abs with
-  | None => None
-  | Some result =>
-      let quot_neg := xorb u_neg v_neg in
-      Some (mk_udivrem_result
-        (if quot_neg then negate_words (ud_quot result) else ud_quot result)
-        (if u_neg then negate_words (ud_rem result) else ud_rem result))
-  end.
-
 End Make.

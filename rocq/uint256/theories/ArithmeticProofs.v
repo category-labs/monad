@@ -352,32 +352,240 @@ Proof.
   apply addc_full_correct_aux.
 Qed.
 
+Lemma subb_borrow_bool : forall B x y c,
+  1 < B ->
+  0 <= x < B ->
+  0 <= y < B ->
+  (c = 0 \/ c = 1) ->
+  ((x <? y) || ((x - y) mod B <? c)) = (x <? y + c).
+Proof.
+  intros B x y c HB Hx Hy Hc.
+  destruct Hc as [Hc|Hc]; subst c.
+  - replace (y + 0) with y by lia.
+    assert (Hmod : ((x - y) mod B <? 0) = false).
+    { apply Z.ltb_ge. pose proof (Z.mod_pos_bound (x - y) B). lia. }
+    rewrite Hmod, orb_false_r. reflexivity.
+  - destruct (x <? y) eqn:Hxy.
+    + apply Z.ltb_lt in Hxy.
+      simpl.
+      symmetry.
+      apply Z.ltb_lt.
+      lia.
+    + apply Z.ltb_ge in Hxy.
+      simpl.
+      assert (Hmod : (x - y) mod B = x - y).
+      { apply Z.mod_small. lia. }
+      rewrite Hmod.
+      destruct (Z.ltb_spec0 (x - y) 1);
+        destruct (Z.ltb_spec0 x (y + 1)); simpl; lia.
+Qed.
+
+Lemma mod_borrow_decompose : forall B n,
+  0 < B ->
+  - B <= n < B ->
+  n mod B - (if n <? 0 then B else 0) = n.
+Proof.
+  intros B n HB Hn.
+  destruct (n <? 0) eqn:Hneg.
+  - apply Z.ltb_lt in Hneg.
+    assert (Hmod : n mod B = n + B).
+    { symmetry. apply Z.mod_unique with (q := -1); lia. }
+    rewrite Hmod. lia.
+  - apply Z.ltb_ge in Hneg.
+    rewrite Z.mod_small by lia. lia.
+Qed.
+
+Lemma subb_full_generic : forall B x y c,
+  1 < B ->
+  0 <= x < B ->
+  0 <= y < B ->
+  (c = 0 \/ c = 1) ->
+  ((x - y) mod B - c) mod B -
+    (if ((x <? y) || ((x - y) mod B <? c)) then B else 0) =
+  x - y - c.
+Proof.
+  intros B x y c HB Hx Hy Hc.
+  rewrite subb_borrow_bool by assumption.
+  rewrite Zminus_mod_idemp_l.
+  assert (Hlt : (x <? y + c) = (x - y - c <? 0)).
+  { destruct (Z.ltb_spec0 x (y + c));
+      destruct (Z.ltb_spec0 (x - y - c) 0); simpl; lia. }
+  rewrite Hlt.
+  apply mod_borrow_decompose.
+  - lia.
+  - destruct Hc as [Hc|Hc]; subst c; lia.
+Qed.
+
+Lemma subb64_full_correct_word : forall lhs rhs borrow_in,
+  to_Z (value64 (subb64 lhs rhs borrow_in)) -
+    (if carry64 (subb64 lhs rhs borrow_in) then base width else 0) =
+  to_Z lhs - to_Z rhs - if borrow_in then 1 else 0.
+Proof.
+  intros lhs rhs borrow_in.
+  unfold subb64.
+  cbn [value64 carry64].
+  remember ((lhs - rhs)%Uint) as sub eqn:Hsub.
+  remember ((sub - of_bool borrow_in)%Uint) as sub_borrow eqn:Hsub_borrow.
+  pose proof (spec_to_Z lhs) as Hlhs.
+  pose proof (spec_to_Z rhs) as Hrhs.
+  assert (HsubZ : to_Z sub = (to_Z lhs - to_Z rhs) mod base width).
+  { subst sub. apply spec_sub. }
+  assert (Hsub_borrowZ :
+    to_Z sub_borrow =
+      (to_Z sub - if borrow_in then 1 else 0) mod base width).
+  { subst sub_borrow. rewrite spec_sub, spec_of_bool. reflexivity. }
+  rewrite !spec_gtb.
+  rewrite !Z.gtb_ltb.
+  rewrite spec_of_bool.
+  rewrite Hsub_borrowZ, HsubZ.
+  apply subb_full_generic.
+  - apply base_width_gt_1.
+  - exact Hlhs.
+  - exact Hrhs.
+  - destruct borrow_in; auto.
+Qed.
+
+Lemma subb64_borrow_correct_word : forall lhs rhs borrow_in,
+  carry64 (subb64 lhs rhs borrow_in) =
+    Z.ltb (to_Z lhs - to_Z rhs - if borrow_in then 1 else 0) 0.
+Proof.
+  intros lhs rhs borrow_in.
+  unfold subb64.
+  cbn [carry64].
+  remember ((lhs - rhs)%Uint) as sub eqn:Hsub.
+  pose proof (spec_to_Z lhs) as Hlhs.
+  pose proof (spec_to_Z rhs) as Hrhs.
+  assert (HsubZ : to_Z sub = (to_Z lhs - to_Z rhs) mod base width).
+  { subst sub. apply spec_sub. }
+  rewrite !spec_gtb.
+  rewrite !Z.gtb_ltb.
+  rewrite spec_of_bool.
+  rewrite HsubZ.
+  rewrite subb_borrow_bool.
+  - assert (Hlt :
+      (to_Z lhs <? to_Z rhs + if borrow_in then 1 else 0) =
+      ((to_Z lhs - to_Z rhs - if borrow_in then 1 else 0) <? 0)).
+    { destruct (Z.ltb_spec0 (to_Z lhs)
+          (to_Z rhs + if borrow_in then 1 else 0));
+        destruct (Z.ltb_spec0
+          (to_Z lhs - to_Z rhs - if borrow_in then 1 else 0) 0);
+        simpl; lia. }
+    exact Hlt.
+  - apply base_width_gt_1.
+  - exact Hlhs.
+  - exact Hrhs.
+  - destruct borrow_in; auto.
+Qed.
+
+Lemma subb_full_correct_aux : forall x y,
+  to_Z_uint256 (value256 (subb x y)) -
+    (if carry256 (subb x y) then modulus256 else 0) =
+    to_Z_uint256 x - to_Z_uint256 y.
+Proof.
+  intros [x0 x1 x2 x3] [y0 y1 y2 y3].
+  unfold subb, to_Z_uint256, modulus256, to_Z_words, modulus_words.
+  cbn - [subb64].
+  set (r0 := subb64 x0 y0 false).
+  set (r1 := subb64 x1 y1 (carry64 r0)).
+  set (r2 := subb64 x2 y2 (carry64 r1)).
+  set (r3 := subb64 x3 y3 (carry64 r2)).
+  pose proof (subb64_full_correct_word x0 y0 false) as H0.
+  fold r0 in H0.
+  pose proof (subb64_full_correct_word x1 y1 (carry64 r0)) as H1.
+  fold r1 in H1.
+  pose proof (subb64_full_correct_word x2 y2 (carry64 r1)) as H2.
+  fold r2 in H2.
+  pose proof (subb64_full_correct_word x3 y3 (carry64 r2)) as H3.
+  fold r3 in H3.
+  destruct (carry64 r0), (carry64 r1), (carry64 r2), (carry64 r3);
+    simpl in H0, H1, H2, H3 |- *;
+    ring_simplify in H0;
+    ring_simplify in H1;
+    ring_simplify in H2;
+    ring_simplify in H3;
+    ring_simplify;
+    lia.
+Qed.
+
 Theorem subb_value_correct : forall x y,
   to_Z_uint256 (value256 (subb x y)) =
     (to_Z_uint256 x - to_Z_uint256 y) mod modulus256.
-Admitted.
+Proof.
+  intros x y.
+  set (v := to_Z_uint256 (value256 (subb x y))) in *.
+  set (s := to_Z_uint256 x - to_Z_uint256 y) in *.
+  pose proof (subb_full_correct_aux x y) as Hfull.
+  fold v in Hfull.
+  fold s in Hfull.
+  pose proof (to_Z_uint256_bounds (value256 (subb x y))) as Hbound.
+  fold v in Hbound.
+  destruct (carry256 (subb x y)) eqn:Hcarry.
+  - simpl in Hfull.
+    apply Z.mod_unique with (q := -1).
+    + left. exact Hbound.
+    + lia.
+  - simpl in Hfull.
+    rewrite <- Hfull.
+    rewrite Z.sub_0_r.
+    symmetry.
+    apply Z.mod_small.
+    exact Hbound.
+Qed.
 
 Theorem subb_borrow_correct : forall x y,
   carry256 (subb x y) = Z.ltb (to_Z_uint256 x) (to_Z_uint256 y).
-Admitted.
+Proof.
+  intros x y.
+  set (v := to_Z_uint256 (value256 (subb x y))) in *.
+  set (s := to_Z_uint256 x - to_Z_uint256 y) in *.
+  pose proof (subb_full_correct_aux x y) as Hfull.
+  fold v in Hfull.
+  fold s in Hfull.
+  pose proof (to_Z_uint256_bounds (value256 (subb x y))) as Hbound.
+  fold v in Hbound.
+  destruct (carry256 (subb x y)) eqn:Hcarry.
+  - simpl in Hfull.
+    symmetry.
+    apply Z.ltb_lt.
+    lia.
+  - simpl in Hfull.
+    symmetry.
+    apply Z.ltb_ge.
+    lia.
+Qed.
 
 Theorem subb_full_correct : forall x y,
   to_Z_uint256 (value256 (subb x y)) -
     (if carry256 (subb x y) then modulus256 else 0) =
     to_Z_uint256 x - to_Z_uint256 y.
-Admitted.
+Proof.
+  apply subb_full_correct_aux.
+Qed.
 
 Theorem ltb_uint256_correct : forall x y,
   ltb_uint256 x y = Z.ltb (to_Z_uint256 x) (to_Z_uint256 y).
-Admitted.
+Proof.
+  intros x y.
+  unfold ltb_uint256.
+  apply subb_borrow_correct.
+Qed.
 
 Theorem add_words_full_uint256_correct : forall x y,
   to_Z_words (add_words_full_uint256 x y) =
     to_Z_uint256 x + to_Z_uint256 y.
-Admitted.
-
-(** ** Modular arithmetic *)
-
+Proof.
+  intros x y.
+  unfold add_words_full_uint256.
+  rewrite WL.to_Z_words_app_single.
+  rewrite uint256_to_words_length.
+  change (modulus_words 4) with modulus256.
+  rewrite spec_of_bool.
+  pose proof (addc_full_correct_aux x y) as H.
+  unfold to_Z_uint256 in H.
+  destruct (carry256 (addc x y)); simpl in H;
+    rewrite ?Z.mul_0_r, ?Z.mul_1_l;
+    exact H.
+Qed.
 Theorem addmod_None_iff : forall x y modulus,
   addmod x y modulus = None <->
   to_Z_uint256 modulus = 0.
@@ -409,19 +617,138 @@ Admitted.
 Theorem negate_uint256_correct : forall x,
   to_Z_uint256 (negate_uint256 x) =
     (- to_Z_uint256 x) mod modulus256.
-Admitted.
+Proof.
+  intro x.
+  unfold negate_uint256.
+  rewrite subb_value_correct.
+  rewrite to_Z_zero_uint256.
+  change ((0 - to_Z_uint256 x) mod modulus256)
+    with ((- to_Z_uint256 x) mod modulus256).
+  reflexivity.
+Qed.
 
 Theorem negate_words_correct : forall ws,
   length ws = 4%nat ->
   to_Z_words (negate_words ws) =
     (- to_Z_words ws) mod modulus256.
-Admitted.
+Proof.
+  intros ws Hlen.
+  destruct ws as [|w0 [|w1 [|w2 [|w3 [|w4 ws']]]]];
+    simpl in Hlen; try discriminate.
+  inversion Hlen; subst; clear Hlen.
+  unfold negate_words.
+  simpl.
+  pose proof (subb_value_correct zero_uint256 (mk_uint256 w0 w1 w2 w3)) as H.
+  rewrite to_Z_zero_uint256 in H.
+  unfold to_Z_uint256 in H.
+  simpl in H.
+  change ((0 - to_Z_words [w0; w1; w2; w3]) mod modulus256)
+    with ((- to_Z_words [w0; w1; w2; w3]) mod modulus256) in H.
+  exact H.
+Qed.
+Lemma to_Z_sign_bit : to_Z sign_bit = 2 ^ 63.
+Proof.
+  unfold sign_bit, word_width.
+  rewrite width_is_64.
+  rewrite spec_shl, spec_one.
+  rewrite width_is_64.
+  rewrite Z.shiftl_mul_pow2 by lia.
+  unfold base.
+  rewrite Z.mod_small.
+  - reflexivity.
+  - split.
+    + apply Z.mul_nonneg_nonneg; lia.
+    + change (1 * 2 ^ 63 < 2 ^ 64).
+      replace (1 * 2 ^ 63) with (2 ^ 63) by lia.
+      apply Z.pow_lt_mono_r; lia.
+Qed.
 
+Lemma sign_threshold256_eq :
+  sign_threshold256 = modulus_words 3 * to_Z sign_bit.
+Proof.
+  unfold sign_threshold256, modulus256, modulus_words, WL.modulus_words.
+  rewrite width_is_64.
+  rewrite to_Z_sign_bit.
+  vm_compute.
+  reflexivity.
+Qed.
+Lemma high_word_ltb_split : forall low hi B s,
+  0 <= low < B ->
+  0 <= hi ->
+  (hi <? s) = (low + B * hi <? B * s).
+Proof.
+  intros low hi B s Hlow Hhi.
+  destruct (Z.ltb_spec0 hi s) as [Hlt|Hge].
+  - destruct (Z.ltb_spec0 (low + B * hi) (B * s)) as [Hlt0|Hge0].
+    + reflexivity.
+    + nia.
+  - destruct (Z.ltb_spec0 (low + B * hi) (B * s)) as [Hlt0|Hge0].
+    + nia.
+    + reflexivity.
+Qed.
 Theorem is_negative_correct : forall x,
   is_negative x = negb (Z.ltb (to_Z_uint256 x) sign_threshold256).
 Admitted.
+Lemma modulus256_pos : 0 < modulus256.
+Proof.
+  pose proof (to_Z_uint256_bounds zero_uint256) as H.
+  rewrite to_Z_zero_uint256 in H.
+  lia.
+Qed.
 
-(** ** Signed division and comparison *)
+Lemma count_significant_words_uint256_zero_iff : forall x,
+  count_significant_words (uint256_to_words x) = 0%nat <->
+  to_Z_uint256 x = 0.
+Proof.
+  intro x.
+  split.
+  - intro Hcsw.
+    unfold to_Z_uint256.
+    apply DP.count_significant_words_zero.
+    exact Hcsw.
+  - intro Hz.
+    destruct (Nat.eq_dec (count_significant_words (uint256_to_words x)) 0)
+      as [Hcsw|Hcsw]; [exact Hcsw|].
+    pose proof (DP.count_significant_words_lower_bound (uint256_to_words x))
+      as Hlb.
+    cbv zeta in Hlb.
+    assert (Hn : (0 < count_significant_words (uint256_to_words x))%nat)
+      by lia.
+    specialize (Hlb Hn).
+    pose proof (DP.WL.modulus_words_pos
+      (DP.count_significant_words (uint256_to_words x) - 1)) as Hpos.
+    assert (Hgt : 0 < DP.WL.to_Z_words (uint256_to_words x)).
+    { nia. }
+    unfold to_Z_uint256, to_Z_words in Hz.
+    change (DP.WL.to_Z_words (uint256_to_words x) = 0) in Hz.
+    lia.
+Qed.
+
+Lemma negate_uint256_zero_iff : forall x,
+  to_Z_uint256 (negate_uint256 x) = 0 <->
+  to_Z_uint256 x = 0.
+Proof.
+  intro x.
+  split.
+  - intro Hneg.
+    pose proof (to_Z_uint256_bounds x) as Hx.
+    rewrite negate_uint256_correct in Hneg.
+    destruct (Z.eq_dec (to_Z_uint256 x) 0) as [Hx0|Hx0]; auto.
+    assert (Hxpos : 0 < to_Z_uint256 x) by lia.
+    pose proof (mod_borrow_decompose modulus256 (- to_Z_uint256 x)
+      modulus256_pos ltac:(lia)) as Hmod.
+    assert (Hlt : (- to_Z_uint256 x <? 0) = true).
+    { apply Z.ltb_lt. lia. }
+    rewrite Hlt in Hmod.
+    rewrite Hneg in Hmod.
+    lia.
+  - intro Hx0.
+    rewrite negate_uint256_correct.
+    rewrite Hx0, Z.opp_0.
+    apply Z.mod_0_l.
+    pose proof modulus256_pos.
+    lia.
+Qed.
 
 Theorem sdivrem_None_iff : forall u v,
   sdivrem u v = None <->

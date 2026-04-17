@@ -62,6 +62,12 @@ use a live Proof General session as the primary workflow.
 - Use `Search`, `Check`, and `Print` from the Rocq toplevel / Proof General
   when you need local context-aware exploration.
 - Validate each edited file with `opam exec -- dune build theories/Foo.vo`.
+- If a proof attempt gets blocked, do **not** just drop back to `Admitted`
+  and move on. First leave the in-progress script in the file as a commented
+  block immediately above the theorem, with a short note about where it
+  stalled. Then restore a buildable state with `Admitted` and only then move
+  on to the next lemma. This rule is mandatory for future proof work in this
+  project.
 
 If you need a concrete sanity-check file for computation or reduction, keep it
 separate from the generic proof file.  Do not rewrite the generic development

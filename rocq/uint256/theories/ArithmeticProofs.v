@@ -60,6 +60,11 @@ Lemma words_to_uint256_roundtrip : forall x,
 Proof.
   intros [x0 x1 x2 x3]. reflexivity.
 Qed.
+Lemma get_word_eq_dp : forall ws i,
+  DP.WL.get_word ws i = get_word ws i.
+Proof.
+  reflexivity.
+Qed.
 
 Lemma to_Z_uint256_bounds : forall x,
   0 <= to_Z_uint256 x < modulus256.
@@ -586,6 +591,91 @@ Proof.
     rewrite ?Z.mul_0_r, ?Z.mul_1_l;
     exact H.
 Qed.
+Lemma to_Z_w3_zero_of_uint256_zero : forall x,
+  to_Z_uint256 x = 0 -> to_Z (w3 x) = 0.
+Proof.
+  intros [x0 x1 x2 x3] Hx.
+  pose proof (spec_to_Z x3) as H3.
+  assert (Hlb : modulus_words 3 * to_Z x3 <=
+    to_Z_uint256 (mk_uint256 x0 x1 x2 x3)).
+  {
+    unfold to_Z_uint256, to_Z_words.
+    cbn.
+    unfold modulus_words, WL.modulus_words.
+    simpl.
+    replace ((base width) ^ 3 * to_Z x3)
+      with (base width * (base width * (base width * to_Z x3)))
+      by ring.
+    pose proof (spec_to_Z x0) as H0.
+    pose proof (spec_to_Z x1) as H1.
+    pose proof (spec_to_Z x2) as H2.
+    nia.
+  }
+  rewrite Hx in Hlb.
+  destruct (Z.eq_dec (to_Z x3) 0) as [Hx3|Hx3]; [exact Hx3|].
+  pose proof (WL.modulus_words_pos 3) as Hm.
+  change (WL.modulus_words 3) with (modulus_words 3) in Hm.
+  assert (Hm_pos : 0 < modulus_words 3) by lia.
+  assert (Hx3_pos : 0 < to_Z x3) by lia.
+  assert (Hprod : 0 < modulus_words 3 * to_Z x3).
+  { apply Z.mul_pos_pos; [exact Hm_pos | exact Hx3_pos]. }
+  lia.
+Qed.
+
+Lemma udivrem_uint256_divisor_exists : forall M u modulus,
+  0 < to_Z_uint256 modulus ->
+  exists r, udivrem M 4 u (uint256_to_words modulus) = Some r.
+Proof.
+  intros M u modulus Hmod.
+  unfold udivrem.
+  set (m := count_significant_words u).
+  set (n := count_significant_words (uint256_to_words modulus)).
+  assert (Hn_pos : (0 < n)%nat).
+  {
+    destruct (Nat.eq_dec n 0) as [Hn0|Hn0]; [|lia].
+    subst n.
+    pose proof (DP.count_significant_words_zero (uint256_to_words modulus)
+      Hn0) as Hz.
+    unfold to_Z_uint256 in Hmod.
+    change (to_Z_words (uint256_to_words modulus) = 0) in Hz.
+    lia.
+  }
+  destruct (Nat.eqb n 0) eqn:Hn0.
+  { apply Nat.eqb_eq in Hn0. lia. }
+  destruct (Nat.ltb m n) eqn:Hmn.
+  { eexists. reflexivity. }
+  destruct (Nat.eqb m 1) eqn:Hm1.
+  - apply Nat.eqb_eq in Hm1.
+    apply Nat.ltb_ge in Hmn.
+    assert (Hn1 : n = 1%nat) by lia.
+    subst n.
+    pose proof (DP.count_significant_words_msw_nonzero
+      (uint256_to_words modulus) Hn_pos) as Hvpos.
+    assert (Hn1p : DP.count_significant_words (uint256_to_words modulus) = 1%nat).
+    { change (count_significant_words (uint256_to_words modulus) = 1%nat).
+      exact Hn1. }
+    rewrite Hn1p in Hvpos.
+    simpl in Hvpos.
+    rewrite get_word_eq_dp in Hvpos.
+    assert (H0_lt : to_Z zero < to_Z (get_word (uint256_to_words modulus) 0)).
+    { rewrite spec_zero. lia. }
+    pose proof (spec_div zero (get_word u 0)
+      (get_word (uint256_to_words modulus) 0) Hvpos H0_lt)
+      as [q [r0 [Hdiv _]]].
+    rewrite Hdiv. eexists. reflexivity.
+  - destruct (Nat.eqb n 1) eqn:Hn1.
+    + eexists. reflexivity.
+    + destruct
+        (knuth_div m n
+          (shift_left_words (firstn m u)
+            (countl_zero (get_word (uint256_to_words modulus) (n - 1))))
+          (firstn n
+            (shift_left_words (firstn n (uint256_to_words modulus))
+              (countl_zero (get_word (uint256_to_words modulus) (n - 1))))))
+        as [u_after quot].
+      eexists. reflexivity.
+Qed.
+
 Theorem addmod_None_iff : forall x y modulus,
   addmod x y modulus = None <->
   to_Z_uint256 modulus = 0.
@@ -603,6 +693,15 @@ Theorem mulmod_None_iff : forall x y modulus,
   mulmod x y modulus = None <->
   to_Z_uint256 modulus = 0.
 Admitted.
+
+Lemma modulus256_square : modulus256 * modulus256 = modulus_words 8.
+Proof.
+  unfold modulus256, modulus_words.
+  simpl.
+  change ((base width) ^ 4 * (base width) ^ 4 = (base width) ^ 8).
+  rewrite <- Z.pow_add_r by lia.
+  reflexivity.
+Qed.
 
 Theorem mulmod_correct : forall x y modulus r,
   0 < to_Z_uint256 modulus ->
@@ -848,6 +947,39 @@ Theorem shift_left_uint256_aux_correct : forall x shift,
     then (to_Z_uint256 x * 2 ^ to_Z shift) mod modulus256
     else 0.
 Admitted.
+
+Lemma to_Z_uint256_zero_high : forall s0 s1 s2 s3,
+  to_Z s1 = 0 -> to_Z s2 = 0 -> to_Z s3 = 0 ->
+  to_Z_uint256 (mk_uint256 s0 s1 s2 s3) = to_Z s0.
+Proof.
+  intros s0 s1 s2 s3 H1 H2 H3.
+  unfold to_Z_uint256, to_Z_words.
+  cbn.
+  rewrite H1, H2, H3.
+  lia.
+Qed.
+
+Lemma to_Z_uint256_high_ge_base : forall s0 s1 s2 s3,
+  0 < to_Z s1 \/ 0 < to_Z s2 \/ 0 < to_Z s3 ->
+  base width <= to_Z_uint256 (mk_uint256 s0 s1 s2 s3).
+Proof.
+  intros s0 s1 s2 s3 Hhi.
+  unfold to_Z_uint256, to_Z_words.
+  cbn.
+  pose proof (spec_to_Z s0) as H0.
+  pose proof (spec_to_Z s1) as H1.
+  pose proof (spec_to_Z s2) as H2.
+  pose proof (spec_to_Z s3) as H3.
+  assert (Hbase : 0 < base width).
+  { unfold base. rewrite width_is_64. simpl. lia. }
+  assert (Hbase1 : 1 <= base width) by lia.
+  destruct Hhi as [Hs1 | [Hs2 | Hs3p]].
+  - nia.
+  - assert (Hbb : base width <= base width * base width) by nia.
+    nia.
+  - assert (Hbbb : base width <= base width * base width * base width) by nia.
+    nia.
+Qed.
 
 Theorem shift_left_uint256_correct : forall x shift,
   to_Z_uint256 (shift_left_uint256 x shift) =

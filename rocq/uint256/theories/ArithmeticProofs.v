@@ -688,6 +688,40 @@ Proof.
 Qed.
 Theorem is_negative_correct : forall x,
   is_negative x = negb (Z.ltb (to_Z_uint256 x) sign_threshold256).
+(*
+In-progress script:
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold is_negative, to_Z_uint256.
+  cbn [uint256_to_words].
+  rewrite spec_ltb.
+  unfold to_Z_words.
+  cbn [WL.to_Z_words].
+  replace (x0 + base width * (x1 + base width * (x2 + base width * (x3 + 0))))
+    with (WL.to_Z_words [x0; x1; x2] + modulus_words 3 * x3).
+  2:{ cbn [WL.to_Z_words].
+      rewrite WL.modulus_words_succ, WL.modulus_words_succ,
+        WL.modulus_words_succ, WL.modulus_words_0.
+      ring. }
+  rewrite sign_threshold256_eq.
+  pose proof (WL.to_Z_words_bound [x0; x1; x2]) as Hlow.
+  pose proof (spec_to_Z x3) as Hhi.
+  pose proof to_Z_sign_bit as Hsb.
+  rewrite Hsb in *.
+  set (bx := (x3 <? 2 ^ 63)).
+  set (by0 :=
+    (WL.to_Z_words [x0; x1; x2] + modulus_words 3 * x3
+      <? modulus_words 3 * 2 ^ 63)).
+  assert (Hcmp : bx = by0).
+  { unfold bx, by0.
+    apply high_word_ltb_split.
+    - exact Hlow.
+    - lia. }
+  (* Stalled on the final normalization step:
+     goal still needs to be rewritten into [negb bx = negb by0]
+     before [rewrite Hcmp] can finish. *)
+Abort.
+*)
 Admitted.
 Lemma modulus256_pos : 0 < modulus256.
 Proof.
@@ -753,8 +787,46 @@ Qed.
 Theorem sdivrem_None_iff : forall u v,
   sdivrem u v = None <->
   to_Z_uint256 v = 0.
+(*
+In-progress script:
+Proof.
+  intros u v.
+  unfold sdivrem.
+  remember (is_negative u) as u_neg.
+  remember (is_negative v) as v_neg.
+  remember (if u_neg then negate_uint256 u else u) as u_abs.
+  remember (if v_neg then negate_uint256 v else v) as v_abs.
+  set (divr := udivrem 4 4 (uint256_to_words u_abs) (uint256_to_words v_abs)).
+  destruct divr as [r|] eqn:Hdiv.
+  - split; [discriminate|].
+    intro Hv0.
+    assert (Hvabs0 : to_Z_uint256 v_abs = 0).
+    { subst v_abs. destruct v_neg; [apply negate_uint256_zero_iff|]; assumption. }
+    apply <- count_significant_words_uint256_zero_iff in Hvabs0.
+    unfold divr, udivrem in Hdiv.
+    rewrite Hvabs0 in Hdiv.
+    discriminate.
+  - split.
+    + intro Hnone.
+      unfold divr, udivrem in Hdiv.
+      destruct (count_significant_words (uint256_to_words v_abs)) eqn:Hcsw.
+      * apply count_significant_words_uint256_zero_iff in Hcsw.
+        subst v_abs.
+        destruct v_neg; [apply negate_uint256_zero_iff in Hcsw|]; assumption.
+      * (* Stalled here: need a cleaner contradiction argument showing that
+           [udivrem] cannot be [None] once the divisor has positive value,
+           by analyzing the remaining branches of [udivrem]. *)
+        discriminate.
+    + intro Hv0.
+      assert (Hvabs0 : to_Z_uint256 v_abs = 0).
+      { subst v_abs. destruct v_neg; [apply negate_uint256_zero_iff|]; assumption. }
+      apply <- count_significant_words_uint256_zero_iff in Hvabs0.
+      unfold divr, udivrem in Hdiv |- *.
+      rewrite Hvabs0.
+      reflexivity.
+Abort.
+*)
 Admitted.
-
 Theorem sdivrem_correct : forall u v r,
   to_Z_uint256 v <> 0 ->
   sdivrem u v = Some r ->

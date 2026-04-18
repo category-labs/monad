@@ -30,8 +30,6 @@ Module RMP := RuntimeMulProofs.MakeProofs(U64).
 
 Open Scope Z_scope.
 
-Local Coercion to_Z : t >-> Z.
-
 Local Definition to_Z_words := WL.to_Z_words.
 Local Definition modulus_words := WL.modulus_words.
 
@@ -677,8 +675,250 @@ Proof.
 Qed.
 
 Theorem addmod_None_iff : forall x y modulus,
+(*
+In-progress script:
+Proof.
+  intros x y modulus.
+  split.
+  - intro Hnone.
+    destruct (Z.eq_dec (to_Z_uint256 modulus) 0) as [Hz|Hz]; auto.
+    pose proof (to_Z_uint256_bounds modulus) as Hbounds.
+    assert (Hmod : 0 < to_Z_uint256 modulus) by lia.
+    unfold addmod in Hnone.
+    destruct (((negb (w3 modulus =? 0)) && (w3 x <=? w3 modulus) &&
+        (w3 y <=? w3 modulus))%bool) eqn:Hguard.
+    + (* Stalled here: the fast path reduces to [Some _], but the proof
+         script needs a cleaner local contradiction argument than repeated
+         [simpl]/[discriminate] against the nested boolean branch. *)
+      admit.
+    + destruct (udivrem 5 4 (add_words_full_uint256 x y)
+        (uint256_to_words modulus)) eqn:Hud; [discriminate|].
+      destruct (udivrem_uint256_divisor_exists 5
+        (add_words_full_uint256 x y) modulus Hmod) as [r Hr].
+      rewrite Hr in Hud. discriminate.
+  - intro Hz.
+    unfold addmod.
+    assert (Hw3 : to_Z (w3 modulus) = 0).
+    { apply to_Z_w3_zero_of_uint256_zero. exact Hz. }
+    rewrite spec_eqb, Hw3, spec_zero.
+    simpl.
+    apply <- count_significant_words_uint256_zero_iff in Hz.
+    unfold udivrem.
+    rewrite Hz.
+    reflexivity.
+Abort.
+*)
   addmod x y modulus = None <->
   to_Z_uint256 modulus = 0.
+(* Remaining: Show The Fast Branch Is Always [Some _] And That The
+   Fallback [Udivrem] Branch Is [None] Exactly When The Modulus Is Zero. *)
+Admitted.
+
+Lemma to_Z_uint256_split_w3 : forall x,
+  to_Z_uint256 x =
+    to_Z_words [w0 x; w1 x; w2 x] + modulus_words 3 * to_Z (w3 x).
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold to_Z_uint256, to_Z_words, modulus_words, WL.modulus_words.
+  cbn [uint256_to_words WL.to_Z_words].
+  nia.
+Qed.
+
+Lemma to_Z_uint256_lt_w3_succ : forall x,
+  to_Z_uint256 x < modulus_words 3 * (to_Z (w3 x) + 1).
+Proof.
+  intro x.
+  rewrite to_Z_uint256_split_w3.
+  pose proof (WL.to_Z_words_bound [w0 x; w1 x; w2 x]) as Hlow.
+  change (0 <= to_Z_words [w0 x; w1 x; w2 x] < modulus_words 3) in Hlow.
+  nia.
+Qed.
+
+Lemma topword_le_implies_lt_double_modulus : forall x modulus,
+  0 < to_Z (w3 modulus) ->
+  to_Z (w3 x) <= to_Z (w3 modulus) ->
+  to_Z_uint256 x < 2 * to_Z_uint256 modulus.
+Proof.
+  intros x modulus Hmodhi Hle.
+  pose proof (to_Z_uint256_lt_w3_succ x) as Hx.
+  pose proof (WL.to_Z_words_bound [w0 modulus; w1 modulus; w2 modulus]) as Hlow.
+  change (0 <= to_Z_words [w0 modulus; w1 modulus; w2 modulus] < modulus_words 3) in Hlow.
+  pose proof (WL.modulus_words_pos 3) as HB.
+  assert (Hstep1 :
+    to_Z_uint256 x < modulus_words 3 * (to_Z (w3 modulus) + 1)) by nia.
+  assert (Hstep2 :
+    modulus_words 3 * (to_Z (w3 modulus) + 1) <=
+    2 * modulus_words 3 * to_Z (w3 modulus)) by nia.
+  assert (Hstep3 :
+    2 * modulus_words 3 * to_Z (w3 modulus) <= 2 * to_Z_uint256 modulus).
+  {
+    rewrite to_Z_uint256_split_w3.
+    nia.
+  }
+  lia.
+Qed.
+
+Lemma addmod_fast_path_guard : forall x y modulus,
+  ((negb (w3 modulus =? 0)%Uint) && (w3 x <=? w3 modulus)%Uint &&
+      (w3 y <=? w3 modulus)%Uint)%bool = true ->
+  0 < to_Z (w3 modulus) /\
+  to_Z (w3 x) <= to_Z (w3 modulus) /\
+  to_Z (w3 y) <= to_Z (w3 modulus).
+Proof.
+  intros x y modulus Hguard.
+  apply andb_prop in Hguard as [Hxy Hyle].
+  apply andb_prop in Hxy as [Hnz Hxle].
+  apply negb_true_iff in Hnz.
+  rewrite (spec_eqb (w3 modulus) 0%Uint), spec_zero in Hnz.
+  rewrite (spec_leb (w3 x) (w3 modulus)) in Hxle.
+  rewrite (spec_leb (w3 y) (w3 modulus)) in Hyle.
+  apply Z.leb_le in Hxle.
+  apply Z.leb_le in Hyle.
+  destruct (to_Z (w3 modulus) =? 0) eqn:Heq; simpl in Hnz; try discriminate.
+  apply Z.eqb_neq in Heq.
+  pose proof (spec_to_Z (w3 modulus)) as Hmb.
+  split.
+  - lia.
+  - split; lia.
+Qed.
+
+Lemma normalize_subb_once_correct : forall x modulus,
+  0 < to_Z_uint256 modulus ->
+  to_Z_uint256 x < 2 * to_Z_uint256 modulus ->
+  to_Z_uint256
+    (if carry256 (subb x modulus) then x else value256 (subb x modulus)) =
+      to_Z_uint256 x mod to_Z_uint256 modulus /\
+  0 <= to_Z_uint256
+    (if carry256 (subb x modulus) then x else value256 (subb x modulus)) <
+      to_Z_uint256 modulus.
+Proof.
+  intros x modulus Hmod Hlt.
+  pose proof (to_Z_uint256_bounds x) as Hx_bound.
+  destruct (carry256 (subb x modulus)) eqn:Hcarry.
+  - rewrite subb_borrow_correct in Hcarry.
+    apply Z.ltb_lt in Hcarry.
+    split.
+    + symmetry.
+      apply Z.mod_small.
+      lia.
+    + lia.
+  - rewrite subb_borrow_correct in Hcarry.
+    apply Z.ltb_ge in Hcarry.
+    pose proof (subb_value_correct x modulus) as Hval.
+    pose proof (to_Z_uint256_bounds modulus) as Hmod_bound.
+    assert (Hsmall :
+      0 <= to_Z_uint256 x - to_Z_uint256 modulus < to_Z_uint256 modulus) by lia.
+    assert (Hsmall256 :
+      0 <= to_Z_uint256 x - to_Z_uint256 modulus < modulus256) by lia.
+    rewrite Hval.
+    rewrite Z.mod_small by exact Hsmall256.
+    split.
+    + apply Z.mod_unique with (q := 1); lia.
+    + exact Hsmall.
+Qed.
+
+(* Lemma addmod_fast_inputs_correct : forall x y modulus, *)
+(*   0 < to_Z_uint256 modulus -> *)
+(*   ((negb (w3 modulus =? 0)) && (w3 x <=? w3 modulus) && *)
+(*       (w3 y <=? w3 modulus))%bool = true -> *)
+(*   to_Z_uint256 *)
+(*     (if carry256 (subb x modulus) then x else value256 (subb x modulus)) = *)
+(*       to_Z_uint256 x mod to_Z_uint256 modulus /\ *)
+(*   0 <= to_Z_uint256 *)
+(*     (if carry256 (subb x modulus) then x else value256 (subb x modulus)) < *)
+(*       to_Z_uint256 modulus /\ *)
+(*   to_Z_uint256 *)
+(*     (if carry256 (subb y modulus) then y else value256 (subb y modulus)) = *)
+(*       to_Z_uint256 y mod to_Z_uint256 modulus /\ *)
+(*   0 <= to_Z_uint256 *)
+(*     (if carry256 (subb y modulus) then y else value256 (subb y modulus)) < *)
+(*       to_Z_uint256 modulus. *)
+(* Proof. *)
+(*   intros x y modulus Hmod Hguard. *)
+(*   destruct (addmod_guard_true_props x y modulus Hguard) as [Hmhi [Hxhi Hyhi]]. *)
+(*   pose proof (topword_le_implies_lt_double_modulus x modulus Hmhi Hxhi) as Hxlt. *)
+(*   pose proof (topword_le_implies_lt_double_modulus y modulus Hmhi Hyhi) as Hylt. *)
+(*   pose proof (normalize_subb_once_correct x modulus Hmod Hxlt) as Hxnorm. *)
+(*   pose proof (normalize_subb_once_correct y modulus Hmod Hylt) as Hynorm. *)
+(*   destruct Hxnorm as [Hxnorm Hxrange]. *)
+(*   destruct Hynorm as [Hynorm Hyrange]. *)
+(*   destruct Hxrange as [Hxnonneg Hxltm]. *)
+(*   destruct Hyrange as [Hynonneg Hyltm]. *)
+(*   repeat split; assumption. *)
+(* Qed. *)
+
+Lemma addmod_reduced_inputs_correct : forall x y modulus,
+  0 < to_Z_uint256 modulus ->
+  0 <= to_Z_uint256 x < to_Z_uint256 modulus ->
+  0 <= to_Z_uint256 y < to_Z_uint256 modulus ->
+  let xy_sum := addc x y in
+  let rem := subb (value256 xy_sum) modulus in
+  to_Z_uint256
+    (if (carry256 xy_sum || negb (carry256 rem))%bool
+     then value256 rem else value256 xy_sum) =
+      (to_Z_uint256 x + to_Z_uint256 y) mod to_Z_uint256 modulus /\
+  0 <= to_Z_uint256
+    (if (carry256 xy_sum || negb (carry256 rem))%bool
+     then value256 rem else value256 xy_sum) <
+      to_Z_uint256 modulus.
+(*
+In-progress script:
+Proof.
+  intros x y modulus Hmod Hxrange Hyrange.
+  set (xy_sum := addc x y).
+  set (rem := subb (value256 xy_sum) modulus).
+  set (s := to_Z_uint256 x + to_Z_uint256 y).
+  change
+    (to_Z_uint256
+       (if (carry256 xy_sum || negb (carry256 rem))%bool
+        then value256 rem else value256 xy_sum) =
+       s mod to_Z_uint256 modulus /\
+     0 <= to_Z_uint256
+       (if (carry256 xy_sum || negb (carry256 rem))%bool
+        then value256 rem else value256 xy_sum) <
+       to_Z_uint256 modulus).
+  pose proof (addc_full_correct x y) as Hsum.
+  fold xy_sum s in Hsum.
+  pose proof (subb_full_correct (value256 xy_sum) modulus) as Hsub.
+  fold rem in Hsub.
+  pose proof (subb_borrow_correct (value256 xy_sum) modulus) as Hborrow.
+  fold rem in Hborrow.
+  pose proof (to_Z_uint256_bounds (value256 xy_sum)) as Hlow_bound.
+  assert (Hs_range : 0 <= s < 2 * to_Z_uint256 modulus) by (unfold s; lia).
+  destruct (carry256 xy_sum) eqn:Hcarry.
+  - assert (Hlow_eq : to_Z_uint256 (value256 xy_sum) = s - modulus256) by lia.
+    assert (Hlow_lt_mod : to_Z_uint256 (value256 xy_sum) < to_Z_uint256 modulus).
+    { rewrite Hlow_eq. pose proof (to_Z_uint256_bounds modulus) as Hmod_bound. lia. }
+    assert (Hborrow_true : carry256 rem = true).
+    { rewrite Hborrow. apply Z.ltb_lt. exact Hlow_lt_mod. }
+    rewrite Hborrow_true. cbn [orb negb].
+    rewrite Hborrow_true in Hsub.
+    assert (Hres : to_Z_uint256 (value256 rem) = s - to_Z_uint256 modulus).
+    { rewrite Hlow_eq in Hsub. lia. }
+    (* Stalled here: this branch is semantically reduced to
+       [s - modulus = s mod modulus] plus the range bound, but [Z.mod_unique]
+       still needs the goal normalized one step further. *)
+    admit.
+  - assert (Hlow_eq : to_Z_uint256 (value256 xy_sum) = s) by lia.
+    destruct (carry256 rem) eqn:Hborrow_rem.
+    + rewrite Hborrow in Hborrow_rem.
+      apply Z.ltb_lt in Hborrow_rem.
+      rewrite Hborrow_rem. cbn [orb negb].
+      rewrite Hlow_eq.
+      split; [apply Z.mod_small; lia|lia].
+    + rewrite Hborrow in Hborrow_rem.
+      apply Z.ltb_ge in Hborrow_rem.
+      rewrite Hborrow_rem. cbn [orb negb].
+      rewrite Hborrow_rem in Hsub.
+      assert (Hres : to_Z_uint256 (value256 rem) = s - to_Z_uint256 modulus).
+      { rewrite Hlow_eq in Hsub. lia. }
+      (* Same remaining task as the carry branch: normalize the final goal to
+         the [Z.mod_unique] shape after rewriting by [Hres]. *)
+      admit.
+Abort.
+*)
+(* Remaining: finish the carry/no-carry case split by normalizing the two
+   branches with [Hres] into the exact [Z.mod_unique] / [Z.mod_small] shapes. *)
 Admitted.
 
 Theorem addmod_correct : forall x y modulus r,
@@ -687,11 +927,128 @@ Theorem addmod_correct : forall x y modulus r,
   to_Z_uint256 r =
     (to_Z_uint256 x + to_Z_uint256 y) mod to_Z_uint256 modulus /\
   0 <= to_Z_uint256 r < to_Z_uint256 modulus.
+Proof.
+  intros x y modulus r Hmod Hadd.
+  unfold addmod in Hadd.
+  destruct ((negb (w3 modulus =? 0)%Uint) && (w3 x <=? w3 modulus)%Uint &&
+      (w3 y <=? w3 modulus)%Uint)%bool eqn:Hguard.
+  - (* fast path *)
+    remember (if carry256 (subb x modulus) then x else value256 (subb x modulus)) as x_norm.
+    remember (if carry256 (subb y modulus) then y else value256 (subb y modulus)) as y_norm.
+    apply andb_prop in Hguard as [Hxy Hyle].
+    apply andb_prop in Hxy as [Hnz Hxle].
+    apply negb_true_iff in Hnz.
+
+  apply Z.leb_le in Hxle.
+
+    destruct (to_Z (w3 modulus) =? 0)% eqn:Heq; simpl in Hnz; try discriminate.
+rewrite Heq in Hnz.
+admit.
+
+
+
+  apply Z.leb_le in Hyle.
+  pose proof (spec_to_Z (w3 modulus)) as Hmb.
+  split.
+  - lia.
+  - split; lia.
+
+
+    pose proof (addmod_fast_inputs_correct x y modulus Hmod Hguard)
+      as [Hxnorm [Hxrange [Hynorm Hyrange]]].
+    destruct (addc x_norm y_norm) as [sum_xy carry_xy] eqn:Hsum.
+    destruct (subb sum_xy modulus) as [sum_rem borrow_rem] eqn:Hrem.
+    destruct (carry_xy || negb borrow_rem)%bool eqn:Hchoose;
+      inversion Hadd; subst; clear Hadd.
+    + (* use [addmod_reduced_inputs_correct] on [x_norm] [y_norm] [modulus],
+         then rewrite by [Hxnorm] and [Hynorm] *)
+      admit.
+    + (* same theorem, opposite branch of the final boolean *)
+      admit.
+  - (* fallback [udivrem 5 4] path *)
+    destruct (udivrem 5 4 (add_words_full_uint256 x y) (uint256_to_words modulus))
+      as [divr|] eqn:Hud; try discriminate.
+    inversion Hadd; subst; clear Hadd.
+    (* bridge [Hud] to division correctness, then use the remainder bound and
+       [to_Z_uint256_words_to_uint256_small]. *)
+    admit.
+
+(* Remaining: Combine [Addmod_Fast_Inputs_Correct] With
+   [Addmod_Reduced_Inputs_Correct] For The Fast Path, Then Bridge The Fallback
+   [Udivrem 5 4] Call To The Corresponding Division Correctness Theorem. *)
 Admitted.
 
 Theorem mulmod_None_iff : forall x y modulus,
+(*
+In-progress script:
+Proof.
+  intros x y modulus.
+  split.
+  - intro Hnone.
+    destruct (Z.eq_dec (to_Z_uint256 modulus) 0) as [Hz|Hz]; auto.
+    pose proof (to_Z_uint256_bounds modulus) as Hbounds.
+    assert (Hmod : 0 < to_Z_uint256 modulus) by lia.
+    unfold mulmod in Hnone.
+    destruct (udivrem 8 4
+      (RMP.truncating_mul_runtime (uint256_to_words x) (uint256_to_words y) 8)
+      (uint256_to_words modulus)) eqn:Hud; simpl in Hnone;
+      [inversion Hnone|].
+    destruct (udivrem_uint256_divisor_exists 8
+      (RMP.truncating_mul_runtime (uint256_to_words x) (uint256_to_words y) 8)
+      modulus Hmod) as [r Hr].
+    (* Stalled here: [Hud] and [Hr] should contradict immediately, but the
+       option equality is not simplifying cleanly under the current proof
+       state. *)
+    admit.
+  - intro Hz.
+    unfold mulmod.
+    apply <- count_significant_words_uint256_zero_iff in Hz.
+    unfold udivrem.
+    rewrite Hz.
+    reflexivity.
+Abort.
+*)
   mulmod x y modulus = None <->
   to_Z_uint256 modulus = 0.
+(* Remaining: Rule Out [None] By Contradiction From Divisor
+   Positivity, Exactly As For [Addmod_None_Iff], But In The 8-By-4 Product Case. *)
+Admitted.
+
+Lemma to_Z_uint256_words_to_uint256_small : forall ws,
+(*
+In-progress script:
+Proof.
+  intros ws Hbound.
+  destruct ws as [|w0 [|w1 [|w2 [|w3 rest]]]].
+  - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat].
+    lia.
+  - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat].
+    lia.
+  - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat].
+    lia.
+  - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat].
+    lia.
+  - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat].
+    lia.
+  - pose proof (WL.to_Z_words_firstn_skipn (w0 :: w1 :: w2 :: w3 :: rest) 4
+      ltac:(lia)) as Hsplit.
+    cbn [firstn skipn] in Hsplit.
+    pose proof (WL.to_Z_words_bound rest) as Hrest.
+    (* Stalled here: from [to_Z_words (firstn 4 ws) + modulus256 *
+       to_Z_words rest < modulus256], we need the tail to be zero, then the
+       first four words give the whole value. *)
+    admit.
+Abort.
+*)
+  0 <= to_Z_words ws < modulus256 ->
+  to_Z_uint256 (words_to_uint256 ws) = to_Z_words ws.
+(* Remaining: Prove That Any Tail Beyond Four Words Must Be Zero Under
+   The Strict [< Modulus256] Hypothesis, Then The First Four Words Carry The Whole Value. *)
 Admitted.
 
 Lemma modulus256_square : modulus256 * modulus256 = modulus_words 8.
@@ -709,6 +1066,41 @@ Theorem mulmod_correct : forall x y modulus r,
   to_Z_uint256 r =
     (to_Z_uint256 x * to_Z_uint256 y) mod to_Z_uint256 modulus /\
   0 <= to_Z_uint256 r < to_Z_uint256 modulus.
+(*
+In-progress script:
+Proof.
+  intros x y modulus r Hmod Hmul.
+  unfold mulmod in Hmul.
+  set (prod :=
+    RMP.truncating_mul_runtime (uint256_to_words x) (uint256_to_words y) 8) in *.
+  destruct (udivrem 8 4 prod (uint256_to_words modulus)) as [[q rem]|]
+    eqn:Hud; try discriminate.
+  inversion Hmul; subst; clear Hmul.
+  pose proof (RMP.truncating_mul_runtime_length
+    (uint256_to_words x) (uint256_to_words y) 8 ltac:(lia)) as Hprod_len.
+  pose proof (uint256_to_words_length modulus) as Hmod_len.
+  pose proof (RMP.truncating_mul_runtime_correct
+    (uint256_to_words x) (uint256_to_words y) 8 ltac:(lia)) as Hprod_mod.
+  pose proof (WL.to_Z_words_bound prod) as Hprod_bound0.
+  pose proof (to_Z_uint256_bounds x) as Hx_bound.
+  pose proof (to_Z_uint256_bounds y) as Hy_bound.
+  assert (Hxy_small :
+    0 <= to_Z_uint256 x * to_Z_uint256 y < modulus_words 8).
+  {
+    split.
+    - apply Z.mul_nonneg_nonneg; lia.
+    - rewrite <- modulus256_square.
+      nia.
+  }
+  (* Stalled here: the remaining arithmetic is fine, but the proof needs a
+     reusable bridge from the local [udivrem] result to [DP.udivrem_correct].
+     A first attempt via a generic map-to-DP lemma turned out broader than
+     this theorem and is parked for now. *)
+Abort.
+*)
+(* Remaining: Finish The 512-Bit Product Path By Relating The Local
+   [Udivrem 8 4] Result To The Division Proof Module, Then Rewrite The Remainder Back
+   Through [To_Z_Uint256_Words_To_Uint256_Small]. *)
 Admitted.
 
 (** ** Signed helpers *)
@@ -785,6 +1177,7 @@ Proof.
     + nia.
     + reflexivity.
 Qed.
+
 Theorem is_negative_correct : forall x,
   is_negative x = negb (Z.ltb (to_Z_uint256 x) sign_threshold256).
 (*
@@ -821,6 +1214,8 @@ Proof.
      before [rewrite Hcmp] can finish. *)
 Abort.
 *)
+(* Remaining: Finish The Final Boolean Normalization After
+   [High_Word_Ltb_Split], So Both Sides Are Expressed As The Same Sign-Bit Comparison. *)
 Admitted.
 Lemma modulus256_pos : 0 < modulus256.
 Proof.
@@ -925,6 +1320,8 @@ Proof.
       reflexivity.
 Abort.
 *)
+(* Remaining: Show That Every Nonzero Divisor Makes The Internal
+   Unsigned Division Succeed, Using [Negate_Uint256_Zero_Iff] And The Existing Divisor-Exists Lemma. *)
 Admitted.
 Theorem sdivrem_correct : forall u v r,
   to_Z_uint256 v <> 0 ->
@@ -933,10 +1330,14 @@ Theorem sdivrem_correct : forall u v r,
     Z.quot (to_Z_signed_uint256 u) (to_Z_signed_uint256 v) /\
   to_Z_signed_words (ud_rem r) =
     Z.rem (to_Z_signed_uint256 u) (to_Z_signed_uint256 v).
+(* Remaining: Combine The Unsigned Division Theorem With The Sign-Case
+   Analysis From [Is_Negative_Correct] And The Quotient/Remainder Negation Lemmas. *)
 Admitted.
 
 Theorem slt_correct : forall x y,
   slt x y = Z.ltb (to_Z_signed_uint256 x) (to_Z_signed_uint256 y).
+(* Remaining: Reduce [Slt] To The Sign-Bit Split And The Proven
+   Unsigned Comparison Theorem [Ltb_Uint256_Correct]. *)
 Admitted.
 
 (** ** Exponentiation and shifts *)
@@ -946,6 +1347,8 @@ Theorem shift_left_uint256_aux_correct : forall x shift,
     if Z.ltb (to_Z shift) 256
     then (to_Z_uint256 x * 2 ^ to_Z shift) mod modulus256
     else 0.
+(* Remaining: Prove Each Branch Of The C++-Style Shift Control Flow
+   Against The Corresponding Arithmetic Left-Shift Modulo [Modulus256]. *)
 Admitted.
 
 Lemma to_Z_uint256_zero_high : forall s0 s1 s2 s3,
@@ -982,17 +1385,42 @@ Proof.
 Qed.
 
 Theorem shift_left_uint256_correct : forall x shift,
+(*
+In-progress script:
+Proof.
+  intros x [s0 s1 s2 s3].
+  unfold shift_left_uint256.
+  destruct (s1 =? 0) eqn:Hs1;
+    destruct (s2 =? 0) eqn:Hs2;
+    destruct (s3 =? 0) eqn:Hs3.
+  - (* Good case: all high words are zero.  The intended route is to turn
+       [Hs1]/[Hs2]/[Hs3] into [to_Z si = 0], rewrite
+       [shift_left_uint256_aux_correct], and then reduce
+       [to_Z_uint256 shift] to [to_Z s0].
+       The blocker was notation/orientation around [spec_eqb] after the
+       destruct-generated equalities. *)
+    admit.
+  - (* All remaining branches use [to_Z_uint256_high_ge_base] to show the
+       outer [if] takes the zero branch.  The statement looks right; the
+       script just needs a cleaner way to normalize the [eqb] hypotheses. *)
+    admit.
+Abort.
+*)
   to_Z_uint256 (shift_left_uint256 x shift) =
     if Z.ltb (to_Z_uint256 shift) (base width)
     then if Z.ltb (to_Z_uint256 shift) 256
          then (to_Z_uint256 x * 2 ^ to_Z_uint256 shift) mod modulus256
          else 0
     else 0.
+(* Remaining: Split On Whether The High Three Shift Words Are Zero,
+   Then Combine [Shift_Left_Uint256_Aux_Correct] With The Zero-High / High-Ge-Base Lemmas. *)
 Admitted.
 
 Theorem exp_correct : forall base exponent,
   to_Z_uint256 (exp base exponent) =
     Z.pow (to_Z_uint256 base) (to_Z_uint256 exponent) mod modulus256.
+(* Remaining: Prove The Fast Path For Base=2 And Then The Generic
+   Square-And-Multiply Loop Against Modular Exponentiation. *)
 Admitted.
 
 End MakeProofs.

@@ -861,65 +861,76 @@ Lemma addmod_reduced_inputs_correct : forall x y modulus,
     (if (carry256 xy_sum || negb (carry256 rem))%bool
      then value256 rem else value256 xy_sum) <
       to_Z_uint256 modulus.
-(*
-In-progress script:
 Proof.
-  intros x y modulus Hmod Hxrange Hyrange.
+  intros x y modulus Hmod [Hxlo Hxhi] [Hylo Hyhi].
+  cbn zeta.
   set (xy_sum := addc x y).
   set (rem := subb (value256 xy_sum) modulus).
   set (s := to_Z_uint256 x + to_Z_uint256 y).
-  change
-    (to_Z_uint256
-       (if (carry256 xy_sum || negb (carry256 rem))%bool
-        then value256 rem else value256 xy_sum) =
-       s mod to_Z_uint256 modulus /\
-     0 <= to_Z_uint256
-       (if (carry256 xy_sum || negb (carry256 rem))%bool
-        then value256 rem else value256 xy_sum) <
-       to_Z_uint256 modulus).
-  pose proof (addc_full_correct x y) as Hsum.
-  fold xy_sum s in Hsum.
-  pose proof (subb_full_correct (value256 xy_sum) modulus) as Hsub.
-  fold rem in Hsub.
-  pose proof (subb_borrow_correct (value256 xy_sum) modulus) as Hborrow.
-  fold rem in Hborrow.
-  pose proof (to_Z_uint256_bounds (value256 xy_sum)) as Hlow_bound.
-  assert (Hs_range : 0 <= s < 2 * to_Z_uint256 modulus) by (unfold s; lia).
-  destruct (carry256 xy_sum) eqn:Hcarry.
-  - assert (Hlow_eq : to_Z_uint256 (value256 xy_sum) = s - modulus256) by lia.
-    assert (Hlow_lt_mod : to_Z_uint256 (value256 xy_sum) < to_Z_uint256 modulus).
-    { rewrite Hlow_eq. pose proof (to_Z_uint256_bounds modulus) as Hmod_bound. lia. }
+  pose proof (to_Z_uint256_bounds modulus) as Hmod_bound.
+  assert (Hs_range : 0 <= s < 2 * to_Z_uint256 modulus) by lia.
+  destruct (carry256 xy_sum) eqn:Hcarry; cbn [orb negb].
+  - assert (Hlow_eq : to_Z_uint256 (value256 xy_sum) = s - modulus256).
+    { unfold s in *.
+      unfold xy_sum.
+      unfold xy_sum in Hcarry.
+      pose proof (addc_full_correct x y) as Hsum.
+      rewrite Hcarry in Hsum. lia. }
+    assert (Hlow_lt_mod : to_Z_uint256 (value256 xy_sum) <
+      to_Z_uint256 modulus).
+    { rewrite Hlow_eq. lia. }
     assert (Hborrow_true : carry256 rem = true).
-    { rewrite Hborrow. apply Z.ltb_lt. exact Hlow_lt_mod. }
-    rewrite Hborrow_true. cbn [orb negb].
-    rewrite Hborrow_true in Hsub.
-    assert (Hres : to_Z_uint256 (value256 rem) = s - to_Z_uint256 modulus).
-    { rewrite Hlow_eq in Hsub. lia. }
-    (* Stalled here: this branch is semantically reduced to
-       [s - modulus = s mod modulus] plus the range bound, but [Z.mod_unique]
-       still needs the goal normalized one step further. *)
-    admit.
-  - assert (Hlow_eq : to_Z_uint256 (value256 xy_sum) = s) by lia.
-    destruct (carry256 rem) eqn:Hborrow_rem.
-    + rewrite Hborrow in Hborrow_rem.
-      apply Z.ltb_lt in Hborrow_rem.
-      rewrite Hborrow_rem. cbn [orb negb].
+    { pose proof (subb_borrow_correct (value256 xy_sum) modulus) as Hborrow.
+      fold rem in Hborrow.
+      rewrite Hborrow. apply Z.ltb_lt. exact Hlow_lt_mod. }
+    assert (Hres : to_Z_uint256 (value256 rem) =
+      s - to_Z_uint256 modulus).
+    { unfold s in *.
+      pose proof (subb_full_correct (value256 xy_sum) modulus) as Hsub.
+      fold rem in Hsub.
+      rewrite Hborrow_true in Hsub.
+      rewrite Hlow_eq in Hsub. lia. }
+    rewrite Hres.
+    rewrite Hlow_eq in Hlow_lt_mod.
+    pose proof (to_Z_uint256_bounds (value256 xy_sum)) as Hlow_bound.
+    rewrite Hlow_eq in Hlow_bound.
+    split; [|lia].
+    apply Z.mod_unique with (q := 1); [left|]; lia.
+  - assert (Hlow_eq : to_Z_uint256 (value256 xy_sum) = s).
+    {
+      pose proof (addc_full_correct x y) as Hsum.
+      subst xy_sum.
+      rewrite Hcarry in Hsum.
+      lia. }
+    destruct (carry256 rem) eqn:Hborrow_rem; cbn [orb negb].
+    + pose proof Hborrow_rem as Hborrow_lt.
+      pose proof (subb_borrow_correct (value256 xy_sum) modulus) as Hborrow.
+      fold rem in Hborrow.
+      rewrite Hborrow in Hborrow_lt.
+      apply Z.ltb_lt in Hborrow_lt.
       rewrite Hlow_eq.
-      split; [apply Z.mod_small; lia|lia].
-    + rewrite Hborrow in Hborrow_rem.
-      apply Z.ltb_ge in Hborrow_rem.
-      rewrite Hborrow_rem. cbn [orb negb].
-      rewrite Hborrow_rem in Hsub.
-      assert (Hres : to_Z_uint256 (value256 rem) = s - to_Z_uint256 modulus).
-      { rewrite Hlow_eq in Hsub. lia. }
-      (* Same remaining task as the carry branch: normalize the final goal to
-         the [Z.mod_unique] shape after rewriting by [Hres]. *)
-      admit.
-Abort.
-*)
-(* Remaining: finish the carry/no-carry case split by normalizing the two
-   branches with [Hres] into the exact [Z.mod_unique] / [Z.mod_small] shapes. *)
-Admitted.
+      split.
+      * symmetry.
+        apply Z.mod_small. lia.
+      * lia.
+    + pose proof Hborrow_rem as Hborrow_ge.
+      pose proof (subb_borrow_correct (value256 xy_sum) modulus) as Hborrow.
+      fold rem in Hborrow.
+      rewrite Hborrow in Hborrow_ge.
+      apply Z.ltb_ge in Hborrow_ge.
+      assert (Hres : to_Z_uint256 (value256 rem) =
+        s - to_Z_uint256 modulus).
+      { unfold s in *.
+        pose proof (subb_full_correct (value256 xy_sum) modulus) as Hsub.
+        fold rem in Hsub.
+        rewrite Hborrow_rem in Hsub.
+        rewrite Hlow_eq in Hsub.
+        lia. }
+      rewrite Hres.
+      split.
+      * apply Z.mod_unique with (q := 1); lia.
+      * lia.
+Qed.
 
 Theorem addmod_correct : forall x y modulus r,
   0 < to_Z_uint256 modulus ->

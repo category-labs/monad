@@ -734,23 +734,23 @@ Proof.
   nia.
 Qed.
 
-Lemma topword_le_implies_lt_double_modulus : forall x modulus,
-  0 < to_Z (w3 modulus) ->
-  to_Z (w3 x) <= to_Z (w3 modulus) ->
-  to_Z_uint256 x < 2 * to_Z_uint256 modulus.
+Lemma topword_le_lt_double : forall x y,
+  0 < to_Z (w3 y) ->
+  to_Z (w3 x) <= to_Z (w3 y) ->
+  to_Z_uint256 x < 2 * to_Z_uint256 y.
 Proof.
-  intros x modulus Hmodhi Hle.
+  intros x y Hmodhi Hle.
   pose proof (to_Z_uint256_lt_w3_succ x) as Hx.
-  pose proof (WL.to_Z_words_bound [w0 modulus; w1 modulus; w2 modulus]) as Hlow.
-  change (0 <= to_Z_words [w0 modulus; w1 modulus; w2 modulus] < modulus_words 3) in Hlow.
+  pose proof (WL.to_Z_words_bound [w0 y; w1 y; w2 y]) as Hlow.
+  change (0 <= to_Z_words [w0 y; w1 y; w2 y] < modulus_words 3) in Hlow.
   pose proof (WL.modulus_words_pos 3) as HB.
   assert (Hstep1 :
-    to_Z_uint256 x < modulus_words 3 * (to_Z (w3 modulus) + 1)) by nia.
+    to_Z_uint256 x < modulus_words 3 * (to_Z (w3 y) + 1)) by nia.
   assert (Hstep2 :
-    modulus_words 3 * (to_Z (w3 modulus) + 1) <=
-    2 * modulus_words 3 * to_Z (w3 modulus)) by nia.
+    modulus_words 3 * (to_Z (w3 y) + 1) <=
+    2 * modulus_words 3 * to_Z (w3 y)) by nia.
   assert (Hstep3 :
-    2 * modulus_words 3 * to_Z (w3 modulus) <= 2 * to_Z_uint256 modulus).
+    2 * modulus_words 3 * to_Z (w3 y) <= 2 * to_Z_uint256 y).
   {
     rewrite to_Z_uint256_split_w3.
     nia.
@@ -782,7 +782,7 @@ Proof.
   - split; lia.
 Qed.
 
-Lemma normalize_subb_once_correct : forall x modulus,
+Lemma norm_subb_once_correct : forall x modulus,
   0 < to_Z_uint256 modulus ->
   to_Z_uint256 x < 2 * to_Z_uint256 modulus ->
   to_Z_uint256
@@ -932,43 +932,43 @@ Proof.
   unfold addmod in Hadd.
   destruct ((negb (w3 modulus =? 0)%Uint) && (w3 x <=? w3 modulus)%Uint &&
       (w3 y <=? w3 modulus)%Uint)%bool eqn:Hguard.
-  - (* fast path *)
-    remember (if carry256 (subb x modulus) then x else value256 (subb x modulus)) as x_norm.
-    remember (if carry256 (subb y modulus) then y else value256 (subb y modulus)) as y_norm.
-    apply andb_prop in Hguard as [Hxy Hyle].
-    apply andb_prop in Hxy as [Hnz Hxle].
-    apply negb_true_iff in Hnz.
-
-  apply Z.leb_le in Hxle.
-
-    destruct (to_Z (w3 modulus) =? 0)% eqn:Heq; simpl in Hnz; try discriminate.
-rewrite Heq in Hnz.
-admit.
-
-
-
-  apply Z.leb_le in Hyle.
-  pose proof (spec_to_Z (w3 modulus)) as Hmb.
-  split.
-  - lia.
-  - split; lia.
-
-
-    pose proof (addmod_fast_inputs_correct x y modulus Hmod Hguard)
-      as [Hxnorm [Hxrange [Hynorm Hyrange]]].
+  - set (x_norm := if carry256 (subb x modulus) then x
+                   else value256 (subb x modulus)).
+    fold x_norm in Hadd.
+    set (y_norm := if carry256 (subb y modulus) then y
+                   else value256 (subb y modulus)).
+    fold y_norm in Hadd.
+    apply addmod_fast_path_guard in Hguard.
+    destruct Hguard as [Hnz [Hxle Hyle]].
+    pose proof (topword_le_lt_double x modulus Hnz Hxle) as Hxlt.
+    pose proof (topword_le_lt_double y modulus Hnz Hyle) as Hylt.
+    pose proof (norm_subb_once_correct x modulus Hmod Hxlt)as Hxnorm.
+    pose proof (norm_subb_once_correct y modulus Hmod Hylt)as Hynorm.
+    fold x_norm in Hxnorm. fold y_norm in Hynorm.
+    destruct Hxnorm as [Hxmod Hxrange].
+    destruct Hynorm as [Hymod Hyrange].
+    pose proof (addmod_reduced_inputs_correct x_norm y_norm modulus Hmod
+                  Hxrange Hyrange) as Hred.
+    cbn zeta in Hred.
     destruct (addc x_norm y_norm) as [sum_xy carry_xy] eqn:Hsum.
+    cbn [carry256 value256] in Hadd, Hred.
     destruct (subb sum_xy modulus) as [sum_rem borrow_rem] eqn:Hrem.
+    cbn [carry256 value256] in Hadd, Hred.
+    destruct Hred as [Hrmod Hrrange].
     destruct (carry_xy || negb borrow_rem)%bool eqn:Hchoose;
       inversion Hadd; subst; clear Hadd.
-    + (* use [addmod_reduced_inputs_correct] on [x_norm] [y_norm] [modulus],
-         then rewrite by [Hxnorm] and [Hynorm] *)
-      admit.
+    + rewrite Hrmod, Hxmod, Hymod.
+      rewrite <- Zplus_mod.
+      split; [|apply Z.mod_pos_bound]; lia.
     + (* same theorem, opposite branch of the final boolean *)
-      admit.
+      rewrite Hrmod, Hxmod, Hymod.
+      rewrite <- Zplus_mod.
+      split; [|apply Z.mod_pos_bound]; lia.
   - (* fallback [udivrem 5 4] path *)
     destruct (udivrem 5 4 (add_words_full_uint256 x y) (uint256_to_words modulus))
       as [divr|] eqn:Hud; try discriminate.
     inversion Hadd; subst; clear Hadd.
+    pose proof (DP.udivrem_correct 5 4 _ _ divr _ _ _ Hud). in Hud.
     (* bridge [Hud] to division correctness, then use the remainder bound and
        [to_Z_uint256_words_to_uint256_small]. *)
     admit.

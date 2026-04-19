@@ -16,7 +16,6 @@ Import WL.
 
 Import ListNotations.
 Open Scope Z_scope.
-
 (** ** Local Helpers *)
 
 Lemma word_lt_implies_value_lt : forall sl vl M sw vw,
@@ -3311,3 +3310,4 @@ Proof.
 Qed.
 
 End MakeProofs.
+

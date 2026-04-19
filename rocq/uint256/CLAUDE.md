@@ -14,8 +14,11 @@ Always prefix with `opam exec --` from the project root.
 # Interactive Proof Development
 
 When developing Rocq proofs, use Proof General in Emacs interactively
-via Emacs. Step through tactics one at a time and check
-goals after each step. Do not write large blocks of untested tactics —
+via Emacs. Step through tactics one at a time and check the live
+`*goals*` and `*response*` buffers after each proof sentence before
+choosing the next tactic. Treat those buffers as authoritative for the
+next step; do not choose tactics from the source text alone. Do not
+write large blocks of untested tactics —
 this wastes time fixing cascading errors.  Do not delegate tasks to
 subagents unless explicitly told to do so.  Do not use worktrees unless
 explicitly told to do so.
@@ -40,6 +43,10 @@ Make the edit in the live Emacs buffer, save it there, then use local
 `proof-goto-point` retraction to replay the affected region. This is an
 explicit exception to the general preference for patch-based edits.
 
+Avoid aggressive `simpl` / `cbn` / `cbv` unless the current `*goals*`
+and `*response*` buffers show that the reduction is safe and useful.
+Over-reduction can destroy the term shape needed for rewrites or `lia`.
+
 When facing a new goal, try the automation cascade through PG before writing
 manual tactics. Step each one and check if it closes the goal:
 
@@ -58,7 +65,8 @@ use a live Proof General session as the primary workflow.
 - Open the target `.v` file in Emacs and step to the theorem of interest.
 - Edit in the live buffer, save there, and retract locally with
   `proof-goto-point`.
-- Prefer small tactic steps with goal inspection after each step.
+- After every proof sentence, inspect `*goals*` and `*response*` before
+  deciding on the next step.
 - Use `Search`, `Check`, and `Print` from the Rocq toplevel / Proof General
   when you need local context-aware exploration.
 - Validate each edited file with `opam exec -- dune build theories/Foo.vo`.

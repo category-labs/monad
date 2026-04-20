@@ -16,17 +16,21 @@
 
 From Stdlib Require Import ZArith Lia List Bool.
 From Stdlib Require Import DoubleType.
-From Uint256 Require Import Uint Words WordsLemmas Arithmetic.
+From Uint256 Require Import Uint Base Words WordsLemmas Arithmetic.
 From Uint256 Require Import DivisionProofs RuntimeMulProofs.
 
 Import ListNotations.
 
-Module MakeProofs (Import U64 : Uint64) (U128 : Uint128)
-  (Import Bridge : UintWiden U64 U128).
-Include Arithmetic.Make(U64)(U128)(Bridge).
-Module WL := WordsLemmas.MakeProofs(U64).
-Module DP := DivisionProofs.MakeProofs(U64)(U128)(Bridge).
-Module RMP := RuntimeMulProofs.MakeProofs(U64).
+Module MakeProofsOn (B : Base.BaseProofSig) (U128 : Uint128)
+  (Import Bridge : UintWiden B.U64 U128)
+  (WL : WordsLemmas.WordsLemmasProofSig with Module U64 := B.U64)
+  (RM : RuntimeMul.RuntimeMulProofSig with Module U64 := B.U64)
+  (RMP : RuntimeMulProofs.RuntimeMulProofsSig(B)(RM)(WL))
+  (Div : Division.DivisionProofSig(B)(U128)(Bridge))
+  (DP : DivisionProofs.DivisionProofsSig(B)(U128)(Bridge)(Div)(WL))
+  (Arith : Arithmetic.ArithmeticSig(B)(U128)(Bridge)(Div)(RM)).
+Include Arith.
+Import B.U64.
 
 Open Scope Z_scope.
 
@@ -57,11 +61,6 @@ Lemma words_to_uint256_roundtrip : forall x,
   words_to_uint256 (uint256_to_words x) = x.
 Proof.
   intros [x0 x1 x2 x3]. reflexivity.
-Qed.
-Lemma get_word_eq_dp : forall ws i,
-  DP.WL.get_word ws i = get_word ws i.
-Proof.
-  reflexivity.
 Qed.
 
 Lemma to_Z_uint256_bounds : forall x,
@@ -654,9 +653,10 @@ Proof.
       exact Hn1. }
     rewrite Hn1p in Hvpos.
     simpl in Hvpos.
-    rewrite get_word_eq_dp in Hvpos.
     assert (H0_lt : to_Z zero < to_Z (get_word (uint256_to_words modulus) 0)).
-    { rewrite spec_zero. lia. }
+    { change (to_Z zero < to_Z (WL.get_word (uint256_to_words modulus) 0)).
+      rewrite spec_zero.
+      lia. }
     pose proof (spec_div zero (get_word u 0)
       (get_word (uint256_to_words modulus) 0) Hvpos H0_lt)
       as [q [r0 [Hdiv _]]].
@@ -979,7 +979,6 @@ Proof.
     destruct (udivrem 5 4 (add_words_full_uint256 x y) (uint256_to_words modulus))
       as [divr|] eqn:Hud; try discriminate.
     inversion Hadd; subst; clear Hadd.
-    pose proof (DP.udivrem_correct 5 4 _ _ divr _ _ _ Hud). in Hud.
     (* bridge [Hud] to division correctness, then use the remainder bound and
        [to_Z_uint256_words_to_uint256_small]. *)
     admit.
@@ -1254,12 +1253,12 @@ Proof.
     assert (Hn : (0 < count_significant_words (uint256_to_words x))%nat)
       by lia.
     specialize (Hlb Hn).
-    pose proof (DP.WL.modulus_words_pos
+    pose proof (WL.modulus_words_pos
       (DP.count_significant_words (uint256_to_words x) - 1)) as Hpos.
-    assert (Hgt : 0 < DP.WL.to_Z_words (uint256_to_words x)).
+    assert (Hgt : 0 < WL.to_Z_words (uint256_to_words x)).
     { nia. }
     unfold to_Z_uint256, to_Z_words in Hz.
-    change (DP.WL.to_Z_words (uint256_to_words x) = 0) in Hz.
+    change (WL.to_Z_words (uint256_to_words x) = 0) in Hz.
     lia.
 Qed.
 
@@ -1434,4 +1433,16 @@ Theorem exp_correct : forall base exponent,
    Square-And-Multiply Loop Against Modular Exponentiation. *)
 Admitted.
 
+End MakeProofsOn.
+
+Module MakeProofs (Import Word64 : Uint64) (U128 : Uint128)
+  (Import Bridge : UintWiden Word64 U128).
+Module B := Base.MakeProof(Word64).
+Module WL := WordsLemmas.MakeProofsOn(B).
+Module RM := RuntimeMul.MakeOnProof(B).
+Module RMP := RuntimeMulProofs.MakeProofsOn(B)(RM)(WL).
+Module Div := Division.MakeOn(B)(U128)(Bridge).
+Module DP := DivisionProofs.MakeProofsOn(B)(U128)(Bridge)(Div)(WL).
+Module Arith := Arithmetic.MakeOn(B)(U128)(Bridge)(Div)(RM).
+Include MakeProofsOn(B)(U128)(Bridge)(WL)(RM)(RMP)(Div)(DP)(Arith).
 End MakeProofs.

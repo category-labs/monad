@@ -21,13 +21,16 @@
     the file models the dedicated C++ [base == 2] fast path as well. *)
 
 From Stdlib Require Import PArith List Bool.
-From Uint256 Require Import Uint Primitives Words RuntimeMul Division.
+From Uint256 Require Import Uint Base Primitives Words RuntimeMul Division.
 Import ListNotations.
 
-Module Make (Import U64 : Uint64Ops) (U128 : Uint128Ops)
-  (Import Bridge : UintWidenOps U64 U128).
-Include Division.Make(U64)(U128)(Bridge).
-Module RM := RuntimeMul.Make(U64).
+Module MakeOn (B : Base.BaseSig) (U128 : Uint128Ops)
+  (Bridge : UintWidenOps B.U64 U128)
+  (Div : Division.DivisionSig(B)(U128)(Bridge))
+  (RM : RuntimeMul.RuntimeMulSig with Module U64 := B.U64).
+Include Div.
+Import B.U64.
+Include UintNotations(U64).
 
 Open Scope uint_scope.
 
@@ -249,4 +252,19 @@ Definition exp (base exponent : uint256) : uint256 :=
          (uint256_to_words base)
          (one_words_generic 4)).
 
+End MakeOn.
+
+Module Type ArithmeticSig (B : Base.BaseSig) (U128 : Uint128Ops)
+  (Bridge : UintWidenOps B.U64 U128)
+  (Div : Division.DivisionSig(B)(U128)(Bridge))
+  (RM : RuntimeMul.RuntimeMulSig with Module U64 := B.U64).
+Include MakeOn(B)(U128)(Bridge)(Div)(RM).
+End ArithmeticSig.
+
+Module Make (Import Word64 : Uint64Ops) (U128 : Uint128Ops)
+  (Import Bridge : UintWidenOps Word64 U128).
+Module B := Base.Make(Word64).
+Module Div := Division.MakeOn(B)(U128)(Bridge).
+Module RM := RuntimeMul.MakeOn(B).
+Include MakeOn(B)(U128)(Bridge)(Div)(RM).
 End Make.

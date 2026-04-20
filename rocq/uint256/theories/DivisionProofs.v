@@ -3312,6 +3312,13 @@ Qed.
 
 End MakeProofsOn.
 
+Module Type DivisionProofsSig (B : Base.BaseProofSig) (U128 : Uint128)
+  (Bridge : UintWiden B.U64 U128)
+  (Div : Division.DivisionProofSig(B)(U128)(Bridge))
+  (WL : WordsLemmas.WordsLemmasProofSig with Module U64 := B.U64).
+Include MakeProofsOn(B)(U128)(Bridge)(Div)(WL).
+End DivisionProofsSig.
+
 Module MakeProofs (Import Word64 : Uint64) (U128 : Uint128)
   (Import Bridge : UintWiden Word64 U128).
 Module B := Base.MakeProof(Word64).

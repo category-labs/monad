@@ -1627,6 +1627,12 @@ Qed.
 
 End MakeProofsOn.
 
+Module Type RuntimeMulProofsSig (B : Base.BaseProofSig)
+  (RM : RuntimeMul.RuntimeMulProofSig with Module U64 := B.U64)
+  (WL : WordsLemmas.WordsLemmasProofSig with Module U64 := B.U64).
+Include MakeProofsOn(B)(RM)(WL).
+End RuntimeMulProofsSig.
+
 Module MakeProofs (Import Word64 : Uint64).
 Module B := Base.MakeProof(Word64).
 Module RM := RuntimeMul.MakeOnProof(B).

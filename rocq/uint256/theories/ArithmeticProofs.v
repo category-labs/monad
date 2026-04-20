@@ -114,7 +114,8 @@ Lemma mod_carry_decompose : forall B n,
 Proof.
   intros B n HB Hn.
   destruct (Z_lt_ge_dec n B) as [Hsmall|Hcarry].
-  - rewrite Z.mod_small by lia.
+  - rewrite Z.mod_small.
+  2: { lia. }
     destruct (Z.leb_spec0 B n); lia.
   - assert (HBnz : B <> 0) by lia.
     pose proof (Z.mod_pos_bound n B HB) as Hm.
@@ -1495,43 +1496,31 @@ Qed.
 
 Theorem is_negative_correct : forall x,
   is_negative x = negb (Z.ltb (to_Z_uint256 x) sign_threshold256).
-(*
-In-progress script:
 Proof.
   intros [x0 x1 x2 x3].
   unfold is_negative, to_Z_uint256.
-  cbn [uint256_to_words].
   rewrite spec_ltb.
-  unfold to_Z_words.
+  change
+    (negb (to_Z x3 <? to_Z sign_bit) =
+     negb (WL.to_Z_words [x0; x1; x2; x3] <? sign_threshold256)).
+  rewrite sign_threshold256_eq.
+  rewrite to_Z_sign_bit.
   cbn [WL.to_Z_words].
-  replace (x0 + base width * (x1 + base width * (x2 + base width * (x3 + 0))))
-    with (WL.to_Z_words [x0; x1; x2] + modulus_words 3 * x3).
+  replace
+    (to_Z x0 + base width *
+       (to_Z x1 + base width *
+          (to_Z x2 + base width * (to_Z x3 + base width * 0))))
+    with (WL.to_Z_words [x0; x1; x2] + modulus_words 3 * to_Z x3).
   2:{ cbn [WL.to_Z_words].
       rewrite WL.modulus_words_succ, WL.modulus_words_succ,
         WL.modulus_words_succ, WL.modulus_words_0.
       ring. }
-  rewrite sign_threshold256_eq.
-  pose proof (WL.to_Z_words_bound [x0; x1; x2]) as Hlow.
-  pose proof (spec_to_Z x3) as Hhi.
-  pose proof to_Z_sign_bit as Hsb.
-  rewrite Hsb in *.
-  set (bx := (x3 <? 2 ^ 63)).
-  set (by0 :=
-    (WL.to_Z_words [x0; x1; x2] + modulus_words 3 * x3
-      <? modulus_words 3 * 2 ^ 63)).
-  assert (Hcmp : bx = by0).
-  { unfold bx, by0.
-    apply high_word_ltb_split.
-    - exact Hlow.
-    - lia. }
-  (* Stalled on the final normalization step:
-     goal still needs to be rewritten into [negb bx = negb by0]
-     before [rewrite Hcmp] can finish. *)
-Abort.
-*)
-(* Remaining: Finish The Final Boolean Normalization After
-   [High_Word_Ltb_Split], So Both Sides Are Expressed As The Same Sign-Bit Comparison. *)
-Admitted.
+  f_equal.
+  apply high_word_ltb_split.
+  - exact (WL.to_Z_words_bound [x0; x1; x2]).
+  - pose proof (spec_to_Z x3). lia.
+Qed.
+
 Lemma modulus256_pos : 0 < modulus256.
 Proof.
   pose proof (to_Z_uint256_bounds zero_uint256) as H.
@@ -1637,7 +1626,45 @@ Abort.
 *)
 (* Remaining: Show That Every Nonzero Divisor Makes The Internal
    Unsigned Division Succeed, Using [Negate_Uint256_Zero_Iff] And The Existing Divisor-Exists Lemma. *)
-Admitted.
+Proof.
+  intros u v.
+  unfold sdivrem.
+  remember (is_negative u) as u_neg.
+  remember (is_negative v) as v_neg.
+  remember (if u_neg then negate_uint256 u else u) as u_abs.
+  remember (if v_neg then negate_uint256 v else v) as v_abs.
+  set (divr := udivrem 4 4 (uint256_to_words u_abs) (uint256_to_words v_abs)).
+  split.
+  - intro Hnone.
+    destruct (Z.eq_dec (to_Z_uint256 v) 0) as [Hv0|Hv0]; auto.
+    assert (Hvabs_nonzero : to_Z_uint256 v_abs <> 0).
+    { subst v_abs.
+      destruct v_neg.
+      - intro H0.
+        apply Hv0.
+        apply (proj1 (negate_uint256_zero_iff v)).
+        exact H0.
+      - exact Hv0. }
+    pose proof (to_Z_uint256_bounds v_abs) as Hvabs_bound.
+    assert (Hvabs_pos : 0 < to_Z_uint256 v_abs) by lia.
+    destruct (udivrem_uint256_divisor_exists 4
+      (uint256_to_words u_abs) v_abs Hvabs_pos) as [r Hr].
+    unfold divr in Hnone.
+    rewrite Hr in Hnone.
+    discriminate.
+  - intro Hv0.
+    assert (Hvabs0 : to_Z_uint256 v_abs = 0).
+    { subst v_abs.
+      destruct v_neg.
+      - apply (proj2 (negate_uint256_zero_iff v)).
+        exact Hv0.
+      - exact Hv0. }
+    apply <- count_significant_words_uint256_zero_iff in Hvabs0.
+    unfold divr, udivrem.
+    rewrite Hvabs0.
+    reflexivity.
+Qed.
+
 Theorem sdivrem_correct : forall u v r,
   to_Z_uint256 v <> 0 ->
   sdivrem u v = Some r ->
@@ -1649,13 +1676,58 @@ Theorem sdivrem_correct : forall u v r,
    Analysis From [Is_Negative_Correct] And The Quotient/Remainder Negation Lemmas. *)
 Admitted.
 
+Lemma signbit63_nonzero_is_negative : forall x,
+  negb (eqb (shr (w3 x) 63) zero) = is_negative x.
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold is_negative.
+  cbn [w3].
+  rewrite spec_eqb, spec_shr, spec_zero, spec_ltb.
+  rewrite Z.shiftr_div_pow2 by lia.
+  rewrite to_Z_sign_bit.
+  pose proof (spec_to_Z x3) as Hx3.
+  assert (Hdiv_bound : 0 <= to_Z x3 / 2 ^ 63 < 2).
+  { split.
+    - apply Z.div_pos; lia.
+    - unfold base in Hx3. rewrite width_is_64 in Hx3.
+      apply Z.div_lt_upper_bound; lia. }
+  rewrite Z.mod_small by (unfold base; rewrite width_is_64; lia).
+  destruct (Z.ltb_spec0 (to_Z x3) (2 ^ 63)) as [Hlt|Hge].
+  - rewrite Z.div_small by lia.
+    reflexivity.
+  - assert (Hdiv_ge: (to_Z x3) / 2^63 >= 1)
+      by (change 1 with (2^63 / 2^63)
+          ; apply Z_div_ge; lia).
+    assert ((to_Z x3 / 2 ^ Z.of_nat 63 =? 0) = false)
+      by (apply Z.eqb_neq; lia).
+    apply Znot_lt_ge in Hge.
+    rewrite H; reflexivity.
+Qed.
+
 Theorem slt_correct : forall x y,
   slt x y = Z.ltb (to_Z_signed_uint256 x) (to_Z_signed_uint256 y).
-(* Remaining: Reduce [Slt] To The Sign-Bit Split And The Proven
-   Unsigned Comparison Theorem [Ltb_Uint256_Correct]. *)
-Admitted.
-
-(** ** Exponentiation and shifts *)
+Proof.
+  intros x y.
+  unfold slt, to_Z_signed_uint256.
+  rewrite !signbit63_nonzero_is_negative.
+  rewrite !is_negative_correct.
+  rewrite ltb_uint256_correct.
+  set (ux := to_Z_uint256 x).
+  set (uy := to_Z_uint256 y).
+  pose proof (to_Z_uint256_bounds x) as Hux.
+  pose proof (to_Z_uint256_bounds y) as Huy.
+  destruct (Z.ltb ux sign_threshold256) eqn:Hx;
+    destruct (Z.ltb uy sign_threshold256) eqn:Hy; simpl.
+  - now rewrite orb_false_r.
+  - symmetry; apply Z.ltb_ge; lia.
+  - symmetry; apply Z.ltb_lt. lia.
+  - destruct (Z.ltb_spec0 ux uy) as [Hlt|Hge].
+    + rewrite Z.sub_lt_mono_r with (p := modulus256) in Hlt.
+      now apply Z.ltb_lt in Hlt.
+    + apply Znot_lt_ge, Z.ge_le in Hge.
+      rewrite Z.sub_le_mono_r with (p := modulus256) in Hge.
+      now rewrite <- Z.ltb_ge in Hge.
+Qed.
 
 Theorem shift_left_uint256_aux_correct : forall x shift,
   to_Z_uint256 (shift_left_uint256_aux x shift) =

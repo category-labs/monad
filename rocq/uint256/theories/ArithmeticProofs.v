@@ -2344,36 +2344,109 @@ Proof.
 Qed.
 
 Theorem shift_left_uint256_correct : forall x shift,
-(*
-In-progress script:
-Proof.
-  intros x [s0 s1 s2 s3].
-  unfold shift_left_uint256.
-  destruct (s1 =? 0) eqn:Hs1;
-    destruct (s2 =? 0) eqn:Hs2;
-    destruct (s3 =? 0) eqn:Hs3.
-  - (* Good case: all high words are zero.  The intended route is to turn
-       [Hs1]/[Hs2]/[Hs3] into [to_Z si = 0], rewrite
-       [shift_left_uint256_aux_correct], and then reduce
-       [to_Z_uint256 shift] to [to_Z s0].
-       The blocker was notation/orientation around [spec_eqb] after the
-       destruct-generated equalities. *)
-    admit.
-  - (* All remaining branches use [to_Z_uint256_high_ge_base] to show the
-       outer [if] takes the zero branch.  The statement looks right; the
-       script just needs a cleaner way to normalize the [eqb] hypotheses. *)
-    admit.
-Abort.
-*)
   to_Z_uint256 (shift_left_uint256 x shift) =
     if Z.ltb (to_Z_uint256 shift) (base width)
     then if Z.ltb (to_Z_uint256 shift) 256
          then (to_Z_uint256 x * 2 ^ to_Z_uint256 shift) mod modulus256
          else 0
     else 0.
-(* Remaining: Split On Whether The High Three Shift Words Are Zero,
-   Then Combine [Shift_Left_Uint256_Aux_Correct] With The Zero-High / High-Ge-Base Lemmas. *)
-Admitted.
+Proof.
+  intros x [s0 s1 s2 s3].
+  unfold shift_left_uint256.
+  cbn [w0 w1 w2 w3 andb].
+  destruct (s1 =? 0)%Uint eqn:Hs1;
+    destruct (s2 =? 0)%Uint eqn:Hs2;
+    destruct (s3 =? 0)%Uint eqn:Hs3;
+    cbn [andb].
+  - rewrite spec_eqb in Hs1. apply Z.eqb_eq in Hs1. rewrite spec_zero in Hs1.
+    rewrite spec_eqb in Hs2. apply Z.eqb_eq in Hs2. rewrite spec_zero in Hs2.
+    rewrite spec_eqb in Hs3. apply Z.eqb_eq in Hs3. rewrite spec_zero in Hs3.
+    rewrite shift_left_uint256_aux_correct.
+    rewrite (to_Z_uint256_zero_high s0 s1 s2 s3 Hs1 Hs2 Hs3).
+    assert (Hltbase : (to_Z s0 <? base width) = true).
+    { apply Z.ltb_lt.
+      pose proof (spec_to_Z s0) as H0.
+      lia. }
+    rewrite Hltbase.
+    reflexivity.
+  - rewrite to_Z_zero_uint256.
+    rewrite spec_eqb in Hs3. apply Z.eqb_neq in Hs3. rewrite spec_zero in Hs3.
+    assert (Hs3p : 0 < to_Z s3).
+    { pose proof (spec_to_Z s3) as H3.
+      lia. }
+    assert (Hltbase : (to_Z_uint256 {| w0 := s0; w1 := s1; w2 := s2; w3 := s3 |} <? base width) = false).
+    { apply Z.ltb_ge.
+      apply to_Z_uint256_high_ge_base.
+      right. right. exact Hs3p. }
+    rewrite Hltbase.
+    reflexivity.
+  - rewrite to_Z_zero_uint256.
+    rewrite spec_eqb in Hs2. apply Z.eqb_neq in Hs2. rewrite spec_zero in Hs2.
+    assert (Hs2p : 0 < to_Z s2).
+    { pose proof (spec_to_Z s2) as H2.
+      lia. }
+    assert (Hltbase : (to_Z_uint256 {| w0 := s0; w1 := s1; w2 := s2; w3 := s3 |} <? base width) = false).
+    { apply Z.ltb_ge.
+      apply to_Z_uint256_high_ge_base.
+      right. left. exact Hs2p. }
+    rewrite Hltbase.
+    reflexivity.
+  - rewrite to_Z_zero_uint256.
+    rewrite spec_eqb in Hs2. apply Z.eqb_neq in Hs2. rewrite spec_zero in Hs2.
+    assert (Hs2p : 0 < to_Z s2).
+    { pose proof (spec_to_Z s2) as H2.
+      lia. }
+    assert (Hltbase : (to_Z_uint256 {| w0 := s0; w1 := s1; w2 := s2; w3 := s3 |} <? base width) = false).
+    { apply Z.ltb_ge.
+      apply to_Z_uint256_high_ge_base.
+      right. left. exact Hs2p. }
+    rewrite Hltbase.
+    reflexivity.
+  - rewrite to_Z_zero_uint256.
+    rewrite spec_eqb in Hs1. apply Z.eqb_neq in Hs1. rewrite spec_zero in Hs1.
+    assert (Hs1p : 0 < to_Z s1).
+    { pose proof (spec_to_Z s1) as H1.
+      lia. }
+    assert (Hltbase : (to_Z_uint256 {| w0 := s0; w1 := s1; w2 := s2; w3 := s3 |} <? base width) = false).
+    { apply Z.ltb_ge.
+      apply to_Z_uint256_high_ge_base.
+      left. exact Hs1p. }
+    rewrite Hltbase.
+    reflexivity.
+  - rewrite to_Z_zero_uint256.
+    rewrite spec_eqb in Hs1. apply Z.eqb_neq in Hs1. rewrite spec_zero in Hs1.
+    assert (Hs1p : 0 < to_Z s1).
+    { pose proof (spec_to_Z s1) as H1.
+      lia. }
+    assert (Hltbase : (to_Z_uint256 {| w0 := s0; w1 := s1; w2 := s2; w3 := s3 |} <? base width) = false).
+    { apply Z.ltb_ge.
+      apply to_Z_uint256_high_ge_base.
+      left. exact Hs1p. }
+    rewrite Hltbase.
+    reflexivity.
+  - rewrite to_Z_zero_uint256.
+    rewrite spec_eqb in Hs1. apply Z.eqb_neq in Hs1. rewrite spec_zero in Hs1.
+    assert (Hs1p : 0 < to_Z s1).
+    { pose proof (spec_to_Z s1) as H1.
+      lia. }
+    assert (Hltbase : (to_Z_uint256 {| w0 := s0; w1 := s1; w2 := s2; w3 := s3 |} <? base width) = false).
+    { apply Z.ltb_ge.
+      apply to_Z_uint256_high_ge_base.
+      left. exact Hs1p. }
+    rewrite Hltbase.
+    reflexivity.
+  - rewrite to_Z_zero_uint256.
+    rewrite spec_eqb in Hs1. apply Z.eqb_neq in Hs1. rewrite spec_zero in Hs1.
+    assert (Hs1p : 0 < to_Z s1).
+    { pose proof (spec_to_Z s1) as H1.
+      lia. }
+    assert (Hltbase : (to_Z_uint256 {| w0 := s0; w1 := s1; w2 := s2; w3 := s3 |} <? base width) = false).
+    { apply Z.ltb_ge.
+      apply to_Z_uint256_high_ge_base.
+      left. exact Hs1p. }
+    rewrite Hltbase.
+    reflexivity.
+Qed.
 
 Theorem exp_correct : forall base exponent,
   to_Z_uint256 (exp base exponent) =

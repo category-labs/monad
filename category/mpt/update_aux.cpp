@@ -23,6 +23,7 @@
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/trie.hpp>
@@ -445,7 +446,8 @@ Node::SharedPtr UpdateAux::do_update(
 
     if (prev_root) {
         // previous compaction offset
-        compact_offsets = compact_offset_pair::deserialize(prev_root->value());
+        tl(timeline_id::primary).compact_offsets =
+            compact_offset_pair::deserialize(prev_root->value());
     }
     if (compaction) {
         if (enable_dynamic_history_length_) {
@@ -459,9 +461,11 @@ Node::SharedPtr UpdateAux::do_update(
         }
     }
 
-    curr_upsert_auto_expire_version = calc_auto_expire_version(version);
+    tl(timeline_id::primary).curr_upsert_auto_expire_version =
+        calc_auto_expire_version(version);
     UpdateList root_updates;
-    byte_string const compact_offsets_bytes = compact_offsets.serialize();
+    byte_string const compact_offsets_bytes =
+        tl(timeline_id::primary).compact_offsets.serialize();
     auto root_update = make_update(
         {}, compact_offsets_bytes, false, std::move(updates), version);
     root_updates.push_front(root_update);
@@ -475,7 +479,7 @@ Node::SharedPtr UpdateAux::do_update(
         std::move(root_updates),
         write_root);
     metadata_ctx_->set_auto_expire_version_metadata(
-        curr_upsert_auto_expire_version);
+        tl(timeline_id::primary).curr_upsert_auto_expire_version);
 
     auto const upsert_duration = upsert_timer.elapsed();
     if (compaction) {
@@ -503,8 +507,8 @@ Node::SharedPtr UpdateAux::do_update(
         curr_fast_writer_offset.offset,
         curr_slow_writer_offset.count,
         curr_slow_writer_offset.offset,
-        (uint32_t)compact_offsets.fast,
-        (uint32_t)compact_offsets.slow);
+        (uint32_t)tl(timeline_id::primary).compact_offsets.fast,
+        (uint32_t)tl(timeline_id::primary).compact_offsets.slow);
     return root;
 }
 
@@ -738,14 +742,14 @@ void UpdateAux::advance_compact_offsets(Node::SharedPtr const prev_root)
     if (prev_root) {
         auto const min_offsets = calc_min_offsets(*prev_root);
         MONAD_ASSERT(
-            !min_offsets.any_below(compact_offsets),
+            !min_offsets.any_below(tl(timeline_id::primary).compact_offsets),
             "Detected referenced offsets below compaction boundary; potential "
             "disk corruption");
         if (min_offsets.fast != INVALID_COMPACT_VIRTUAL_OFFSET) {
-            compact_offsets.fast = min_offsets.fast;
+            tl(timeline_id::primary).compact_offsets.fast = min_offsets.fast;
         }
         if (min_offsets.slow != INVALID_COMPACT_VIRTUAL_OFFSET) {
-            compact_offsets.slow = min_offsets.slow;
+            tl(timeline_id::primary).compact_offsets.slow = min_offsets.slow;
         }
     }
 
@@ -760,13 +764,16 @@ void UpdateAux::advance_compact_offsets(Node::SharedPtr const prev_root)
     }
 
     MONAD_ASSERT(
-        compact_offsets.fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
-        compact_offsets.slow != INVALID_COMPACT_VIRTUAL_OFFSET);
+        tl(timeline_id::primary).compact_offsets.fast !=
+            INVALID_COMPACT_VIRTUAL_OFFSET &&
+        tl(timeline_id::primary).compact_offsets.slow !=
+            INVALID_COMPACT_VIRTUAL_OFFSET);
     /* The fast list compaction offset range is determined both by the
     average disk growth over historical blocks, and the fast list offset
     range of the latest version, so that fast-list usage adapts appropriately to
     changes in history length. */
-    compact_offset_range_fast_ = MIN_COMPACT_VIRTUAL_OFFSET;
+    tl(timeline_id::primary).compact_offset_range_fast_ =
+        MIN_COMPACT_VIRTUAL_OFFSET;
 
     uint64_t const min_version = metadata_ctx_->db_history_min_valid_version();
     MONAD_ASSERT(min_version != INVALID_BLOCK_NUM);
@@ -791,7 +798,7 @@ void UpdateAux::advance_compact_offsets(Node::SharedPtr const prev_root)
     // worth of growth, to prevent over-compaction when the history window
     // shrinks.
     uint32_t const latest_block_fast_uncompacted_range =
-        curr_fast_writer_offset - compact_offsets.fast;
+        curr_fast_writer_offset - tl(timeline_id::primary).compact_offsets.fast;
     if (latest_block_fast_uncompacted_range >
         static_cast<uint64_t>(avg_disk_growth_fast) *
             min_versions_of_growth_before_compact_fast_list) {
@@ -804,8 +811,10 @@ void UpdateAux::advance_compact_offsets(Node::SharedPtr const prev_root)
             avg_disk_growth_fast + min_compaction_progress_buffer);
         to_advance =
             std::min(to_advance, max_compact_offset_range); // Cap at 32MB
-        compact_offset_range_fast_.set_value(to_advance);
-        compact_offsets.fast += compact_offset_range_fast_;
+        tl(timeline_id::primary)
+            .compact_offset_range_fast_.set_value(to_advance);
+        tl(timeline_id::primary).compact_offsets.fast +=
+            tl(timeline_id::primary).compact_offset_range_fast_;
     }
     constexpr double usage_limit_start_compact_slow = 0.6;
     constexpr double slow_usage_limit_start_compact_slow = 0.2;
@@ -820,24 +829,28 @@ void UpdateAux::advance_compact_offsets(Node::SharedPtr const prev_root)
         // collection ratio of the last block. We use the ratio of compacted
         // bytes to determine how aggressively to advance the compaction head.
         if (stats.compacted_bytes_in_slow != 0 &&
-            compact_offset_range_slow_ != 0) {
+            tl(timeline_id::primary).compact_offset_range_slow_ != 0) {
             uint32_t const gc_efficiency = static_cast<uint32_t>(std::round(
-                double(compact_offset_range_slow_ << 16) /
+                double(
+                    tl(timeline_id::primary).compact_offset_range_slow_ << 16) /
                 stats.compacted_bytes_in_slow));
             // Cap at last block's growth + 1 to avoid advancing too fast
             uint32_t const new_range = std::min(
                 static_cast<uint32_t>(last_block_disk_growth_slow_ + 1),
                 gc_efficiency);
-            compact_offset_range_slow_.set_value(new_range);
+            tl(timeline_id::primary)
+                .compact_offset_range_slow_.set_value(new_range);
         }
         else {
             // No valid data, use minimum progress
-            compact_offset_range_slow_.set_value(1);
+            tl(timeline_id::primary).compact_offset_range_slow_.set_value(1);
         }
-        compact_offsets.slow += compact_offset_range_slow_;
+        tl(timeline_id::primary).compact_offsets.slow +=
+            tl(timeline_id::primary).compact_offset_range_slow_;
     }
     else {
-        compact_offset_range_slow_ = MIN_COMPACT_VIRTUAL_OFFSET;
+        tl(timeline_id::primary).compact_offset_range_slow_ =
+            MIN_COMPACT_VIRTUAL_OFFSET;
     }
 }
 
@@ -947,17 +960,17 @@ void UpdateAux::print_update_stats(uint64_t const version)
         stats.nodes_updated_expire,
         stats.nreads_expire);
 
-    if (compact_offset_range_fast_) {
+    if (tl(timeline_id::primary).compact_offset_range_fast_) {
         std::format_to(
             std::back_inserter(buf),
             "   Fast: total growth ~ {} KB, compact range {} KB, "
             "bytes copied fast to slow {:.2f} KB, active data ratio {:.2f}%\n",
             last_block_disk_growth_fast_ << 6,
-            compact_offset_range_fast_ << 6,
+            tl(timeline_id::primary).compact_offset_range_fast_ << 6,
             stats.compacted_bytes_in_fast / 1024.0,
             100.0 * stats.compacted_bytes_in_fast /
-                (compact_offset_range_fast_ << 16));
-        if (compact_offset_range_slow_) {
+                (tl(timeline_id::primary).compact_offset_range_fast_ << 16));
+        if (tl(timeline_id::primary).compact_offset_range_slow_) {
             // slow list compaction range vs growth
             auto const total_bytes_written_to_slow =
                 stats.compacted_bytes_in_fast + stats.compacted_bytes_in_slow;
@@ -967,10 +980,10 @@ void UpdateAux::print_update_stats(uint64_t const version)
                 "KB, bytes copied slow to slow {:.2f} KB, active data ratio "
                 "{:.2f}%. other bytes copied slow to fast {:.2f} KB.\n",
                 total_bytes_written_to_slow / 1024.0,
-                compact_offset_range_slow_ << 6,
+                tl(timeline_id::primary).compact_offset_range_slow_ << 6,
                 stats.compacted_bytes_in_slow / 1024.0,
                 100.0 * stats.compacted_bytes_in_slow /
-                    (compact_offset_range_slow_ << 16),
+                    (tl(timeline_id::primary).compact_offset_range_slow_ << 16),
                 stats.bytes_copied_slow_to_fast_for_slow / 1024.0);
         }
         else {
@@ -996,7 +1009,7 @@ void UpdateAux::print_update_stats(uint64_t const version)
                 ? (100.0 * stats.nodes_copied_fast_to_fast_for_fast /
                    nodes_copied_for_slow)
                 : 0);
-        if (compact_offsets.slow) {
+        if (tl(timeline_id::primary).compact_offsets.slow) {
             auto const nodes_copied_for_slow =
                 stats.compacted_nodes_in_slow +
                 stats.nodes_copied_fast_to_fast_for_slow +
@@ -1038,13 +1051,14 @@ void UpdateAux::print_update_stats(uint64_t const version)
                     stats.nreads_after_compact_offset[0]))
                 : 0,
             (double)stats.bytes_read_before_compact_offset[0] / 1024,
-            compact_offset_range_fast_ << 6,
+            tl(timeline_id::primary).compact_offset_range_fast_ << 6,
             stats.bytes_read_before_compact_offset[0]
                 ? (100.0 * stats.bytes_read_before_compact_offset[0] /
-                   compact_offset_range_fast_ / 1024 / 64)
+                   tl(timeline_id::primary).compact_offset_range_fast_ / 1024 /
+                   64)
                 : 0,
             (double)stats.bytes_read_after_compact_offset[0] / 1024);
-        if (compact_offset_range_slow_) {
+        if (tl(timeline_id::primary).compact_offset_range_slow_) {
             std::format_to(
                 std::back_inserter(buf),
                 "   Slow: reads within compaction range {} / "
@@ -1061,10 +1075,11 @@ void UpdateAux::print_update_stats(uint64_t const version)
                         stats.nreads_after_compact_offset[1]))
                     : 0,
                 (double)stats.bytes_read_before_compact_offset[1] / 1024,
-                compact_offset_range_slow_ << 6,
+                tl(timeline_id::primary).compact_offset_range_slow_ << 6,
                 stats.bytes_read_before_compact_offset[1]
                     ? (100.0 * stats.bytes_read_before_compact_offset[1] /
-                       compact_offset_range_slow_ / 1024 / 64)
+                       tl(timeline_id::primary).compact_offset_range_slow_ /
+                       1024 / 64)
                     : 0,
                 (double)stats.bytes_read_after_compact_offset[1] / 1024);
         }
@@ -1093,8 +1108,9 @@ void UpdateAux::collect_compaction_read_stats(
 #if MONAD_MPT_COLLECT_STATS
     auto const node_offset = physical_to_virtual(physical_node_offset);
     if (compact_virtual_chunk_offset_t(node_offset) <
-        (node_offset.in_fast_list() ? compact_offsets.fast
-                                    : compact_offsets.slow)) {
+        (node_offset.in_fast_list()
+             ? tl(timeline_id::primary).compact_offsets.fast
+             : tl(timeline_id::primary).compact_offsets.slow)) {
         // node orig offset in fast list but compact to slow list
         ++stats.nreads_before_compact_offset[!node_offset.in_fast_list()];
         stats.bytes_read_before_compact_offset[!node_offset.in_fast_list()] +=
@@ -1154,7 +1170,7 @@ void UpdateAux::collect_compacted_nodes_stats(
             MONAD_ASSERT(!node_offset.in_fast_list());
             MONAD_ASSERT(
                 compact_virtual_chunk_offset_t{node_offset} <
-                compact_offsets.slow);
+                tl(timeline_id::primary).compact_offsets.slow);
             ++stats.compacted_nodes_in_slow;
             stats.compacted_bytes_in_slow += node_disk_size;
         }
@@ -1163,12 +1179,38 @@ void UpdateAux::collect_compacted_nodes_stats(
     if (!copy_node_for_fast && !rewrite_to_fast) {
         MONAD_ASSERT(!node_offset.in_fast_list());
         MONAD_ASSERT(
-            compact_virtual_chunk_offset_t{node_offset} < compact_offsets.slow);
+            compact_virtual_chunk_offset_t{node_offset} <
+            tl(timeline_id::primary).compact_offsets.slow);
         stats.compacted_bytes_in_slow += node_disk_size;
     }
     (void)copy_node_for_fast;
     (void)rewrite_to_fast;
 #endif
+}
+
+void UpdateAux::activate_secondary_timeline(uint64_t const fork_version)
+{
+    MONAD_ASSERT(is_on_disk());
+    metadata_ctx_->activate_secondary_header(fork_version);
+    // Both timelines share the same storage rings, so the secondary
+    // inherits the primary's compaction boundary — the stall pins at the
+    // fork point, not at offset 0.
+    tl(timeline_id::secondary) = tl(timeline_id::primary);
+}
+
+void UpdateAux::deactivate_secondary_timeline()
+{
+    MONAD_ASSERT(is_on_disk());
+    metadata_ctx_->deactivate_secondary_header();
+    tl(timeline_id::secondary) = timeline_compaction_state{};
+}
+
+void UpdateAux::promote_secondary_to_primary()
+{
+    MONAD_ASSERT(is_on_disk());
+    metadata_ctx_->promote_secondary_to_primary_header();
+    std::swap(tl(timeline_id::primary), tl(timeline_id::secondary));
+    LOG_INFO("Promoted secondary timeline to primary");
 }
 
 MONAD_MPT_NAMESPACE_END

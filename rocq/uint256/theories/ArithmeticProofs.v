@@ -1514,7 +1514,7 @@ Proof.
   2:{ cbn [WL.to_Z_words].
       rewrite WL.modulus_words_succ, WL.modulus_words_succ,
         WL.modulus_words_succ, WL.modulus_words_0.
-      ring. }
+    ring. }
   f_equal.
   apply high_word_ltb_split.
   - exact (WL.to_Z_words_bound [x0; x1; x2]).
@@ -1729,14 +1729,586 @@ Proof.
       now rewrite <- Z.ltb_ge in Hge.
 Qed.
 
+Lemma bounded_shift_nat_correct : forall fuel shift,
+  (fuel <= word_width)%nat ->
+  to_Z shift < Z.of_nat fuel ->
+  bounded_shift_nat fuel shift = Z.to_nat (to_Z shift).
+Proof.
+  induction fuel as [|fuel IH]; intros shift Hfuel Hlt.
+  - pose proof (spec_to_Z shift). exfalso; lia.
+  - simpl bounded_shift_nat.
+    rewrite spec_eqb, spec_zero.
+    destruct (Z.eq_dec (to_Z shift) 0) as [Hz|Hz].
+    + rewrite Hz, Z.eqb_refl. reflexivity.
+    + assert (Heq : (to_Z shift =? 0) = false) by (apply Z.eqb_neq; exact Hz).
+      rewrite Heq.
+      pose proof (spec_to_Z shift) as HshiftZ. rewrite width_is_64 in HshiftZ.
+      assert (Hsub_lt : to_Z ((shift - 1)%Uint) < Z.of_nat fuel).
+      { rewrite spec_sub, spec_one.
+        rewrite Z.mod_small.
+        - lia.
+        - split.
+          + lia.
+          + unfold base, word_width in Hfuel |-.
+            rewrite width_is_64. simpl. lia. }
+      rewrite IH by lia.
+      rewrite spec_sub, spec_one.
+      rewrite Z.mod_small.
+      2: { split.
+           - lia.
+           - unfold base, word_width in Hfuel |-.
+             rewrite width_is_64. simpl. lia. }
+      replace (to_Z shift) with ((to_Z shift - 1) + 1) by lia.
+      rewrite Z2Nat.inj_add by lia.
+      simpl. lia.
+Qed.
+
+Lemma to_Z_words_firstn_shift_left_mod : forall ws s,
+  (s < Pos.to_nat U64.width)%nat ->
+  to_Z_words (firstn (length ws) (shift_left_words ws s)) =
+    (to_Z_words ws * 2 ^ Z.of_nat s) mod modulus_words (length ws).
+Proof.
+  intros ws s Hs.
+  pose proof (DP.shift_left_words_correct ws s Hs) as Hshift.
+  pose proof (DP.shift_left_words_length ws s) as Hlen.
+  set (result := shift_left_words ws s) in *.
+  assert (Hle : (length ws <= length result)%nat) by lia.
+  pose proof (WL.to_Z_words_firstn_skipn result (length ws) Hle) as Hsplit.
+  pose proof (WL.to_Z_words_bound (firstn (length ws) result)) as Hfirst.
+  rewrite firstn_length_le in Hfirst by lia.
+  rewrite Hshift in Hsplit.
+  apply Z.mod_unique with (q := to_Z_words (skipn (length ws) result)).
+  - left. exact Hfirst.
+  - rewrite Z.add_comm. exact Hsplit.
+Qed.
+
+Lemma shld64_zero_low_spec : forall high s,
+  (s < Pos.to_nat U64.width)%nat ->
+  to_Z (shld64 high zero s) = to_Z (shl high s).
+Proof.
+  intros high s Hs.
+  rewrite DP.shld64_spec by exact Hs.
+  rewrite spec_shl, spec_zero.
+  rewrite Z.div_0_l by (apply Z.pow_nonzero; lia).
+  rewrite Z.shiftl_mul_pow2 by lia.
+  lia.
+Qed.
+
+Lemma modulus_words_add : forall m n,
+  modulus_words (m + n) = modulus_words m * modulus_words n.
+Proof.
+  intros m n.
+  unfold modulus_words, WL.modulus_words.
+  rewrite Nat2Z.inj_add.
+  rewrite Z.pow_add_r by (pose proof base_width_gt_1; lia).
+  ring.
+Qed.
+
+Lemma modulus_words_1 :
+  modulus_words 1 = 2 ^ 64.
+Proof.
+  unfold modulus_words, WL.modulus_words, base.
+  rewrite width_is_64.
+  change (Z.pow_pos (2 ^ 64) 1) with ((2 ^ 64) ^ 1).
+  rewrite Z.pow_1_r.
+  reflexivity.
+Qed.
+
+Lemma modulus_words_2 :
+  modulus_words 2 = 2 ^ 128.
+Proof.
+  unfold modulus_words, WL.modulus_words, base.
+  rewrite width_is_64.
+  change (Z.pow_pos (2 ^ 64) 2) with ((2 ^ 64) ^ 2).
+  rewrite Z.pow_2_r.
+  replace 128 with (64 + 64) by lia.
+  rewrite Z.pow_add_r by lia.
+  reflexivity.
+Qed.
+
+Lemma modulus_words_3 :
+  modulus_words 3 = 2 ^ 192.
+Proof.
+  change (modulus_words 3) with (modulus_words (2 + 1)).
+  rewrite modulus_words_add.
+  rewrite modulus_words_2, modulus_words_1.
+  replace 192 with (128 + 64) by lia.
+  rewrite Z.pow_add_r by lia.
+  reflexivity.
+Qed.
+
+Lemma modulus_words_scale_mod : forall k n a,
+  modulus_words k * (a mod modulus_words n) =
+    (modulus_words k * a) mod modulus_words (k + n).
+Proof.
+  intros k n a.
+  unfold modulus_words in *.
+  pose proof (WL.modulus_words_pos k) as Hkpos.
+  pose proof (WL.modulus_words_pos n) as Hnpos.
+  assert (Hnpos0 : 0 < WL.modulus_words n) by lia.
+  rewrite modulus_words_add.
+  apply Z.mod_unique with (q := a / modulus_words n).
+  - left.
+    pose proof (Z.mod_pos_bound a (WL.modulus_words n) Hnpos0) as Hmod.
+    replace (modulus_words k * modulus_words n) with
+      (WL.modulus_words k * WL.modulus_words n) by reflexivity.
+    split; nia.
+  - pose proof (Z.div_mod a (WL.modulus_words n) ltac:(lia)) as Hdiv.
+    replace (modulus_words k * modulus_words n) with
+      (WL.modulus_words k * WL.modulus_words n) by reflexivity.
+    replace a with
+      (WL.modulus_words n * (a / WL.modulus_words n) + a mod WL.modulus_words n)
+      at 1 by (symmetry; exact Hdiv).
+    change (a / modulus_words n) with (a / WL.modulus_words n).
+    ring.
+Qed.
+
+Lemma to_Z_shl_one : forall n,
+  (n < Pos.to_nat U64.width)%nat ->
+  to_Z (shl one n) = 2 ^ Z.of_nat n.
+Proof.
+  intros n Hn.
+  rewrite spec_shl, spec_one.
+  rewrite Z.shiftl_mul_pow2 by lia.
+  rewrite Z.mod_small.
+  - lia.
+  - split.
+    + apply Z.mul_nonneg_nonneg; lia.
+    + unfold base. rewrite width_is_64. simpl.
+      replace (1 * 2 ^ Z.of_nat n) with (2 ^ Z.of_nat n) by lia.
+      assert (Hpowpos : 0 < 2 ^ Z.of_nat n) by (apply Z.pow_pos_nonneg; lia).
+      destruct (2 ^ Z.of_nat n) eqn:Hp; simpl in *; try lia.
+      rewrite <- Hp. replace (Z.pow_pos 2 64) with (2 ^ 64) by reflexivity.
+      rewrite width_is_64 in Hn.
+      apply Z.pow_lt_mono_r; lia.
+Qed.
+
 Theorem shift_left_uint256_aux_correct : forall x shift,
   to_Z_uint256 (shift_left_uint256_aux x shift) =
     if Z.ltb (to_Z shift) 256
     then (to_Z_uint256 x * 2 ^ to_Z shift) mod modulus256
     else 0.
-(* Remaining: Prove Each Branch Of The C++-Style Shift Control Flow
-   Against The Corresponding Arithmetic Left-Shift Modulo [Modulus256]. *)
-Admitted.
+Proof.
+  intros [x0 x1 x2 x3] shift.
+  unfold shift_left_uint256_aux, to_Z_uint256.
+  cbn [uint256_to_words].
+  pose proof (to_Z_shl_one 6 ltac:(rewrite width_is_64; simpl; lia)) as H64.
+  pose proof (to_Z_shl_one 7 ltac:(rewrite width_is_64; simpl; lia)) as H128.
+  pose proof (to_Z_shl_one 8 ltac:(rewrite width_is_64; simpl; lia)) as H256.
+  assert (H192 : to_Z (shl (one + one + one)%Uint 6) = 192).
+  { rewrite spec_shl, !spec_add, !spec_one.
+    rewrite Z.shiftl_mul_pow2 by lia.
+    rewrite Z.mod_small.
+    - repeat rewrite Z.mod_small by (unfold base; rewrite width_is_64; simpl; lia).
+      nia.
+    - repeat rewrite Z.mod_small by (unfold base; rewrite width_is_64; simpl; lia).
+      unfold base. rewrite width_is_64. simpl. lia. }
+  rewrite !spec_ltb.
+  rewrite H64, H128, H256, H192.
+  replace (2 ^ Z.of_nat 8) with 256 in *.
+  2: reflexivity.
+  replace (2 ^ Z.of_nat 7) with 128 in *.
+  2: reflexivity.
+  replace (2 ^ Z.of_nat 6) with 64 in *.
+  2: reflexivity.
+  destruct (to_Z shift <? 256) eqn:H256lt.
+  - cbn [negb].
+    apply Z.ltb_lt in H256lt.
+    destruct (to_Z shift <? 128) eqn:H128lt.
+    + apply Z.ltb_lt in H128lt.
+      destruct (to_Z shift <? 64) eqn:H64lt.
+      * apply Z.ltb_lt in H64lt.
+        pose proof (spec_to_Z shift) as HshiftZ.
+        rewrite (bounded_shift_nat_correct word_width shift ltac:(lia)
+          ltac:(unfold word_width; rewrite width_is_64; exact H64lt)).
+        unfold to_Z_words, uint256_to_words.
+        cbn [w0 w1 w2 w3].
+        replace
+          (WL.to_Z_words
+             [shl x0 (Z.to_nat (to_Z shift));
+              shld64 x1 x0 (Z.to_nat (to_Z shift));
+              shld64 x2 x1 (Z.to_nat (to_Z shift));
+              shld64 x3 x2 (Z.to_nat (to_Z shift))])
+          with
+          (WL.to_Z_words
+             (firstn 4
+                (shift_left_words [x0; x1; x2; x3]
+                   (Z.to_nat (to_Z shift))))).
+        2: {
+          unfold shift_left_words.
+          cbn [firstn shift_left_words_aux WL.to_Z_words].
+          rewrite shld64_zero_low_spec.
+          2: { rewrite width_is_64. change (Pos.to_nat 64) with 64%nat.
+          apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia. lia. }
+          reflexivity. }
+        change (firstn 4 (shift_left_words [x0; x1; x2; x3]
+          (Z.to_nat (to_Z shift)))) with
+          (firstn (length [x0; x1; x2; x3])
+             (shift_left_words [x0; x1; x2; x3]
+                (Z.to_nat (to_Z shift)))).
+        rewrite to_Z_words_firstn_shift_left_mod.
+        2: { rewrite width_is_64. change (Pos.to_nat 64) with 64%nat.
+             apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia. lia. }
+        unfold modulus256, to_Z_words.
+        replace (length [x0; x1; x2; x3]) with 4%nat by reflexivity.
+        replace (Z.of_nat (Z.to_nat (to_Z shift))) with (to_Z shift)
+          by (symmetry; apply Z2Nat.id; lia).
+        reflexivity.
+      * apply Z.ltb_ge in H64lt.
+        pose proof (spec_to_Z shift) as HshiftZ.
+        assert (Hshift64 :
+          to_Z ((shift - shl 1 6)%Uint) = to_Z shift - 64).
+        { rewrite spec_sub, H64.
+          rewrite Z.mod_small.
+          - lia.
+          - split; [lia|].
+            unfold base. rewrite width_is_64. simpl. lia. }
+        assert (Hshift64lt : to_Z (shift - shl 1 6)%Uint < 64)
+          by (rewrite Hshift64; lia).
+        rewrite (bounded_shift_nat_correct word_width (shift - shl 1 6)%Uint
+          ltac:(lia)
+          ltac:(unfold word_width; rewrite width_is_64, Hshift64; lia)).
+        replace (Z.to_nat (to_Z (shift - shl 1 6)%Uint)) with
+          (Z.to_nat (to_Z shift - 64)) by (rewrite Hshift64; reflexivity).
+        unfold to_Z_words, uint256_to_words.
+        cbn [w0 w1 w2 w3].
+        cbn [WL.to_Z_words].
+        rewrite spec_zero.
+        assert (HLHS :
+          0 + base WL.U64.width *
+            (WL.U64.to_Z (shl x0 (Z.to_nat (to_Z shift - 64))) +
+             base WL.U64.width *
+             (WL.U64.to_Z (shld64 x1 x0 (Z.to_nat (to_Z shift - 64))) +
+              base WL.U64.width *
+              (WL.U64.to_Z (shld64 x2 x1 (Z.to_nat (to_Z shift - 64))) +
+               base WL.U64.width * 0))) =
+          modulus_words 1 *
+            WL.to_Z_words
+              [shl x0 (Z.to_nat (to_Z shift - 64));
+               shld64 x1 x0 (Z.to_nat (to_Z shift - 64));
+               shld64 x2 x1 (Z.to_nat (to_Z shift - 64))]).
+        { unfold modulus_words, WL.modulus_words.
+          cbn [WL.to_Z_words]. simpl.
+          change (Z.pow_pos (base WL.U64.width) 1)
+            with ((base WL.U64.width) ^ 1).
+          rewrite Z.pow_1_r. ring. }
+        rewrite HLHS.
+        replace
+          (WL.to_Z_words
+             [shl x0 (Z.to_nat (to_Z shift - 64));
+              shld64 x1 x0 (Z.to_nat (to_Z shift - 64));
+              shld64 x2 x1 (Z.to_nat (to_Z shift - 64))])
+          with
+          (WL.to_Z_words
+             (firstn 3
+                (shift_left_words [x0; x1; x2]
+                   (Z.to_nat (to_Z shift - 64))))).
+        2: {
+          unfold shift_left_words.
+          cbn [firstn shift_left_words_aux WL.to_Z_words].
+          rewrite shld64_zero_low_spec.
+          2: { rewrite width_is_64. change (Pos.to_nat 64) with 64%nat.
+               apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia. lia. }
+          reflexivity. }
+        change (firstn 3 (shift_left_words [x0; x1; x2]
+          (Z.to_nat (to_Z shift - 64)))) with
+          (firstn (length [x0; x1; x2])
+             (shift_left_words [x0; x1; x2]
+                (Z.to_nat (to_Z shift - 64)))).
+        rewrite to_Z_words_firstn_shift_left_mod.
+        2: { rewrite width_is_64. change (Pos.to_nat 64) with 64%nat.
+             apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia. lia. }
+        replace (Z.of_nat (Z.to_nat (to_Z shift - 64))) with (to_Z shift - 64)
+          by (symmetry; apply Z2Nat.id; lia).
+        rewrite modulus_words_scale_mod.
+        unfold modulus256.
+        fold (WL.to_Z_words [x0; x1; x2; x3]).
+        rewrite (WL.to_Z_words_firstn_skipn [x0; x1; x2; x3] 3) by (simpl; lia).
+        cbn [firstn skipn WL.to_Z_words].
+        assert (Hpow64 : 2 ^ to_Z shift = modulus_words 1 * 2 ^ (to_Z shift - 64)).
+        { unfold modulus_words, WL.modulus_words, base.
+          rewrite width_is_64.
+          change (Z.pow_pos (2 ^ 64) 1 * 2 ^ (to_Z shift - 64))
+            with (((2 ^ 64) ^ 1) * 2 ^ (to_Z shift - 64)).
+          rewrite Z.pow_1_r.
+          replace (to_Z shift) with (64 + (to_Z shift - 64)) by lia.
+          rewrite Z.pow_add_r by lia.
+          replace (64 + (to_Z shift - 64) - 64) with (to_Z shift - 64) by lia.
+          reflexivity. }
+        rewrite Hpow64.
+        rewrite modulus_words_add.
+        ring_simplify.
+        replace
+          (((WL.U64.to_Z x0 +
+             base WL.U64.width *
+             (WL.U64.to_Z x1 +
+              base WL.U64.width * (WL.U64.to_Z x2 + base WL.U64.width * 0)) +
+             WL.modulus_words 3 * (WL.U64.to_Z x3 + base WL.U64.width * 0)) *
+            (modulus_words 1 * 2 ^ (to_Z shift - 64))))
+          with
+          (modulus_words 1 * (to_Z_words [x0; x1; x2] * 2 ^ (to_Z shift - 64)) +
+           modulus_words 4 *
+             ((WL.U64.to_Z x3 + base WL.U64.width * 0) *
+              2 ^ (to_Z shift - 64))).
+        2: { change (modulus_words 4) with (modulus_words (1 + 3)).
+             rewrite modulus_words_add. unfold to_Z_words.
+             cbn [WL.to_Z_words].
+             change (WL.modulus_words 3) with (modulus_words 3).
+             ring. }
+        rewrite Zplus_mod.
+        rewrite (Z.mul_comm (modulus_words 4)
+          (((WL.U64.to_Z x3 + base WL.U64.width * 0) * 2 ^ (to_Z shift - 64)))).
+        assert (Hmod4nz : modulus_words 4 <> 0).
+        { pose proof (WL.modulus_words_pos 4) as Hpos.
+          intro Hz. change (WL.modulus_words 4) with (modulus_words 4) in Hpos.
+          rewrite Hz in Hpos. lia. }
+        rewrite Z.mod_mul by exact Hmod4nz.
+        rewrite Z.add_0_r.
+        change (length [x0; x1; x2]) with 3%nat.
+        rewrite <- modulus_words_add.
+        rewrite Z.mod_mod by exact Hmod4nz.
+        change (modulus_words (1 + 3)) with (modulus_words 4).
+        reflexivity.
+    + apply Z.ltb_ge in H128lt.
+      destruct (to_Z shift <? 192) eqn:H192lt.
+      * apply Z.ltb_lt in H192lt.
+        pose proof (spec_to_Z shift) as HshiftZ.
+        assert (Hshift128 :
+          to_Z ((shift - shl 1 7)%Uint) = to_Z shift - 128).
+        { rewrite spec_sub, H128.
+          rewrite Z.mod_small.
+          - lia.
+          - split; [lia|].
+            unfold base. rewrite width_is_64. simpl. lia. }
+        assert (Hshift128lt : to_Z (shift - shl 1 7)%Uint < 64)
+          by (rewrite Hshift128; lia).
+        rewrite (bounded_shift_nat_correct word_width (shift - shl 1 7)%Uint
+          ltac:(lia)
+          ltac:(unfold word_width; rewrite width_is_64, Hshift128; lia)).
+        replace (Z.to_nat (to_Z (shift - shl 1 7)%Uint)) with
+          (Z.to_nat (to_Z shift - 128)) by (rewrite Hshift128; reflexivity).
+        unfold to_Z_words, uint256_to_words.
+        cbn [w0 w1 w2 w3].
+        cbn [WL.to_Z_words].
+        rewrite !spec_zero.
+
+        assert (HLHS2 :
+          0 + base WL.U64.width *
+            (0 + base WL.U64.width *
+              (WL.U64.to_Z (shl x0 (Z.to_nat (to_Z shift - 128))) +
+               base WL.U64.width *
+               (WL.U64.to_Z (shld64 x1 x0 (Z.to_nat (to_Z shift - 128))) +
+                base WL.U64.width * 0))) =
+          modulus_words 2 *
+            WL.to_Z_words
+              [shl x0 (Z.to_nat (to_Z shift - 128));
+               shld64 x1 x0 (Z.to_nat (to_Z shift - 128))]).
+        { unfold modulus_words, WL.modulus_words.
+          cbn [WL.to_Z_words]. simpl.
+          change (Z.pow_pos (base WL.U64.width) 2) with ((base WL.U64.width) ^ 2).
+          rewrite Z.pow_2_r. ring. }
+        rewrite HLHS2.
+        replace
+          (WL.to_Z_words
+             [shl x0 (Z.to_nat (to_Z shift - 128));
+              shld64 x1 x0 (Z.to_nat (to_Z shift - 128))])
+          with
+          (WL.to_Z_words
+             (firstn 2
+                (shift_left_words [x0; x1]
+                   (Z.to_nat (to_Z shift - 128))))).
+        2: {
+          unfold shift_left_words.
+          cbn [firstn shift_left_words_aux WL.to_Z_words].
+          rewrite shld64_zero_low_spec.
+          2: { rewrite width_is_64. change (Pos.to_nat 64) with 64%nat.
+               apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia. lia. }
+          reflexivity. }
+        change (firstn 2 (shift_left_words [x0; x1]
+          (Z.to_nat (to_Z shift - 128)))) with
+          (firstn (length [x0; x1])
+             (shift_left_words [x0; x1]
+                (Z.to_nat (to_Z shift - 128)))).
+        rewrite to_Z_words_firstn_shift_left_mod.
+        2: { rewrite width_is_64. change (Pos.to_nat 64) with 64%nat.
+             apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia. lia. }
+        replace (Z.of_nat (Z.to_nat (to_Z shift - 128))) with (to_Z shift - 128)
+          by (symmetry; apply Z2Nat.id; lia).
+        rewrite modulus_words_scale_mod.
+        unfold modulus256.
+        fold (WL.to_Z_words [x0; x1; x2; x3]).
+        rewrite (WL.to_Z_words_firstn_skipn [x0; x1; x2; x3] 2) by (simpl; lia).
+        cbn [firstn skipn WL.to_Z_words].
+        assert (Hpow128 : 2 ^ to_Z shift = modulus_words 2 * 2 ^ (to_Z shift - 128)).
+        { rewrite modulus_words_2.
+          replace (to_Z shift) with (128 + (to_Z shift - 128)) by lia.
+          rewrite Z.pow_add_r by lia.
+          replace (128 + (to_Z shift - 128) - 128) with (to_Z shift - 128) by lia.
+          reflexivity. }
+        rewrite Hpow128.
+        rewrite modulus_words_add.
+        ring_simplify.
+        replace
+          (((WL.U64.to_Z x0 +
+             base WL.U64.width * (WL.U64.to_Z x1 + base WL.U64.width * 0) +
+             WL.modulus_words 2 *
+             (WL.U64.to_Z x2 +
+              base WL.U64.width * (WL.U64.to_Z x3 + base WL.U64.width * 0))) *
+            (modulus_words 2 * 2 ^ (to_Z shift - 128))))
+          with
+          (modulus_words 2 * (to_Z_words [x0; x1] * 2 ^ (to_Z shift - 128)) +
+           modulus_words 4 *
+             (WL.to_Z_words [x2; x3] * 2 ^ (to_Z shift - 128))).
+        2: { change (modulus_words 4) with (modulus_words (2 + 2)).
+             rewrite modulus_words_add. unfold to_Z_words.
+             cbn [WL.to_Z_words].
+             change (WL.modulus_words 2) with (modulus_words 2).
+             nia. }
+        rewrite Zplus_mod.
+        rewrite (Z.mul_comm (modulus_words 4)
+          (WL.to_Z_words [x2; x3] * 2 ^ (to_Z shift - 128))).
+        assert (Hmod4nz : modulus_words 4 <> 0).
+        { pose proof (WL.modulus_words_pos 4) as Hpos.
+          intro Hz. change (WL.modulus_words 4) with (modulus_words 4) in Hpos.
+          rewrite Hz in Hpos. lia. }
+        rewrite Z.mod_mul by exact Hmod4nz.
+        rewrite Z.add_0_r.
+        change (length [x0; x1]) with 2%nat.
+        rewrite <- modulus_words_add.
+        rewrite Z.mod_mod by exact Hmod4nz.
+        change (modulus_words (2 + 2)) with (modulus_words 4).
+        reflexivity.
+      * apply Z.ltb_ge in H192lt.
+        pose proof (spec_to_Z shift) as HshiftZ.
+        assert (Hshift192 :
+          to_Z ((shift - shl (one + one + one)%Uint 6)%Uint) = to_Z shift - 192).
+        { rewrite spec_sub, H192.
+          rewrite Z.mod_small.
+          - lia.
+          - split; [lia|].
+            unfold base. rewrite width_is_64. simpl. lia. }
+        assert (Hshift192lt : to_Z (shift - shl (one + one + one)%Uint 6)%Uint < 64)
+          by (rewrite Hshift192; lia).
+        rewrite (bounded_shift_nat_correct word_width
+          (shift - shl (one + one + one)%Uint 6)%Uint
+          ltac:(lia)
+          ltac:(unfold word_width; rewrite width_is_64, Hshift192; lia)).
+        replace (Z.to_nat (to_Z (shift - shl (one + one + one)%Uint 6)%Uint)) with
+          (Z.to_nat (to_Z shift - 192)) by (rewrite Hshift192; reflexivity).
+        unfold to_Z_words, uint256_to_words.
+        cbn [w0 w1 w2 w3].
+        cbn [WL.to_Z_words].
+        rewrite !spec_zero.
+        assert (HLHS3 :
+          0 + base WL.U64.width *
+            (0 + base WL.U64.width *
+              (0 + base WL.U64.width *
+                (WL.U64.to_Z (shl x0 (Z.to_nat (to_Z shift - 192))) +
+                 base WL.U64.width * 0))) =
+          modulus_words 3 *
+            WL.to_Z_words [shl x0 (Z.to_nat (to_Z shift - 192))]).
+        { change (modulus_words 3) with (modulus_words (2 + 1)).
+          rewrite modulus_words_add.
+          unfold modulus_words, WL.modulus_words.
+          cbn [WL.to_Z_words]. simpl.
+          change (Z.pow_pos (base WL.U64.width) 2) with ((base WL.U64.width) ^ 2).
+          change (Z.pow_pos (base WL.U64.width) 1) with ((base WL.U64.width) ^ 1).
+          rewrite Z.pow_2_r, Z.pow_1_r. ring. }
+        rewrite HLHS3.
+        replace
+          (WL.to_Z_words [shl x0 (Z.to_nat (to_Z shift - 192))])
+          with
+          (WL.to_Z_words
+             (firstn 1
+                (shift_left_words [x0]
+                   (Z.to_nat (to_Z shift - 192))))).
+        2: {
+          unfold shift_left_words.
+          cbn [firstn shift_left_words_aux WL.to_Z_words].
+          rewrite shld64_zero_low_spec.
+          2: { rewrite width_is_64. change (Pos.to_nat 64) with 64%nat.
+               apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia. lia. }
+          reflexivity. }
+        change (firstn 1 (shift_left_words [x0]
+          (Z.to_nat (to_Z shift - 192)))) with
+          (firstn (length [x0])
+             (shift_left_words [x0]
+                (Z.to_nat (to_Z shift - 192)))).
+        rewrite to_Z_words_firstn_shift_left_mod.
+        2: { rewrite width_is_64. change (Pos.to_nat 64) with 64%nat.
+             apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia. lia. }
+        replace (Z.of_nat (Z.to_nat (to_Z shift - 192))) with (to_Z shift - 192)
+          by (symmetry; apply Z2Nat.id; lia).
+        rewrite modulus_words_scale_mod.
+        unfold modulus256.
+        fold (WL.to_Z_words [x0; x1; x2; x3]).
+        rewrite (WL.to_Z_words_firstn_skipn [x0; x1; x2; x3] 1) by (simpl; lia).
+        cbn [firstn skipn WL.to_Z_words].
+        assert (Hpow192 : 2 ^ to_Z shift = modulus_words 3 * 2 ^ (to_Z shift - 192)).
+        { rewrite modulus_words_3.
+          replace (to_Z shift) with (192 + (to_Z shift - 192)) by lia.
+          rewrite Z.pow_add_r by lia.
+          replace (192 + (to_Z shift - 192) - 192) with (to_Z shift - 192) by lia.
+          reflexivity. }
+        rewrite Hpow192.
+        rewrite modulus_words_add.
+        ring_simplify.
+        replace
+          ((((WL.U64.to_Z x0 +
+              WL.modulus_words 1 *
+              (WL.U64.to_Z x1 +
+               base WL.U64.width *
+               (WL.U64.to_Z x2 + base WL.U64.width * (WL.U64.to_Z x3 + base WL.U64.width * 0)))) *
+             (modulus_words 3 * 2 ^ (to_Z shift - 192)))
+            mod modulus_words 4))
+          with
+          ((modulus_words 3 * (to_Z_words [x0] * 2 ^ (to_Z shift - 192)) +
+            modulus_words 4 *
+              (WL.to_Z_words [x1; x2; x3] * 2 ^ (to_Z shift - 192)))
+           mod modulus_words 4).
+        2: { f_equal.
+             change (modulus_words 4) with (modulus_words (3 + 1)).
+             rewrite modulus_words_add. unfold to_Z_words.
+             cbn [WL.to_Z_words].
+             change (WL.modulus_words 1) with (modulus_words 1).
+             ring. }
+        assert (Hrhs :
+          (((WL.U64.to_Z x0 + base WL.U64.width * 0 +
+              WL.modulus_words 1 *
+                (WL.U64.to_Z x1 +
+                 base WL.U64.width *
+                   (WL.U64.to_Z x2 +
+                    base WL.U64.width * (WL.U64.to_Z x3 + base WL.U64.width * 0)))) *
+             (modulus_words 3 * 2 ^ (to_Z shift - 192)))
+           mod modulus_words 4) =
+          ((modulus_words 3 * (to_Z_words [x0] * 2 ^ (to_Z shift - 192)) +
+            modulus_words 4 *
+              (WL.to_Z_words [x1; x2; x3] * 2 ^ (to_Z shift - 192)))
+           mod modulus_words 4)).
+        { f_equal.
+          change (modulus_words 4) with (modulus_words (3 + 1)).
+          rewrite modulus_words_add. unfold to_Z_words.
+          cbn [WL.to_Z_words].
+          change (WL.modulus_words 1) with (modulus_words 1).
+          ring. }
+        rewrite Hrhs. clear Hrhs.
+        rewrite Zplus_mod.
+        rewrite (Z.mul_comm (modulus_words 4)
+          (WL.to_Z_words [x1; x2; x3] * 2 ^ (to_Z shift - 192))).
+        assert (Hmod4nz : modulus_words 4 <> 0).
+        { pose proof (WL.modulus_words_pos 4) as Hpos.
+          intro Hz. change (WL.modulus_words 4) with (modulus_words 4) in Hpos.
+          rewrite Hz in Hpos. lia. }
+        rewrite Z.mod_mul by exact Hmod4nz.
+        rewrite Z.add_0_r.
+        change (length [x0]) with 1%nat.
+        rewrite <- modulus_words_add.
+        rewrite Z.mod_mod by exact Hmod4nz.
+        change (modulus_words (3 + 1)) with (modulus_words 4).
+        reflexivity.
+  - apply Z.ltb_ge in H256lt.
+    cbn. rewrite !spec_zero. lia.
+Qed.
 
 Lemma to_Z_uint256_zero_high : forall s0 s1 s2 s3,
   to_Z s1 = 0 -> to_Z s2 = 0 -> to_Z s3 = 0 ->

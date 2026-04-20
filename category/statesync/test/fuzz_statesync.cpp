@@ -210,7 +210,8 @@ namespace
         MONAD_ASSERT(begin != end);
         bytes32_t const key{erase ? begin : n % (end - begin) + begin};
         bytes32_t const value{erase ? 0 : n};
-        auto const sorig = db.read_storage(addr, orig->incarnation, key);
+        auto const sorig =
+            to_bytes(db.read_storage(addr, orig->incarnation, key));
         bool const success = deltas.emplace(
             addr,
             StateDelta{

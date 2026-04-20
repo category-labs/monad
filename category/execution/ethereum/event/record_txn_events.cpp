@@ -132,7 +132,7 @@ struct AccountAccessInfo
 /// whether opt_txn_num is set or not; the account access events are allocated
 /// this way, as some of them occur at system scope
 template <typename T>
-ReservedExecEvent<T> reserve_event(
+ReservedEvent<T> reserve_event(
     ExecutionEventRecorder *exec_recorder, monad_exec_event_type event_type,
     std::optional<uint32_t> opt_txn_num)
 {
@@ -161,7 +161,7 @@ void record_storage_events(
             }
         }
 
-        ReservedExecEvent const storage_access =
+        ReservedEvent const storage_access =
             reserve_event<monad_exec_storage_access>(
                 exec_recorder, MONAD_EXEC_STORAGE_ACCESS, opt_txn_num);
         *storage_access.payload = monad_exec_storage_access{
@@ -205,7 +205,7 @@ void record_account_events(
     auto const [modified_nonce, is_nonce_modified] =
         account_info.get_nonce_modification();
 
-    ReservedExecEvent const account_access =
+    ReservedEvent const account_access =
         reserve_event<monad_exec_account_access>(
             exec_recorder, MONAD_EXEC_ACCOUNT_ACCESS, opt_txn_num);
     *account_access.payload = monad_exec_account_access{
@@ -262,7 +262,7 @@ void record_account_access_events_internal(
 {
     auto const &prestate_map = state.original();
 
-    ReservedExecEvent const list_header =
+    ReservedEvent const list_header =
         reserve_event<monad_exec_account_access_list_header>(
             exec_recorder, MONAD_EXEC_ACCOUNT_ACCESS_LIST_HEADER, opt_txn_num);
     *list_header.payload = monad_exec_account_access_list_header{
@@ -302,7 +302,7 @@ void record_txn_header_events(
     }
 
     // TXN_HEADER_START
-    ReservedExecEvent const txn_header_start =
+    ReservedEvent const txn_header_start =
         exec_recorder->reserve_txn_event<monad_exec_txn_header_start>(
             MONAD_EXEC_TXN_HEADER_START,
             txn_num,
@@ -313,7 +313,7 @@ void record_txn_header_events(
 
     // TXN_ACCESS_LIST_ENTRY
     for (uint32_t index = 0; AccessEntry const &e : transaction.access_list) {
-        ReservedExecEvent const access_list_entry =
+        ReservedEvent const access_list_entry =
             exec_recorder->reserve_txn_event<monad_exec_txn_access_list_entry>(
                 MONAD_EXEC_TXN_ACCESS_LIST_ENTRY,
                 txn_num,
@@ -330,7 +330,7 @@ void record_txn_header_events(
     // TXN_AUTH_LIST_ENTRY
     for (uint32_t index = 0;
          AuthorizationEntry const &e : transaction.authorization_list) {
-        ReservedExecEvent const auth_list_entry =
+        ReservedEvent const auth_list_entry =
             exec_recorder->reserve_txn_event<monad_exec_txn_auth_list_entry>(
                 MONAD_EXEC_TXN_AUTH_LIST_ENTRY, txn_num);
         *auth_list_entry.payload = monad_exec_txn_auth_list_entry{
@@ -364,7 +364,7 @@ void record_txn_output_events(
     }
 
     // TXN_EVM_OUTPUT
-    ReservedExecEvent const txn_evm_output =
+    ReservedEvent const txn_evm_output =
         exec_recorder->reserve_txn_event<monad_exec_txn_evm_output>(
             MONAD_EXEC_TXN_EVM_OUTPUT, txn_num);
     *txn_evm_output.payload = monad_exec_txn_evm_output{
@@ -377,7 +377,7 @@ void record_txn_output_events(
 
     // TXN_LOG
     for (uint32_t index = 0; auto const &log : receipt.logs) {
-        ReservedExecEvent const txn_log =
+        ReservedEvent const txn_log =
             exec_recorder->reserve_txn_event<monad_exec_txn_log>(
                 MONAD_EXEC_TXN_LOG,
                 txn_num,
@@ -399,7 +399,7 @@ void record_txn_output_events(
         std::span const return_bytes{
             call_frame.output.data(), call_frame.output.size()};
 
-        ReservedExecEvent const txn_call_frame =
+        ReservedEvent const txn_call_frame =
             exec_recorder->reserve_txn_event<monad_exec_txn_call_frame>(
                 MONAD_EXEC_TXN_CALL_FRAME,
                 txn_num,
@@ -449,14 +449,14 @@ void record_txn_error_event(
     auto const &error_domain = txn_error.domain();
     auto const error_value = txn_error.value();
     if (error_domain == txn_err_domain) {
-        ReservedExecEvent const txn_reject =
+        ReservedEvent const txn_reject =
             exec_recorder->reserve_txn_event<monad_exec_txn_reject>(
                 MONAD_EXEC_TXN_REJECT, txn_num);
         *txn_reject.payload = static_cast<uint32_t>(error_value);
         exec_recorder->commit(txn_reject);
     }
     else {
-        ReservedExecEvent const evm_error =
+        ReservedEvent const evm_error =
             exec_recorder->reserve_txn_event<monad_exec_evm_error>(
                 MONAD_EXEC_EVM_ERROR, txn_num);
         *evm_error.payload = monad_exec_evm_error{

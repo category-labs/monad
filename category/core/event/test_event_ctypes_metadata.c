@@ -24,7 +24,7 @@ extern "C"
 {
 #endif
 
-struct monad_event_metadata const g_monad_test_event_metadata[3] = {
+struct monad_event_metadata const g_monad_test_event_metadata[4] = {
 
     [MONAD_TEST_EVENT_NONE] =
         {.event_type = MONAD_TEST_EVENT_NONE,
@@ -39,7 +39,13 @@ struct monad_event_metadata const g_monad_test_event_metadata[3] = {
     [MONAD_TEST_EVENT_COUNTER] =
         {.event_type = MONAD_TEST_EVENT_COUNTER,
          .c_name = "TEST_COUNTER",
-         .description = "A special event emitted only by the test suite"},
+         .description = "A test suite event that counts"},
+
+    [MONAD_TEST_EVENT_VLT] =
+        {.event_type = MONAD_TEST_EVENT_VLT,
+         .c_name = "TEST_VLT",
+         .description =
+             "A test suite event that records variable-length trailing arrays"},
 
 };
 

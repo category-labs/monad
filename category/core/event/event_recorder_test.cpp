@@ -40,6 +40,7 @@
 
 #include <category/core/event/event_iterator.h>
 #include <category/core/event/event_recorder.h>
+#include <category/core/event/event_recorder.hpp>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
 #include <category/core/event/test_event_ctypes.h>
@@ -478,4 +479,132 @@ TEST_F(EventRecorderDefaultFixture, LargePayloads)
             monad_event_ring_payload_peek(&event_ring_, &second_event),
             data(big_buffer_bytes),
             size(big_buffer_bytes)));
+}
+
+TEST_F(EventRecorderDefaultFixture, CxxInterface)
+{
+    using namespace monad;
+
+    constexpr unsigned VLT_ARRAY_1[] = {12345678U, 87654321U, 0xBEEFCAFE};
+    constexpr char VLT_ARRAY_2[] = "Hello world!";
+    constexpr uint64_t CONTENT_EXT_0 = 0x7F56938801020304UL;
+
+    monad_event_recorder c_recorder;
+    ASSERT_EQ(0, monad_event_ring_init_recorder(&event_ring_, &c_recorder));
+    EventRecorder recorder{c_recorder};
+
+    // Note: the subspan(0) calls are there to make the spans into dynamic
+    // extent spans, rather than compile-time fixed-sized spans. Normally this
+    // API is never given fixed-sized spans, because the trailing buffer
+    // variadic args are by definition used for recording variably-sized
+    // trailing data. `std::span{x}` evaluates to a fixed-sized span because
+    // our testing data has a compile-time-known extent.
+    ReservedEvent const vlt_event =
+        recorder.reserve_event<monad_test_event_vlt>(
+            MONAD_TEST_EVENT_VLT,
+            as_bytes(std::span{VLT_ARRAY_1}).subspan(0),
+            as_bytes(std::span{VLT_ARRAY_2}).subspan(0));
+    ASSERT_NE(vlt_event.event, nullptr);
+    ASSERT_NE(vlt_event.payload, nullptr);
+    ASSERT_NE(vlt_event.seqno, 0);
+
+    *vlt_event.payload = monad_test_event_vlt{
+        .vlt_1_length = static_cast<uint32_t>(std::size(VLT_ARRAY_1)),
+        .vlt_2_length = static_cast<uint32_t>(std::size(VLT_ARRAY_2))};
+    vlt_event.event->content_ext[0] = CONTENT_EXT_0;
+    recorder.commit(vlt_event);
+
+    monad_event_descriptor event;
+    ASSERT_TRUE(
+        monad_event_ring_try_copy(&event_ring_, vlt_event.seqno, &event));
+    ASSERT_EQ(event.event_type, MONAD_TEST_EVENT_VLT);
+    ASSERT_EQ(event.content_ext[0], CONTENT_EXT_0);
+
+    auto const *const vlt_payload = static_cast<monad_test_event_vlt const *>(
+        monad_event_ring_payload_peek(&event_ring_, &event));
+    ASSERT_EQ(memcmp(vlt_payload, vlt_event.payload, sizeof *vlt_payload), 0);
+    ASSERT_EQ(memcmp(vlt_payload + 1, VLT_ARRAY_1, sizeof VLT_ARRAY_1), 0);
+    ASSERT_EQ(
+        memcmp(
+            reinterpret_cast<std::byte const *>(vlt_payload + 1) +
+                sizeof VLT_ARRAY_1,
+            VLT_ARRAY_2,
+            sizeof VLT_ARRAY_2),
+        0);
+}
+
+TEST_F(EventRecorderDefaultFixture, CxxOverflowError)
+{
+    using namespace monad;
+    std::vector<uint8_t> truncated;
+
+    // Make some data to put in the truncated buffer region. We will also pass
+    // in a giant buffer after this one, to cause the > 4GiB overflow. The
+    // giant buffer may not point to valid memory, but because we will have
+    // copied up the maximum truncation size from this smaller buffer first,
+    // the library won't try to access the giant buffer
+    truncated.reserve(EventRecorder::RECORD_ERROR_TRUNCATED_SIZE);
+    for (unsigned i = 0; i < EventRecorder::RECORD_ERROR_TRUNCATED_SIZE; ++i) {
+        truncated.push_back(static_cast<uint8_t>(i));
+    }
+
+    monad_event_recorder c_recorder;
+    ASSERT_EQ(0, monad_event_ring_init_recorder(&event_ring_, &c_recorder));
+    EventRecorder recorder{c_recorder};
+
+    constexpr size_t OverflowSize = 1UL << 32;
+    ReservedEvent const vlt_event =
+        recorder.reserve_event<monad_test_event_vlt>(
+            MONAD_TEST_EVENT_VLT,
+            std::as_bytes(std::span{truncated}),
+            std::span{
+                reinterpret_cast<std::byte const *>(truncated.data()),
+                OverflowSize});
+    ASSERT_NE(vlt_event.event, nullptr);
+    ASSERT_NE(vlt_event.payload, nullptr);
+    ASSERT_NE(vlt_event.seqno, 0);
+
+    // The user will typically not know that error has happened; they will
+    // write into the payload area as though this is the real payload, but
+    // it's really part of the MONAD_EVENT_RECORD_ERROR layout
+    *vlt_event.payload =
+        monad_test_event_vlt{.vlt_1_length = 0, .vlt_2_length = 0};
+
+    recorder.commit(vlt_event);
+
+    monad_event_descriptor event;
+    ASSERT_TRUE(
+        monad_event_ring_try_copy(&event_ring_, vlt_event.seqno, &event));
+    ASSERT_EQ(event.event_type, 1);
+
+    size_t const expected_requested_payload_size =
+        sizeof(*vlt_event.payload) + std::size(truncated) + OverflowSize;
+    auto const *const written_error =
+        static_cast<monad_event_record_error const *>(
+            monad_event_ring_payload_peek(&event_ring_, &event));
+
+    size_t const expected_truncation_size =
+        EventRecorder::RECORD_ERROR_TRUNCATED_SIZE - sizeof(*written_error);
+    ASSERT_EQ(written_error->error_type, MONAD_EVENT_RECORD_ERROR_OVERFLOW_4GB);
+    ASSERT_EQ(written_error->dropped_event_type, MONAD_TEST_EVENT_VLT);
+    ASSERT_EQ(written_error->truncated_payload_size, expected_truncation_size);
+    ASSERT_EQ(
+        written_error->requested_payload_size, expected_requested_payload_size);
+
+    // `*vlt_event.payload` is still copied into the error event, into the
+    // truncation area
+    ASSERT_EQ(
+        memcmp(
+            written_error + 1, vlt_event.payload, sizeof(*vlt_event.payload)),
+        0);
+
+    // Part of the VLT (as much as will fit) is also copied
+    size_t const vlt_offset =
+        sizeof(*written_error) + sizeof(*vlt_event.payload);
+    ASSERT_EQ(
+        memcmp(
+            reinterpret_cast<std::byte const *>(written_error) + vlt_offset,
+            std::data(truncated),
+            written_error->truncated_payload_size - sizeof(*vlt_event.payload)),
+        0);
 }

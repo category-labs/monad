@@ -18,13 +18,16 @@
 #include <category/core/assert.h>
 #include <category/core/cleanup.h> //NOLINT(misc-include-cleaner)
 #include <category/core/config.hpp>
+#include <category/core/event/event_recorder.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
+#include <category/core/event/owned_event_ring.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 
 #include <charconv>
 #include <concepts>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -33,6 +36,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include <errno.h>
@@ -234,12 +238,115 @@ int create_owned_event_ring_nointr(
     return rc;
 }
 
+int init_owned_event_ring(
+    EventRingConfig ring_config, monad_event_content_type content_type,
+    uint8_t const *schema_hash, uint8_t default_descriptor_shift,
+    uint8_t default_payload_buf_shift,
+    std::unique_ptr<OwnedEventRing> &owned_event_ring)
+{
+    char ring_path[PATH_MAX];
+
+    if (ring_config.descriptors_shift == 0) {
+        ring_config.descriptors_shift = default_descriptor_shift;
+    }
+    if (ring_config.payload_buf_shift == 0) {
+        ring_config.payload_buf_shift = default_payload_buf_shift;
+    }
+
+    if (int const rc = monad_event_resolve_ring_file(
+            MONAD_EVENT_DEFAULT_HUGETLBFS,
+            ring_config.event_ring_file.c_str(),
+            ring_path,
+            sizeof ring_path);
+        rc != 0) {
+        LOG_ERROR(
+            "resolution of event ring file {} failed: {}",
+            ring_config.event_ring_file,
+            monad_event_ring_get_last_error());
+        return rc;
+    }
+    if (ring_config.event_ring_file != ring_path) {
+        LOG_INFO(
+            "event ring `{}` resolved to `{}`",
+            ring_config.event_ring_file,
+            ring_path);
+    }
+
+    // Check if the underlying filesystem supports MAP_HUGETLB
+    bool fs_supports_hugetlb;
+    if (int const rc = monad_check_path_supports_map_hugetlb(
+            ring_path, &fs_supports_hugetlb)) {
+        LOG_ERROR(
+            "event library error -- {}", monad_event_ring_get_last_error());
+        return rc;
+    }
+    if (!fs_supports_hugetlb) {
+        LOG_WARNING(
+            "file system hosting event ring file `{}` does not support "
+            "MAP_HUGETLB!",
+            ring_path);
+    }
+
+    monad_event_ring_simple_config const simple_cfg = {
+        .descriptors_shift = ring_config.descriptors_shift,
+        .payload_buf_shift = ring_config.payload_buf_shift,
+        .context_large_pages = 0,
+        .content_type = content_type,
+        .schema_hash = schema_hash};
+
+    int ring_fd [[gnu::cleanup(cleanup_close)]] = -1;
+    if (int const rc =
+            create_owned_event_ring_nointr(ring_path, simple_cfg, &ring_fd)) {
+        return rc;
+    }
+
+    int const mmap_extra_flags =
+        fs_supports_hugetlb ? MAP_POPULATE | MAP_HUGETLB : MAP_POPULATE;
+
+    // mmap the event ring into this process' address space
+    monad_event_ring event_ring;
+    if (int const rc = monad_event_ring_mmap(
+            &event_ring,
+            PROT_READ | PROT_WRITE,
+            mmap_extra_flags,
+            ring_fd,
+            0,
+            ring_path)) {
+        LOG_ERROR(
+            "event library error -- {}", monad_event_ring_get_last_error());
+        (void)unlink(ring_path);
+        return rc;
+    }
+
+    // owned_fd isn't closed by us, but given to OwnedEventRing
+    int const owned_fd = dup(ring_fd);
+    if (owned_fd == -1) {
+        int const saved_errno = errno;
+        LOG_ERROR(
+            "could not dup(2) ring file {} fd: {} {}",
+            ring_path,
+            strerror(saved_errno),
+            saved_errno);
+        (void)unlink(ring_path);
+        monad_event_ring_unmap(&event_ring);
+        return saved_errno;
+    }
+    owned_event_ring =
+        std::make_unique<OwnedEventRing>(owned_fd, ring_path, event_ring);
+    LOG_INFO(
+        "{} event ring created: {}",
+        g_monad_event_content_type_names[std::to_underlying(content_type)],
+        ring_path);
+    return 0;
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-// Links against the global object in libmonad_execution_ethereum; remains
-// uninitialized if recording is disabled
+// These symbols link against the global objects in libmonad_execution_ethereum;
+// they remain uninitialized if execution event recording is disabled
+extern std::unique_ptr<OwnedEventRing> g_exec_event_ring;
 extern std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
 
 // Parse a configuration string, which has the form
@@ -289,77 +396,27 @@ try_parse_event_ring_config(std::string_view s)
 
 int init_execution_event_recorder(EventRingConfig ring_config)
 {
-    char ring_path[PATH_MAX];
-    MONAD_ASSERT(!g_exec_event_recorder, "recorder initialized twice?");
+    MONAD_ASSERT(!g_exec_event_ring, "recorder initialized twice?");
 
-    if (int const rc = monad_event_resolve_ring_file(
-            MONAD_EVENT_DEFAULT_HUGETLBFS,
-            ring_config.event_ring_file.c_str(),
-            ring_path,
-            sizeof ring_path);
-        rc != 0) {
-        LOG_ERROR(
-            "resolution of event ring file {} failed: {}",
-            ring_config.event_ring_file,
-            monad_event_ring_get_last_error());
-        return rc;
-    }
-    if (ring_config.event_ring_file != ring_path) {
-        LOG_INFO(
-            "event ring `{}` resolved to `{}`",
-            ring_config.event_ring_file,
-            ring_path);
-    }
-
-    // Check if the underlying filesystem supports MAP_HUGETLB
-    bool fs_supports_hugetlb;
-    if (int const rc = monad_check_path_supports_map_hugetlb(
-            ring_path, &fs_supports_hugetlb)) {
-        LOG_ERROR(
-            "event library error -- {}", monad_event_ring_get_last_error());
-        return rc;
-    }
-    if (!fs_supports_hugetlb) {
-        LOG_WARNING(
-            "file system hosting event ring file `{}` does not support "
-            "MAP_HUGETLB!",
-            ring_path);
-    }
-
-    monad_event_ring_simple_config const simple_cfg = {
-        .descriptors_shift = ring_config.descriptors_shift,
-        .payload_buf_shift = ring_config.payload_buf_shift,
-        .context_large_pages = 0,
-        .content_type = MONAD_EVENT_CONTENT_TYPE_EXEC,
-        .schema_hash = g_monad_exec_event_schema_hash};
-
-    int ring_fd [[gnu::cleanup(cleanup_close)]] = -1;
-    if (int const rc =
-            create_owned_event_ring_nointr(ring_path, simple_cfg, &ring_fd)) {
+    if (int const rc = init_owned_event_ring(
+            std::move(ring_config),
+            MONAD_EVENT_CONTENT_TYPE_EXEC,
+            g_monad_exec_event_schema_hash,
+            DEFAULT_EXEC_RING_DESCRIPTORS_SHIFT,
+            DEFAULT_EXEC_RING_PAYLOAD_BUF_SHIFT,
+            g_exec_event_ring)) {
         return rc;
     }
 
-    int const mmap_extra_flags =
-        fs_supports_hugetlb ? MAP_POPULATE | MAP_HUGETLB : MAP_POPULATE;
-
-    // mmap the event ring into this process' address space
-    monad_event_ring exec_ring;
-    if (int const rc = monad_event_ring_mmap(
-            &exec_ring,
-            PROT_READ | PROT_WRITE,
-            mmap_extra_flags,
-            ring_fd,
-            0,
-            ring_path)) {
+    monad_event_recorder recorder;
+    if (int const rc = monad_event_ring_init_recorder(
+            g_exec_event_ring->get_event_ring(), &recorder)) {
         LOG_ERROR(
             "event library error -- {}", monad_event_ring_get_last_error());
         return rc;
     }
 
-    // Create the execution recorder object
-    g_exec_event_recorder =
-        std::make_unique<ExecutionEventRecorder>(ring_fd, ring_path, exec_ring);
-    LOG_INFO("execution event ring created: {}", ring_path);
+    g_exec_event_recorder = std::make_unique<ExecutionEventRecorder>(recorder);
     return 0;
 }
 

@@ -24,7 +24,7 @@ void record_mock_consensus_events(
     bytes32_t const &block_id, uint64_t block_number)
 {
     if (auto *exec_recorder = g_exec_event_recorder.get()) {
-        ReservedExecEvent const block_qc =
+        ReservedEvent const block_qc =
             exec_recorder->reserve_block_event<monad_exec_block_qc>(
                 MONAD_EXEC_BLOCK_QC);
         *block_qc.payload = monad_exec_block_qc{
@@ -33,14 +33,14 @@ void record_mock_consensus_events(
             .epoch = 0};
         exec_recorder->commit(block_qc);
 
-        ReservedExecEvent const block_finalized =
+        ReservedEvent const block_finalized =
             exec_recorder->reserve_block_event<monad_exec_block_finalized>(
                 MONAD_EXEC_BLOCK_FINALIZED);
         *block_finalized.payload = monad_exec_block_finalized{
             .id = block_id, .block_number = block_number};
         exec_recorder->commit(block_finalized);
 
-        ReservedExecEvent const block_verified =
+        ReservedEvent const block_verified =
             exec_recorder->reserve_block_event<monad_exec_block_verified>(
                 MONAD_EXEC_BLOCK_VERIFIED);
         *block_verified.payload =

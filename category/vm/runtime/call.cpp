@@ -175,8 +175,8 @@ namespace monad::vm::runtime
             .input_data =
                 (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr,
             .input_size = *args_size,
-            .value = static_cast<evmc::bytes32>(value),
-            .create2_salt = static_cast<evmc::bytes32>(ctx->env.create2_salt),
+            .value = value,
+            .create2_salt = ctx->env.create2_salt,
             .code_address = code_address,
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,

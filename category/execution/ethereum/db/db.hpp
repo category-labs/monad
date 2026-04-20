@@ -41,7 +41,9 @@ struct Db
 {
     virtual std::optional<Account> read_account(Address const &) = 0;
 
-    virtual bytes32_t
+    // Returns the zeroless big-endian representation of the slot value,
+    // equivalent to `compact_storage_view(slot_value)` (see db/util.hpp).
+    virtual byte_string
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
 
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;

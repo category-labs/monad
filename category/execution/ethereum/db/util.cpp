@@ -666,11 +666,19 @@ Result<Account> decode_account_db_ignore_address(byte_string_view &enc)
     return decode_account_db_helper(res.second);
 }
 
+byte_string_view compact_storage_view(bytes32_t const &val)
+{
+    return rlp::zeroless_view(to_byte_string_view(val.bytes));
+}
+
 byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)
 {
     byte_string encoded_storage;
     encoded_storage += rlp::encode_bytes32_compact(key);
-    encoded_storage += rlp::encode_bytes32_compact(val);
+    // Equivalent to `rlp::encode_bytes32_compact(val)`, but written this way
+    // to make the storage-value representation (zeroless big-endian) explicit
+    // at the encode site.
+    encoded_storage += rlp::encode_string2(compact_storage_view(val));
     return rlp::encode_list2(encoded_storage);
 }
 

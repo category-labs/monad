@@ -22,6 +22,7 @@
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
@@ -64,7 +65,8 @@ class DbCache final : public Db
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
-    using StorageCache = LruCache<StorageKey, bytes32_t, StorageKeyHashCompare>;
+    using StorageCache =
+        LruCache<StorageKey, byte_string, StorageKeyHashCompare>;
 
     AccountsCache accounts_{10'000'000};
     StorageCache storage_{10'000'000};
@@ -92,11 +94,11 @@ public:
         return db_.read_account(address);
     }
 
-    virtual bytes32_t read_storage(
+    virtual byte_string read_storage(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
-        bytes32_t result;
+        byte_string result;
         auto const res =
             proposals_.try_read_storage(address, incarnation, key, result);
         if (res.found) {
@@ -233,7 +235,8 @@ private:
                     auto const incarnation = account->incarnation;
                     storage_.insert(
                         StorageKey(address, incarnation, key),
-                        storage_delta.second);
+                        byte_string{
+                            compact_storage_view(storage_delta.second)});
                 }
             }
         }

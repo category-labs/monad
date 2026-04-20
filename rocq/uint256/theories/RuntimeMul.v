@@ -19,7 +19,261 @@ From Stdlib Require Import ZArith Lia List.
 From Uint256 Require Import Uint Base Primitives Words.
 Import ListNotations.
 
-Module MakeOn (B : Base.BaseSig).
+Module Type RuntimeMulSig.
+Include Base.BaseSig.
+Import U64.
+Include UintNotations(U64).
+Open Scope uint_scope.
+
+Fixpoint mul_line_recur (xs : words) (y : t) (result : words)
+    (I R : nat) (carry : t) : words :=
+  match xs with
+  | [] =>
+      if (I <? R)%nat
+      then set_word result I carry
+      else result
+  | x :: rest =>
+      if (I <? R)%nat then
+        if (I + 1 <? R)%nat then
+          let (hi,lo) := mulx x y in
+          let '(new_carry, res_I) := adc_2_short hi lo carry in
+          mul_line_recur rest y (set_word result I res_I) (S I) R new_carry
+        else
+          set_word result I (y * x + carry)
+      else result
+  end.
+
+Definition mul_line (R : nat) (xs : words) (y : t) : words :=
+  match xs with
+  | [] => extend_words R
+  | x0 :: rest =>
+      let result := extend_words R in
+      let '(carry, lo) := mulx y x0 in
+      let result' := set_word result 0 lo in
+      mul_line_recur rest y result' 1 R carry
+  end.
+
+Fixpoint mul_add_line_recur (xs : words) (y_i : t) (result : words)
+    (J I R : nat) (c_hi c_lo : t) : words :=
+  match xs with
+  | [] =>
+      let pos := (I + J)%nat in
+      if (pos + 1 <? R)%nat then
+        let '(r_1, r_0) := adc_2_short c_hi c_lo (get_word result pos) in
+        set_word (set_word result pos r_0) (pos + 1) r_1
+      else if (pos <? R)%nat then
+        set_word result pos (get_word result pos + c_lo)
+      else result
+  | x :: rest =>
+      if (I + J <? R)%nat then
+        if (I + J + 2 <? R)%nat then
+          let '(hi, lo) := mulx x y_i in
+          let '(c_hi', c_lo', res_IJ) :=
+            adc_3 hi lo (get_word result (I + J)) c_hi c_lo in
+          mul_add_line_recur rest y_i (set_word result (I + J) res_IJ)
+                             (S J) I R c_hi' c_lo'
+        else if (I + J + 1 <? R)%nat then
+          let lo_val := x * y_i in
+          let '(c_lo', res_IJ) :=
+            adc_2_full lo_val (get_word result (I + J)) c_hi c_lo in
+          mul_add_line_recur rest y_i (set_word result (I + J) res_IJ)
+                             (S J) I R c_hi c_lo'
+        else
+          let result' := set_word result (I + J)
+                           (get_word result (I + J) + c_lo) in
+          mul_add_line_recur rest y_i result' (S J) I R c_hi c_lo
+      else result
+  end.
+
+Fixpoint mul_add_line_recur_alt (xs : words) (y_i : t) (result : words)
+    (J I R : nat) (c_hi c_lo : t) : words :=
+  match xs with
+  | [] =>
+      let pos := (I + J)%nat in
+      if (pos + 1 <? R)%nat then
+        let '(r_1, r_0) := adc_2_short c_hi c_lo (get_word result pos) in
+        set_word (set_word result pos r_0) (pos + 1) r_1
+      else if (pos <? R)%nat then
+        set_word result pos (get_word result pos + c_lo)
+      else result
+  | x :: rest =>
+      if (I + J <? R)%nat then
+        let '(c_hi', c_lo', res_IJ) :=
+          if (I + J + 2 <? R)%nat then
+            let '(hi, lo) := mulx x y_i in
+            adc_3 hi lo (get_word result (I + J)) c_hi c_lo
+          else if (I + J + 1 <? R)%nat then
+            let lo_val := x * y_i in
+            let '(c_lo', res_IJ) :=
+              adc_2_full lo_val (get_word result (I + J)) c_hi c_lo in
+            (c_hi, c_lo', res_IJ)
+          else
+            (c_hi, c_lo, (get_word result (I + J) + c_lo)) in
+        mul_add_line_recur_alt rest y_i (set_word result (I + J) res_IJ)
+                           (S J) I R c_hi' c_lo'
+      else result
+  end.
+
+Definition mul_add_line (I R : nat) (xs : words) (y_i : t)
+    (result : words) : words :=
+  match xs with
+  | [] => result
+  | x0 :: rest =>
+      let '(c_hi, c_lo) :=
+        if (I + 1 <? R)%nat then
+          mulx x0 y_i
+        else
+          (0, x0 * y_i)
+      in
+      mul_add_line_recur rest y_i result 0 I R c_hi c_lo
+  end.
+
+Fixpoint truncating_mul_runtime_recur (xs : words) (ys : words)
+    (result : words) (I R : nat) : words :=
+  match ys with
+  | [] => result
+  | y0 :: ys_tail =>
+      let result' := mul_add_line I R xs y0 result in
+      truncating_mul_runtime_recur xs ys_tail result' (S I) R
+  end.
+
+Definition truncating_mul_runtime (xs ys : words) (R : nat) : words :=
+  match ys with
+  | [] => extend_words R
+  | y0 :: ys_tail =>
+      let result := mul_line R xs y0 in
+      truncating_mul_runtime_recur xs ys_tail result 1 R
+  end.
+End RuntimeMulSig.
+
+Module Type RuntimeMulProofSig.
+Include Base.BaseProofSig.
+Import U64.
+Include UintNotations(U64).
+Open Scope uint_scope.
+
+Fixpoint mul_line_recur (xs : words) (y : t) (result : words)
+    (I R : nat) (carry : t) : words :=
+  match xs with
+  | [] =>
+      if (I <? R)%nat
+      then set_word result I carry
+      else result
+  | x :: rest =>
+      if (I <? R)%nat then
+        if (I + 1 <? R)%nat then
+          let (hi,lo) := mulx x y in
+          let '(new_carry, res_I) := adc_2_short hi lo carry in
+          mul_line_recur rest y (set_word result I res_I) (S I) R new_carry
+        else
+          set_word result I (y * x + carry)
+      else result
+  end.
+
+Definition mul_line (R : nat) (xs : words) (y : t) : words :=
+  match xs with
+  | [] => extend_words R
+  | x0 :: rest =>
+      let result := extend_words R in
+      let '(carry, lo) := mulx y x0 in
+      let result' := set_word result 0 lo in
+      mul_line_recur rest y result' 1 R carry
+  end.
+
+Fixpoint mul_add_line_recur (xs : words) (y_i : t) (result : words)
+    (J I R : nat) (c_hi c_lo : t) : words :=
+  match xs with
+  | [] =>
+      let pos := (I + J)%nat in
+      if (pos + 1 <? R)%nat then
+        let '(r_1, r_0) := adc_2_short c_hi c_lo (get_word result pos) in
+        set_word (set_word result pos r_0) (pos + 1) r_1
+      else if (pos <? R)%nat then
+        set_word result pos (get_word result pos + c_lo)
+      else result
+  | x :: rest =>
+      if (I + J <? R)%nat then
+        if (I + J + 2 <? R)%nat then
+          let '(hi, lo) := mulx x y_i in
+          let '(c_hi', c_lo', res_IJ) :=
+            adc_3 hi lo (get_word result (I + J)) c_hi c_lo in
+          mul_add_line_recur rest y_i (set_word result (I + J) res_IJ)
+                             (S J) I R c_hi' c_lo'
+        else if (I + J + 1 <? R)%nat then
+          let lo_val := x * y_i in
+          let '(c_lo', res_IJ) :=
+            adc_2_full lo_val (get_word result (I + J)) c_hi c_lo in
+          mul_add_line_recur rest y_i (set_word result (I + J) res_IJ)
+                             (S J) I R c_hi c_lo'
+        else
+          let result' := set_word result (I + J)
+                           (get_word result (I + J) + c_lo) in
+          mul_add_line_recur rest y_i result' (S J) I R c_hi c_lo
+      else result
+  end.
+
+Fixpoint mul_add_line_recur_alt (xs : words) (y_i : t) (result : words)
+    (J I R : nat) (c_hi c_lo : t) : words :=
+  match xs with
+  | [] =>
+      let pos := (I + J)%nat in
+      if (pos + 1 <? R)%nat then
+        let '(r_1, r_0) := adc_2_short c_hi c_lo (get_word result pos) in
+        set_word (set_word result pos r_0) (pos + 1) r_1
+      else if (pos <? R)%nat then
+        set_word result pos (get_word result pos + c_lo)
+      else result
+  | x :: rest =>
+      if (I + J <? R)%nat then
+        let '(c_hi', c_lo', res_IJ) :=
+          if (I + J + 2 <? R)%nat then
+            let '(hi, lo) := mulx x y_i in
+            adc_3 hi lo (get_word result (I + J)) c_hi c_lo
+          else if (I + J + 1 <? R)%nat then
+            let lo_val := x * y_i in
+            let '(c_lo', res_IJ) :=
+              adc_2_full lo_val (get_word result (I + J)) c_hi c_lo in
+            (c_hi, c_lo', res_IJ)
+          else
+            (c_hi, c_lo, (get_word result (I + J) + c_lo)) in
+        mul_add_line_recur_alt rest y_i (set_word result (I + J) res_IJ)
+                           (S J) I R c_hi' c_lo'
+      else result
+  end.
+
+Definition mul_add_line (I R : nat) (xs : words) (y_i : t)
+    (result : words) : words :=
+  match xs with
+  | [] => result
+  | x0 :: rest =>
+      let '(c_hi, c_lo) :=
+        if (I + 1 <? R)%nat then
+          mulx x0 y_i
+        else
+          (0, x0 * y_i)
+      in
+      mul_add_line_recur rest y_i result 0 I R c_hi c_lo
+  end.
+
+Fixpoint truncating_mul_runtime_recur (xs : words) (ys : words)
+    (result : words) (I R : nat) : words :=
+  match ys with
+  | [] => result
+  | y0 :: ys_tail =>
+      let result' := mul_add_line I R xs y0 result in
+      truncating_mul_runtime_recur xs ys_tail result' (S I) R
+  end.
+
+Definition truncating_mul_runtime (xs ys : words) (R : nat) : words :=
+  match ys with
+  | [] => extend_words R
+  | y0 :: ys_tail =>
+      let result := mul_line R xs y0 in
+      truncating_mul_runtime_recur xs ys_tail result 1 R
+  end.
+End RuntimeMulProofSig.
+
+Module MakeOn (B : Base.BaseSig) <: RuntimeMulSig.
 Include B.
 Import U64.
 Include UintNotations(U64).
@@ -204,6 +458,22 @@ Definition truncating_mul_runtime (xs ys : words) (R : nat) : words :=
   end.
 
 End MakeOn.
+
+Module MakeOnProof (B : Base.BaseProofSig) <: RuntimeMulProofSig.
+Include B.
+Import U64.
+Include UintNotations(U64).
+Open Scope uint_scope.
+Module RM := MakeOn(B).
+
+Definition mul_line_recur := RM.mul_line_recur.
+Definition mul_line := RM.mul_line.
+Definition mul_add_line_recur := RM.mul_add_line_recur.
+Definition mul_add_line_recur_alt := RM.mul_add_line_recur_alt.
+Definition mul_add_line := RM.mul_add_line.
+Definition truncating_mul_runtime_recur := RM.truncating_mul_runtime_recur.
+Definition truncating_mul_runtime := RM.truncating_mul_runtime.
+End MakeOnProof.
 
 Module Make (Import Word64 : Uint64Ops).
 Module B := Base.Make(Word64).

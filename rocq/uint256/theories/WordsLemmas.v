@@ -12,13 +12,119 @@
     [words_valid], etc.) are retained below the functor.  *)
 
 From Stdlib Require Import ZArith Lia List.
-From Uint256 Require Import Uint Primitives Words.
+From Uint256 Require Import Uint Base Primitives Words.
 From Stdlib Require Import DoubleType.
 Import ListNotations.
 
-Module Make (Import U64 : Uint64Ops).
+Module Type WordsLemmasSig.
+Include Base.BaseSig.
+
+Parameter set_word_length : forall ws i v,
+  length (set_word ws i v) = length ws.
+
+Parameter get_set_word_same : forall ws i v,
+  (i < length ws)%nat ->
+  get_word (set_word ws i v) i = v.
+
+Parameter get_set_word_other : forall ws i j v,
+  i <> j ->
+  get_word (set_word ws i v) j = get_word ws j.
+
+Parameter extend_words_length : forall n,
+  length (extend_words n) = n.
+
+Parameter get_extend_words : forall n i,
+  (i < n)%nat ->
+  get_word (extend_words n) i = U64.zero.
+End WordsLemmasSig.
+
+Module Type WordsLemmasProofSig.
+Include Base.BaseProofSig.
+Import U64.
+#[local] Open Scope Z_scope.
+
+Parameter set_word_length : forall ws i v,
+  length (set_word ws i v) = length ws.
+
+Parameter get_set_word_same : forall ws i v,
+  (i < length ws)%nat ->
+  get_word (set_word ws i v) i = v.
+
+Parameter get_set_word_other : forall ws i j v,
+  i <> j ->
+  get_word (set_word ws i v) j = get_word ws j.
+
+Parameter extend_words_length : forall n,
+  length (extend_words n) = n.
+
+Parameter get_extend_words : forall n i,
+  (i < n)%nat ->
+  get_word (extend_words n) i = U64.zero.
+
+Fixpoint to_Z_words (ws : words) : Z :=
+  match ws with
+  | [] => 0
+  | w :: rest => to_Z w + (base width) * to_Z_words rest
+  end.
+
+Definition modulus_words (n : nat) : Z := (base width) ^ (Z.of_nat n).
+
+Parameter modulus_words_0 : modulus_words 0 = 1%Z.
+Parameter modulus_words_succ : forall n,
+  modulus_words (S n) = base width * modulus_words n.
+Parameter get_word_bounded : forall ws i,
+  (i < length ws)%nat ->
+  0 <= to_Z (get_word ws i) < (base width).
+Parameter to_Z_words_bound : forall ws,
+  0 <= to_Z_words ws < modulus_words (length ws).
+Parameter to_Z_extend_words : forall n,
+  to_Z_words (extend_words n) = 0.
+Parameter get_extend_words_zero : forall n i,
+  (i < n)%nat ->
+  get_word (extend_words n) i = U64.zero.
+Parameter get_extend_words_Z : forall n i,
+  (i < n)%nat ->
+  to_Z (get_word (extend_words n) i) = 0.
+Parameter to_Z_words_set_word : forall ws i v,
+  (i < length ws)%nat ->
+  to_Z_words (set_word ws i v) =
+    to_Z_words ws - to_Z (get_word ws i) * (base width) ^ (Z.of_nat i) +
+    to_Z v * (base width) ^ (Z.of_nat i).
+Parameter to_Z_words_app_single : forall ws w,
+  to_Z_words (ws ++ [w]) =
+    to_Z_words ws + to_Z w * modulus_words (length ws).
+Parameter to_Z_words_repeat_zero : forall n,
+  to_Z_words (repeat zero n) = 0.
+Parameter to_Z_words_app : forall ws1 ws2,
+  to_Z_words (ws1 ++ ws2) =
+    to_Z_words ws1 + modulus_words (length ws1) * to_Z_words ws2.
+Parameter to_Z_words_firstn_skipn : forall ws n,
+  (n <= length ws)%nat ->
+  to_Z_words ws = to_Z_words (firstn n ws) +
+    modulus_words n * to_Z_words (skipn n ws).
+Parameter to_Z_words_all_zero : forall ws,
+  (forall i, (i < length ws)%nat -> to_Z (get_word ws i) = 0) ->
+  to_Z_words ws = 0.
+Parameter to_Z_words_skipn_zeros : forall ws n,
+  (n <= length ws)%nat ->
+  (forall i, (n <= i < length ws)%nat -> to_Z (get_word ws i) = 0) ->
+  to_Z_words (skipn n ws) = 0.
+Parameter to_Z_words_firstn_trailing_zeros : forall ws n,
+  (n <= length ws)%nat ->
+  (forall i, (n <= i < length ws)%nat -> to_Z (get_word ws i) = 0) ->
+  to_Z_words (firstn n ws) = to_Z_words ws.
+Parameter to_Z_words_firstn_app_repeat : forall ws N,
+  (length ws <= N)%nat ->
+  to_Z_words (firstn N (ws ++ repeat zero N)) = to_Z_words ws.
+Parameter modulus_words_le : forall m n,
+  (m <= n)%nat -> modulus_words m <= modulus_words n.
+Parameter modulus_words_pos : forall n, modulus_words n > 0.
+End WordsLemmasProofSig.
+
+Module MakeOn (B : Base.BaseSig) <: WordsLemmasSig.
+Include B.
+Import U64.
 Include UintNotations(U64).
-Include Words.Make(U64).
 Open Scope uint_scope.
 (** ** Word List Helper Lemmas *)
 
@@ -72,14 +178,41 @@ Proof.
   apply nth_repeat.
 Qed.
 
-End Make.
+End MakeOn.
 
 (** ** Abstract proof functor — [to_Z_words] and Z-level reasoning *)
 
-Module MakeProofs (Import U64 : Uint64).
-Include Make(U64).
+Module MakeProofsOn (B : Base.BaseProofSig) <: WordsLemmasProofSig.
+Include B.
+Import B.U64.
+Include UintNotations(U64).
+Open Scope uint_scope.
+Module ML := MakeOn(B).
 
 #[local] Open Scope Z_scope.
+
+Lemma set_word_length : forall ws i v,
+  length (set_word ws i v) = length ws.
+Proof. apply ML.set_word_length. Qed.
+
+Lemma get_set_word_same : forall ws i v,
+  (i < length ws)%nat ->
+  get_word (set_word ws i v) i = v.
+Proof. apply ML.get_set_word_same. Qed.
+
+Lemma get_set_word_other : forall ws i j v,
+  i <> j ->
+  get_word (set_word ws i v) j = get_word ws j.
+Proof. apply ML.get_set_word_other. Qed.
+
+Lemma extend_words_length : forall n,
+  length (extend_words n) = n.
+Proof. apply ML.extend_words_length. Qed.
+
+Lemma get_extend_words : forall n i,
+  (i < n)%nat ->
+  get_word (extend_words n) i = U64.zero.
+Proof. apply ML.get_extend_words. Qed.
 
 (** Interpretation of a word list as a multi-word integer (little-endian) *)
 Fixpoint to_Z_words (ws : words) : Z :=
@@ -305,6 +438,16 @@ Proof.
   intros n. unfold modulus_words, base. apply Z.lt_gt. apply Z.pow_pos_nonneg; lia.
 Qed.
 
+End MakeProofsOn.
+
+Module Make (Word64 : Uint64Ops).
+Module B := Base.Make(Word64).
+Include MakeOn(B).
+End Make.
+
+Module MakeProofs (Import Word64 : Uint64).
+Module B := Base.MakeProof(Word64).
+Include MakeProofsOn(B).
 End MakeProofs.
 
 (*

@@ -1,4 +1,5 @@
 -R theories Uint256
+-R _build/default/theories Uint256
 -arg -w -arg -notation-overridden
 -arg -w -arg -redundant-canonical-projection
 
@@ -12,3 +13,5 @@ theories/DivisionProofs.v
 theories/RuntimeMul.v
 theories/RuntimeMulProofs.v
 theories/UintZ.v
+theories/UintRecords.v
+theories/UintRecordsMetatheorems.v

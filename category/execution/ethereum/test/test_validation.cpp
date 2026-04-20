@@ -101,7 +101,7 @@ TYPED_TEST(TraitsTest, validate_floor_gas)
     Transaction const t{
         .sc = {.r = r, .s = s},
         .gas_limit = gas_limit,
-        .data = evmc::bytes(10000, 0x01),
+        .data = byte_string(10000, 0x01),
     };
 
     auto const result =

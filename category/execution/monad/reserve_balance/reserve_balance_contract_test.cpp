@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
@@ -270,7 +271,7 @@ void run_dipped_into_reserve_test(
         state.add_to_balance(EOA, initial_balance);
 
         // set EOA to delegate to SCW
-        evmc::bytes const delegate_code =
+        byte_string const delegate_code =
             from_hex(std::format("0xef0100{}", to_hex(SCW))).value();
         state.set_code(EOA, byte_string_view{delegate_code});
 

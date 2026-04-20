@@ -17,19 +17,20 @@
 
 #include <category/core/config.hpp>
 
-#include <evmc/bytes.hpp>
-
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <string>
+#include <string_view>
 
 MONAD_NAMESPACE_BEGIN
 
-using byte_string = evmc::bytes;
+using byte_string = std::basic_string<uint8_t>;
 
 template <size_t N>
 using byte_string_fixed = std::array<unsigned char, N>;
 
-using byte_string_view = evmc::bytes_view;
+using byte_string_view = std::basic_string_view<uint8_t>;
 
 template <size_t N>
 constexpr byte_string_view to_byte_string_view(unsigned char const (&a)[N])

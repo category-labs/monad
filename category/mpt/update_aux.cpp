@@ -378,6 +378,16 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
                 metadata_ctx_->update_history_length_metadata(*history_len);
                 enable_dynamic_history_length_ = false;
             }
+            else if (
+                metadata_ctx_->version_history_length() < MIN_HISTORY_LENGTH) {
+                // A db created by an older binary may have been shrunk to a
+                // floor below the current MIN_HISTORY_LENGTH. Raise the stored
+                // cap so subsequent restarts keep enough history to avoid a
+                // forced statesync. Actual on-disk history will grow back to
+                // the new floor as new blocks come in.
+                metadata_ctx_->update_history_length_metadata(
+                    MIN_HISTORY_LENGTH);
+            }
         }
     }
     // If the pool has changed since we configured the metadata, this will

@@ -46,7 +46,11 @@ using MONAD_ASYNC_NAMESPACE::round_up_align;
 static constexpr uint8_t INVALID_BRANCH = 255;
 static constexpr uint8_t INVALID_PATH_INDEX = 255;
 static constexpr uint64_t INVALID_BLOCK_NUM = uint64_t(-1);
-static constexpr uint64_t MIN_HISTORY_LENGTH = 257;
+// Floor for disk-pressure history shrinking. Execution requires 256 history
+// blocks for the block hash buffer, so this must exceed 256 by enough margin
+// that a node rewound to the last finalized block on restart still has
+// sufficient history and can avoid a full statesync.
+static constexpr uint64_t MIN_HISTORY_LENGTH = 300;
 
 static byte_string const empty_trie_hash = [] {
     using namespace ::monad::literals;

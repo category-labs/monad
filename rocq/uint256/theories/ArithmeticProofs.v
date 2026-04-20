@@ -2433,11 +2433,369 @@ Proof.
     reflexivity.
 Qed.
 
+Lemma is_two_uint256_true : forall x,
+  is_two_uint256 x = true ->
+  to_Z_uint256 x = 2.
+Proof.
+  intros [x0 x1 x2 x3] Htwo.
+  unfold is_two_uint256 in Htwo.
+  cbn [w0 w1 w2 w3 andb] in Htwo.
+  repeat rewrite Bool.andb_true_iff in Htwo.
+  destruct Htwo as [[[Hx0 Hx1] Hx2] Hx3].
+  rewrite spec_eqb in *. apply Z.eqb_eq in Hx0,Hx1,Hx2,Hx3.
+  rewrite spec_add, !spec_one in Hx0.
+  change ((1 + 1) mod base width) with (2 mod base width) in Hx0.
+  rewrite Z.mod_small in Hx0
+      by (unfold base; rewrite width_is_64; lia).
+  unfold to_Z_uint256, uint256_to_words; cbn [w0 w1 w2 w3].
+  cbn [WL.to_Z_words].
+  rewrite Hx0, Hx1, Hx2, Hx3, !spec_zero.
+  lia.
+Qed.
+
+Lemma to_Z_words_one_words_generic_4 :
+  to_Z_words (one_words_generic 4) = 1.
+Proof.
+  unfold one_words_generic.
+  rewrite WL.to_Z_words_set_word.
+  2:{ rewrite WL.extend_words_length. lia. }
+  rewrite WL.to_Z_extend_words.
+  rewrite WL.get_extend_words_zero by lia.
+  rewrite spec_zero, spec_one.
+  rewrite Z.pow_0_r by lia.
+  lia.
+Qed.
+
+Lemma truncating_mul_runtime_exact_4 : forall xs ys,
+  length xs = 4%nat ->
+  length ys = 4%nat ->
+  to_Z_words (RM.truncating_mul_runtime xs ys 4) =
+    (to_Z_words xs * to_Z_words ys) mod modulus256.
+Proof.
+  intros xs ys Hx Hy.
+  pose proof (RMP.truncating_mul256_runtime_correct xs ys Hx Hy) as Hmul.
+  pose proof (WL.to_Z_words_bound (RM.truncating_mul_runtime xs ys 4)) as Hbound.
+  rewrite RMP.truncating_mul_runtime_length in Hbound by lia.
+  change (WL.modulus_words 4) with modulus256 in Hmul.
+  change (WL.modulus_words 4) with modulus256 in Hbound.
+  rewrite Z.mod_small in Hmul by lia.
+  exact Hmul.
+Qed.
+Lemma to_Z_shr_1 : forall x,
+  to_Z (shr x 1) = to_Z x / 2.
+Proof.
+  intro x.
+  rewrite spec_shr.
+  rewrite Z.shiftr_div_pow2 by lia.
+  change (2 ^ Z.of_nat 1) with 2.
+  rewrite Z.mod_small.
+  - reflexivity.
+  - pose proof (spec_to_Z x) as Hx.
+    split.
+    + apply Z.div_pos; lia.
+    + apply Z.div_lt_upper_bound; lia.
+Qed.
+
+Lemma to_Z_shl_shr_1 : forall x,
+  to_Z (shl (shr x 1) 1) = 2 * to_Z (shr x 1).
+Proof.
+  intro x.
+  rewrite spec_shl.
+  rewrite Z.shiftl_mul_pow2 by lia.
+  rewrite Z.pow_1_r.
+  rewrite Z.mod_small.
+  - ring.
+  - pose proof (spec_to_Z x) as Hx.
+    rewrite to_Z_shr_1.
+    assert (Hle : 2 * (to_Z x / 2) <= to_Z x).
+    { pose proof (Z.div_mod (to_Z x) 2 ltac:(lia)) as Hdiv.
+      pose proof (Z.mod_pos_bound (to_Z x) 2 ltac:(lia)) as Hmod.
+      lia. }
+    split.
+    + apply Z.mul_nonneg_nonneg; [apply Z.div_pos; lia|lia].
+    + lia.
+Qed.
+
+Lemma odd_word_shr_decompose : forall x,
+  to_Z x = 2 * to_Z (shr x 1) + if odd_word x then 1 else 0.
+Proof.
+  intro x.
+  unfold odd_word.
+  destruct ((x =? shl (shr x 1) 1)%Uint) eqn:Heq.
+  - rewrite spec_eqb in Heq.
+    apply Z.eqb_eq in Heq.
+    rewrite Heq.
+    rewrite to_Z_shl_shr_1.
+    cbn. lia.
+  - rewrite spec_eqb in Heq.
+    apply Z.eqb_neq in Heq.
+    rewrite to_Z_shr_1.
+    assert (Hdiv : to_Z x = 2 * (to_Z x / 2) + to_Z x mod 2).
+    { pose proof (Z.div_mod (to_Z x) 2 ltac:(lia)) as Hdiv.
+      lia. }
+    assert (Hrem : 0 <= to_Z x mod 2 < 2).
+    { apply Z.mod_pos_bound. lia. }
+    assert (Hneq : to_Z x <> 2 * (to_Z x / 2)).
+    { intro Hcontra.
+      apply Heq.
+      rewrite to_Z_shl_shr_1, to_Z_shr_1.
+      exact Hcontra. }
+    assert (Hr1 : to_Z x mod 2 = 1) by lia.
+    cbn [negb]. rewrite Hr1 in Hdiv. exact Hdiv.
+Qed.
+
+Lemma two_pow_nat_succ : forall n,
+  2 ^ Z.of_nat (S n) = 2 * 2 ^ Z.of_nat n.
+Proof.
+  intro n.
+  replace (Z.of_nat (S n)) with (Z.of_nat n + 1) by lia.
+  rewrite Z.pow_add_r by lia.
+  rewrite Z.pow_1_r.
+  ring.
+Qed.
+
+Lemma square_pow : forall b q,
+  0 <= q ->
+  (b * b) ^ q = b ^ (2 * q).
+Proof.
+  intros b q Hq.
+  replace (b * b) with (b ^ 2) by (rewrite Z.pow_2_r; ring).
+  rewrite <- Z.pow_mul_r by lia.
+  reflexivity.
+Qed.
+
+Lemma shr_lt_two_pow : forall bits x,
+  to_Z x < 2 ^ Z.of_nat (S bits) ->
+  to_Z (shr x 1) < 2 ^ Z.of_nat bits.
+Proof.
+  intros bits x Hlt.
+  rewrite to_Z_shr_1.
+  rewrite two_pow_nat_succ in Hlt.
+  apply Z.div_lt_upper_bound; lia.
+Qed.
+
+Lemma truncating_mul_runtime_semantic_4 : forall xs ys a b,
+  length xs = 4%nat ->
+  length ys = 4%nat ->
+  to_Z_words xs = a mod modulus256 ->
+  to_Z_words ys = b mod modulus256 ->
+  to_Z_words (RM.truncating_mul_runtime xs ys 4) = (a * b) mod modulus256.
+Proof.
+  intros xs ys a b Hx Hy Hxs Hys.
+  rewrite (truncating_mul_runtime_exact_4 xs ys Hx Hy).
+  rewrite Hxs, Hys.
+  rewrite <- Z.mul_mod by (pose proof modulus256_pos; lia).
+  reflexivity.
+Qed.
+
+Lemma exp_sigbit_loop_correct_4 :
+  forall bits word_exp base result b r,
+  length base = 4%nat ->
+  length result = 4%nat ->
+  to_Z_words base = b mod modulus256 ->
+  to_Z_words result = r mod modulus256 ->
+  to_Z word_exp < 2 ^ Z.of_nat bits ->
+  let '(base', result') := exp_sigbit_loop 4 bits word_exp base result in
+  length base' = 4%nat /\
+  length result' = 4%nat /\
+  to_Z_words base' = b ^ (2 ^ Z.of_nat bits) mod modulus256 /\
+  to_Z_words result' = (r * b ^ to_Z word_exp) mod modulus256.
+Proof.
+  induction bits as [|bits IH];
+    intros word_exp base result b r Hbase_len Hresult_len Hbase Hresult Hexp.
+  - simpl in Hexp.
+    assert (Hz : to_Z word_exp = 0).
+    { pose proof (spec_to_Z word_exp) as Hword. lia. }
+    simpl.
+    rewrite Hz, Z.pow_0_r, Z.mul_1_r.
+    change (Z.pow_pos b 1 mod modulus256) with (b ^ 1 mod modulus256).
+    rewrite Z.pow_1_r.
+    repeat split; assumption.
+  - simpl exp_sigbit_loop.
+    remember (odd_word word_exp) as odd eqn:Hodd.
+    set (result0 := if odd then RM.truncating_mul_runtime result base 4 else result).
+    set (base0 := RM.truncating_mul_runtime base base 4).
+    assert (Hbase0_len : length base0 = 4%nat).
+    { subst base0. apply RMP.truncating_mul_runtime_length. lia. }
+    assert (Hbase0 : to_Z_words base0 = (b * b) mod modulus256).
+    { subst base0.
+      apply truncating_mul_runtime_semantic_4; assumption. }
+    assert (Hshr_bound : to_Z (shr word_exp 1) < 2 ^ Z.of_nat bits).
+    { apply shr_lt_two_pow. exact Hexp. }
+    assert (Hpow_nonneg : 0 <= 2 ^ Z.of_nat bits) by (apply Z.pow_nonneg; lia).
+    assert (Hshr_nonneg : 0 <= to_Z (shr word_exp 1)).
+    { pose proof (spec_to_Z (shr word_exp 1)) as Hshr. lia. }
+    destruct odd.
+    + assert (Hresult0_len : length result0 = 4%nat).
+      { subst result0. apply RMP.truncating_mul_runtime_length. lia. }
+      assert (Hresult0 : to_Z_words result0 = (r * b) mod modulus256).
+      { subst result0.
+        apply truncating_mul_runtime_semantic_4; assumption. }
+      specialize (IH (shr word_exp 1) base0 result0 (b * b) (r * b)
+        Hbase0_len Hresult0_len Hbase0 Hresult0 Hshr_bound).
+      destruct (exp_sigbit_loop 4 bits (shr word_exp 1) base0 result0)
+        as [base' result'] eqn:Hloop.
+      simpl in IH.
+      destruct IH as [Hbase'_len [Hresult'_len [Hbase' Hresult']]].
+      pose proof (odd_word_shr_decompose word_exp) as Hoddexp.
+      rewrite <- Hodd in Hoddexp.
+      repeat split.
+      * exact Hbase'_len.
+      * exact Hresult'_len.
+      * rewrite Hbase'.
+        rewrite square_pow by exact Hpow_nonneg.
+        rewrite two_pow_nat_succ.
+        reflexivity.
+      * rewrite Hresult'.
+        rewrite square_pow by exact Hshr_nonneg.
+        rewrite Hoddexp.
+        replace (2 * to_Z (shr word_exp 1) + 1) with
+          (1 + 2 * to_Z (shr word_exp 1)) by lia.
+        rewrite Z.pow_add_r by lia.
+        rewrite Z.pow_1_r.
+        replace (r * b * b ^ (2 * to_Z (shr word_exp 1))) with
+          (r * (b * b ^ (2 * to_Z (shr word_exp 1)))) by ring.
+        reflexivity.
+    + assert (Hresult0_len : length result0 = 4%nat).
+      { subst result0. exact Hresult_len. }
+      assert (Hresult0 : to_Z_words result0 = r mod modulus256).
+      { subst result0. exact Hresult. }
+      specialize (IH (shr word_exp 1) base0 result0 (b * b) r
+        Hbase0_len Hresult0_len Hbase0 Hresult0 Hshr_bound).
+      destruct (exp_sigbit_loop 4 bits (shr word_exp 1) base0 result0)
+        as [base' result'] eqn:Hloop.
+      simpl in IH.
+      destruct IH as [Hbase'_len [Hresult'_len [Hbase' Hresult']]].
+      pose proof (odd_word_shr_decompose word_exp) as Hoddexp.
+      rewrite <- Hodd in Hoddexp.
+      repeat split.
+      * exact Hbase'_len.
+      * exact Hresult'_len.
+      * rewrite Hbase'.
+        rewrite square_pow by exact Hpow_nonneg.
+        rewrite two_pow_nat_succ.
+        reflexivity.
+      * rewrite Hresult'.
+        rewrite square_pow by exact Hshr_nonneg.
+        rewrite Hoddexp.
+        replace (2 * to_Z (shr word_exp 1) + 0) with
+          (2 * to_Z (shr word_exp 1)) by lia.
+        reflexivity.
+Qed.
+
+Lemma two_pow_ge_256_mod_modulus256 : forall e,
+  256 <= e ->
+  2 ^ e mod modulus256 = 0.
+Proof.
+  intros e He.
+  assert (Hmod : modulus256 = 2 ^ 256).
+  { unfold modulus256, modulus_words, WL.modulus_words, base.
+    rewrite width_is_64.
+    change (Z.pow_pos (2 ^ 64) 4) with ((2 ^ 64) ^ 4).
+    replace 256 with (64 * 4) by lia.
+    rewrite <- Z.pow_mul_r by lia.
+    reflexivity. }
+  rewrite Hmod.
+  replace e with (256 + (e - 256)) by lia.
+  rewrite Z.pow_add_r by lia.
+  rewrite Z.mul_comm.
+  rewrite Z.mod_mul by (apply Z.pow_nonzero; lia).
+  reflexivity.
+Qed.
+Lemma exp_words_loop_correct_4 :
+  forall exponent base result b r,
+    length base = 4%nat ->
+    length result = 4%nat ->
+    to_Z_words base = b mod modulus256 ->
+    to_Z_words result = r mod modulus256 ->
+    length (exp_words_loop 4 exponent base result) = 4%nat /\
+    to_Z_words (exp_words_loop 4 exponent base result) =
+      (r * b ^ to_Z_words exponent) mod modulus256.
+Proof.
+  induction exponent as [|word_exp rest IH];
+    intros base result b r Hbase_len Hresult_len Hbase Hresult.
+  - simpl. split.
+    + exact Hresult_len.
+    + cbn [WL.to_Z_words].
+      rewrite Z.mul_1_r. exact Hresult.  - destruct rest as [|word_exp' rest'].
+    + simpl.
+      set (bits := (word_width - countl_zero word_exp)%nat).
+      destruct (exp_sigbit_loop 4 bits word_exp base result)
+        as [base' result'] eqn:Hloop.
+      assert (Hbound : to_Z word_exp < 2 ^ Z.of_nat bits).
+      { subst bits. apply DP.countl_zero_upper. }
+      pose proof (exp_sigbit_loop_correct_4 bits word_exp base result
+        b r Hbase_len Hresult_len Hbase Hresult Hbound) as Hsig.
+      rewrite Hloop in Hsig.
+      cbn in Hsig.
+      destruct Hsig as [Hbase'_len [Hresult'_len [Hbase' Hresult']]].
+      split.
+      * exact Hresult'_len.
+      * rewrite Hresult'.
+        cbn [WL.to_Z_words].
+        rewrite Z.mul_0_r, Z.add_0_r.
+        reflexivity.
+    + simpl.
+      set (bits := word_width).
+      destruct (exp_sigbit_loop 4 bits word_exp base result)
+        as [base' result'] eqn:Hloop.
+      assert (Hbound : to_Z word_exp < 2 ^ Z.of_nat bits).
+      { subst bits.
+        pose proof (spec_to_Z word_exp) as Hword.
+        assert (Hbase64 : DoubleType.base width = 2 ^ 64).
+        { unfold DoubleType.base. rewrite width_is_64. reflexivity. }
+        rewrite Hbase64 in Hword.
+        unfold word_width. rewrite width_is_64. simpl.
+        lia. }
+      pose proof (exp_sigbit_loop_correct_4 bits word_exp base result
+        b r Hbase_len Hresult_len Hbase Hresult Hbound) as Hsig.
+      rewrite Hloop in Hsig.
+      cbn in Hsig.
+      destruct Hsig as [Hbase'_len [Hresult'_len [Hbase' Hresult']]].
+      specialize (IH base' result'
+        (b ^ (2 ^ Z.of_nat bits))
+        (r * b ^ to_Z word_exp)
+        Hbase'_len Hresult'_len Hbase' Hresult').
+      destruct IH as [Hlen Hval].
+      split.
+      * exact Hlen.
+      * unfold bits in Hval |- *.
+        cbn [exp_words_loop] in Hval |- *.
+        rewrite Hval.
+        assert (Hbase64 : DoubleType.base WL.U64.width = 2 ^ 64).
+        { unfold DoubleType.base. rewrite width_is_64. reflexivity. }
+        rewrite Hbase64.
+        unfold word_width.
+        rewrite width_is_64.
+        change (Z.of_nat (Pos.to_nat 64)) with 64.
+        replace
+          (WL.U64.to_Z word_exp +
+             2 ^ 64 * (WL.U64.to_Z word_exp' + 2 ^ 64 * to_Z_words rest'))
+          with
+          (WL.U64.to_Z word_exp + 2 ^ 64 * to_Z_words (word_exp' :: rest'))
+          by (cbn [WL.to_Z_words]; rewrite Hbase64; reflexivity).
+        pose proof (spec_to_Z word_exp) as Hword.
+        pose proof (WL.to_Z_words_bound (word_exp' :: rest')) as Htail.
+        replace
+          ((b ^ (2 ^ 64)) ^ to_Z_words (word_exp' :: rest'))
+          with
+          (b ^ (2 ^ 64 * to_Z_words (word_exp' :: rest')))
+          by (rewrite <- Z.pow_mul_r by (destruct Htail; lia); reflexivity).
+        replace
+          (r * b ^ to_Z word_exp *
+             b ^ (2 ^ 64 * to_Z_words (word_exp' :: rest')))
+          with
+          (r * (b ^ to_Z word_exp *
+             b ^ (2 ^ 64 * to_Z_words (word_exp' :: rest'))))
+          by ring.
+        rewrite <- Z.pow_add_r by (destruct Hword; destruct Htail; lia).
+        reflexivity.
+Qed.
+
 Theorem exp_correct : forall base exponent,
   to_Z_uint256 (exp base exponent) =
     Z.pow (to_Z_uint256 base) (to_Z_uint256 exponent) mod modulus256.
-(* Remaining: Prove The Fast Path For Base=2 And Then The Generic
-   Square-And-Multiply Loop Against Modular Exponentiation. *)
+Proof.
 Admitted.
 
 End MakeProofs.

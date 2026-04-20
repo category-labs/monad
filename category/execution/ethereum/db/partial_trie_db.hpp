@@ -168,7 +168,7 @@ public:
 
     std::optional<Account> read_account(Address const &) override;
 
-    bytes32_t
+    byte_string
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
 
     vm::SharedIntercode read_code(bytes32_t const &code_hash) override;

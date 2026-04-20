@@ -33,7 +33,7 @@ bytes32_t read_storage(
     monad_statesync_client_context &ctx, Address const &addr,
     bytes32_t const &key)
 {
-    return ctx.tdb.read_storage(addr, Incarnation{0, 0}, key);
+    return to_bytes(ctx.tdb.read_storage(addr, Incarnation{0, 0}, key));
 }
 
 void account_update(

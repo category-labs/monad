@@ -115,7 +115,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     return acct.value();
 }
 
-bytes32_t
+byte_string
 TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
 {
     auto const res = db_.find(
@@ -134,7 +134,7 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
     auto encoded_storage = res.value().node->value();
     auto const storage = decode_storage_db_ignore_slot(encoded_storage);
     MONAD_ASSERT(!storage.has_error());
-    return to_bytes(storage.value());
+    return byte_string{storage.value()};
 };
 
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)

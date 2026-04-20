@@ -599,7 +599,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
         this->tdb.finalize(1, bytes32_t{1});
         this->tdb.set_block_and_prefix(1);
         EXPECT_EQ(
-            this->tdb.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
+            this->tdb.read_storage(a, Incarnation{1, 2}, key1), byte_string{});
     }
 }
 
@@ -653,18 +653,25 @@ TYPED_TEST(
             std::nullopt);
         this->tdb.finalize(1, bytes32_t{1});
         this->tdb.set_block_and_prefix(1);
-        EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key1), value1);
-        EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value2);
+        EXPECT_EQ(
+            to_bytes(this->tdb.read_storage(a, Incarnation{1, 2}, key1)),
+            value1);
+        EXPECT_EQ(
+            to_bytes(this->tdb.read_storage(a, Incarnation{1, 2}, key2)),
+            value2);
         if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
             EXPECT_EQ(
-                this->tdb.read_storage(a, Incarnation{1, 2}, key3), value3);
+                to_bytes(this->tdb.read_storage(a, Incarnation{1, 2}, key3)),
+                value3);
 
             EXPECT_EQ(
                 this->tdb.state_root(),
                 0x425AE06EDEDEC27A17412E8A2BC2F148A4AF94EE510FFB7AEA81E1ABF5450768_bytes32);
         }
         else {
-            EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key3), null);
+            EXPECT_EQ(
+                to_bytes(this->tdb.read_storage(a, Incarnation{1, 2}, key3)),
+                null);
             EXPECT_EQ(
                 this->tdb.state_root(),
                 0x5B853ED6066181BF0E0D405DA0926FD7707446BCBE670DE13C9EDA7A84F6A401_bytes32);
@@ -714,8 +721,11 @@ TYPED_TEST(
         this->tdb.finalize(0, NULL_HASH_BLAKE3);
         this->tdb.set_block_and_prefix(0);
         EXPECT_EQ(
-            this->tdb.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
-        EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value3);
+            to_bytes(this->tdb.read_storage(a, Incarnation{1, 2}, key1)),
+            bytes32_t{});
+        EXPECT_EQ(
+            to_bytes(this->tdb.read_storage(a, Incarnation{1, 2}, key2)),
+            value3);
     }
 }
 
@@ -1288,7 +1298,8 @@ TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
 
     EXPECT_TRUE(this->tdb.read_account(a).has_value());
     EXPECT_EQ(this->tdb.read_account(a).value().balance, 1u);
-    EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 1}, key1), value1);
+    EXPECT_EQ(
+        to_bytes(this->tdb.read_storage(a, Incarnation{1, 1}, key1)), value1);
 }
 
 TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
@@ -1316,7 +1327,8 @@ TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
         std::nullopt);
 
     EXPECT_EQ(
-        this->tdb.read_storage(a, Incarnation{1, 1}, key1), monad::bytes32_t{});
+        to_bytes(this->tdb.read_storage(a, Incarnation{1, 1}, key1)),
+        monad::bytes32_t{});
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
@@ -1370,8 +1382,12 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             BlockHeader{.number = 10});
         this->tdb.finalize(10, bytes32_t{10});
 
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value2);
+        EXPECT_EQ(
+            to_bytes(this->tdb.read_storage(b, Incarnation{1, 1}, key1)),
+            value2);
+        EXPECT_EQ(
+            to_bytes(this->tdb.read_storage(b, Incarnation{1, 1}, key2)),
+            value2);
 
         this->tdb.set_block_and_prefix(10, bytes32_t{10});
     }
@@ -1396,15 +1412,16 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             bytes32_t{11},
             BlockHeader{.number = 11});
         EXPECT_EQ(
-            this->tdb.read_storage(c, Incarnation{2, 1}, key1),
+            to_bytes(this->tdb.read_storage(c, Incarnation{2, 1}, key1)),
             monad::bytes32_t{});
         if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
             EXPECT_EQ(
-                this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
+                to_bytes(this->tdb.read_storage(c, Incarnation{2, 1}, key2)),
+                value1);
         }
         else {
             EXPECT_EQ(
-                this->tdb.read_storage(c, Incarnation{2, 1}, key2),
+                to_bytes(this->tdb.read_storage(c, Incarnation{2, 1}, key2)),
                 monad::bytes32_t{});
         }
 
@@ -1412,15 +1429,16 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         this->tdb.finalize(11, bytes32_t{11});
         this->tdb.set_block_and_prefix(11);
         EXPECT_EQ(
-            this->tdb.read_storage(c, Incarnation{2, 1}, key1),
+            to_bytes(this->tdb.read_storage(c, Incarnation{2, 1}, key1)),
             monad::bytes32_t{});
         if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
             EXPECT_EQ(
-                this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
+                to_bytes(this->tdb.read_storage(c, Incarnation{2, 1}, key2)),
+                value1);
         }
         else {
             EXPECT_EQ(
-                this->tdb.read_storage(c, Incarnation{2, 1}, key2),
+                to_bytes(this->tdb.read_storage(c, Incarnation{2, 1}, key2)),
                 monad::bytes32_t{});
         }
     }
@@ -1479,9 +1497,12 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
             BlockHeader{.number = 11});
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 82'000);
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
         EXPECT_EQ(
-            this->tdb.read_storage(b, Incarnation{1, 1}, key2), bytes32_t{});
+            to_bytes(this->tdb.read_storage(b, Incarnation{1, 1}, key1)),
+            value2);
+        EXPECT_EQ(
+            to_bytes(this->tdb.read_storage(b, Incarnation{1, 1}, key2)),
+            bytes32_t{});
     }
     auto const state_root_round8 = this->tdb.state_root();
 
@@ -1508,9 +1529,11 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 84'000);
         EXPECT_EQ(
-            this->tdb.read_storage(b, Incarnation{1, 1}, key1), bytes32_t{});
+            to_bytes(this->tdb.read_storage(b, Incarnation{1, 1}, key1)),
+            bytes32_t{});
         EXPECT_EQ(
-            this->tdb.read_storage(b, Incarnation{1, 1}, key2), bytes32_t{});
+            to_bytes(this->tdb.read_storage(b, Incarnation{1, 1}, key2)),
+            bytes32_t{});
     }
 
     auto const state_root_round6 = this->tdb.state_root();
@@ -1537,8 +1560,12 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
             BlockHeader{.number = 11});
 
         EXPECT_EQ(this->tdb.read_account(b).value().balance, 72'000);
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
-        EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value3);
+        EXPECT_EQ(
+            to_bytes(this->tdb.read_storage(b, Incarnation{1, 1}, key1)),
+            value2);
+        EXPECT_EQ(
+            to_bytes(this->tdb.read_storage(b, Incarnation{1, 1}, key2)),
+            value3);
     }
     auto const state_root_round7 = this->tdb.state_root();
     this->tdb.finalize(11, bytes32_t{117});
@@ -1656,10 +1683,14 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
     EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{20'000});
     EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{30'000});
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), value2);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(b, Incarnation{0, 0}, key1)), value1);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(b, Incarnation{0, 0}, key2)), value2);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(c, Incarnation{0, 0}, key1)), value1);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(c, Incarnation{0, 0}, key2)), value2);
 
     LOG_INFO("block 11 round 111 on block 10 round 100");
     db_cache.set_block_and_prefix(10, bytes32_t{10});
@@ -1690,10 +1721,15 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
     EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{60'000});
     EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{30'000});
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(b, Incarnation{0, 0}, key1)), value2);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(b, Incarnation{0, 0}, key2)),
+        bytes32_t{});
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(c, Incarnation{0, 0}, key1)), value1);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(c, Incarnation{0, 0}, key2)), value2);
 
     LOG_INFO("block 12 round 121 on block 11 round 111");
     db_cache.set_block_and_prefix(11, bytes32_t{111});
@@ -1722,10 +1758,15 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
     EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{60'000});
     EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{40'000});
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value1);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(b, Incarnation{0, 0}, key1)), value2);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(b, Incarnation{0, 0}, key2)),
+        bytes32_t{});
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(c, Incarnation{0, 0}, key1)), value1);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(c, Incarnation{0, 0}, key2)), value1);
 
     LOG_INFO("block 11 round 112 on block 10 round 100");
     db_cache.set_block_and_prefix(10, bytes32_t{10});
@@ -1833,10 +1874,13 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
     EXPECT_EQ(db_cache.read_account(b).value().balance, 80'000);
     EXPECT_EQ(db_cache.read_account(c).value().balance, 40'000);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(b, Incarnation{0, 0}, key1)), value2);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(b, Incarnation{0, 0}, key2)), value1);
+    EXPECT_EQ(
+        to_bytes(db_cache.read_storage(c, Incarnation{0, 0}, key1)), value2);
+    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), byte_string{});
 
     // check state root of previous rounds
     db_cache.set_block_and_prefix(11, bytes32_t{111});
@@ -2206,9 +2250,9 @@ namespace
                     for (uint8_t const j : KEYS) {
                         bytes32_t const key(j);
                         auto const val1 =
-                            db1_.read_storage(addr, incarnation, key);
+                            to_bytes(db1_.read_storage(addr, incarnation, key));
                         auto const val2 =
-                            db2_.read_storage(addr, incarnation, key);
+                            to_bytes(db2_.read_storage(addr, incarnation, key));
                         if (val1 != bytes32_t{0}) {
                             LOG_INFO(
                                 "Check_storage_ a_{}          k_{} {}",

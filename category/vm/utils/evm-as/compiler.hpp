@@ -230,12 +230,14 @@ namespace monad::vm::utils::evm_as
                         static constexpr size_t addr_size = sizeof(Address);
                         // Emit the smallest possible PUSH opcode
                         size_t const least_n = addr_size - countl(push.address);
-                        if (least_n == 0 && traits::evm_rev() < EVMC_SHANGHAI) {
-                            // Special case for zero address before Shanghai, as
-                            // PUSH0 is not available.
-                            emit_byte(mc::EvmOpCode::PUSH1);
-                            emit_byte(0x00);
-                            return;
+                        if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
+                            if (least_n == 0) {
+                                // Special case for zero address before
+                                // Shanghai, as PUSH0 is not available.
+                                emit_byte(mc::EvmOpCode::PUSH1);
+                                emit_byte(0x00);
+                                return;
+                            }
                         }
                         emit_byte(
                             mc::EvmOpCode::PUSH0 +

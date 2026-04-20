@@ -273,7 +273,7 @@ Definition truncating_mul_runtime (xs ys : words) (R : nat) : words :=
   end.
 End RuntimeMulProofSig.
 
-Module MakeOn (B : Base.BaseSig) <: RuntimeMulSig.
+Module Make (B : Base.BaseSig) <: RuntimeMulSig.
 Include B.
 Import U64.
 Include UintNotations(U64).
@@ -457,14 +457,14 @@ Definition truncating_mul_runtime (xs ys : words) (R : nat) : words :=
       truncating_mul_runtime_recur xs rest result 1 R
   end.
 
-End MakeOn.
+End Make.
 
-Module MakeOnProof (B : Base.BaseProofSig) <: RuntimeMulProofSig.
+Module MakeProof (B : Base.BaseProofSig) <: RuntimeMulProofSig.
 Include B.
 Import U64.
 Include UintNotations(U64).
 Open Scope uint_scope.
-Module RM := MakeOn(B).
+Module RM := Make(B).
 
 Definition mul_line_recur := RM.mul_line_recur.
 Definition mul_line := RM.mul_line.
@@ -473,9 +473,12 @@ Definition mul_add_line_recur_alt := RM.mul_add_line_recur_alt.
 Definition mul_add_line := RM.mul_add_line.
 Definition truncating_mul_runtime_recur := RM.truncating_mul_runtime_recur.
 Definition truncating_mul_runtime := RM.truncating_mul_runtime.
-End MakeOnProof.
+End MakeProof.
 
-Module Make (Import Word64 : Uint64Ops).
+Module MakeLegacy (Import Word64 : Uint64Ops).
 Module B := Base.Make(Word64).
-Include MakeOn(B).
-End Make.
+Include Make(B).
+End MakeLegacy.
+
+Module MakeOn := Make.
+Module MakeOnProof := MakeProof.

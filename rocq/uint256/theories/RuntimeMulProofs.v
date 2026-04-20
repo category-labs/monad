@@ -14,7 +14,7 @@ From Stdlib Require Import ZArith Lia List.
 From Stdlib Require Import DoubleType.
 From Uint256 Require Import Uint Base Words WordsLemmas RuntimeMul.
 
-Module MakeProofsOn
+Module MakeProofs
   (B : Base.BaseProofSig)
   (RM : RuntimeMul.RuntimeMulProofSig with Module U64 := B.U64)
   (WL : WordsLemmas.WordsLemmasProofSig with Module U64 := B.U64).
@@ -44,7 +44,7 @@ Proof. apply WL.extend_words_length. Qed.
 
 Lemma get_set_word_same_local : forall ws i v,
   (i < length ws)%nat ->
-  MakeProofsOn.get_word (MakeProofsOn.set_word ws i v) i = v.
+  MakeProofs.get_word (MakeProofs.set_word ws i v) i = v.
 Proof.
   intros ws i v Hi.
   apply WL.get_set_word_same. exact Hi.
@@ -52,8 +52,8 @@ Qed.
 
 Lemma get_set_word_other_local : forall ws i j v,
   i <> j ->
-  MakeProofsOn.get_word (MakeProofsOn.set_word ws i v) j =
-  MakeProofsOn.get_word ws j.
+  MakeProofs.get_word (MakeProofs.set_word ws i v) j =
+  MakeProofs.get_word ws j.
 Proof.
   intros ws i j v Hij.
   apply WL.get_set_word_other. exact Hij.
@@ -61,9 +61,9 @@ Qed.
 
 Lemma to_Z_words_set_word_local : forall ws i v,
   (i < length ws)%nat ->
-  to_Z_words (MakeProofsOn.set_word ws i v) =
+  to_Z_words (MakeProofs.set_word ws i v) =
     to_Z_words ws
-    - to_Z (MakeProofsOn.get_word ws i) * (base width) ^ (Z.of_nat i)
+    - to_Z (MakeProofs.get_word ws i) * (base width) ^ (Z.of_nat i)
     + to_Z v * (base width) ^ (Z.of_nat i).
 Proof.
   intros ws i v Hi.
@@ -206,11 +206,11 @@ Proof.
   rewrite <- Zplus_mod_idemp_r.
   rewrite low_limb_shift_mod.
   rewrite Zplus_mod_idemp_r.
-  change (get_word result pos) with (MakeProofsOn.get_word result pos).
+  change (get_word result pos) with (MakeProofs.get_word result pos).
   replace
     (to_Z_words result
-     - to_Z (MakeProofsOn.get_word result pos) * 2 ^ (64 * Z.of_nat pos)
-     + (to_Z (MakeProofsOn.get_word result pos) + to_Z c) *
+     - to_Z (MakeProofs.get_word result pos) * 2 ^ (64 * Z.of_nat pos)
+     + (to_Z (MakeProofs.get_word result pos) + to_Z c) *
        2 ^ (64 * Z.of_nat pos))
     with
       (to_Z_words result + to_Z c * 2 ^ (64 * Z.of_nat pos)) by ring.
@@ -281,7 +281,7 @@ Lemma adc_2_full_mul_step_mod_words :
 Proof.
   intros result pos x y c_hi c_lo c_lo' res Hlen Hadc.
   rewrite to_Z_words_set_word_local by (rewrite Hlen; lia).
-  change (MakeProofsOn.get_word result pos) with (get_word result pos).
+  change (MakeProofs.get_word result pos) with (get_word result pos).
   change ((base width) ^ Z.of_nat pos) with (modulus_words pos).
   rewrite modulus_words_succ.
   pose proof (spec_adc_2_full (mul x y) (get_word result pos) c_hi c_lo)
@@ -355,8 +355,8 @@ Qed.
 
 Lemma to_Z_words_set_word_zero_local : forall ws i v,
   (i < length ws)%nat ->
-  MakeProofsOn.get_word ws i = zero ->
-  to_Z_words (MakeProofsOn.set_word ws i v) =
+  MakeProofs.get_word ws i = zero ->
+  to_Z_words (MakeProofs.set_word ws i v) =
     to_Z_words ws + to_Z v * 2 ^ (64 * Z.of_nat i).
 Proof.
   intros ws i v Hi Hz.
@@ -373,7 +373,7 @@ Lemma zero_tail_after_set_word_local :
   forall result I R res_I,
   (forall j, (I <= j)%nat -> (j < R)%nat -> get_word result j = zero) ->
   forall j, (S I <= j)%nat -> (j < R)%nat ->
-    get_word (MakeProofsOn.set_word result I res_I) j = zero.
+    get_word (MakeProofs.set_word result I res_I) j = zero.
 Proof.
   intros result I R res_I Hzero j Hij HjR.
   rewrite WL.get_set_word_other.
@@ -519,7 +519,7 @@ Proof.
   2:{ rewrite set_word_length_local, Hlen. lia. }
   2:{ rewrite get_set_word_other_local by lia. exact Hzero. }
   rewrite to_Z_words_set_word_local by (rewrite Hlen; lia).
-  change (MakeProofsOn.get_word result pos) with (get_word result pos).
+  change (MakeProofs.get_word result pos) with (get_word result pos).
   change ((base width) ^ Z.of_nat pos) with (modulus_words pos).
   rewrite pow64_succ.
   pose proof (adc_2_short_exact_pair_bound c_hi c_lo
@@ -554,7 +554,7 @@ Lemma zero_tail_before_set_word_local :
   forall result I R res_I,
   (forall j, (S I <= j)%nat -> (j < R)%nat -> get_word result j = zero) ->
   forall j, (S I <= j)%nat -> (j < R)%nat ->
-    get_word (MakeProofsOn.set_word result I res_I) j = zero.
+    get_word (MakeProofs.set_word result I res_I) j = zero.
 Proof.
   intros result I R res_I Hzero j Hij HjR.
   rewrite get_set_word_other_local by lia.
@@ -578,9 +578,9 @@ Proof.
     destruct (Nat.ltb pos R) eqn:Hpos.
     + destruct (Nat.ltb (pos + 2) R) eqn:Hpos2.
       * destruct (mulx x y_i) as [hi lo] eqn:Hmulx.
-        destruct (adc_3 hi lo (MakeProofsOn.get_word result pos) c_hi c_lo)
+        destruct (adc_3 hi lo (MakeProofs.get_word result pos) c_hi c_lo)
           as [[c_hi' c_lo'] res] eqn:Hadc.
-        change (MakeProofsOn.set_word result pos res) with (set_word result pos res).
+        change (MakeProofs.set_word result pos res) with (set_word result pos res).
         eapply IH;
           [rewrite set_word_length_local; exact Hlen
           |cbn [length] in HRbound; subst pos; lia
@@ -590,9 +590,9 @@ Proof.
           |cbn [length] in Hj; subst pos; lia
           |exact HjR].
       * destruct (Nat.ltb (pos + 1) R) eqn:Hpos1.
-        -- destruct (adc_2_full (mul x y_i) (MakeProofsOn.get_word result pos)
+        -- destruct (adc_2_full (mul x y_i) (MakeProofs.get_word result pos)
                      c_hi c_lo) as [c_lo' res] eqn:Hadc.
-           change (MakeProofsOn.set_word result pos res)
+           change (MakeProofs.set_word result pos res)
              with (set_word result pos res).
            eapply IH;
              [rewrite set_word_length_local; exact Hlen
@@ -602,7 +602,7 @@ Proof.
                 apply Hzero; subst pos; lia
              |cbn [length] in Hj; subst pos; lia
              |exact HjR].
-        -- change MakeProofsOn.set_word with set_word.
+        -- change MakeProofs.set_word with set_word.
            eapply IH;
              [rewrite set_word_length_local; exact Hlen
              |cbn [length] in HRbound; subst pos; lia
@@ -649,7 +649,7 @@ Proof.
   induction xs_tail as [| x rest IH]; intros y_i result J I R c_hi c_lo Hlen;
     simpl.
   - destruct (Nat.ltb (I + J + 1) R).
-    + destruct (adc_2_short c_hi c_lo (MakeProofsOn.get_word result (I + J)))
+    + destruct (adc_2_short c_hi c_lo (MakeProofs.get_word result (I + J)))
         as [r1 r0] eqn:Hadc.
       cbn.
       rewrite set_word_length_local, set_word_length_local. exact Hlen.
@@ -658,13 +658,13 @@ Proof.
   - destruct (Nat.ltb (I + J) R); [|exact Hlen].
     destruct (Nat.ltb (I + J + 2) R).
     + destruct (mulx x y_i) as [hi lo] eqn:Hmulx.
-      destruct (adc_3 hi lo (MakeProofsOn.get_word result (I + J)) c_hi c_lo)
+      destruct (adc_3 hi lo (MakeProofs.get_word result (I + J)) c_hi c_lo)
         as [[ch cl] ri] eqn:Hadc.
       cbn.
       apply IH. rewrite set_word_length_local. exact Hlen.
     + destruct (Nat.ltb (I + J + 1) R).
       * destruct
-          (adc_2_full (mul x y_i) (MakeProofsOn.get_word result (I + J))
+          (adc_2_full (mul x y_i) (MakeProofs.get_word result (I + J))
              c_hi c_lo)
           as [cl ri] eqn:Hadc.
         cbn.
@@ -713,12 +713,12 @@ Proof.
   - destruct (Nat.ltb (I + J) R); [|reflexivity].
     destruct (Nat.ltb (I + J + 2) R).
     + destruct (mulx x y_i) as [hi lo].
-      destruct (adc_3 hi lo (MakeProofsOn.get_word result (I + J)) c_hi c_lo)
+      destruct (adc_3 hi lo (MakeProofs.get_word result (I + J)) c_hi c_lo)
         as [[ch cl] ri].
       apply IH.
     + destruct (Nat.ltb (I + J + 1) R).
       * destruct
-          (adc_2_full (mul x y_i) (MakeProofsOn.get_word result (I + J))
+          (adc_2_full (mul x y_i) (MakeProofs.get_word result (I + J))
              c_hi c_lo)
           as [cl ri].
         apply IH.
@@ -740,7 +740,7 @@ Proof.
   - cbn [mul_line_recur to_Z_words].
     destruct (Nat.ltb I R) eqn:HI.
     + apply Nat.ltb_lt in HI.
-      assert (HzI : MakeProofsOn.get_word result I = zero).
+      assert (HzI : MakeProofs.get_word result I = zero).
       { apply Hzero; lia. }
       rewrite to_Z_words_set_word_zero_local.
       2:{ rewrite Hlen. lia. }
@@ -757,14 +757,14 @@ Proof.
       * apply Nat.ltb_lt in HI1.
         destruct (mulx x y) as [hi lo] eqn:Hmulx.
         destruct (adc_2_short hi lo carry) as [new_carry res_I] eqn:Hadc.
-        rewrite (IH y (MakeProofsOn.set_word result I res_I) (S I) R new_carry).
+        rewrite (IH y (MakeProofs.set_word result I res_I) (S I) R new_carry).
         2:{ rewrite set_word_length_local. exact Hlen. }
         2:{ lia. }
         2:{ intros j Hij HjR.
             rewrite WL.get_set_word_other.
             - apply Hzero; lia.
             - lia. }
-        assert (HzI : MakeProofsOn.get_word result I = zero).
+        assert (HzI : MakeProofs.get_word result I = zero).
         { apply Hzero; lia. }
         rewrite to_Z_words_set_word_zero_local.
         2:{ rewrite Hlen. lia. }
@@ -798,7 +798,7 @@ Proof.
         reflexivity.
       * apply Nat.ltb_ge in HI1.
         assert (HSR : R = S I) by lia.
-        assert (HzI : MakeProofsOn.get_word result I = zero).
+        assert (HzI : MakeProofs.get_word result I = zero).
         { apply Hzero; lia. }
         rewrite to_Z_words_set_word_zero_local.
         2:{ rewrite Hlen. lia. }
@@ -868,11 +868,11 @@ Proof.
       destruct (Nat.ltb (pos + 2) R) eqn:Hpos2.
       * apply Nat.ltb_lt in Hpos2.
         destruct (mulx x y_i) as [hi lo] eqn:Hmulx.
-        destruct (adc_3 hi lo (MakeProofsOn.get_word result pos) c_hi c_lo)
+        destruct (adc_3 hi lo (MakeProofs.get_word result pos) c_hi c_lo)
           as [[c_hi' c_lo'] res] eqn:Hadc.
-        change (MakeProofsOn.set_word result pos res)
+        change (MakeProofs.set_word result pos res)
           with (set_word result pos res).
-        change (MakeProofsOn.get_word result pos)
+        change (MakeProofs.get_word result pos)
           with (get_word result pos) in Hadc.
         rewrite (IH y_i (set_word result pos res) (S J) I R c_hi' c_lo').
         2:{ rewrite set_word_length_local. exact Hlen. }
@@ -910,11 +910,11 @@ Proof.
            assert (HR : R = S (S pos)) by lia.
            assert (Hlen2 : length result = S (S pos)).
            { rewrite <- HR. exact Hlen. }
-           destruct (adc_2_full (mul x y_i) (MakeProofsOn.get_word result pos)
+           destruct (adc_2_full (mul x y_i) (MakeProofs.get_word result pos)
                       c_hi c_lo) as [c_lo' res] eqn:Hadc.
-           change (MakeProofsOn.set_word result pos res)
+           change (MakeProofs.set_word result pos res)
              with (set_word result pos res).
-           change (MakeProofsOn.get_word result pos)
+           change (MakeProofs.get_word result pos)
              with (get_word result pos) in Hadc.
            rewrite (IH y_i (set_word result pos res) (S J) I R c_hi c_lo').
            2:{ rewrite set_word_length_local. exact Hlen. }
@@ -981,8 +981,8 @@ Proof.
            reflexivity.
         -- apply Nat.ltb_ge in Hpos1.
            assert (HR : R = S pos) by lia.
-           change MakeProofsOn.set_word with set_word.
-           change MakeProofsOn.get_word with get_word.
+           change MakeProofs.set_word with set_word.
+           change MakeProofs.get_word with get_word.
            rewrite (IH y_i
              (set_word result pos (get_word result pos + c_lo)%Uint) (S J) I R
              c_hi c_lo).
@@ -1040,9 +1040,9 @@ Proof.
     cbn [length] in Hzero.
     destruct (Nat.ltb (pos + 1) R) eqn:Hpos1.
     + apply Nat.ltb_lt in Hpos1.
-      destruct (adc_2_short c_hi c_lo (MakeProofsOn.get_word result pos))
+      destruct (adc_2_short c_hi c_lo (MakeProofs.get_word result pos))
         as [r1 r0] eqn:Hadc.
-      change (MakeProofsOn.set_word (MakeProofsOn.set_word result pos r0)
+      change (MakeProofs.set_word (MakeProofs.set_word result pos r0)
         (pos + 1) r1) with (set_word (set_word result pos r0) (pos + 1) r1).
       split.
       * assert (Hzero1 : get_word result (S pos) = zero).
@@ -1088,8 +1088,8 @@ Proof.
              by (symmetry; apply Nat.ltb_ge; lia).
            replace (pos <? R)%nat with true
              by (symmetry; apply Nat.ltb_lt; lia).
-           change MakeProofsOn.set_word with set_word.
-           change MakeProofsOn.get_word with get_word.
+           change MakeProofs.set_word with set_word.
+           change MakeProofs.get_word with get_word.
            rewrite HR.
            rewrite set_word_add_last_with_high_mod with (c_hi := c_hi) by lia.
            rewrite width_is_64; unfold base.
@@ -1107,8 +1107,8 @@ Proof.
         -- intros j Hj HjR. subst pos. exfalso. lia.
   - remember (I + J)%nat as pos eqn:Hpos_def in *.
     cbn [mul_add_line_recur to_Z_words].
-    change MakeProofsOn.set_word with set_word.
-    change MakeProofsOn.get_word with get_word.
+    change MakeProofs.set_word with set_word.
+    change MakeProofs.get_word with get_word.
     destruct (Nat.ltb pos R) eqn:Hpos.
     + apply Nat.ltb_lt in Hpos.
       destruct (Nat.ltb (pos + 2) R) eqn:Hpos2.
@@ -1170,7 +1170,7 @@ Proof.
            assert (HR : R = S (S pos)) by lia.
            assert (Hlen2 : length result = S (S pos)).
            { rewrite <- HR. exact Hlen. }
-           destruct (adc_2_full (mul x y_i) (MakeProofsOn.get_word result pos)
+           destruct (adc_2_full (mul x y_i) (MakeProofs.get_word result pos)
                       c_hi c_lo) as [c_lo' res] eqn:Hadc.
            replace ((I + J <? R)%nat) with true
              by (symmetry; apply Nat.ltb_lt; lia).
@@ -1179,7 +1179,7 @@ Proof.
            replace ((I + J + 1 <? R)%nat) with true
              by (symmetry; apply Nat.ltb_lt; lia).
            replace (I + J)%nat with pos by lia.
-           change MakeProofsOn.get_word with get_word in Hadc.
+           change MakeProofs.get_word with get_word in Hadc.
            rewrite Hadc.
            rewrite (mul_add_line_recur_correct
              rest y_i (set_word result pos res) (S J) I R c_hi c_lo').
@@ -1256,8 +1256,8 @@ Proof.
            replace ((I + J + 1 <? R)%nat) with false
              by (symmetry; apply Nat.ltb_ge; lia).
            replace (I + J)%nat with pos by lia.
-           change MakeProofsOn.set_word with set_word.
-           change MakeProofsOn.get_word with get_word.
+           change MakeProofs.set_word with set_word.
+           change MakeProofs.get_word with get_word.
            rewrite (mul_add_line_recur_correct
              rest y_i (set_word result pos (get_word result pos + c_lo)%Uint)
              (S J) I R c_hi c_lo).
@@ -1410,7 +1410,7 @@ Proof.
       apply get_extend_words_zero.
       exact HjR. }
     specialize (Hrecur Hlen ltac:(lia) Hzero).
-    change (MakeProofsOn.set_word (MakeProofsOn.extend_words R) 0 lo)
+    change (MakeProofs.set_word (MakeProofs.extend_words R) 0 lo)
       with (set_word (extend_words R) 0 lo).
     rewrite Hrecur.
     assert (Hinit :
@@ -1625,17 +1625,19 @@ Qed.
 (* Checked in concrete models:
    Print Assumptions truncating_mul_runtime_correct.*)
 
-End MakeProofsOn.
+End MakeProofs.
 
 Module Type RuntimeMulProofsSig (B : Base.BaseProofSig)
   (RM : RuntimeMul.RuntimeMulProofSig with Module U64 := B.U64)
   (WL : WordsLemmas.WordsLemmasProofSig with Module U64 := B.U64).
-Include MakeProofsOn(B)(RM)(WL).
+Include MakeProofs(B)(RM)(WL).
 End RuntimeMulProofsSig.
 
-Module MakeProofs (Import Word64 : Uint64).
+Module MakeProofsLegacy (Import Word64 : Uint64).
 Module B := Base.MakeProof(Word64).
-Module RM := RuntimeMul.MakeOnProof(B).
-Module WL := WordsLemmas.MakeProofsOn(B).
-Include MakeProofsOn(B)(RM)(WL).
-End MakeProofs.
+Module RM := RuntimeMul.MakeProof(B).
+Module WL := WordsLemmas.MakeProofs(B).
+Include MakeProofs(B)(RM)(WL).
+End MakeProofsLegacy.
+
+Module MakeProofsOn := MakeProofs.

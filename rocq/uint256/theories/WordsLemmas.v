@@ -121,7 +121,7 @@ Parameter modulus_words_le : forall m n,
 Parameter modulus_words_pos : forall n, modulus_words n > 0.
 End WordsLemmasProofSig.
 
-Module MakeOn (B : Base.BaseSig) <: WordsLemmasSig.
+Module Make (B : Base.BaseSig) <: WordsLemmasSig.
 Include B.
 Import U64.
 Include UintNotations(U64).
@@ -178,16 +178,16 @@ Proof.
   apply nth_repeat.
 Qed.
 
-End MakeOn.
+End Make.
 
 (** ** Abstract proof functor — [to_Z_words] and Z-level reasoning *)
 
-Module MakeProofsOn (B : Base.BaseProofSig) <: WordsLemmasProofSig.
+Module MakeProofs (B : Base.BaseProofSig) <: WordsLemmasProofSig.
 Include B.
 Import B.U64.
 Include UintNotations(U64).
 Open Scope uint_scope.
-Module ML := MakeOn(B).
+Module ML := Make(B).
 
 #[local] Open Scope Z_scope.
 
@@ -438,17 +438,20 @@ Proof.
   intros n. unfold modulus_words, base. apply Z.lt_gt. apply Z.pow_pos_nonneg; lia.
 Qed.
 
-End MakeProofsOn.
-
-Module Make (Word64 : Uint64Ops).
-Module B := Base.Make(Word64).
-Include MakeOn(B).
-End Make.
-
-Module MakeProofs (Import Word64 : Uint64).
-Module B := Base.MakeProof(Word64).
-Include MakeProofsOn(B).
 End MakeProofs.
+
+Module MakeLegacy (Word64 : Uint64Ops).
+Module B := Base.Make(Word64).
+Include Make(B).
+End MakeLegacy.
+
+Module MakeProofsLegacy (Import Word64 : Uint64).
+Module B := Base.MakeProof(Word64).
+Include MakeProofs(B).
+End MakeProofsLegacy.
+
+Module MakeOn := Make.
+Module MakeProofsOn := MakeProofs.
 
 (*
 (** Convert a word list to its mathematical value (little-endian) *)

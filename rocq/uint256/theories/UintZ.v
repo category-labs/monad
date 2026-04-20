@@ -922,7 +922,10 @@ End ZBridge.
 
 (** RuntimeMul proofs with no axioms *)
 Module RuntimeMulConsistency.
-  Module P := RuntimeMulProofs.MakeProofs(ZUint64).
+  Module B := Base.MakeProof(ZUint64).
+  Module RM := RuntimeMul.MakeProof(B).
+  Module WL := WordsLemmas.MakeProofs(B).
+  Module P := RuntimeMulProofs.MakeProofs(B)(RM)(WL).
   Include P.
   (** This should print no assumptions once all Admitted above are filled *)
   Print Assumptions P.truncating_mul_runtime_correct.
@@ -930,7 +933,10 @@ End RuntimeMulConsistency.
 
 (** Division proofs with no axioms *)
 Module DivisionConsistency.
-  Module P := DivisionProofs.MakeProofs(ZUint64)(ZUint128)(ZBridge).
+  Module B := Base.MakeProof(ZUint64).
+  Module Div := Division.Make(B)(ZUint128)(ZBridge).
+  Module WL := WordsLemmas.MakeProofs(B).
+  Module P := DivisionProofs.MakeProofs(B)(ZUint128)(ZBridge)(Div)(WL).
   Include P.
 
   (** This should print no assumptions once all Admitted above are filled *)

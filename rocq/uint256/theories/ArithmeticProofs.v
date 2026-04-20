@@ -21,7 +21,7 @@ From Uint256 Require Import DivisionProofs RuntimeMulProofs.
 
 Import ListNotations.
 
-Module MakeProofsOn (B : Base.BaseProofSig) (U128 : Uint128)
+Module MakeProofs (B : Base.BaseProofSig) (U128 : Uint128)
   (Import Bridge : UintWiden B.U64 U128)
   (WL : WordsLemmas.WordsLemmasProofSig with Module U64 := B.U64)
   (RM : RuntimeMul.RuntimeMulProofSig with Module U64 := B.U64)
@@ -1433,16 +1433,18 @@ Theorem exp_correct : forall base exponent,
    Square-And-Multiply Loop Against Modular Exponentiation. *)
 Admitted.
 
-End MakeProofsOn.
+End MakeProofs.
 
-Module MakeProofs (Import Word64 : Uint64) (U128 : Uint128)
+Module MakeProofsLegacy (Import Word64 : Uint64) (U128 : Uint128)
   (Import Bridge : UintWiden Word64 U128).
 Module B := Base.MakeProof(Word64).
-Module WL := WordsLemmas.MakeProofsOn(B).
-Module RM := RuntimeMul.MakeOnProof(B).
-Module RMP := RuntimeMulProofs.MakeProofsOn(B)(RM)(WL).
-Module Div := Division.MakeOn(B)(U128)(Bridge).
-Module DP := DivisionProofs.MakeProofsOn(B)(U128)(Bridge)(Div)(WL).
-Module Arith := Arithmetic.MakeOn(B)(U128)(Bridge)(Div)(RM).
-Include MakeProofsOn(B)(U128)(Bridge)(WL)(RM)(RMP)(Div)(DP)(Arith).
-End MakeProofs.
+Module WL := WordsLemmas.MakeProofs(B).
+Module RM := RuntimeMul.MakeProof(B).
+Module RMP := RuntimeMulProofs.MakeProofs(B)(RM)(WL).
+Module Div := Division.Make(B)(U128)(Bridge).
+Module DP := DivisionProofs.MakeProofs(B)(U128)(Bridge)(Div)(WL).
+Module Arith := Arithmetic.Make(B)(U128)(Bridge)(Div)(RM).
+Include MakeProofs(B)(U128)(Bridge)(WL)(RM)(RMP)(Div)(DP)(Arith).
+End MakeProofsLegacy.
+
+Module MakeProofsOn := MakeProofs.

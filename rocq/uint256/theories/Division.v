@@ -26,7 +26,7 @@ From Stdlib Require Import ZArith Lia List.
 From Uint256 Require Import Uint Base Primitives Words.
 Import ListNotations.
 
-Module MakeOn (B : Base.BaseSig) (U128 : Uint128Ops)
+Module Make (B : Base.BaseSig) (U128 : Uint128Ops)
   (Import Bridge : UintWidenOps B.U64 U128).
 Include B.
 Import U64.
@@ -320,20 +320,22 @@ Definition udivrem (M N : nat) (u v : words) : option udivrem_result :=
       (quot ++ repeat 0 (M - length quot))
       (rem ++ repeat 0 (N - length rem))).
 
-End MakeOn.
+End Make.
 
 Module Type DivisionSig (B : Base.BaseSig) (U128 : Uint128Ops)
   (Bridge : UintWidenOps B.U64 U128).
-Include MakeOn(B)(U128)(Bridge).
+Include Make(B)(U128)(Bridge).
 End DivisionSig.
 
 Module Type DivisionProofSig (B : Base.BaseProofSig) (U128 : Uint128)
   (Bridge : UintWiden B.U64 U128).
-Include MakeOn(B)(U128)(Bridge).
+Include Make(B)(U128)(Bridge).
 End DivisionProofSig.
 
-Module Make (Word64 : Uint64Ops) (U128 : Uint128Ops)
+Module MakeLegacy (Word64 : Uint64Ops) (U128 : Uint128Ops)
   (Import Bridge : UintWidenOps Word64 U128).
 Module B := Base.Make(Word64).
-Include MakeOn(B)(U128)(Bridge).
-End Make.
+Include Make(B)(U128)(Bridge).
+End MakeLegacy.
+
+Module MakeOn := Make.

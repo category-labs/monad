@@ -1002,13 +1002,19 @@ End SigmaBridge.
 (** * Instantiations — the consistency witnesses *)
 
 Module RuntimeMulConsistency.
-  Module P := RuntimeMulProofs.MakeProofs(SigmaUint64).
+  Module B := Base.MakeProof(SigmaUint64).
+  Module RM := RuntimeMul.MakeProof(B).
+  Module WL := WordsLemmas.MakeProofs(B).
+  Module P := RuntimeMulProofs.MakeProofs(B)(RM)(WL).
   Include P.
   Print Assumptions truncating_mul_runtime_correct.
 End RuntimeMulConsistency.
 
 Module DivisionConsistency.
-  Module P := DivisionProofs.MakeProofs(SigmaUint64)(SigmaUint128)(SigmaBridge).
+  Module B := Base.MakeProof(SigmaUint64).
+  Module Div := Division.Make(B)(SigmaUint128)(SigmaBridge).
+  Module WL := WordsLemmas.MakeProofs(B).
+  Module P := DivisionProofs.MakeProofs(B)(SigmaUint128)(SigmaBridge)(Div)(WL).
   Include P.
   Print Assumptions udivrem_correct.
 End DivisionConsistency.

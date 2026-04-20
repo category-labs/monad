@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "account.hpp"
-#include "state.hpp"
+#include "assertions.hpp"
+#include "fuzzer_view.hpp"
 
 #include <category/core/assert.h>
 
@@ -22,57 +22,11 @@
 #include <evmc/evmc.hpp>
 
 #include <algorithm>
+#include <ranges>
 #include <span>
-
-using namespace evmone::state;
 
 namespace monad::vm::fuzzing
 {
-    void assert_equal(StorageValue const &a, StorageValue const &b)
-    {
-        MONAD_ASSERT(a.current == b.current);
-        MONAD_ASSERT(a.original == b.original);
-        MONAD_ASSERT(a.access_status == b.access_status);
-    }
-
-    void assert_equal(Account const &a, Account const &b)
-    {
-        MONAD_ASSERT(a.transient_storage.size() == b.transient_storage.size());
-        for (auto const &[k, v] : a.transient_storage) {
-            auto const found = b.transient_storage.find(k);
-            MONAD_ASSERT(found != b.transient_storage.end());
-            MONAD_ASSERT(found->second == v);
-        }
-
-        MONAD_ASSERT(a.storage.size() == b.storage.size());
-        for (auto const &[k, v] : a.storage) {
-            auto const found = b.storage.find(k);
-            MONAD_ASSERT(found != b.storage.end());
-            assert_equal(v, found->second);
-        }
-
-        MONAD_ASSERT(a.nonce == b.nonce);
-        MONAD_ASSERT(a.balance == b.balance);
-        MONAD_ASSERT(a.code_hash == b.code_hash);
-        MONAD_ASSERT(a.destructed == b.destructed);
-        MONAD_ASSERT(a.erase_if_empty == b.erase_if_empty);
-        MONAD_ASSERT(a.just_created == b.just_created);
-        MONAD_ASSERT(a.access_status == b.access_status);
-    }
-
-    void assert_equal(State const &a, State const &b)
-    {
-        auto const &a_accs = a.get_modified_accounts();
-        auto const &b_accs = b.get_modified_accounts();
-
-        MONAD_ASSERT(a_accs.size() == b_accs.size());
-        for (auto const &[k, v] : a_accs) {
-            auto const found = b_accs.find(k);
-            MONAD_ASSERT(found != b_accs.end());
-            assert_equal(v, found->second);
-        }
-    }
-
     void assert_equal(
         evmc::Result const &evmone_result, evmc::Result const &compiler_result,
         bool const strict_out_of_gas)
@@ -118,4 +72,46 @@ namespace monad::vm::fuzzing
         }
     }
 
+    void assert_states_equal(SortedStateView const &a, SortedStateView const &b)
+    {
+        MONAD_ASSERT(a.size() == b.size());
+
+        for (auto const &[a_acc, b_acc] : std::views::zip(a, b)) {
+            MONAD_ASSERT(a_acc.addr == b_acc.addr);
+            MONAD_ASSERT(a_acc.nonce == b_acc.nonce);
+            MONAD_ASSERT(a_acc.balance == b_acc.balance);
+            MONAD_ASSERT(a_acc.code_hash == b_acc.code_hash);
+            MONAD_ASSERT(std::ranges::equal(a_acc.code, b_acc.code));
+
+            auto const a_st = a.storage(a_acc.addr);
+            auto const b_st = b.storage(b_acc.addr);
+
+            MONAD_ASSERT(a_st->size() == b_st->size());
+
+            for (auto const &[a_se, b_se] : std::views::zip(*a_st, *b_st)) {
+                MONAD_ASSERT(a_se.key == b_se.key);
+                MONAD_ASSERT(a_se.current == b_se.current);
+                MONAD_ASSERT(a_se.original == b_se.original);
+                MONAD_ASSERT(a_se.access_status == b_se.access_status);
+            }
+
+            auto const a_ts = a.transient_storage(a_acc.addr);
+            auto const b_ts = b.transient_storage(b_acc.addr);
+
+            MONAD_ASSERT(a_ts->size() == b_ts->size());
+
+            for (auto const &[a_te, b_te] : std::views::zip(*a_ts, *b_ts)) {
+                MONAD_ASSERT(a_te.key == b_te.key);
+                MONAD_ASSERT(a_te.value == b_te.value);
+            }
+        }
+    }
+
+    void
+    assert_backend_states_equal(FuzzerBackend const &a, FuzzerBackend const &b)
+    {
+        auto const a_view = a.sorted_view();
+        auto const b_view = b.sorted_view();
+        assert_states_equal(*a_view, *b_view);
+    }
 }

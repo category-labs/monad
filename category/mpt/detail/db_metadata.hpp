@@ -63,8 +63,11 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MONAD007";
+        static constexpr char const *MAGIC = "MONAD008";
         static constexpr unsigned MAGIC_STRING_LEN = 8;
+        // Previous magic supported via on-the-fly migration (see
+        // DbMetadataContext constructor).
+        static constexpr char const *PREVIOUS_MAGIC = "MONAD007";
 
         friend class MONAD_MPT_NAMESPACE::DbMetadataContext;
         friend class MONAD_MPT_NAMESPACE::UpdateAux;
@@ -88,9 +91,15 @@ namespace detail
         // design works well, because this min is always known to be stored N
         // elements before the max, so no special handling is required when the
         // ring buffer is under capacity.
+        //
+        // Two physically-distinct rings of this type live in db_metadata:
+        // `root_offsets` (ring_a) and `secondary_timeline` (ring_b). Which one
+        // is the logical primary is selected by `primary_ring_idx` below.
+        // SIZE_-1 caps the per-ring cnv_chunks[] list length (vastly over-
+        // provisioned vs. real pools that use at most a handful per ring).
         struct root_offsets_ring_t
         {
-            static constexpr size_t SIZE_ = 65536;
+            static constexpr size_t SIZE_ = 32;
 
             uint64_t version_lower_bound_;
             uint64_t
@@ -156,8 +165,64 @@ namespace detail
         bytes32_t latest_voted_block_id;
         bytes32_t latest_proposed_block_id;
 
+        // Ring B: second physical root-offsets ring, structurally identical
+        // to root_offsets (ring_a). Both rings have the same header type,
+        // but physically ring_a's cnv_chunks list is populated at pool init
+        // (all ring chunks go to it) while ring_b starts empty. On
+        // activate_secondary_header, ring_a atomically shrinks and the
+        // freed chunks are handed to ring_b; on deactivate they return.
+        root_offsets_ring_t secondary_timeline;
+
+        // Which physical ring is the logical primary:
+        //   0 = root_offsets (ring_a), 1 = secondary_timeline (ring_b).
+        // Promote flips this byte atomically on both metadata copies. Headers
+        // and physical storage stay attached to their rings — only the role
+        // label moves.
+        uint8_t primary_ring_idx;
+        // 1 = secondary role is currently active (the non-primary ring holds
+        // valid data and is being read/written). 0 = inactive; the non-
+        // primary ring's header/data are garbage.
+        uint8_t secondary_timeline_active_;
+        uint8_t reserved_timeline_[6]; // alignment
+
+        // Sequence lock guarding ring shrink/grow. Even = idle; odd = a
+        // shrink or grow is in progress. Readers of the ring (looking up a
+        // root offset for a version + timeline_id) bracket their snapshot
+        // with loads of this field, retrying if it moved or is odd. Written
+        // only by the writer thread around activate/deactivate_secondary.
+        uint64_t shrink_grow_seq_;
+
+        // Intent log for crash-safe ring shrink/grow. The ring data lives
+        // in different backing files from the metadata, so kernel pagecache
+        // writeback can interleave ring writes against metadata writes in
+        // either order. Before touching anything, activate/deactivate
+        // stamps op_kind + target_primary_chunks on both metadata copies
+        // and msyncs; on open, if op_kind is nonzero, the constructor
+        // replays the operation to completion before returning control.
+        // The ring-copy loop and cnv_chunks[] moves are idempotent under
+        // replay, so re-running is safe. Cleared and msync'd before
+        // activate/deactivate returns, so writers never see a durable
+        // "in-progress" flag once the public API call has completed.
+        enum pending_op_kind : uint32_t
+        {
+            PENDING_OP_NONE = 0,
+            PENDING_OP_ACTIVATE = 1, // activate_secondary_header
+            PENDING_OP_DEACTIVATE = 2, // deactivate_secondary_header
+        };
+
+        struct pending_shrink_grow_t
+        {
+            uint32_t op_kind; // pending_op_kind
+            uint32_t target_primary_chunks; // target cnv_chunks_len for primary
+            uint64_t fork_version; // meaningful only for activate
+        } pending_shrink_grow;
+
+        static_assert(sizeof(pending_shrink_grow_t) == 16);
+
         // padding for adding future atomics without requiring DB reset
-        uint8_t future_variables_unused[4032];
+        uint8_t future_variables_unused
+            [4032 - sizeof(root_offsets_ring_t) - 8 - 8 -
+             sizeof(pending_shrink_grow_t)];
 
         // used to know if the metadata was being
         // updated when the process suddenly exited
@@ -459,7 +524,13 @@ namespace detail
 
     static_assert(std::is_trivially_copyable_v<db_metadata>);
     static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
-    static_assert(sizeof(db_metadata) == 528512);
+    // The fixed-header size is pinned so that adding or shrinking a
+    // field in the header is a conscious decision. The actual mmap
+    // region is sizeof(db_metadata) + chunk_count * sizeof(chunk_info_t)
+    // and must fit in cnv.capacity()/2 (copy 0 at offset 0, copy 1 at
+    // cnv.capacity()/2); enlarging the fixed header eats into the
+    // chunk_info[] budget for any given chunk_count.
+    static_assert(sizeof(db_metadata) == 4480);
     static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(
@@ -513,6 +584,9 @@ namespace detail
         dest->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM
         auto const old_next_version = intr->root_offsets.next_version_;
         intr->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM
+        dest->secondary_timeline.next_version_ = 0;
+        auto const old_secondary_next = intr->secondary_timeline.next_version_;
+        intr->secondary_timeline.next_version_ = 0;
         atomic_memcpy((void *)dest, buffer, sizeof(db_metadata));
         atomic_memcpy(
             ((std::byte *)dest) + sizeof(db_metadata),
@@ -520,6 +594,8 @@ namespace detail
             bytes - sizeof(db_metadata));
         std::atomic_ref<uint64_t>(dest->root_offsets.next_version_)
             .store(old_next_version, std::memory_order_release);
+        std::atomic_ref<uint64_t>(dest->secondary_timeline.next_version_)
+            .store(old_secondary_next, std::memory_order_release);
     };
 }
 

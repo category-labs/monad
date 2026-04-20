@@ -43,9 +43,12 @@ struct OnDiskDbConfig
     // fixed history length if contains value, otherwise rely on db to adjust
     // history length upon disk usage
     std::optional<uint64_t> fixed_history_length{std::nullopt};
-    // Number of chunks to allocate for root offsets when initializing the disk.
-    // Each chunk can hold 1 << 24 = 16777216 historical entries.
-    // This field must be power of 2.
+    // Number of cnv chunks allocated for root-offset ring storage. All are
+    // assigned to the primary ring at pool init (secondary ring starts
+    // empty). On activating the secondary timeline, the primary ring shrinks
+    // in half and the freed chunk(s) are handed to the secondary. On
+    // deactivation the chunks are returned to the primary. Must be a power
+    // of 2. Each chunk can hold 1 << 24 = 16777216 historical entries.
     uint32_t root_offsets_chunk_count{2};
 };
 

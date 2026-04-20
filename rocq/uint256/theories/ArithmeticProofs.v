@@ -34,8 +34,8 @@ Import B.U64.
 
 Open Scope Z_scope.
 
-Local Definition to_Z_words := WL.to_Z_words.
-Local Definition modulus_words := WL.modulus_words.
+Local Notation to_Z_words := WL.to_Z_words.
+Local Notation modulus_words := WL.modulus_words.
 
 Definition modulus256 : Z := modulus_words 4.
 
@@ -57,11 +57,6 @@ Proof.
   intros [x0 x1 x2 x3]. reflexivity.
 Qed.
 
-Lemma words_to_uint256_roundtrip : forall x,
-  words_to_uint256 (uint256_to_words x) = x.
-Proof.
-  intros [x0 x1 x2 x3]. reflexivity.
-Qed.
 
 Lemma to_Z_uint256_bounds : forall x,
   0 <= to_Z_uint256 x < modulus256.
@@ -597,7 +592,7 @@ Proof.
   assert (Hlb : modulus_words 3 * to_Z x3 <=
     to_Z_uint256 (mk_uint256 x0 x1 x2 x3)).
   {
-    unfold to_Z_uint256, to_Z_words.
+    unfold to_Z_uint256.
     cbn.
     unfold modulus_words, WL.modulus_words.
     simpl.
@@ -740,7 +735,7 @@ Proof.
   - intro Hz.
     destruct modulus as [m0 m1 m2 m3].
     unfold to_Z_uint256, to_Z_words in Hz.
-    cbn [uint256_to_words WL.to_Z_words w0 w1 w2 w3] in Hz.
+    cbn [uint256_to_words w0 w1 w2 w3] in Hz.
     pose proof (spec_to_Z m0) as H0.
     pose proof (spec_to_Z m1) as H1.
     pose proof (spec_to_Z m2) as H2.
@@ -777,7 +772,7 @@ Lemma to_Z_uint256_split_w3 : forall x,
 Proof.
   intros [x0 x1 x2 x3].
   unfold to_Z_uint256, to_Z_words, modulus_words, WL.modulus_words.
-  cbn [uint256_to_words WL.to_Z_words].
+  cbn [uint256_to_words].
   nia.
 Qed.
 
@@ -1062,16 +1057,16 @@ Proof.
       to_Z_words (ud_rem divr)).
     { destruct (ud_rem divr) as [|r0 [|r1 [|r2 [|r3 rest]]]].
       - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
-        cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+        cbn [app firstn repeat uint256_to_words w0 w1 w2 w3].
         rewrite !spec_zero. lia.
       - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
-        cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+        cbn [app firstn repeat uint256_to_words w0 w1 w2 w3].
         rewrite !spec_zero. lia.
       - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
-        cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+        cbn [app firstn repeat uint256_to_words w0 w1 w2 w3].
         rewrite !spec_zero. lia.
       - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
-        cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+        cbn [app firstn repeat uint256_to_words w0 w1 w2 w3].
         rewrite !spec_zero. lia.
       - pose proof
           (WL.to_Z_words_firstn_skipn (r0 :: r1 :: r2 :: r3 :: rest) 4
@@ -1089,9 +1084,7 @@ Proof.
           { pose proof (proj2 Hrem_small) as Hsmall.
             assert (Htail_le : modulus256 * to_Z_words rest <=
               to_Z_words (r0 :: r1 :: r2 :: r3 :: rest)).
-            { change (modulus256 * WL.to_Z_words rest <=
-                WL.to_Z_words (r0 :: r1 :: r2 :: r3 :: rest)).
-              rewrite Hsplit.
+            { rewrite Hsplit.
               assert (Hprefix_nonneg_wl :
                 0 <= WL.to_Z_words [r0; r1; r2; r3]).
               { exact Hprefix_nonneg. }
@@ -1102,9 +1095,9 @@ Proof.
           pose proof (to_Z_uint256_bounds modulus) as Hmod_bound.
           assert (Hmod256_pos : 0 < modulus256) by lia.
           nia. }
-        unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
-        cbn [app firstn repeat uint256_to_words WL.to_Z_words].
-        assert (Hrest0_wl : WL.to_Z_words rest = 0).
+        unfold words_to_uint256, fit_words.
+        cbn [app firstn uint256_to_words to_Z_uint256 to_Z_words].
+        assert (Hrest0_wl : to_Z_words rest = 0).
         { exact Hrest0. }
         rewrite Hrest0_wl.
         cbn.
@@ -1127,9 +1120,7 @@ Proof.
       apply Z.mod_unique with (q := to_Z_words (ud_quot divr));
         [left; exact Hrange_local|nia].
     + exact Hrange.
-
 Qed.
-
 
 Theorem mulmod_None_iff : forall x y modulus,
 (*
@@ -1284,12 +1275,12 @@ Proof.
       { unfold modulus256, modulus_words, WL.modulus_words, base.
         rewrite width_is_64. nia. }
       nia. }
-    unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
-    cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
-    assert (Hrest0_wl : WL.to_Z_words rest = 0).
+    unfold words_to_uint256, fit_words.
+    cbn [app firstn uint256_to_words to_Z_uint256 to_Z_words].
+    assert (Hrest0_wl : to_Z_words rest = 0).
     { exact Hrest0. }
     rewrite Hrest0_wl.
-    cbn [w0 w1 w2 w3].
+    cbn.
     reflexivity.
 Qed.
 
@@ -1302,7 +1293,6 @@ Proof.
   rewrite <- Z.pow_add_r by lia.
   reflexivity.
 Qed.
-
 Theorem mulmod_correct : forall x y modulus r,
   0 < to_Z_uint256 modulus ->
   mulmod x y modulus = Some r ->
@@ -1842,24 +1832,19 @@ Lemma modulus_words_scale_mod : forall k n a,
     (modulus_words k * a) mod modulus_words (k + n).
 Proof.
   intros k n a.
-  unfold modulus_words in *.
   pose proof (WL.modulus_words_pos k) as Hkpos.
   pose proof (WL.modulus_words_pos n) as Hnpos.
-  assert (Hnpos0 : 0 < WL.modulus_words n) by lia.
   rewrite modulus_words_add.
   apply Z.mod_unique with (q := a / modulus_words n).
   - left.
-    pose proof (Z.mod_pos_bound a (WL.modulus_words n) Hnpos0) as Hmod.
+    pose proof (Z.mod_pos_bound a (WL.modulus_words n) ltac:(lia)) as Hmod.
     replace (modulus_words k * modulus_words n) with
       (WL.modulus_words k * WL.modulus_words n) by reflexivity.
     split; nia.
-  - pose proof (Z.div_mod a (WL.modulus_words n) ltac:(lia)) as Hdiv.
-    replace (modulus_words k * modulus_words n) with
-      (WL.modulus_words k * WL.modulus_words n) by reflexivity.
+  - pose proof (Z.div_mod a (modulus_words n) ltac:(lia)) as Hdiv.
     replace a with
-      (WL.modulus_words n * (a / WL.modulus_words n) + a mod WL.modulus_words n)
+      (modulus_words n * (a / modulus_words n) + a mod modulus_words n)
       at 1 by (symmetry; exact Hdiv).
-    change (a / modulus_words n) with (a / WL.modulus_words n).
     ring.
 Qed.
 
@@ -1921,7 +1906,7 @@ Proof.
         pose proof (spec_to_Z shift) as HshiftZ.
         rewrite (bounded_shift_nat_correct word_width shift ltac:(lia)
           ltac:(unfold word_width; rewrite width_is_64; exact H64lt)).
-        unfold to_Z_words, uint256_to_words.
+        unfold uint256_to_words.
         cbn [w0 w1 w2 w3].
         replace
           (WL.to_Z_words
@@ -1946,10 +1931,10 @@ Proof.
           (firstn (length [x0; x1; x2; x3])
              (shift_left_words [x0; x1; x2; x3]
                 (Z.to_nat (to_Z shift)))).
-        rewrite to_Z_words_firstn_shift_left_mod.
+rewrite to_Z_words_firstn_shift_left_mod.
         2: { rewrite width_is_64. change (Pos.to_nat 64) with 64%nat.
              apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia. lia. }
-        unfold modulus256, to_Z_words.
+        unfold modulus256.
         replace (length [x0; x1; x2; x3]) with 4%nat by reflexivity.
         replace (Z.of_nat (Z.to_nat (to_Z shift))) with (to_Z shift)
           by (symmetry; apply Z2Nat.id; lia).
@@ -1970,7 +1955,7 @@ Proof.
           ltac:(unfold word_width; rewrite width_is_64, Hshift64; lia)).
         replace (Z.to_nat (to_Z (shift - shl 1 6)%Uint)) with
           (Z.to_nat (to_Z shift - 64)) by (rewrite Hshift64; reflexivity).
-        unfold to_Z_words, uint256_to_words.
+        unfold uint256_to_words.
         cbn [w0 w1 w2 w3].
         cbn [WL.to_Z_words].
         rewrite spec_zero.
@@ -2051,7 +2036,7 @@ Proof.
              ((WL.U64.to_Z x3 + base WL.U64.width * 0) *
               2 ^ (to_Z shift - 64))).
         2: { change (modulus_words 4) with (modulus_words (1 + 3)).
-             rewrite modulus_words_add. unfold to_Z_words.
+             rewrite modulus_words_add.
              cbn [WL.to_Z_words].
              change (WL.modulus_words 3) with (modulus_words 3).
              ring. }
@@ -2087,7 +2072,7 @@ Proof.
           ltac:(unfold word_width; rewrite width_is_64, Hshift128; lia)).
         replace (Z.to_nat (to_Z (shift - shl 1 7)%Uint)) with
           (Z.to_nat (to_Z shift - 128)) by (rewrite Hshift128; reflexivity).
-        unfold to_Z_words, uint256_to_words.
+        unfold uint256_to_words.
         cbn [w0 w1 w2 w3].
         cbn [WL.to_Z_words].
         rewrite !spec_zero.
@@ -2160,7 +2145,7 @@ Proof.
            modulus_words 4 *
              (WL.to_Z_words [x2; x3] * 2 ^ (to_Z shift - 128))).
         2: { change (modulus_words 4) with (modulus_words (2 + 2)).
-             rewrite modulus_words_add. unfold to_Z_words.
+             rewrite modulus_words_add.
              cbn [WL.to_Z_words].
              change (WL.modulus_words 2) with (modulus_words 2).
              nia. }
@@ -2195,7 +2180,7 @@ Proof.
           ltac:(unfold word_width; rewrite width_is_64, Hshift192; lia)).
         replace (Z.to_nat (to_Z (shift - shl (one + one + one)%Uint 6)%Uint)) with
           (Z.to_nat (to_Z shift - 192)) by (rewrite Hshift192; reflexivity).
-        unfold to_Z_words, uint256_to_words.
+        unfold uint256_to_words.
         cbn [w0 w1 w2 w3].
         cbn [WL.to_Z_words].
         rewrite !spec_zero.
@@ -2268,7 +2253,7 @@ Proof.
            mod modulus_words 4).
         2: { f_equal.
              change (modulus_words 4) with (modulus_words (3 + 1)).
-             rewrite modulus_words_add. unfold to_Z_words.
+             rewrite modulus_words_add.
              cbn [WL.to_Z_words].
              change (WL.modulus_words 1) with (modulus_words 1).
              ring. }
@@ -2287,7 +2272,7 @@ Proof.
            mod modulus_words 4)).
         { f_equal.
           change (modulus_words 4) with (modulus_words (3 + 1)).
-          rewrite modulus_words_add. unfold to_Z_words.
+          rewrite modulus_words_add.
           cbn [WL.to_Z_words].
           change (WL.modulus_words 1) with (modulus_words 1).
           ring. }
@@ -2315,7 +2300,7 @@ Lemma to_Z_uint256_zero_high : forall s0 s1 s2 s3,
   to_Z_uint256 (mk_uint256 s0 s1 s2 s3) = to_Z s0.
 Proof.
   intros s0 s1 s2 s3 H1 H2 H3.
-  unfold to_Z_uint256, to_Z_words.
+  unfold to_Z_uint256.
   cbn.
   rewrite H1, H2, H3.
   lia.
@@ -2326,7 +2311,7 @@ Lemma to_Z_uint256_high_ge_base : forall s0 s1 s2 s3,
   base width <= to_Z_uint256 (mk_uint256 s0 s1 s2 s3).
 Proof.
   intros s0 s1 s2 s3 Hhi.
-  unfold to_Z_uint256, to_Z_words.
+  unfold to_Z_uint256.
   cbn.
   pose proof (spec_to_Z s0) as H0.
   pose proof (spec_to_Z s1) as H1.

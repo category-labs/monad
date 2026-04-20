@@ -74,7 +74,7 @@ evmc::uint256be
 EvmcHostBase::get_balance(evmc::address const &address) const noexcept
 {
     try {
-        return intx::be::store<evmc::uint256be>(state_.get_balance(address));
+        return intx::be::store<uint256_be_t>(state_.get_balance(address));
     }
     catch (...) {
         capture_current_exception();

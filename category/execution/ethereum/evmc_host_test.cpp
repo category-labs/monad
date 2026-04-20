@@ -104,7 +104,7 @@ TYPED_TEST(TraitsTest, get_tx_context)
         .block_number = 15'000'000,
         .block_timestamp = 1677616016,
         .block_gas_limit = 50'000,
-        .block_prev_randao = evmc::uint256be{10'000'000u},
+        .block_prev_randao = uint256_be_t{10'000'000u},
     };
     intx::be::store(ctx.chain_id.bytes, uint256_t{chain_id});
     intx::be::store(ctx.tx_gas_price.bytes, gas_cost);

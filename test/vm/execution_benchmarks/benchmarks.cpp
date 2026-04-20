@@ -15,6 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/bytes.hpp>
 
 #include <test_resource_data.h>
 
@@ -297,7 +298,7 @@ namespace
                         .sender = tx.sender,
                         .input_data = tx.data.data(),
                         .input_size = tx.data.size(),
-                        .value = intx::be::store<evmc::uint256be>(tx.value),
+                        .value = intx::be::store<monad::uint256_be_t>(tx.value),
                         .create2_salt = {},
                         .code_address = recipient,
                         .memory_handle = test_memory.data,

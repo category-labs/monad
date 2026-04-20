@@ -101,9 +101,8 @@ namespace monad::vm::runtime
             .sender = ctx->env.recipient,
             .input_data = (*size > 0) ? ctx->memory.data + *offset : nullptr,
             .input_size = *size,
-            .value = static_cast<evmc::bytes32>(bytes32_from_uint256(value)),
-            .create2_salt =
-                static_cast<evmc::bytes32>(bytes32_from_uint256(salt_word)),
+            .value = bytes32_from_uint256(value),
+            .create2_salt = bytes32_from_uint256(salt_word),
             .code_address = {},
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,

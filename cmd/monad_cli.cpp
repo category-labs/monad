@@ -421,7 +421,7 @@ void do_version(DbStateMachine &sm, std::string_view const version)
 
 void do_proposal(DbStateMachine &sm, std::string_view const input)
 {
-    bytes32_t const block_id = evmc::literals::parse<bytes32_t>(input);
+    bytes32_t const block_id = from_hex<bytes32_t>(input).value_or(bytes32_t{});
     if (block_id == bytes32_t{}) {
         fmt::println(
             "Invalid block_id input: please input a 32-byte hex string.");

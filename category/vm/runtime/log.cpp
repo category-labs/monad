@@ -32,7 +32,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void log_impl(
         Context *ctx, uint256_t const &offset_word, uint256_t const &size_word,
-        std::span<evmc::bytes32 const> topics)
+        std::span<bytes32_t const> topics)
     {
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
@@ -77,7 +77,7 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic1_ptr)),
+                bytes32_from_uint256(*topic1_ptr),
             }});
     }
 
@@ -93,8 +93,8 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic1_ptr)),
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic2_ptr)),
+                bytes32_from_uint256(*topic1_ptr),
+                bytes32_from_uint256(*topic2_ptr),
             }});
     }
 
@@ -111,9 +111,9 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic1_ptr)),
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic2_ptr)),
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic3_ptr)),
+                bytes32_from_uint256(*topic1_ptr),
+                bytes32_from_uint256(*topic2_ptr),
+                bytes32_from_uint256(*topic3_ptr),
             }});
     }
 
@@ -130,10 +130,10 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic1_ptr)),
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic2_ptr)),
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic3_ptr)),
-                static_cast<evmc::bytes32>(bytes32_from_uint256(*topic4_ptr)),
+                bytes32_from_uint256(*topic1_ptr),
+                bytes32_from_uint256(*topic2_ptr),
+                bytes32_from_uint256(*topic3_ptr),
+                bytes32_from_uint256(*topic4_ptr),
             }});
     }
 

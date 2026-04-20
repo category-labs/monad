@@ -32,6 +32,7 @@
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -2884,7 +2885,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_updates_auto_expire)
     EXPECT_EQ(
         test::DbAccessor::aux(db)
             .metadata_ctx()
-            .get_auto_expire_version_metadata(),
+            .get_auto_expire_version_metadata(monad::mpt::timeline_id::primary),
         0);
 
     // Move trie from version 0 to version 1000
@@ -2895,7 +2896,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_updates_auto_expire)
     EXPECT_EQ(
         test::DbAccessor::aux(db)
             .metadata_ctx()
-            .get_auto_expire_version_metadata(),
+            .get_auto_expire_version_metadata(monad::mpt::timeline_id::primary),
         start_version)
         << "auto_expire_version_metadata should be moved forward with "
            "move_trie_version_forward";

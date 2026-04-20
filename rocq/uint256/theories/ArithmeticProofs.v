@@ -685,8 +685,8 @@ Proof.
     pose proof (to_Z_uint256_bounds modulus) as Hbounds.
     assert (Hmod : 0 < to_Z_uint256 modulus) by lia.
     unfold addmod in Hnone.
-    destruct (((negb (w3 modulus =? 0)) && (w3 x <=? w3 modulus) &&
-        (w3 y <=? w3 modulus))%bool) eqn:Hguard.
+    destruct (((negb (w3 modulus =? 0)) && (w3 x <=? w3 modulus)%Uint &&
+        (w3 y <=? w3 modulus)%Uint)%bool) eqn:Hguard.
     + (* Stalled here: the fast path reduces to [Some _], but the proof
          script needs a cleaner local contradiction argument than repeated
          [simpl]/[discriminate] against the nested boolean branch. *)
@@ -710,9 +710,65 @@ Abort.
 *)
   addmod x y modulus = None <->
   to_Z_uint256 modulus = 0.
-(* Remaining: Show The Fast Branch Is Always [Some _] And That The
-   Fallback [Udivrem] Branch Is [None] Exactly When The Modulus Is Zero. *)
-Admitted.
+Proof.
+  intros x y modulus.
+  split.
+  - intro Hnone.
+    destruct (Z.eq_dec (to_Z_uint256 modulus) 0) as [Hz|Hz]; auto.
+    pose proof (to_Z_uint256_bounds modulus) as Hmod_bound.
+    assert (Hmod : 0 < to_Z_uint256 modulus) by lia.
+    exfalso.
+    destruct (negb (w3 modulus =? 0)%Uint) eqn:Hm;
+      destruct (w3 x <=? w3 modulus)%Uint eqn:Hx;
+      destruct (w3 y <=? w3 modulus)%Uint eqn:Hy;
+      unfold addmod in Hnone; rewrite Hm, Hx, Hy in Hnone;
+      cbn zeta in Hnone;
+      try (destruct (udivrem 5 4 (add_words_full_uint256 x y)
+             (uint256_to_words modulus)) eqn:Hud; [discriminate|];
+           destruct (udivrem_uint256_divisor_exists 5
+             (add_words_full_uint256 x y) modulus Hmod) as [r Hr];
+           rewrite Hr in Hud; discriminate).
+    repeat match type of Hnone with
+      | context [subb ?a ?b] =>
+          let H := fresh "Hsub" in destruct (subb a b) eqn:H
+      | context [addc ?a ?b] =>
+          let H := fresh "Hadd" in destruct (addc a b) eqn:H
+      | context [if ?b then _ else _] =>
+          let Hb := fresh "Hb" in destruct b eqn:Hb
+      end; discriminate.
+  - intro Hz.
+    destruct modulus as [m0 m1 m2 m3].
+    unfold to_Z_uint256, to_Z_words in Hz.
+    cbn [uint256_to_words WL.to_Z_words w0 w1 w2 w3] in Hz.
+    pose proof (spec_to_Z m0) as H0.
+    pose proof (spec_to_Z m1) as H1.
+    pose proof (spec_to_Z m2) as H2.
+    pose proof (spec_to_Z m3) as H3.
+    unfold base in Hz, H0, H1, H2, H3.
+    rewrite !width_is_64 in Hz, H0, H1, H2, H3.
+    assert (Hm0 : to_Z m0 = 0).
+    { nia. }
+    assert (Hm1 : to_Z m1 = 0).
+    { nia. }
+    assert (Hm2 : to_Z m2 = 0).
+    { nia. }
+    assert (Hm3 : to_Z m3 = 0).
+    { nia. }
+    assert (Hcount :
+      count_significant_words (uint256_to_words (mk_uint256 m0 m1 m2 m3)) = 0%nat).
+    { unfold count_significant_words.
+      cbn [uint256_to_words rev skip_leading_zeros app w0 w1 w2 w3].
+      rewrite !spec_eqb, Hm0, Hm1, Hm2, Hm3, !spec_zero.
+      reflexivity. }
+    unfold addmod.
+    cbn [w3].
+    rewrite spec_eqb, Hm3, spec_zero.
+    simpl.
+    unfold udivrem.
+    rewrite Hcount.
+    reflexivity.
+Qed.
+
 
 Lemma to_Z_uint256_split_w3 : forall x,
   to_Z_uint256 x =
@@ -1050,7 +1106,7 @@ Proof.
         assert (Hrest0_wl : WL.to_Z_words rest = 0).
         { exact Hrest0. }
         rewrite Hrest0_wl.
-        cbn [w0 w1 w2 w3].
+        cbn.
         reflexivity. }
     rewrite Hrem_value.
     split.
@@ -1106,9 +1162,50 @@ Abort.
 *)
   mulmod x y modulus = None <->
   to_Z_uint256 modulus = 0.
-(* Remaining: Rule Out [None] By Contradiction From Divisor
-   Positivity, Exactly As For [Addmod_None_Iff], But In The 8-By-4 Product Case. *)
-Admitted.
+Proof.
+  intros x y modulus.
+  split.
+  - intro Hnone.
+    destruct (Z.eq_dec (to_Z_uint256 modulus) 0) as [Hz|Hz]; auto.
+    pose proof (to_Z_uint256_bounds modulus) as Hbounds.
+    assert (Hmod : 0 < to_Z_uint256 modulus) by lia.
+    exfalso.
+    unfold mulmod in Hnone.
+    destruct (udivrem 8 4
+      (RMP.truncating_mul_runtime (uint256_to_words x) (uint256_to_words y) 8)
+      (uint256_to_words modulus)) eqn:Hud; simpl in Hnone;
+      [discriminate|].
+    destruct (udivrem_uint256_divisor_exists 8
+      (RMP.truncating_mul_runtime (uint256_to_words x) (uint256_to_words y) 8)
+      modulus Hmod) as [r Hr].
+    rewrite Hr in Hud. discriminate.
+  - intro Hz.
+    destruct modulus as [m0 m1 m2 m3].
+    unfold to_Z_uint256, to_Z_words in Hz.
+    cbn [uint256_to_words WL.to_Z_words w0 w1 w2 w3] in Hz.
+    pose proof (spec_to_Z m0) as H0.
+    pose proof (spec_to_Z m1) as H1.
+    pose proof (spec_to_Z m2) as H2.
+    pose proof (spec_to_Z m3) as H3.
+    unfold base in Hz, H0, H1, H2, H3.
+    rewrite !width_is_64 in Hz, H0, H1, H2, H3.
+    assert (Hm0 : to_Z m0 = 0) by nia.
+    assert (Hm1 : to_Z m1 = 0) by nia.
+    assert (Hm2 : to_Z m2 = 0) by nia.
+    assert (Hm3 : to_Z m3 = 0) by nia.
+    assert (Hcount :
+      count_significant_words (uint256_to_words (mk_uint256 m0 m1 m2 m3)) = 0%nat).
+    { unfold count_significant_words.
+      cbn [uint256_to_words rev skip_leading_zeros app w0 w1 w2 w3].
+      rewrite !spec_eqb, Hm0, Hm1, Hm2, Hm3, !spec_zero.
+      reflexivity. }
+    unfold mulmod.
+    cbn [uint256_to_words].
+    unfold udivrem.
+    rewrite Hcount.
+    reflexivity.
+Qed.
+
 
 Lemma to_Z_uint256_words_to_uint256_small : forall ws,
 (*
@@ -1143,9 +1240,58 @@ Abort.
 *)
   0 <= to_Z_words ws < modulus256 ->
   to_Z_uint256 (words_to_uint256 ws) = to_Z_words ws.
-(* Remaining: Prove That Any Tail Beyond Four Words Must Be Zero Under
-   The Strict [< Modulus256] Hypothesis, Then The First Four Words Carry The Whole Value. *)
-Admitted.
+Proof.
+  intros ws Hbound.
+  destruct ws as [|x0 [|x1 [|x2 [|x3 rest]]]].
+  - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+    rewrite !spec_zero. lia.
+  - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+    rewrite !spec_zero. lia.
+  - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+    rewrite !spec_zero. lia.
+  - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+    rewrite !spec_zero. lia.
+  - pose proof
+      (WL.to_Z_words_firstn_skipn (x0 :: x1 :: x2 :: x3 :: rest) 4
+         ltac:(simpl; lia)) as Hsplit.
+    cbn [firstn skipn] in Hsplit.
+    change (WL.modulus_words 4) with modulus256 in Hsplit.
+    pose proof (WL.to_Z_words_bound [x0; x1; x2; x3]) as Hprefix.
+    change (0 <= to_Z_words [x0; x1; x2; x3] < modulus256) in Hprefix.
+    pose proof (WL.to_Z_words_bound rest) as Hrest.
+    assert (Hrest0 : to_Z_words rest = 0).
+    { destruct Hrest as [Hrest_nonneg _].
+      pose proof (proj1 Hprefix) as Hprefix_nonneg.
+      assert (Htail_small : modulus256 * to_Z_words rest < modulus256).
+      { pose proof (proj2 Hbound) as Hsmall.
+        assert (Htail_le : modulus256 * to_Z_words rest <=
+          to_Z_words (x0 :: x1 :: x2 :: x3 :: rest)).
+        { change (modulus256 * WL.to_Z_words rest <=
+            WL.to_Z_words (x0 :: x1 :: x2 :: x3 :: rest)).
+          rewrite Hsplit.
+          assert (Hprefix_nonneg_wl : 0 <= WL.to_Z_words [x0; x1; x2; x3]).
+          { exact Hprefix_nonneg. }
+          lia. }
+        lia. }
+      assert (Hrest_nonneg_local : 0 <= to_Z_words rest).
+      { exact Hrest_nonneg. }
+      assert (Hmod256_pos : 0 < modulus256).
+      { unfold modulus256, modulus_words, WL.modulus_words, base.
+        rewrite width_is_64. nia. }
+      nia. }
+    unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+    cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+    assert (Hrest0_wl : WL.to_Z_words rest = 0).
+    { exact Hrest0. }
+    rewrite Hrest0_wl.
+    cbn [w0 w1 w2 w3].
+    reflexivity.
+Qed.
+
 
 Lemma modulus256_square : modulus256 * modulus256 = modulus_words 8.
 Proof.
@@ -1197,7 +1343,80 @@ Abort.
 (* Remaining: Finish The 512-Bit Product Path By Relating The Local
    [Udivrem 8 4] Result To The Division Proof Module, Then Rewrite The Remainder Back
    Through [To_Z_Uint256_Words_To_Uint256_Small]. *)
-Admitted.
+Proof.
+  intros x y modulus r Hmod Hmul.
+  unfold mulmod in Hmul.
+  set (prod :=
+    RMP.truncating_mul_runtime (uint256_to_words x) (uint256_to_words y) 8)
+    in *.
+  destruct (udivrem 8 4 prod (uint256_to_words modulus)) as [divr|] eqn:Hud;
+    try discriminate.
+  inversion Hmul; subst r; clear Hmul.
+  pose proof
+    (RMP.truncating_mul_runtime_length
+       (uint256_to_words x) (uint256_to_words y) 8 ltac:(lia))
+    as Hprod_len.
+  pose proof (uint256_to_words_length modulus) as Hmod_len.
+  assert (Hmod_pos : to_Z_words (uint256_to_words modulus) > 0).
+  { unfold to_Z_uint256 in Hmod. lia. }
+  pose proof
+    (DP.udivrem_correct 8 4 prod (uint256_to_words modulus) divr
+       Hprod_len Hmod_len Hmod_pos Hud)
+    as [Hdiv Hrange].
+  pose proof
+    (RMP.truncating_mul_runtime_correct
+       (uint256_to_words x) (uint256_to_words y) 8
+       ltac:(rewrite !uint256_to_words_length; lia)
+       ltac:(rewrite !uint256_to_words_length; lia)
+       ltac:(lia)
+       ltac:(rewrite !uint256_to_words_length; lia))
+    as Hprod_mod.
+  pose proof (to_Z_uint256_bounds x) as Hx_bound.
+  pose proof (to_Z_uint256_bounds y) as Hy_bound.
+  assert (Hprod_small : 0 <= to_Z_words prod < modulus_words 8).
+  { pose proof (WL.to_Z_words_bound prod) as Hbound.
+    assert (Hlen_prod : length prod = 8%nat).
+    { change
+        (length
+           (RMP.truncating_mul_runtime
+              (uint256_to_words x) (uint256_to_words y) 8) = 8%nat).
+      exact Hprod_len. }
+    rewrite Hlen_prod in Hbound.
+    exact Hbound. }
+  assert (Hxy_small :
+    0 <= to_Z_uint256 x * to_Z_uint256 y < modulus_words 8).
+  { rewrite <- modulus256_square.
+    nia. }
+  assert (Hprod_value :
+    to_Z_words prod = to_Z_uint256 x * to_Z_uint256 y).
+  { unfold to_Z_uint256 in Hprod_mod.
+    rewrite Z.mod_small in Hprod_mod by exact Hprod_small.
+    rewrite Z.mod_small in Hprod_mod by exact Hxy_small.
+    exact Hprod_mod. }
+  assert (Hrem_small : 0 <= to_Z_words (ud_rem divr) < modulus256).
+  { pose proof (to_Z_uint256_bounds modulus) as Hmod_bound.
+    split.
+    - exact (proj1 Hrange).
+    - eapply Z.lt_trans; [exact (proj2 Hrange)| exact (proj2 Hmod_bound)]. }
+  pose proof
+    (to_Z_uint256_words_to_uint256_small (ud_rem divr) Hrem_small)
+    as Hrem_value.
+  rewrite Hrem_value.
+  split.
+  - assert (Hprod_value_wl :
+      WL.to_Z_words prod = to_Z_uint256 x * to_Z_uint256 y).
+    { exact Hprod_value. }
+    rewrite Hprod_value_wl in Hdiv.
+    assert (Hrange_local :
+      0 <= to_Z_words (ud_rem divr) < to_Z_uint256 modulus).
+    { exact Hrange. }
+    apply Z.mod_unique with (q := to_Z_words (ud_quot divr)).
+    + left. exact Hrange_local.
+    +       rewrite <- (Z.mul_comm (to_Z_words (ud_quot divr))
+                   (to_Z_uint256 modulus)).
+      exact Hdiv.
+  - exact Hrange.
+Qed.
 
 (** ** Signed helpers *)
 

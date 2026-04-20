@@ -5,13 +5,14 @@
 
 From Stdlib Require Import ZArith Lia List.
 From Stdlib Require Import DoubleType.
-From Uint256 Require Import Uint Primitives Words WordsLemmas Division.
+From Uint256 Require Import Uint Base Primitives Words WordsLemmas Division.
 
-Module MakeProofs (U64 : Uint64) (U128 : Uint128)
-  (Import Bridge : UintWiden U64 U128).
-Import U64.
-Include Division.Make(U64)(U128)(Bridge).
-Module WL := WordsLemmas.MakeProofs(U64).
+Module MakeProofsOn (B : Base.BaseProofSig) (U128 : Uint128)
+  (Import Bridge : UintWiden B.U64 U128)
+  (Div : Division.DivisionProofSig(B)(U128)(Bridge))
+  (WL : WordsLemmas.WordsLemmasProofSig with Module U64 := B.U64).
+Include Div.
+Import B.U64.
 Import WL.
 
 Import ListNotations.
@@ -1394,8 +1395,8 @@ Proof.
     replace (Z.of_nat (j + 0)) with (Z.of_nat j) by lia.
     rewrite Z.mul_0_r, Z.add_0_l.
     reflexivity.
-  - change (MakeProofs.set_word) with set_word.
-    change (MakeProofs.get_word) with get_word.
+  - change (MakeProofsOn.set_word) with set_word.
+    change (MakeProofsOn.get_word) with get_word.
     set (prod := U128.mul q_hat (widen vj)).
     set (t := U128.sub (U128.sub (widen (get_word u_seg j)) k)
       (widen (trunc prod))).
@@ -1468,8 +1469,8 @@ Proof.
     replace (j + 0)%nat with j by lia.
     unfold modulus_words. ring. }
   (* Step: vj :: vs_rest *)
-  change (MakeProofs.set_word) with set_word.
-  change (MakeProofs.get_word) with get_word.
+  change (MakeProofsOn.set_word) with set_word.
+  change (MakeProofsOn.get_word) with get_word.
   set (t := U128.add (U128.add (widen (get_word u_seg j)) (widen vj)) k).
   assert (Hk': U128.to_Z (U128.shr t 64) <= 1).
   { (* t = u_seg[j] + vj + k as U128. sum < 2*base since u,v < base and k <= 1 *)
@@ -1576,8 +1577,8 @@ Lemma knuth_div_subtract_correct : forall u_seg q_hat v n,
 Proof.
   intros u_seg q_hat v n Hlen_u Hlen_v Hvpos Hqhat Hlb Hub.
   unfold knuth_div_subtract.
-  change (MakeProofs.get_word) with get_word in *.
-  change (MakeProofs.set_word) with set_word in *.
+  change (MakeProofsOn.get_word) with get_word in *.
+  change (MakeProofsOn.set_word) with set_word in *.
   set (Bpow := modulus_words n).
   assert (HBpow_pos : Bpow > 0).
   { unfold Bpow. apply modulus_words_pos. }
@@ -1910,8 +1911,8 @@ Lemma knuth_div_estimate_bounds : forall u v i n,
   /\ to_Z_words (get_segment u i (n + 1)) < (U128.to_Z q_hat + 1) * to_Z_words v.
 Proof.
   intros u v i n Hlv Hn Hi Hvpos Hnorm Hseg_small Hmsw q_hat Hqhat_def Hq_nz.
-  change (MakeProofs.get_word) with get_word in *.
-  change (MakeProofs.get_segment) with get_segment in *.
+  change (MakeProofsOn.get_word) with get_word in *.
+  change (MakeProofsOn.get_segment) with get_segment in *.
   set (B := base width).
   set (M := modulus_words (n - 2)).
   set (u_seg := get_segment u i (n + 1)).
@@ -1986,7 +1987,7 @@ Proof.
       in Hskip_u0
       by reflexivity.
     unfold u_seg in Hskip_u0.
-    change (MakeProofs.get_segment) with get_segment in Hskip_u0.
+    change (MakeProofsOn.get_segment) with get_segment in Hskip_u0.
     rewrite !get_word_get_segment in Hskip_u0 by lia.
     unfold u_lo, u_mid, u_hi in Hskip_u0.
     replace (i + (n - 2))%nat with (i + n - 2)%nat in Hskip_u0 by lia.
@@ -2338,8 +2339,8 @@ Proof.
   unfold knuth_div_step.
   set (q_hat := knuth_div_estimate (get_word u (i + n)) (get_word u (i + n - 1))
     (get_word u (i + n - 2)) (get_word v (n - 1)) (get_word v (n - 2))).
-  change (MakeProofs.get_word) with get_word.
-  change (MakeProofs.get_segment) with get_segment.
+  change (MakeProofsOn.get_word) with get_word.
+  change (MakeProofsOn.get_segment) with get_segment.
   fold q_hat.
   destruct (U128.eqb q_hat U128.zero) eqn:Hq;
     [| fold (get_segment u i (n + 1))].
@@ -2658,7 +2659,7 @@ Proof.
     Hlv Hn Hlen Hvpos Hnorm Hseg_small Hmsw) as Hstep.
   destruct (knuth_div_step u v current_i n) as [u' q_i].
   destruct Hstep as [Heuclid [Hrem [Hlen' [Hout Hmsw_zero]]]].
-  change (MakeProofs.set_word) with set_word.
+  change (MakeProofsOn.set_word) with set_word.
   destruct current_i as [|ci'].
   - (* current_i = 0: last iteration, recursive call has fuel = 0 *)
     simpl knuth_div_loop.
@@ -2761,7 +2762,7 @@ Theorem knuth_div_correct : forall m n u v,
   0 <= to_Z_words (firstn n u_after) < to_Z_words v.
 Proof.
   intros m n u v Hlu Hlv Hmn Hn Hvpos Hnorm Hseg_small Hmsw.
-  unfold knuth_div. change (MakeProofs.extend_words) with extend_words.
+  unfold knuth_div. change (MakeProofsOn.extend_words) with extend_words.
   assert (Hmsw': to_Z (get_word u (m - n + n)) <= to_Z (get_word v (n - 1)))
     by (replace (m - n + n)%nat with m by lia; exact Hmsw).
   assert (Hquot_zero: forall j, (j <= m - n)%nat ->
@@ -2934,13 +2935,13 @@ Proof.
     pose proof (spec_div U64.zero (get_word u 0) (get_word v 0) Hv0_pos H0_lt)
       as [q [r0 [Hdiv_eq [Hdiv_val Hdiv_lt]]]].
     rewrite spec_zero in Hdiv_val.
-    change (MakeProofs.get_word) with get_word in Hudiv.
+    change (MakeProofsOn.get_word) with get_word in Hudiv.
     rewrite Hdiv_eq in Hudiv.
     inversion Hudiv; clear Hudiv; subst.
     cbv beta iota zeta delta [ud_quot ud_rem] in |- *.
-    change (MakeProofs.get_word) with get_word.
-    change (MakeProofs.set_word) with set_word.
-    change (MakeProofs.extend_words) with extend_words.
+    change (MakeProofsOn.get_word) with get_word.
+    change (MakeProofsOn.set_word) with set_word.
+    change (MakeProofsOn.extend_words) with extend_words.
     rewrite !to_Z_words_set_extend by lia.
     simpl Z.of_nat. rewrite !Z.pow_0_r.
     rewrite Hu_val, Hv_val. pose proof (spec_to_Z r0). lia. }
@@ -2948,9 +2949,9 @@ Proof.
   (* Branch 4: n = 1 — long division *)
   destruct (Nat.eqb n 1) eqn:Hn1.
   { apply Nat.eqb_eq in Hn1.
-    change (MakeProofs.get_word) with get_word.
-    change (MakeProofs.set_word) with set_word.
-    change (MakeProofs.extend_words) with extend_words.
+    change (MakeProofsOn.get_word) with get_word.
+    change (MakeProofsOn.set_word) with set_word.
+    change (MakeProofsOn.extend_words) with extend_words.
     assert (Hv_val: to_Z_words v = to_Z (get_word v 0))
       by (apply csw_one_value; [exact Hn1 | lia]).
     assert (Hv0_pos: to_Z (get_word v 0) > 0) by lia.
@@ -2972,12 +2973,12 @@ Proof.
     change
       (rev
          (ld_quot
-            (long_div_fold (rev (firstn m u)) (MakeProofs.get_word v 0)
+            (long_div_fold (rev (firstn m u)) (MakeProofsOn.get_word v 0)
                U64.zero)))
       with (ld_quot ld).
     change
       (ld_rem
-         (long_div_fold (rev (firstn m u)) (MakeProofs.get_word v 0)
+         (long_div_fold (rev (firstn m u)) (MakeProofsOn.get_word v 0)
             U64.zero))
       with (ld_rem ld).
     rewrite !Z.mul_1_r.
@@ -2987,12 +2988,12 @@ Proof.
   (* Branch 5: Knuth division — uses knuth_div_correct (Admitted) *)
   assert (Hm_ge2: (m >= 2)%nat) by lia.
   assert (Hn_ge2: (n >= 2)%nat) by lia.
-  change (MakeProofs.get_word) with get_word.
+  change (MakeProofsOn.get_word) with get_word.
   set (shift := countl_zero (get_word v (n - 1))).
   set (u_norm := shift_left_words (firstn m u) shift).
   set (v_norm := firstn n (shift_left_words (firstn n v) shift)).
   destruct (knuth_div m n u_norm v_norm) as [u_after quot] eqn:Hkd.
-  change (MakeProofs.get_word) with get_word in Hudiv.
+  change (MakeProofsOn.get_word) with get_word in Hudiv.
   fold shift in Hudiv.
   fold u_norm v_norm in Hudiv.
   rewrite Hkd in Hudiv.
@@ -3309,5 +3310,12 @@ Proof.
   exact (udivrem_correct 4 4).
 Qed.
 
-End MakeProofs.
+End MakeProofsOn.
 
+Module MakeProofs (Import Word64 : Uint64) (U128 : Uint128)
+  (Import Bridge : UintWiden Word64 U128).
+Module B := Base.MakeProof(Word64).
+Module Div := Division.MakeOn(B)(U128)(Bridge).
+Module WL := WordsLemmas.MakeProofsOn(B).
+Include MakeProofsOn(B)(U128)(Bridge)(Div)(WL).
+End MakeProofs.

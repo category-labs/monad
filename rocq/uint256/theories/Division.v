@@ -322,6 +322,16 @@ Definition udivrem (M N : nat) (u v : words) : option udivrem_result :=
 
 End MakeOn.
 
+Module Type DivisionSig (B : Base.BaseSig) (U128 : Uint128Ops)
+  (Bridge : UintWidenOps B.U64 U128).
+Include MakeOn(B)(U128)(Bridge).
+End DivisionSig.
+
+Module Type DivisionProofSig (B : Base.BaseProofSig) (U128 : Uint128)
+  (Bridge : UintWiden B.U64 U128).
+Include MakeOn(B)(U128)(Bridge).
+End DivisionProofSig.
+
 Module Make (Word64 : Uint64Ops) (U128 : Uint128Ops)
   (Import Bridge : UintWidenOps Word64 U128).
 Module B := Base.Make(Word64).

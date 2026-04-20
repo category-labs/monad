@@ -109,8 +109,8 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
 }
 
 size_t EvmcHostBase::copy_code(
-    evmc::address const &address, size_t offset, uint8_t *data,
-    size_t size) const noexcept
+    evmc::address const &address, size_t const offset, uint8_t *const data,
+    size_t const size) const noexcept
 {
     try {
         return state_.copy_code(address, offset, data, size);
@@ -151,8 +151,9 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 }
 
 void EvmcHostBase::emit_log(
-    evmc::address const &address, uint8_t const *data, size_t data_size,
-    evmc::bytes32 const topics[], size_t num_topics) noexcept
+    evmc::address const &address, uint8_t const *const data,
+    size_t const data_size, evmc::bytes32 const topics[],
+    size_t const num_topics) noexcept
 {
     try {
         Receipt::Log log{.data = {data, data_size}, .address = address};

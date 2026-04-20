@@ -52,7 +52,7 @@ struct DummyCompute final : Compute
         return 0;
     }
 
-    virtual unsigned compute(unsigned char *buffer, Node const &) override
+    virtual unsigned compute(unsigned char *const buffer, Node const &) override
     {
         buffer[0] = 0xa;
         return 1;

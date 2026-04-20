@@ -69,7 +69,7 @@ namespace monad::vm
     }
 
     SharedVarcode VarcodeCache::try_set_raw(
-        bytes32_t const &code_hash, std::span<uint8_t const> code)
+        bytes32_t const &code_hash, std::span<uint8_t const> const code)
     {
         WeightCache::ConstAccessor acc;
         if (!weight_cache_.find(acc, code_hash)) {

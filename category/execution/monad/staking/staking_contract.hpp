@@ -375,7 +375,7 @@ public:
     // `PAGINATED_RESULTS_SIZE` in a single call. The return types in this call
     // are defined by these pagination limits.
     std::tuple<bool, u32_be, std::vector<u64_be>> get_valset(
-        StorageArray<u64_be> const &valset, uint32_t const start_index,
+        StorageArray<u64_be> const &valset, uint32_t start_index,
         uint32_t limit);
 
     // The two lists are of Type LinkedList[T] where T = Address | u64_be.  The
@@ -494,20 +494,20 @@ private:
     // Sets an existence bit in state that `val_id` is present in the set.
     // Returns `true` if the validator is already in the set. Called in
     // delegate.
-    bool add_to_valset(u64_be const val_id);
+    bool add_to_valset(u64_be val_id);
 
     // Removes the existence bit. Called in the snapshot syscall.
-    void remove_from_valset(u64_be const val_id);
+    void remove_from_valset(u64_be val_id);
 
     Result<void> reward_invariant(ValExecution &, uint256_t const &);
 
     // increments a future accumulator value for a validator.  this value is
     // overriden on epoch change when the accumulator for that epoch is
     // complete. Used by delegate and undelegate.
-    void increment_accumulator_refcount(u64_be const val_id);
+    void increment_accumulator_refcount(u64_be val_id);
 
     // reads an future accumulator from state and decrements the refcount.
-    u256_be decrement_accumulator_refcount(u64_be epoch, u64_be const val_id);
+    u256_be decrement_accumulator_refcount(u64_be epoch, u64_be val_id);
 
     // Returns the epoch when the delegation or undelegation will activate.
     uint64_t get_activation_epoch() const noexcept;

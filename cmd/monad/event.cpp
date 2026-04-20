@@ -178,7 +178,7 @@ int allocate_event_ring_file(
 //   3. Finally, we rename the init file to its correct filename
 int create_owned_event_ring(
     fs::path const &ring_file_path,
-    monad_event_ring_simple_config const &simple_cfg, int *ring_fd)
+    monad_event_ring_simple_config const &simple_cfg, int *const ring_fd)
 {
     fs::path init_file_path = ring_file_path;
     init_file_path.replace_filename(
@@ -220,7 +220,7 @@ int create_owned_event_ring(
 // signals prior to returning
 int create_owned_event_ring_nointr(
     fs::path const &ring_file_path,
-    monad_event_ring_simple_config const &simple_cfg, int *ring_fd)
+    monad_event_ring_simple_config const &simple_cfg, int *const ring_fd)
 {
     sigset_t to_block;
     sigset_t old_mask;
@@ -249,7 +249,7 @@ extern std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
 // A shift can be empty, e.g., <descriptor-shift> in `my-file::30`, in which
 // case the default value is used
 std::expected<EventRingConfig, std::string>
-try_parse_event_ring_config(std::string_view s)
+try_parse_event_ring_config(std::string_view const s)
 {
     std::vector<std::string_view> tokens;
     EventRingConfig cfg;
@@ -287,7 +287,7 @@ try_parse_event_ring_config(std::string_view s)
     return cfg;
 }
 
-int init_execution_event_recorder(EventRingConfig ring_config)
+int init_execution_event_recorder(EventRingConfig const ring_config)
 {
     char ring_path[PATH_MAX];
     MONAD_ASSERT(!g_exec_event_recorder, "recorder initialized twice?");

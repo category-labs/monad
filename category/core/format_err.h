@@ -84,8 +84,9 @@ int monad_vformat_err(
     int err, char const *format, va_list ap);
 
 __attribute__((format(printf, 5, 6))) static inline int monad_format_err(
-    char *err_buf, size_t err_buf_size, monad_source_location_t const *src,
-    int err, char const *format, ...)
+    char *const err_buf, size_t const err_buf_size,
+    monad_source_location_t const *const src, int const err,
+    char const *const format, ...)
 {
     va_list ap;
     int rc;

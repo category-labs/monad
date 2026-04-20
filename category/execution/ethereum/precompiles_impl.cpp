@@ -169,7 +169,7 @@ PrecompileResult blake2bf_execute(byte_string_view const input)
     return silkpre_execute<silkpre_blake2_f_run>(input);
 }
 
-PrecompileResult point_evaluation_execute(byte_string_view input)
+PrecompileResult point_evaluation_execute(byte_string_view const input)
 {
     if (input.size() != 192) {
         return PrecompileResult::failure();

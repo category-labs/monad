@@ -31,10 +31,10 @@ namespace monad::staking::test
     byte_string_fixed<33> serialize_secp_pubkey(secp256k1_pubkey const &pubkey);
 
     byte_string_fixed<64>
-    sign_secp(byte_string_view const message, bytes32_t const &seckey);
+    sign_secp(byte_string_view message, bytes32_t const &seckey);
 
     byte_string_fixed<96>
-    sign_bls(byte_string_view const message, blst_scalar const &seckey);
+    sign_bls(byte_string_view message, blst_scalar const &seckey);
 
     byte_string_fixed<65>
     serialize_secp_pubkey_uncompressed(secp256k1_pubkey const &pubkey);
@@ -49,12 +49,10 @@ namespace monad::staking::test
         uint256_t const &commission = 0, bytes32_t secret = bytes32_t{0x1000});
 
     byte_string craft_undelegate_input(
-        u64_be const val_id, uint256_t const &amount,
-        u8_be const withdrawal_id);
+        u64_be val_id, uint256_t const &amount, u8_be withdrawal_id);
+
+    byte_string craft_withdraw_input(u64_be val_id, u8_be withdrawal_id);
 
     byte_string
-    craft_withdraw_input(u64_be const val_id, u8_be const withdrawal_id);
-
-    byte_string craft_change_commission_input(
-        u64_be const val_id, uint256_t const &commission);
+    craft_change_commission_input(u64_be val_id, uint256_t const &commission);
 }

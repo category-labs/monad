@@ -110,8 +110,9 @@ namespace
         return db.upsert(std::move(root), std::move(ul_prefix), block_id);
     };
 
-    monad::Result<monad::byte_string>
-    db_get(Db &db, NodeCursor const &root, NibblesView key, uint64_t version)
+    monad::Result<monad::byte_string> db_get(
+        Db &db, NodeCursor const &root, NibblesView const key,
+        uint64_t const version)
     {
         auto const res = db.find(root, key, version);
         if (res.has_value()) {
@@ -121,7 +122,8 @@ namespace
     }
 
     monad::Result<monad::byte_string> db_get_data(
-        Db &db, NodeCursor const &root, NibblesView key, uint64_t block_id)
+        Db &db, NodeCursor const &root, NibblesView const key,
+        uint64_t const block_id)
     {
         auto const res = db.find(root, key, block_id);
         if (res.has_value()) {
@@ -178,7 +180,7 @@ namespace
                 std::function<void(result_t<T>)> callback;
 
                 void set_value(
-                    monad::async::erased_connected_operation *state,
+                    monad::async::erased_connected_operation *const state,
                     sender_type::result_type res)
                 {
                     ++parent->cbs;
@@ -193,7 +195,7 @@ namespace
             state->initiate();
         }
 
-        void poll_until(size_t num_callbacks)
+        void poll_until(size_t const num_callbacks)
         {
             while (cbs < num_callbacks) {
                 ro_db.poll(false);
@@ -262,7 +264,7 @@ namespace
         {
         }
 
-        virtual bool down(unsigned char branch, Node const &node) override
+        virtual bool down(unsigned char const branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
                 return true;
@@ -279,7 +281,7 @@ namespace
             return true;
         }
 
-        virtual void up(unsigned char branch, Node const &node) override
+        virtual void up(unsigned char const branch, Node const &node) override
         {
             auto const path_view = NibblesView{path};
             auto const rem_size = [&] {
@@ -320,7 +322,7 @@ namespace
     }
 
     std::pair<std::deque<monad::byte_string>, std::deque<Update>>
-    prepare_random_updates(unsigned nkeys, unsigned const offset = 0)
+    prepare_random_updates(unsigned const nkeys, unsigned const offset = 0)
     {
         std::deque<monad::byte_string> bytes_alloc;
         std::deque<Update> updates_alloc;
@@ -889,14 +891,15 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
         Nibbles path;
         bool has_done_callback;
 
-        explicit TraverseMachinePruneHistory(std::function<void(void)> callback)
+        explicit TraverseMachinePruneHistory(
+            std::function<void(void)> const callback)
             : upsert_callback(callback)
             , path{}
             , has_done_callback{false}
         {
         }
 
-        virtual bool down(unsigned char branch, Node const &node) override
+        virtual bool down(unsigned char const branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
                 return true;
@@ -911,7 +914,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
             return true;
         }
 
-        virtual void up(unsigned char branch, Node const &node) override
+        virtual void up(unsigned char const branch, Node const &node) override
         {
             auto const path_view = NibblesView{path};
             auto const rem_size = [&] {
@@ -1082,8 +1085,8 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
         }
 
         void set_value(
-            monad::async::erased_connected_operation *traverse_state,
-            monad::async::result<bool> res)
+            monad::async::erased_connected_operation *const traverse_state,
+            monad::async::result<bool> const res)
         {
             ASSERT_TRUE(res);
             result.traverse_success = res.assume_value();
@@ -1107,7 +1110,8 @@ TEST_F(OnDiskDbWithFileAsyncFixture, async_get_node_then_async_traverse)
         }
 
         void set_value(
-            monad::async::erased_connected_operation *state, ResultType res)
+            monad::async::erased_connected_operation *const state,
+            ResultType const res)
         {
             if (!res) {
                 result.traverse_success = false;
@@ -1576,7 +1580,7 @@ TYPED_TEST(DbTraverseTest, traverse)
             return std::make_unique<SimpleTraverse>(*this);
         }
 
-        Nibbles make_nibbles(std::initializer_list<uint8_t> nibbles)
+        Nibbles make_nibbles(std::initializer_list<uint8_t> const nibbles)
         {
             Nibbles ret{nibbles.size()};
             for (auto const *it = nibbles.begin(); it < nibbles.end(); ++it) {

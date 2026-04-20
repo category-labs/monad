@@ -128,7 +128,8 @@ namespace
 }
 
 inline ssize_t statesync_server_recv(
-    monad_statesync_server_network *const net, unsigned char *buf, size_t n)
+    monad_statesync_server_network *const net, unsigned char *const buf,
+    size_t const n)
 {
     size_t total_received = 0;
 

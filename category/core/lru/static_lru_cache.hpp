@@ -128,7 +128,7 @@ public:
     }
 
 protected:
-    void update_lru(ListIter it)
+    void update_lru(ListIter const it)
     {
         active_list_.splice(active_list_.begin(), active_list_, it);
     }

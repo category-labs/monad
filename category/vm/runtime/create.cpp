@@ -31,12 +31,12 @@
 
 namespace monad::vm::runtime
 {
-    consteval Bin<2> create_code_word_cost(evmc_revision rev)
+    consteval Bin<2> create_code_word_cost(evmc_revision const rev)
     {
         return (rev >= EVMC_SHANGHAI) ? bin<2> : bin<0>;
     }
 
-    consteval Bin<4> create2_code_word_cost(evmc_revision rev)
+    consteval Bin<4> create2_code_word_cost(evmc_revision const rev)
     {
         return (rev >= EVMC_SHANGHAI) ? bin<8> : bin<6>;
     }

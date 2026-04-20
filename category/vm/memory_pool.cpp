@@ -64,7 +64,7 @@ namespace monad::vm
         return reinterpret_cast<uint8_t *>(old_head);
     }
 
-    void MemoryPool::dealloc(uint8_t *p)
+    void MemoryPool::dealloc(uint8_t *const p)
     {
         MONAD_DEBUG_ASSERT((reinterpret_cast<uintptr_t>(p) & 31) == 0);
         static_assert(alignof(Node) <= 32);

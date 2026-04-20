@@ -75,35 +75,37 @@ namespace monad::staking::test
     }
 
     std::unordered_set<uint8_t> const &
-    StakingContractModel::active_withdrawal_ids(u64_be v, Address const &a)
+    StakingContractModel::active_withdrawal_ids(
+        u64_be const v, Address const &a)
     {
         return delegator_to_active_withdrawal_ids_[{v.native(), a}];
     }
 
     uint256_t
-    StakingContractModel::unit_bias_rewards(u64_be v, Address const &a)
+    StakingContractModel::unit_bias_rewards(u64_be const v, Address const &a)
     {
         return unit_bias_rewards_[{v.native(), a}];
     }
 
-    uint256_t
-    StakingContractModel::delegator_stake(u64_be v, Address const &a, u64_be e)
+    uint256_t StakingContractModel::delegator_stake(
+        u64_be const v, Address const &a, u64_be const e)
     {
         return get_delegator_stake(v.native(), a, e.native());
     }
 
-    uint256_t
-    StakingContractModel::withdrawal_stake(u64_be v, Address const &a, u64_be e)
+    uint256_t StakingContractModel::withdrawal_stake(
+        u64_be const v, Address const &a, u64_be const e)
     {
         return get_withdrawal_stake(v.native(), a, e.native());
     }
 
-    uint256_t StakingContractModel::active_consensus_commission(u64_be val_id)
+    uint256_t
+    StakingContractModel::active_consensus_commission(u64_be const val_id)
     {
         return active_consensus_commission_[val_id.native()];
     }
 
-    uint256_t StakingContractModel::active_consensus_stake(u64_be val_id)
+    uint256_t StakingContractModel::active_consensus_stake(u64_be const val_id)
     {
         return active_consensus_stake_[val_id.native()];
     }
@@ -115,14 +117,14 @@ namespace monad::staking::test
 
     StakingContract::RefCountedAccumulator
     StakingContractModel::accumulated_reward_per_token(
-        u64_be epoch, u64_be val_id)
+        u64_be const epoch, u64_be const val_id)
     {
         return contract_.vars.accumulated_reward_per_token(epoch, val_id)
             .load();
     }
 
     uint256_t StakingContractModel::live_accumulated_reward_per_token(
-        u64_be epoch, u64_be val_id)
+        u64_be const epoch, u64_be const val_id)
     {
         if (contract_.vars.epoch.load().native() < epoch.native()) {
             return contract_.vars.val_execution(val_id)
@@ -160,19 +162,19 @@ namespace monad::staking::test
         return contract_.vars.val_id_bls(a).load().native();
     }
 
-    ValExecution StakingContractModel::val_execution(u64_be v)
+    ValExecution StakingContractModel::val_execution(u64_be const v)
     {
         return contract_.vars.val_execution(v);
     }
 
     StorageVariable<StakingContract::WithdrawalRequest>
     StakingContractModel::withdrawal_request(
-        u64_be val_id, Address const &delegator, u8_be wid)
+        u64_be const val_id, Address const &delegator, u8_be const wid)
     {
         return contract_.vars.withdrawal_request(val_id, delegator, wid);
     }
 
-    Delegator StakingContractModel::delegator(u64_be v, Address const &a)
+    Delegator StakingContractModel::delegator(u64_be const v, Address const &a)
     {
         return contract_.vars.delegator(v, a);
     }
@@ -192,23 +194,24 @@ namespace monad::staking::test
         return contract_.vars.valset_consensus;
     }
 
-    ConsensusView StakingContractModel::consensus_view(u64_be v)
+    ConsensusView StakingContractModel::consensus_view(u64_be const v)
     {
         return contract_.vars.consensus_view(v);
     }
 
-    ConsensusView StakingContractModel::snapshot_view(u64_be v)
+    ConsensusView StakingContractModel::snapshot_view(u64_be const v)
     {
         return contract_.vars.snapshot_view(v);
     }
 
-    StorageVariable<u256_be> StakingContractModel::val_bitset_bucket(u64_be v)
+    StorageVariable<u256_be>
+    StakingContractModel::val_bitset_bucket(u64_be const v)
     {
         return contract_.vars.val_bitset_bucket(v);
     }
 
     std::vector<Address>
-    StakingContractModel::get_delegators_for_validator(u64_be val_id)
+    StakingContractModel::get_delegators_for_validator(u64_be const val_id)
     {
         auto const [done, _, ds] = contract_.get_delegators_for_validator(
             val_id, Address{}, std::numeric_limits<uint32_t>::max());
@@ -232,7 +235,7 @@ namespace monad::staking::test
     }
 
     uint256_t StakingContractModel::withdrawal_reward(
-        u64_be val_id, Address const &addr, u8_be id)
+        u64_be const val_id, Address const &addr, u8_be const id)
     {
         auto withdraw =
             contract_.vars.withdrawal_request(val_id, addr, id).load();
@@ -247,8 +250,8 @@ namespace monad::staking::test
         return calculate_rewards(x, q, p);
     }
 
-    uint256_t
-    StakingContractModel::unaccumulated_rewards(u64_be v, Address const &a)
+    uint256_t StakingContractModel::unaccumulated_rewards(
+        u64_be const v, Address const &a)
     {
         auto del = contract_.vars.delegator(v, a);
         auto const epoch = contract_.vars.epoch.load().native();
@@ -298,7 +301,8 @@ namespace monad::staking::test
         return r1 + r2 + r3;
     }
 
-    uint256_t StakingContractModel::pending_rewards(u64_be v, Address const &a)
+    uint256_t
+    StakingContractModel::pending_rewards(u64_be const v, Address const &a)
     {
         uint256_t sum{};
         auto const &is = delegator_to_active_withdrawal_ids_[{v.native(), a}];
@@ -309,7 +313,7 @@ namespace monad::staking::test
     }
 
     Result<void>
-    StakingContractModel::syscall_on_epoch_change(u64_be next_epoch)
+    StakingContractModel::syscall_on_epoch_change(u64_be const next_epoch)
     {
         auto const input = abi_encode_uint(next_epoch);
         pre_call(uint256_be_t{});
@@ -612,7 +616,7 @@ namespace monad::staking::test
     EXPLICIT_MONAD_TRAITS_MEMBER(StakingContractModel::precompile_get_delegator)
 
     uint256_t StakingContractModel::get_delegator_stake(
-        uint64_t val_id, Address const &addr, uint64_t epoch)
+        uint64_t const val_id, Address const &addr, uint64_t const epoch)
     {
         auto const &m = delegator_stake_[{val_id, addr}];
         auto it = m.lower_bound(epoch);
@@ -620,13 +624,13 @@ namespace monad::staking::test
     }
 
     uint256_t StakingContractModel::get_withdrawal_stake(
-        uint64_t val_id, Address const &addr, uint64_t epoch)
+        uint64_t const val_id, Address const &addr, uint64_t const epoch)
     {
         return withdrawal_stake_[{val_id, addr, epoch}];
     }
 
     void StakingContractModel::add_delegator_stake(
-        uint64_t val_id, Address const &addr, uint64_t epoch,
+        uint64_t const val_id, Address const &addr, uint64_t const epoch,
         uint256_t const &delta)
     {
         auto &m = delegator_stake_[{val_id, addr}];
@@ -645,7 +649,7 @@ namespace monad::staking::test
     }
 
     void StakingContractModel::add_withdrawal_stake(
-        uint64_t val_id, Address const &addr, uint64_t end_epoch,
+        uint64_t const val_id, Address const &addr, uint64_t const end_epoch,
         uint256_t const &delta)
     {
         uint64_t const begin_epoch = contract_.vars.epoch.load().native();
@@ -655,7 +659,7 @@ namespace monad::staking::test
     }
 
     void StakingContractModel::distribute_reward(
-        u64_be val_id, u256_be const &reward_be)
+        u64_be const val_id, u256_be const &reward_be)
     {
         auto const v = val_id.native();
         auto const rew = reward_be.native();

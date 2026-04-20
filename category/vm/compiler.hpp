@@ -189,7 +189,7 @@ namespace monad::vm
         }
 
         SharedVarcode try_insert_varcode_raw(
-            bytes32_t const &code_hash, std::span<uint8_t const> code)
+            bytes32_t const &code_hash, std::span<uint8_t const> const code)
         {
             return varcode_cache_.try_set_raw(code_hash, code);
         }

@@ -60,7 +60,7 @@ protected:
 public:
     EvmcHostBase(
         CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &, bool const log_native_transfers) noexcept;
+        State &, bool log_native_transfers) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -118,8 +118,8 @@ struct EvmcHost final : public EvmcHostBase
     EvmcHost(
         CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state,
-        Transaction const &tx, std::optional<uint256_t> base_fee_per_gas,
-        uint64_t i, ChainContext<traits> const &chain_ctx,
+        Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
+        uint64_t const i, ChainContext<traits> const &chain_ctx,
         bool const log_native_transfers = false) noexcept
         : EvmcHostBase{call_tracer, tx_context, block_hash_buffer, state, log_native_transfers}
         , tx_{tx}

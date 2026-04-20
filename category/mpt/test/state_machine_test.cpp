@@ -66,7 +66,7 @@ namespace
             return std::make_unique<TestStateMachine>(*this);
         }
 
-        virtual void down(unsigned char nibble) override
+        virtual void down(unsigned char const nibble) override
         {
             EXPECT_LE(nibble, 0xf);
             auto const [_, success] = down_calls.emplace(path, nibble);
@@ -74,7 +74,7 @@ namespace
             path.push_back(nibble);
         }
 
-        virtual void up(size_t n) override
+        virtual void up(size_t const n) override
         {
             EXPECT_LE(n, path.size());
             // can invoke up() at same path for multiple times with async

@@ -157,7 +157,7 @@ public:
         return seq_chunks_.size();
     }
 
-    file_offset_t chunk_capacity(size_t id) const noexcept
+    file_offset_t chunk_capacity(size_t const id) const noexcept
     {
         MONAD_ASSERT_PRINTF(
             id < seq_chunks_.size(),
@@ -218,7 +218,7 @@ public:
         return concurrent_read_io_limit_;
     }
 
-    void set_concurrent_read_io_limit(unsigned v) noexcept
+    void set_concurrent_read_io_limit(unsigned const v) noexcept
     {
         concurrent_read_io_limit_ = v;
     }
@@ -228,7 +228,7 @@ public:
         return eager_completions_;
     }
 
-    void set_eager_completions(bool v) noexcept
+    void set_eager_completions(bool const v) noexcept
     {
         eager_completions_ = v;
     }
@@ -238,7 +238,7 @@ public:
         return capture_io_latencies_;
     }
 
-    void set_capture_io_latencies(bool v) noexcept
+    void set_capture_io_latencies(bool const v) noexcept
     {
         capture_io_latencies_ = v;
     }
@@ -253,7 +253,7 @@ public:
 
     // Blocks until at least one completion is processed, returning number
     // of completions processed.
-    size_t poll_blocking(size_t count = 1)
+    size_t poll_blocking(size_t const count = 1)
     {
         size_t n = 0;
         while (n < count) {
@@ -267,7 +267,7 @@ public:
     }
 
     std::optional<size_t>
-    poll_blocking_if_not_within_completions(size_t count = 1)
+    poll_blocking_if_not_within_completions(size_t const count = 1)
     {
         if (detail::AsyncIO_per_thread_state().am_within_completions()) {
             return std::nullopt;
@@ -276,7 +276,7 @@ public:
     }
 
     // Never blocks
-    size_t poll_nonblocking(size_t count = size_t(-1))
+    size_t poll_nonblocking(size_t const count = size_t(-1))
     {
         size_t n = 0;
         while (n < count) {
@@ -290,7 +290,7 @@ public:
     }
 
     std::optional<size_t>
-    poll_nonblocking_if_not_within_completions(size_t count = size_t(-1))
+    poll_nonblocking_if_not_within_completions(size_t const count = size_t(-1))
     {
         if (detail::AsyncIO_per_thread_state().am_within_completions()) {
             return std::nullopt;
@@ -320,8 +320,8 @@ public:
     }
 
     size_t submit_read_request(
-        std::span<std::byte> buffer, chunk_offset_t offset,
-        erased_connected_operation *uring_data)
+        std::span<std::byte> const buffer, chunk_offset_t const offset,
+        erased_connected_operation *const uring_data)
     {
         if (capture_io_latencies_) {
             uring_data->initiated = std::chrono::steady_clock::now();
@@ -342,8 +342,9 @@ public:
     }
 
     size_t submit_read_request(
-        std::span<const struct iovec> buffers, chunk_offset_t offset,
-        erased_connected_operation *uring_data)
+        std::span<const struct iovec> const buffers,
+        chunk_offset_t const offset,
+        erased_connected_operation *const uring_data)
 
     {
         if (capture_io_latencies_) {
@@ -364,8 +365,8 @@ public:
     }
 
     void submit_write_request(
-        std::span<std::byte const> buffer, chunk_offset_t offset,
-        erased_connected_operation *uring_data)
+        std::span<std::byte const> const buffer, chunk_offset_t const offset,
+        erased_connected_operation *const uring_data)
     {
         if (capture_io_latencies_) {
             uring_data->initiated = std::chrono::steady_clock::now();
@@ -415,7 +416,7 @@ public:
 
     struct io_connected_operation_unique_ptr_deleter
     {
-        void operator()(erased_connected_operation *p) const
+        void operator()(erased_connected_operation *const p) const
         {
             auto *io = p->executor();
             p->~erased_connected_operation();
@@ -440,7 +441,7 @@ public:
             std::declval<Receiver>())),
         io_connected_operation_unique_ptr_deleter>;
 
-    void do_free_read_buffer(std::byte *b) noexcept
+    void do_free_read_buffer(std::byte *const b) noexcept
     {
 #ifndef NDEBUG
         memset((void *)b, 0xff, READ_BUFFER_SIZE);
@@ -448,7 +449,7 @@ public:
         rd_pool_.release((unsigned char *)b);
     }
 
-    void do_free_write_buffer(std::byte *b) noexcept
+    void do_free_write_buffer(std::byte *const b) noexcept
     {
 #ifndef NDEBUG
         static_assert(WRITE_BUFFER_SIZE >= CPU_PAGE_SIZE);
@@ -460,7 +461,7 @@ public:
     using read_buffer_ptr = detail::read_buffer_ptr;
     using write_buffer_ptr = detail::write_buffer_ptr;
 
-    read_buffer_ptr get_read_buffer(size_t bytes)
+    read_buffer_ptr get_read_buffer(size_t const bytes)
     {
         MONAD_ASSERT(bytes <= READ_BUFFER_SIZE);
         unsigned char *mem = rd_pool_.alloc();
@@ -651,12 +652,12 @@ static_assert(alignof(AsyncIO) == 8);
 
 namespace detail
 {
-    inline void read_buffer_deleter::operator()(std::byte *b)
+    inline void read_buffer_deleter::operator()(std::byte *const b)
     {
         parent_->do_free_read_buffer(b);
     }
 
-    inline void write_buffer_deleter::operator()(std::byte *b)
+    inline void write_buffer_deleter::operator()(std::byte *const b)
     {
         parent_->do_free_write_buffer(b);
     }

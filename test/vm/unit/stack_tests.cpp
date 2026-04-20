@@ -37,25 +37,25 @@ namespace
         {
         }
 
-        StackElemTestData &with_stack_offset(std::int32_t offset)
+        StackElemTestData &with_stack_offset(std::int32_t const offset)
         {
             stack_offset = {offset, PrevLoc::Unknown};
             return *this;
         }
 
-        StackElemTestData &with_avx_reg(AvxReg x)
+        StackElemTestData &with_avx_reg(AvxReg const x)
         {
             avx_reg = x;
             return *this;
         }
 
-        StackElemTestData &with_general_reg(GeneralReg x)
+        StackElemTestData &with_general_reg(GeneralReg const x)
         {
             general_reg = x;
             return *this;
         }
 
-        StackElemTestData &with_literal(Literal x)
+        StackElemTestData &with_literal(Literal const x)
         {
             literal = x;
             return *this;
@@ -68,7 +68,7 @@ namespace
         std::set<std::int32_t> stack_indices;
     };
 
-    bool test_stack_element(StackElemRef e, StackElemTestData t)
+    bool test_stack_element(StackElemRef const e, StackElemTestData const t)
     {
         return e->stack_offset() == t.stack_offset &&
                e->avx_reg() == t.avx_reg && e->general_reg() == t.general_reg &&

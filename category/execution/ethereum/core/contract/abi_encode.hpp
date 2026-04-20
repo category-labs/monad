@@ -111,12 +111,12 @@ class AbiEncoder
     byte_string tail_;
     std::vector<std::pair<size_t, size_t>> unresolved_offsets_;
 
-    void add_static(bytes32_t data)
+    void add_static(bytes32_t const data)
     {
         head_ += data;
     }
 
-    void add_dynamic(byte_string data)
+    void add_dynamic(byte_string const data)
     {
         unresolved_offsets_.emplace_back(head_.size(), tail_.size());
         head_ += bytes32_t{};

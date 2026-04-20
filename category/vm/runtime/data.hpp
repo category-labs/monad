@@ -28,8 +28,9 @@ namespace monad::vm::runtime
     void
     balance(Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr);
 
-    inline void
-    calldataload(Context *ctx, uint256_t *result_ptr, uint256_t const *i_ptr)
+    inline void calldataload(
+        Context *const ctx, uint256_t *const result_ptr,
+        uint256_t const *const i_ptr)
     {
         if (MONAD_UNLIKELY(!is_bounded_by_bits<32>(*i_ptr))) {
             *result_ptr = 0;

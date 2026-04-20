@@ -41,7 +41,7 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 /// @param encoding      The RLP-encoded payload that was signed.
 ///
 std::optional<Address>
-ecrecover(SignatureAndChain const &sc, byte_string_view encoding)
+ecrecover(SignatureAndChain const &sc, byte_string_view const encoding)
 {
     if (sc.y_parity > 1) {
         return std::nullopt;

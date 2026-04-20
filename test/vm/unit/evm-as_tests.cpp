@@ -97,7 +97,7 @@ namespace
     }
 
     monad::vm::test::TestContext
-    test_context(int64_t gas_remaining = 10'000'000)
+    test_context(int64_t const gas_remaining = 10'000'000)
     {
         return monad::vm::test::TestContext{[&](auto &x) {
             x.gas_remaining = gas_remaining;
@@ -111,7 +111,7 @@ namespace
 
     struct TestStackMemoryDeleter
     {
-        void operator()(uint8_t *p) const
+        void operator()(uint8_t *const p) const
         {
             std::free(p);
         }
@@ -154,7 +154,7 @@ namespace
         }
     };
 
-    std::vector<uint8_t> kernel_base_calldata(size_t args_size)
+    std::vector<uint8_t> kernel_base_calldata(size_t const args_size)
     {
         auto const sz = 3000 * 32 * (args_size == 0 ? 1 : args_size);
         std::vector<uint8_t> ret(sz, 0);

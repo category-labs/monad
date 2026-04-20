@@ -53,7 +53,7 @@ namespace detail
         using is_always_equal = std::true_type;
 
         constexpr FixedBufferAllocator(
-            std::span<std::byte> buffer_, std::byte *&p_)
+            std::span<std::byte> const buffer_, std::byte *&p_)
             : buffer(buffer_)
             , p(p_)
         {
@@ -68,7 +68,7 @@ namespace detail
         {
         }
 
-        [[nodiscard]] constexpr value_type *allocate(size_t n)
+        [[nodiscard]] constexpr value_type *allocate(size_t const n)
         {
             auto *newp = p + sizeof(value_type) * n;
             assert(size_t(newp - buffer.data()) <= buffer.size());
@@ -94,15 +94,15 @@ struct stack_backtrace_impl final : public stack_backtrace
     byte_allocator_type main_alloc;
     stacktrace_implementation_type stacktrace;
 
-    explicit stack_backtrace_impl(std::span<std::byte> storage)
+    explicit stack_backtrace_impl(std::span<std::byte> const storage)
         : main_alloc(storage, storage_end)
         , stacktrace(stacktrace_allocator_type{main_alloc})
     {
     }
 
     virtual void print(
-        int fd, unsigned indent,
-        bool print_async_signal_unsafe_info) const noexcept override
+        int const fd, unsigned const indent,
+        bool const print_async_signal_unsafe_info) const noexcept override
     {
         char indent_buffer[64];
         memset(indent_buffer, ' ', 64);
@@ -148,7 +148,7 @@ struct stack_backtrace_impl final : public stack_backtrace
 };
 
 stack_backtrace::ptr
-stack_backtrace::capture(std::span<std::byte> storage) noexcept
+stack_backtrace::capture(std::span<std::byte> const storage) noexcept
 {
     assert(storage.size() > sizeof(stack_backtrace_impl));
     return ptr(new (storage.data()) stack_backtrace_impl(
@@ -156,8 +156,8 @@ stack_backtrace::capture(std::span<std::byte> storage) noexcept
 }
 
 extern "C" void monad_stack_backtrace_capture_and_print(
-    char *buffer, size_t size, int fd, unsigned indent,
-    bool print_async_unsafe_info)
+    char *const buffer, size_t const size, int const fd, unsigned const indent,
+    bool const print_async_unsafe_info)
 {
     stack_backtrace::capture({reinterpret_cast<std::byte *>(buffer), size})
         ->print(fd, indent, print_async_unsafe_info);

@@ -22,7 +22,7 @@ namespace monad::vm::compiler::test
     public:
         bool dump_asm_on_failure = false;
 
-        TestParams(bool dump_asm_on_failure = false)
+        TestParams(bool const dump_asm_on_failure = false)
             : dump_asm_on_failure(dump_asm_on_failure)
         {
         }

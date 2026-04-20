@@ -76,7 +76,7 @@
 #include <unistd.h>
 #include <zstd.h>
 
-std::string print_bytes(MONAD_ASYNC_NAMESPACE::file_offset_t bytes_)
+std::string print_bytes(MONAD_ASYNC_NAMESPACE::file_offset_t const bytes_)
 {
     auto bytes = double(bytes_);
     std::stringstream s;
@@ -147,9 +147,11 @@ struct chunk_info_restore_t
     bool done{false};
 
     chunk_info_restore_t(
-        monad::async::storage_pool::chunk_type type_, uint32_t chunk_id_,
-        monad::mpt::detail::db_metadata::chunk_info_t metadata_,
-        std::span<std::byte const> compressed_, bool is_uncompressed_)
+        monad::async::storage_pool::chunk_type const type_,
+        uint32_t const chunk_id_,
+        monad::mpt::detail::db_metadata::chunk_info_t const metadata_,
+        std::span<std::byte const> const compressed_,
+        bool const is_uncompressed_)
         : type(type_)
         , chunk_id(chunk_id_)
         , metadata(metadata_)
@@ -292,7 +294,8 @@ struct chunk_info_archive_t
     std::future<void> compression_thread;
 
     chunk_info_archive_t(
-        monad::async::storage_pool::chunk_t *chunk_ptr_, la_int64_t metadata_)
+        monad::async::storage_pool::chunk_t *chunk_ptr_,
+        la_int64_t const metadata_)
         : chunk_ptr(std::move(chunk_ptr_))
         , metadata(metadata_)
     {
@@ -420,7 +423,7 @@ public:
     {
     }
 
-    void cli_ask_question(char const *msg)
+    void cli_ask_question(char const *const msg)
     {
         if (!no_prompt) {
             auto const answer = tty_ask_question(msg);
@@ -1375,7 +1378,8 @@ public:
 };
 
 int main_impl(
-    std::ostream &cout, std::ostream &cerr, std::span<std::string_view> args)
+    std::ostream &cout, std::ostream &cerr,
+    std::span<std::string_view> const args)
 {
     CLI::App cli("Tool for managing MPT databases", "monad-mpt");
     cli.footer(R"(Suitable sources of block storage:

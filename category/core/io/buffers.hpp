@@ -127,23 +127,23 @@ public:
     }
 };
 
-[[gnu::always_inline]] inline Buffers
-make_buffers_for_read_only(Ring &ring, size_t read_count, size_t read_size)
+[[gnu::always_inline]] inline Buffers make_buffers_for_read_only(
+    Ring &ring, size_t const read_count, size_t const read_size)
 {
     return Buffers(ring, nullptr, read_count, 0, read_size, 0);
 }
 
 [[gnu::always_inline]] inline Buffers make_buffers_for_mixed_read_write(
-    Ring &ring, size_t read_count, size_t write_count, size_t read_size,
-    size_t write_size)
+    Ring &ring, size_t const read_count, size_t const write_count,
+    size_t const read_size, size_t const write_size)
 {
     return Buffers(
         ring, nullptr, read_count, write_count, read_size, write_size);
 }
 
 [[gnu::always_inline]] inline Buffers make_buffers_for_segregated_read_write(
-    Ring &ring, Ring &wr_ring, size_t read_count, size_t write_count,
-    size_t read_size, size_t write_size)
+    Ring &ring, Ring &wr_ring, size_t const read_count,
+    size_t const write_count, size_t const read_size, size_t const write_size)
 {
     return Buffers(
         ring, &wr_ring, read_count, write_count, read_size, write_size);

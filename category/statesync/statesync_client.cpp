@@ -38,7 +38,7 @@ unsigned const MONAD_SQPOLL_DISABLED = unsigned(-1);
 
 monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const *const dbname_paths, size_t const len,
-    unsigned const sq_thread_cpu, monad_statesync_client *sync,
+    unsigned const sq_thread_cpu, monad_statesync_client *const sync,
     void (*statesync_send_request)(
         monad_statesync_client *, monad_sync_request))
 {

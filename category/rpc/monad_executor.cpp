@@ -1432,14 +1432,16 @@ struct monad_executor_state monad_executor_get_state(monad_executor *const e)
 }
 
 void monad_executor_run_transactions(
-    struct monad_executor *executor, enum monad_chain_config chain_config,
-    uint8_t const *rlp_header, size_t rlp_header_len, uint64_t block_number,
-    uint8_t const *rlp_block_id, size_t rlp_block_id_len,
-    uint8_t const *rlp_parent_block_id, size_t rlp_parent_block_id_len,
-    uint8_t const *rlp_grandparent_block_id,
-    size_t rlp_grandparent_block_id_len, int64_t const transaction_index,
-    void (*complete)(monad_executor_result *, void *user), void *user,
-    enum monad_tracer_config tracer_config)
+    struct monad_executor *const executor,
+    enum monad_chain_config const chain_config, uint8_t const *const rlp_header,
+    size_t const rlp_header_len, uint64_t const block_number,
+    uint8_t const *const rlp_block_id, size_t const rlp_block_id_len,
+    uint8_t const *const rlp_parent_block_id,
+    size_t const rlp_parent_block_id_len,
+    uint8_t const *const rlp_grandparent_block_id,
+    size_t const rlp_grandparent_block_id_len, int64_t const transaction_index,
+    void (*complete)(monad_executor_result *, void *user), void *const user,
+    enum monad_tracer_config const tracer_config)
 {
     MONAD_ASSERT(executor);
 

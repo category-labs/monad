@@ -32,7 +32,7 @@ namespace
 
 namespace monad::staking::test
 {
-    std::pair<blst_p1, blst_scalar> gen_bls_keypair(bytes32_t secret)
+    std::pair<blst_p1, blst_scalar> gen_bls_keypair(bytes32_t const secret)
     {
         blst_scalar secret_key;
         blst_p1 public_key;
@@ -42,7 +42,8 @@ namespace monad::staking::test
         return {public_key, secret_key};
     }
 
-    std::pair<secp256k1_pubkey, bytes32_t> gen_secp_keypair(bytes32_t secret)
+    std::pair<secp256k1_pubkey, bytes32_t>
+    gen_secp_keypair(bytes32_t const secret)
     {
         secp256k1_pubkey public_key;
 
@@ -130,7 +131,7 @@ namespace monad::staking::test
     std::tuple<byte_string, byte_string, byte_string, Address>
     craft_add_validator_input_raw(
         Address const &auth_address, uint256_t const &stake,
-        uint256_t const &commission, bytes32_t secret)
+        uint256_t const &commission, bytes32_t const secret)
     {
         auto const [bls_pubkey, bls_seckey] = gen_bls_keypair(secret);
         auto const [secp_pubkey, secp_seckey] = gen_secp_keypair(secret);
@@ -163,7 +164,7 @@ namespace monad::staking::test
 
     std::pair<byte_string, Address> craft_add_validator_input(
         Address const &auth_address, uint256_t const &stake,
-        uint256_t const &commission, bytes32_t secret)
+        uint256_t const &commission, bytes32_t const secret)
     {
         auto const [message, secp_sig, bls_sig, sign_address] =
             craft_add_validator_input_raw(

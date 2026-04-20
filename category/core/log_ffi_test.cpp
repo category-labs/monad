@@ -28,7 +28,7 @@
 #include <gtest/gtest.h>
 #include <quill/Quill.h>
 
-static void capture_log(monad_log const *input_log, uintptr_t ptr)
+static void capture_log(monad_log const *const input_log, uintptr_t const ptr)
 {
     // The "logging" function makes a copy of the `monad_log` object, to be
     // tested after the logging completes; we also copy the message's string

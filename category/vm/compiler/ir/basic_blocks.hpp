@@ -274,7 +274,7 @@ namespace monad::vm::compiler::basic_blocks
         /**
          * Retrieve a block by its identifier.
          */
-        Block const &block(block_id id) const
+        Block const &block(block_id const id) const
         {
             return blocks_.at(id);
         }

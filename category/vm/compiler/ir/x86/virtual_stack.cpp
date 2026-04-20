@@ -87,7 +87,7 @@ namespace monad::vm::compiler::native
     std::array<GeneralReg, GENERAL_REG_COUNT> ALL_GENERAL_REGS = {
         GeneralReg(0), GeneralReg(1), GeneralReg(2)};
 
-    StackElem::StackElem(Stack *s)
+    StackElem::StackElem(Stack *const s)
         : stack_{*s}
         , reserve_avx_reg_count_{}
         , reserve_general_reg_count_{}
@@ -147,13 +147,13 @@ namespace monad::vm::compiler::native
         stack_.deferred_comparison_.negated_stack_elem = nullptr;
     }
 
-    void StackElem::insert_literal(Literal x)
+    void StackElem::insert_literal(Literal const x)
     {
         MONAD_ASSERT(!literal_.has_value());
         literal_ = x;
     }
 
-    void StackElem::insert_stack_offset(StackOffset x)
+    void StackElem::insert_stack_offset(StackOffset const x)
     {
         MONAD_ASSERT(!stack_offset_.has_value());
         stack_offset_ = x;
@@ -417,7 +417,7 @@ namespace monad::vm::compiler::native
         at(top_index_) = std::move(e);
     }
 
-    StackElemRef Stack::negate_if_deferred_comparison(StackElemRef e)
+    StackElemRef Stack::negate_if_deferred_comparison(StackElemRef const e)
     {
         auto const &dc = deferred_comparison_;
         if (dc.stack_elem == e.get()) {
@@ -545,12 +545,12 @@ namespace monad::vm::compiler::native
         return spill_avx_reg(find_stack_elem_for_avx_reg_spill());
     }
 
-    StackElem *Stack::spill_avx_reg(StackElemRef e)
+    StackElem *Stack::spill_avx_reg(StackElemRef const e)
     {
         return spill_avx_reg(e.get());
     }
 
-    StackElem *Stack::spill_avx_reg(StackElem *e)
+    StackElem *Stack::spill_avx_reg(StackElem *const e)
     {
         e->remove_avx_reg();
         if (e->stack_offset_.has_value() || e->general_reg_.has_value() ||
@@ -564,7 +564,7 @@ namespace monad::vm::compiler::native
         return e;
     }
 
-    void Stack::spill_stack_offset(StackElemRef e)
+    void Stack::spill_stack_offset(StackElemRef const e)
     {
         MONAD_ASSERT(
             e->avx_reg_.has_value() || e->general_reg_.has_value() ||
@@ -572,7 +572,7 @@ namespace monad::vm::compiler::native
         e->remove_stack_offset();
     }
 
-    void Stack::spill_literal(StackElemRef e)
+    void Stack::spill_literal(StackElemRef const e)
     {
         MONAD_ASSERT(
             e->avx_reg_.has_value() || e->general_reg_.has_value() ||
@@ -611,12 +611,12 @@ namespace monad::vm::compiler::native
         return spill_general_reg(general_reg_stack_elems_[best_index]);
     }
 
-    StackElem *Stack::spill_general_reg(StackElemRef e)
+    StackElem *Stack::spill_general_reg(StackElemRef const e)
     {
         return spill_general_reg(e.get());
     }
 
-    StackElem *Stack::spill_general_reg(StackElem *e)
+    StackElem *Stack::spill_general_reg(StackElem *const e)
     {
         e->remove_general_reg();
         if (e->stack_offset_.has_value() || e->avx_reg_.has_value() ||
@@ -710,12 +710,13 @@ namespace monad::vm::compiler::native
     }
 
     void Stack::insert_stack_offset(
-        StackElemRef e, int32_t const preferred, PrevLoc const moved_from)
+        StackElemRef const e, int32_t const preferred, PrevLoc const moved_from)
     {
         insert_stack_offset(*e, preferred, moved_from);
     }
 
-    void Stack::insert_stack_offset(StackElemRef e, PrevLoc const moved_from)
+    void
+    Stack::insert_stack_offset(StackElemRef const e, PrevLoc const moved_from)
     {
         insert_stack_offset(*e, moved_from);
     }
@@ -737,7 +738,7 @@ namespace monad::vm::compiler::native
     }
 
     std::pair<AvxRegReserv, std::optional<StackOffset>>
-    Stack::insert_avx_reg(StackElemRef e)
+    Stack::insert_avx_reg(StackElemRef const e)
     {
         if (e->avx_reg_.has_value()) {
             return {AvxRegReserv{e}, std::nullopt};
@@ -765,7 +766,7 @@ namespace monad::vm::compiler::native
     }
 
     std::pair<GeneralRegReserv, std::optional<StackOffset>>
-    Stack::insert_general_reg(StackElemRef e)
+    Stack::insert_general_reg(StackElemRef const e)
     {
         if (e->general_reg_.has_value()) {
             return {GeneralRegReserv{e}, std::nullopt};
@@ -778,7 +779,7 @@ namespace monad::vm::compiler::native
         return {GeneralRegReserv{e}, spill_offset};
     }
 
-    StackElemRef Stack::alloc_literal(Literal lit)
+    StackElemRef Stack::alloc_literal(Literal const lit)
     {
         auto e = new_stack_elem();
         e->insert_literal(lit);
@@ -809,7 +810,7 @@ namespace monad::vm::compiler::native
         return {std::move(e), reserv, spill};
     }
 
-    StackElemRef Stack::release_stack_offset(StackElemRef elem)
+    StackElemRef Stack::release_stack_offset(StackElemRef const elem)
     {
         auto dst = new_stack_elem();
         dst->stack_offset_ = elem->stack_offset_;
@@ -817,7 +818,7 @@ namespace monad::vm::compiler::native
         return dst;
     }
 
-    StackElemRef Stack::release_avx_reg(StackElemRef elem)
+    StackElemRef Stack::release_avx_reg(StackElemRef const elem)
     {
         auto dst = new_stack_elem();
         move_avx_reg(*elem, *dst);
@@ -840,7 +841,7 @@ namespace monad::vm::compiler::native
         return dst;
     }
 
-    StackElemRef Stack::release_general_reg(StackElemRef elem)
+    StackElemRef Stack::release_general_reg(StackElemRef const elem)
     {
         return release_general_reg(*elem);
     }

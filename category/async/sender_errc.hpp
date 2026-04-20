@@ -353,6 +353,12 @@ inline nested_sender_errc_with_payload_code make_status_code(
 
 // ADL discovered customisation point, opts into being able to directly use the
 // enum when comparing to status codes.
+//
+// NOLINTNEXTLINE(misc-auto-const-correctness): const on `c` makes `return c;`
+// pick boost::outcome's status_code(T&&) constructor instead of the
+// quick_status_code_from_enum one (the latter is specialized on cv-unqualified
+// `sender_errc`), causing infinite constexpr recursion through ADL back into
+// this function.
 inline constexpr BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::
     quick_status_code_from_enum_code<sender_errc>
     make_status_code(sender_errc c)

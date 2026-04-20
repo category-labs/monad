@@ -35,7 +35,7 @@ struct NodeCursor
 
     // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr NodeCursor(
-        std::shared_ptr<Node> node_, unsigned prefix_index_ = 0)
+        std::shared_ptr<Node> node_, unsigned const prefix_index_ = 0)
         : node{std::move(node_)}
         , prefix_index{prefix_index_}
     {

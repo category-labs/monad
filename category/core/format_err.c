@@ -21,15 +21,16 @@
 #include <category/core/format_err.h>
 #include <category/core/srcloc.h>
 
-static char const *final_path_component(char const *path)
+static char const *final_path_component(char const *const path)
 {
     char const *last = strrchr(path, '/');
     return last == nullptr ? path : last + 1;
 }
 
 extern int monad_vformat_err(
-    char *err_buf, size_t err_buf_size, struct monad_source_location const *src,
-    int err, char const *format, va_list ap)
+    char *const err_buf, size_t const err_buf_size,
+    struct monad_source_location const *const src, int const err,
+    char const *const format, va_list ap)
 {
     size_t len;
     int rc = 0;

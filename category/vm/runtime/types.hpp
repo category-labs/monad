@@ -74,8 +74,8 @@ namespace monad::vm::runtime
         }
 
         [[gnu::always_inline]]
-        void
-        set_return_data(uint8_t const *output_data, size_t const output_size)
+        void set_return_data(
+            uint8_t const *const output_data, size_t const output_size)
         {
             MONAD_DEBUG_ASSERT(return_data_size == 0);
             return_data = output_data;
@@ -127,7 +127,8 @@ namespace monad::vm::runtime
 
         Memory() = delete;
 
-        explicit Memory(uint8_t *han, uint8_t *dat, uint32_t const cap)
+        explicit Memory(
+            uint8_t *const han, uint8_t *const dat, uint32_t const cap)
             : size{}
             , capacity{cap}
             , data{dat}

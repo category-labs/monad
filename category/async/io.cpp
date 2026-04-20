@@ -92,7 +92,8 @@ namespace detail
     {
         AsyncIO_per_thread_state_t *parent;
 
-        explicit within_completions_holder(AsyncIO_per_thread_state_t *parent_)
+        explicit within_completions_holder(
+            AsyncIO_per_thread_state_t *const parent_)
             : parent(parent_)
         {
             parent->within_completions_count++;
@@ -273,7 +274,7 @@ AsyncIO::~AsyncIO()
     MONAD_ASSERT(!io_uring_unregister_files(&uring_.get_ring()));
 }
 
-void AsyncIO::account_read_(size_t size)
+void AsyncIO::account_read_(size_t const size)
 {
     if (++records_.inflight_rd > records_.max_inflight_rd) {
         records_.max_inflight_rd = records_.inflight_rd;
@@ -283,9 +284,9 @@ void AsyncIO::account_read_(size_t size)
 }
 
 void AsyncIO::prepare_read_sqe_(
-    struct io_uring_sqe *sqe, std::span<std::byte> buffer,
-    chunk_offset_t chunk_and_offset, void *uring_data,
-    enum erased_connected_operation::io_priority prio)
+    struct io_uring_sqe *const sqe, std::span<std::byte> const buffer,
+    chunk_offset_t const chunk_and_offset, void *const uring_data,
+    enum erased_connected_operation::io_priority const prio)
 {
     MONAD_ASSERT(sqe != nullptr);
     MONAD_ASSERT(uring_data != nullptr);
@@ -321,9 +322,9 @@ void AsyncIO::prepare_read_sqe_(
 }
 
 void AsyncIO::prepare_read_sqe_(
-    struct io_uring_sqe *sqe, std::span<const struct iovec> buffers,
-    chunk_offset_t chunk_and_offset, void *uring_data,
-    enum erased_connected_operation::io_priority prio)
+    struct io_uring_sqe *const sqe, std::span<const struct iovec> const buffers,
+    chunk_offset_t const chunk_and_offset, void *const uring_data,
+    enum erased_connected_operation::io_priority const prio)
 {
     MONAD_ASSERT(sqe != nullptr);
     MONAD_ASSERT(uring_data != nullptr);
@@ -369,8 +370,9 @@ void AsyncIO::prepare_read_sqe_(
 }
 
 void AsyncIO::submit_request_sqe_(
-    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
-    void *uring_data, enum erased_connected_operation::io_priority prio)
+    std::span<std::byte> const buffer, chunk_offset_t const chunk_and_offset,
+    void *const uring_data,
+    enum erased_connected_operation::io_priority const prio)
 {
     struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
     MONAD_ASSERT(sqe);
@@ -380,8 +382,9 @@ void AsyncIO::submit_request_sqe_(
 }
 
 void AsyncIO::submit_request_(
-    std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
-    void *uring_data, enum erased_connected_operation::io_priority prio)
+    std::span<std::byte> const buffer, chunk_offset_t const chunk_and_offset,
+    void *const uring_data,
+    enum erased_connected_operation::io_priority const prio)
 {
     poll_uring_while_submission_queue_full_();
 
@@ -389,8 +392,9 @@ void AsyncIO::submit_request_(
 }
 
 void AsyncIO::submit_request_(
-    std::span<const struct iovec> buffers, chunk_offset_t chunk_and_offset,
-    void *uring_data, enum erased_connected_operation::io_priority prio)
+    std::span<const struct iovec> const buffers,
+    chunk_offset_t const chunk_and_offset, void *const uring_data,
+    enum erased_connected_operation::io_priority const prio)
 {
     poll_uring_while_submission_queue_full_();
     struct io_uring_sqe *sqe = io_uring_get_sqe(&uring_.get_ring());
@@ -401,8 +405,9 @@ void AsyncIO::submit_request_(
 }
 
 void AsyncIO::submit_request_(
-    std::span<std::byte const> buffer, chunk_offset_t chunk_and_offset,
-    void *uring_data, enum erased_connected_operation::io_priority prio)
+    std::span<std::byte const> const buffer,
+    chunk_offset_t const chunk_and_offset, void *const uring_data,
+    enum erased_connected_operation::io_priority const prio)
 {
     MONAD_ASSERT(uring_data != nullptr);
     MONAD_ASSERT(!rwbuf_.is_read_only());
@@ -489,7 +494,7 @@ void AsyncIO::poll_uring_while_submission_queue_full_()
 
 // return the number of completions processed
 // if blocking is true, will block until at least one completion is processed
-size_t AsyncIO::poll_uring_(bool blocking, unsigned poll_rings_mask)
+size_t AsyncIO::poll_uring_(bool blocking, unsigned const poll_rings_mask)
 {
     // bit 0 in poll_rings_mask blocks read completions, bit 1 blocks write
     // completions
@@ -719,7 +724,7 @@ unsigned AsyncIO::deferred_initiations_in_flight() const noexcept
 }
 
 std::pair<unsigned, unsigned>
-AsyncIO::io_uring_ring_entries_left(bool for_wr_ring) const noexcept
+AsyncIO::io_uring_ring_entries_left(bool const for_wr_ring) const noexcept
 {
     if (for_wr_ring) {
         if (wr_uring_ == nullptr) {
@@ -736,7 +741,7 @@ AsyncIO::io_uring_ring_entries_left(bool for_wr_ring) const noexcept
         *ring->cq.kring_entries - io_uring_cq_ready(ring)};
 }
 
-void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
+void AsyncIO::dump_fd_to(size_t const which, std::filesystem::path const &path)
 {
     int const tofd = ::creat(path.c_str(), 0600);
     MONAD_ASSERT_PRINTF(
@@ -757,7 +762,7 @@ void AsyncIO::dump_fd_to(size_t which, std::filesystem::path const &path)
         copied != -1, "copy_file_range failed due to %s", std::strerror(errno));
 }
 
-unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool is_write)
+unsigned char *AsyncIO::poll_uring_while_no_io_buffers_(bool const is_write)
 {
     /* Prevent any new i/o initiation as we cannot exit until an i/o
     buffer becomes freed.

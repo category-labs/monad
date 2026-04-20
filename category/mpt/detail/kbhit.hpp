@@ -58,7 +58,7 @@ inline int getch()
     return -1;
 }
 
-inline char tty_ask_question(char const *msg, ...)
+inline char tty_ask_question(char const *const msg, ...)
 {
     va_list vl;
     termios term;

@@ -56,7 +56,7 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
 
         explicit TraverseVerifyVersions(
             std::stack<ExpectedSubtrieVersion> &records,
-            bool done_erase_ = false)
+            bool const done_erase_ = false)
             : records(records)
             , done_erase{done_erase_}
         {

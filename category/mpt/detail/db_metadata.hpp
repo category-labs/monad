@@ -128,8 +128,8 @@ namespace detail
             ~db_offsets_info_t() = default;
 
             constexpr db_offsets_info_t(
-                chunk_offset_t start_of_wip_offset_fast_,
-                chunk_offset_t start_of_wip_offset_slow_)
+                chunk_offset_t const start_of_wip_offset_fast_,
+                chunk_offset_t const start_of_wip_offset_slow_)
                 : start_of_wip_offset_fast(start_of_wip_offset_fast_)
                 , start_of_wip_offset_slow(start_of_wip_offset_slow_)
             {
@@ -188,7 +188,7 @@ namespace detail
             uint64_t unused0_ : 2;
             uint64_t insertion_count1_ : 10;
 
-            uint32_t index(db_metadata const *parent) const noexcept
+            uint32_t index(db_metadata const *const parent) const noexcept
             {
                 auto const ret = uint32_t(this - parent->chunk_info);
                 MONAD_ASSERT(ret < parent->chunk_info_count);
@@ -201,7 +201,8 @@ namespace detail
                        uint32_t(insertion_count0_);
             }
 
-            chunk_info_t const *prev(db_metadata const *parent) const noexcept
+            chunk_info_t const *
+            prev(db_metadata const *const parent) const noexcept
             {
                 if (prev_chunk_id == INVALID_CHUNK_ID) {
                     return nullptr;
@@ -209,7 +210,8 @@ namespace detail
                 return parent->at(prev_chunk_id);
             }
 
-            chunk_info_t const *next(db_metadata const *parent) const noexcept
+            chunk_info_t const *
+            next(db_metadata const *const parent) const noexcept
             {
                 if (next_chunk_id == INVALID_CHUNK_ID) {
                     return nullptr;
@@ -241,7 +243,7 @@ namespace detail
             {
                 db_metadata *parent;
 
-                explicit holder_t(db_metadata *p)
+                explicit holder_t(db_metadata *const p)
                     : parent(p)
                 {
                     parent->is_dirty().store(1, std::memory_order_release);
@@ -266,14 +268,14 @@ namespace detail
             return holder_t(this);
         }
 
-        chunk_info_t const *at(uint32_t idx) const noexcept
+        chunk_info_t const *at(uint32_t const idx) const noexcept
         {
             MONAD_ASSERT(idx < chunk_info_count);
             return &chunk_info[idx];
         }
 
         chunk_info_t atomic_load_chunk_info(
-            uint32_t const idx, std::memory_order load_ord =
+            uint32_t const idx, std::memory_order const load_ord =
                                     std::memory_order_seq_cst) const noexcept
         {
             return reinterpret_cast<std::atomic<chunk_info_t> const *>(at(idx))
@@ -329,13 +331,13 @@ namespace detail
         }
 
     private:
-        chunk_info_t *at_(uint32_t idx) noexcept
+        chunk_info_t *at_(uint32_t const idx) noexcept
         {
             MONAD_ASSERT(idx < chunk_info_count);
             return &chunk_info[idx];
         }
 
-        void append_(id_pair &list, chunk_info_t *i) noexcept
+        void append_(id_pair &list, chunk_info_t *const i) noexcept
         {
             // Insertion count is assigned to chunk_info_t *i atomically
             auto const g = hold_dirty();
@@ -374,7 +376,7 @@ namespace detail
                 info, std::memory_order_release);
         }
 
-        void remove_(chunk_info_t *i) noexcept
+        void remove_(chunk_info_t *const i) noexcept
         {
             auto get_list = [&]() -> id_pair & {
                 if (i->in_fast_list) {
@@ -435,13 +437,13 @@ namespace detail
 #endif
         }
 
-        void free_capacity_add_(uint64_t bytes) noexcept
+        void free_capacity_add_(uint64_t const bytes) noexcept
         {
             auto const g = hold_dirty();
             capacity_in_free_list += bytes;
         }
 
-        void free_capacity_sub_(uint64_t bytes) noexcept
+        void free_capacity_sub_(uint64_t const bytes) noexcept
         {
             auto const g = hold_dirty();
             capacity_in_free_list -= bytes;
@@ -461,9 +463,10 @@ namespace detail
     static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(
-        void *__restrict__ dest_, void const *__restrict__ src_, size_t bytes,
-        std::memory_order load_ord = std::memory_order_acquire,
-        std::memory_order store_ord = std::memory_order_release)
+        void *__restrict__ const dest_, void const *__restrict__ const src_,
+        size_t bytes,
+        std::memory_order const load_ord = std::memory_order_acquire,
+        std::memory_order const store_ord = std::memory_order_release)
     {
         MONAD_ASSERT((((uintptr_t)dest_) & 7) == 0);
         MONAD_ASSERT((((uintptr_t)src_) & 7) == 0);
@@ -497,7 +500,9 @@ namespace detail
     /* A dirty bit setting memcpy implementation, so the dirty bit gets held
     high during the memory copy.
     */
-    inline void db_copy(db_metadata *dest, db_metadata const *src, size_t bytes)
+    inline void db_copy(
+        db_metadata *const dest, db_metadata const *const src,
+        size_t const bytes)
     {
         alignas(db_metadata) std::byte buffer[sizeof(db_metadata)];
         memcpy(buffer, src, sizeof(db_metadata));

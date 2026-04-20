@@ -133,8 +133,8 @@ public:
     }
 
     TryReadResult try_read_storage(
-        Address const &address, Incarnation incarnation, bytes32_t const &key,
-        bytes32_t &result) const
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key, bytes32_t &result) const
     {
         auto const fn =
             [&address, incarnation, &key, &result](ProposalState const &ps) {

@@ -115,7 +115,7 @@ namespace monad::vm::utils
         return input;
     }
 
-    void err(std::string_view msg, std::string_view value)
+    void err(std::string_view const msg, std::string_view const value)
     {
         std::cerr << "error: " << msg << ": " << value << '\n';
         exit(1);
@@ -161,19 +161,19 @@ namespace monad::vm::utils
         return input;
     }
 
-    bool is_push_with_arg(std::string_view op)
+    bool is_push_with_arg(std::string_view const op)
     {
         return (
             find(push_ops_with_arg.begin(), push_ops_with_arg.end(), op) !=
             push_ops_with_arg.end());
     }
 
-    void warn(std::string_view msg, std::string_view value)
+    void warn(std::string_view const msg, std::string_view const value)
     {
         std::cerr << "warning: " << msg << ": " << value << '\n';
     }
 
-    std::optional<uint8_t> find_opcode(std::string_view op)
+    std::optional<uint8_t> find_opcode(std::string_view const op)
     {
         auto const &tbl = monad::vm::compiler::make_opcode_table<
             EvmTraits<EVMC_LATEST_STABLE_REVISION>>();

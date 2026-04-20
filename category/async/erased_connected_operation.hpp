@@ -41,7 +41,7 @@ namespace detail
     public:
         read_buffer_deleter() = default;
 
-        constexpr explicit read_buffer_deleter(AsyncIO *parent)
+        constexpr explicit read_buffer_deleter(AsyncIO *const parent)
             : parent_(parent)
         {
             MONAD_ASSERT(parent != nullptr);
@@ -57,7 +57,7 @@ namespace detail
     public:
         write_buffer_deleter() = default;
 
-        constexpr explicit write_buffer_deleter(AsyncIO *parent)
+        constexpr explicit write_buffer_deleter(AsyncIO *const parent)
             : parent_(parent)
         {
             MONAD_ASSERT(parent != nullptr);
@@ -120,7 +120,7 @@ public:
     filled_read_buffer &operator=(filled_read_buffer const &) = delete;
     filled_read_buffer &operator=(filled_read_buffer &&) = default;
 
-    constexpr explicit filled_read_buffer(size_t bytes_to_read)
+    constexpr explicit filled_read_buffer(size_t const bytes_to_read)
         : base_((std::byte const *)nullptr, bytes_to_read)
     {
     }
@@ -140,7 +140,7 @@ public:
     }
 
     //! Sets the span length
-    void set_bytes_transferred(size_t bytes) noexcept
+    void set_bytes_transferred(size_t const bytes) noexcept
     {
         auto *span = static_cast<base_ *>(this);
         *span = span->subspan(0, bytes);
@@ -211,7 +211,7 @@ public:
     filled_write_buffer &operator=(filled_write_buffer const &) = delete;
     filled_write_buffer &operator=(filled_write_buffer &&) = default;
 
-    constexpr explicit filled_write_buffer(size_t bytes_to_write)
+    constexpr explicit filled_write_buffer(size_t const bytes_to_write)
         : base_((std::byte const *)nullptr, bytes_to_write)
     {
     }
@@ -231,7 +231,7 @@ public:
     }
 
     //! Sets the span length
-    void set_bytes_transferred(size_t bytes) noexcept
+    void set_bytes_transferred(size_t const bytes) noexcept
     {
         auto *span = static_cast<base_ *>(this);
         *span = span->subspan(0, bytes);
@@ -336,15 +336,16 @@ protected:
     } rbtree_;
 
     constexpr erased_connected_operation(
-        operation_type operation_type, bool lifetime_managed_internally)
+        operation_type const operation_type,
+        bool const lifetime_managed_internally)
         : operation_type_(operation_type)
         , lifetime_managed_internally_(lifetime_managed_internally)
     {
     }
 
     constexpr erased_connected_operation(
-        operation_type operation_type, AsyncIO &io,
-        bool lifetime_managed_internally)
+        operation_type const operation_type, AsyncIO &io,
+        bool const lifetime_managed_internally)
         : operation_type_(operation_type)
         , lifetime_managed_internally_(lifetime_managed_internally)
         , io_(&io)
@@ -407,7 +408,7 @@ public:
             return n->color;
         }
 
-        static void set_color(node_ptr n, color c)
+        static void set_color(node_ptr n, color const c)
         {
             n->color = c;
         }
@@ -427,7 +428,7 @@ public:
             return n->key;
         }
 
-        static void set_key(node_ptr n, file_offset_t v)
+        static void set_key(node_ptr n, file_offset_t const v)
         {
             static constexpr file_offset_t max_key = (1ULL << 63) - 1;
             MONAD_ASSERT(v <= max_key);
@@ -435,59 +436,64 @@ public:
         }
 
         static erased_connected_operation *
-        get_parent(erased_connected_operation const *n)
+        get_parent(erased_connected_operation const *const n)
         {
             return n->rbtree_.parent_;
         }
 
         static void set_parent(
-            erased_connected_operation *n, erased_connected_operation *parent)
+            erased_connected_operation *const n,
+            erased_connected_operation *const parent)
         {
             n->rbtree_.parent_ = parent;
         }
 
         static erased_connected_operation *
-        get_left(erased_connected_operation const *n)
+        get_left(erased_connected_operation const *const n)
         {
             return n->rbtree_.left_;
         }
 
         static void set_left(
-            erased_connected_operation *n, erased_connected_operation *left)
+            erased_connected_operation *const n,
+            erased_connected_operation *const left)
         {
             n->rbtree_.left_ = left;
         }
 
         static erased_connected_operation *
-        get_right(erased_connected_operation const *n)
+        get_right(erased_connected_operation const *const n)
         {
             return n->rbtree_.right_;
         }
 
         static void set_right(
-            erased_connected_operation *n, erased_connected_operation *right)
+            erased_connected_operation *const n,
+            erased_connected_operation *const right)
         {
             n->rbtree_.right_ = right;
         }
 
-        static file_offset_t get_key(erased_connected_operation const *n)
+        static file_offset_t get_key(erased_connected_operation const *const n)
         {
             return n->rbtree_.key;
         }
 
-        static void set_key(erased_connected_operation *n, file_offset_t v)
+        static void
+        set_key(erased_connected_operation *const n, file_offset_t const v)
         {
             static constexpr file_offset_t max_key = (1ULL << 63) - 1;
             MONAD_ASSERT(v <= max_key);
             n->rbtree_.key = v & max_key;
         }
 
-        static node_ptr to_node_ptr(erased_connected_operation *n)
+        static node_ptr to_node_ptr(erased_connected_operation *const n)
         {
             return &n->rbtree_;
         }
 
-        static const_node_ptr to_node_ptr(erased_connected_operation const *n)
+        static const_node_ptr
+        to_node_ptr(erased_connected_operation const *const n)
         {
             return &n->rbtree_;
         }
@@ -555,7 +561,7 @@ public:
         return io_priority_;
     }
 
-    void set_io_priority(enum io_priority v) noexcept
+    void set_io_priority(enum io_priority const v) noexcept
     {
         io_priority_ = v;
     }
@@ -587,7 +593,7 @@ public:
 
     // Overload ambiguity resolver so you can write `completed(success())`
     // without ambiguous overload warnings.
-    void completed(BOOST_OUTCOME_V2_NAMESPACE::success_type<void> _)
+    void completed(BOOST_OUTCOME_V2_NAMESPACE::success_type<void> const _)
     {
         completed(result<void>(_));
     }

@@ -53,8 +53,9 @@ namespace monad::vm::utils
         using ConstAccessor = HashMap::const_accessor;
 
         explicit LruWeightCache(
-            uint32_t max_weight, std::chrono::nanoseconds lru_update_duration =
-                                     std::chrono::milliseconds{200})
+            uint32_t const max_weight,
+            std::chrono::nanoseconds const lru_update_duration =
+                std::chrono::milliseconds{200})
             : max_weight_(max_weight)
             , weight_(0)
             , lru_{lru_update_duration.count()}
@@ -75,7 +76,7 @@ namespace monad::vm::utils
 
         /// Insert `value` with `weight` under `key`. Overwrites if there is
         /// already a value under `key`.
-        bool insert(Key const &key, Value const &value, uint32_t weight)
+        bool insert(Key const &key, Value const &value, uint32_t const weight)
         {
             int64_t delta_weight = weight;
             bool is_new_key = true;
@@ -101,7 +102,7 @@ namespace monad::vm::utils
         /// Like insert, but does not overwrite an existing value in the cache.
         /// Instead if a value already exists under `key` then it will
         /// overwrite the `value` argument with the existing value.
-        bool try_insert(Key const &key, Value &value, uint32_t weight)
+        bool try_insert(Key const &key, Value &value, uint32_t const weight)
         {
             ConstAccessor acc;
             if (!hmap_.insert(acc, {key, HashMapValue{value, weight}})) {
@@ -137,7 +138,7 @@ namespace monad::vm::utils
         }
 
     private:
-        void adjust_by_delta_weight(int64_t delta_weight)
+        void adjust_by_delta_weight(int64_t const delta_weight)
         {
             int64_t const pre_weight =
                 weight_.fetch_add(delta_weight, std::memory_order_acq_rel);
@@ -155,14 +156,14 @@ namespace monad::vm::utils
             }
         }
 
-        void try_update_lru(ListNode const *node)
+        void try_update_lru(ListNode const *const node)
         {
             if (node->second.check_lru_time()) {
                 lru_.update_lru(node);
             }
         }
 
-        uint32_t evict(ListNode const *target)
+        uint32_t evict(ListNode const *const target)
         {
             Accessor acc;
             bool const found = hmap_.find(acc, target->first);
@@ -183,7 +184,7 @@ namespace monad::vm::utils
 
             HashMapValue() = default;
 
-            HashMapValue(Value const &value, uint32_t weight)
+            HashMapValue(Value const &value, uint32_t const weight)
                 : value_{value}
                 , cache_weight_{weight}
             {
@@ -204,7 +205,7 @@ namespace monad::vm::utils
                 return prev_ != nullptr;
             }
 
-            void update_lru_time(int64_t update_period) const
+            void update_lru_time(int64_t const update_period) const
             {
                 lru_time_.store(
                     cur_time() + update_period, std::memory_order_release);
@@ -231,14 +232,14 @@ namespace monad::vm::utils
             int64_t lru_update_period_;
 
         public:
-            explicit LruList(int64_t lru_update_period)
+            explicit LruList(int64_t const lru_update_period)
                 : lru_update_period_{lru_update_period}
             {
                 base_.second.next_ = &base_;
                 base_.second.prev_ = &base_;
             }
 
-            void update_lru(ListNode const *node)
+            void update_lru(ListNode const *const node)
             {
                 std::unique_lock const l(mutex_);
                 if (node->second.is_in_list()) {
@@ -248,7 +249,7 @@ namespace monad::vm::utils
                 } // else item is being evicted or inserted, don't update LRU
             }
 
-            void push_front(ListNode const *node)
+            void push_front(ListNode const *const node)
             {
                 std::unique_lock const l(mutex_);
                 front_link(node);
@@ -267,7 +268,8 @@ namespace monad::vm::utils
                 return target;
             }
 
-            bool unsafe_check_consistent(HashMap const &hmap, int64_t weight)
+            bool
+            unsafe_check_consistent(HashMap const &hmap, int64_t const weight)
             {
                 std::unordered_set<Key> keys;
                 std::unique_lock l(mutex_);
@@ -288,7 +290,7 @@ namespace monad::vm::utils
             }
 
         private:
-            void delink(ListNode const *node)
+            void delink(ListNode const *const node)
             {
                 ListNode const *const prev = node->second.prev_;
                 ListNode const *const next = node->second.next_;
@@ -296,7 +298,7 @@ namespace monad::vm::utils
                 next->second.prev_ = prev;
             }
 
-            void front_link(ListNode const *node)
+            void front_link(ListNode const *const node)
             {
                 ListNode const *const head = base_.second.next_;
                 node->second.prev_ = &base_;

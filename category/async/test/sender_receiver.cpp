@@ -134,9 +134,9 @@ public:
     }
 
     virtual bool reinitiate(
-        MONAD_ASYNC_NAMESPACE::erased_connected_operation *i,
-        MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::buffer_type buffer)
-        override final
+        MONAD_ASYNC_NAMESPACE::erased_connected_operation *const i,
+        MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::buffer_type const
+            buffer) override final
     {
         using namespace MONAD_ASYNC_NAMESPACE;
         auto *state = static_cast<typename io_state_type_::pointer>(i);
@@ -159,12 +159,12 @@ public:
     }
 
     MONAD_ASYNC_NAMESPACE::read_single_buffer_sender &
-    sender(size_t idx) noexcept
+    sender(size_t const idx) noexcept
     {
         return states_[idx]->sender();
     }
 
-    Receiver &receiver(size_t idx) noexcept
+    Receiver &receiver(size_t const idx) noexcept
     {
         return states_[idx]->receiver();
     }
@@ -285,14 +285,15 @@ struct completion_handler_io_receiver
     read_single_buffer_operation_states_base_ *state;
 
     explicit completion_handler_io_receiver(
-        read_single_buffer_operation_states_base_ *s)
+        read_single_buffer_operation_states_base_ *const s)
         : state(s)
     {
     }
 
     void set_value(
-        MONAD_ASYNC_NAMESPACE::erased_connected_operation *rawstate,
-        MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type buffer)
+        MONAD_ASYNC_NAMESPACE::erased_connected_operation *const rawstate,
+        MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type const
+            buffer)
     {
         ASSERT_TRUE(buffer);
         state->reinitiate(rawstate, std::move(buffer.assume_value().get()));
@@ -345,7 +346,7 @@ struct cpp_suspend_resume_io_receiver
     }
 
     void set_value(
-        MONAD_ASYNC_NAMESPACE::erased_connected_operation *rawstate,
+        MONAD_ASYNC_NAMESPACE::erased_connected_operation *const rawstate,
         MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type buffer)
     {
         MONAD_ASSERT(!res.has_value());
@@ -366,7 +367,7 @@ struct cpp_suspend_resume_io_receiver
         return res.has_value();
     }
 
-    void await_suspend(std::coroutine_handle<> h)
+    void await_suspend(std::coroutine_handle<> const h)
     {
         MONAD_ASSERT(!res.has_value());
         _h = h;
@@ -445,7 +446,7 @@ struct fiber_suspend_resume_io_receiver
     }
 
     void set_value(
-        MONAD_ASYNC_NAMESPACE::erased_connected_operation *rawstate,
+        MONAD_ASYNC_NAMESPACE::erased_connected_operation *const rawstate,
         MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type buffer)
     {
         promise.set_value({rawstate, std::move(buffer)});
@@ -711,7 +712,7 @@ TEST_F(AsyncIO, immediate_completion_decays_to_bytes_transferred)
                 payload_to_immediately_complete);
         }
 
-        void reset(size_t v)
+        void reset(size_t const v)
         {
             payload_to_immediately_complete = v;
         }
@@ -799,7 +800,7 @@ TEST_F(AsyncIO, immediate_completion_decays_to_void)
                 payload_to_immediately_complete);
         }
 
-        void reset(size_t v)
+        void reset(size_t const v)
         {
             payload_to_immediately_complete = v;
         }

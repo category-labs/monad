@@ -26,8 +26,8 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 // return length of noderef
-inline unsigned
-to_node_reference(byte_string_view rlp, unsigned char *dest) noexcept
+inline unsigned to_node_reference(
+    byte_string_view const rlp, unsigned char *const dest) noexcept
 {
     if (MONAD_LIKELY(rlp.size() >= KECCAK256_SIZE)) {
         keccak256(rlp.data(), rlp.size(), dest);

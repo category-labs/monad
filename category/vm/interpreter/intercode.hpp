@@ -43,7 +43,7 @@ namespace monad::vm::interpreter
 
         explicit Intercode(std::span<uint8_t const> const);
 
-        Intercode(uint8_t const *code, size_t code_size)
+        Intercode(uint8_t const *const code, size_t const code_size)
             : Intercode{std::span<uint8_t const>{code, code_size}}
         {
         }
@@ -80,8 +80,8 @@ namespace monad::vm::interpreter
         code_size_t code_size_;
         JumpdestMap jumpdest_map_;
 
-        static uint8_t const *pad(std::span<uint8_t const> const code);
+        static uint8_t const *pad(std::span<uint8_t const> code);
 
-        static JumpdestMap find_jumpdests(std::span<uint8_t const> const code);
+        static JumpdestMap find_jumpdests(std::span<uint8_t const> code);
     };
 }

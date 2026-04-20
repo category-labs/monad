@@ -98,7 +98,8 @@ struct chunk_offset_t
     }
 
     constexpr chunk_offset_t(
-        uint32_t id_, file_offset_t offset_, file_offset_t spare_ = max_spare)
+        uint32_t const id_, file_offset_t const offset_,
+        file_offset_t const spare_ = max_spare)
         : offset(offset_ & max_offset)
         , id(id_ & max_id)
         , spare{spare_ & max_spare}
@@ -140,7 +141,7 @@ struct chunk_offset_t
                static_cast<file_offset_t>(offset);
     }
 
-    void set_spare(uint16_t value) noexcept
+    void set_spare(uint16_t const value) noexcept
     {
         MONAD_ASSERT(value < max_spare);
         spare = value & max_spare;
@@ -153,7 +154,7 @@ static_assert(std::is_trivially_copyable_v<chunk_offset_t>);
 
 struct chunk_offset_t_hasher
 {
-    constexpr size_t operator()(chunk_offset_t v) const noexcept
+    constexpr size_t operator()(chunk_offset_t const v) const noexcept
     {
         return fnv1a_hash<file_offset_t>()(v.raw());
     }
@@ -185,7 +186,7 @@ static constexpr uint16_t DMA_PAGE_BITS = 6;
 static constexpr uint16_t DMA_PAGE_SIZE = (1U << DMA_PAGE_BITS);
 
 //! Calculate total byte length from an array of iovec buffers
-inline size_t iov_length(std::span<const struct iovec> iovecs)
+inline size_t iov_length(std::span<const struct iovec> const iovecs)
 {
     size_t total = 0;
     for (auto const &iov : iovecs) {
@@ -211,7 +212,7 @@ namespace std
             return v_.is_lock_free();
         }
 
-        constexpr explicit atomic(value_type v) noexcept
+        constexpr explicit atomic(value_type const v) noexcept
             : v_(std::bit_cast<uint64_t>(v))
         {
         }
@@ -222,21 +223,21 @@ namespace std
         atomic &operator=(atomic &&) = delete;
 
         void store(
-            value_type v,
-            std::memory_order ord = std::memory_order_seq_cst) noexcept
+            value_type const v,
+            std::memory_order const ord = std::memory_order_seq_cst) noexcept
         {
             v_.store(std::bit_cast<uint64_t>(v), ord);
         }
 
-        value_type
-        load(std::memory_order ord = std::memory_order_seq_cst) const noexcept
+        value_type load(std::memory_order const ord = std::memory_order_seq_cst)
+            const noexcept
         {
             return std::bit_cast<value_type>(v_.load(ord));
         }
 
         value_type exchange(
-            value_type desired,
-            std::memory_order ord = std::memory_order_seq_cst) noexcept
+            value_type const desired,
+            std::memory_order const ord = std::memory_order_seq_cst) noexcept
         {
             return std::bit_cast<value_type>(
                 v_.exchange(std::bit_cast<uint64_t>(desired), ord));

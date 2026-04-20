@@ -298,8 +298,8 @@ public:
     }
 
     virtual bool traverse_fiber_blocking(
-        Node::SharedPtr node, TraverseMachine &machine, uint64_t const block_id,
-        size_t) override
+        Node::SharedPtr const node, TraverseMachine &machine,
+        uint64_t const block_id, size_t) override
     {
         return preorder_traverse_blocking(aux_, *node, machine, block_id);
     }
@@ -979,7 +979,7 @@ struct RODb::Impl final : public OnDiskWithWorkerThreadImpl
         return fut.get();
     }
 
-    NodeCursor load_root_fiber_blocking(uint64_t version)
+    NodeCursor load_root_fiber_blocking(uint64_t const version)
     {
         auto const root_offset =
             aux().metadata_ctx().get_root_offset_at_version(version);
@@ -1329,13 +1329,14 @@ uint64_t Db::get_history_length() const
                         : 1;
 }
 
-AsyncContext::AsyncContext(Db &db, size_t node_lru_max_mem)
+AsyncContext::AsyncContext(Db &db, size_t const node_lru_max_mem)
     : aux(db.impl_->aux())
     , node_cache(node_lru_max_mem)
 {
 }
 
-AsyncContextUniquePtr async_context_create(Db &db, size_t node_lru_max_mem)
+AsyncContextUniquePtr
+async_context_create(Db &db, size_t const node_lru_max_mem)
 {
     return std::make_unique<AsyncContext>(db, node_lru_max_mem);
 }
@@ -1358,8 +1359,8 @@ namespace detail
         uint16_t buffer_off;
 
         constexpr load_root_receiver_t(
-            chunk_offset_t offset_, DbGetSender<T> *sender_,
-            async::erased_connected_operation *io_state_)
+            chunk_offset_t const offset_, DbGetSender<T> *const sender_,
+            async::erased_connected_operation *const io_state_)
             : offset(offset_)
             , sender(sender_)
             , io_state(io_state_)
@@ -1444,8 +1445,8 @@ namespace detail
     };
 
     template <return_type T>
-    async::result<void>
-    DbGetSender<T>::operator()(async::erased_connected_operation *io_state)
+    async::result<void> DbGetSender<T>::operator()(
+        async::erased_connected_operation *const io_state)
     {
         switch (op_type) {
         case op_t::op_get1:

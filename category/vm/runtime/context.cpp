@@ -44,7 +44,7 @@ static_assert(alignof(Bin<31>) == alignof(uint32_t));
 static_assert(std::is_standard_layout_v<Bin<31>>);
 
 extern "C" void monad_vm_runtime_increase_capacity(
-    Context *ctx, uint32_t const old_size, Bin<30> const new_size)
+    Context *const ctx, uint32_t const old_size, Bin<30> const new_size)
 {
     MONAD_DEBUG_ASSERT((*new_size & 31) == 0);
     MONAD_DEBUG_ASSERT(old_size < *new_size);
@@ -79,7 +79,7 @@ namespace monad::vm::runtime
 {
     namespace
     {
-        void release_result(evmc_result const *result)
+        void release_result(evmc_result const *const result)
         {
             MONAD_DEBUG_ASSERT(result);
             std::free(const_cast<uint8_t *>(result->output_data));
@@ -87,8 +87,9 @@ namespace monad::vm::runtime
     }
 
     Context Context::from(
-        evmc_host_interface const *host, evmc_host_context *context,
-        evmc_message const *msg, std::span<uint8_t const> code) noexcept
+        evmc_host_interface const *const host, evmc_host_context *const context,
+        evmc_message const *const msg,
+        std::span<uint8_t const> const code) noexcept
     {
         return Context{
             .host = host,

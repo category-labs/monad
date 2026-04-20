@@ -45,14 +45,14 @@ private:
 
 public:
     constexpr read_single_buffer_sender(
-        chunk_offset_t offset, size_t bytes_to_read)
+        chunk_offset_t const offset, size_t const bytes_to_read)
         : offset_(offset)
         , buffer_(bytes_to_read)
     {
     }
 
     constexpr read_single_buffer_sender(
-        chunk_offset_t offset, buffer_type buffer)
+        chunk_offset_t const offset, buffer_type buffer)
         : offset_(offset)
         , buffer_(std::move(buffer))
     {
@@ -73,19 +73,19 @@ public:
         return std::move(buffer_);
     }
 
-    void reset(chunk_offset_t offset, size_t bytes_to_read)
+    void reset(chunk_offset_t const offset, size_t const bytes_to_read)
     {
         offset_ = offset;
         buffer_ = buffer_type(bytes_to_read);
     }
 
-    void reset(chunk_offset_t offset, buffer_type buffer)
+    void reset(chunk_offset_t const offset, buffer_type buffer)
     {
         offset_ = offset;
         buffer_ = std::move(buffer);
     }
 
-    result<void> operator()(erased_connected_operation *io_state)
+    result<void> operator()(erased_connected_operation *const io_state)
     {
         if (!buffer_) {
             buffer_.set_read_buffer(
@@ -161,7 +161,7 @@ private:
 
 public:
     constexpr read_multiple_buffer_sender(
-        chunk_offset_t offset, buffers_type buffers)
+        chunk_offset_t const offset, buffers_type const buffers)
         : offset_(offset)
         , buffers_(buffers)
     {
@@ -177,13 +177,13 @@ public:
         return buffers_;
     }
 
-    void reset(chunk_offset_t offset, buffers_type buffers)
+    void reset(chunk_offset_t const offset, buffers_type const buffers)
     {
         offset_ = offset;
         buffers_ = buffers;
     }
 
-    result<void> operator()(erased_connected_operation *io_state) noexcept
+    result<void> operator()(erased_connected_operation *const io_state) noexcept
     {
         try {
             std::span<const struct iovec> iovecs;
@@ -305,7 +305,7 @@ private:
 
 public:
     constexpr write_single_buffer_sender(
-        chunk_offset_t offset, size_t bytes_to_write)
+        chunk_offset_t const offset, size_t const bytes_to_write)
         : offset_(offset)
         , buffer_(bytes_to_write)
         , append_(const_cast<std::byte *>(buffer_.data()))
@@ -313,7 +313,7 @@ public:
     }
 
     constexpr write_single_buffer_sender(
-        chunk_offset_t offset, buffer_type buffer)
+        chunk_offset_t const offset, buffer_type buffer)
         : offset_(offset)
         , buffer_(std::move(buffer))
         , append_(const_cast<std::byte *>(buffer_.data()))
@@ -335,21 +335,21 @@ public:
         return std::move(buffer_);
     }
 
-    void reset(chunk_offset_t offset, size_t bytes_to_write)
+    void reset(chunk_offset_t const offset, size_t const bytes_to_write)
     {
         offset_ = offset;
         buffer_ = buffer_type(bytes_to_write);
         append_ = const_cast<std::byte *>(buffer_.data());
     }
 
-    void reset(chunk_offset_t offset, buffer_type buffer)
+    void reset(chunk_offset_t const offset, buffer_type buffer)
     {
         offset_ = offset;
         buffer_ = std::move(buffer);
         append_ = const_cast<std::byte *>(buffer_.data());
     }
 
-    result<void> operator()(erased_connected_operation *io_state) noexcept
+    result<void> operator()(erased_connected_operation *const io_state) noexcept
     {
         MONAD_ASSERT(!!buffer_);
         buffer_.set_bytes_transferred(size_t(append_ - buffer_.data()));
@@ -390,7 +390,7 @@ public:
         return static_cast<size_t>(end - append_);
     }
 
-    constexpr std::byte *advance_buffer_append(size_t bytes) noexcept
+    constexpr std::byte *advance_buffer_append(size_t const bytes) noexcept
     {
         if (bytes > remaining_buffer_bytes()) {
             return nullptr;

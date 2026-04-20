@@ -46,7 +46,8 @@ static int64_t calc_min_version_original(Node const &node)
 }
 
 // Build a node whose mask has exactly `nchildren` bits set (low bits).
-static Node::SharedPtr make_bench_node(unsigned nchildren, int64_t version)
+static Node::SharedPtr
+make_bench_node(unsigned const nchildren, int64_t const version)
 {
     uint16_t const mask = static_cast<uint16_t>((1u << nchildren) - 1u);
 

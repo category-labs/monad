@@ -58,7 +58,7 @@ constexpr bool PLATFORM_LINUX = false;
 
 constexpr int PIDFD_SNAPSHOT = -2;
 
-static void usage(FILE *out)
+static void usage(FILE *const out)
 {
     extern char const *__progname;
     fprintf(out, "usage: %s [-h] [<exec-event-ring>]\n", __progname);
@@ -88,7 +88,7 @@ struct option const longopts[] = {
     {}
 };
 
-static int parse_options(int argc, char **argv)
+static int parse_options(int const argc, char ** const argv)
 {
     int ch;
 
@@ -115,7 +115,7 @@ static void handle_signal(int)
     g_should_stop = 1;
 }
 
-static bool process_has_exited(int pidfd)
+static bool process_has_exited(int const pidfd)
 {
     if (pidfd == -1) {
         // pidfd being -1 means "disable the detection feature"
@@ -129,8 +129,8 @@ static bool process_has_exited(int pidfd)
 }
 
 static void hexdump_event_payload(
-    struct monad_event_ring const *event_ring,
-    struct monad_event_descriptor const *event, FILE *out)
+    struct monad_event_ring const *const event_ring,
+    struct monad_event_descriptor const *const event, FILE *const out)
 {
     static char hexdump_buf[1 << 25];
     char *o = hexdump_buf;
@@ -169,8 +169,8 @@ static void hexdump_event_payload(
 }
 
 static void print_event(
-    struct monad_event_ring const *event_ring,
-    struct monad_event_descriptor const *event, FILE *out)
+    struct monad_event_ring const *const event_ring,
+    struct monad_event_descriptor const *const event, FILE *const out)
 {
     static char time_buf[32];
     static time_t last_second = 0;
@@ -259,8 +259,8 @@ static void print_event(
 
 // The main event processing loop of the application
 static void event_loop(
-    struct monad_event_ring const *event_ring,
-    struct monad_event_iterator *iter, int pidfd, FILE *out)
+    struct monad_event_ring const *const event_ring,
+    struct monad_event_iterator *const iter, int const pidfd, FILE *const out)
 {
     struct monad_event_descriptor event;
     uint64_t not_ready_count = 0;
@@ -297,7 +297,8 @@ static void event_loop(
     }
 }
 
-static void find_initial_iteration_point(struct monad_event_iterator *iter)
+static void
+find_initial_iteration_point(struct monad_event_iterator *const iter)
 {
     // This function is not strictly necessary, but it is probably useful for
     // most use cases. When an iterator is initialized via a call to
@@ -330,7 +331,7 @@ static void find_initial_iteration_point(struct monad_event_iterator *iter)
     (void)monad_exec_iter_consensus_prev(iter, MONAD_EXEC_BLOCK_START, nullptr);
 }
 
-int main(int argc, char **argv)
+int main(int const argc, char **const argv)
 {
     char event_ring_pathbuf[PATH_MAX];
     char const *event_ring_input = MONAD_EVENT_DEFAULT_EXEC_FILE_NAME;

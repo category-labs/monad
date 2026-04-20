@@ -60,7 +60,7 @@ public:
         std::filesystem::path const &file,
         std::optional<std::variant<evmc_revision, monad_revision>> const
             &revision,
-        bool enable_tracing) noexcept
+        bool const enable_tracing) noexcept
         : file_{file}
         , revision_{revision}
         , enable_tracing_{enable_tracing}

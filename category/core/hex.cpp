@@ -71,7 +71,7 @@ std::string to_hex(byte_string_view const bytes)
 
 namespace literals
 {
-    byte_string operator""_bytes(char const *s)
+    byte_string operator""_bytes(char const *const s)
     {
         return from_hex(s).value();
     }

@@ -93,7 +93,7 @@ namespace trace
         AccessListTracer(
             nlohmann::json &storage, Address const &sender,
             Address const &beneficiary, std::optional<Address> const &to,
-            std::span<std::optional<Address> const> const authorities);
+            std::span<std::optional<Address> const> authorities);
 
         template <Traits traits>
         void encode(State &);

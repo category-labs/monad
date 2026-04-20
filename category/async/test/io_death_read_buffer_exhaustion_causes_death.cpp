@@ -62,7 +62,7 @@ namespace
 
             void set_value(
                 monad::async::erased_connected_operation *,
-                monad::async::read_single_buffer_sender::result_type r)
+                monad::async::read_single_buffer_sender::result_type const r)
             {
                 MONAD_ASSERT(r);
                 // Exactly the same test as the death test, except for this line

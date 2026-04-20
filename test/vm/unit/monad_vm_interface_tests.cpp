@@ -44,7 +44,8 @@ using TestTraits = EvmTraits<constants::EARLIEST_SUPPORTED_EVM_FORK>;
 
 namespace
 {
-    std::pair<std::vector<uint8_t>, bytes32_t> make_bytecode(uint32_t bytes)
+    std::pair<std::vector<uint8_t>, bytes32_t>
+    make_bytecode(uint32_t const bytes)
     {
         std::vector<uint8_t> bytecode{
             PUSH1,
@@ -91,7 +92,7 @@ namespace
         };
 
         HostMock(
-            size_t calls_before_exception,
+            size_t const calls_before_exception,
             std::function<evmc::Result(Host &, evmc_message const &)> call_impl)
             : calls_before_exception_{calls_before_exception}
             , call_impl_{std::move(call_impl)}
@@ -475,7 +476,7 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
     ASSERT_EQ(result.gas_left, 4);
 }
 
-static void test_execute_raw(VM::Mode mode)
+static void test_execute_raw(VM::Mode const mode)
 {
     VM vm{mode};
     evmc::MockedHost host;

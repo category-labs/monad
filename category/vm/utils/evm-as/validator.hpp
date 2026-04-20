@@ -53,7 +53,7 @@ namespace monad::vm::utils::evm_as::internal
     {
 
         EvmDebugValidator(
-            std::vector<ValidationError> &errors, bool allow_invalid)
+            std::vector<ValidationError> &errors, bool const allow_invalid)
             : errors(errors)
             , vstack_size(0)
             , pos(0)
@@ -192,7 +192,7 @@ namespace monad::vm::utils::evm_as::internal
             return true;
         }
 
-        void error(size_t pos, std::string &&msg)
+        void error(size_t const pos, std::string &&msg)
         {
             result = false;
             if constexpr (collect_errors) {

@@ -69,7 +69,7 @@ namespace monad::test
             ++depth;
         }
 
-        virtual void up(size_t n) override
+        virtual void up(size_t const n) override
         {
             MONAD_ASSERT(n <= depth);
             depth -= n;
@@ -128,7 +128,7 @@ namespace monad::test
             ++depth;
         }
 
-        virtual void up(size_t n) override
+        virtual void up(size_t const n) override
         {
             MONAD_ASSERT(n <= depth);
             depth -= n;
@@ -194,7 +194,7 @@ namespace monad::test
             ++depth;
         }
 
-        virtual void up(size_t n) override
+        virtual void up(size_t const n) override
         {
             MONAD_ASSERT(n <= depth);
             depth -= n;
@@ -569,7 +569,7 @@ namespace monad::test
                 return s;
             }
 
-            void ensure_total_chunks(size_t chunks)
+            void ensure_total_chunks(size_t const chunks)
             {
                 std::vector<Update> updates;
                 updates.reserve(Config.updates_per_block);

@@ -65,7 +65,8 @@ unsigned encode_two_pieces(
     return ret;
 }
 
-std::span<unsigned char> encode_empty_string(std::span<unsigned char> result)
+std::span<unsigned char>
+encode_empty_string(std::span<unsigned char> const result)
 {
     result[0] = RLP_EMPTY_STRING;
     return result.subspan(1);

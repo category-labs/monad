@@ -73,8 +73,8 @@ struct MachineBase : public mpt::StateMachine
     TableType table{TableType::Prefix};
 
     virtual mpt::Compute &get_compute() const override;
-    virtual void down(unsigned char const nibble) override;
-    virtual void up(size_t const n) override;
+    virtual void down(unsigned char nibble) override;
+    virtual void up(size_t n) override;
     virtual bool is_variable_length() const override;
     constexpr uint8_t prefix_len() const;
 

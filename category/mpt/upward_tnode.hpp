@@ -104,7 +104,7 @@ struct UpdateExpireBase : public TNodeBase
 protected:
     UpdateExpireBase(
         TNodeBase *const parent, tnode_type const type, uint8_t const npending,
-        uint8_t branch, uint16_t const mask)
+        uint8_t const branch, uint16_t const mask)
         : TNodeBase(parent, type, npending)
         , branch(branch)
         , mask(mask)
@@ -320,8 +320,8 @@ struct ExpireTNode : public UpdateExpireBase
                          allocator_type, &ExpireTNode::pool>>;
 
     static unique_ptr_type make(
-        UpdateExpireBase *const parent, unsigned const branch, unsigned index,
-        bool const cache_node, Node::SharedPtr node)
+        UpdateExpireBase *const parent, unsigned const branch,
+        unsigned const index, bool const cache_node, Node::SharedPtr node)
     {
         MONAD_ASSERT(parent);
         return allocators::allocate_unique<allocator_type, &ExpireTNode::pool>(

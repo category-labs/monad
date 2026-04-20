@@ -53,7 +53,7 @@ namespace monad::vm::utils::evm_as
         }
 
         compiler::OpCodeInfo const &
-        lookup(compiler::EvmOpCode opcode) const noexcept
+        lookup(compiler::EvmOpCode const opcode) const noexcept
         {
             return compiler::opcode_table<traits>[opcode];
         }
@@ -85,13 +85,13 @@ namespace monad::vm::utils::evm_as
             return ins_.size();
         }
 
-        Instruction::T const &operator[](size_t index) const
+        Instruction::T const &operator[](size_t const index) const
         {
             return ins_[index];
         }
 
         // Inserts a nullary opcode
-        EvmBuilder &ins(compiler::EvmOpCode opcode) noexcept
+        EvmBuilder &ins(compiler::EvmOpCode const opcode) noexcept
         {
             if (compiler::is_unknown_opcode_info<traits>(
                     compiler::opcode_table<traits>[opcode])) {
@@ -129,7 +129,8 @@ namespace monad::vm::utils::evm_as
             return push(n, imm);
         }
 
-        EvmBuilder &push(size_t n_bytes, runtime::uint256_t const &imm) noexcept
+        EvmBuilder &
+        push(size_t const n_bytes, runtime::uint256_t const &imm) noexcept
         {
             if (n_bytes > 32) {
                 return insert(InvalidI{std::format("PUSH{}", n_bytes)});
@@ -184,7 +185,7 @@ namespace monad::vm::utils::evm_as
             return ins(compiler::EvmOpCode::JUMPI);
         }
 
-        EvmBuilder &dup(size_t n) noexcept
+        EvmBuilder &dup(size_t const n) noexcept
         {
             if (n == 0 || n > 16) {
                 return insert(InvalidI{std::format("DUP{}", n)});
@@ -194,7 +195,7 @@ namespace monad::vm::utils::evm_as
             return ins(static_cast<compiler::EvmOpCode>(opcode));
         }
 
-        EvmBuilder &swap(size_t n) noexcept
+        EvmBuilder &swap(size_t const n) noexcept
         {
             if (n == 0 || n > 16) {
                 return insert(InvalidI{std::format("SWAP{}", n)});
@@ -264,7 +265,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &call(
-            uint64_t gas, Address const &address,
+            uint64_t const gas, Address const &address,
             runtime::uint256_t const &value,
             runtime::uint256_t const &args_offset,
             runtime::uint256_t const &args_size,
@@ -282,7 +283,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &callcode(
-            uint64_t gas, Address const &address,
+            uint64_t const gas, Address const &address,
             runtime::uint256_t const &value,
             runtime::uint256_t const &args_offset,
             runtime::uint256_t const &args_size,
@@ -300,7 +301,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &delegatecall(
-            uint64_t gas, Address const &address,
+            uint64_t const gas, Address const &address,
             runtime::uint256_t const &args_offset,
             runtime::uint256_t const &args_size,
             runtime::uint256_t const &ret_offset,
@@ -316,7 +317,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &staticcall(
-            uint64_t gas, Address const &address,
+            uint64_t const gas, Address const &address,
             runtime::uint256_t const &args_offset,
             runtime::uint256_t const &args_size,
             runtime::uint256_t const &ret_offset,
@@ -331,21 +332,21 @@ namespace monad::vm::utils::evm_as
             return staticcall();
         }
 
-        EvmBuilder &return_(uint64_t offset, uint64_t size) noexcept
+        EvmBuilder &return_(uint64_t const offset, uint64_t const size) noexcept
         {
             push(size);
             push(offset);
             return return_();
         }
 
-        EvmBuilder &revert(uint64_t offset, uint64_t size) noexcept
+        EvmBuilder &revert(uint64_t const offset, uint64_t const size) noexcept
         {
             push(size);
             push(offset);
             return revert();
         }
 
-        EvmBuilder &log0(uint64_t offset, uint64_t size) noexcept
+        EvmBuilder &log0(uint64_t const offset, uint64_t const size) noexcept
         {
             push(size);
             push(offset);
@@ -353,7 +354,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &log1(
-            uint64_t offset, uint64_t size,
+            uint64_t const offset, uint64_t const size,
             runtime::uint256_t const &topic1) noexcept
         {
             push(topic1);
@@ -363,7 +364,8 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &log2(
-            uint64_t offset, uint64_t size, runtime::uint256_t const &topic1,
+            uint64_t const offset, uint64_t const size,
+            runtime::uint256_t const &topic1,
             runtime::uint256_t const &topic2) noexcept
         {
             push(topic2);
@@ -374,8 +376,8 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &log3(
-            uint64_t offset, uint64_t size, runtime::uint256_t const &topic1,
-            runtime::uint256_t const &topic2,
+            uint64_t const offset, uint64_t const size,
+            runtime::uint256_t const &topic1, runtime::uint256_t const &topic2,
             runtime::uint256_t const &topic3) noexcept
         {
             push(topic3);
@@ -387,8 +389,9 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &log4(
-            uint64_t offset, uint64_t size, runtime::uint256_t const &topic1,
-            runtime::uint256_t const &topic2, runtime::uint256_t const &topic3,
+            uint64_t const offset, uint64_t const size,
+            runtime::uint256_t const &topic1, runtime::uint256_t const &topic2,
+            runtime::uint256_t const &topic3,
             runtime::uint256_t const &topic4) noexcept
         {
             push(topic4);
@@ -400,28 +403,28 @@ namespace monad::vm::utils::evm_as
             return log4();
         }
 
-        EvmBuilder &mload(uint64_t offset) noexcept
+        EvmBuilder &mload(uint64_t const offset) noexcept
         {
             push(offset);
             return mload();
         }
 
         EvmBuilder &
-        mstore(uint64_t offset, runtime::uint256_t const &value) noexcept
+        mstore(uint64_t const offset, runtime::uint256_t const &value) noexcept
         {
             push(value);
             push(offset);
             return mstore();
         }
 
-        EvmBuilder &sload(uint64_t key) noexcept
+        EvmBuilder &sload(uint64_t const key) noexcept
         {
             push(key);
             return sload();
         }
 
         EvmBuilder &
-        sstore(uint64_t key, runtime::uint256_t const &value) noexcept
+        sstore(uint64_t const key, runtime::uint256_t const &value) noexcept
         {
             push(value);
             push(key);

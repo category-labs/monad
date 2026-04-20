@@ -94,7 +94,7 @@ public:
             epochs + StorageVariable<Epochs_t>::N;
     };
 
-    Delegator(State &state, Address const &address, bytes32_t const key);
+    Delegator(State &state, Address const &address, bytes32_t key);
 
     /////////////
     // Getters //

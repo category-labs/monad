@@ -80,8 +80,9 @@ struct virtual_chunk_offset_t
     }
 
     constexpr virtual_chunk_offset_t(
-        uint32_t count_, file_offset_t offset_, file_offset_t is_fast_list_,
-        file_offset_t spare_ = MAX_SPARE)
+        uint32_t const count_, file_offset_t const offset_,
+        file_offset_t const is_fast_list_,
+        file_offset_t const spare_ = MAX_SPARE)
         : offset(offset_ & MAX_OFFSET)
         , count(count_ & MAX_COUNT)
         , spare{spare_ & MAX_SPARE}
@@ -139,7 +140,7 @@ static_assert(INVALID_VIRTUAL_OFFSET.in_fast_list());
 
 struct virtual_chunk_offset_t_hasher
 {
-    constexpr size_t operator()(virtual_chunk_offset_t v) const noexcept
+    constexpr size_t operator()(virtual_chunk_offset_t const v) const noexcept
     {
         return fnv1a_hash<file_offset_t>()(v.hasher_raw());
     }
@@ -172,7 +173,7 @@ public:
     }
 
     constexpr compact_virtual_chunk_offset_t(
-        prevent_public_construction_tag, uint32_t v)
+        prevent_public_construction_tag, uint32_t const v)
         : v_{v}
     {
     }
@@ -185,7 +186,7 @@ public:
         MONAD_ASSERT(offset != INVALID_VIRTUAL_OFFSET);
     }
 
-    void set_value(uint32_t v) noexcept
+    void set_value(uint32_t const v) noexcept
     {
         v_ = v;
     }
@@ -246,13 +247,14 @@ struct compact_offset_pair
     compact_virtual_chunk_offset_t slow{INVALID_COMPACT_VIRTUAL_OFFSET};
 
     // Returns true if either component is below the corresponding threshold
-    constexpr bool any_below(compact_offset_pair threshold) const noexcept
+    constexpr bool any_below(compact_offset_pair const threshold) const noexcept
     {
         return fast < threshold.fast || slow < threshold.slow;
     }
 
     // Returns true if the fast component is below the threshold
-    constexpr bool fast_below(compact_offset_pair threshold) const noexcept
+    constexpr bool
+    fast_below(compact_offset_pair const threshold) const noexcept
     {
         return fast < threshold.fast;
     }

@@ -34,7 +34,7 @@
 MONAD_IO_NAMESPACE_BEGIN
 
 Buffers::Buffers(
-    Ring &ring, Ring *wr_ring, size_t const read_count,
+    Ring &ring, Ring *const wr_ring, size_t const read_count,
     size_t const write_count, size_t const read_size, size_t const write_size)
     : ring_{ring}
     , wr_ring_(wr_ring)

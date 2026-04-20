@@ -45,7 +45,7 @@ namespace
         {
         }
 
-        void call(std::function<void(Context &)> continuation)
+        void call(std::function<void(Context &)> const continuation)
         {
             evmc_message msg{};
             if (prev_rt_ctx_) {
@@ -97,7 +97,7 @@ namespace
             2 * (parent_total_size + capacity_before + 32) - parent_total_size);
     }
 
-    void set_memory(Context &ctx, uint8_t depth, bool full)
+    void set_memory(Context &ctx, uint8_t const depth, bool const full)
     {
         if (full) {
             ctx.memory.size = ctx.memory.capacity;
@@ -109,7 +109,7 @@ namespace
         std::memset(ctx.memory.data, depth, ctx.memory.size);
     }
 
-    void invariant_check(Context &ctx, uint8_t depth)
+    void invariant_check(Context &ctx, uint8_t const depth)
     {
         uint8_t const *const data_handle = ctx.memory.data_handle;
         uint8_t const *const data = ctx.memory.data;

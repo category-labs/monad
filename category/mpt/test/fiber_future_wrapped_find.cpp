@@ -41,8 +41,8 @@ namespace
     using namespace MONAD_ASYNC_NAMESPACE;
 
     void find(
-        UpdateAux *aux, Node::SharedPtr root, monad::byte_string_view const key,
-        monad::byte_string_view const value)
+        UpdateAux *const aux, Node::SharedPtr const root,
+        monad::byte_string_view const key, monad::byte_string_view const value)
     {
         monad::threadsafe_boost_fibers_promise<
             monad::mpt::find_cursor_result_type>
@@ -54,7 +54,7 @@ namespace
         EXPECT_EQ(it.node->value(), value);
     };
 
-    void poll(AsyncIO *const io, bool *signal_done)
+    void poll(AsyncIO *const io, bool *const signal_done)
     {
         while (!*signal_done) {
             io->poll_nonblocking(1);

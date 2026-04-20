@@ -33,7 +33,7 @@ namespace monad::vm
     }
 
     inline SharedIntercode
-    make_shared_intercode(std::initializer_list<uint8_t> a)
+    make_shared_intercode(std::initializer_list<uint8_t> const a)
     {
         return std::make_shared<Intercode const>(a);
     }

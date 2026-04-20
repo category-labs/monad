@@ -28,16 +28,16 @@ namespace monad::vm::test
             uint8_t dims[32]{};
         };
 
-        explicit KernelCalldata(size_t calldata_size)
+        explicit KernelCalldata(size_t const calldata_size)
             : data_(calldata_size >> 5){MONAD_ASSERT((calldata_size & 31) == 0)}
 
             uint8_t
-            & operator[](size_t i)
+            & operator[](size_t const i)
         {
             return data_[i >> 5].dims[i & 31];
         }
 
-        uint8_t const &operator[](size_t i) const
+        uint8_t const &operator[](size_t const i) const
         {
             return data_[i >> 5].dims[i & 31];
         }

@@ -58,8 +58,8 @@ std::span<unsigned char>
 encode_16_children(Node const &, std::span<unsigned char> result);
 
 unsigned encode_two_pieces(
-    unsigned char *const dest, NibblesView const path,
-    byte_string_view const second, bool const has_value = false);
+    unsigned char *dest, NibblesView path, byte_string_view second,
+    bool has_value = false);
 
 struct Compute
 {
@@ -287,7 +287,7 @@ struct VarLenMerkleCompute : Compute
     }
 
     virtual unsigned
-    set_node_data(unsigned char *buffer, unsigned const max_size) override
+    set_node_data(unsigned char *const buffer, unsigned const max_size) override
     {
         // copy from internal state
         if (state.len == 0) {
@@ -302,7 +302,8 @@ struct VarLenMerkleCompute : Compute
         return len;
     }
 
-    virtual unsigned compute(unsigned char *buffer, Node const &node) override
+    virtual unsigned
+    compute(unsigned char *const buffer, Node const &node) override
     {
         // Ethereum leaf: leaf node hash without child
         if (node.number_of_children() == 0) {
@@ -352,7 +353,8 @@ protected:
         return state.len;
     }
 
-    unsigned compute_branch_reference_(unsigned char *buffer, Node const &node)
+    unsigned
+    compute_branch_reference_(unsigned char *const buffer, Node const &node)
     {
         MONAD_ASSERT(node.number_of_children());
         // compute branch node hash
@@ -385,7 +387,7 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafValueProcessor>
     }
 
     virtual unsigned compute_node_data_len(
-        std::span<ChildData> const children, uint16_t mask, NibblesView,
+        std::span<ChildData> const children, uint16_t const mask, NibblesView,
         std::optional<byte_string_view> const value) override
     {
         MONAD_ASSERT(mask);
@@ -406,7 +408,7 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafValueProcessor>
     }
 
     virtual unsigned
-    set_node_data(unsigned char *buffer, unsigned const max_size) override
+    set_node_data(unsigned char *const buffer, unsigned const max_size) override
     {
         return Base::set_node_data(buffer, max_size);
     }

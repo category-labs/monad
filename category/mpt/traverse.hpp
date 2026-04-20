@@ -62,7 +62,7 @@ namespace detail
     void async_parallel_preorder_traverse_impl(
         TraverseSender &sender,
         async::erased_connected_operation *traverse_state, Node const &node,
-        TraverseMachine &machine, unsigned char const branch);
+        TraverseMachine &machine, unsigned char branch);
 
     // current implementation does not contaminate triedb node caching
     inline bool preorder_traverse_blocking_impl(
@@ -135,7 +135,7 @@ namespace detail
             unsigned char const branch;
 
             receiver_t(
-                TraverseSender *sender,
+                TraverseSender *const sender,
                 async::erased_connected_operation *const traverse_state,
                 unsigned char const branch, chunk_offset_t const offset,
                 std::unique_ptr<TraverseMachine> machine)
@@ -228,7 +228,7 @@ namespace detail
         }
 
         async::result<void>
-        operator()(async::erased_connected_operation *traverse_state)
+        operator()(async::erased_connected_operation *const traverse_state)
         {
             MONAD_ASSERT(traverse_root != nullptr);
             async_parallel_preorder_traverse_init(
@@ -273,7 +273,8 @@ namespace detail
 
     inline void async_parallel_preorder_traverse_init(
         TraverseSender &sender,
-        async::erased_connected_operation *traverse_state, Node const &node)
+        async::erased_connected_operation *const traverse_state,
+        Node const &node)
     {
         sender.within_recursion_count++;
         async_parallel_preorder_traverse_impl(
@@ -290,8 +291,8 @@ namespace detail
 
     inline void async_parallel_preorder_traverse_impl(
         TraverseSender &sender,
-        async::erased_connected_operation *traverse_state, Node const &node,
-        TraverseMachine &machine, unsigned char const branch)
+        async::erased_connected_operation *const traverse_state,
+        Node const &node, TraverseMachine &machine, unsigned char const branch)
     {
         // How many children are considered left side for depth first preference
         // Two and four was benchmarked as slightly worse than three, so three
@@ -401,8 +402,8 @@ inline bool preorder_traverse_ondisk(
         }
 
         void set_value(
-            async::erased_connected_operation *traverse_state,
-            async::result<bool> traverse_completed)
+            async::erased_connected_operation *const traverse_state,
+            async::result<bool> const traverse_completed)
         {
             MONAD_ASSERT(traverse_completed);
             version_expired_before_traverse_complete_ =

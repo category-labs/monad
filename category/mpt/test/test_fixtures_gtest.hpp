@@ -51,7 +51,7 @@ namespace monad::test
         using FillDBWithChunks<Config, ::testing::Test>::FillDBWithChunks;
     };
 
-    inline std::filesystem::path create_temp_file(long size_gb)
+    inline std::filesystem::path create_temp_file(long const size_gb)
     {
         std::filesystem::path const filename{
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /

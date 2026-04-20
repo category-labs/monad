@@ -27,7 +27,7 @@ namespace
         int value;
         int *ptr;
 
-        explicit TestInt(int *x)
+        explicit TestInt(int *const x)
         {
             value = *x;
             ptr = x;
@@ -42,7 +42,7 @@ namespace
 
     using TestIntRcPtr = RcPtr<TestInt, RcObject<TestInt>::DefaultDeleter>;
 
-    TestIntRcPtr make_test_int(int *ptr)
+    TestIntRcPtr make_test_int(int *const ptr)
     {
         return TestIntRcPtr::make(RcObject<TestInt>::default_allocate, ptr);
     }

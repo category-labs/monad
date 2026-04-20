@@ -70,7 +70,8 @@ namespace monad::vm
         }
 
         [[gnu::always_inline]]
-        runtime::Context *set_runtime_context(runtime::Context *ctx) noexcept
+        runtime::Context *
+        set_runtime_context(runtime::Context *const ctx) noexcept
         {
             auto *const prev = runtime_context_;
             runtime_context_ = ctx;

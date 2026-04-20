@@ -30,7 +30,7 @@ namespace monad::vm::test
 
         using Builder = std::function<void(runtime::Context &)>;
 
-        TestContext(Builder build = [](auto &) {})
+        TestContext(Builder const build = [](auto &) {})
             : ctx{runtime::Context::empty(
                   test_memory.data, test_memory.capacity)}
         {

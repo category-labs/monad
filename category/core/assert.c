@@ -29,7 +29,7 @@ extern void monad_stack_backtrace_capture_and_print(
 
 void monad_assertion_failed(
     char const *const expr, char const *const function, char const *const file,
-    long const line, char const *msg)
+    long const line, char const *const msg)
 {
     // This NEEDS to remain async signal safe!
     char buffer[16384];

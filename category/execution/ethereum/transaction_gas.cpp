@@ -33,7 +33,8 @@ MONAD_NAMESPACE_BEGIN
 namespace
 {
     // Approximates `factor * e ** (n/d) using Taylor expansion
-    uint256_t fake_exponential(uint256_t factor, uint256_t n, uint256_t d)
+    uint256_t fake_exponential(
+        uint256_t const factor, uint256_t const n, uint256_t const d)
     {
         int i = 1;
         uint256_t output = 0;

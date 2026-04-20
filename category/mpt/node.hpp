@@ -51,7 +51,7 @@ struct node_disk_pages_spare_15
         uint16_t value;
 
         // NOLINTNEXTLINE(google-explicit-constructor)
-        constexpr spare_dual(uint16_t v)
+        constexpr spare_dual(uint16_t const v)
             : value(v)
         {
         }
@@ -332,7 +332,7 @@ public:
 
     void set_next(unsigned index, SharedPtr p) noexcept;
 
-    SharedPtr move_next(unsigned const index) noexcept;
+    SharedPtr move_next(unsigned index) noexcept;
 };
 
 static_assert(std::is_standard_layout_v<Node>, "required by offsetof");
@@ -411,8 +411,8 @@ void serialize_node_to_buffer(
     unsigned char *write_pos, unsigned bytes_to_write, Node const &,
     uint32_t disk_size, unsigned offset = 0);
 
-inline Node::SharedPtr
-deserialize_node_from_buffer(unsigned char const *read_pos, size_t max_bytes)
+inline Node::SharedPtr deserialize_node_from_buffer(
+    unsigned char const *read_pos, size_t const max_bytes)
 {
     for (size_t n = 0; n < max_bytes; n += 64) {
         __builtin_prefetch(read_pos + n, 0, 0);
@@ -460,7 +460,7 @@ public:
         using reference = value_type;
 
         // NOLINTNEXTLINE(google-explicit-constructor)
-        iterator(uint16_t mask)
+        iterator(uint16_t const mask)
             : index_(0)
             , mask_(mask)
         {
@@ -488,7 +488,7 @@ public:
         uint16_t mask_;
     };
 
-    explicit NodeChildrenRange(uint16_t mask)
+    explicit NodeChildrenRange(uint16_t const mask)
         : mask_(mask)
     {
     }

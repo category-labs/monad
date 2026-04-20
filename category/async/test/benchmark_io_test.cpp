@@ -176,7 +176,7 @@ struct shared_state_t
         return ret;
     }
 
-    MONAD_ASYNC_NAMESPACE::chunk_offset_t add_op(uint64_t elapsed_ns)
+    MONAD_ASYNC_NAMESPACE::chunk_offset_t add_op(uint64_t const elapsed_ns)
     {
         ops++;
         if (elapsed_ns < min_ns) {
@@ -204,7 +204,7 @@ struct receiver_t
 
     shared_state_t *shared;
 
-    explicit receiver_t(shared_state_t *shared_)
+    explicit receiver_t(shared_state_t *const shared_)
         : shared(shared_)
     {
     }
@@ -221,8 +221,8 @@ using connected_state_ptr_type =
         MONAD_ASYNC_NAMESPACE::read_single_buffer_sender, receiver_t>;
 
 inline void receiver_t::set_value(
-    MONAD_ASYNC_NAMESPACE::erased_connected_operation *rawstate,
-    MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type buffer)
+    MONAD_ASYNC_NAMESPACE::erased_connected_operation *const rawstate,
+    MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type const buffer)
 {
     if (!buffer) {
         std::cerr << "FATAL: " << buffer.assume_error().message().c_str()
@@ -245,7 +245,7 @@ inline void receiver_t::set_value(
     }
 }
 
-int main(int argc, char *argv[])
+int main(int const argc, char *argv[])
 {
     try {
         CLI::App cli(

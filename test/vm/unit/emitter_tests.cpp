@@ -73,7 +73,8 @@ namespace
 
         std::string log_path_storage_;
 
-        CompilerConfig add_asm_log_path(CompilerConfig c, std::string log_path)
+        CompilerConfig
+        add_asm_log_path(CompilerConfig c, std::string const log_path)
         {
             if (!c.asm_log_path &&
                 monad::vm::compiler::test::params.dump_asm_on_failure) {
@@ -86,7 +87,7 @@ namespace
         // to have this constructor is so that the lifetime of the
         // new_emitter_asm_log_path extends to after the Emitter constructor.
         TestEmitter(
-            asmjit::JitRuntime const &rt, code_size_t bytecode_size,
+            asmjit::JitRuntime const &rt, code_size_t const bytecode_size,
             CompilerConfig const &c = {},
             std::string const &log_path = new_emitter_asm_log_path())
             : Emitter(rt, bytecode_size, add_asm_log_path(c, log_path))
@@ -136,8 +137,8 @@ namespace
     }
 
     monad::vm::test::TestContext test_context(
-        evmc_tx_context const *tx_context,
-        int64_t gas_remaining = (uint64_t{1} << 63) - 1)
+        evmc_tx_context const *const tx_context,
+        int64_t const gas_remaining = (uint64_t{1} << 63) - 1)
     {
         return monad::vm::test::TestContext{[&](auto &x) {
             x.gas_remaining = gas_remaining;
@@ -152,7 +153,7 @@ namespace
 
     struct TestStackMemoryDeleter
     {
-        void operator()(uint8_t *p) const
+        void operator()(uint8_t *const p) const
         {
             std::free(p);
         }
@@ -172,7 +173,8 @@ namespace
         Emitter::LocationType::StackOffset};
 
     void mov_literal_to_location_type(
-        Emitter &emit, int32_t stack_index, Emitter::LocationType loc)
+        Emitter &emit, int32_t const stack_index,
+        Emitter::LocationType const loc)
     {
         StackElem *spill;
         Stack &stack = emit.get_stack();
@@ -211,7 +213,8 @@ namespace
     }
 
     void copy_stack_offset_to_location_type(
-        Emitter &emit, int32_t stack_index, Emitter::LocationType loc)
+        Emitter &emit, int32_t const stack_index,
+        Emitter::LocationType const loc)
     {
         Stack &stack = emit.get_stack();
         auto elem = stack.get(stack_index);
@@ -243,11 +246,11 @@ namespace
     using PureEmitterInstrPtr = void (Emitter::*)();
 
     void pure_bin_instr_test_instance(
-        asmjit::JitRuntime &rt, PureEmitterInstr instr,
-        runtime::uint256_t const &left, Emitter::LocationType left_loc,
-        runtime::uint256_t const &right, Emitter::LocationType right_loc,
+        asmjit::JitRuntime &rt, PureEmitterInstr const instr,
+        runtime::uint256_t const &left, Emitter::LocationType const left_loc,
+        runtime::uint256_t const &right, Emitter::LocationType const right_loc,
         runtime::uint256_t const &result, basic_blocks::BasicBlocksIR const &ir,
-        bool dup)
+        bool const dup)
     {
 #if 0
         if (left_loc != Emitter::LocationType::Literal || right_loc != Emitter::LocationType::AvxReg || dup) {
@@ -389,9 +392,9 @@ namespace
     }
 
     void pure_bin_instr_test(
-        asmjit::JitRuntime &rt, EvmOpCode opcode, PureEmitterInstr instr,
-        runtime::uint256_t const &left, runtime::uint256_t const &right,
-        runtime::uint256_t const &result)
+        asmjit::JitRuntime &rt, EvmOpCode const opcode,
+        PureEmitterInstr const instr, runtime::uint256_t const &left,
+        runtime::uint256_t const &right, runtime::uint256_t const &result)
     {
         std::vector<uint8_t> bytecode1{PUSH0, PUSH0, opcode, PUSH0, RETURN};
         auto ir1 =
@@ -442,9 +445,9 @@ namespace
     }
 
     void dynamic_gas_bin_instr_test_instance(
-        asmjit::JitRuntime &rt, PureEmitterInstr instr,
-        runtime::uint256_t const &left, Emitter::LocationType left_loc,
-        runtime::uint256_t const &right, Emitter::LocationType right_loc,
+        asmjit::JitRuntime &rt, PureEmitterInstr const instr,
+        runtime::uint256_t const &left, Emitter::LocationType const left_loc,
+        runtime::uint256_t const &right, Emitter::LocationType const right_loc,
         runtime::uint256_t const &expected_gas,
         basic_blocks::BasicBlocksIR const &ir)
     {
@@ -492,9 +495,9 @@ namespace
     }
 
     void dynamic_gas_test(
-        asmjit::JitRuntime &rt, EvmOpCode opcode, PureEmitterInstr instr,
-        runtime::uint256_t const &left, runtime::uint256_t const &right,
-        runtime::uint256_t const &expected_gas)
+        asmjit::JitRuntime &rt, EvmOpCode const opcode,
+        PureEmitterInstr const instr, runtime::uint256_t const &left,
+        runtime::uint256_t const &right, runtime::uint256_t const &expected_gas)
     {
         std::vector<uint8_t> bytecode1{
             GAS, PUSH0, PUSH0, opcode, SWAP1, GAS, SUB, RETURN};
@@ -516,9 +519,9 @@ namespace
     }
 
     void pure_bin_instr_test(
-        asmjit::JitRuntime &rt, EvmOpCode opcode, PureEmitterInstrPtr instr,
-        runtime::uint256_t const &left, runtime::uint256_t const &right,
-        runtime::uint256_t const &result)
+        asmjit::JitRuntime &rt, EvmOpCode const opcode,
+        PureEmitterInstrPtr instr, runtime::uint256_t const &left,
+        runtime::uint256_t const &right, runtime::uint256_t const &result)
     {
         pure_bin_instr_test(
             rt, opcode, [&](Emitter &e) { (e.*instr)(); }, left, right, result);
@@ -548,16 +551,17 @@ namespace
     }
 
     void pure_una_instr_test(
-        asmjit::JitRuntime &rt, EvmOpCode opcode, PureEmitterInstrPtr instr,
-        runtime::uint256_t const &input, runtime::uint256_t const &result)
+        asmjit::JitRuntime &rt, EvmOpCode const opcode,
+        PureEmitterInstrPtr instr, runtime::uint256_t const &input,
+        runtime::uint256_t const &result)
     {
         pure_una_instr_test(
             rt, opcode, [&](Emitter &e) { (e.*instr)(); }, input, result);
     }
 
     void jump_test(
-        Emitter::LocationType loc1, Emitter::LocationType loc2,
-        Emitter::LocationType loc_dest, bool swap)
+        Emitter::LocationType const loc1, Emitter::LocationType const loc2,
+        Emitter::LocationType const loc_dest, bool const swap)
     {
 #if 0
         if (swap || loc1 != Emitter::LocationType::Literal || loc2 != Emitter::LocationType::AvxReg || loc_dest != Emitter::LocationType::Literal) {
@@ -618,8 +622,8 @@ namespace
     }
 
     basic_blocks::BasicBlocksIR get_jumpi_ir(
-        bool deferred_comparison, bool swap, bool dup,
-        bool jumpdest_fallthrough)
+        bool const deferred_comparison, bool const swap, bool const dup,
+        bool const jumpdest_fallthrough)
     {
         std::vector<uint8_t> bytecode;
         if (deferred_comparison && swap) {
@@ -665,11 +669,11 @@ namespace
     }
 
     void jumpi_test(
-        asmjit::JitRuntime &rt, Emitter::LocationType loc1,
-        Emitter::LocationType loc2, Emitter::LocationType loc_cond,
-        Emitter::LocationType loc_dest, bool take_jump,
-        bool deferred_comparison, bool swap, bool dup,
-        bool jumpdest_fallthrough)
+        asmjit::JitRuntime &rt, Emitter::LocationType const loc1,
+        Emitter::LocationType const loc2, Emitter::LocationType const loc_cond,
+        Emitter::LocationType const loc_dest, bool const take_jump,
+        bool const deferred_comparison, bool const swap, bool const dup,
+        bool const jumpdest_fallthrough)
     {
 #if 0
         if (!take_jump || deferred_comparison || swap || dup || !jumpdest_fallthrough || loc1 != Emitter::LocationType::GeneralReg || loc2 != Emitter::LocationType::GeneralReg || loc_cond != Emitter::LocationType::GeneralReg || loc_dest != Emitter::LocationType::StackOffset) {
@@ -768,9 +772,9 @@ namespace
     }
 
     void block_epilogue_test(
-        Emitter::LocationType loc1, Emitter::LocationType loc2,
-        Emitter::LocationType loc3, Emitter::LocationType loc4,
-        Emitter::LocationType loc5)
+        Emitter::LocationType const loc1, Emitter::LocationType const loc2,
+        Emitter::LocationType const loc3, Emitter::LocationType const loc4,
+        Emitter::LocationType const loc5)
     {
 #if 0
         if (loc1 != Emitter::LocationType::StackOffset || loc2 != Emitter::LocationType::StackOffset || loc3 != Emitter::LocationType::StackOffset || loc4 != Emitter::LocationType::StackOffset || loc5 != Emitter::LocationType::StackOffset) {
@@ -854,12 +858,12 @@ namespace
     }
 
     void runtime_test_12_arg_fun(
-        runtime::Context *ctx, runtime::uint256_t *result,
-        runtime::uint256_t const *a, runtime::uint256_t const *b,
-        runtime::uint256_t const *c, runtime::uint256_t const *d,
-        runtime::uint256_t const *e, runtime::uint256_t const *f,
-        runtime::uint256_t const *g, runtime::uint256_t const *h,
-        runtime::uint256_t const *i, int64_t remaining_base_gas)
+        runtime::Context *const ctx, runtime::uint256_t *const result,
+        runtime::uint256_t const *const a, runtime::uint256_t const *const b,
+        runtime::uint256_t const *const c, runtime::uint256_t const *const d,
+        runtime::uint256_t const *const e, runtime::uint256_t const *const f,
+        runtime::uint256_t const *const g, runtime::uint256_t const *const h,
+        runtime::uint256_t const *const i, int64_t const remaining_base_gas)
     {
         *result = runtime::uint256_t{ctx->gas_remaining} -
                   (runtime::uint256_t{remaining_base_gas} -
@@ -867,12 +871,12 @@ namespace
     }
 
     void runtime_test_11_arg_fun(
-        runtime::Context *ctx, runtime::uint256_t *result,
-        runtime::uint256_t const *a, runtime::uint256_t const *b,
-        runtime::uint256_t const *c, runtime::uint256_t const *d,
-        runtime::uint256_t const *e, runtime::uint256_t const *f,
-        runtime::uint256_t const *g, runtime::uint256_t const *h,
-        int64_t remaining_base_gas)
+        runtime::Context *const ctx, runtime::uint256_t *const result,
+        runtime::uint256_t const *const a, runtime::uint256_t const *const b,
+        runtime::uint256_t const *const c, runtime::uint256_t const *const d,
+        runtime::uint256_t const *const e, runtime::uint256_t const *const f,
+        runtime::uint256_t const *const g, runtime::uint256_t const *const h,
+        int64_t const remaining_base_gas)
     {
         *result = runtime::uint256_t{ctx->gas_remaining} -
                   (runtime::uint256_t{remaining_base_gas} -

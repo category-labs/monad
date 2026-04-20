@@ -42,8 +42,9 @@ static size_t const PAGE_2MB = 1UL << 21, HEADER_SIZE = PAGE_2MB;
         __VA_ARGS__)
 
 int monad_event_ring_init_size(
-    uint8_t descriptors_shift, uint8_t payload_buf_shift,
-    uint16_t context_large_pages, struct monad_event_ring_size *size)
+    uint8_t const descriptors_shift, uint8_t const payload_buf_shift,
+    uint16_t const context_large_pages,
+    struct monad_event_ring_size *const size)
 {
     // Do some basic input validation of the size; our main goal here is to
     // protect the event ring from being too small as it can create certain
@@ -81,8 +82,8 @@ int monad_event_ring_init_size(
     return 0;
 }
 
-size_t
-monad_event_ring_calc_storage(struct monad_event_ring_size const *ring_size)
+size_t monad_event_ring_calc_storage(
+    struct monad_event_ring_size const *const ring_size)
 {
     return PAGE_2MB +
            ring_size->descriptor_capacity *
@@ -103,9 +104,10 @@ monad_event_ring_calc_storage(struct monad_event_ring_size const *ring_size)
 //  |   Context area   |
 //  .------------------.
 int monad_event_ring_init_file(
-    struct monad_event_ring_size const *ring_size,
-    enum monad_event_content_type content_type, uint8_t const *schema_hash,
-    int ring_fd, off_t ring_offset, char const *error_name)
+    struct monad_event_ring_size const *const ring_size,
+    enum monad_event_content_type const content_type,
+    uint8_t const *const schema_hash, int const ring_fd,
+    off_t const ring_offset, char const *error_name)
 {
     size_t ring_bytes;
     void *map_base;
@@ -208,8 +210,9 @@ int monad_event_ring_init_file(
 }
 
 int monad_event_ring_mmap(
-    struct monad_event_ring *event_ring, int mmap_prot, int mmap_extra_flags,
-    int ring_fd, off_t ring_offset, char const *error_name)
+    struct monad_event_ring *const event_ring, int const mmap_prot,
+    int const mmap_extra_flags, int const ring_fd, off_t const ring_offset,
+    char const *error_name)
 {
     int rc;
     char namebuf[64];
@@ -351,7 +354,7 @@ Error:
     return rc;
 }
 
-void monad_event_ring_unmap(struct monad_event_ring *event_ring)
+void monad_event_ring_unmap(struct monad_event_ring *const event_ring)
 {
     struct monad_event_ring_header const *const header = event_ring->header;
     if (header != nullptr) {
@@ -373,8 +376,8 @@ void monad_event_ring_unmap(struct monad_event_ring *event_ring)
 }
 
 int monad_event_ring_init_iterator(
-    struct monad_event_ring const *event_ring,
-    struct monad_event_iterator *iter)
+    struct monad_event_ring const *const event_ring,
+    struct monad_event_iterator *const iter)
 {
     memset(iter, 0, sizeof *iter);
     struct monad_event_ring_header const *header = event_ring->header;
@@ -392,8 +395,8 @@ int monad_event_ring_init_iterator(
 }
 
 int monad_event_ring_init_recorder(
-    struct monad_event_ring const *event_ring,
-    struct monad_event_recorder *recorder)
+    struct monad_event_ring const *const event_ring,
+    struct monad_event_recorder *const recorder)
 {
     memset(recorder, 0, sizeof *recorder);
     struct monad_event_ring_header *header = event_ring->header;

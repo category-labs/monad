@@ -891,7 +891,7 @@ std::tuple<bool, u32_be, std::vector<u64_be>> StakingContract::get_valset(
 
 std::tuple<bool, Address, std::vector<Address>>
 StakingContract::get_delegators_for_validator(
-    u64_be val_id, Address const &start_delegator, uint32_t const limit)
+    u64_be const val_id, Address const &start_delegator, uint32_t const limit)
 {
     return linked_list_traverse<u64_be, Address>(
         val_id, start_delegator, limit);
@@ -994,24 +994,21 @@ Result<byte_string> StakingContract::get_valset(
 }
 
 Result<byte_string> StakingContract::precompile_get_consensus_valset(
-    byte_string_view const input, Address const &,
-    uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
     return get_valset(input, vars.valset_consensus);
 }
 
 Result<byte_string> StakingContract::precompile_get_snapshot_valset(
-    byte_string_view const input, Address const &,
-    uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
     return get_valset(input, vars.valset_snapshot);
 }
 
 Result<byte_string> StakingContract::precompile_get_execution_valset(
-    byte_string_view const input, Address const &,
-    uint256_be_t const &msg_value)
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
     BOOST_OUTCOME_TRY(function_not_payable(msg_value));
     auto const valset = vars.valset_execution;
@@ -1735,7 +1732,7 @@ Result<void> StakingContract::syscall_reward(
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::syscall_reward);
 
 Result<void> StakingContract::syscall_snapshot(
-    byte_string_view const input, uint256_t const &value)
+    byte_string_view input, uint256_t const &value)
 {
     if (MONAD_UNLIKELY(value != 0)) {
         return StakingError::ValueNonZero;

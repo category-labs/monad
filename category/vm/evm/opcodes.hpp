@@ -283,7 +283,7 @@ namespace monad::vm::compiler
 
     consteval inline void add_opcode(
         uint8_t const opcode, std::array<OpCodeInfo, 256> &table,
-        OpCodeInfo info)
+        OpCodeInfo const info)
     {
         MONAD_DEBUG_ASSERT(table[opcode] == unknown_opcode_info);
         table[opcode] = info;

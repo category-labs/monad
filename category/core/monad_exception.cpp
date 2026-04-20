@@ -55,7 +55,7 @@ char const *MonadException::message() const noexcept
     return message_;
 }
 
-void MonadException::print(int fd) const noexcept
+void MonadException::print(int const fd) const noexcept
 {
     if (stack_trace_buffer_) {
         stack_trace_->print(fd, 3, true);

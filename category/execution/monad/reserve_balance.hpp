@@ -73,7 +73,7 @@ public:
 
     void on_pop_reject(FailedSet const &accounts);
 
-    void on_set_code(Address const &address, byte_string_view const code);
+    void on_set_code(Address const &address, byte_string_view code);
 
     template <Traits traits>
     void init_from_tx(

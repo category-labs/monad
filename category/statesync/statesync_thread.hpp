@@ -38,7 +38,7 @@ struct StateSyncServerConfig
 
 struct monad_statesync_server_deleter
 {
-    void operator()(monad_statesync_server *server) const
+    void operator()(monad_statesync_server *const server) const
     {
         if (server != nullptr) {
             monad_statesync_server_destroy(server);

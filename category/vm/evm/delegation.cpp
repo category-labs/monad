@@ -44,7 +44,7 @@ namespace monad::vm::evm
             delegation_indicator_prefix_bytes.size()};
     }
 
-    bool is_delegated(std::span<uint8_t const> code)
+    bool is_delegated(std::span<uint8_t const> const code)
     {
         if (code.size() != delegation_indicator_size) {
             return false;
@@ -55,7 +55,7 @@ namespace monad::vm::evm
     }
 
     std::optional<Address> resolve_delegation(
-        evmc_host_interface const *host, evmc_host_context *ctx,
+        evmc_host_interface const *const host, evmc_host_context *const ctx,
         Address const &addr)
     {
         // Copy up to |code_size| bytes of the bytecode. Then test

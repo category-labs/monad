@@ -39,7 +39,7 @@ namespace monad::vm::interpreter
     [[gnu::always_inline]]
     inline void trace(
         Intercode const &analysis, int64_t const gas_remaining,
-        uint8_t const *instr_ptr)
+        uint8_t const *const instr_ptr)
     {
         std::cerr << std::format(
             "offset: 0x{:02x}  opcode: 0x{:x}  gas_left: {}\n",

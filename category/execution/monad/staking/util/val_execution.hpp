@@ -85,7 +85,7 @@ public:
             address_flags + StorageVariable<AddressFlags_t>::N;
     };
 
-    ValExecution(State &state, Address const &address, bytes32_t const key);
+    ValExecution(State &state, Address const &address, bytes32_t key);
 
     /////////////
     // Getters //

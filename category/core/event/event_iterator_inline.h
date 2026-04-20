@@ -39,7 +39,7 @@ extern "C"
 #endif
 
 static inline uint64_t
-monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
+monad_event_iterator_sync_wait(struct monad_event_iterator *const iter)
 {
     uint64_t const MAX_SYNC_SPIN = 100;
     uint64_t write_last_seqno =
@@ -77,8 +77,8 @@ monad_event_iterator_sync_wait(struct monad_event_iterator *iter)
 }
 
 inline enum monad_event_iter_result monad_event_iterator_try_copy(
-    struct monad_event_iterator const *iter,
-    struct monad_event_descriptor *event)
+    struct monad_event_iterator const *const iter,
+    struct monad_event_descriptor *const event)
 {
     struct monad_event_descriptor const *const ring_event =
         &iter->descriptors[iter->read_last_seqno & iter->desc_capacity_mask];
@@ -102,7 +102,8 @@ inline enum monad_event_iter_result monad_event_iterator_try_copy(
 }
 
 inline enum monad_event_iter_result monad_event_iterator_try_next(
-    struct monad_event_iterator *iter, struct monad_event_descriptor *event)
+    struct monad_event_iterator *const iter,
+    struct monad_event_descriptor *const event)
 {
     enum monad_event_iter_result const r =
         monad_event_iterator_try_copy(iter, event);
@@ -113,12 +114,13 @@ inline enum monad_event_iter_result monad_event_iterator_try_next(
 }
 
 inline void monad_event_iterator_set_seqno(
-    struct monad_event_iterator *iter, uint64_t seqno)
+    struct monad_event_iterator *const iter, uint64_t const seqno)
 {
     iter->read_last_seqno = seqno - 1;
 }
 
-inline uint64_t monad_event_iterator_reset(struct monad_event_iterator *iter)
+inline uint64_t
+monad_event_iterator_reset(struct monad_event_iterator *const iter)
 {
     uint64_t const last_available_seqno = monad_event_iterator_sync_wait(iter);
     return iter->read_last_seqno =

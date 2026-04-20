@@ -144,11 +144,13 @@ ReservedExecEvent<T> reserve_event(
 // Records a MONAD_EXEC_STORAGE_ACCESS event for all reads and writes in the
 // AccountState prestate and modified maps
 void record_storage_events(
-    ExecutionEventRecorder *exec_recorder,
-    monad_exec_account_access_context ctx, std::optional<uint32_t> opt_txn_num,
-    uint32_t account_index, Address const *address,
-    AccountState::StorageMap const *prestate_storage,
-    AccountState::StorageMap const *modified_storage, bool is_transient)
+    ExecutionEventRecorder *const exec_recorder,
+    monad_exec_account_access_context const ctx,
+    std::optional<uint32_t> const opt_txn_num, uint32_t const account_index,
+    Address const *const address,
+    AccountState::StorageMap const *const prestate_storage,
+    AccountState::StorageMap const *const modified_storage,
+    bool const is_transient)
 {
     for (size_t index = 0; auto const &[key, value] : *prestate_storage) {
         bool is_modified = false;
@@ -185,9 +187,10 @@ void record_storage_events(
 // record_storage_events to record both the ordinary and transient storage
 // accesses
 void record_account_events(
-    ExecutionEventRecorder *exec_recorder,
-    monad_exec_account_access_context ctx, std::optional<uint32_t> opt_txn_num,
-    uint32_t index, AccountAccessInfo const &account_info)
+    ExecutionEventRecorder *const exec_recorder,
+    monad_exec_account_access_context const ctx,
+    std::optional<uint32_t> const opt_txn_num, uint32_t const index,
+    AccountAccessInfo const &account_info)
 {
     MONAD_ASSERT(account_info.prestate);
     monad_c_eth_account_state initial_state;
@@ -256,9 +259,9 @@ void record_account_events(
 // scope, either the block prologue, block epilogue, or in the scope of some
 // transaction
 void record_account_access_events_internal(
-    ExecutionEventRecorder *exec_recorder,
-    monad_exec_account_access_context ctx, std::optional<uint32_t> opt_txn_num,
-    State const &state)
+    ExecutionEventRecorder *const exec_recorder,
+    monad_exec_account_access_context const ctx,
+    std::optional<uint32_t> const opt_txn_num, State const &state)
 {
     auto const &prestate_map = state.original();
 
@@ -469,7 +472,7 @@ void record_txn_error_event(
 // is called from execute_block.cpp, to record prologue and epilogue accesses;
 // transaction-scope state accesses use record_txn_output_events instead
 void record_account_access_events(
-    monad_exec_account_access_context ctx, State const &state)
+    monad_exec_account_access_context const ctx, State const &state)
 {
     if (ExecutionEventRecorder *const e = g_exec_event_recorder.get()) {
         return record_account_access_events_internal(

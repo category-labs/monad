@@ -158,7 +158,7 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 void TrieDb::commit(
     bytes32_t const &block_id, CommitBuilder &builder,
     BlockHeader const &header, StateDeltas const &,
-    std::function<void(BlockHeader &)> populate_header_fn)
+    std::function<void(BlockHeader &)> const populate_header_fn)
 {
     auto const block_number = header.number;
     MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());

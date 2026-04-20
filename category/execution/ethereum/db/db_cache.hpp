@@ -48,7 +48,8 @@ class DbCache final : public Db
         StorageKey() = default;
 
         StorageKey(
-            Address const &addr, Incarnation incarnation, bytes32_t const &key)
+            Address const &addr, Incarnation const incarnation,
+            bytes32_t const &key)
         {
             memcpy(bytes, addr.bytes, sizeof(Address));
             memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));

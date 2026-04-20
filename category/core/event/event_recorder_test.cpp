@@ -58,8 +58,9 @@ constexpr uint8_t DEFAULT_DESCRIPTORS_SHIFT = 20;
 constexpr uint8_t DEFAULT_PAYLOAD_BUF_SHIFT = 28;
 
 static void open_event_ring_file(
-    char const *input, uint8_t descriptors_shift, uint8_t payload_buf_shift,
-    monad_event_ring *event_ring, std::string *file_path)
+    char const *const input, uint8_t const descriptors_shift,
+    uint8_t const payload_buf_shift, monad_event_ring *const event_ring,
+    std::string *const file_path)
 {
     int ring_fd;
     char const *error_name;
@@ -127,7 +128,7 @@ static void open_event_ring_file(
     (void)close(ring_fd);
 }
 
-static bool alloc_cpu(cpu_set_t *avail_cpus, cpu_set_t *out)
+static bool alloc_cpu(cpu_set_t *const avail_cpus, cpu_set_t *const out)
 {
     int const n_cpus = CPU_COUNT(avail_cpus);
     CPU_ZERO(out);
@@ -148,8 +149,9 @@ static bool alloc_cpu(cpu_set_t *avail_cpus, cpu_set_t *out)
 // total number of iterations by the number of writers, so that the test doesn't
 // take too long.
 static void writer_main(
-    monad_event_recorder *recorder, std::latch *latch, uint8_t writer_id,
-    uint8_t writer_thread_count, uint32_t payload_size)
+    monad_event_recorder *const recorder, std::latch *const latch,
+    uint8_t const writer_id, uint8_t const writer_thread_count,
+    uint32_t const payload_size)
 {
     using std::chrono::duration_cast, std::chrono::nanoseconds;
     std::byte local_payload_buf[1 << 14]{};
@@ -192,8 +194,8 @@ static void writer_main(
 // that the sequence numbers are in order, that their payload size is correct,
 // etc.)
 [[maybe_unused]] static void reader_main(
-    monad_event_ring const *event_ring, std::latch *latch,
-    uint8_t writer_thread_count, uint32_t expected_len)
+    monad_event_ring const *const event_ring, std::latch *const latch,
+    uint8_t const writer_thread_count, uint32_t const expected_len)
 {
     uint64_t const max_writer_iteration =
         (1UL << PERF_ITER_SHIFT) / writer_thread_count;

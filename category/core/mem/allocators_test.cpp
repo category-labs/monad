@@ -48,7 +48,7 @@ namespace
             constructed++;
         }
 
-        explicit Foo(int a)
+        explicit Foo(int const a)
             : x(a)
         {
             constructed++;
@@ -65,13 +65,13 @@ namespace
         using value_type = Foo;
         using size_type = size_t;
 
-        [[nodiscard]] value_type *allocate(size_type n)
+        [[nodiscard]] value_type *allocate(size_type const n)
         {
             allocated++;
             return std::allocator<value_type>().allocate(n);
         }
 
-        void deallocate(value_type *p, size_type n) noexcept
+        void deallocate(value_type *const p, size_type const n) noexcept
         {
             deallocated++;
             std::allocator<value_type>().deallocate(p, n);
@@ -89,13 +89,13 @@ namespace
         using value_type = std::byte;
         using size_type = size_t;
 
-        [[nodiscard]] value_type *allocate(size_type n)
+        [[nodiscard]] value_type *allocate(size_type const n)
         {
             allocated++;
             return (std::byte *)std::malloc(n);
         }
 
-        void deallocate(value_type *p, size_type) noexcept
+        void deallocate(value_type *const p, size_type) noexcept
         {
             deallocated++;
             free(p);

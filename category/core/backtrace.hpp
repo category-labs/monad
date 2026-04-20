@@ -32,7 +32,7 @@ protected:
 
     struct deleter_
     {
-        void operator()(stack_backtrace *p)
+        void operator()(stack_backtrace *const p)
         {
             p->~stack_backtrace();
             // no deallocation needed

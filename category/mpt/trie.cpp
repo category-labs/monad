@@ -103,8 +103,8 @@ void try_fillin_parent_after_expiration(
 void propagate_upward(UpdateAux &, StateMachine &, TNodeBase *);
 
 void fillin_parent_after_expiration(
-    UpdateAux &, Node::SharedPtr, UpdateExpireBase *const, uint8_t const index,
-    uint8_t const branch, bool const cache_node);
+    UpdateAux &, Node::SharedPtr, UpdateExpireBase *const, uint8_t index,
+    uint8_t branch, bool cache_node);
 
 struct async_write_node_result
 {
@@ -125,7 +125,7 @@ void erase_child_from_parent(UpdateTNode &parent, ChildData &entry)
 }
 
 void erase_child_from_parent(
-    UpdateExpireBase &parent, uint8_t branch, uint8_t index)
+    UpdateExpireBase &parent, uint8_t const branch, uint8_t const index)
 {
     parent.mask &= static_cast<uint16_t>(~(1u << branch));
     if (parent.type == tnode_type::update) {
@@ -257,8 +257,8 @@ struct load_all_impl_
         uint16_t buffer_off;
 
         receiver_t(
-            load_all_impl_ *impl, NodeCursor root, unsigned char const branch,
-            std::unique_ptr<StateMachine> sm)
+            load_all_impl_ *const impl, NodeCursor const root,
+            unsigned char const branch, std::unique_ptr<StateMachine> sm)
             : impl(impl)
             , root(root)
             , branch_index(branch)
@@ -935,9 +935,9 @@ void fillin_entry(
  * and there might be update to the leaf value. */
 void dispatch_updates_impl_(
     UpdateAux &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::SharedPtr old_ptr, Requests &requests, unsigned const prefix_index,
-    NibblesView const path, std::optional<byte_string_view> const opt_leaf_data,
-    int64_t const version)
+    Node::SharedPtr const old_ptr, Requests &requests,
+    unsigned const prefix_index, NibblesView const path,
+    std::optional<byte_string_view> const opt_leaf_data, int64_t const version)
 {
     Node *old = old_ptr.get();
     uint16_t const orig_mask = old->mask | requests.mask;
@@ -1003,7 +1003,7 @@ void dispatch_updates_impl_(
 // prefix_index to `requests`, which can have 1 or more sublists.
 void mismatch_handler_(
     UpdateAux &aux, StateMachine &sm, UpdateTNode &parent, ChildData &entry,
-    Node::SharedPtr old_ptr, Requests &requests, NibblesView const path,
+    Node::SharedPtr const old_ptr, Requests &requests, NibblesView const path,
     unsigned const old_prefix_index, unsigned const prefix_index)
 {
     MONAD_ASSERT(old_ptr);

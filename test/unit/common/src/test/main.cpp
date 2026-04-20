@@ -16,7 +16,7 @@
 #include <gtest/gtest.h>
 #include <monad/test/environment.hpp>
 
-int main(int argc, char **argv)
+int main(int argc, char **const argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
     testing::AddGlobalTestEnvironment(new monad::test::Environment);

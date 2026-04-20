@@ -62,8 +62,8 @@ namespace
 MONAD_TEST_NAMESPACE_BEGIN
 
 void find_execution_events(
-    monad_event_ring const *event_ring, monad_event_iterator *iter,
-    ExecutionEvents *exec_events)
+    monad_event_ring const *const event_ring, monad_event_iterator *const iter,
+    ExecutionEvents *const exec_events)
 {
     monad_event_descriptor event;
 
@@ -127,7 +127,7 @@ ConsumeMore:
     goto ConsumeMore;
 }
 
-void init_exec_event_recorder(std::string event_ring_path)
+void init_exec_event_recorder(std::string const event_ring_path)
 {
     constexpr uint8_t DESCRIPTORS_SHIFT = 20;
     constexpr uint8_t PAYLOAD_BUF_SHIFT = 28; // 256 MiB

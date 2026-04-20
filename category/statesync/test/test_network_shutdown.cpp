@@ -43,7 +43,7 @@ namespace
     // Returns a socket path unique per process to avoid bind() collisions when
     // tests run in parallel. Assumes TMPDIR is short enough that the full path
     // stays within sun_path (108 bytes).
-    std::filesystem::path unique_socket_path(std::string_view name)
+    std::filesystem::path unique_socket_path(std::string_view const name)
     {
         return std::filesystem::temp_directory_path() /
                (std::string(name) + "_" + std::to_string(::getpid()) + ".sock");

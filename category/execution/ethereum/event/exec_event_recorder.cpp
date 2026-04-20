@@ -35,7 +35,8 @@
 MONAD_NAMESPACE_BEGIN
 
 ExecutionEventRecorder::ExecutionEventRecorder(
-    int ring_fd, std::string_view ring_path, monad_event_ring const &exec_ring)
+    int const ring_fd, std::string_view const ring_path,
+    monad_event_ring const &exec_ring)
     : exec_recorder_{}
     , exec_ring_{exec_ring}
     , cur_block_start_seqno_{0}
@@ -62,10 +63,11 @@ ExecutionEventRecorder::~ExecutionEventRecorder()
 
 std::tuple<monad_event_descriptor *, std::byte *, uint64_t>
 ExecutionEventRecorder::setup_record_error_event(
-    monad_exec_event_type event_type, monad_event_record_error_type error_type,
-    size_t header_payload_size,
-    std::span<std::span<std::byte const> const> trailing_payload_bufs,
-    size_t original_payload_size)
+    monad_exec_event_type const event_type,
+    monad_event_record_error_type const error_type,
+    size_t const header_payload_size,
+    std::span<std::span<std::byte const> const> const trailing_payload_bufs,
+    size_t const original_payload_size)
 {
     monad_exec_record_error *error_payload;
     size_t error_payload_size;

@@ -61,7 +61,7 @@ namespace
         bool done{false};
 
         receiver_t(
-            FiberFutureWrappedFind::shared_state_t *fixture_shared_state_,
+            FiberFutureWrappedFind::shared_state_t *const fixture_shared_state_,
             ::boost::fibers::promise<
                 MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::buffer_type>
                 &&p,
@@ -74,7 +74,8 @@ namespace
 
         void set_value(
             erased_connected_operation *,
-            MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type res)
+            MONAD_ASYNC_NAMESPACE::read_single_buffer_sender::result_type const
+                res)
         {
             ASSERT_TRUE(res);
             auto &buffer = res.assume_value().get();

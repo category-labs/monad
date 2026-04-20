@@ -302,7 +302,7 @@ namespace monad::vm::utils::evm_as
         }
 
         constexpr mnemonic_config(
-            bool resolve_labels, bool annotate, size_t offset)
+            bool const resolve_labels, bool const annotate, size_t const offset)
             : resolve_labels(resolve_labels)
             , annotate(annotate)
             , desired_annotation_offset(offset)

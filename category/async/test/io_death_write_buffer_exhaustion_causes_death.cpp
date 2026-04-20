@@ -58,7 +58,7 @@ namespace
         {
             void set_value(
                 monad::async::erased_connected_operation *,
-                monad::async::write_single_buffer_sender::result_type r)
+                monad::async::write_single_buffer_sender::result_type const r)
             {
                 MONAD_ASSERT(r);
             }

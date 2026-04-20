@@ -51,7 +51,7 @@ namespace
 
         void set_value(
             monad::async::erased_connected_operation *,
-            monad::async::read_single_buffer_sender::result_type r)
+            monad::async::read_single_buffer_sender::result_type const r)
         {
             MONAD_ASSERT(r);
             // Exactly the same test as the death test, except for this line
@@ -107,7 +107,7 @@ namespace
         {
             void set_value(
                 monad::async::erased_connected_operation *,
-                monad::async::write_single_buffer_sender::result_type r)
+                monad::async::write_single_buffer_sender::result_type const r)
             {
                 MONAD_ASSERT(r);
             }
@@ -165,8 +165,8 @@ namespace
             sqe_exhaustion_does_not_reorder_writes_receiver>;
 
     inline void sqe_exhaustion_does_not_reorder_writes_receiver::set_value(
-        monad::async::erased_connected_operation *io_state,
-        monad::async::write_single_buffer_sender::result_type r)
+        monad::async::erased_connected_operation *const io_state,
+        monad::async::write_single_buffer_sender::result_type const r)
     {
         MONAD_ASSERT(r);
         auto *state = static_cast<
@@ -256,7 +256,7 @@ namespace
 
         void set_value(
             monad::async::erased_connected_operation *,
-            monad::async::read_single_buffer_sender::result_type r)
+            monad::async::read_single_buffer_sender::result_type const r)
         {
             MONAD_ASSERT(r);
             EXPECT_EQ(r.assume_value().get().size(), expected_size);

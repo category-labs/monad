@@ -75,7 +75,8 @@ struct write_operation_io_receiver
 
     void set_value(
         MONAD_ASYNC_NAMESPACE::erased_connected_operation *,
-        MONAD_ASYNC_NAMESPACE::write_single_buffer_sender::result_type res)
+        MONAD_ASYNC_NAMESPACE::write_single_buffer_sender::result_type const
+            res)
     {
         MONAD_ASSERT(res);
         MONAD_ASSERT(res.assume_value().get().size() == should_be_written);
@@ -278,7 +279,7 @@ public:
     void collect_compaction_read_stats(
         chunk_offset_t node_offset, unsigned bytes_to_read);
     void collect_compacted_nodes_stats(
-        bool const copy_node_for_fast, bool const rewrite_to_fast,
+        bool copy_node_for_fast, bool rewrite_to_fast,
         virtual_chunk_offset_t node_offset, uint32_t node_disk_size);
 
     void print_update_stats(uint64_t version);
@@ -313,14 +314,14 @@ public:
     void rewind_to_version(uint64_t version);
     void clear_ondisk_db();
 
-    void set_initial_insertion_count_unit_testing_only(uint32_t count)
+    void set_initial_insertion_count_unit_testing_only(uint32_t const count)
     {
         initial_insertion_count_on_pool_creation_ = count;
     }
 
     // WARNING: for unit testing only
     // DO NOT invoke it outside of unit test
-    void alternate_slow_fast_node_writer_unit_testing_only(bool alternate)
+    void alternate_slow_fast_node_writer_unit_testing_only(bool const alternate)
     {
         alternate_slow_fast_writer_ = alternate;
     }
@@ -335,7 +336,7 @@ public:
         return can_write_to_fast_;
     }
 
-    void set_can_write_to_fast(bool v) noexcept
+    void set_can_write_to_fast(bool const v) noexcept
     {
         can_write_to_fast_ = v;
     }
@@ -356,7 +357,7 @@ public:
                (double)num_chunks(chunk_list::free) / (double)io->chunk_count();
     }
 
-    uint32_t num_chunks(chunk_list const list) const noexcept;
+    uint32_t num_chunks(chunk_list list) const noexcept;
 };
 
 // sizeof changed: db_metadata_[2] replaced by unique_ptr<DbMetadataContext>
@@ -502,7 +503,7 @@ inline constexpr unsigned num_pages(file_offset_t const offset, unsigned bytes)
 
 inline compact_offset_pair calc_min_offsets(
     Node &node,
-    virtual_chunk_offset_t node_virtual_offset = INVALID_VIRTUAL_OFFSET)
+    virtual_chunk_offset_t const node_virtual_offset = INVALID_VIRTUAL_OFFSET)
 {
     compact_offset_pair ret;
     if (node_virtual_offset != INVALID_VIRTUAL_OFFSET) {

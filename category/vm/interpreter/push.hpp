@@ -52,7 +52,7 @@ namespace monad::vm::interpreter
         using subword_t = runtime::uint256_t::word_type;
 
         [[gnu::always_inline]] inline subword_t
-        read_unaligned(uint8_t const *ptr)
+        read_unaligned(uint8_t const *const ptr)
         {
             return std::byteswap(unaligned_load<subword_t>(ptr));
         }
@@ -61,9 +61,9 @@ namespace monad::vm::interpreter
             requires(!detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void generic_push(
             runtime::Context &ctx, Intercode const &analysis,
-            runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, int64_t &gas_remaining,
-            uint8_t const *instr_ptr)
+            runtime::uint256_t const *const stack_bottom,
+            runtime::uint256_t *const stack_top, int64_t &gas_remaining,
+            uint8_t const *const instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
@@ -137,9 +137,9 @@ namespace monad::vm::interpreter
             requires(detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void avx2_push(
             runtime::Context &ctx, Intercode const &analysis,
-            runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, int64_t &gas_remaining,
-            uint8_t const *instr_ptr)
+            runtime::uint256_t const *const stack_bottom,
+            runtime::uint256_t *const stack_top, int64_t &gas_remaining,
+            uint8_t const *const instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
@@ -188,9 +188,9 @@ namespace monad::vm::interpreter
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
-            runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, int64_t &gas_remaining,
-            uint8_t const *instr_ptr)
+            runtime::uint256_t const *const stack_bottom,
+            runtime::uint256_t *const stack_top, int64_t &gas_remaining,
+            uint8_t const *const instr_ptr)
         {
             detail::generic_push<N, traits>(
                 ctx,
@@ -207,8 +207,8 @@ namespace monad::vm::interpreter
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
-            runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, int64_t &gas_remaining,
+            runtime::uint256_t const *const stack_bottom,
+            runtime::uint256_t *const stack_top, int64_t &gas_remaining,
             uint8_t const *)
         {
             check_requirements<PUSH0, traits>(
@@ -223,9 +223,9 @@ namespace monad::vm::interpreter
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
-            runtime::uint256_t const *stack_bottom,
-            runtime::uint256_t *stack_top, int64_t &gas_remaining,
-            uint8_t const *instr_ptr)
+            runtime::uint256_t const *const stack_bottom,
+            runtime::uint256_t *const stack_top, int64_t &gas_remaining,
+            uint8_t const *const instr_ptr)
         {
             detail::avx2_push<N, traits>(
                 ctx,

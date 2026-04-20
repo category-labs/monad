@@ -33,7 +33,7 @@ namespace monad::vm::utils
             return std::allocator<RcObject<T>>().allocate(1);
         }
 
-        static void default_deallocate(RcObject<T> *rco)
+        static void default_deallocate(RcObject<T> *const rco)
         {
             std::allocator<RcObject<T>>().deallocate(rco, 1);
         }
@@ -45,7 +45,7 @@ namespace monad::vm::utils
                 // nop
             }
 
-            static void deallocate(RcObject<T> *rco)
+            static void deallocate(RcObject<T> *const rco)
             {
                 default_deallocate(rco);
             }
@@ -152,7 +152,7 @@ namespace monad::vm::utils
         }
 
     private:
-        explicit RcPtr(RcObject<T> *rco)
+        explicit RcPtr(RcObject<T> *const rco)
             : rc_object{rco}
         {
         }

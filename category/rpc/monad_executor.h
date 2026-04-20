@@ -115,7 +115,7 @@ void monad_executor_run_transactions(
     size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
     size_t rlp_parent_block_id_len, uint8_t const *rlp_grandparent_block_id,
     size_t rlp_grandparent_block_id_len,
-    int64_t const transaction_index, /* transaction_index >= 0 implies tracing
+    int64_t transaction_index, /* transaction_index >= 0 implies tracing
                                         of a single transaction. */
     void (*complete)(monad_executor_result *, void *user), void *user,
     enum monad_tracer_config);

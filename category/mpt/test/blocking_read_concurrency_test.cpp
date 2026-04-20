@@ -49,7 +49,7 @@ namespace
     {
         Nibbles path{};
 
-        virtual bool down(unsigned char branch, Node const &node) override
+        virtual bool down(unsigned char const branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
                 return true;
@@ -62,7 +62,7 @@ namespace
             return true;
         }
 
-        virtual void up(unsigned char branch, Node const &node) override
+        virtual void up(unsigned char const branch, Node const &node) override
         {
             auto const path_view = NibblesView{path};
             auto const rem_size = [&] {

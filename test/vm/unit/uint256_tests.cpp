@@ -160,7 +160,7 @@ TEST(uint256, bit_width)
     test_bit_width<255>();
 }
 
-::intx::uint256 from_words(std::array<uint64_t, 4> words)
+::intx::uint256 from_words(std::array<uint64_t, 4> const words)
 {
     return ::intx::uint256{words[0], words[1], words[2], words[3]};
 }

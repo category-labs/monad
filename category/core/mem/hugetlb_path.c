@@ -38,7 +38,7 @@ thread_local char g_error_buf[PATH_MAX];
         __VA_ARGS__)
 
 int monad_hugetlbfs_open_dir_fd(
-    struct monad_hugetlbfs_resolve_params const *params, int *dirfd,
+    struct monad_hugetlbfs_resolve_params const *const params, int *const dirfd,
     char *pathbuf, size_t pathbuf_size)
 {
     size_t resolve_size;

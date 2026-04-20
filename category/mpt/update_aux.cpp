@@ -1138,7 +1138,7 @@ void UpdateAux::collect_expire_stats(bool const is_read)
 
 void UpdateAux::collect_compacted_nodes_stats(
     bool const copy_node_for_fast, bool const rewrite_to_fast,
-    virtual_chunk_offset_t node_offset, uint32_t node_disk_size)
+    virtual_chunk_offset_t const node_offset, uint32_t const node_disk_size)
 {
 #if MONAD_MPT_COLLECT_STATS
     if (copy_node_for_fast) {

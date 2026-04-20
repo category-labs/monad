@@ -623,7 +623,7 @@ void process_test(
 void process_test(
     std::variant<evmc_revision, monad_revision> const &revision,
     std::string const &name, nlohmann::json const &j_contents,
-    bool enable_tracing)
+    bool const enable_tracing)
 {
     if (std::holds_alternative<evmc_revision>(revision)) {
         auto const rev = std::get<evmc_revision>(revision);
@@ -690,7 +690,7 @@ void BlockchainTest::TestBody()
 void register_blockchain_tests_path(
     std::filesystem::path const &root,
     std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
-    bool enable_tracing)
+    bool const enable_tracing)
 {
     namespace fs = std::filesystem;
     MONAD_ASSERT(fs::exists(root));
@@ -733,7 +733,7 @@ void register_blockchain_tests_path(
 
 void register_blockchain_tests(
     std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
-    bool enable_tracing)
+    bool const enable_tracing)
 {
     // skip slow tests
     testing::FLAGS_gtest_filter +=

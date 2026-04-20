@@ -53,7 +53,7 @@ uint256_t calculate_txn_award(
     uint64_t gas_used) noexcept;
 
 inline intx::uint512
-max_gas_cost(uint64_t const gas_limit, uint256_t max_fee_per_gas) noexcept
+max_gas_cost(uint64_t const gas_limit, uint256_t const max_fee_per_gas) noexcept
 {
     return intx::umul(uint256_t{gas_limit}, max_fee_per_gas);
 }

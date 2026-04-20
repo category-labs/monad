@@ -65,8 +65,9 @@ namespace monad::test
             return v;
         }
 
-        static void
-        signal_handler(int signo, ::siginfo_t *siginfo, void *context) noexcept
+        static void signal_handler(
+            int const signo, ::siginfo_t *const siginfo,
+            void *const context) noexcept
         {
             auto const &signal_handlers =
                 SignalStackTracePrinterEnvironment::signal_handlers();

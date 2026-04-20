@@ -70,7 +70,7 @@ static monad::byte_string to_key(uint64_t const key)
 }
 
 static uint64_t
-select_rand_version(Db const &db, monad::small_prng &rnd, double bias)
+select_rand_version(Db const &db, monad::small_prng &rnd, double const bias)
 {
     auto const version_range_start =
         static_cast<double>(db.get_earliest_version());
@@ -89,7 +89,7 @@ static void on_signal(int)
     g_done = 1;
 }
 
-int main(int argc, char *const argv[])
+int main(int const argc, char *const argv[])
 {
     unsigned num_sync_reader_threads = 4;
     unsigned num_async_reader_threads = 2;
@@ -310,8 +310,8 @@ int main(int argc, char *const argv[])
                     monad::byte_string version_bytes;
 
                     void set_value(
-                        monad::async::erased_connected_operation *state,
-                        monad::async::result<monad::byte_string> res)
+                        monad::async::erased_connected_operation *const state,
+                        monad::async::result<monad::byte_string> const res)
                     {
                         if (res) {
                             MONAD_ASSERT(res.value() == version_bytes);
@@ -406,14 +406,14 @@ int main(int argc, char *const argv[])
                     sig_atomic_t volatile &done;
 
                     explicit VersionValidatorMachine(
-                        size_t num_nodes_, sig_atomic_t volatile &done_)
+                        size_t const num_nodes_, sig_atomic_t volatile &done_)
                         : num_nodes(num_nodes_)
                         , done(done_)
                     {
                     }
 
                     virtual bool
-                    down(unsigned char branch, Node const &node) override
+                    down(unsigned char const branch, Node const &node) override
                     {
                         if (branch == INVALID_BRANCH) {
                             return true;
@@ -441,7 +441,7 @@ int main(int argc, char *const argv[])
                     }
 
                     virtual void
-                    up(unsigned char branch, Node const &node) override
+                    up(unsigned char const branch, Node const &node) override
                     {
                         auto const path_view = NibblesView{path};
                         auto const rem_size = [&] {

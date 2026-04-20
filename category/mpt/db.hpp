@@ -234,7 +234,7 @@ namespace detail
         }
 
         constexpr DbGetSender(
-            AsyncContext &context_, op_t const op_type_, NodeCursor cur_,
+            AsyncContext &context_, op_t const op_type_, NodeCursor const cur_,
             NibblesView const n, uint64_t const block_id_)
             : context(context_)
             , op_type(op_type_)

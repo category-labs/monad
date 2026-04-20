@@ -246,8 +246,8 @@ enum monad_event_record_error_type : uint16_t
  */
 
 inline bool monad_event_ring_try_copy(
-    struct monad_event_ring const *event_ring, uint64_t seqno,
-    struct monad_event_descriptor *event)
+    struct monad_event_ring const *const event_ring, uint64_t const seqno,
+    struct monad_event_descriptor *const event)
 {
     if (MONAD_UNLIKELY(seqno == 0)) {
         return false;
@@ -264,16 +264,16 @@ inline bool monad_event_ring_try_copy(
 }
 
 inline void const *monad_event_ring_payload_peek(
-    struct monad_event_ring const *event_ring,
-    struct monad_event_descriptor const *event)
+    struct monad_event_ring const *const event_ring,
+    struct monad_event_descriptor const *const event)
 {
     return event_ring->payload_buf +
            (event->payload_buf_offset & event_ring->payload_buf_mask);
 }
 
 inline bool monad_event_ring_payload_check(
-    struct monad_event_ring const *event_ring,
-    struct monad_event_descriptor const *event)
+    struct monad_event_ring const *const event_ring,
+    struct monad_event_descriptor const *const event)
 {
     return event->payload_buf_offset >=
            __atomic_load_n(
@@ -282,8 +282,9 @@ inline bool monad_event_ring_payload_check(
 }
 
 inline void *monad_event_ring_payload_memcpy(
-    struct monad_event_ring const *event_ring,
-    struct monad_event_descriptor const *event, void *dst, size_t n)
+    struct monad_event_ring const *const event_ring,
+    struct monad_event_descriptor const *const event, void *const dst,
+    size_t const n)
 {
     if (MONAD_UNLIKELY(!monad_event_ring_payload_check(event_ring, event))) {
         return nullptr;

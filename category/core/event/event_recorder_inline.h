@@ -70,8 +70,8 @@ inline uint64_t monad_event_get_epoch_nanos()
 // the user is finished copying the payload, at atomic store of `seqno` into
 // the descriptor will finish the recording process.
 static inline struct monad_event_descriptor *monad_event_recorder_reserve(
-    struct monad_event_recorder *recorder, size_t payload_size, uint64_t *seqno,
-    uint8_t **payload)
+    struct monad_event_recorder *const recorder, size_t const payload_size,
+    uint64_t *const seqno, uint8_t **const payload)
 {
     struct monad_event_descriptor *event;
     uint64_t buffer_window_start;
@@ -137,7 +137,7 @@ static inline struct monad_event_descriptor *monad_event_recorder_reserve(
 }
 
 inline void monad_event_recorder_commit(
-    struct monad_event_descriptor *event, uint64_t seqno)
+    struct monad_event_descriptor *const event, uint64_t const seqno)
 {
     __atomic_store_n(&event->seqno, seqno, __ATOMIC_RELEASE);
 }

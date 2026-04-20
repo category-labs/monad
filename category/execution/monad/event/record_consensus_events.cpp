@@ -73,7 +73,8 @@ EXPLICIT_INSTANTIATE_QC_TEMPLATE(MonadConsensusBlockHeaderV2);
 
 #undef EXPLICIT_INSTANTIATE_QC_TEMPLATE
 
-void record_block_finalized(bytes32_t const &block_id, uint64_t block_number)
+void record_block_finalized(
+    bytes32_t const &block_id, uint64_t const block_number)
 {
     if (auto *const exec_recorder = g_exec_event_recorder.get()) {
         ReservedExecEvent const block_finalized =
@@ -85,7 +86,7 @@ void record_block_finalized(bytes32_t const &block_id, uint64_t block_number)
     }
 }
 
-void record_block_verified(std::span<uint64_t const> verified_blocks)
+void record_block_verified(std::span<uint64_t const> const verified_blocks)
 {
     if (auto *const exec_recorder = g_exec_event_recorder.get()) {
         for (uint64_t b : verified_blocks) {

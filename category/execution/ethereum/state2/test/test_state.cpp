@@ -1893,7 +1893,7 @@ namespace
         {
         }
 
-        void run(uint64_t iterations)
+        void run(uint64_t const iterations)
         {
             for (uint64_t i = 0; i < iterations; ++i) {
                 LOG_INFO("=== Iteration {}", i + 1);

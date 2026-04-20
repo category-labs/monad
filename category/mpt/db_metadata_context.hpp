@@ -95,8 +95,8 @@ public:
             std::atomic_ref<uint64_t> next_version_;
             std::span<chunk_offset_t> root_offsets_chunks_;
 
-            void
-            update_version_lower_bound_(uint64_t lower_bound = uint64_t(-1))
+            void update_version_lower_bound_(
+                uint64_t const lower_bound = uint64_t(-1))
             {
                 auto const version_lower_bound =
                     version_lower_bound_.load(std::memory_order_acquire);
@@ -117,7 +117,7 @@ public:
             }
 
         public:
-            explicit root_offsets_delegator(metadata_copy const *m)
+            explicit root_offsets_delegator(metadata_copy const *const m)
                 : version_lower_bound_(
                       m->main->root_offsets.version_lower_bound_)
                 , next_version_(m->main->root_offsets.next_version_)
@@ -267,7 +267,7 @@ public:
 
     chunk_offset_t get_root_offset_at_version(uint64_t version) const noexcept;
 
-    bool version_is_valid_ondisk(uint64_t version) const noexcept
+    bool version_is_valid_ondisk(uint64_t const version) const noexcept
     {
         return get_root_offset_at_version(version) != INVALID_OFFSET;
     }

@@ -43,7 +43,7 @@ Node::Node(prevent_public_construction_tag) {}
 
 Node::Node(
     prevent_public_construction_tag, uint16_t const mask,
-    std::optional<byte_string_view> value, size_t const data_size,
+    std::optional<byte_string_view> const value, size_t const data_size,
     NibblesView const path, int64_t const version)
     : mask(mask)
     , path_nibble_index_end(path.end_nibble_)
@@ -361,7 +361,8 @@ unsigned char const *Node::child_data(unsigned const index) const noexcept
     return child_data() + child_data_offset(index);
 }
 
-void Node::set_child_data(unsigned const index, byte_string_view data) noexcept
+void Node::set_child_data(
+    unsigned const index, byte_string_view const data) noexcept
 {
     // called after data_off array is calculated
     std::memcpy(child_data(index), data.data(), data.size());
@@ -415,27 +416,27 @@ std::span<Node::SharedPtr const> Node::child_next_data() const noexcept
         number_of_children()};
 }
 
-Node::SharedPtr *Node::child_ptr(unsigned index) noexcept
+Node::SharedPtr *Node::child_ptr(unsigned const index) noexcept
 {
     return child_next_data().data() + index;
 }
 
-Node::SharedPtr const *Node::child_ptr(unsigned index) const noexcept
+Node::SharedPtr const *Node::child_ptr(unsigned const index) const noexcept
 {
     return child_next_data().data() + index;
 }
 
-Node::SharedPtr &Node::next(unsigned index) noexcept
+Node::SharedPtr &Node::next(unsigned const index) noexcept
 {
     return child_next_data()[index];
 }
 
-Node::SharedPtr const &Node::next(unsigned index) const noexcept
+Node::SharedPtr const &Node::next(unsigned const index) const noexcept
 {
     return child_next_data()[index];
 }
 
-void Node::set_next(unsigned index, Node::SharedPtr p) noexcept
+void Node::set_next(unsigned const index, Node::SharedPtr p) noexcept
 {
     child_next_data()[index] = std::move(p);
 }

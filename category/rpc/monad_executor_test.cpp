@@ -171,7 +171,8 @@ namespace
         }
     };
 
-    void complete_callback(monad_executor_result *result, void *user)
+    void
+    complete_callback(monad_executor_result *const result, void *const user)
     {
         auto *c = (callback_context *)user;
 

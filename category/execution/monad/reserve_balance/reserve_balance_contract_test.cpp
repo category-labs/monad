@@ -213,7 +213,7 @@ void add_spend_code(uint64_t const value_mon, std::vector<uint8_t> &code)
 }
 
 void add_call_code(
-    uint256_t const &gas_fee, Address target, std::vector<uint8_t> &code)
+    uint256_t const &gas_fee, Address const target, std::vector<uint8_t> &code)
 {
     auto const *v = intx::as_bytes(target);
     auto const *g = intx::as_bytes(gas_fee);

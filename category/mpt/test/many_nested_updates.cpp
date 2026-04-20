@@ -58,7 +58,7 @@ using TrieTypes =
     ::testing::Types<InMemoryMerkleTrieGTest, OnDiskMerkleTrieGTest>;
 TYPED_TEST_SUITE(ManyNestedUpdates, TrieTypes);
 
-inline ::boost::json::value read_corpus(std::string_view suffix)
+inline ::boost::json::value read_corpus(std::string_view const suffix)
 {
     auto path = std::filesystem::path(__FILE__);
     path = std::filesystem::path(path).remove_filename() /
@@ -74,7 +74,7 @@ inline ::boost::json::value read_corpus(std::string_view suffix)
     return ::boost::json::parse(s);
 }
 
-inline monad::byte_string const &to_byte_string(std::string_view s)
+inline monad::byte_string const &to_byte_string(std::string_view const s)
 {
     static std::map<std::string, monad::byte_string> storage;
     std::string key(s);

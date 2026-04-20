@@ -107,7 +107,8 @@ namespace
 
     public:
         BinaryDbLoader(
-            ::monad::mpt::Db &db, size_t buf_size, uint64_t const block_id)
+            ::monad::mpt::Db &db, size_t const buf_size,
+            uint64_t const block_id)
             : db_{db}
             , buf_size_{buf_size}
             , buf_{std::make_unique_for_overwrite<unsigned char[]>(buf_size)}
@@ -197,8 +198,8 @@ namespace
 
         void load(
             std::istream &input,
-            std::function<size_t(byte_string_view, UpdateList &)> fparse,
-            std::function<void(UpdateList)> fwrite)
+            std::function<size_t(byte_string_view, UpdateList &)> const fparse,
+            std::function<void(UpdateList)> const fwrite)
         {
             UpdateList updates;
             size_t total_processed = 0;
@@ -294,7 +295,7 @@ namespace
             return total_processed;
         }
 
-        Update handle_account(byte_string_view curr)
+        Update handle_account(byte_string_view const curr)
         {
             constexpr auto balance_offset = sizeof(bytes32_t);
             constexpr auto nonce_offset = balance_offset + sizeof(uint256_t);
@@ -825,7 +826,8 @@ get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
             path_ = path_view.substr(0, prefix_size);
         }
 
-        virtual bool should_visit(Node const &, unsigned char branch) override
+        virtual bool
+        should_visit(Node const &, unsigned char const branch) override
         {
             if (path_.nibble_size() == 0) {
                 return branch == PROPOSAL_NIBBLE;

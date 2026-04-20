@@ -41,7 +41,7 @@ namespace monad::staking::test
 {
     template <Traits traits>
     StakingContractMachine<traits>::StakingContractMachine(
-        seed_t seed, Config const &config)
+        seed_t const seed, Config const &config)
         : engine_{seed}
         , enable_pubkey_assertions_{config.enable_pubkey_assertions}
         , enable_trace_{config.enable_trace}
@@ -611,7 +611,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::for_all_val_ids(
-        std::function<void(u64_be)> f)
+        std::function<void(u64_be)> const f)
     {
         uint64_t n = model_.last_val_id() + 3;
         for (uint64_t i = 0; i < n; ++i) {
@@ -621,7 +621,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::for_all_addresses(
-        std::function<void(Address const &)> f)
+        std::function<void(Address const &)> const f)
     {
         for (auto const &a : all_addresses_) {
             f(a);
@@ -630,7 +630,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::for_all_val_ids_and_addresses(
-        std::function<void(u64_be, Address const &)> f)
+        std::function<void(u64_be, Address const &)> const f)
     {
         for_all_val_ids([&](u64_be v) {
             for_all_addresses([&](Address const &a) { f(v, a); });
@@ -638,7 +638,7 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    bool StakingContractMachine<traits>::transition(Transition t)
+    bool StakingContractMachine<traits>::transition(Transition const t)
     {
         if (enable_trace_) {
             std::cout << magic_enum::enum_name(t) << std::endl;
@@ -829,7 +829,7 @@ namespace monad::staking::test
     // lower_bound, lower_bound + 1, upper_bound, upper_bound - 1.
     template <Traits traits>
     uint256_t StakingContractMachine<traits>::gen_bound_biased_uint256(
-        uint256_t lower_bound, uint256_t upper_bound)
+        uint256_t const lower_bound, uint256_t const upper_bound)
     {
         MONAD_ASSERT(lower_bound <= upper_bound);
         return discrete_choice<uint256_t>(
@@ -860,7 +860,7 @@ namespace monad::staking::test
     // code path coverage.
     template <Traits traits>
     uint256_t StakingContractMachine<traits>::gen_stake(
-        uint256_t lower_bound, uint256_t upper_bound)
+        uint256_t const lower_bound, uint256_t const upper_bound)
     {
         MONAD_ASSERT(upper_bound >= lower_bound);
         auto optional_result = [&](uint256_t const &stake) {
@@ -943,7 +943,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     Address
-    StakingContractMachine<traits>::gen_delegator_to_val_id(u64_be val_id)
+    StakingContractMachine<traits>::gen_delegator_to_val_id(u64_be const val_id)
     {
         MONAD_ASSERT(model_.val_execution(val_id).exists());
         auto ds = model_.get_delegators_for_validator(val_id);
@@ -1281,7 +1281,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_delegate(
-        u64_be val_id, Address const &sender, uint256_be_t const &value)
+        u64_be const val_id, Address const &sender, uint256_be_t const &value)
     {
         auto result = model_.precompile_delegate<traits>(val_id, sender, value);
         MONAD_ASSERT(result.has_value());
@@ -1443,8 +1443,8 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_undelegate(
-        u64_be val_id, u256_be stake, u8_be wid, Address const &sender,
-        uint256_be_t const &value)
+        u64_be const val_id, u256_be const stake, u8_be const wid,
+        Address const &sender, uint256_be_t const &value)
     {
         MONAD_ASSERT(model_.val_execution(val_id).exists());
 
@@ -1615,7 +1615,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_compound(
-        u64_be val_id, Address const &sender, uint256_be_t const &value)
+        u64_be const val_id, Address const &sender, uint256_be_t const &value)
     {
         uint256_t const rewards =
             model_.delegator(val_id, sender).rewards().load().native() +
@@ -1753,7 +1753,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_withdraw(
-        u64_be val_id, u8_be wid, Address const &sender,
+        u64_be const val_id, u8_be const wid, Address const &sender,
         uint256_be_t const &value)
     {
         auto result =
@@ -1841,7 +1841,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_claim_rewards(
-        u64_be val_id, Address const &sender, uint256_be_t const &value)
+        u64_be const val_id, Address const &sender, uint256_be_t const &value)
     {
         auto const res =
             model_.precompile_claim_rewards<traits>(val_id, sender, value);
@@ -1893,7 +1893,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_change_commission(
-        u64_be val_id, u256_be const &commission, Address const &sender,
+        u64_be const val_id, u256_be const &commission, Address const &sender,
         uint256_be_t const &value)
     {
         auto const res = model_.precompile_change_commission<traits>(
@@ -1928,7 +1928,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_external_reward(
-        u64_be val_id, Address const &sender, uint256_be_t const &value)
+        u64_be const val_id, Address const &sender, uint256_be_t const &value)
     {
         auto const res =
             model_.precompile_external_reward<traits>(val_id, sender, value);
@@ -2006,7 +2006,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_get_delegator(
-        u64_be val_id, Address const &addr, Address const &sender,
+        u64_be const val_id, Address const &addr, Address const &sender,
         uint256_be_t const &value)
     {
         auto const res = model_.precompile_get_delegator<traits>(

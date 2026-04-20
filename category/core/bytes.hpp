@@ -50,7 +50,7 @@ struct bytes32_t : evmc_bytes32
     {
     }
 
-    explicit constexpr bytes32_t(uint64_t v) noexcept
+    explicit constexpr bytes32_t(uint64_t const v) noexcept
         : evmc_bytes32{}
     {
         for (int i = 0; i < 8; ++i) {

@@ -163,7 +163,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-ReserveBalance::ReserveBalance(State *state)
+ReserveBalance::ReserveBalance(State *const state)
     : state_{state}
 {
 }

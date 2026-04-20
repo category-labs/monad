@@ -1783,8 +1783,9 @@ namespace monad::vm::interpreter
 
     MONAD_VM_INSTRUCTION_CALL inline void stop(
         runtime::Context &ctx, Intercode const &analysis,
-        runtime::uint256_t const *stack_bottom, runtime::uint256_t *stack_top,
-        int64_t const gas_remaining, uint8_t const *)
+        runtime::uint256_t const *const stack_bottom,
+        runtime::uint256_t *const stack_top, int64_t const gas_remaining,
+        uint8_t const *)
     {
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         ctx.gas_remaining = gas_remaining;

@@ -82,7 +82,7 @@ namespace
 
     evmc::Result BlockHistoryFixture::call_blockhash_opcode(
         uint64_t const block_number, uint64_t const current_block_number,
-        Address sender)
+        Address const sender)
     {
         MonadDevnet const chain{};
 

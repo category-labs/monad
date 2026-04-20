@@ -43,7 +43,8 @@ extern thread_local char _g_monad_event_ring_error_buf[1024];
 
 // Given a path which may not exist, walk backward until we find a parent path
 // that does exist; the caller must free(3) parent_path
-static int find_existing_parent_path(char const *path, char **parent_path)
+static int
+find_existing_parent_path(char const *const path, char **const parent_path)
 {
     struct stat path_stat;
 
@@ -83,8 +84,8 @@ StatAgain:
 }
 
 static bool check_flock_entry(
-    char *lock_line, ino_t const ring_ino,
-    struct monad_event_flock_info *fl_info)
+    char *const lock_line, ino_t const ring_ino,
+    struct monad_event_flock_info *const fl_info)
 {
     char *saveptr;
     ino_t lock_ino = 0;
@@ -139,7 +140,8 @@ static bool check_flock_entry(
 }
 
 int monad_event_ring_query_flocks(
-    int ring_fd, struct monad_event_flock_info *flocks, size_t *size)
+    int const ring_fd, struct monad_event_flock_info *const flocks,
+    size_t *const size)
 {
     struct stat ring_stat;
     struct monad_event_flock_info fl_info_buf;
@@ -166,7 +168,8 @@ int monad_event_ring_query_flocks(
     return 0; // NOLINT(clang-analyzer-unix.Stream)
 }
 
-int monad_check_path_supports_map_hugetlb(char const *path, bool *supported)
+int monad_check_path_supports_map_hugetlb(
+    char const *const path, bool *const supported)
 {
     char *parent_path;
     struct statfs fs_stat;

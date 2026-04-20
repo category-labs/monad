@@ -30,7 +30,7 @@ namespace monad::vm::utils::evm_as::internal
     static std::array<char, 6> var_letters = {'X', 'Y', 'Z', 'A', 'B', 'C'};
 
     void emit_annotation(
-        annot_context &ctx, size_t prefix_len, size_t desired_offset,
+        annot_context &ctx, size_t prefix_len, size_t const desired_offset,
         std::ostream &os)
     {
         // Emit whitespace to align annotations

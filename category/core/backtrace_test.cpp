@@ -34,13 +34,13 @@
 namespace
 {
     __attribute__((noinline)) monad::stack_backtrace::ptr
-    func_b(std::span<std::byte> storage)
+    func_b(std::span<std::byte> const storage)
     {
         return monad::stack_backtrace::capture(storage);
     }
 
     __attribute__((noinline)) monad::stack_backtrace::ptr
-    func_a(std::span<std::byte> storage)
+    func_a(std::span<std::byte> const storage)
     {
         return func_b(storage);
     }
@@ -78,7 +78,7 @@ namespace
         {
             int *fds;
 
-            explicit unfds_t(int *fds_)
+            explicit unfds_t(int *const fds_)
                 : fds(fds_)
             {
             }

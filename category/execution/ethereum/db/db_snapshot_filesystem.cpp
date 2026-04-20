@@ -71,7 +71,7 @@ monad_db_snapshot_filesystem_write_user_context_create(
 }
 
 void monad_db_snapshot_filesystem_write_user_context_destroy(
-    monad_db_snapshot_filesystem_write_user_context *context)
+    monad_db_snapshot_filesystem_write_user_context *const context)
 {
     for (auto &[_, stream] : context->shard) {
         for (auto &shard : stream) {

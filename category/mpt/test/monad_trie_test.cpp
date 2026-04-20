@@ -93,13 +93,13 @@ using concurrent_queue = moodycamel::ConcurrentQueue<T>;
 
 using namespace monad::mpt;
 
-static void ctrl_c_handler(int s)
+static void ctrl_c_handler(int const s)
 {
     (void)s;
     exit(0);
 }
 
-void print_hex_bytes(monad::byte_string_view arr)
+void print_hex_bytes(monad::byte_string_view const arr)
 {
     fprintf(stdout, "0x");
     for (auto const &c : arr) {
@@ -120,11 +120,11 @@ namespace
     nkeys: number of keys to insert in this batch
 */
 Node::SharedPtr batch_upsert_commit(
-    std::ostream &csv_writer, uint64_t block_id, uint64_t const vec_idx,
+    std::ostream &csv_writer, uint64_t const block_id, uint64_t const vec_idx,
     uint64_t const key_offset, uint64_t const nkeys,
     std::vector<monad::byte_string> &keccak_keys,
     std::vector<monad::byte_string> &keccak_values, bool const erase,
-    bool compaction, Node::SharedPtr prev_root, UpdateAux &aux,
+    bool const compaction, Node::SharedPtr prev_root, UpdateAux &aux,
     StateMachine &sm)
 {
 
@@ -191,9 +191,9 @@ Node::SharedPtr batch_upsert_commit(
 }
 
 void prepare_keccak(
-    size_t nkeys, std::vector<monad::byte_string> &keccak_keys,
-    std::vector<monad::byte_string> &keccak_values, size_t key_offset,
-    bool realistic_corpus, bool is_random)
+    size_t const nkeys, std::vector<monad::byte_string> &keccak_keys,
+    std::vector<monad::byte_string> &keccak_values, size_t const key_offset,
+    bool const realistic_corpus, bool const is_random)
 {
     size_t val;
     // prepare keccak
@@ -284,7 +284,7 @@ void prepare_keccak(
     }
 }
 
-int main(int argc, char *argv[])
+int main(int const argc, char *argv[])
 {
     struct sigaction sig;
     sig.sa_handler = &ctrl_c_handler;
@@ -415,7 +415,7 @@ int main(int argc, char *argv[])
                 std::vector<std::byte *> pages;
                 ::monad::small_prng rand;
 
-                explicit cpu_cache_emptier_t(bool enable)
+                explicit cpu_cache_emptier_t(bool const enable)
                 {
                     if (enable) {
                         pages.resize(TLB_ENTRIES);
@@ -743,8 +743,9 @@ int main(int argc, char *argv[])
                         monad::byte_string key;
 
                         explicit receiver_t(
-                            uint64_t &ops_, bool &done_, unsigned n_slices_,
-                            NodeCursor begin, uint32_t id)
+                            uint64_t &ops_, bool &done_,
+                            unsigned const n_slices_, NodeCursor const begin,
+                            uint32_t const id)
                             : ops(ops_)
                             , done(done_)
                             , n_slices(n_slices_)
@@ -756,8 +757,8 @@ int main(int argc, char *argv[])
 
                         void set_value(
                             MONAD_ASYNC_NAMESPACE::erased_connected_operation
-                                *io_state,
-                            find_bytes_request_sender::result_type res)
+                                *const io_state,
+                            find_bytes_request_sender::result_type const res)
                         {
                             MONAD_ASSERT(res);
                             auto const [data, errc] = res.assume_value();

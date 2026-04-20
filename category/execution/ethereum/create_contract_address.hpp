@@ -24,7 +24,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-Address create_contract_address(Address const &from, uint64_t const nonce);
+Address create_contract_address(Address const &from, uint64_t nonce);
 Address create2_contract_address(
     Address const &from, bytes32_t const &zeta,
     ethash::hash256 const &code_hash);

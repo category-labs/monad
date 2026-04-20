@@ -149,7 +149,7 @@ namespace monad::vm::fuzzing
 
     static_assert(is_exit_terminator(STOP));
 
-    std::vector<uint8_t> const &memory_operands(uint8_t const opcode) noexcept;
+    std::vector<uint8_t> const &memory_operands(uint8_t opcode) noexcept;
 
-    bool uses_memory(uint8_t const opcode) noexcept;
+    bool uses_memory(uint8_t opcode) noexcept;
 }

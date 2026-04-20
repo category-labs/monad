@@ -28,7 +28,7 @@ namespace monad::vm::utils
         std::atomic<T> running_avg_{0};
         std::atomic<T> count_{0};
 
-        void update(T new_value) noexcept
+        void update(T const new_value) noexcept
         {
             auto count = count_.load(std::memory_order_acquire);
             auto running_avg = running_avg_.load(std::memory_order_acquire);
@@ -51,7 +51,7 @@ namespace monad::vm::utils
         std::atomic<T> running_avg_{0};
         std::atomic<T> count_{0};
 
-        void update(T new_value) noexcept
+        void update(T const new_value) noexcept
         {
             auto count = count_.load(std::memory_order_acquire);
             auto running_avg = running_avg_.load(std::memory_order_acquire);

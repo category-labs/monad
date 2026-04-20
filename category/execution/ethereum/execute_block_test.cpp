@@ -68,8 +68,8 @@ namespace
     // DB Getters
     ///////////////////////////////////////////
     std::vector<CallFrame> read_call_frame(
-        mpt::Node::SharedPtr root, mpt::Db &db, uint64_t const block_number,
-        uint64_t const txn_idx)
+        mpt::Node::SharedPtr const root, mpt::Db &db,
+        uint64_t const block_number, uint64_t const txn_idx)
     {
         using namespace mpt;
 

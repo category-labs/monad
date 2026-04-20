@@ -119,8 +119,8 @@ public:
             }
 
             // Only used for seq chunks
-            std::span<std::atomic<uint32_t>>
-            chunk_bytes_used(file_offset_t end_of_this_offset) const noexcept
+            std::span<std::atomic<uint32_t>> chunk_bytes_used(
+                file_offset_t const end_of_this_offset) const noexcept
             {
                 static_assert(
                     sizeof(uint32_t) == sizeof(std::atomic<uint32_t>));
@@ -135,7 +135,8 @@ public:
             }
 
             // Bytes used by the pool metadata on this device
-            size_t total_size(file_offset_t end_of_this_offset) const noexcept
+            size_t
+            total_size(file_offset_t const end_of_this_offset) const noexcept
             {
                 auto const count = chunks(end_of_this_offset);
                 return sizeof(metadata_t) + count * sizeof(uint32_t);
@@ -145,8 +146,9 @@ public:
         static_assert(sizeof(metadata_t) == 64);
 
         constexpr device_t(
-            int readwritefd, type_t_ type, uint64_t unique_hash,
-            file_offset_t size_of_file, metadata_t *metadata)
+            int const readwritefd, type_t_ const type,
+            uint64_t const unique_hash, file_offset_t const size_of_file,
+            metadata_t *const metadata)
             : readwritefd_(readwritefd)
             , type_(type)
             , unique_hash_(unique_hash)
@@ -206,10 +208,11 @@ public:
 
     public:
         constexpr chunk_t(
-            device_t &device, int read_fd, int write_fd, file_offset_t offset,
-            file_offset_t capacity, uint32_t chunkid_within_device,
-            uint32_t chunkid_within_zone, bool owns_readfd, bool owns_writefd,
-            bool append_only)
+            device_t &device, int const read_fd, int const write_fd,
+            file_offset_t const offset, file_offset_t const capacity,
+            uint32_t const chunkid_within_device,
+            uint32_t const chunkid_within_zone, bool const owns_readfd,
+            bool const owns_writefd, bool const append_only)
             : device_(device)
             , read_fd_(read_fd)
             , write_fd_(write_fd)
@@ -406,7 +409,7 @@ public:
     }
 
     //! \brief Returns the number of chunks for the specified type
-    size_t chunks(chunk_type which) const noexcept
+    size_t chunks(chunk_type const which) const noexcept
     {
         return chunks_[which].size();
     }

@@ -721,7 +721,7 @@ namespace monad::vm::compiler::native
         }
 
         /** Null or the stack element holding the general reg. */
-        StackElem *general_reg_stack_elem(GeneralReg r)
+        StackElem *general_reg_stack_elem(GeneralReg const r)
         {
             return general_reg_stack_elems_[r.reg];
         }
@@ -834,7 +834,7 @@ namespace monad::vm::compiler::native
 
     struct StackElemDeleter
     {
-        static void destroy(utils::RcObject<StackElem> *x)
+        static void destroy(utils::RcObject<StackElem> *const x)
         {
             static_assert(sizeof(size_t) == sizeof(void *));
             x->ref_count =

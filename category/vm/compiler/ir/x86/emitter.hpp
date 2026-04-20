@@ -188,13 +188,13 @@ namespace monad::vm::compiler::native
         {
         public:
             Runtime(
-                Emitter *e, int64_t remaining_base_gas, bool spill_avx,
-                void (*f)(Args...))
+                Emitter *const e, int64_t const remaining_base_gas,
+                bool const spill_avx, void (*f)(Args...))
                 : RuntimeImpl(e, remaining_base_gas, spill_avx, f)
             {
             }
 
-            Runtime(Emitter *e, bool spill_avx, void (*f)(Args...))
+            Runtime(Emitter *const e, bool const spill_avx, void (*f)(Args...))
                 : Runtime(e, 0, spill_avx, f)
             {
             }
@@ -760,7 +760,7 @@ namespace monad::vm::compiler::native
         void error_block(asmjit::Label &, runtime::StatusCode);
         void return_with_status_code(runtime::StatusCode);
 
-        static constexpr size_t div64_ceil(size_t x)
+        static constexpr size_t div64_ceil(size_t const x)
         {
             return (x >> 6) + ((x & 63) != 0);
         }

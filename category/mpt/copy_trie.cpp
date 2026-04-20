@@ -36,7 +36,7 @@ MONAD_MPT_NAMESPACE_BEGIN
 Node::SharedPtr create_node_add_new_branch(
     UpdateAux &aux, Node *const node, unsigned char const new_branch,
     Node::SharedPtr new_child, uint64_t const new_version,
-    std::optional<byte_string_view> opt_value)
+    std::optional<byte_string_view> const opt_value)
 {
     uint16_t const mask =
         static_cast<uint16_t>(node->mask | (1u << new_branch));
@@ -76,7 +76,7 @@ Node::SharedPtr create_node_add_new_branch(
 Node::SharedPtr create_node_with_two_children(
     UpdateAux &aux, NibblesView const path, unsigned char const branch0,
     Node::SharedPtr child0, unsigned char const branch1, Node::SharedPtr child1,
-    uint64_t const new_version, std::optional<byte_string_view> opt_value)
+    uint64_t const new_version, std::optional<byte_string_view> const opt_value)
 {
     // mismatch: split node's path: turn node to a branch node with two
     // children
@@ -110,9 +110,9 @@ Node::SharedPtr create_node_with_two_children(
 }
 
 Node::SharedPtr copy_trie_impl(
-    UpdateAux &aux, Node::SharedPtr src_root, NibblesView const src_prefix,
-    Node::SharedPtr dest_root, NibblesView const dest_prefix,
-    uint64_t const dest_version)
+    UpdateAux &aux, Node::SharedPtr const src_root,
+    NibblesView const src_prefix, Node::SharedPtr dest_root,
+    NibblesView const dest_prefix, uint64_t const dest_version)
 {
     MONAD_ASSERT(aux.is_on_disk());
     auto [src_cursor, res] = find_blocking(

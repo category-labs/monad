@@ -122,7 +122,7 @@ void do_binary(
     std::cout << show_opcodes(opcodes) << '\n';
 }
 
-int main(int argc, char **argv)
+int main(int const argc, char **const argv)
 {
     auto args = parse_args(argc, argv);
 

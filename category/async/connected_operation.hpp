@@ -211,7 +211,7 @@ namespace detail
 
         // Overload ambiguity resolver so you can write `completed(success())`
         // without ambiguous overload warnings.
-        void completed(BOOST_OUTCOME_V2_NAMESPACE::success_type<void> _)
+        void completed(BOOST_OUTCOME_V2_NAMESPACE::success_type<void> const _)
         {
             completed(result<void>(_));
         }

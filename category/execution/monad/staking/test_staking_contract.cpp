@@ -118,7 +118,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         contract.vars.epoch.store(start_epoch);
     }
 
-    void post_call(bool err)
+    void post_call(bool const err)
     {
         if (!err) {
             state.pop_accept();
@@ -157,7 +157,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
 
     void check_delegator_c_state(
         ValResult const &val, Address const &delegator,
-        uint256_t expected_stake, uint256_t expected_rewards)
+        uint256_t const expected_stake, uint256_t const expected_rewards)
     {
         auto del = contract.vars.delegator(val.id, delegator);
         pull_delegator_up_to_date(val.id, delegator);

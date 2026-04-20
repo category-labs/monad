@@ -131,7 +131,7 @@ namespace
     }
 }
 
-int main(int argc, char **argv)
+int main(int const argc, char **const argv)
 {
     auto const args = parse_args(argc, argv);
 

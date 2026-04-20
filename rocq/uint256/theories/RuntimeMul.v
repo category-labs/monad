@@ -16,12 +16,13 @@
     Proofs are in RuntimeMulProofs.v. *)
 
 From Stdlib Require Import ZArith Lia List.
-From Uint256 Require Import Uint Primitives Words.
+From Uint256 Require Import Uint Base Primitives Words.
 Import ListNotations.
 
-Module Make (Import U64 : Uint64Ops).
+Module MakeOn (B : Base.BaseSig).
+Include B.
+Import U64.
 Include UintNotations(U64).
-Include Words.Make(U64).
 Open Scope uint_scope.
 
 (** ** mul_line: First Row of Multiplication *)
@@ -202,4 +203,9 @@ Definition truncating_mul_runtime (xs ys : words) (R : nat) : words :=
       truncating_mul_runtime_recur xs rest result 1 R
   end.
 
+End MakeOn.
+
+Module Make (Import Word64 : Uint64Ops).
+Module B := Base.Make(Word64).
+Include MakeOn(B).
 End Make.

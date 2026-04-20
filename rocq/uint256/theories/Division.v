@@ -23,14 +23,15 @@
     Proofs are in DivisionProofs.v. *)
 
 From Stdlib Require Import ZArith Lia List.
-From Uint256 Require Import Uint Primitives Words.
+From Uint256 Require Import Uint Base Primitives Words.
 Import ListNotations.
 
-Module Make (U64 : Uint64Ops) (U128 : Uint128Ops)
-  (Import Bridge : UintWidenOps U64 U128).
+Module MakeOn (B : Base.BaseSig) (U128 : Uint128Ops)
+  (Import Bridge : UintWidenOps B.U64 U128).
+Include B.
+Import U64.
 Include UintNotations(U64).
-Include Primitives.Make(U64).
-Include Words.Make(U64).
+Open Scope uint_scope.
 
 (* Notations for 128-bit operations *)
 Module WN := UintNotations(U128).
@@ -319,4 +320,10 @@ Definition udivrem (M N : nat) (u v : words) : option udivrem_result :=
       (quot ++ repeat 0 (M - length quot))
       (rem ++ repeat 0 (N - length rem))).
 
+End MakeOn.
+
+Module Make (Word64 : Uint64Ops) (U128 : Uint128Ops)
+  (Import Bridge : UintWidenOps Word64 U128).
+Module B := Base.Make(Word64).
+Include MakeOn(B)(U128)(Bridge).
 End Make.

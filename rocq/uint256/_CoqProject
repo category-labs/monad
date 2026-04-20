@@ -5,6 +5,7 @@
 
 theories/Spec.v
 theories/Uint.v
+theories/Base.v
 theories/Primitives.v
 theories/Words.v
 theories/WordsLemmas.v
@@ -12,6 +13,7 @@ theories/Division.v
 theories/DivisionProofs.v
 theories/RuntimeMul.v
 theories/RuntimeMulProofs.v
+theories/Stack.v
 theories/UintZ.v
 theories/UintRecords.v
 theories/UintRecordsMetatheorems.v

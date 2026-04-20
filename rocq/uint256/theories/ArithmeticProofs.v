@@ -981,12 +981,98 @@ Proof.
     inversion Hadd; subst; clear Hadd.
     (* bridge [Hud] to division correctness, then use the remainder bound and
        [to_Z_uint256_words_to_uint256_small]. *)
-    admit.
+    pose proof (uint256_to_words_length modulus) as Hmod_len.
+    assert (Hsum_len : length (add_words_full_uint256 x y) = 5%nat).
+    { unfold add_words_full_uint256.
+      rewrite length_app, uint256_to_words_length.
+      simpl. lia. }
+    assert (Hmod_pos : to_Z_words (uint256_to_words modulus) > 0).
+    { unfold to_Z_uint256 in Hmod. lia. }
+    pose proof (DP.udivrem_correct 5 4
+      (add_words_full_uint256 x y) (uint256_to_words modulus) divr
+      Hsum_len Hmod_len Hmod_pos Hud) as [Hdiv Hrange].
+    pose proof (add_words_full_uint256_correct x y) as Hsum.
+    assert (Hrem_small : 0 <= to_Z_words (ud_rem divr) < modulus256).
+    { pose proof (to_Z_uint256_bounds modulus) as Hmod_bound.
+      unfold to_Z_uint256 in Hmod_bound.
+      split.
+      - exact (proj1 Hrange).
+      - eapply Z.lt_trans.
+        + exact (proj2 Hrange).
+        + exact (proj2 Hmod_bound). }
+    assert (Hrem_value :
+      to_Z_uint256 (words_to_uint256 (ud_rem divr)) =
+      to_Z_words (ud_rem divr)).
+    { destruct (ud_rem divr) as [|r0 [|r1 [|r2 [|r3 rest]]]].
+      - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+        cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+        rewrite !spec_zero. lia.
+      - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+        cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+        rewrite !spec_zero. lia.
+      - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+        cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+        rewrite !spec_zero. lia.
+      - unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+        cbn [app firstn repeat uint256_to_words WL.to_Z_words w0 w1 w2 w3].
+        rewrite !spec_zero. lia.
+      - pose proof
+          (WL.to_Z_words_firstn_skipn (r0 :: r1 :: r2 :: r3 :: rest) 4
+             ltac:(simpl; lia)) as Hsplit.
+        cbn [firstn skipn] in Hsplit.
+        change (WL.modulus_words 4) with modulus256 in Hsplit.
+        pose proof (WL.to_Z_words_bound [r0; r1; r2; r3]) as Hprefix.
+        change (0 <= to_Z_words [r0; r1; r2; r3] < modulus256)
+          in Hprefix.
+        pose proof (WL.to_Z_words_bound rest) as Hrest.
+        assert (Hrest0 : to_Z_words rest = 0).
+        { destruct Hrest as [Hrest_nonneg _].
+          pose proof (proj1 Hprefix) as Hprefix_nonneg.
+          assert (Htail_small : modulus256 * to_Z_words rest < modulus256).
+          { pose proof (proj2 Hrem_small) as Hsmall.
+            assert (Htail_le : modulus256 * to_Z_words rest <=
+              to_Z_words (r0 :: r1 :: r2 :: r3 :: rest)).
+            { change (modulus256 * WL.to_Z_words rest <=
+                WL.to_Z_words (r0 :: r1 :: r2 :: r3 :: rest)).
+              rewrite Hsplit.
+              assert (Hprefix_nonneg_wl :
+                0 <= WL.to_Z_words [r0; r1; r2; r3]).
+              { exact Hprefix_nonneg. }
+              lia. }
+            lia. }
+          assert (Hrest_nonneg_local : 0 <= to_Z_words rest).
+          { exact Hrest_nonneg. }
+          pose proof (to_Z_uint256_bounds modulus) as Hmod_bound.
+          assert (Hmod256_pos : 0 < modulus256) by lia.
+          nia. }
+        unfold words_to_uint256, fit_words, to_Z_uint256, to_Z_words.
+        cbn [app firstn repeat uint256_to_words WL.to_Z_words].
+        assert (Hrest0_wl : WL.to_Z_words rest = 0).
+        { exact Hrest0. }
+        rewrite Hrest0_wl.
+        cbn [w0 w1 w2 w3].
+        reflexivity. }
+    rewrite Hrem_value.
+    split.
+    + assert (Hsum_wl :
+        WL.to_Z_words (add_words_full_uint256 x y) =
+        to_Z_uint256 x + to_Z_uint256 y).
+      { exact Hsum. }
+      rewrite Hsum_wl in Hdiv.
+      assert (Hdiv_local :
+        to_Z_uint256 x + to_Z_uint256 y =
+        to_Z_words (ud_quot divr) * to_Z_uint256 modulus +
+        to_Z_words (ud_rem divr)).
+      { exact Hdiv. }
+      assert (Hrange_local :
+        0 <= to_Z_words (ud_rem divr) < to_Z_uint256 modulus).
+      { exact Hrange. }
+      apply Z.mod_unique with (q := to_Z_words (ud_quot divr));
+        [left; exact Hrange_local|nia].
+    + exact Hrange.
 
-(* Remaining: Combine [Addmod_Fast_Inputs_Correct] With
-   [Addmod_Reduced_Inputs_Correct] For The Fast Path, Then Bridge The Fallback
-   [Udivrem 5 4] Call To The Corresponding Division Correctness Theorem. *)
-Admitted.
+Qed.
+
 
 Theorem mulmod_None_iff : forall x y modulus,
 (*

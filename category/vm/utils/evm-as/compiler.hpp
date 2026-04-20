@@ -209,6 +209,15 @@ namespace monad::vm::utils::evm_as
                         size_t const offset = it->second;
                         size_t const n =
                             offset == 0 ? offset : byte_width(offset);
+                        if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
+                            if (n == 0) {
+                                // Special case for zero offset before Shanghai,
+                                // as PUSH0 is not available.
+                                emit_byte(mc::EvmOpCode::PUSH1);
+                                emit_byte(0x00);
+                                return;
+                            }
+                        }
                         emit_byte(
                             mc::EvmOpCode::PUSH0 + static_cast<uint8_t>(n));
                         // Note: assumes we are executing on a
@@ -350,7 +359,10 @@ namespace monad::vm::utils::evm_as
                             }
                             size_t offset = it->second;
                             if (offset == 0) {
-                                std::string const str = std::format("PUSH0");
+                                static constexpr std::string_view str =
+                                    traits::evm_rev() < EVMC_SHANGHAI
+                                        ? "PUSH1 0x00"
+                                        : "PUSH0";
                                 os << str;
                                 return str.size();
                             }

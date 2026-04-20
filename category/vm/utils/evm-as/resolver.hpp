@@ -98,6 +98,15 @@ namespace monad::vm::utils::evm_as
                                 size_t const n =
                                     offset == 0 ? 0 : byte_width(offset);
 
+                                if constexpr (
+                                    traits::evm_rev() < EVMC_SHANGHAI) {
+                                    if (n == 0) {
+                                        // Special case for zero offset before
+                                        // Shanghai, as PUSH0 is not available.
+                                        return 2; // PUSH1 0x00
+                                    }
+                                }
+
                                 // Expand to either PUSH0 or
                                 // PUSHn.
                                 return 1 + n;

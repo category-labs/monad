@@ -692,6 +692,32 @@ TEST(EvmAs, BytecodeCompile3)
     }
 }
 
+TEST(EvmAs, PushLabelZeroOffsetPreShanghai)
+{
+    auto eb = evm_as::paris();
+
+    eb.jumpdest(".START").jump(".START");
+    ASSERT_TRUE(evm_as::validate(eb));
+
+    auto const label_offsets = resolve_labels(eb);
+    ASSERT_EQ(label_offsets.find(".START")->second, 0);
+
+    std::vector<uint8_t> const expected = {
+        compiler::EvmOpCode::JUMPDEST,
+        compiler::EvmOpCode::PUSH1,
+        0x00,
+        compiler::EvmOpCode::JUMP};
+
+    std::vector<uint8_t> bytecode;
+    evm_as::compile(eb, bytecode);
+    ASSERT_EQ(bytecode, expected);
+
+    std::string const expected_mnemonic = "JUMPDEST\nPUSH1 0x00\nJUMP\n";
+    ASSERT_EQ(
+        evm_as::mcompile(eb, evm_as::mnemonic_config{true, false, 32}),
+        expected_mnemonic);
+}
+
 TEST(EvmAs, BytecodeCompile4)
 {
     auto eb = evm_as::latest();

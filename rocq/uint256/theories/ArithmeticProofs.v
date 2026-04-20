@@ -1736,11 +1736,13 @@ Proof.
       assert (Hsub_lt : to_Z ((shift - 1)%Uint) < Z.of_nat fuel).
       { rewrite spec_sub, spec_one.
         rewrite Z.mod_small.
-        - lia.
-        - split.
-          + lia.
-          + unfold base, word_width in Hfuel |-.
-            rewrite width_is_64. simpl. lia. }
+      2:{ split.
+          - lia.
+          - pose proof (spec_to_Z shift) as HshiftZ0.
+            unfold base in HshiftZ0 |- *.
+            rewrite width_is_64 in HshiftZ0 |- *.
+            lia. }
+        - lia. }
       rewrite IH by lia.
       rewrite spec_sub, spec_one.
       rewrite Z.mod_small.
@@ -2796,7 +2798,81 @@ Theorem exp_correct : forall base exponent,
   to_Z_uint256 (exp base exponent) =
     Z.pow (to_Z_uint256 base) (to_Z_uint256 exponent) mod modulus256.
 Proof.
-Admitted.
+  intros base exponent.
+  unfold exp.
+  destruct (is_two_uint256 base) eqn:Htwo.
+  - pose proof (is_two_uint256_true base Htwo) as Hbase2.
+    rewrite shift_left_uint256_correct.
+    rewrite to_Z_one_uint256.
+    rewrite Hbase2.
+    set (e := to_Z_uint256 exponent).
+    destruct (Z.ltb e (DoubleType.base width)) eqn:Hltbase.
+    + destruct (Z.ltb e 256) eqn:Hlt256.
+      * rewrite Z.mul_1_l. reflexivity.
+      * apply Z.ltb_ge in Hlt256.
+        rewrite two_pow_ge_256_mod_modulus256 by exact Hlt256.
+        reflexivity.
+    + apply Z.ltb_ge in Hltbase.
+      rewrite two_pow_ge_256_mod_modulus256.
+      * reflexivity.
+      * unfold e in Hltbase |- *.
+        unfold DoubleType.base in Hltbase |- *.
+        rewrite width_is_64 in Hltbase.
+        simpl in Hltbase.
+        lia.
+  - remember (count_significant_words (uint256_to_words exponent))
+      as sig_words eqn:Hsig_words.
+    set (res :=
+      exp_words_loop 4
+        (firstn sig_words (uint256_to_words exponent))
+        (uint256_to_words base)
+        (one_words_generic 4)).
+    assert (Hone_len : length (one_words_generic 4) = 4%nat).
+    { unfold one_words_generic.
+      rewrite WL.set_word_length, WL.extend_words_length.
+      reflexivity. }
+    assert (Hbase_mod :
+      to_Z_words (uint256_to_words base) =
+      to_Z_uint256 base mod modulus256).
+    { unfold to_Z_uint256.
+      rewrite Z.mod_small by apply to_Z_uint256_bounds.
+      reflexivity. }
+    assert (Hone_mod :
+      to_Z_words (one_words_generic 4) = 1 mod modulus256).
+    { rewrite to_Z_words_one_words_generic_4.
+      rewrite Z.mod_small.
+      2:{ split.
+          - lia.
+          - unfold modulus256, modulus_words, WL.modulus_words, DoubleType.base.
+            rewrite width_is_64. simpl. lia. }
+      reflexivity. }
+    pose proof (exp_words_loop_correct_4
+      (firstn sig_words (uint256_to_words exponent))
+      (uint256_to_words base) (one_words_generic 4)
+      (to_Z_uint256 base) 1
+      (uint256_to_words_length base) Hone_len Hbase_mod Hone_mod)
+      as Hloop.
+    destruct Hloop as [Hres_len Hres_val].
+    assert (Hres_bound : 0 <= to_Z_words res < modulus256).
+    { unfold res.
+      pose proof (WL.to_Z_words_bound
+        (exp_words_loop 4
+           (firstn sig_words (uint256_to_words exponent))
+           (uint256_to_words base)
+           (one_words_generic 4))) as Hbound.
+      rewrite Hres_len in Hbound.
+      change (WL.modulus_words 4) with modulus256 in Hbound.
+      exact Hbound. }
+    rewrite (to_Z_uint256_words_to_uint256_small res Hres_bound).
+    unfold res.
+    rewrite Hres_val.
+    subst sig_words.
+    rewrite DP.count_significant_words_preserves_value.
+    unfold to_Z_uint256 at 2.
+    rewrite Z.mul_1_l.
+    reflexivity.
+Qed.
+
 
 End MakeProofs.
 

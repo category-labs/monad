@@ -122,13 +122,23 @@ namespace monad::vm
 
     class VM
     {
+    public:
+        enum Mode
+        {
+            Dual,
+            CompilerOnly,
+            InterpreterOnly
+        };
+
+    private:
+        Mode mode_;
         Compiler compiler_;
         CompilerConfig compiler_config_;
         runtime::EvmStackAllocator stack_allocator_;
         MemoryPool memory_pool_;
 
     public:
-        explicit VM(bool enable_async = true);
+        explicit VM(Mode mode = Dual);
 
         std::optional<SharedVarcode> find_varcode(bytes32_t const &code_hash)
         {
@@ -185,6 +195,15 @@ namespace monad::vm
         evmc::Result execute_raw(
             runtime::Context &rt_ctx, bytes32_t const &code_hash,
             SharedVarcode const &vcode);
+
+        /// Compile the intercode and execute. In `CompilerOnly` mode, the
+        /// function will wait for (cached) compilation to finish and execute
+        /// the native entrypoint. Otherwise start async compilation and
+        /// execute with interpreter.
+        template <Traits traits>
+        evmc::Result cached_compile_and_execute_raw(
+            runtime::Context &rt_ctx, bytes32_t const &code_hash,
+            SharedIntercode const &icode);
 
         /// Execute with interpreter, without stack unwind support.
         template <Traits traits>

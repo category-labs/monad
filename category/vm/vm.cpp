@@ -29,6 +29,8 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <quill/Quill.h>
+
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -37,11 +39,15 @@ namespace monad::vm
 {
     using namespace monad::vm::utils;
 
-    VM::VM(bool enable_async)
-        : compiler_{enable_async}
+    VM::VM(Mode const mode)
+        : mode_{mode}
+        , compiler_{mode == Dual}
         , stack_allocator_{}
         , memory_pool_{8 * 1024 * 1024}
     {
+        if (MONAD_UNLIKELY(mode == CompilerOnly)) {
+            compiler_.enable_always_cold_cache();
+        }
     }
 
     template <Traits traits>
@@ -109,11 +115,9 @@ namespace monad::vm
             // The bytecode is compiled.
             if (MONAD_UNLIKELY(ncode->chain_id() != traits::id())) {
                 // Revision change. The bytecode was compiled pre revision
-                // change, so start async compilation immediately for the
-                // new revision. Execute with interpreter in the meantime.
-                compiler_.async_compile<traits>(
-                    code_hash, icode, compiler_config_);
-                return execute_intercode_raw<traits>(rt_ctx, icode);
+                // change. Start compilation immediately for the new revision.
+                return cached_compile_and_execute_raw<traits>(
+                    rt_ctx, code_hash, icode);
             }
             auto const entry = ncode->entrypoint();
             if (MONAD_UNLIKELY(entry == nullptr)) {
@@ -126,10 +130,11 @@ namespace monad::vm
             return execute_native_entrypoint_raw<traits>(rt_ctx, entry);
         }
         if (!compiler_.is_varcode_cache_warm()) {
-            // If cache is not warm then start async compilation
-            // immediately, and execute with interpreter in the meantime.
-            compiler_.async_compile<traits>(code_hash, icode, compiler_config_);
-            return execute_intercode_raw<traits>(rt_ctx, icode);
+            // If cache is not warm then start compilation immediately.
+            // In CompilerOnly mode, the cache is always cold, so this
+            // branch is always taken in CompilerOnly mode.
+            return cached_compile_and_execute_raw<traits>(
+                rt_ctx, code_hash, icode);
         }
         // Execute with interpreter. We will start async compilation when
         // the accumulated execution gas spent by interpreter on the
@@ -150,6 +155,29 @@ namespace monad::vm
     }
 
     EXPLICIT_TRAITS_MEMBER(VM::execute_raw);
+
+    template <Traits traits>
+    evmc::Result VM::cached_compile_and_execute_raw(
+        runtime::Context &rt_ctx, bytes32_t const &code_hash,
+        SharedIntercode const &icode)
+    {
+        if (MONAD_UNLIKELY(mode_ == CompilerOnly)) {
+            auto const ncode = compiler_.cached_compile<traits>(
+                code_hash, icode, compiler_config_);
+            auto const entry = ncode->entrypoint();
+            if (MONAD_LIKELY(entry != nullptr)) {
+                return execute_native_entrypoint_raw<traits>(rt_ctx, entry);
+            }
+            LOG_WARNING("WARNING: VM: fallback to interpreter: "
+                        "compilation failed in CompilerOnly mode.");
+        }
+        else {
+            compiler_.async_compile<traits>(code_hash, icode, compiler_config_);
+        }
+        return execute_intercode_raw<traits>(rt_ctx, icode);
+    }
+
+    EXPLICIT_TRAITS_MEMBER(VM::cached_compile_and_execute_raw);
 
     template <Traits traits>
     evmc::Result VM::execute_bytecode_raw(

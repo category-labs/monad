@@ -33,6 +33,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <mutex>
 #include <span>
 #include <thread>
 
@@ -42,6 +43,7 @@ namespace monad::vm
 
     struct CompilerStats
     {
+        std::mutex mutex_;
         utils::EuclidMean<uint64_t> avg_native_code_size_;
         utils::EuclidMean<uint64_t> avg_compiled_bytecode_size_;
         utils::GeoMean<double> avg_native_code_ratio_;
@@ -53,12 +55,12 @@ namespace monad::vm
         std::atomic<uint64_t> num_unexpected_compilation_errors_{0};
         std::atomic<uint64_t> num_size_out_of_bound_compilation_errors_{0};
 
-        // must be called non-concurrently
         void event_new_compiled_code_cached(
             SharedIntercode const &icode, SharedNativecode const &ncode,
             auto compile_start, auto compile_end) noexcept
         {
             if constexpr (utils::collect_monad_compiler_stats) {
+                std::lock_guard<std::mutex> const lock_{mutex_};
                 switch (ncode->error_code()) {
                 case Nativecode::ErrorCode::Unexpected:
                     num_unexpected_compilation_errors_.fetch_add(
@@ -195,6 +197,11 @@ namespace monad::vm
         bool is_varcode_cache_warm()
         {
             return varcode_cache_.is_warm();
+        }
+
+        void enable_always_cold_cache()
+        {
+            varcode_cache_.enable_always_cold();
         }
 
         void set_varcode_cache_warm_kb_threshold(uint32_t const warm_kb)

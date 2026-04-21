@@ -705,7 +705,7 @@ struct monad_executor
     // The VM for executing eth calls needs to unconditionally use the
     // interpreter rather than the compiler. If it uses the compiler, then
     // out-of-gas errors can be misreported as generic failures.
-    vm::VM vm_{false};
+    vm::VM vm_{vm::VM::InterpreterOnly};
 
     monad_executor(
         monad_executor_pool_config const &low_pool_config,

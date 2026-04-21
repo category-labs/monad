@@ -365,8 +365,9 @@ TEST(MonadVmInterface, cached_compile)
 
 TEST(MonadVmInterface, async_compile)
 {
-    for (bool enabled : {false, true}) {
-        VM vm{enabled};
+    for (VM::Mode const mode :
+         {VM::Dual, VM::CompilerOnly, VM::InterpreterOnly}) {
+        VM vm{mode};
 
         auto [bytecode1, hash1] = make_bytecode(1);
         auto icode1 = make_shared_intercode(bytecode1);
@@ -380,7 +381,7 @@ TEST(MonadVmInterface, async_compile)
         ASSERT_NE(vcode1.value()->nativecode(), nullptr);
 
         auto entry1 = (*vcode1)->nativecode()->entrypoint();
-        if (enabled) {
+        if (mode == VM::Dual) {
             ASSERT_NE(entry1, nullptr);
             test::TestContext ctx1;
             entry1(&*ctx1, nullptr);
@@ -474,16 +475,18 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
     ASSERT_EQ(result.gas_left, 4);
 }
 
-TEST(MonadVmInterface, execute_raw)
+static void test_execute_raw(VM::Mode mode)
 {
-    VM vm;
+    VM vm{mode};
     evmc::MockedHost host;
 
     test::TestMessage msg{};
     msg->gas = 100'000'000;
 
     static uint32_t const warm_kb_threshold = 1 << 10; // 1MB
-    vm.compiler().set_varcode_cache_warm_kb_threshold(warm_kb_threshold);
+    if (mode != VM::CompilerOnly) {
+        vm.compiler().set_varcode_cache_warm_kb_threshold(warm_kb_threshold);
+    }
 
     // First parameter is just to avoid explicitly using .template operator()
     // when the lambda gets called.
@@ -510,47 +513,63 @@ TEST(MonadVmInterface, execute_raw)
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
-    // Execute with interpreter on cold cache
+    // Execute on cold cache
     execute_raw(TestTraits{}, hash0, vcode0);
 
-    vm.compiler().debug_wait_for_empty_queue();
+    if (mode != VM::CompilerOnly) {
+        vm.compiler().debug_wait_for_empty_queue();
+    }
 
     auto compiled_vcode0 = vm.find_varcode(hash0);
     ASSERT_TRUE(compiled_vcode0.has_value());
     ASSERT_EQ(compiled_vcode0.value()->intercode(), icode0);
     ASSERT_NE(compiled_vcode0.value()->nativecode(), nullptr);
-    ASSERT_NE(compiled_vcode0.value()->nativecode()->entrypoint(), nullptr);
     ASSERT_EQ(
         compiled_vcode0.value()->nativecode()->chain_id(), TestTraits::id());
+    if (mode != VM::InterpreterOnly) {
+        ASSERT_NE(compiled_vcode0.value()->nativecode()->entrypoint(), nullptr);
+    }
+    else {
+        ASSERT_EQ(compiled_vcode0.value()->nativecode()->entrypoint(), nullptr);
+    }
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
-    // Execute compiled bytecode on cold cache
+    // Execute potentially compiled bytecode on cold cache
     execute_raw(TestTraits{}, hash0, compiled_vcode0.value());
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
-    // Execute with interpreter because of revision change
+    // Execute with revision change
     execute_raw(EvmTraits<EVMC_SHANGHAI>{}, hash0, compiled_vcode0.value());
 
-    vm.compiler().debug_wait_for_empty_queue();
+    if (mode != VM::CompilerOnly) {
+        vm.compiler().debug_wait_for_empty_queue();
+    }
 
     auto re_compiled_vcode0 = vm.find_varcode(hash0);
     ASSERT_NE(re_compiled_vcode0, compiled_vcode0);
     ASSERT_TRUE(re_compiled_vcode0.has_value());
     ASSERT_EQ(re_compiled_vcode0.value()->intercode(), icode0);
     ASSERT_NE(re_compiled_vcode0.value()->nativecode(), nullptr);
-    ASSERT_NE(
-        re_compiled_vcode0.value()->nativecode(),
-        compiled_vcode0.value()->nativecode());
-    ASSERT_NE(re_compiled_vcode0.value()->nativecode()->entrypoint(), nullptr);
     ASSERT_EQ(
         re_compiled_vcode0.value()->nativecode()->chain_id(),
         EvmTraits<EVMC_SHANGHAI>::id());
+    ASSERT_NE(
+        re_compiled_vcode0.value()->nativecode(),
+        compiled_vcode0.value()->nativecode());
+    if (mode != VM::InterpreterOnly) {
+        ASSERT_NE(
+            re_compiled_vcode0.value()->nativecode()->entrypoint(), nullptr);
+    }
+    else {
+        ASSERT_EQ(
+            re_compiled_vcode0.value()->nativecode()->entrypoint(), nullptr);
+    }
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
-    // Execute compiled bytecode after revision change
+    // Execute potentially compiled bytecode after revision change
     execute_raw(EvmTraits<EVMC_SHANGHAI>{}, hash0, re_compiled_vcode0.value());
 
     auto [noncompiling_bytecode, noncompiling_hash] =
@@ -564,11 +583,13 @@ TEST(MonadVmInterface, execute_raw)
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
-    // Execute with interpreter on cold cache
+    // Execute on cold cache
     execute_raw(
         EvmTraits<EVMC_SHANGHAI>{}, noncompiling_hash, noncompiling_vcode);
 
-    vm.compiler().debug_wait_for_empty_queue();
+    if (mode != VM::CompilerOnly) {
+        vm.compiler().debug_wait_for_empty_queue();
+    }
 
     auto attempted_noncompiling_vcode = vm.find_varcode(noncompiling_hash);
     ASSERT_TRUE(attempted_noncompiling_vcode.has_value());
@@ -584,21 +605,41 @@ TEST(MonadVmInterface, execute_raw)
 
     ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
 
-    // Execute with interpreter after failed compliation
+    // Execute after failed compilation
     execute_raw(
         EvmTraits<EVMC_SHANGHAI>{},
         noncompiling_hash,
         attempted_noncompiling_vcode.value());
 
-    // Warm up cache
-    for (uint32_t i = 1; i <= warm_kb_threshold / 3; ++i) {
+    // In CompilerOnly mode the cache should always stay cold, also after
+    // inserting more than `warm_kb_threshold * 2` small contracts into the
+    // cache. In the other VM modes, the cache should become warm exactly
+    // after inserting more than `warm_kb_threshold / 3` small contracts.
+    uint32_t const warm_limit = mode == VM::CompilerOnly
+                                    ? warm_kb_threshold * 2
+                                    : warm_kb_threshold / 3;
+    // Start at index 2, because we have already inserted two small contracts.
+    // Compilation of these small contracts does not cause the estimated size
+    // to exceed the 3 kB lower bound on the code size estimate.
+    for (uint32_t i = 2; i < warm_limit; ++i) {
         auto [bc, h] = make_bytecode(i);
         auto ic = make_shared_intercode(bc);
         vm.try_insert_varcode(h, ic);
     }
-    ASSERT_TRUE(vm.compiler().is_varcode_cache_warm());
+    ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
+    {
+        auto [bc, h] = make_bytecode(warm_limit);
+        auto ic = make_shared_intercode(bc);
+        vm.try_insert_varcode(h, ic);
+    }
+    if (mode != VM::CompilerOnly) {
+        ASSERT_TRUE(vm.compiler().is_varcode_cache_warm());
+    }
+    else {
+        ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
+    }
 
-    auto [warm_bytecode, warm_hash] = make_bytecode(warm_kb_threshold / 3 + 1);
+    auto [warm_bytecode, warm_hash] = make_bytecode(warm_limit + 1);
     auto warm_icode = make_shared_intercode(warm_bytecode);
     auto warm_vcode = vm.try_insert_varcode(warm_hash, warm_icode);
 
@@ -606,29 +647,60 @@ TEST(MonadVmInterface, execute_raw)
     auto const compile_threshold =
         native::max_code_size(max_code_size_offset, warm_icode->code_size());
 
-    // Execute with interpreter on warm cache until compilation is started.
-    do {
-        execute_raw(EvmTraits<EVMC_SHANGHAI>{}, warm_hash, warm_vcode);
-        vm.compiler().debug_wait_for_empty_queue();
-    }
-    while (warm_vcode->get_intercode_gas_used() < *compile_threshold);
-
+    // Execute on warm cache once
+    execute_raw(EvmTraits<EVMC_SHANGHAI>{}, warm_hash, warm_vcode);
     vm.compiler().debug_wait_for_empty_queue();
+    auto pre_warm_vcode = vm.find_varcode(warm_hash);
+    ASSERT_TRUE(pre_warm_vcode.has_value());
+    ASSERT_EQ(pre_warm_vcode.value()->intercode(), warm_icode);
+    if (mode != VM::CompilerOnly) {
+        ASSERT_EQ(pre_warm_vcode.value()->nativecode(), nullptr);
+    }
+    else {
+        ASSERT_NE(pre_warm_vcode.value()->nativecode(), nullptr);
+    }
+
+    if (mode != VM::CompilerOnly) {
+        // Execute on warm cache until potential compilation is started
+        while (warm_vcode->get_intercode_gas_used() < *compile_threshold) {
+            execute_raw(EvmTraits<EVMC_SHANGHAI>{}, warm_hash, warm_vcode);
+            vm.compiler().debug_wait_for_empty_queue();
+        }
+    }
 
     auto compiled_warm_vcode = vm.find_varcode(warm_hash);
     ASSERT_TRUE(compiled_warm_vcode.has_value());
     ASSERT_EQ(compiled_warm_vcode.value()->intercode(), warm_icode);
     ASSERT_NE(compiled_warm_vcode.value()->nativecode(), nullptr);
-    ASSERT_NE(compiled_warm_vcode.value()->nativecode()->entrypoint(), nullptr);
     ASSERT_EQ(
         compiled_warm_vcode.value()->nativecode()->chain_id(),
         EvmTraits<EVMC_SHANGHAI>::id());
+    if (mode != VM::InterpreterOnly) {
+        ASSERT_NE(
+            compiled_warm_vcode.value()->nativecode()->entrypoint(), nullptr);
+    }
+    else {
+        ASSERT_EQ(
+            compiled_warm_vcode.value()->nativecode()->entrypoint(), nullptr);
+    }
 
-    ASSERT_TRUE(vm.compiler().is_varcode_cache_warm());
+    if (mode != VM::CompilerOnly) {
+        ASSERT_TRUE(vm.compiler().is_varcode_cache_warm());
+    }
+    else {
+        ASSERT_FALSE(vm.compiler().is_varcode_cache_warm());
+    }
 
-    // Execute compiled bytecode on warm cache
+    // Execute potentially compiled bytecode on warm cache
     execute_raw(
         EvmTraits<EVMC_SHANGHAI>{}, warm_hash, compiled_warm_vcode.value());
+}
+
+TEST(MonadVmInterface, execute_raw)
+{
+    test_execute_raw(VM::Dual);
+    test_execute_raw(VM::CompilerOnly);
+    test_execute_raw(VM::InterpreterOnly);
 }
 
 TEST(MonadVmInterface, execute)

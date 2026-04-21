@@ -416,7 +416,7 @@ try {
     // If call tracing is enabled, we need to correspondingly disable native
     // compilation: the compiler does not expose the full fidelity of error exit
     // codes that are required to serve RPC responses that include call traces.
-    vm::VM vm{!trace_calls};
+    vm::VM vm{trace_calls ? vm::VM::InterpreterOnly : vm::VM::Dual};
 
     DbCache db_cache =
         sync_server ? DbCache{*sync_server->ctx} : DbCache{triedb};

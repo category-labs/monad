@@ -19,6 +19,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
+#include <limits>
 #include <span>
 
 namespace monad::vm
@@ -65,6 +66,11 @@ namespace monad::vm
         void set_warm_cache_kb(uint32_t const warm_kb)
         {
             warm_cache_kb_ = warm_kb;
+        }
+
+        void enable_always_cold()
+        {
+            set_warm_cache_kb(std::numeric_limits<uint32_t>::max());
         }
 
         // Cache weight of the given code size.

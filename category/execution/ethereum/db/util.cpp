@@ -379,6 +379,22 @@ namespace
         }
     };
 
+    struct PagedStorageLeafProcessor
+    {
+        static byte_string process(Node const &node)
+        {
+            MONAD_ASSERT(node.has_value());
+            auto encoded_storage = node.value();
+            auto const storage = decode_storage_db_ignore_key(encoded_storage);
+            MONAD_ASSERT(!storage.has_error());
+            auto const page = decode_storage_page(storage.value());
+            MONAD_ASSERT(page.has_value());
+            auto const commitment = page_commit(page.value());
+            return rlp::encode_string2(
+                {commitment.bytes, sizeof(commitment.bytes)});
+        }
+    };
+
     Result<byte_string_view>
     parse_encoded_receipt_ignore_log_index(byte_string_view &enc)
     {
@@ -419,8 +435,11 @@ namespace
 
     using AccountMerkleCompute = MerkleComputeBase<AccountLeafProcessor>;
     using StorageMerkleCompute = MerkleComputeBase<StorageLeafProcessor>;
+    using PagedStorageMerkleCompute =
+        MerkleComputeBase<PagedStorageLeafProcessor>;
 
-    struct StorageRootMerkleCompute : public StorageMerkleCompute
+    template <typename Base>
+    struct StorageRootMerkleComputeImpl : public Base
     {
         virtual unsigned
         compute(unsigned char *const buffer, Node const &node) override
@@ -433,6 +452,11 @@ namespace
                 true);
         }
     };
+
+    using StorageRootMerkleCompute =
+        StorageRootMerkleComputeImpl<StorageMerkleCompute>;
+    using PagedStorageRootMerkleCompute =
+        StorageRootMerkleComputeImpl<PagedStorageMerkleCompute>;
 
     struct AccountRootMerkleCompute : public AccountMerkleCompute
     {
@@ -473,8 +497,6 @@ mpt::Compute &MachineBase::get_compute() const
 
     static AccountMerkleCompute account_compute;
     static AccountRootMerkleCompute account_root_compute;
-    static StorageMerkleCompute storage_compute;
-    static StorageRootMerkleCompute storage_root_compute;
 
     static VarLenMerkleCompute generic_merkle_compute;
     static RootVarLenMerkleCompute generic_root_merkle_compute;
@@ -495,10 +517,10 @@ mpt::Compute &MachineBase::get_compute() const
             return account_compute;
         }
         else if (depth == prefix_length + 2 * sizeof(bytes32_t)) {
-            return storage_root_compute;
+            return storage_root_compute();
         }
         else {
-            return storage_compute;
+            return storage_compute();
         }
     }
     else if (table == TableType::Receipt) {
@@ -564,6 +586,18 @@ void MachineBase::up(size_t const n)
     }
 }
 
+mpt::Compute &MachineBase::storage_compute() const
+{
+    static StorageMerkleCompute compute;
+    return compute;
+}
+
+mpt::Compute &MachineBase::storage_root_compute() const
+{
+    static StorageRootMerkleCompute compute;
+    return compute;
+}
+
 bool InMemoryMachine::cache() const
 {
     return true;
@@ -577,6 +611,23 @@ bool InMemoryMachine::compact() const
 std::unique_ptr<StateMachine> InMemoryMachine::clone() const
 {
     return std::make_unique<InMemoryMachine>(*this);
+}
+
+std::unique_ptr<StateMachine> MonadInMemoryMachine::clone() const
+{
+    return std::make_unique<MonadInMemoryMachine>(*this);
+}
+
+mpt::Compute &MonadInMemoryMachine::storage_compute() const
+{
+    static PagedStorageMerkleCompute compute;
+    return compute;
+}
+
+mpt::Compute &MonadInMemoryMachine::storage_root_compute() const
+{
+    static PagedStorageRootMerkleCompute compute;
+    return compute;
 }
 
 bool OnDiskMachine::cache() const
@@ -601,6 +652,23 @@ bool OnDiskMachine::auto_expire() const
 std::unique_ptr<StateMachine> OnDiskMachine::clone() const
 {
     return std::make_unique<OnDiskMachine>(*this);
+}
+
+std::unique_ptr<StateMachine> MonadOnDiskMachine::clone() const
+{
+    return std::make_unique<MonadOnDiskMachine>(*this);
+}
+
+mpt::Compute &MonadOnDiskMachine::storage_compute() const
+{
+    static PagedStorageMerkleCompute compute;
+    return compute;
+}
+
+mpt::Compute &MonadOnDiskMachine::storage_root_compute() const
+{
+    static PagedStorageRootMerkleCompute compute;
+    return compute;
 }
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &enc)

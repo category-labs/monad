@@ -196,6 +196,8 @@ add_library(
 add_library(
   monad_execution_native OBJECT
   # monad/db
+  "monad/db/monad_commit_builder.hpp"
+  "monad/db/monad_commit_builder.cpp"
   "monad/db/page_storage_broker.hpp"
   "monad/db/storage_page.cpp"
   "monad/db/storage_page.hpp"

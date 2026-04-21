@@ -82,6 +82,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     boost::fibers::promise<void> &prev_;
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
+    bool trace_transfers_;
 
     Result<evmc::Result> execute_impl2(State &);
     Receipt execute_final(State &, evmc::Result const &);
@@ -92,7 +93,8 @@ public:
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
-        trace::StateTracer &, ChainContext<traits> const &chain_ctx);
+        trace::StateTracer &, ChainContext<traits> const &chain_ctx,
+        bool trace_transfers = false);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

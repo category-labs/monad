@@ -14,6 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <gtest/gtest.h>
@@ -153,4 +155,73 @@ TEST(MonadDb, page_commit_cross_check_with_reference)
         full_page[i] = bytes32_t{static_cast<uint64_t>(i + 1)};
     }
     EXPECT_EQ(page_commit(full_page), FULL_PAGE_COMMIT);
+}
+
+// Slots on the same page are merged into a single page on commit.
+// Block 0 writes slots 0 and 1. Block 1 updates slot 0 only.
+// After block 1 commit, both the updated slot 0 and the untouched slot 1
+// must be present in the same page.
+TEST(MonadDb, page_write_merges_slots)
+{
+    constexpr auto slot_key_0 = bytes32_t{uint64_t{0x00}};
+    constexpr auto slot_key_1 = bytes32_t{uint64_t{0x01}};
+    constexpr auto val_0 =
+        0x000000000000000000000000000000000000000000000000000000000000aaaa_bytes32;
+    constexpr auto val_1 =
+        0x000000000000000000000000000000000000000000000000000000000000bbbb_bytes32;
+    constexpr auto val_0_updated =
+        0x000000000000000000000000000000000000000000000000000000000000dddd_bytes32;
+
+    Account const acct{.nonce = 1};
+    MonadInMemoryMachine machine;
+    mpt::Db mpt_db{machine};
+    TrieDb tdb{mpt_db};
+
+    // Block 0: seed two slots on the same page.
+    {
+        PageStorageBroker broker{tdb};
+        MonadCommitBuilder builder(0, broker);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {
+                     {slot_key_0, {bytes32_t{}, val_0}},
+                     {slot_key_1, {bytes32_t{}, val_1}}}}}});
+        auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
+        tdb.reset_root(std::move(root), 0);
+    }
+
+    // Block 1: update slot 0, leave slot 1 untouched.
+    // The broker reads the existing page (both slots), the commit builder
+    // merges the delta on top, so the resulting page keeps both values.
+    {
+        PageStorageBroker broker{tdb};
+
+        // Populate broker by reading through it.
+        ASSERT_EQ(
+            broker.read_storage_slot(ADDR_A, Incarnation{0, 0}, slot_key_0),
+            val_0);
+        ASSERT_EQ(
+            broker.read_storage_slot(ADDR_A, Incarnation{0, 0}, slot_key_1),
+            val_1);
+
+        MonadCommitBuilder builder(1, broker);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {acct, acct},
+                 .storage = {{slot_key_0, {val_0, val_0_updated}}}}}});
+        auto root =
+            mpt_db.upsert(tdb.get_root(), builder.build(finalized_nibbles), 1);
+        tdb.reset_root(std::move(root), 1);
+    }
+
+    // Verify: fresh broker reads back both values from the committed page.
+    PageStorageBroker broker{tdb};
+    EXPECT_EQ(
+        broker.read_storage_slot(ADDR_A, Incarnation{0, 0}, slot_key_0),
+        val_0_updated);
+    EXPECT_EQ(
+        broker.read_storage_slot(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
 }

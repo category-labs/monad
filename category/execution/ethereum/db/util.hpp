@@ -83,12 +83,18 @@ struct MachineBase : public mpt::StateMachine
     {
         return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
     }
+
+protected:
+    // Per-subclass hooks that select the compute used for storage leaves and
+    // the storage root. The default returns the slot-based computes.
+    virtual mpt::Compute &storage_compute() const;
+    virtual mpt::Compute &storage_root_compute() const;
 };
 
 static_assert(sizeof(MachineBase) == 16);
 static_assert(alignof(MachineBase) == 8);
 
-struct InMemoryMachine final : public MachineBase
+struct InMemoryMachine : public MachineBase
 {
     virtual bool cache() const override;
     virtual bool compact() const override;
@@ -101,6 +107,28 @@ struct OnDiskMachine : public MachineBase
     virtual bool compact() const override;
     virtual bool auto_expire() const override;
     virtual std::unique_ptr<StateMachine> clone() const override;
+};
+
+// In-memory machine that hashes storage at page granularity. Used once the
+// chain is at a revision that persists storage as pages instead of slots.
+struct MonadInMemoryMachine final : public InMemoryMachine
+{
+    virtual std::unique_ptr<StateMachine> clone() const override;
+
+protected:
+    virtual mpt::Compute &storage_compute() const override;
+    virtual mpt::Compute &storage_root_compute() const override;
+};
+
+// On-disk machine that hashes storage at page granularity. Used once the
+// chain is at a revision that persists storage as pages instead of slots.
+struct MonadOnDiskMachine final : public OnDiskMachine
+{
+    virtual std::unique_ptr<StateMachine> clone() const override;
+
+protected:
+    virtual mpt::Compute &storage_compute() const override;
+    virtual mpt::Compute &storage_root_compute() const override;
 };
 
 //////////////////////////////////////////////////////////

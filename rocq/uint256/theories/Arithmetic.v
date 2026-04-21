@@ -202,6 +202,7 @@ Fixpoint bounded_shift_nat (fuel : nat) (shift : t) : nat :=
       else S (bounded_shift_nat fuel' (shift - 1))
   end.
 
+(* Models C++ operator<<(uint256_t, T). *)
 Definition shift_left_uint256_aux (x : uint256) (shift : t) : uint256 :=
   if negb (shift <? shl 1 8) then zero_uint256
   else if shift <? shl 1 7 then
@@ -233,6 +234,7 @@ Definition shift_left_uint256_aux (x : uint256) (shift : t) : uint256 :=
     let s := bounded_shift_nat word_width shift' in
     mk_uint256 0 0 0 (shl (w0 x) s).
 
+(* Models C++ operator<<(uint256_t, uint256_t) wrapper. *)
 Definition shift_left_uint256 (x shift : uint256) : uint256 :=
   if ((w1 shift =? 0) &&
       (w2 shift =? 0) &&

@@ -22,6 +22,7 @@
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -38,27 +39,6 @@ MONAD_NAMESPACE_BEGIN
 class DbCache final : public Db
 {
     Db &db_;
-
-    struct StorageKey
-    {
-        static constexpr size_t k_bytes =
-            sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
-
-        uint8_t bytes[k_bytes];
-
-        StorageKey() = default;
-
-        StorageKey(
-            Address const &addr, Incarnation incarnation, bytes32_t const &key)
-        {
-            memcpy(bytes, addr.bytes, sizeof(Address));
-            memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
-            memcpy(
-                &bytes[sizeof(Address) + sizeof(Incarnation)],
-                key.bytes,
-                sizeof(bytes32_t));
-        }
-    };
 
     byte_string to_compact_bytes(bytes32_t const &byte)
     {

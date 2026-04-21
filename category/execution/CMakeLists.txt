@@ -98,6 +98,8 @@ add_library(
   "ethereum/db/db_snapshot_filesystem.h"
   "ethereum/db/file_db.cpp"
   "ethereum/db/file_db.hpp"
+  "ethereum/db/storage_broker.hpp"
+  "ethereum/db/storage_key.hpp"
   "ethereum/db/trie_db.cpp"
   "ethereum/db/trie_db.hpp"
   "ethereum/db/trie_rodb.hpp"
@@ -193,6 +195,10 @@ add_library(
 
 add_library(
   monad_execution_native OBJECT
+  # monad/db
+  "monad/db/page_storage_broker.hpp"
+  "monad/db/storage_page.cpp"
+  "monad/db/storage_page.hpp"
   # monad/chain
   "monad/chain/monad_chain.cpp"
   "monad/chain/monad_chain.hpp"

@@ -17,8 +17,10 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/result.hpp>
 
 #include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
@@ -27,8 +29,6 @@
 #include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
-
-using bytes32_t = ::evmc::bytes32;
 
 struct storage_page_t
 {
@@ -95,23 +95,10 @@ compute_slot_key(bytes32_t const &page_key, uint8_t slot_offset)
 
 bytes32_t page_commit(storage_page_t const &page);
 
+// Storage page run-length encoding (RLE)
+// TODO: review the implementation, it can be changed without affecting the
+// interface.
 byte_string encode_storage_page(storage_page_t const &page);
-storage_page_t decode_storage_page(uint8_t const *data, size_t len);
-
-// Returns the encoded byte size of a page with the given number of
-// non-zero slots. Useful for sizing slab allocators.
-constexpr size_t encoded_page_size(size_t const slots)
-{
-    constexpr size_t SZ = storage_page_t::SLOT_SIZE;
-    if (slots < 16) {
-        return 1 + slots + slots * SZ;
-    }
-    return 1 + storage_page_t::SLOTS / 8 + slots * SZ;
-}
-
-inline storage_page_t decode_storage_page(byte_string_view enc)
-{
-    return decode_storage_page(enc.data(), enc.size());
-}
+Result<storage_page_t> decode_storage_page(byte_string_view enc);
 
 MONAD_NAMESPACE_END

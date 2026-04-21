@@ -107,7 +107,7 @@ public:
             return {};
         }
         auto encoded_storage = storage_leaf_res.value().node->value();
-        auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+        auto const storage = decode_storage_db_ignore_key(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
         return byte_string{storage.value()};
     }

@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -39,6 +40,7 @@ class BlockState final
     vm::VM &vm_;
     std::unique_ptr<StateDeltas> state_;
     Code code_;
+    SlotStorageBroker slot_broker_;
 
 public:
     BlockState(Db &, vm::VM &);

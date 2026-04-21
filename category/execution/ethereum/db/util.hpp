@@ -21,6 +21,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/state_machine.hpp>
 
@@ -139,6 +140,15 @@ inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
 
+// ── Monad Page Storage ──────────────────────────────
+//
+// DB format: RLP([compact(key), string(encode_storage_page(page))])
+//
+// encode_storage_page / decode_storage_page live in storage_page.hpp.
+
+byte_string
+encode_storage_page_db(bytes32_t const &key, storage_page_t const &page);
+
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_account_db_raw(byte_string_view &);
 Result<std::pair<Address, Account>> decode_account_db(byte_string_view &);
@@ -147,7 +157,7 @@ Result<Account> decode_account_db_ignore_address(byte_string_view &);
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_storage_db_raw(byte_string_view &);
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
-Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
+Result<byte_string_view> decode_storage_db_ignore_key(byte_string_view &);
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);
 Result<std::pair<Transaction, Address>>

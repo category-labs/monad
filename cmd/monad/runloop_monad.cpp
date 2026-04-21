@@ -318,6 +318,8 @@ Result<BlockExecOutput> propose_block(
     if (block.withdrawals.has_value()) {
         builder.add_withdrawals(block.withdrawals.value());
     }
+    // TODO: add secondary db (without db_cache) for migration purpose, and
+    // commit to db2 as well
     db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
         // second stage: populate block header
         h.receipts_root = db.receipts_root();

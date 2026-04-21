@@ -50,7 +50,8 @@ MONAD_NAMESPACE_BEGIN
 BlockState::BlockState(Db &db, vm::VM &monad_vm)
     : db_{db}
     , vm_{monad_vm}
-    , state_(std::make_unique<StateDeltas>())
+    , state_{std::make_unique<StateDeltas>()}
+    , slot_broker_{db}
 {
 }
 
@@ -104,8 +105,9 @@ bytes32_t BlockState::read_storage(
     // database
     {
         auto const result =
-            read_storage ? to_bytes(db_.read_storage(address, incarnation, key))
-                         : bytes32_t{};
+            read_storage
+                ? slot_broker_.read_storage_slot(address, incarnation, key)
+                : bytes32_t{};
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
         auto const &account = it->second.account.second;

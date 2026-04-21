@@ -34,6 +34,7 @@ struct Withdrawal;
 
 class CommitBuilder
 {
+protected:
     std::deque<mpt::Update> update_alloc_;
     std::deque<byte_string> bytes_alloc_;
     std::deque<hash256> hash_alloc_;
@@ -42,8 +43,9 @@ class CommitBuilder
 
 public:
     explicit CommitBuilder(uint64_t block_number);
+    virtual ~CommitBuilder() = default;
 
-    CommitBuilder &add_state_deltas(StateDeltas const &);
+    virtual CommitBuilder &add_state_deltas(StateDeltas const &);
 
     CommitBuilder &add_code(Code const &);
 

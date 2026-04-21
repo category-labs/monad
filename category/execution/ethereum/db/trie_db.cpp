@@ -133,9 +133,11 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
         return {};
     }
     stats_storage_value();
-    auto encoded_storage = res.value().node->value();
-    auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+    auto encoded_storage_with_key = res.value().node->value();
+    auto const storage = decode_storage_db_ignore_key(encoded_storage_with_key);
     MONAD_ASSERT(!storage.has_error());
+    // For ethereum, this returns compact(storage_value)
+    // For Monad using storage page, returns encode_storage_page(page)
     return byte_string{storage.value()};
 };
 

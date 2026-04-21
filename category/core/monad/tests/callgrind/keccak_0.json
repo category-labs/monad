@@ -1,5 +1,0 @@
-{
-  "binary_name": "ethash-test",
-  "function_name": "ethash_keccak256",
-  "args": ["--gtest_filter=keccak/bytes.256/0"]
-}

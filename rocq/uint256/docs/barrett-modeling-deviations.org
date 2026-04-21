@@ -1,0 +1,96 @@
+#+TITLE: Barrett Rocq Modeling Deviations
+#+DATE: 2026-04-21
+
+* Purpose
+
+This note records the places where =rocq/uint256/theories/Barrett.v= cannot be a
+literal one-for-one transcription of the C++ source, even though the intended
+control flow and arithmetic meaning are preserved.
+
+Per the modeling rules for this branch, only representational deviations are
+listed here.  Semantic discrepancies between the Monad C++ and the reference
+algorithms are logged separately in =barrett-semantic-discrepancies.org=.
+
+* Deviations introduced in the Rocq model
+
+** Fixed-size arrays and spans are modeled as little-endian =words= lists
+
+The C++ code uses:
+
+- =words_t<N>= fixed-size arrays;
+- =std::span<...,4>= output slices for quotient/remainder copying.
+
+The Rocq uint256 development already represents multi-word state as little-endian
+=words= lists, so the Barrett model follows that convention.
+
+Consequence:
+
+- array-size information is carried by derived nat-valued functions such as
+  =input_words=, =reciprocal_words=, and =max_r_hat_words=;
+- copies/truncations are modeled with =fit_words= rather than in-place span
+  writes.
+
+** Template-time constants and =if constexpr= are modeled by nat-valued functions and ordinary conditionals
+
+The C++ file computes many constants at template-instantiation time:
+
+- =INPUT_WORDS=
+- =RECIPROCAL_BITS=
+- =PRE_PRODUCT_SHIFT=
+- =MAX_R_HAT_WORDS=
+- =RELEVANT_QUOTIENT_WORDS=
+
+In Rocq these are ordinary pure functions of =BarrettParams=.  Likewise,
+=if constexpr= branches become ordinary conditionals on those derived nat
+values.
+
+This preserves the branch structure, but not the compile-time/runtime distinction.
+
+** Constructors are pure record builders rather than side-effecting constructors with assertions
+
+The Rocq model exposes:
+
+- =reciprocal_of_denominator=
+- =reciprocal_of_multiplier=
+
+as pure functions returning a =reciprocal= record.  The debug assertions from
+the C++ constructors are not executed as side effects; instead, the intended
+well-formedness conditions are surfaced as theorem hypotheses later.
+
+** Barrett wrapper division results reuse the existing =Division.udivrem_result= type
+
+The C++ Barrett wrappers return quotient/remainder pairs of =uint256_t=.  The
+existing Rocq division model already uses =Division.udivrem_result= with
+little-endian word lists, and the rest of the project is built around that type.
+
+So the Barrett Rocq wrappers return:
+
+- =Division.udivrem_result= for =udivrem= and =sdivrem=;
+- =uint256= for =addmod=, =mulmod=, and =mulmod_const=.
+
+This is a representation choice, not a semantic change.
+
+** The unreachable generic multiplier numerator branch is modeled via word shifting
+
+For =numerator_with_multiplier=, the current Rocq model uses the existing
+word-level shift helper to describe the intended left-shifted numerator layout.
+
+This is deliberate because:
+
+- the current exported multiplier families always satisfy =BIT_SHIFT = 0=;
+- the unused =BIT_SHIFT <> 0= C++ branch appears ill-formed and is logged in
+  =barrett-semantic-discrepancies.org=.
+
+So the Rocq file preserves the reachable public behavior while avoiding a false
+claim that the dormant generic branch has already been modeled literally.
+
+* Non-deviations worth noting
+
+The following aspects were kept deliberately close to the C++ structure:
+
+- the same derived constant vocabulary;
+- the same =estimate_q= / =reduce= split;
+- the same correction-branch shape in =reduce=;
+- the same wrapper decomposition into =udivrem=, =sdivrem=, =addmod=,
+  =mulmod=, and =mulmod_const=;
+- the same interval-alias family structure.

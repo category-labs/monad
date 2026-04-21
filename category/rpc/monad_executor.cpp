@@ -658,8 +658,10 @@ namespace
         TrieRODb &tdb, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
         fiber::FiberGroup &tx_exec_pool,
         std::span<monad_state_override const *const> state_overrides,
-        std::span<monad_block_override const *const> block_overrides)
+        std::span<monad_block_override const *const> block_overrides,
+        bool emit_native_transfer_logs)
     {
+        (void)emit_native_transfer_logs;
         // TODO(dhil): Geth allows up to 256 blocks to be simulated, including
         // synthetic blocks inserted to fill in possible gaps in the block
         // overrides.
@@ -1885,7 +1887,7 @@ struct monad_executor
         std::span<monad_state_override const *const> state_overrides,
         std::span<monad_block_override const *const> block_overrides,
         BlockHeader const &block_header, uint64_t const block_number,
-        bytes32_t const &block_id,
+        bytes32_t const &block_id, bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -1911,6 +1913,7 @@ struct monad_executor
              block_id = block_id,
              chain_config = chain_config,
              &db = db_,
+             emit_native_transfer_logs = emit_native_transfer_logs,
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
              &vm = vm_,
@@ -1991,7 +1994,8 @@ struct monad_executor
                                 block_hash_buffer,
                                 *tx_exec_group->group,
                                 state_overrides,
-                                block_overrides);
+                                block_overrides,
+                                emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -2013,7 +2017,8 @@ struct monad_executor
                                 block_hash_buffer,
                                 *tx_exec_group->group,
                                 state_overrides,
-                                block_overrides);
+                                block_overrides,
+                                emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
                     }();
@@ -2256,7 +2261,7 @@ void monad_executor_eth_simulate_submit(
     struct monad_state_override const *const *state_overrides,
     size_t n_state_overrides,
     struct monad_block_override const *const *block_overrides,
-    size_t n_block_overrides,
+    size_t n_block_overrides, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
     byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
@@ -2295,6 +2300,7 @@ void monad_executor_eth_simulate_submit(
         block_header,
         block_number,
         block_id,
+        emit_native_transfer_logs,
         complete,
         user);
 }

@@ -680,6 +680,7 @@ pub async fn eth_simulate_v1(
     block_header: Header,
     block_number: u64,
     block_id: Option<[u8; 32]>,
+    emit_native_transfer_logs: bool,
     eth_call_executor: &EthCallExecutor,
     overrides: &[(&BlockOverride, &StateOverrideSet)],
 ) -> SimulateResult {
@@ -810,6 +811,7 @@ pub async fn eth_simulate_v1(
             state_overrides.len(),
             block_overrides.as_ptr() as *const *const ffi::monad_block_override,
             block_overrides.len(),
+            emit_native_transfer_logs,
             Some(eth_call_submit_callback),
             sender_ctx_ptr as *mut std::ffi::c_void,
         );

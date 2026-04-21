@@ -4336,6 +4336,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         1,
         &block_override,
         1,
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -4445,6 +4446,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         state_overrides.size(),
         block_overrides.data(),
         block_overrides.size(),
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -4549,6 +4551,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         so_overrides.size(),
         bo_overrides.data(),
         bo_overrides.size(),
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -4607,6 +4610,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
         so_overrides.size(),
         bo_overrides.data(),
         bo_overrides.size(),
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -4679,6 +4683,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         so_overrides.size(),
         bo_overrides.data(),
         bo_overrides.size(),
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -4786,6 +4791,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         so_overrides.size(),
         bo_overrides.data(),
         bo_overrides.size(),
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -4896,6 +4902,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             1,
             &bo_ptr,
             1,
+            false,
             complete_callback,
             (void *)&s->ctx);
 
@@ -5064,6 +5071,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         1,
         &bo,
         1,
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5229,6 +5237,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             so.size(),
             bo.data(),
             bo.size(),
+            false,
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -5374,6 +5383,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             so.size(),
             bo.data(),
             bo.size(),
+            false,
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -5605,6 +5615,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         1,
         &bo,
         1,
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5762,6 +5773,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         so.size(),
         bo.data(),
         bo.size(),
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5993,6 +6005,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         so.size(),
         bo.data(),
         bo.size(),
+        false,
         complete_callback,
         (void *)&ctx);
     f.get();

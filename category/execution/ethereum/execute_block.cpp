@@ -203,7 +203,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
-    ChainContext<traits> const &chain_ctx)
+    ChainContext<traits> const &chain_ctx, bool const trace_transfers)
 {
     MONAD_ASSERT(senders.size() == transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
@@ -234,7 +234,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &block_metrics,
              &call_tracer = *call_tracers[i],
              &state_tracer = *state_tracers[i],
-             &chain_ctx = chain_ctx] {
+             &chain_ctx = chain_ctx,
+             trace_transfers] {
                 record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
                 try {
                     results[i] = dispatch_transaction<traits>(
@@ -250,7 +251,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         promises[i],
                         call_tracer,
                         state_tracer,
-                        chain_ctx);
+                        chain_ctx,
+                        trace_transfers);
                     if (results[i]->has_error()) {
                         record_txn_error_event(i, results[i]->error());
                     }
@@ -304,7 +306,7 @@ Result<std::vector<Receipt>> execute_block(
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
-    ChainContext<traits> const &chain_ctx)
+    ChainContext<traits> const &chain_ctx, bool const trace_transfers)
 {
     TRACE_BLOCK_EVENT(StartBlock);
 
@@ -328,7 +330,8 @@ Result<std::vector<Receipt>> execute_block(
             block_metrics,
             call_tracers,
             state_tracers,
-            chain_ctx));
+            chain_ctx,
+            trace_transfers));
 
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};

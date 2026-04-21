@@ -858,7 +858,8 @@ namespace
                     block_metrics,
                     call_tracers,
                     state_tracers,
-                    chain_context));
+                    chain_context,
+                    emit_native_transfer_logs));
 
             // Patch up the block header for results reporting.
             // TODO(dhil): Report gas used for Ethereum?

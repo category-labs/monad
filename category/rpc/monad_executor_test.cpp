@@ -6053,3 +6053,201 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     }
     monad_executor_destroy(executor);
 }
+
+// Test that native transfer logs are emitted when emit_native_transfer_logs is
+// true. A "forwarder" contract receives value from the sender and forwards
+// half of it to a "sink" contract. With native transfer logging enabled, we
+// expect two Transfer events emitted from the synthetic native-token address
+// (0xeeee...eeee):
+//
+//   1. sender    -> forwarder  (10 MON)    top-level value transfer
+//   2. forwarder -> sink       (5 MON)     internal CALL value transfer
+TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address sink =
+        0x00000000000000000000000000000000000051c0_address;
+    static constexpr Address forwarder_addr =
+        0x000000000000000000000000000000000f0a4d01_address;
+
+    // Sink contract: just STOPs (accepts value, does nothing).
+    auto const sink_eb = evm_as::latest().stop();
+    std::vector<uint8_t> sink_bytecode{};
+    ASSERT_TRUE(evm_as::validate(sink_eb));
+    evm_as::compile(sink_eb, sink_bytecode);
+    byte_string_view const sink_code{
+        sink_bytecode.data(), sink_bytecode.size()};
+    auto const sink_code_hash = to_bytes(keccak256(sink_code));
+    auto const sink_icode = vm::make_shared_intercode(sink_code);
+
+    // Forwarder contract: send CALLVALUE/2 to sink, then STOP.
+    //   PUSH(2)  CALLVALUE  DIV  =>  half = CALLVALUE/2
+    //   PUSH0  MSTORE                mem[0] = half
+    //   PUSH0 PUSH0 PUSH0 PUSH0      retSize=0 retOff=0 argsSize=0 argsOff=0
+    //   MLOAD(0)                      value = half
+    //   PUSH(sink)                    address
+    //   GAS                           gas
+    //   CALL
+    //   POP
+    //   STOP
+    auto const fwd_eb = evm_as::latest()
+                            .push(2)
+                            .callvalue()
+                            .div()
+                            .push0()
+                            .mstore()
+                            .push0()
+                            .push0()
+                            .push0()
+                            .push0()
+                            .mload(0)
+                            .push(sink)
+                            .gas()
+                            .call()
+                            .pop()
+                            .stop();
+    std::vector<uint8_t> fwd_bytecode{};
+    ASSERT_TRUE(evm_as::validate(fwd_eb));
+    evm_as::compile(fwd_eb, fwd_bytecode);
+    byte_string_view const fwd_code{fwd_bytecode.data(), fwd_bytecode.size()};
+    auto const fwd_code_hash = to_bytes(keccak256(fwd_code));
+    auto const fwd_icode = vm::make_shared_intercode(fwd_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {sink,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = sink_code_hash,
+                          .nonce = 0}}}},
+            {forwarder_addr,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = fwd_code_hash,
+                          .nonce = 0}}}}},
+        Code{
+            {sink_code_hash, sink_icode},
+            {fwd_code_hash, fwd_icode},
+        },
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    // Single tx: sender calls forwarder with 10 MON.
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .value = uint256_t{10} * WEI_PER_MON,
+        .to = forwarder_addr,
+    };
+
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders =
+        to_vec(rlp::encode_list2(rlp::encode_list2(enc_sender)));
+
+    auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(enc_tx)));
+
+    BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    monad_state_override *so = monad_state_override_create();
+    monad_block_override *bo = monad_block_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        &so,
+        1,
+        &bo,
+        1,
+        true, // emit_native_transfer_logs
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 1);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+
+    // Native transfer log constants.
+    static constexpr Address native_token =
+        0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
+    static constexpr bytes32_t transfer_sig =
+        0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32;
+
+    auto const format_address_topic = [](Address const &addr) {
+        bytes32_t padded{};
+        std::memcpy(&padded.bytes[12], addr.bytes, 20);
+        return std::format("0x{}", to_hex(padded));
+    };
+
+    auto const &logs = output[0]["calls"][0]["logs"];
+    ASSERT_EQ(logs.size(), 2);
+
+    // Log 0: sender -> forwarder (10 MON)
+    EXPECT_EQ(logs[0]["address"], std::format("0x{}", to_hex(native_token)));
+    ASSERT_EQ(logs[0]["topics"].size(), 3);
+    EXPECT_EQ(logs[0]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
+    EXPECT_EQ(logs[0]["topics"][1], format_address_topic(sender));
+    EXPECT_EQ(logs[0]["topics"][2], format_address_topic(forwarder_addr));
+    auto const ten_mon =
+        intx::be::store<bytes32_t>(uint256_t{10} * WEI_PER_MON);
+    EXPECT_EQ(logs[0]["data"], std::format("0x{}", to_hex(ten_mon)));
+
+    // Log 1: forwarder -> sink (5 MON)
+    EXPECT_EQ(logs[1]["address"], std::format("0x{}", to_hex(native_token)));
+    ASSERT_EQ(logs[1]["topics"].size(), 3);
+    EXPECT_EQ(logs[1]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
+    EXPECT_EQ(logs[1]["topics"][1], format_address_topic(forwarder_addr));
+    EXPECT_EQ(logs[1]["topics"][2], format_address_topic(sink));
+    auto const five_mon =
+        intx::be::store<bytes32_t>(uint256_t{5} * WEI_PER_MON);
+    EXPECT_EQ(logs[1]["data"], std::format("0x{}", to_hex(five_mon)));
+
+    monad_block_override_destroy(bo);
+    monad_state_override_destroy(so);
+    monad_executor_destroy(executor);
+}

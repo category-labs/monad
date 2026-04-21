@@ -1,0 +1,139 @@
+#+TITLE: Barrett Semantic Discrepancies Log
+#+DATE: 2026-04-21
+
+* Scope
+
+This note records semantic differences between the current Monad C++
+=barrett= namespace in =category/core/runtime/uint256.hpp= and the linked
+reference algorithms used for the Rocq modeling work:
+
+- Barrett 1986
+- HAC 14.3.3
+- Modern Computer Arithmetic, Section 2.4.1
+- Hacker's Delight, Chapter 10 background on reciprocal division
+- the two local research reports:
+  - =~/projects/category-labs-notes/gptpro-reports/barrett_reduction_research_report.org=
+  - =~/projects/category-labs-notes/gptpro-reports/barrett_reduction_monad_barrett_addendum.org=
+
+This is not a bug list for every implementation detail.  It is a log of places
+where the Monad code is not literally the textbook algorithm and where the Rocq
+proof target must therefore follow the implementation rather than forcing HAC's
+exact presentation.
+
+* Confirmed semantic differences
+
+** The namespace is a family of reciprocal reducers, not one textbook Barrett reducer
+
+The reference HAC presentation fixes one modulus \(m\), one scale
+\(\mu = \lfloor b^{2k}/m \rfloor\), and one quotient derivation
+\(q_1, q_2, q_3\).
+
+The Monad code instead parameterizes over:
+
+- denominator interval;
+- input width;
+- optional baked-in multiplier.
+
+So the proof target is a generic =reciprocal<Params>= object plus wrapper
+theorems, not one monolithic textbook theorem.
+
+** Quotient estimation uses a pre-product shift
+
+The textbook multi-limb derivation approximates the quotient from the top part
+of \(x\) and the reciprocal.  Monad adds
+=PRE_PRODUCT_SHIFT=, replacing \(x\) by \(\lfloor x / 2^B \rfloor\) before the
+reciprocal multiply when there is no baked-in multiplier.
+
+That changes the proof shape:
+
+- when =B = 0=, the quotient underestimate is at most 1;
+- when =B > 0=, the quotient underestimate is at most 2.
+
+This is consistent with the addendum and with MCA-style quotient-selection
+optimizations, but it is not the literal HAC control/data decomposition.
+
+** The provided alias families exclude denominator 1
+
+All exported interval aliases begin at =min_bits = 1=, so the public Barrett
+families cover denominators in \([2, 2^{256}]\), not \(d = 1\).
+
+The textbook algorithms of course work for every positive denominator.  For the
+formal development this means:
+
+- the generic Barrett theorems can target the exported families as-is;
+- any VM semantics that need divisor/modulus =1= will require a trivial
+  separate path.
+
+** Signed division is implemented as an unsigned wrapper over absolute values
+
+The signed wrapper is not a direct signed Barrett algorithm.  It:
+
+1. extracts the dividend sign from the high bit;
+2. divides absolute values with the unsigned Barrett reducer;
+3. reapplies quotient and remainder signs afterward;
+4. takes the denominator sign as a separate boolean, while the reciprocal is
+   built from the absolute denominator.
+
+That matches the current C++ API, but it is a semantic layer above the unsigned
+Barrett references.
+
+** =addmod= and =mulmod= reduce exact widened numerators
+
+The wrapper contracts differ from some reference presentations that assume
+already-reduced inputs:
+
+- =addmod= constructs the exact 257-bit sum before reduction;
+- =mulmod= constructs the exact 512-bit product before reduction;
+- =mulmod_const= absorbs one multiplicand into reciprocal precomputation.
+
+So the natural theorems are:
+
+- =addmod(x,y,rec) = (x+y) mod d=
+- =mulmod(x,y,rec) = (xy) mod d=
+- =mulmod_const(x,rec) = (xy) mod d=
+
+for all 256-bit inputs, not only for inputs already known to lie below the
+modulus.
+
+** The alias interval upper bound depends on fixed-width shift semantics
+
+The C++ alias definitions rely on the fact that:
+
+#+BEGIN_SRC c++
+((uint256_t{1} << 256) - 1)
+#+END_SRC
+
+evaluates to \(2^{256} - 1\), because =uint256_t::operator<<= returns zero for
+shifts \(\ge 256\) and subtraction then wraps in 256 bits.
+
+That is correct for the Monad helper type, but it is not the same as an
+arbitrary-precision mathematical shift.  The Rocq model must therefore follow
+the helper type's fixed-width shift semantics at this point.
+
+* Current implementation issue outside the exported alias families
+
+** Unused generic multiplier branch with =BIT_SHIFT <> 0=
+
+In =reciprocal::numerator(y)=, the generic branch for
+=MULTIPLIER_WORDS > 0= and =BIT_SHIFT <> 0= appears to access =y[i+1]= all the
+way up to =i = MULTIPLIER_WORDS - 1=.
+
+That looks out-of-bounds as written.  The branch is currently unreachable for
+the exported multiplier families, because those instantiate =INPUT_BITS = 256=
+and therefore =BIT_SHIFT = 0=.
+
+For the current Rocq modeling phase this branch is logged and intentionally not
+treated as part of the verified public surface.
+
+* Consequence for the proof plan
+
+The main proof target should remain the one recommended in the addendum:
+
+- prove constructor soundness;
+- prove the quotient-underestimate bounds for =estimate_q=;
+- prove =reduce= against the exact mathematical numerator;
+- derive the wrapper theorems as corollaries.
+
+The development should *not* force the Monad code into HAC's exact
+=q_1 / q_2 / q_3= presentation when the implementation has already specialized
+the reducer family more aggressively.

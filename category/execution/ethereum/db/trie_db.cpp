@@ -139,7 +139,7 @@ bytes32_t TrieDb::read_storage(
     }
     stats_storage_value();
     auto encoded_storage = res.value().node->value();
-    auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+    auto const storage = decode_storage_db_ignore_key(encoded_storage);
     MONAD_ASSERT(!storage.has_error());
     return to_bytes(storage.value());
 }

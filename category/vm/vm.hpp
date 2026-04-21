@@ -26,6 +26,10 @@
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/utils/debug.hpp>
 
+#include <array>
+#include <optional>
+#include <string>
+
 namespace monad::vm
 {
     constexpr auto counts_format_string =
@@ -235,6 +239,11 @@ namespace monad::vm
         {
             return compiler_.print_stats();
         }
+
+        static std::string mode_to_string(Mode);
+        static std::optional<Mode> mode_from_string(std::string);
+        static std::array<Mode, 3> const all_modes;
+        static std::array<std::string, 3> const all_mode_names;
 
     private:
         VmStats stats_;

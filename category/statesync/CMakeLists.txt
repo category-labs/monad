@@ -44,7 +44,13 @@ target_include_directories(monad_statesync PUBLIC ${CATEGORY_MAIN_DIR})
 monad_compile_options(monad_statesync)
 target_link_libraries(monad_statesync PUBLIC monad_execution_ethereum)
 
-monad_add_test_folder(".")
+monad_add_test_folder("."
+  EXCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/test/test_statesync.cpp")
+
+# test_statesync contains StateSyncFixture.benchmark (~25 s) — label it as
+# "bench" so `ctest -LE bench` skips it during the fast fix/build/test cycle.
+monad_add_test(test_statesync test/test_statesync.cpp
+  BENCH_FILTER "StateSyncFixture.benchmark")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   add_executable(fuzz_statesync "${PROJECT_SOURCE_DIR}/test/fuzz_statesync.cpp")

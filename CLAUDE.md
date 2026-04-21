@@ -12,9 +12,12 @@ CC=gcc-15 CXX=g++-15 cmake -G Ninja -B build \
 # Build
 cmake --build build --parallel
 
-# Test
-ctest --test-dir build --output-on-failure --timeout 500 --parallel
-pytest-3 category/core/monad/tests/
+# Test (fast iteration — skips throughput benchmarks labeled "bench")
+ctest --test-dir build --output-on-failure --timeout 500 -j 32 -LE bench
+pytest-3 --pyargs monad
+
+# Test (full — includes benchmarks, use before pushing)
+ctest --test-dir build --output-on-failure --timeout 500 -j 32
 
 # Format
 scripts/apply-clang-format.sh
@@ -202,6 +205,13 @@ New library/executable targets should call `monad_compile_options(target)` to ap
 Test files live in two places:
 - **Alongside source** in `category/` subdirectories (e.g., `category/core/hex_test.cpp`, `category/execution/ethereum/evm_test.cpp`)
 - **In `test/`** for cross-cutting or suite-level tests (e.g., `test/ethereum_test/`, `test/vm/`)
+
+### Throughput benchmarks — the "bench" label
+
+Tests that are primarily throughput/latency measurements (not correctness) should be labeled `bench` so `ctest -LE bench` can skip them during the fix/build/test cycle. Plain `ctest` still runs them for pre-push coverage. Two mechanisms exist:
+
+- **`monad_add_test`** accepts an optional `BENCH_FILTER "<gtest-pattern>"` argument. Tests matching the pattern are excluded from normal discovery and registered as a separate `<target>_bench` ctest entry with the `bench` label.
+- **Manual** — call `add_test(NAME ..._bench COMMAND ... --gtest_filter=...)` + `set_tests_properties(... PROPERTIES LABELS bench ENVIRONMENT "...")`. Use this when one executable has multiple slow benches that should run as separate ctest entries so they parallelize under `-j` (e.g., `category/mpt/test/CMakeLists.txt` does this for the two `DbTest.scalability` fixtures).
 
 Test data paths are available via generated header `test/test_resource_data.h`:
 - `test_resource::test_data_dir` — `test/`

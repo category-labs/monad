@@ -28,7 +28,24 @@ add_trie_test(
 add_trie_test(TARGET compaction_test SOURCES "compaction_test.cpp")
 add_trie_test(TARGET db_metadata_test SOURCES "db_metadata_test.cpp")
 add_trie_test(TARGET update_aux_test SOURCES "update_aux_test.cpp")
-add_trie_test(TARGET db_test SOURCES "db_test.cpp")
+add_trie_test(TARGET db_test SOURCES "db_test.cpp"
+              TEST_FILTER "-DbTest/*.scalability")
+
+# scalability is a throughput benchmark (~60 s per fixture). Exclude it from
+# the default test set and register one ctest entry per fixture under the
+# "bench" label so `ctest -LE bench` skips them for fast iteration while
+# plain `ctest` still runs them (in parallel via two separate entries).
+set(_scalability_env
+    "ASAN_OPTIONS=abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1;TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer"
+)
+add_test(NAME monad_trie/DbTest.scalability_InMemoryDbFixture_bench
+         COMMAND db_test --gtest_filter=DbTest/0.scalability)
+add_test(NAME monad_trie/DbTest.scalability_OnDiskDbFixture_bench
+         COMMAND db_test --gtest_filter=DbTest/1.scalability)
+set_tests_properties(
+  monad_trie/DbTest.scalability_InMemoryDbFixture_bench
+  monad_trie/DbTest.scalability_OnDiskDbFixture_bench
+  PROPERTIES LABELS bench ENVIRONMENT "${_scalability_env}")
 add_trie_test(TARGET fiber_future_wrapped_find_test SOURCES
               "fiber_future_wrapped_find.cpp")
 add_trie_test(TARGET fiber_future_wrapped_read_test SOURCES

@@ -99,8 +99,7 @@ namespace monad::vm::compiler::basic_blocks
     /**
      * Base gas usage for a given terminator.
      */
-    template <Traits traits>
-    constexpr uint16_t terminator_static_gas(Terminator const t)
+    inline constexpr uint16_t terminator_static_gas(Terminator const t)
     {
         using enum Terminator;
         switch (t) {
@@ -113,12 +112,7 @@ namespace monad::vm::compiler::basic_blocks
         case Jump:
             return 8;
         case SelfDestruct: {
-            if constexpr (traits::evm_rev() < EVMC_TANGERINE_WHISTLE) {
-                return 0;
-            }
-            else {
-                return 5000;
-            }
+            return 5000;
         }
         case Stop:
             return 0;
@@ -418,15 +412,14 @@ namespace monad::vm::compiler::basic_blocks
             info.dynamic_gas);
     }
 
-    template <Traits traits>
-    int64_t block_base_gas(Block const &block)
+    inline int64_t block_base_gas(Block const &block)
     {
         int64_t base_gas = 0;
         for (auto const &instr : block.instrs) {
             base_gas += instr.static_gas_cost();
         }
         auto const term_gas =
-            basic_blocks::terminator_static_gas<traits>(block.terminator);
+            basic_blocks::terminator_static_gas(block.terminator);
         // This is also correct for fall through and invalid instruction:
         return base_gas + term_gas;
     }

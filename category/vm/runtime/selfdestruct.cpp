@@ -29,6 +29,8 @@ namespace monad::vm::runtime
     template <Traits traits>
     void selfdestruct [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
     {
+        static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
@@ -39,29 +41,26 @@ namespace monad::vm::runtime
             auto const access_status =
                 ctx->host->access_account(ctx->context, &address);
             if (access_status == EVMC_ACCESS_COLD) {
-                // The minimum gas for SELFDESTRUCT is 0, so we have to account
-                // for the extra 100 gas for accessing a warm account here.
+                // +100 for the warm account access cost.
                 ctx->deduct_gas(traits::cold_account_cost() + 100);
             }
         }
 
-        if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-            auto const non_zero_transfer = [ctx] {
-                if constexpr (traits::evm_rev() == EVMC_TANGERINE_WHISTLE) {
-                    return true;
-                }
-                auto const balance = static_cast<bytes32_t>(
-                    ctx->host->get_balance(ctx->context, &ctx->env.recipient));
-                return balance != bytes32_t{};
-            }();
+        auto const non_zero_transfer = [ctx] {
+            if constexpr (traits::evm_rev() == EVMC_TANGERINE_WHISTLE) {
+                return true;
+            }
+            auto const balance = static_cast<bytes32_t>(
+                ctx->host->get_balance(ctx->context, &ctx->env.recipient));
+            return balance != bytes32_t{};
+        }();
 
-            if (non_zero_transfer) {
-                auto const exists =
-                    ctx->host->account_exists(ctx->context, &address);
+        if (non_zero_transfer) {
+            auto const exists =
+                ctx->host->account_exists(ctx->context, &address);
 
-                if (!exists) {
-                    ctx->deduct_gas(25000);
-                }
+            if (!exists) {
+                ctx->deduct_gas(25000);
             }
         }
 

@@ -62,6 +62,8 @@ namespace monad::vm::runtime
         evmc_call_kind const call_kind, bool const static_call,
         int64_t const remaining_block_base_gas)
     {
+        static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+
         ctx->env.clear_return_data();
 
         auto const args_size = ctx->get_memory_offset(args_size_word);
@@ -146,14 +148,7 @@ namespace monad::vm::runtime
 
         auto gas = clamp_cast<int64_t>(gas_word);
 
-        if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-            gas = std::min(gas, gas_left_here - (gas_left_here / 64));
-        }
-        else {
-            if (MONAD_UNLIKELY(gas > gas_left_here)) {
-                ctx->exit(StatusCode::OutOfGas);
-            }
-        }
+        gas = std::min(gas, gas_left_here - (gas_left_here / 64));
 
         if (has_value) {
             gas += 2300;

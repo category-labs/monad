@@ -51,6 +51,8 @@ Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id)
 {
+    static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
         if constexpr (traits::evm_rev() < EVMC_SPURIOUS_DRAGON) {
@@ -170,8 +172,7 @@ Result<void> static_validate_transaction(
     }
 
     // EIP-2
-    if (MONAD_UNLIKELY(!silkpre::is_valid_signature(
-            tx.sc.r, tx.sc.s, traits::evm_rev() >= EVMC_HOMESTEAD))) {
+    if (MONAD_UNLIKELY(!silkpre::is_valid_signature(tx.sc.r, tx.sc.s, true))) {
         return TransactionError::InvalidSignature;
     }
 

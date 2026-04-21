@@ -81,9 +81,6 @@ evmc_revision EthereumMainnet::get_revision(
     else if (block_number >= 2463000) {
         return EVMC_TANGERINE_WHISTLE;
     }
-    else if (block_number >= 1150000) {
-        return EVMC_HOMESTEAD;
-    }
     MONAD_ASSERT(false, "unsupported fork");
 }
 

@@ -52,7 +52,6 @@ enum class BlockError
     TooManyOmmers,
     DuplicateOmmers,
     InvalidOmmerHeader,
-    WrongDaoExtraData,
     WrongLogsBloom,
     InvalidGasUsed,
     WrongMerkleRoot,

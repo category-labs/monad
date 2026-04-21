@@ -37,6 +37,8 @@ namespace
 
 TYPED_TEST(TraitsTest, intrinsic_gas)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_HOMESTEAD);
+
     auto non_zero_since = []<evmc_revision r>(rev<r>, uint64_t val) consteval {
         if constexpr (TestFixture::Trait::evm_rev() >= r) {
             return val;
@@ -46,13 +48,10 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
         }
     };
 
-    static constexpr auto empty_to =
-        non_zero_since(rev<EVMC_HOMESTEAD>{}, 32'000);
-
     {
         Transaction t{};
         EXPECT_EQ(
-            intrinsic_gas<typename TestFixture::Trait>(t), 21'000 + empty_to);
+            intrinsic_gas<typename TestFixture::Trait>(t), 21'000 + 32'000);
     }
 
     {
@@ -83,12 +82,12 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
         t.data.push_back(0x00);
         EXPECT_EQ(
             intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + empty_to + zero_token_cost + extra_cost_per_evm_word);
+            21'000 + 32'000 + zero_token_cost + extra_cost_per_evm_word);
 
         t.data.push_back(0xff);
         EXPECT_EQ(
             intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + empty_to + zero_token_cost + non_zero_token_cost +
+            21'000 + 32'000 + zero_token_cost + non_zero_token_cost +
                 extra_cost_per_evm_word);
     }
 
@@ -103,7 +102,7 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
 
         EXPECT_EQ(
             intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + empty_to + non_zero_token_cost * 127 + zero_token_cost +
+            21'000 + 32'000 + non_zero_token_cost * 127 + zero_token_cost +
                 4 * extra_cost_per_evm_word);
     }
 

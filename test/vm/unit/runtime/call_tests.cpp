@@ -97,6 +97,8 @@ TYPED_TEST(RuntimeTraitsTest, CallWithValueCold)
 
 TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_HOMESTEAD);
+
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
 
@@ -106,39 +108,28 @@ TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
     auto res =
         do_call(std::numeric_limits<std::int64_t>::max(), 0, 0, 0, 0, 0, 0);
 
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-        ASSERT_EQ(res, 1);
-        ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
-        ASSERT_EQ(this->ctx_.memory.size, 0);
+    ASSERT_EQ(res, 1);
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(this->ctx_.memory.size, 0);
 
-        constexpr auto gas_remaining = [] {
-            if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-                if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-                    return 2882;
-                }
+    constexpr auto gas_remaining = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+                return 2882;
             }
-            if constexpr (
-                TestFixture::Trait::evm_rev() == EVMC_TANGERINE_WHISTLE) {
-                return 2648;
-            }
-            else if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
-                return 3039;
-            }
-            else {
-                return 3000;
-            }
-        }();
+        }
+        if constexpr (TestFixture::Trait::evm_rev() == EVMC_TANGERINE_WHISTLE) {
+            return 2648;
+        }
+        else if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+            return 3039;
+        }
+        else {
+            return 3000;
+        }
+    }();
 
-        ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
-    }
-    else {
-        ASSERT_EQ(this->ctx_.result.status, StatusCode::OutOfGas);
-        // because set_return_data is not reached in this branch due to the
-        // early exit, ASAN complains about a memory leak, since the destructor
-        // of Environment would normally run std::free on this data.
-        std::free(
-            const_cast<std::uint8_t *>(this->host_.call_result.output_data));
-    }
+    ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
 }
 
 TYPED_TEST(RuntimeTraitsTest, CallFailure)

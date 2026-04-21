@@ -47,6 +47,8 @@ namespace monad::vm::runtime
         uint256_t const &size_word, uint256_t const &salt_word,
         evmc_call_kind const kind, int64_t const remaining_block_base_gas)
     {
+        static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
@@ -88,9 +90,7 @@ namespace monad::vm::runtime
         }
 
         auto gas = ctx->gas_remaining + remaining_block_base_gas;
-        if constexpr (traits::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-            gas = gas - (gas / 64);
-        }
+        gas = gas - (gas / 64);
 
         auto const message = evmc_message{
             .kind = kind,

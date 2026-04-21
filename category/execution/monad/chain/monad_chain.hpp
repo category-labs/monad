@@ -24,6 +24,7 @@
 #include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>

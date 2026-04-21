@@ -25,10 +25,14 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <concepts>
+#include <type_traits>
+#include <utility>
+
 MONAD_RLP_NAMESPACE_BEGIN
 
 template <unsigned_integral T>
-constexpr Result<T> decode_raw_num(byte_string_view const enc)
+inline Result<T> decode_raw_num(byte_string_view const enc)
 {
     if (MONAD_UNLIKELY(enc.size() > sizeof(T))) {
         return DecodeError::Overflow;
@@ -51,104 +55,174 @@ constexpr Result<T> decode_raw_num(byte_string_view const enc)
     return result;
 }
 
-constexpr Result<size_t> decode_length(byte_string_view const enc)
+inline Result<size_t> decode_length(byte_string_view const enc)
 {
     return decode_raw_num<size_t>(enc);
 }
 
-constexpr Result<byte_string_view> parse_string_metadata(byte_string_view &enc)
+enum class RlpType
 {
-    size_t i = 0;
-    size_t end = 0;
+    String,
+    List
+};
 
+namespace detail
+{
+
+    enum class ParseMetadataOptions
+    {
+        ReturnRlpType,
+    };
+
+    template <ParseMetadataOptions... Options>
+    inline constexpr bool should_return_rlp_type =
+        ((Options == ParseMetadataOptions::ReturnRlpType) || ...);
+
+    // We want two return versions of the functions below. One which simply
+    // returns a byte_string_view when we are parsing/expecting a specific type,
+    // e.g. parse_list_metadata. If using the dynamic parse_metadata, we want
+    // the result to be a byte_string_view plus the type that was decoded from
+    // the first byte of enc, hence when we call
+    // parse_string_metadata<ParseMetadataOptions::ReturnRlpType> from
+    // parse_metadata, the return value will be an std::pair{RlpType::String,
+    // payload}
+    template <ParseMetadataOptions... Options>
+    using parse_metadata_result_t = std::conditional_t<
+        should_return_rlp_type<Options...>,
+        Result<std::pair<RlpType, byte_string_view>>, Result<byte_string_view>>;
+
+    template <RlpType Ty, ParseMetadataOptions... Options>
+    [[gnu::always_inline]] inline parse_metadata_result_t<Options...>
+    extract_payload(byte_string_view &enc, size_t const i, size_t const length)
+    {
+        auto const end = i + length;
+
+        if (MONAD_UNLIKELY(end > enc.size() || end < i)) {
+            return DecodeError::InputTooShort;
+        }
+
+        auto const payload = enc.substr(i, length);
+        enc = enc.substr(end);
+
+        if constexpr (should_return_rlp_type<Options...>) {
+            return {Ty, payload};
+        }
+        else {
+            return payload;
+        }
+    }
+
+    template <ParseMetadataOptions... Options>
+    [[gnu::always_inline]] inline parse_metadata_result_t<Options...>
+    parse_string_metadata(byte_string_view &enc)
+    {
+        MONAD_DEBUG_ASSERT(!enc.empty());
+        MONAD_DEBUG_ASSERT(enc[0] < 0xc0);
+
+        size_t i = 0;
+        size_t length;
+
+        if (enc[0] < 0x80) // [0x00, 0x7f] - single byte string
+        {
+            length = 1;
+        }
+        else if (enc[0] < 0xb8) // [0x80, 0xb7] - short string (0-55 bytes)
+        {
+            length = enc[0] - 0x80;
+            ++i;
+        }
+        else // [0xb8, 0xbf] - long string, N+1 bytes for length, then
+             // payload
+        {
+            uint8_t const length_of_length = enc[0] - 0xb7;
+            ++i;
+            if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
+                return DecodeError::InputTooShort;
+            }
+            BOOST_OUTCOME_TRY(
+                length, decode_length(enc.substr(i, length_of_length)));
+            i += length_of_length;
+        }
+        return extract_payload<RlpType::String, Options...>(enc, i, length);
+    }
+
+    template <ParseMetadataOptions... Options>
+    [[gnu::always_inline]] inline parse_metadata_result_t<Options...>
+    parse_list_metadata(byte_string_view &enc)
+    {
+        MONAD_DEBUG_ASSERT(!enc.empty());
+        MONAD_DEBUG_ASSERT(enc[0] >= 0xc0);
+
+        size_t i = 0;
+        size_t length;
+
+        if (enc[0] < 0xf8) // [0xc0, 0xf7] - short list (0-55 bytes)
+        {
+            length = enc[0] - 0xc0;
+            ++i;
+        }
+        else // [0xf8, 0xff] - long list, N+1 bytes for length, then payload
+        {
+            uint8_t const length_of_length = enc[0] - 0xf7;
+            ++i;
+            if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
+                return DecodeError::InputTooShort;
+            }
+            BOOST_OUTCOME_TRY(
+                length, decode_length(enc.substr(i, length_of_length)));
+            i += length_of_length;
+        }
+        return extract_payload<RlpType::List, Options...>(enc, i, length);
+    }
+}
+
+inline Result<std::pair<RlpType, byte_string_view>>
+parse_metadata(byte_string_view &enc)
+{
     if (MONAD_UNLIKELY(enc.empty())) {
         return DecodeError::InputTooShort;
     }
+    if (enc[0] < 0xc0) {
+        return detail::parse_string_metadata<
+            detail::ParseMetadataOptions::ReturnRlpType>(enc);
+    }
+    else {
+        return detail::parse_list_metadata<
+            detail::ParseMetadataOptions::ReturnRlpType>(enc);
+    }
+}
 
+inline Result<byte_string_view> parse_string_metadata(byte_string_view &enc)
+{
+    if (MONAD_UNLIKELY(enc.empty())) {
+        return DecodeError::InputTooShort;
+    }
     if (MONAD_UNLIKELY(enc[0] >= 0xc0)) {
         return DecodeError::TypeUnexpected;
     }
 
-    if (enc[0] < 0x80) // [0x00, 0x7f]
-    {
-        end = i + 1;
-    }
-    else if (enc[0] < 0xb8) // [0x80, 0xb7]
-    {
-        ++i;
-        uint8_t const length = enc[0] - 0x80;
-        end = i + length;
-    }
-    else // [0xb8, 0xbf]
-    {
-        ++i;
-        uint8_t const length_of_length = enc[0] - 0xb7;
-
-        if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
-            return DecodeError::InputTooShort;
-        }
-
-        BOOST_OUTCOME_TRY(
-            auto const length, decode_length(enc.substr(i, length_of_length)));
-        i += length_of_length;
-        end = i + length;
-    }
-
-    if (MONAD_UNLIKELY(end > enc.size() || end < i)) {
-        return DecodeError::InputTooShort;
-    }
-
-    auto const payload = enc.substr(i, end - i);
-    enc = enc.substr(end);
-    return payload;
+    return detail::parse_string_metadata(enc);
 }
 
-constexpr Result<byte_string_view> parse_list_metadata(byte_string_view &enc)
+inline Result<byte_string_view> parse_list_metadata(byte_string_view &enc)
 {
-    size_t i = 0;
-    size_t length;
-    ++i;
-
     if (MONAD_UNLIKELY(enc.empty())) {
         return DecodeError::InputTooShort;
     }
-
     if (MONAD_UNLIKELY(enc[0] < 0xc0)) {
         return DecodeError::TypeUnexpected;
     }
 
-    if (enc[0] < 0xf8) {
-        length = enc[0] - 0xc0;
-    }
-    else {
-        size_t const length_of_length = enc[0] - 0xf7;
-
-        if (MONAD_UNLIKELY(i + length_of_length >= enc.size())) {
-            return DecodeError::InputTooShort;
-        }
-
-        BOOST_OUTCOME_TRY(
-            length, decode_length(enc.substr(i, length_of_length)));
-        i += length_of_length;
-    }
-    auto const end = i + length;
-
-    if (MONAD_UNLIKELY(end > enc.size() || end < i)) {
-        return DecodeError::InputTooShort;
-    }
-
-    auto const payload = enc.substr(i, end - i);
-    enc = enc.substr(end);
-    return payload;
+    return detail::parse_list_metadata(enc);
 }
 
-constexpr Result<byte_string_view> decode_string(byte_string_view &enc)
+inline Result<byte_string_view> decode_string(byte_string_view &enc)
 {
     return parse_string_metadata(enc);
 }
 
 template <size_t N>
-constexpr Result<byte_string_fixed<N>>
+inline Result<byte_string_fixed<N>>
 decode_byte_string_fixed(byte_string_view &enc)
 {
     byte_string_fixed<N> bsf;

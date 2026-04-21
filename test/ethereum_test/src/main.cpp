@@ -53,6 +53,7 @@ int main(int argc, char *argv[])
 
     auto log_level = quill::LogLevel::None;
     std::optional<std::string> fork_name;
+    std::optional<std::string> vm_mode_name;
     std::optional<std::variant<evmc_revision, monad_revision>> revision =
         std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
@@ -68,6 +69,10 @@ int main(int argc, char *argv[])
     app.add_option("--fork", fork_name, "Fork to run unit tests for")
         ->transform(CLI::IsMember(
             std::views::keys(test::revision_map) | std::ranges::to<std::set>(),
+            CLI::ignore_case));
+    app.add_option("--vm_mode", vm_mode_name, "Restrict to given VM mode")
+        ->transform(CLI::IsMember(
+            vm::VM::all_mode_names | std::ranges::to<std::set<std::string>>(),
             CLI::ignore_case));
 
     app.callback([&]() {
@@ -99,6 +104,11 @@ int main(int argc, char *argv[])
         "--sleep", sleep_seconds, "Sleep for the specified number of seconds");
     CLI11_PARSE(app, argc, argv);
 
+    std::optional<vm::VM::Mode> vm_mode;
+    if (vm_mode_name.has_value()) {
+        vm_mode = vm::VM::mode_from_string(vm_mode_name.value());
+    }
+
     quill::start(true);
     quill::get_root_logger()->set_log_level(log_level);
 #ifdef ENABLE_EVENT_TRACING
@@ -114,7 +124,7 @@ int main(int argc, char *argv[])
     if (blockchain_tests_path || transaction_tests_path) {
         if (blockchain_tests_path) {
             test::register_blockchain_tests_path(
-                *blockchain_tests_path, revision, trace_calls);
+                *blockchain_tests_path, revision, vm_mode, trace_calls);
         }
         if (transaction_tests_path) {
             test::register_transaction_tests_path(
@@ -122,7 +132,7 @@ int main(int argc, char *argv[])
         }
     }
     else {
-        test::register_blockchain_tests(revision, trace_calls);
+        test::register_blockchain_tests(revision, vm_mode, trace_calls);
         test::register_transaction_tests(revision);
     }
 

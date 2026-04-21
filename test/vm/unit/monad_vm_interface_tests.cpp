@@ -366,8 +366,7 @@ TEST(MonadVmInterface, cached_compile)
 
 TEST(MonadVmInterface, async_compile)
 {
-    for (VM::Mode const mode :
-         {VM::Dual, VM::CompilerOnly, VM::InterpreterOnly}) {
+    for (VM::Mode const mode : VM::all_modes) {
         VM vm{mode};
 
         auto [bytecode1, hash1] = make_bytecode(1);

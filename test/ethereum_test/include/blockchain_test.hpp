@@ -50,6 +50,7 @@ class BlockchainTest : public testing::Test
 {
     std::filesystem::path const file_;
     std::optional<std::variant<evmc_revision, monad_revision>> const revision_;
+    std::optional<vm::VM::Mode> fixed_vm_mode_;
     bool enable_tracing_;
 
 public:
@@ -60,9 +61,11 @@ public:
         std::filesystem::path const &file,
         std::optional<std::variant<evmc_revision, monad_revision>> const
             &revision,
+        std::optional<vm::VM::Mode> const fixed_vm_mode,
         bool const enable_tracing) noexcept
         : file_{file}
         , revision_{revision}
+        , fixed_vm_mode_{fixed_vm_mode}
         , enable_tracing_{enable_tracing}
     {
     }
@@ -72,9 +75,11 @@ public:
 
 void register_blockchain_tests_path(
     std::filesystem::path const &,
-    std::optional<std::variant<evmc_revision, monad_revision>> const &, bool);
+    std::optional<std::variant<evmc_revision, monad_revision>> const &,
+    std::optional<vm::VM::Mode>, bool);
 
 void register_blockchain_tests(
-    std::optional<std::variant<evmc_revision, monad_revision>> const &, bool);
+    std::optional<std::variant<evmc_revision, monad_revision>> const &,
+    std::optional<vm::VM::Mode>, bool);
 
 MONAD_TEST_NAMESPACE_END

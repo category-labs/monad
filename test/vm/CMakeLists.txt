@@ -30,7 +30,6 @@ if(MONAD_COMPILER_BENCHMARKS)
 endif()
 
 if(MONAD_COMPILER_TESTING)
-  add_subdirectory(blockchain)
   add_subdirectory(fuzzer)
 endif()
 

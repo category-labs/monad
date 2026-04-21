@@ -4,6 +4,4 @@ VERBOSE=1 \
 cmake \
   --build build \
   --config RelWithDebInfo \
-  --target vm-unit-tests \
-  --target compiler-blockchain-tests \
-  --target interpreter-blockchain-tests
+  --target vm-unit-tests

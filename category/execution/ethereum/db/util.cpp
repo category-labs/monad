@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
@@ -371,7 +372,7 @@ namespace
         {
             MONAD_ASSERT(node.has_value());
             auto encoded_storage = node.value();
-            auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+            auto const storage = decode_storage_db_ignore_key(encoded_storage);
             MONAD_ASSERT(!storage.has_error());
             return rlp::encode_string2(storage.value());
         }
@@ -682,6 +683,14 @@ byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)
     return rlp::encode_list2(encoded_storage);
 }
 
+byte_string
+encode_storage_page_db(bytes32_t const &key, storage_page_t const &page)
+{
+    return rlp::encode_list2(
+        rlp::encode_bytes32_compact(key),
+        rlp::encode_string2(encode_storage_page(page)));
+}
+
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_storage_db_raw(byte_string_view &enc)
 {
@@ -700,7 +709,7 @@ Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
     return {to_bytes(res.first), to_bytes(res.second)};
 }
 
-Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
+Result<byte_string_view> decode_storage_db_ignore_key(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto const res, decode_storage_db_raw(enc));
     if (!enc.empty()) {

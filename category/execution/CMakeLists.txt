@@ -103,6 +103,7 @@ add_library(
   "ethereum/db/file_db.hpp"
   "ethereum/db/partial_trie_db.hpp"
   "ethereum/db/partial_trie_db.cpp"
+  "ethereum/db/storage_key.hpp"
   "ethereum/db/trie_db.cpp"
   "ethereum/db/trie_db.hpp"
   "ethereum/db/trie_rodb.hpp"
@@ -200,6 +201,7 @@ add_library(
 add_library(
   monad_execution_native OBJECT
   # monad/db
+  "monad/db/page_storage_broker.hpp"
   "monad/db/storage_page.cpp"
   "monad/db/storage_page.hpp"
   # monad/chain

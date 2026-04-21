@@ -208,6 +208,7 @@ Result<void> process_monad_block(
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
+    // TODO: halt at the page store revision, forcing a snapshot reload
     BlockState block_state(db, vm);
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(

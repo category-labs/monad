@@ -1,0 +1,49 @@
+* Shift-Right Notes
+
+** Current Modeling Policy
+
+For now, the Rocq model should stay as close as possible to the current
+C++ control flow, even when that means repeating branch-local shift
+computations instead of factoring them into a more abstract helper.
+This is deliberate: the primary goal is straightforward side-by-side
+comparison between the Rocq and C++ sources.
+
+** Tail Case
+
+The Rocq model of ~shift_right_uint256_aux~ now mirrors the C++ tail
+control flow directly:
+
+- logical tail: ~shr (w3 x) tail_shift~
+- arithmetic tail: ~shrd64 fill (w3 x) tail_shift~
+
+This is closer to the C++ than the earlier Rocq version, which used
+~asr~ for the arithmetic tail.
+
+** Remaining Presentational Discrepancy
+
+The C++ computes the tail shift amount as ~shift & 63~. The Rocq model
+now does the same at the word level via ~land shift (shl 1 6 - 1)~.
+This required extending the ~Uint~ interface with bitwise ~and~.
+
+The branch-local shift amounts are also now kept close to the C++:
+
+- ~shift < 64~: use ~shift~ directly
+- ~64 <= shift < 128~: use ~shift & 63~
+- ~128 <= shift < 192~: use ~shift & 127~
+- ~192 <= shift < 256~: no branch-local ~s~ is needed
+
+** Possible Future C++ / Rocq Simplifications
+
+These are intentionally parked for later. Do not apply them to the Rocq
+model unless we also decide to revisit the C++ side-by-side structure.
+
+1. Hoist ~s = shift & 63~ once and reuse it in multiple branches.
+2. Simplify the arithmetic fill computation, for example to an all-ones
+   or zero word derived from the sign bit in a shorter form.
+3. Replace the arithmetic tail ~shrd(fill, x[3], s)~ with an equivalent
+   signed right shift if we ever decide that source-level clarity is
+   more important than maintaining the current C++ shape.
+
+If the C++ implementation is revised later, this note should be updated
+at the same time as the Rocq model so their correspondence remains easy
+for a developer to audit.

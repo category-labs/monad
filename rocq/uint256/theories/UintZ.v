@@ -138,6 +138,8 @@ Module ZUint64.
     Z.shiftr (v - (if v <? wB width / 2 then 0 else wB width))
              (Z.of_nat n).
 
+  Definition land (x y : t) : t := Z.land x y.
+
   (** Bitwise OR *)
   Definition or (x y : t) : t := Z.lor x y.
 
@@ -289,6 +291,20 @@ Module ZUint64.
       mod base width.
   Proof.
     intros. unfold to_Z, asr, norm. reflexivity.
+  Qed.
+
+  Lemma spec_land : forall x y,
+    to_Z (land x y) = Z.land (to_Z x) (to_Z y) mod base width.
+  Proof.
+    intros. unfold to_Z, land, norm, wB, base.
+    apply Z.bits_inj'. intros n Hn.
+    destruct (Z_lt_ge_dec n (Z.pos width)).
+    - rewrite !Z.mod_pow2_bits_low by lia.
+      rewrite !Z.land_spec.
+      rewrite !Z.mod_pow2_bits_low by lia.
+      reflexivity.
+    - rewrite !Z.mod_pow2_bits_high by lia.
+      reflexivity.
   Qed.
 
   Lemma spec_or : forall x y,
@@ -509,6 +525,7 @@ Module ZUint128.
     let v := norm width x in
     Z.shiftr (v - (if v <? wB width / 2 then 0 else wB width))
              (Z.of_nat n).
+  Definition land (x y : t) : t := Z.land x y.
   Definition or (x y : t) : t := Z.lor x y.
   Definition eqb (x y : t) : bool := (norm width x =? norm width y).
   Definition ltb (x y : t) : bool := (norm width x <? norm width y).
@@ -650,6 +667,20 @@ Module ZUint128.
       mod base width.
   Proof.
     intros. unfold to_Z, asr, norm. reflexivity.
+  Qed.
+
+  Lemma spec_land : forall x y,
+    to_Z (land x y) = Z.land (to_Z x) (to_Z y) mod base width.
+  Proof.
+    intros. unfold to_Z, land, norm, wB, base.
+    apply Z.bits_inj'. intros n Hn.
+    destruct (Z_lt_ge_dec n (Z.pos width)).
+    - rewrite !Z.mod_pow2_bits_low by lia.
+      rewrite !Z.land_spec.
+      rewrite !Z.mod_pow2_bits_low by lia.
+      reflexivity.
+    - rewrite !Z.mod_pow2_bits_high by lia.
+      reflexivity.
   Qed.
 
   Lemma spec_or : forall x y,

@@ -131,6 +131,8 @@ Module SigmaUint64.
     mk width (Z.shiftr (v - (if v <? base width / 2 then 0 else base width))
                        (Z.of_nat n)).
 
+  Definition land (x y : t) : t := mk width (Z.land (val x) (val y)).
+
   (** Bitwise OR *)
   Definition or (x y : t) : t := mk width (Z.lor (val x) (val y)).
 
@@ -307,6 +309,15 @@ Module SigmaUint64.
   Proof.
     intros x n.
     unfold asr, to_Z.
+    rewrite val_mk.
+    reflexivity.
+  Qed.
+
+  Lemma spec_land : forall x y,
+    to_Z (land x y) = Z.land (to_Z x) (to_Z y) mod base width.
+  Proof.
+    intros x y.
+    unfold land, to_Z.
     rewrite val_mk.
     reflexivity.
   Qed.
@@ -539,6 +550,8 @@ Module SigmaUint128.
     mk width (Z.shiftr (v - (if v <? base width / 2 then 0 else base width))
                        (Z.of_nat n)).
 
+  Definition land (x y : t) : t := mk width (Z.land (val x) (val y)).
+
   Definition or (x y : t) : t := mk width (Z.lor (val x) (val y)).
 
   Definition eqb (x y : t) : bool := (val x =? val y).
@@ -710,6 +723,15 @@ Module SigmaUint128.
   Proof.
     intros x n.
     unfold asr, to_Z.
+    rewrite val_mk.
+    reflexivity.
+  Qed.
+
+  Lemma spec_land : forall x y,
+    to_Z (land x y) = Z.land (to_Z x) (to_Z y) mod base width.
+  Proof.
+    intros x y.
+    unfold land, to_Z.
     rewrite val_mk.
     reflexivity.
   Qed.

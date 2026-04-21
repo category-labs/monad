@@ -240,6 +240,63 @@ Definition shift_left_uint256 (x shift : uint256) : uint256 :=
   then shift_left_uint256_aux x (w0 shift)
   else zero_uint256.
 
+Definition filled_uint256 (fill : t) : uint256 :=
+  mk_uint256 fill fill fill fill.
+
+Inductive right_shift_kind :=
+| RightShiftLogical
+| RightShiftArithmetic.
+
+Definition shift_right_uint256_aux (kind : right_shift_kind) (fill : t)
+    (x : uint256) (shift : t) : uint256 :=
+  let tail_shift := bounded_shift_nat word_width (land shift (shl 1 6 - 1)) in
+  let tail :=
+    match kind with
+    | RightShiftLogical => shr (w3 x) tail_shift
+    | RightShiftArithmetic => shrd64 fill (w3 x) tail_shift
+    end in
+  if shift <? shl 1 7 then
+    if shift <? shl 1 6 then
+      let s := bounded_shift_nat word_width shift in
+      mk_uint256
+        (shrd64 (w1 x) (w0 x) s)
+        (shrd64 (w2 x) (w1 x) s)
+        (shrd64 (w3 x) (w2 x) s)
+        tail
+    else
+      let s := bounded_shift_nat word_width (land shift (shl 1 6 - 1)) in
+      mk_uint256
+        (shrd64 (w2 x) (w1 x) s)
+        (shrd64 (w3 x) (w2 x) s)
+        tail
+        fill
+  else if shift <? shl (1 + 1 + 1) 6 then
+    let s := bounded_shift_nat word_width (land shift (shl 1 7 - 1)) in
+    mk_uint256
+      (shrd64 (w3 x) (w2 x) s)
+      tail
+      fill
+      fill
+  else
+    mk_uint256 tail fill fill fill.
+
+Definition shift_right_uint256 (x shift : uint256) : uint256 :=
+  if ((w1 shift =? 0) &&
+      (w2 shift =? 0) &&
+      (w3 shift =? 0) &&
+      (w0 shift <? shl 1 8))%bool
+  then shift_right_uint256_aux RightShiftLogical 0 x (w0 shift)
+  else zero_uint256.
+
+Definition sar (shift x : uint256) : uint256 :=
+  let fill := if is_negative x then u64_max_val else 0 in
+  if ((w1 shift =? 0) &&
+      (w2 shift =? 0) &&
+      (w3 shift =? 0) &&
+      (w0 shift <? shl 1 8))%bool
+  then shift_right_uint256_aux RightShiftArithmetic fill x (w0 shift)
+  else filled_uint256 fill.
+
 Definition exp (base exponent : uint256) : uint256 :=
   if is_two_uint256 base
   then shift_left_uint256 one_uint256 exponent

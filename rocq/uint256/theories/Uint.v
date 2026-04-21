@@ -62,7 +62,8 @@ Module Type UintOps.
       Models C++ signed right-shift on two's complement values. *)
   Parameter asr : t -> nat -> t.
 
-  (** *** Bitwise OR *)
+  (** *** Bitwise operations *)
+  Parameter land : t -> t -> t.
   Parameter or : t -> t -> t.
 
   (** *** Comparison *)
@@ -162,7 +163,9 @@ Module Type Uint <: UintOps.
                (Z.of_nat n)
       mod base width.
 
-  (** Bitwise OR specification *)
+  (** Bitwise AND/OR specifications *)
+  Axiom spec_land : forall x y,
+    to_Z (land x y) = Z.land (to_Z x) (to_Z y) mod base width.
   Axiom spec_or : forall x y,
     to_Z (or x y) = Z.lor (to_Z x) (to_Z y) mod base width.
 
@@ -310,7 +313,7 @@ Module UintNotations (U : UintOps).
   Infix "*" := U.mul : uint_scope.
   (* No infix notation for [or] and [and] — [|] conflicts with
      match-branch syntax and [&] has awkward precedence.
-     Use [U.or x y] / [U.and x y] or unqualified when imported. *)
+     Use [U.or x y] / [U.land x y] or unqualified when imported. *)
   Infix "<?" := U.ltb : uint_scope.
   Infix "=?" := U.eqb : uint_scope.
   Infix "<=?" := U.leb : uint_scope.

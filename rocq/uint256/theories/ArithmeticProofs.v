@@ -15,6 +15,7 @@
     obligations to be filled in incrementally. *)
 
 From Stdlib Require Import ZArith Lia List Bool.
+From Stdlib Require Import Zquot.
 From Stdlib Require Import DoubleType.
 From Uint256 Require Import Uint Base Words WordsLemmas Arithmetic.
 From Uint256 Require Import DivisionProofs RuntimeMulProofs.
@@ -50,6 +51,10 @@ Definition to_Z_signed_uint256 (x : uint256) : Z :=
 
 Definition to_Z_signed_words (ws : words) : Z :=
   to_Z_signed_uint256 (words_to_uint256 ws).
+
+Definition wrap_signed256 (z : Z) : Z :=
+  let uz := z mod modulus256 in
+  if Z.ltb uz sign_threshold256 then uz else uz - modulus256.
 
 Lemma uint256_to_words_length : forall x,
   length (uint256_to_words x) = 4%nat.
@@ -1655,16 +1660,265 @@ Proof.
     reflexivity.
 Qed.
 
+Lemma to_Z_signed_uint256_wrap : forall x,
+  to_Z_signed_uint256 x = wrap_signed256 (to_Z_uint256 x).
+Proof.
+  intro x.
+  unfold to_Z_signed_uint256, wrap_signed256.
+  pose proof (to_Z_uint256_bounds x) as Hx.
+  rewrite Z.mod_small by lia.
+  reflexivity.
+Qed.
+
+Lemma to_Z_signed_words_wrap : forall ws,
+  0 <= to_Z_words ws < modulus256 ->
+  to_Z_signed_words ws = wrap_signed256 (to_Z_words ws).
+Proof.
+  intros ws Hws.
+  unfold to_Z_signed_words.
+  rewrite to_Z_signed_uint256_wrap.
+  f_equal.
+  apply to_Z_uint256_words_to_uint256_small.
+  exact Hws.
+Qed.
+
+Lemma negate_words_small_correct : forall ws,
+  0 <= to_Z_words ws < modulus256 ->
+  to_Z_words (negate_words ws) = (- to_Z_words ws) mod modulus256.
+Proof.
+  intros ws Hws.
+  change (to_Z_uint256 (negate_uint256 (words_to_uint256 ws)) =
+    (- to_Z_words ws) mod modulus256).
+  rewrite negate_uint256_correct.
+  rewrite to_Z_uint256_words_to_uint256_small by exact Hws.
+  reflexivity.
+Qed.
+
+Lemma to_Z_signed_negate_words_wrap : forall ws,
+  0 <= to_Z_words ws < modulus256 ->
+  to_Z_signed_words (negate_words ws) = wrap_signed256 (- to_Z_words ws).
+Proof.
+  intros ws Hws.
+  assert (Hneg : 0 <= to_Z_words (negate_words ws) < modulus256).
+  { rewrite negate_words_small_correct by exact Hws.
+    apply Z.mod_pos_bound.
+    exact modulus256_pos. }
+  rewrite (to_Z_signed_words_wrap _ Hneg).
+  rewrite negate_words_small_correct by exact Hws.
+  unfold wrap_signed256.
+  rewrite Z.mod_mod by (pose proof modulus256_pos; lia).
+  reflexivity.
+Qed.
+
+Lemma to_Z_signed_uint256_nonnegative : forall x,
+  is_negative x = false ->
+  to_Z_signed_uint256 x = to_Z_uint256 x.
+Proof.
+  intros x Hneg.
+  rewrite is_negative_correct in Hneg.
+  apply negb_false_iff in Hneg.
+  apply Z.ltb_lt in Hneg.
+  unfold to_Z_signed_uint256.
+  destruct (Z.ltb_spec0 (to_Z_uint256 x) sign_threshold256); lia.
+Qed.
+
+Lemma to_Z_signed_uint256_negative : forall x,
+  is_negative x = true ->
+  to_Z_signed_uint256 x = - to_Z_uint256 (negate_uint256 x).
+Proof.
+  intros x Hneg.
+  rewrite is_negative_correct in Hneg.
+  apply negb_true_iff in Hneg.
+  apply Z.ltb_ge in Hneg.
+  unfold to_Z_signed_uint256.
+  destruct (Z.ltb_spec0 (to_Z_uint256 x) sign_threshold256) as [Hlt|Hge].
+  - lia.
+  - rewrite negate_uint256_correct.
+    pose proof (to_Z_uint256_bounds x) as Hx.
+    assert (Hthpos : 0 < sign_threshold256).
+    { unfold sign_threshold256, modulus256, modulus_words,
+        WL.modulus_words, base.
+      rewrite width_is_64.
+      vm_compute.
+      reflexivity. }
+    assert (Hxpos : 0 < to_Z_uint256 x) by lia.
+    assert (Hlt0 : (- to_Z_uint256 x <? 0) = true).
+    { apply Z.ltb_lt. lia. }
+    pose proof (mod_borrow_decompose modulus256 (- to_Z_uint256 x)
+      modulus256_pos ltac:(lia)) as Hmod.
+    rewrite Hlt0 in Hmod.
+    lia.
+Qed.
+
+Lemma udivrem_uint256_4_4_correct : forall u_abs v_abs divr,
+  0 < to_Z_uint256 v_abs ->
+  udivrem 4 4 (uint256_to_words u_abs) (uint256_to_words v_abs) =
+    Some divr ->
+  to_Z_words (ud_quot divr) =
+    Z.quot (to_Z_uint256 u_abs) (to_Z_uint256 v_abs) /\
+  to_Z_words (ud_rem divr) =
+    Z.rem (to_Z_uint256 u_abs) (to_Z_uint256 v_abs) /\
+  0 <= to_Z_words (ud_quot divr) < modulus256 /\
+  0 <= to_Z_words (ud_rem divr) < modulus256.
+Proof.
+  intros u_abs v_abs divr Hvabs_pos Hdiv.
+  unfold to_Z_uint256 in Hvabs_pos.
+  assert (Hvabs_pos_gt : to_Z_words (uint256_to_words v_abs) > 0) by lia.
+  pose proof (DP.udivrem_correct 4 4
+    (uint256_to_words u_abs) (uint256_to_words v_abs) divr
+    (uint256_to_words_length u_abs) (uint256_to_words_length v_abs)
+    Hvabs_pos_gt Hdiv) as [Hdiv_eq Hrange].
+  change (to_Z_words (uint256_to_words u_abs)) with (to_Z_uint256 u_abs)
+    in Hdiv_eq.
+  change (to_Z_words (uint256_to_words v_abs)) with (to_Z_uint256 v_abs)
+    in Hdiv_eq.
+  change (to_Z_words (uint256_to_words v_abs)) with (to_Z_uint256 v_abs)
+    in Hrange.
+  rewrite Z.mul_comm in Hdiv_eq.
+  assert (Hrem_ok : Zquot.Remainder (to_Z_uint256 u_abs)
+    (to_Z_uint256 v_abs) (to_Z_words (ud_rem divr))).
+  { left.
+    split.
+    - pose proof (to_Z_uint256_bounds u_abs). lia.
+    - rewrite Z.abs_eq by lia. exact Hrange. }
+  pose proof (Zquot.Zquot_unique_full (to_Z_uint256 u_abs)
+    (to_Z_uint256 v_abs) (to_Z_words (ud_quot divr))
+    (to_Z_words (ud_rem divr)) Hrem_ok Hdiv_eq) as Hquot.
+  pose proof (Zquot.Zrem_unique_full (to_Z_uint256 u_abs)
+    (to_Z_uint256 v_abs) (to_Z_words (ud_quot divr))
+    (to_Z_words (ud_rem divr)) Hrem_ok Hdiv_eq) as Hrem.
+  assert (Hq_range : 0 <= to_Z_words (ud_quot divr) < modulus256).
+  { pose proof (to_Z_uint256_bounds u_abs) as Huabs_bound.
+    split; nia. }
+  assert (Hr_range : 0 <= to_Z_words (ud_rem divr) < modulus256).
+  { split.
+    - exact (proj1 Hrange).
+    - eapply Z.lt_trans.
+      + exact (proj2 Hrange).
+      + exact (proj2 (to_Z_uint256_bounds v_abs)). }
+  split.
+  - exact Hquot.
+  - split.
+    + exact Hrem.
+    + split.
+      * exact Hq_range.
+      * exact Hr_range.
+Qed.
+
 Theorem sdivrem_correct : forall u v r,
   to_Z_uint256 v <> 0 ->
   sdivrem u v = Some r ->
   to_Z_signed_words (ud_quot r) =
-    Z.quot (to_Z_signed_uint256 u) (to_Z_signed_uint256 v) /\
+    wrap_signed256
+      (Z.quot (to_Z_signed_uint256 u) (to_Z_signed_uint256 v)) /\
   to_Z_signed_words (ud_rem r) =
-    Z.rem (to_Z_signed_uint256 u) (to_Z_signed_uint256 v).
-(* Remaining: Combine The Unsigned Division Theorem With The Sign-Case
-   Analysis From [Is_Negative_Correct] And The Quotient/Remainder Negation Lemmas. *)
-Admitted.
+    wrap_signed256
+      (Z.rem (to_Z_signed_uint256 u) (to_Z_signed_uint256 v)).
+Proof.
+  intros u v r Hv0 Hsdiv.
+  unfold sdivrem in Hsdiv.
+  destruct (is_negative u) eqn:Hu;
+    destruct (is_negative v) eqn:Hv; simpl in Hsdiv.
+  - destruct (udivrem 4 4 (uint256_to_words (negate_uint256 u))
+        (uint256_to_words (negate_uint256 v))) as [divr|] eqn:Hdiv;
+      try discriminate.
+    inversion Hsdiv; subst r; clear Hsdiv.
+    cbn [ud_quot ud_rem].
+    assert (Hvabs_pos : 0 < to_Z_uint256 (negate_uint256 v)).
+    { pose proof (to_Z_uint256_bounds (negate_uint256 v)) as Hvabs.
+      destruct (Z.eq_dec (to_Z_uint256 (negate_uint256 v)) 0) as [H0|H0].
+      - exfalso.
+        apply Hv0.
+        apply (proj1 (negate_uint256_zero_iff v)).
+        exact H0.
+      - lia. }
+    pose proof (udivrem_uint256_4_4_correct (negate_uint256 u)
+      (negate_uint256 v) divr Hvabs_pos Hdiv)
+      as [Hquot [Hrem [Hq_range Hr_range]]].
+    split.
+    + rewrite (to_Z_signed_words_wrap (ud_quot divr) Hq_range).
+      rewrite (to_Z_signed_uint256_negative u Hu).
+      rewrite (to_Z_signed_uint256_negative v Hv).
+      rewrite Z.quot_opp_opp by lia.
+      rewrite Hquot.
+      reflexivity.
+    + rewrite (to_Z_signed_negate_words_wrap (ud_rem divr) Hr_range).
+      rewrite (to_Z_signed_uint256_negative u Hu).
+      rewrite (to_Z_signed_uint256_negative v Hv).
+      rewrite Z.rem_opp_opp by lia.
+      rewrite Hrem.
+      reflexivity.
+  - destruct (udivrem 4 4 (uint256_to_words (negate_uint256 u))
+        (uint256_to_words v)) as [divr|] eqn:Hdiv;
+      try discriminate.
+    inversion Hsdiv; subst r; clear Hsdiv.
+    cbn [ud_quot ud_rem].
+    assert (Hvabs_pos : 0 < to_Z_uint256 v).
+    { pose proof (to_Z_uint256_bounds v). lia. }
+    pose proof (udivrem_uint256_4_4_correct (negate_uint256 u) v divr
+      Hvabs_pos Hdiv) as [Hquot [Hrem [Hq_range Hr_range]]].
+    split.
+    + rewrite (to_Z_signed_negate_words_wrap (ud_quot divr) Hq_range).
+      rewrite (to_Z_signed_uint256_negative u Hu).
+      rewrite (to_Z_signed_uint256_nonnegative v Hv).
+      rewrite Z.quot_opp_l by lia.
+      rewrite Hquot.
+      reflexivity.
+    + rewrite (to_Z_signed_negate_words_wrap (ud_rem divr) Hr_range).
+      rewrite (to_Z_signed_uint256_negative u Hu).
+      rewrite (to_Z_signed_uint256_nonnegative v Hv).
+      rewrite Z.rem_opp_l by lia.
+      rewrite Hrem.
+      reflexivity.
+  - destruct (udivrem 4 4 (uint256_to_words u)
+        (uint256_to_words (negate_uint256 v))) as [divr|] eqn:Hdiv;
+      try discriminate.
+    inversion Hsdiv; subst r; clear Hsdiv.
+    cbn [ud_quot ud_rem].
+    assert (Hvabs_pos : 0 < to_Z_uint256 (negate_uint256 v)).
+    { pose proof (to_Z_uint256_bounds (negate_uint256 v)) as Hvabs.
+      destruct (Z.eq_dec (to_Z_uint256 (negate_uint256 v)) 0) as [H0|H0].
+      - exfalso.
+        apply Hv0.
+        apply (proj1 (negate_uint256_zero_iff v)).
+        exact H0.
+      - lia. }
+    pose proof (udivrem_uint256_4_4_correct u (negate_uint256 v) divr
+      Hvabs_pos Hdiv) as [Hquot [Hrem [Hq_range Hr_range]]].
+    split.
+    + rewrite (to_Z_signed_negate_words_wrap (ud_quot divr) Hq_range).
+      rewrite (to_Z_signed_uint256_nonnegative u Hu).
+      rewrite (to_Z_signed_uint256_negative v Hv).
+      rewrite Z.quot_opp_r by lia.
+      rewrite Hquot.
+      reflexivity.
+    + rewrite (to_Z_signed_words_wrap (ud_rem divr) Hr_range).
+      rewrite (to_Z_signed_uint256_nonnegative u Hu).
+      rewrite (to_Z_signed_uint256_negative v Hv).
+      rewrite Z.rem_opp_r by lia.
+      rewrite Hrem.
+      reflexivity.
+  - destruct (udivrem 4 4 (uint256_to_words u)
+        (uint256_to_words v)) as [divr|] eqn:Hdiv;
+      try discriminate.
+    inversion Hsdiv; subst r; clear Hsdiv.
+    cbn [ud_quot ud_rem].
+    assert (Hvabs_pos : 0 < to_Z_uint256 v).
+    { pose proof (to_Z_uint256_bounds v). lia. }
+    pose proof (udivrem_uint256_4_4_correct u v divr Hvabs_pos Hdiv)
+      as [Hquot [Hrem [Hq_range Hr_range]]].
+    split.
+    + rewrite (to_Z_signed_words_wrap (ud_quot divr) Hq_range).
+      rewrite (to_Z_signed_uint256_nonnegative u Hu).
+      rewrite (to_Z_signed_uint256_nonnegative v Hv).
+      rewrite Hquot.
+      reflexivity.
+    + rewrite (to_Z_signed_words_wrap (ud_rem divr) Hr_range).
+      rewrite (to_Z_signed_uint256_nonnegative u Hu).
+      rewrite (to_Z_signed_uint256_nonnegative v Hv).
+      rewrite Hrem.
+      reflexivity.
+Qed.
 
 Lemma signbit63_nonzero_is_negative : forall x,
   negb (eqb (shr (w3 x) 63) zero) = is_negative x.

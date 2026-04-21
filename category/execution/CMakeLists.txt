@@ -129,7 +129,6 @@ add_library(
   "ethereum/block_reward.hpp"
   "ethereum/create_contract_address.cpp"
   "ethereum/create_contract_address.hpp"
-  "ethereum/dao.hpp"
   "ethereum/dispatch_transaction.cpp"
   "ethereum/dispatch_transaction.hpp"
   "ethereum/evm.cpp"

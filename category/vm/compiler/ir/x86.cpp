@@ -443,7 +443,7 @@ namespace monad::vm::compiler::native
         for (Block const &block : ir.blocks()) {
             bool const can_enter_block = emit.begin_new_block(block);
             if (can_enter_block) {
-                int64_t const base_gas = block_base_gas<traits>(block);
+                int64_t const base_gas = block_base_gas(block);
                 emit_gas_decrement(emit, ir, block, base_gas);
                 emit_instrs<traits>(
                     emit, block, base_gas, max_native_size, config);

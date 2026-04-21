@@ -58,22 +58,6 @@ namespace monad::vm::runtime
     }
 
     template <>
-    struct StorageCostTable<EvmTraits<EVMC_HOMESTEAD>>
-    {
-        static constexpr auto costs = std::array{
-            StoreCost{.gas_cost = 5000, .gas_refund = 0},
-            StoreCost{.gas_cost = 20000, .gas_refund = 0},
-            StoreCost{.gas_cost = 5000, .gas_refund = 15000},
-            StoreCost{.gas_cost = 5000, .gas_refund = 0},
-            StoreCost{.gas_cost = 20000, .gas_refund = 0},
-            StoreCost{.gas_cost = 5000, .gas_refund = 15000},
-            StoreCost{.gas_cost = 20000, .gas_refund = 0},
-            StoreCost{.gas_cost = 5000, .gas_refund = 15000},
-            StoreCost{.gas_cost = 5000, .gas_refund = 0},
-        };
-    };
-
-    template <>
     struct StorageCostTable<EvmTraits<EVMC_TANGERINE_WHISTLE>>
     {
         static constexpr auto costs = std::array{

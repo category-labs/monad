@@ -14,7 +14,7 @@ cmake --build build --parallel
 
 # Test
 ctest --test-dir build --output-on-failure --timeout 500 --parallel
-pytest-3 --pyargs monad
+pytest-3 category/core/monad/tests/
 
 # Format
 scripts/apply-clang-format.sh

@@ -13,7 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-obj = "libmonad_core.a"
+# monad_core is an OBJECT library, so its .o files are archived into the
+# monad_core_disas STATIC via the PUBLIC monad_core link dependency.
+obj = "libmonad_core_disas.a"
 syms = [
     "monad::fiber::PriorityQueue::pop()",
     "monad::fiber::PriorityQueue::push(boost::fibers::context*)",

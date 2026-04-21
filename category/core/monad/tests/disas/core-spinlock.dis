@@ -1,6 +1,6 @@
 0000000000000000 <spinlock_init_disas>:
    0:	c7 07 00 00 00 00       	movl   $0x0,(%rdi)
-   6:	c3                      	ret    
+   6:	c3                      	ret
    7:	66 0f 1f 84 00 00 00 00 	nopw   0x0(%rax,%rax,1)
    f:	00 
 
@@ -19,16 +19,15 @@
   2b:	48 83 c4 08             	add    $0x8,%rsp
   2f:	5b                      	pop    %rbx
   30:	41 5e                   	pop    %r14
-  32:	c3                      	ret    
-  33:	64 48 03 1c 25 00 00 00 	add    %fs:0x0,%rbx
-  3b:	00 
-  3c:	49 89 fe                	mov    %rdi,%r14
-  3f:	e8 00 00 00 00          	call   44 <spinlock_try_lock_disas+0x34>
-			40: R_X86_64_PLT32	init_tl_tid-0x4
-  44:	4c 89 f7                	mov    %r14,%rdi
-  47:	8b 0b                   	mov    (%rbx),%ecx
-  49:	eb d7                   	jmp    22 <spinlock_try_lock_disas+0x12>
-  4b:	0f 1f 44 00 00          	nopl   0x0(%rax,%rax,1)
+  32:	c3                      	ret
+  33:	49 89 fe                	mov    %rdi,%r14
+  36:	e8 00 00 00 00          	call   3b <spinlock_try_lock_disas+0x2b>
+			37: R_X86_64_PLT32	init_tl_tid-0x4
+  3b:	4c 89 f7                	mov    %r14,%rdi
+  3e:	64 8b 0b                	mov    %fs:(%rbx),%ecx
+  41:	eb df                   	jmp    22 <spinlock_try_lock_disas+0x12>
+  43:	66 66 66 66 2e 0f 1f 84 	data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+  4b:	00 00 00 00 00 
 
 0000000000000050 <spinlock_lock_disas>:
   50:	41 56                   	push   %r14
@@ -38,41 +37,38 @@
 			57: R_X86_64_GOTTPOFF	tl_tid-0x4
   5b:	64 8b 0b                	mov    %fs:(%rbx),%ecx
   5e:	85 c9                   	test   %ecx,%ecx
-  60:	75 3e                   	jne    a0 <spinlock_lock_disas+0x50>
-  62:	64 48 03 1c 25 00 00 00 	add    %fs:0x0,%rbx
-  6a:	00 
-  6b:	49 89 fe                	mov    %rdi,%r14
-  6e:	e8 00 00 00 00          	call   73 <spinlock_lock_disas+0x23>
-			6f: R_X86_64_PLT32	init_tl_tid-0x4
-  73:	4c 89 f7                	mov    %r14,%rdi
-  76:	8b 0b                   	mov    (%rbx),%ecx
-  78:	eb 26                   	jmp    a0 <spinlock_lock_disas+0x50>
-  7a:	31 c0                   	xor    %eax,%eax
-  7c:	eb 04                   	jmp    82 <spinlock_lock_disas+0x32>
-  7e:	f3 90                   	pause  
-  80:	eb 07                   	jmp    89 <spinlock_lock_disas+0x39>
-  82:	83 f8 7f                	cmp    $0x7f,%eax
-  85:	77 f7                   	ja     7e <spinlock_lock_disas+0x2e>
-  87:	ff c0                   	inc    %eax
-  89:	8b 17                   	mov    (%rdi),%edx
-  8b:	85 d2                   	test   %edx,%edx
-  8d:	74 17                   	je     a6 <spinlock_lock_disas+0x56>
-  8f:	eb f1                   	jmp    82 <spinlock_lock_disas+0x32>
-  91:	66 66 66 66 66 66 2e 0f 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
-  99:	1f 84 00 00 00 00 00 
-  a0:	8b 07                   	mov    (%rdi),%eax
-  a2:	85 c0                   	test   %eax,%eax
-  a4:	75 d4                   	jne    7a <spinlock_lock_disas+0x2a>
-  a6:	31 c0                   	xor    %eax,%eax
-  a8:	f0 0f b1 0f             	lock cmpxchg %ecx,(%rdi)
-  ac:	75 f2                   	jne    a0 <spinlock_lock_disas+0x50>
-  ae:	48 83 c4 08             	add    $0x8,%rsp
-  b2:	5b                      	pop    %rbx
-  b3:	41 5e                   	pop    %r14
-  b5:	c3                      	ret    
-  b6:	66 2e 0f 1f 84 00 00 00 	cs nopw 0x0(%rax,%rax,1)
-  be:	00 00 
+  60:	75 2e                   	jne    90 <spinlock_lock_disas+0x40>
+  62:	49 89 fe                	mov    %rdi,%r14
+  65:	e8 00 00 00 00          	call   6a <spinlock_lock_disas+0x1a>
+			66: R_X86_64_PLT32	init_tl_tid-0x4
+  6a:	4c 89 f7                	mov    %r14,%rdi
+  6d:	64 8b 0b                	mov    %fs:(%rbx),%ecx
+  70:	eb 1e                   	jmp    90 <spinlock_lock_disas+0x40>
+  72:	31 c0                   	xor    %eax,%eax
+  74:	eb 04                   	jmp    7a <spinlock_lock_disas+0x2a>
+  76:	f3 90                   	pause
+  78:	eb 07                   	jmp    81 <spinlock_lock_disas+0x31>
+  7a:	83 f8 7f                	cmp    $0x7f,%eax
+  7d:	77 f7                   	ja     76 <spinlock_lock_disas+0x26>
+  7f:	ff c0                   	inc    %eax
+  81:	8b 17                   	mov    (%rdi),%edx
+  83:	85 d2                   	test   %edx,%edx
+  85:	74 0f                   	je     96 <spinlock_lock_disas+0x46>
+  87:	eb f1                   	jmp    7a <spinlock_lock_disas+0x2a>
+  89:	0f 1f 80 00 00 00 00    	nopl   0x0(%rax)
+  90:	8b 07                   	mov    (%rdi),%eax
+  92:	85 c0                   	test   %eax,%eax
+  94:	75 dc                   	jne    72 <spinlock_lock_disas+0x22>
+  96:	31 c0                   	xor    %eax,%eax
+  98:	f0 0f b1 0f             	lock cmpxchg %ecx,(%rdi)
+  9c:	75 f2                   	jne    90 <spinlock_lock_disas+0x40>
+  9e:	48 83 c4 08             	add    $0x8,%rsp
+  a2:	5b                      	pop    %rbx
+  a3:	41 5e                   	pop    %r14
+  a5:	c3                      	ret
+  a6:	66 2e 0f 1f 84 00 00 00 	cs nopw 0x0(%rax,%rax,1)
+  ae:	00 00 
 
-00000000000000c0 <spinlock_unlock_disas>:
-  c0:	c7 07 00 00 00 00       	movl   $0x0,(%rdi)
-  c6:	c3                      	ret    
+00000000000000b0 <spinlock_unlock_disas>:
+  b0:	c7 07 00 00 00 00       	movl   $0x0,(%rdi)
+  b6:	c3                      	ret

@@ -5,4 +5,4 @@
    6:	64 89 04 25 00 00 00 00 	mov    %eax,%fs:0x0
 			a: R_X86_64_TPOFF32	tl_tid
    e:	58                      	pop    %rax
-   f:	c3                      	ret    
+   f:	c3                      	ret

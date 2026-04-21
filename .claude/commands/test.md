@@ -24,9 +24,9 @@ A build must exist in `build/`. If it doesn't, tell the user to run `/build` fir
 
 2. **Run the Python test layer:**
    ```bash
-   pytest-3 --pyargs monad
+   pytest-3 category/core/monad/tests/
    ```
-   This runs additional tests (e.g., disassembly validation). If pytest-3 is not installed or the `monad` Python package isn't available, treat it as a failure and tell the user — this is a required part of the pre-PR test gate.
+   This runs additional tests (e.g., disassembly validation). If pytest-3 is not installed, treat it as a failure and tell the user — this is a required part of the pre-PR test gate.
 
 ### Error handling
 

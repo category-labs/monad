@@ -87,8 +87,8 @@ namespace detail
                     continue;
                 }
                 MONAD_ASSERT(aux.is_on_disk());
-                auto const next_node_ondisk =
-                    read_node_blocking(aux, node.fnext(idx), version);
+                auto const next_node_ondisk = read_node_blocking(
+                    aux, node.fnext(idx), version, timeline_id::primary);
                 if (!next_node_ondisk || !preorder_traverse_blocking_impl(
                                              aux,
                                              next_branch,

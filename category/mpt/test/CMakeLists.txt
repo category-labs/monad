@@ -30,6 +30,7 @@ add_trie_test(TARGET compaction_test SOURCES "compaction_test.cpp")
 add_trie_test(TARGET db_metadata_test SOURCES "db_metadata_test.cpp")
 add_trie_test(TARGET update_aux_test SOURCES "update_aux_test.cpp")
 add_trie_test(TARGET db_test SOURCES "db_test.cpp")
+add_trie_test(TARGET dual_timeline_test SOURCES "dual_timeline_test.cpp")
 add_trie_test(TARGET load_all_test SOURCES "load_all_test.cpp")
 add_trie_test(TARGET many_nested_updates SOURCES "many_nested_updates.cpp"
               LINK_LIBRARIES Boost::json)

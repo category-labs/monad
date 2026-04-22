@@ -24,6 +24,7 @@
 #include <category/core/io/ring.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/cli_tool_impl.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/trie.hpp>
@@ -238,7 +239,8 @@ struct cli_tool_fixture
                 monad::mpt::Node::SharedPtr const root_ptr{read_node_blocking(
                     aux,
                     aux.metadata_ctx().get_latest_root_offset(),
-                    aux.metadata_ctx().db_history_max_version())};
+                    aux.metadata_ctx().db_history_max_version(),
+                    monad::mpt::timeline_id::primary)};
                 monad::mpt::NodeCursor const root(root_ptr);
 
                 for (auto const &key : this->state()->keys) {
@@ -246,7 +248,8 @@ struct cli_tool_fixture
                         aux,
                         root,
                         key.first,
-                        aux.metadata_ctx().db_history_max_version());
+                        aux.metadata_ctx().db_history_max_version(),
+                        monad::mpt::timeline_id::primary);
                     EXPECT_EQ(ret.second, monad::mpt::find_result::success);
                 }
                 EXPECT_EQ(
@@ -347,7 +350,8 @@ struct cli_tool_fixture
                         read_node_blocking(
                             aux,
                             aux.metadata_ctx().get_latest_root_offset(),
-                            aux.metadata_ctx().db_history_max_version())};
+                            aux.metadata_ctx().db_history_max_version(),
+                            monad::mpt::timeline_id::primary)};
                     monad::mpt::NodeCursor const root(root_ptr);
 
                     for (auto const &key : this->state()->keys) {
@@ -355,7 +359,8 @@ struct cli_tool_fixture
                             aux,
                             root,
                             key.first,
-                            aux.metadata_ctx().db_history_max_version());
+                            aux.metadata_ctx().db_history_max_version(),
+                            monad::mpt::timeline_id::primary);
                         EXPECT_EQ(ret.second, monad::mpt::find_result::success);
                     }
                     EXPECT_EQ(

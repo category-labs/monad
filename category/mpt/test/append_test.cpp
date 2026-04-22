@@ -19,6 +19,7 @@
 #include <category/async/config.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/update.hpp>
 
 #include <iostream>
@@ -76,7 +77,10 @@ TYPED_TEST(AppendTest, works)
 
     // Get new current root
     this->state()->root = read_node_blocking(
-        this->state()->aux, last_root_off, last_root_version);
+        this->state()->aux,
+        last_root_off,
+        last_root_version,
+        timeline_id::primary);
 
     std::cout << "\nAfter rewind:";
     this->state()->print(std::cout);
@@ -123,7 +127,11 @@ TYPED_TEST(AppendTest, works)
             std::move(this->state()->root),
             this->state()->sm,
             std::move(update_ls),
-            this->state()->version++);
+            this->state()->version++,
+            /*compaction=*/false,
+            /*can_write_to_fast=*/true,
+            /*write_root=*/true,
+            timeline_id::primary);
     }
 
     auto const root_hash_after2 = this->state()->root_hash();

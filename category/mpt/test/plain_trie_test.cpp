@@ -22,6 +22,7 @@
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/compute.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -128,53 +129,65 @@ TYPED_TEST(PlainTrieTest, var_length_trie)
         make_update(kv[7].first, kv[7].second));
 
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[0].first, version)
+        find_blocking(
+            this->aux, this->root, kv[0].first, version, timeline_id::primary)
             .first.node->value(),
         kv[0].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[1].first, version)
+        find_blocking(
+            this->aux, this->root, kv[1].first, version, timeline_id::primary)
             .first.node->value(),
         kv[1].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[2].first, version)
+        find_blocking(
+            this->aux, this->root, kv[2].first, version, timeline_id::primary)
             .first.node->value(),
         kv[2].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[3].first, version)
+        find_blocking(
+            this->aux, this->root, kv[3].first, version, timeline_id::primary)
             .first.node->value(),
         kv[3].second);
 
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[0].first, version)
+        find_blocking(
+            this->aux, this->root, kv[0].first, version, timeline_id::primary)
             .first.node->value(),
         kv[0].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[1].first, version)
+        find_blocking(
+            this->aux, this->root, kv[1].first, version, timeline_id::primary)
             .first.node->value(),
         kv[1].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[2].first, version)
+        find_blocking(
+            this->aux, this->root, kv[2].first, version, timeline_id::primary)
             .first.node->value(),
         kv[2].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[3].first, version)
+        find_blocking(
+            this->aux, this->root, kv[3].first, version, timeline_id::primary)
             .first.node->value(),
         kv[3].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[4].first, version)
+        find_blocking(
+            this->aux, this->root, kv[4].first, version, timeline_id::primary)
             .first.node->value(),
         kv[4].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[5].first, version)
+        find_blocking(
+            this->aux, this->root, kv[5].first, version, timeline_id::primary)
             .first.node->value(),
         kv[5].second);
 
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[6].first, version)
+        find_blocking(
+            this->aux, this->root, kv[6].first, version, timeline_id::primary)
             .first.node->value(),
         kv[6].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[7].first, version)
+        find_blocking(
+            this->aux, this->root, kv[7].first, version, timeline_id::primary)
             .first.node->value(),
         kv[7].second);
 
@@ -244,15 +257,18 @@ TYPED_TEST(PlainTrieTest, mismatch)
         make_update(kv[1].first, kv[1].second),
         make_update(kv[2].first, kv[2].second));
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[0].first, version)
+        find_blocking(
+            this->aux, this->root, kv[0].first, version, timeline_id::primary)
             .first.node->value(),
         kv[0].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[1].first, version)
+        find_blocking(
+            this->aux, this->root, kv[1].first, version, timeline_id::primary)
             .first.node->value(),
         kv[1].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[2].first, version)
+        find_blocking(
+            this->aux, this->root, kv[2].first, version, timeline_id::primary)
             .first.node->value(),
         kv[2].second);
 
@@ -279,19 +295,23 @@ TYPED_TEST(PlainTrieTest, mismatch)
         make_update(kv[3].first, kv[3].second),
         make_update(kv[4].first, kv[4].second));
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[1].first, version)
+        find_blocking(
+            this->aux, this->root, kv[1].first, version, timeline_id::primary)
             .first.node->value(),
         kv[1].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[2].first, version)
+        find_blocking(
+            this->aux, this->root, kv[2].first, version, timeline_id::primary)
             .first.node->value(),
         kv[2].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[3].first, version)
+        find_blocking(
+            this->aux, this->root, kv[3].first, version, timeline_id::primary)
             .first.node->value(),
         kv[3].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[4].first, version)
+        find_blocking(
+            this->aux, this->root, kv[4].first, version, timeline_id::primary)
             .first.node->value(),
         kv[4].second);
 
@@ -389,16 +409,22 @@ TYPED_TEST(PlainTrieTest, delete_with_incarnation)
                 std::move(nested)));
     }
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[0].first, version)
+        find_blocking(
+            this->aux, this->root, kv[0].first, version, timeline_id::primary)
             .first.node->value(),
         kv[0].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[1].first, version)
+        find_blocking(
+            this->aux, this->root, kv[1].first, version, timeline_id::primary)
             .first.node->value(),
         kv[1].second);
     EXPECT_EQ(
         find_blocking(
-            this->aux, this->root, kv[1].first + nested_kv[0].first, version)
+            this->aux,
+            this->root,
+            kv[1].first + nested_kv[0].first,
+            version,
+            timeline_id::primary)
             .first.node->value(),
         nested_kv[0].second);
 
@@ -414,21 +440,31 @@ TYPED_TEST(PlainTrieTest, delete_with_incarnation)
             make_update(kv[1].first, kv[1].second, true, std::move(nested)));
     }
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[0].first, version)
+        find_blocking(
+            this->aux, this->root, kv[0].first, version, timeline_id::primary)
             .first.node->value(),
         kv[0].second);
     EXPECT_EQ(
-        find_blocking(this->aux, this->root, kv[1].first, version)
+        find_blocking(
+            this->aux, this->root, kv[1].first, version, timeline_id::primary)
             .first.node->value(),
         kv[1].second);
     EXPECT_EQ(
         find_blocking(
-            this->aux, this->root, kv[1].first + nested_kv[1].first, version)
+            this->aux,
+            this->root,
+            kv[1].first + nested_kv[1].first,
+            version,
+            timeline_id::primary)
             .first.node->value(),
         nested_kv[1].second);
     EXPECT_EQ(
         find_blocking(
-            this->aux, this->root, kv[1].first + nested_kv[0].first, version)
+            this->aux,
+            this->root,
+            kv[1].first + nested_kv[0].first,
+            version,
+            timeline_id::primary)
             .second,
         find_result::key_mismatch_failure);
 }
@@ -453,8 +489,8 @@ TYPED_TEST(PlainTrieTest, large_values)
 
     same_upsert_to_clear_nodes_outside_cache_level();
     {
-        auto [leaf_it, res] =
-            find_blocking(this->aux, this->root, key1, version);
+        auto [leaf_it, res] = find_blocking(
+            this->aux, this->root, key1, version, timeline_id::primary);
         auto const &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);
@@ -464,8 +500,8 @@ TYPED_TEST(PlainTrieTest, large_values)
 
     same_upsert_to_clear_nodes_outside_cache_level();
     {
-        auto [leaf_it, res] =
-            find_blocking(this->aux, this->root, key2, version);
+        auto [leaf_it, res] = find_blocking(
+            this->aux, this->root, key2, version, timeline_id::primary);
         auto const &leaf = leaf_it.node;
         EXPECT_EQ(res, find_result::success);
         EXPECT_NE(leaf, nullptr);
@@ -540,26 +576,30 @@ TYPED_TEST(PlainTrieTest, multi_level_find_blocking)
             std::move(this->root),
             make_update(prefix, top_value, false, std::move(updates)));
         // find blocking on multi-level trie
-        auto [begin, errc] =
-            find_blocking(this->aux, this->root, prefix, version);
+        auto [begin, errc] = find_blocking(
+            this->aux, this->root, prefix, version, timeline_id::primary);
         EXPECT_EQ(errc, find_result::success);
         EXPECT_EQ(begin.node->number_of_children(), 2);
         EXPECT_EQ(begin.node->value(), top_value);
 
+        // appears to be a bug in the checker
+        // NOLINTBEGIN(clang-analyzer-core.CallAndMessage)
         EXPECT_EQ(
-            // appears to be a bug in the checker
-            // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
-            find_blocking(this->aux, begin, kv[0].first, version)
+            find_blocking(
+                this->aux, begin, kv[0].first, version, timeline_id::primary)
                 .first.node->value(),
             kv[0].second);
         EXPECT_EQ(
-            find_blocking(this->aux, begin, kv[1].first, version)
+            find_blocking(
+                this->aux, begin, kv[1].first, version, timeline_id::primary)
                 .first.node->value(),
             kv[1].second);
         EXPECT_EQ(
-            find_blocking(this->aux, begin, kv[2].first, version)
+            find_blocking(
+                this->aux, begin, kv[2].first, version, timeline_id::primary)
                 .first.node->value(),
             kv[2].second);
+        // NOLINTEND(clang-analyzer-core.CallAndMessage)
     };
 
     upsert_and_find_with_prefix(0x000001_bytes, 0xdeadbeef_bytes);
@@ -599,7 +639,8 @@ TYPED_TEST(PlainTrieTest, node_version)
 
     auto read_child = [&](Node &parent,
                           unsigned const index) -> Node::SharedPtr {
-        return read_node_blocking(this->aux, parent.fnext(index), 0);
+        return read_node_blocking(
+            this->aux, parent.fnext(index), 0, timeline_id::primary);
     };
     if (this->root->next(0)) {
         EXPECT_EQ(this->root->next(0)->version, 0);

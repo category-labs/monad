@@ -28,6 +28,7 @@
 MONAD_NAMESPACE_BEGIN
 
 struct MonadChain;
+struct Db;
 class DbCache;
 class BlockHashBufferFinalized;
 
@@ -44,6 +45,7 @@ namespace fiber
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &, std::filesystem::path const &, mpt::Db &, DbCache &,
     vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &,
-    uint64_t, sig_atomic_t const volatile &, bool enable_tracing);
+    uint64_t, sig_atomic_t const volatile &, bool enable_tracing,
+    Db &secondary_db);
 
 MONAD_NAMESPACE_END

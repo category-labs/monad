@@ -33,7 +33,7 @@ MONAD_NAMESPACE_BEGIN
 
 class State;
 
-class BlockState final
+class BlockState
 {
     Db &db_;
     vm::VM &vm_;
@@ -42,6 +42,7 @@ class BlockState final
 
 public:
     BlockState(Db &, vm::VM &);
+    virtual ~BlockState() = default;
 
     vm::VM &vm()
     {
@@ -67,6 +68,13 @@ public:
     ReleasedState release() &&;
 
     void log_debug();
+
+protected:
+    // Fetches a storage slot from the DB on a block-state miss. The default
+    // reads directly from db_ (slot encoding). MonadBlockState overrides to
+    // route through a PageStorageBroker for the page-encoded variant.
+    virtual bytes32_t
+    read_storage_through_db(Address const &, Incarnation, bytes32_t const &key);
 };
 
 MONAD_NAMESPACE_END

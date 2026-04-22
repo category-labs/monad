@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/keccak.hpp>
-#include <category/execution/ethereum/db/storage_broker.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/db/monad_commit_builder.hpp>

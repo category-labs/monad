@@ -281,6 +281,8 @@ add_library(
   "monad/staking/util/val_execution.cpp"
   "monad/staking/util/val_execution.hpp"
   # monad/state2
+  "monad/state2/monad_block_state.cpp"
+  "monad/state2/monad_block_state.hpp"
   "monad/state2/proposal_state.hpp")
 
 target_include_directories(

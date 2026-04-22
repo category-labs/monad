@@ -16,6 +16,7 @@
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/core/assert.h>
 #include <category/mpt/config.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
@@ -31,10 +32,10 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 Node::SharedPtr read_node_blocking(
     UpdateAux const &aux, chunk_offset_t const node_offset,
-    uint64_t const version)
+    uint64_t const version, timeline_id const tid)
 {
     MONAD_ASSERT(aux.is_on_disk());
-    if (!aux.metadata_ctx().version_is_valid_ondisk(version)) {
+    if (!aux.metadata_ctx().version_is_valid_ondisk(version, tid)) {
         return {};
     }
     auto &pool = aux.io->storage_pool();
@@ -67,7 +68,7 @@ Node::SharedPtr read_node_blocking(
             rd_offset,
             strerror(errno));
     }
-    return aux.metadata_ctx().version_is_valid_ondisk(version)
+    return aux.metadata_ctx().version_is_valid_ondisk(version, tid)
                ? deserialize_node_from_buffer(
                      buffer + buffer_off, size_t(bytes_read) - buffer_off)
                : Node::SharedPtr{};

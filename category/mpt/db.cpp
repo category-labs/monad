@@ -33,6 +33,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/db_metadata_context.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -57,6 +58,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -76,6 +78,7 @@ struct Db::Impl
     virtual ~Impl() = default;
 
     virtual UpdateAux &aux() = 0;
+
     virtual Node::SharedPtr upsert_fiber_blocking(
         Node::SharedPtr, UpdateList &&, uint64_t, bool enable_compaction,
         bool can_write_to_fast, bool write_root) = 0;
@@ -86,6 +89,7 @@ struct Db::Impl
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
     virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) = 0;
     virtual Node::SharedPtr load_root_for_version(uint64_t version) = 0;
+
     virtual size_t poll(bool blocking, size_t count) = 0;
     virtual bool traverse_fiber_blocking(
         Node::SharedPtr, TraverseMachine &, uint64_t version,
@@ -164,12 +168,16 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
 class Db::ROOnDiskBlocking final : public Db::Impl
 {
     UpdateAux aux_;
+    timeline_id const tid_;
 
 public:
-    explicit ROOnDiskBlocking(AsyncIOContext &io_ctx)
+    ROOnDiskBlocking(AsyncIOContext &io_ctx, timeline_id const tid)
         : aux_(io_ctx.io)
+        , tid_{tid}
     {
     }
+
+    virtual ~ROOnDiskBlocking() = default;
 
     virtual UpdateAux &aux() override
     {
@@ -190,12 +198,12 @@ public:
             return {NodeCursor{}, find_result::root_node_is_null_failure};
         }
         // the root we last loaded does not contain the version we want to find
-        if (!aux().metadata_ctx().version_is_valid_ondisk(version)) {
+        if (!aux().metadata_ctx().version_is_valid_ondisk(version, tid_)) {
             return {NodeCursor{}, find_result::version_no_longer_exist};
         }
-        auto const res = find_blocking(aux(), root, key, version);
+        auto const res = find_blocking(aux(), root, key, version, tid_);
         // verify version still valid in history after success
-        return aux().metadata_ctx().version_is_valid_ondisk(version)
+        return aux().metadata_ctx().version_is_valid_ondisk(version, tid_)
                    ? res
                    : find_cursor_result_type{
                          NodeCursor{}, find_result::version_no_longer_exist};
@@ -236,12 +244,12 @@ public:
     load_root_for_version(uint64_t const version) override
     {
         auto const root_offset =
-            aux().metadata_ctx().get_root_offset_at_version(version);
+            aux().metadata_ctx().get_root_offset_at_version(version, tid_);
         if (root_offset == INVALID_OFFSET) {
             return nullptr;
         }
 
-        return read_node_blocking(aux(), root_offset, version);
+        return read_node_blocking(aux(), root_offset, version, tid_);
     }
 };
 
@@ -252,8 +260,7 @@ class Db::InMemory final : public Db::Impl
 
 public:
     explicit InMemory(StateMachine &machine)
-        : aux_{}
-        , machine_{machine}
+        : machine_{machine}
     {
     }
 
@@ -267,7 +274,14 @@ public:
         bool, bool) override
     {
         return aux_.do_update(
-            std::move(root), machine_, std::move(list), version, false);
+            std::move(root),
+            machine_,
+            std::move(list),
+            version,
+            /*compaction=*/false,
+            /*can_write_to_fast=*/true,
+            /*write_root=*/true,
+            timeline_id::primary);
     }
 
     virtual Node::SharedPtr copy_trie_fiber_blocking(
@@ -281,7 +295,7 @@ public:
         NodeCursor const &root, NibblesView const &key,
         uint64_t const version) override
     {
-        return find_blocking(aux(), root, key, version);
+        return find_blocking(aux(), root, key, version, timeline_id::primary);
     }
 
     virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) override
@@ -325,6 +339,7 @@ public:
         bool enable_compaction;
         bool can_write_to_fast;
         bool write_root;
+        timeline_id tid;
     };
 
     struct FiberCopyTrieRequest
@@ -365,6 +380,7 @@ public:
     {
         ::boost::fibers::promise<Node::SharedPtr> promise;
         uint64_t version;
+        timeline_id tid;
     };
 
     struct RODbFiberFindOwningNodeRequest
@@ -518,7 +534,8 @@ private:
                             req->version,
                             req->enable_compaction,
                             req->can_write_to_fast,
-                            req->write_root));
+                            req->write_root,
+                            req->tid));
                     }
                     else if (auto *req = std::get_if<3>(&request);
                              req != nullptr) {
@@ -550,10 +567,14 @@ private:
                              req != nullptr) {
                         auto const root_offset =
                             aux.metadata_ctx().get_root_offset_at_version(
-                                req->version);
-                        MONAD_ASSERT(root_offset != INVALID_OFFSET);
-                        req->promise.set_value(
-                            read_node_blocking(aux, root_offset, req->version));
+                                req->version, req->tid);
+                        if (root_offset == INVALID_OFFSET) {
+                            req->promise.set_value(nullptr);
+                        }
+                        else {
+                            req->promise.set_value(read_node_blocking(
+                                aux, root_offset, req->version, req->tid));
+                        }
                     }
                     else if (auto *req = std::get_if<7>(&request);
                              req != nullptr) {
@@ -675,21 +696,49 @@ public:
 class Db::RWOnDisk final : public Impl
 {
     std::shared_ptr<OnDiskDbServiceThread> worker_thread_;
-    StateMachine &machine_;
+    // Pointer (not reference) so promote_secondary_to_primary can null it:
+    // the promoted trie was written with the sibling's machine, so any upsert
+    // on this Db before close+reopen would corrupt hashes.
+    StateMachine *machine_;
+    timeline_id const tid_;
     bool const compaction_;
 
+    // A write_root=false upsert leaves V unflushed on this RWOnDisk's
+    // timeline. Per-RWOnDisk because tid_ is fixed at construction.
     uint64_t unflushed_version_{INVALID_BLOCK_NUM};
 
 public:
     RWOnDisk(
         std::shared_ptr<OnDiskDbServiceThread> worker_thread,
-        StateMachine &machine, bool compaction)
+        StateMachine &machine, timeline_id const tid, bool const compaction)
         : worker_thread_(std::move(worker_thread))
-        , machine_{machine}
-        , compaction_(compaction)
-        , unflushed_version_{INVALID_BLOCK_NUM}
+        , machine_{&machine}
+        , tid_{tid}
+        , compaction_{compaction}
     {
         MONAD_ASSERT(worker_thread_ != nullptr);
+    }
+
+    void clear_machine() noexcept
+    {
+        machine_ = nullptr;
+    }
+
+    // Returns a fresh RWOnDisk wired to the same worker thread (and thus the
+    // same UpdateAux, AsyncIO, and storage pool) but bound to a different
+    // machine + timeline. Used to mint a secondary Db that shares the
+    // primary's underlying service thread.
+    std::unique_ptr<RWOnDisk>
+    spawn_sibling(StateMachine &machine, timeline_id const tid) const
+    {
+        MONAD_ASSERT(machine_ != nullptr);
+        return std::make_unique<RWOnDisk>(
+            worker_thread_, machine, tid, compaction_);
+    }
+
+    long worker_thread_use_count() const noexcept
+    {
+        return worker_thread_.use_count();
     }
 
     virtual UpdateAux &aux() override
@@ -702,11 +751,11 @@ public:
         NodeCursor const &start, NibblesView const &key,
         uint64_t const version) override
     {
-        // It's sufficient to validate the version once before starting the
-        // lookup, because RWDb never performs upserts concurrently with reads.
-        // Skip version check if looking up from an unflushed version
+        // Validating once suffices — RWDb does not interleave upserts and
+        // reads. An unflushed-version hit on this timeline bypasses the
+        // ondisk check since the version is in-memory only.
         if (unflushed_version_ != version &&
-            !aux().metadata_ctx().version_is_valid_ondisk(version)) {
+            !aux().metadata_ctx().version_is_valid_ondisk(version, tid_)) {
             return {NodeCursor{}, find_result::version_no_longer_exist};
         }
         ::boost::fibers::promise<find_cursor_result_type> promise;
@@ -722,6 +771,7 @@ public:
         bool const enable_compaction, bool const can_write_to_fast,
         bool const write_root) override
     {
+        MONAD_ASSERT(machine_ != nullptr);
         if (unflushed_version_ != INVALID_BLOCK_NUM &&
             unflushed_version_ != version) {
             LOG_WARNING_CFORMAT(
@@ -737,12 +787,13 @@ public:
         worker_thread_->submit(OnDiskDbServiceThread::FiberUpsertRequest{
             .promise = std::move(promise),
             .prev_root = std::move(root),
-            .sm = machine_,
+            .sm = *machine_,
             .updates = std::move(updates),
             .version = version,
             .enable_compaction = enable_compaction && compaction_,
             .can_write_to_fast = can_write_to_fast,
-            .write_root = write_root});
+            .write_root = write_root,
+            .tid = tid_});
         return fut.get();
     }
 
@@ -759,13 +810,14 @@ public:
     // threadsafe
     virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &root) override
     {
+        MONAD_ASSERT(machine_ != nullptr);
         ::boost::fibers::promise<size_t> promise;
         auto fut = promise.get_future();
         worker_thread_->submit(
             OnDiskDbServiceThread::FiberLoadAllFromBlockRequest{
                 .promise = std::move(promise),
                 .root = NodeCursor{root},
-                .sm = machine_});
+                .sm = *machine_});
         return fut.get();
     }
 
@@ -793,14 +845,20 @@ public:
     virtual Node::SharedPtr
     load_root_for_version(uint64_t const version) override
     {
-        if (!aux().metadata_ctx().version_is_valid_ondisk(version)) {
+        if (!aux().metadata_ctx().timeline_active(tid_)) {
+            return nullptr;
+        }
+        if (tid_ == timeline_id::primary &&
+            !aux().metadata_ctx().version_is_valid_ondisk(version)) {
             return nullptr;
         }
         ::boost::fibers::promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
         worker_thread_->submit(
             OnDiskDbServiceThread::FiberLoadRootVersionRequest{
-                .promise = std::move(promise), .version = version});
+                .promise = std::move(promise),
+                .version = version,
+                .tid = tid_});
         return fut.get();
     }
 
@@ -809,6 +867,9 @@ public:
         Node::SharedPtr dest_root, NibblesView const dest_prefix,
         uint64_t const dest_version, bool const write_root = true) override
     {
+        // copy_trie's worker handler (FiberCopyTrieRequest) carries no tid;
+        // it always operates on the primary timeline. Surface that here.
+        MONAD_ASSERT(tid_ == timeline_id::primary);
         if (unflushed_version_ != INVALID_BLOCK_NUM &&
             unflushed_version_ != dest_version) {
             LOG_WARNING_CFORMAT(
@@ -980,16 +1041,24 @@ Db::Db(StateMachine &machine)
 Db::Db(StateMachine &machine, OnDiskDbConfig const &config)
     : impl_{std::make_unique<RWOnDisk>(
           std::make_shared<OnDiskDbServiceThread>(config), machine,
-          config.compaction)}
+          timeline_id::primary, config.compaction)}
 {
     MONAD_ASSERT(impl_->aux().is_on_disk());
 }
 
 Db::Db(AsyncIOContext &io_ctx)
-    : impl_{std::make_unique<ROOnDiskBlocking>(io_ctx)}
+    : impl_{std::make_unique<ROOnDiskBlocking>(io_ctx, timeline_id::primary)}
 {
 }
 
+Db::Db(std::unique_ptr<Impl> impl)
+    : impl_{std::move(impl)}
+{
+    MONAD_ASSERT(impl_);
+}
+
+Db::Db(Db &&) noexcept = default;
+Db &Db::operator=(Db &&) noexcept = default;
 Db::~Db() = default;
 
 Result<NodeCursor> Db::find(
@@ -1203,6 +1272,53 @@ UpdateAux const &Db::aux() const
 {
     MONAD_ASSERT(impl_);
     return impl_->aux();
+}
+
+Db Db::activate_secondary_timeline(
+    StateMachine &secondary_machine, uint64_t const fork_version)
+{
+    MONAD_ASSERT(impl_);
+    auto *const rw = static_cast<RWOnDisk *>(impl_.get());
+    MONAD_ASSERT(rw->worker_thread_use_count() == 1);
+    rw->aux().activate_secondary_timeline(fork_version);
+    return Db{rw->spawn_sibling(secondary_machine, timeline_id::secondary)};
+}
+
+std::optional<Db> Db::open_secondary_timeline(StateMachine &secondary_machine)
+{
+    MONAD_ASSERT(impl_);
+    auto *const rw = static_cast<RWOnDisk *>(impl_.get());
+    MONAD_ASSERT(rw->worker_thread_use_count() == 1);
+    if (!rw->aux().metadata_ctx().timeline_active(timeline_id::secondary)) {
+        return std::nullopt;
+    }
+    return Db{rw->spawn_sibling(secondary_machine, timeline_id::secondary)};
+}
+
+void Db::promote_secondary_to_primary()
+{
+    MONAD_ASSERT(impl_);
+    auto *const rw = static_cast<RWOnDisk *>(impl_.get());
+    MONAD_ASSERT(rw->worker_thread_use_count() == 1);
+    rw->aux().promote_secondary_to_primary();
+    // The promoted trie was written with the secondary's machine; clear
+    // this Db's binding so any stray upsert before the expected
+    // close+reopen traps instead of silently corrupting hashes.
+    rw->clear_machine();
+}
+
+void Db::deactivate_secondary_timeline()
+{
+    MONAD_ASSERT(impl_);
+    auto *const rw = static_cast<RWOnDisk *>(impl_.get());
+    MONAD_ASSERT(rw->worker_thread_use_count() == 1);
+    rw->aux().deactivate_secondary_timeline();
+}
+
+bool Db::timeline_active(timeline_id const tid) const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().metadata_ctx().timeline_active(tid);
 }
 
 uint64_t Db::get_history_length() const

@@ -33,6 +33,7 @@
 #include <category/mpt/update.hpp>
 
 #include <memory>
+#include <optional>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -84,7 +85,10 @@ public:
         size_t concurrency_limit = 4096);
 };
 
-// RW, ROBlocking, InMemory
+// A Db is bound to one timeline. The constructors below produce a primary
+// Db; a secondary Db is obtained from activate_secondary_timeline /
+// open_secondary_timeline. Both instances share the underlying UpdateAux
+// and worker thread via the on-disk service thread held inside the Impl.
 class Db
 {
 private:
@@ -97,20 +101,22 @@ private:
 
     std::unique_ptr<Impl> impl_;
 
+    explicit Db(std::unique_ptr<Impl> impl);
+
 public:
-    explicit Db(StateMachine &); // In-memory mode
-    Db(StateMachine &, OnDiskDbConfig const &);
-    explicit Db(AsyncIOContext &);
+    explicit Db(StateMachine &); // in-memory
+    Db(StateMachine &, OnDiskDbConfig const &); // on-disk RW
+    explicit Db(AsyncIOContext &); // on-disk RO blocking
 
     Db(Db const &) = delete;
-    Db(Db &&) = delete;
+    Db(Db &&) noexcept;
     Db &operator=(Db const &) = delete;
-    Db &operator=(Db &&) = delete;
+    Db &operator=(Db &&) noexcept;
     ~Db();
 
-    // The `block_id` parameter specify the version to read from, and is also
-    // used for version control validation. These calls may wait on a fiber
-    // future.
+    // `block_id` is both the version to read and the validity check.
+    // These calls may block on a fiber future and read from this Db's
+    // bound timeline.
     Result<NodeCursor>
     find(NodeCursor const &, NibblesView, uint64_t block_id) const;
     Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
@@ -166,6 +172,32 @@ public:
 
     bool is_on_disk() const;
     bool is_read_only() const;
+
+    // Timeline lifecycle (callable on the primary Db only).
+    //
+    // All three require the secondary Db (if one was issued) to be
+    // destroyed first; that invariant is asserted via the worker
+    // thread's shared_ptr refcount.
+
+    // Activate the secondary ring at `fork_version` and return a Db
+    // bound to it.
+    [[nodiscard]] Db activate_secondary_timeline(
+        StateMachine &secondary_machine, uint64_t fork_version);
+
+    // Attach to a secondary ring that was activated in a prior process
+    // and persisted on disk. Returns nullopt if no secondary is active.
+    [[nodiscard]] std::optional<Db>
+    open_secondary_timeline(StateMachine &secondary_machine);
+
+    // Swap primary and secondary slots. Clears the primary Db's
+    // StateMachine binding so a missed close+reopen (the expected next
+    // step) traps on the next upsert instead of silently using the old
+    // machine on the promoted trie.
+    void promote_secondary_to_primary();
+
+    void deactivate_secondary_timeline();
+
+    bool timeline_active(timeline_id tid) const;
 
 private:
     friend struct test::DbAccessor;

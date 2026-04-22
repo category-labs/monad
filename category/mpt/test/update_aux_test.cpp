@@ -184,7 +184,8 @@ TEST(update_aux_test, root_offsets_fast_slow)
             .write_fd(50);
         auto const end_offset =
             aux_writer.node_writer_fast->sender().offset().add_to_offset(50);
-        aux_writer.metadata_ctx().append_root_offset(start_offset);
+        aux_writer.metadata_ctx().append_root_offset(
+            start_offset, timeline_id::primary);
         aux_writer.metadata_ctx().advance_db_offsets_to(
             end_offset, aux_writer.node_writer_slow->sender().offset());
     }
@@ -202,7 +203,8 @@ TEST(update_aux_test, root_offsets_fast_slow)
             .write_fd(100);
         auto const end_offset =
             aux_writer.node_writer_fast->sender().offset().add_to_offset(100);
-        aux_writer.metadata_ctx().append_root_offset(end_offset);
+        aux_writer.metadata_ctx().append_root_offset(
+            end_offset, timeline_id::primary);
     }
 
     { // Fail to reopen upon calling rewind_to_match_offsets()

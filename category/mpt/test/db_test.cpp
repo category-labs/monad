@@ -32,6 +32,7 @@
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -2899,4 +2900,75 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_updates_auto_expire)
         start_version)
         << "auto_expire_version_metadata should be moved forward with "
            "move_trie_version_forward";
+}
+
+TEST_F(OnDiskDbWithFileFixture, timeline_lifecycle_activate_deactivate)
+{
+    // Insert data on primary timeline
+    auto const k1 = 0x12345678_bytes;
+    auto u1 = make_update(k1, k1);
+    UpdateList ul;
+    ul.push_front(u1);
+    root = db.upsert(std::move(root), std::move(ul), 0);
+    ASSERT_NE(root, nullptr);
+
+    // Initially only primary is active
+    EXPECT_TRUE(db.timeline_active(timeline_id::primary));
+    EXPECT_FALSE(db.timeline_active(timeline_id::secondary));
+
+    // Activate secondary timeline at fork version 0
+    StateMachineAlwaysEmpty secondary_machine;
+    {
+        auto const secondary_db =
+            db.activate_secondary_timeline(secondary_machine, 0);
+        EXPECT_TRUE(db.timeline_active(timeline_id::secondary));
+    }
+
+    // Deactivate
+    db.deactivate_secondary_timeline();
+    EXPECT_FALSE(db.timeline_active(timeline_id::secondary));
+}
+
+TEST_F(OnDiskDbWithFileFixture, timeline_lifecycle_dual_upsert)
+{
+    // Insert data on primary timeline
+    auto const k1 = 0x12345678_bytes;
+    auto u1 = make_update(k1, k1);
+    UpdateList ul;
+    ul.push_front(u1);
+    root = db.upsert(std::move(root), std::move(ul), 0);
+    ASSERT_NE(root, nullptr);
+
+    // Activate secondary with a different compute
+    StateMachineAlwaysEmpty secondary_machine;
+    auto secondary_db = db.activate_secondary_timeline(secondary_machine, 1);
+
+    // Upsert the same data on secondary timeline
+    auto const k2 = 0x22345678_bytes;
+    auto u2 = make_update(k2, k2);
+    UpdateList ul2;
+    ul2.push_front(u2);
+
+    // Upsert to primary
+    auto const primary_root = db.upsert(root, std::move(ul2), 1);
+    ASSERT_NE(primary_root, nullptr);
+
+    // Upsert same data to secondary
+    auto u3 = make_update(k2, k2);
+    UpdateList ul3;
+    ul3.push_front(u3);
+    Node::SharedPtr secondary_root;
+    secondary_root =
+        secondary_db.upsert(std::move(secondary_root), std::move(ul3), 1);
+    ASSERT_NE(secondary_root, nullptr);
+
+    // Both roots should exist
+    EXPECT_NE(primary_root.get(), secondary_root.get());
+
+    // Cleanup: destroy secondary Db first, then deactivate
+    {
+        Db const moved_out = std::move(secondary_db);
+        (void)moved_out;
+    }
+    db.deactivate_secondary_timeline();
 }

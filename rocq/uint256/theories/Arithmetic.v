@@ -299,6 +299,35 @@ Definition sar (shift x : uint256) : uint256 :=
   then shift_right_uint256_aux RightShiftArithmetic fill x (w0 shift)
   else filled_uint256 fill.
 
+Definition signextend (byte_index_256 x : uint256) : uint256 :=
+  if negb (ltb_uint256 byte_index_256
+             (mk_uint256 (shl 1 5 - 1) 0 0 0))
+  then x
+  else
+    let byte_index := w0 byte_index_256 in
+    let word_index := shr byte_index 3 in
+    let bit_index := shl (land byte_index (shl 1 3 - 1)) 3 in
+    let s := bounded_shift_nat word_width bit_index in
+    let current_word word :=
+      let shifted := shr word s in
+      let signed_byte := asr (shl shifted 56) 56 in
+      let upper := shl signed_byte s in
+      let lower := land word (shl 1 s - 1) in
+      let sign_bits := asr signed_byte 63 in
+      (or upper lower, sign_bits) in
+    if word_index =? 0 then
+      let '(current, sign_bits) := current_word (w0 x) in
+      mk_uint256 current sign_bits sign_bits sign_bits
+    else if word_index =? 1 then
+      let '(current, sign_bits) := current_word (w1 x) in
+      mk_uint256 (w0 x) current sign_bits sign_bits
+    else if word_index =? (1 + 1) then
+      let '(current, sign_bits) := current_word (w2 x) in
+      mk_uint256 (w0 x) (w1 x) current sign_bits
+    else
+      let '(current, _) := current_word (w3 x) in
+      mk_uint256 (w0 x) (w1 x) (w2 x) current.
+
 Definition exp (base exponent : uint256) : uint256 :=
   if is_two_uint256 base
   then shift_left_uint256 one_uint256 exponent

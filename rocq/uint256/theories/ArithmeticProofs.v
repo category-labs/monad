@@ -100,7 +100,10 @@ Proof.
   rewrite Z.mul_0_r, Z.add_0_r.
   rewrite Z.mod_small.
   - lia.
-  - unfold base. rewrite width_is_64. simpl. lia.
+  - split; [lia|].
+    unfold base. rewrite width_is_64. simpl.
+    change (Z.pow_pos 2 64) with (2 ^ 64).
+    nia.
 Qed.
 
 Lemma base_width_gt_1 : 1 < base width.
@@ -2299,7 +2302,7 @@ rewrite to_Z_words_firstn_shift_left_mod.
              rewrite modulus_words_add.
              cbn [WL.to_Z_words].
              change (WL.modulus_words 3) with (modulus_words 3).
-             ring. }
+             nia. }
         rewrite Zplus_mod.
         rewrite (Z.mul_comm (modulus_words 4)
           (((WL.U64.to_Z x3 + base WL.U64.width * 0) * 2 ^ (to_Z shift - 64)))).
@@ -2309,7 +2312,7 @@ rewrite to_Z_words_firstn_shift_left_mod.
           rewrite Hz in Hpos. lia. }
         rewrite Z.mod_mul by exact Hmod4nz.
         rewrite Z.add_0_r.
-        change (length [x0; x1; x2]) with 3%nat.
+        cbn [WL.to_Z_words].
         rewrite <- modulus_words_add.
         rewrite Z.mod_mod by exact Hmod4nz.
         change (modulus_words (1 + 3)) with (modulus_words 4).
@@ -2412,8 +2415,9 @@ rewrite to_Z_words_firstn_shift_left_mod.
              change (WL.modulus_words 2) with (modulus_words 2).
              nia. }
         rewrite Zplus_mod.
-        rewrite (Z.mul_comm (modulus_words 4)
-          (WL.to_Z_words [x2; x3] * 2 ^ (to_Z shift - 128))).
+        replace (modulus_words 4 * (to_Z_words [x2; x3] * 2 ^ (to_Z shift - 128)))
+          with ((to_Z_words [x2; x3] * 2 ^ (to_Z shift - 128)) * modulus_words 4)
+          by ring.
         assert (Hmod4nz : modulus_words 4 <> 0).
         { pose proof (WL.modulus_words_pos 4) as Hpos.
           intro Hz. change (WL.modulus_words 4) with (modulus_words 4) in Hpos.
@@ -2724,7 +2728,12 @@ Proof.
   rewrite spec_sub, H64, spec_one.
   rewrite Z.mod_small.
   - reflexivity.
-  - unfold base. rewrite width_is_64. simpl. lia.
+  - split.
+    + lia.
+    + unfold base. rewrite width_is_64. simpl.
+      change (Z.pow_pos 2 64) with (2 ^ 64).
+      pose proof (Z.pow_pos_nonneg 2 64 ltac:(lia)) as Hpow.
+      nia.
 Qed.
 
 Lemma to_Z_low_7_mask : to_Z (sub (shl one 7) one) = 127.
@@ -2733,7 +2742,11 @@ Proof.
   rewrite spec_sub, H128, spec_one.
   rewrite Z.mod_small.
   - reflexivity.
-  - unfold base. rewrite width_is_64. simpl. lia.
+  - split; [lia|].
+    unfold base. rewrite width_is_64. simpl.
+    change (Z.pow_pos 2 64) with (2 ^ 64).
+    pose proof (Z.pow_pos_nonneg 2 64 ltac:(lia)) as Hpow.
+    nia.
 Qed.
 
 Lemma to_Z_land_shift_and_63 : forall shift,
@@ -3233,6 +3246,291 @@ Proof.
     rewrite Hltbase.
     reflexivity.
 Qed.
+
+Lemma to_Z_shr : forall x n,
+  to_Z (shr x n) = to_Z x / 2 ^ Z.of_nat n.
+Proof.
+  intros x n.
+  rewrite spec_shr.
+  rewrite Z.shiftr_div_pow2 by lia.
+  rewrite Z.mod_small.
+  - reflexivity.
+  - pose proof (spec_to_Z x) as Hx.
+    split.
+    + apply Z.div_pos; lia.
+    + apply Z.div_lt_upper_bound.
+      * apply Z.pow_pos_nonneg; lia.
+      * nia.
+Qed.
+
+Lemma to_Z_low_mask : forall n,
+  (n < Pos.to_nat U64.width)%nat ->
+  to_Z (sub (shl one n) one) = 2 ^ Z.of_nat n - 1.
+Proof.
+  intros n Hn.
+  rewrite spec_sub, spec_shl, spec_one.
+  rewrite Z.shiftl_mul_pow2 by lia.
+  rewrite Z.mul_1_l.
+  rewrite (Z.mod_small (2 ^ Z.of_nat n) (base width)).
+  2:{
+    split.
+    + apply Z.pow_nonneg. lia.
+    + pose proof Hn as Hn'.
+      rewrite width_is_64 in Hn'.
+      apply Nat2Z.inj_lt in Hn'.
+      unfold base. rewrite width_is_64. simpl in *.
+      change (Z.pow_pos 2 64) with (2 ^ 64).
+      apply Z.pow_lt_mono_r; lia. }
+  rewrite (Z.mod_small (2 ^ Z.of_nat n - 1) (base width)).
+  2:{
+    split.
+    + pose proof (Z.pow_pos_nonneg 2 (Z.of_nat n) ltac:(lia)) as Hpow.
+      nia.
+    + unfold base. rewrite width_is_64. simpl.
+      change (Z.pow_pos 2 64) with (2 ^ 64).
+      pose proof Hn as Hn'.
+      rewrite width_is_64 in Hn'.
+      apply Nat2Z.inj_lt in Hn'.
+      assert (Hltpow : 2 ^ Z.of_nat n < 2 ^ 64).
+      { apply Z.pow_lt_mono_r; lia. }
+      lia. }
+  reflexivity.
+Qed.
+
+Lemma to_Z_land_low_mask : forall x n,
+  (n < Pos.to_nat U64.width)%nat ->
+  to_Z (land x (sub (shl one n) one)) = to_Z x mod 2 ^ Z.of_nat n.
+Proof.
+  intros x n Hn.
+  rewrite spec_land, to_Z_low_mask by exact Hn.
+  replace (2 ^ Z.of_nat n - 1) with (Z.ones (Z.of_nat n)).
+  2:{ rewrite Z.ones_equiv. lia. }
+  rewrite Z.land_ones by lia.
+  rewrite Z.mod_small.
+  - reflexivity.
+  - pose proof (spec_to_Z x) as Hx.
+    split.
+    + apply Z.mod_pos_bound. apply Z.pow_pos_nonneg; lia.
+    + pose proof Hn as Hn'.
+      rewrite width_is_64 in Hn'.
+      apply Nat2Z.inj_lt in Hn'.
+      unfold base. rewrite width_is_64. simpl in *.
+      change (Z.pow_pos 2 64) with (2 ^ 64).
+      assert (Hltpow : 2 ^ Z.of_nat n < 2 ^ 64).
+      { apply Z.pow_lt_mono_r; lia. }
+      eapply Z.lt_trans.
+      * apply Z.mod_pos_bound. apply Z.pow_pos_nonneg; lia.
+      * exact Hltpow.
+Qed.
+
+Lemma to_Z_uint256_lt_base_zero_high : forall s0 s1 s2 s3,
+  to_Z_uint256 (mk_uint256 s0 s1 s2 s3) < base width ->
+  to_Z s1 = 0 /\ to_Z s2 = 0 /\ to_Z s3 = 0.
+Proof.
+  intros s0 s1 s2 s3 Hlt.
+  assert (Hs1z : to_Z s1 = 0).
+  { destruct (Z.eq_dec (to_Z s1) 0) as [Hs1z|Hs1nz]; auto.
+    assert (Hs1p : 0 < to_Z s1).
+    { pose proof (spec_to_Z s1) as Hs1. lia. }
+    pose proof (to_Z_uint256_high_ge_base s0 s1 s2 s3 (or_introl Hs1p)) as Hge.
+    lia. }
+  assert (Hs2z : to_Z s2 = 0).
+  { destruct (Z.eq_dec (to_Z s2) 0) as [Hs2z|Hs2nz]; auto.
+    assert (Hs2p : 0 < to_Z s2).
+    { pose proof (spec_to_Z s2) as Hs2. lia. }
+    pose proof (to_Z_uint256_high_ge_base s0 s1 s2 s3 (or_intror (or_introl Hs2p)))
+      as Hge.
+    lia. }
+  assert (Hs3z : to_Z s3 = 0).
+  { destruct (Z.eq_dec (to_Z s3) 0) as [Hs3z|Hs3nz]; auto.
+    assert (Hs3p : 0 < to_Z s3).
+    { pose proof (spec_to_Z s3) as Hs3. lia. }
+    pose proof (to_Z_uint256_high_ge_base s0 s1 s2 s3
+      (or_intror (or_intror Hs3p))) as Hge.
+    lia. }
+  repeat split; assumption.
+Qed.
+
+Lemma to_Z_asr_63 : forall x,
+  to_Z (asr x 63) =
+    if to_Z x <? base width / 2 then 0 else base width - 1.
+Proof.
+  intro x.
+  rewrite spec_asr.
+  destruct (to_Z x <? base width / 2) eqn:Hltb.
+  - apply Z.ltb_lt in Hltb.
+    rewrite Z.sub_0_r.
+    rewrite Z.shiftr_div_pow2 by lia.
+    assert (Hdiv : to_Z x / 2 ^ Z.of_nat 63 = 0).
+    { apply Z.div_small.
+      pose proof (spec_to_Z x) as Hx.
+      unfold base in Hltb. rewrite width_is_64 in Hltb. simpl in Hltb.
+      change (Z.pow_pos 2 64 / 2) with (2 ^ Z.of_nat 63) in Hltb.
+      pose proof (Z.pow_pos_nonneg 2 (Z.of_nat 63) ltac:(lia)) as Hpow.
+      lia. }
+    rewrite Hdiv.
+    rewrite Z.mod_small.
+    + reflexivity.
+    + split; [lia|].
+      unfold base. rewrite width_is_64. simpl.
+      change (Z.pow_pos 2 64) with (2 ^ 64).
+      pose proof (Z.pow_pos_nonneg 2 64 ltac:(lia)) as Hpow.
+      nia.
+  - apply Z.ltb_ge in Hltb.
+    rewrite Z.shiftr_div_pow2 by lia.
+    assert (Hdiv : (to_Z x - base width) / 2 ^ Z.of_nat 63 = -1).
+    { pose proof (spec_to_Z x) as Hx.
+      unfold base in Hltb |- *. rewrite width_is_64 in Hltb |- *. simpl in *.
+      change (2 ^ 64 / 2) with (2 ^ Z.of_nat 63) in Hltb.
+      assert (Hge63 : 2 ^ Z.of_nat 63 <= to_Z x) by exact Hltb.
+      assert (Hrange : - 2 ^ Z.of_nat 63 <= to_Z x - 2 ^ 64 < 0).
+      { split.
+        - apply Z.add_le_mono_r with (p := - 2 ^ 64) in Hge63.
+          replace (2 ^ Z.of_nat 63 + - 2 ^ 64) with
+            (2 ^ Z.of_nat 63 - 2 ^ 64) in Hge63 by ring.
+          exact Hge63.
+        - pose proof (spec_to_Z x) as Hx_bound.
+          unfold base in Hx_bound. rewrite width_is_64 in Hx_bound.
+          simpl in Hx_bound.
+          nia. }
+      change (Z.pow_pos 2 63) with (2 ^ Z.of_nat 63).
+      change (Z.pow_pos 2 64) with (2 ^ 64).
+      symmetry.
+      apply Z.div_unique with (r := to_Z x - 2 ^ Z.of_nat 63).
+      - lia.
+      - lia. }
+    rewrite Hdiv.
+    symmetry.
+    apply Z.mod_unique with (q := -1).
+    + left.
+      unfold base. rewrite width_is_64. simpl.
+      change (Z.pow_pos 2 64) with (2 ^ 64).
+      pose proof (Z.pow_pos_nonneg 2 64 ltac:(lia)) as Hpow.
+      nia.
+    + unfold base. rewrite width_is_64. simpl.
+      change (Z.pow_pos 2 64) with (2 ^ 64).
+      lia.
+Qed.
+
+Lemma signextend_signed_byte64_correct : forall shifted,
+  to_Z (asr (shl shifted 56) 56) =
+    let byte := to_Z shifted mod 256 in
+    if byte <? 128 then byte else base width - 256 + byte.
+Proof.
+  intro shifted.
+  pose proof (spec_to_Z shifted) as Hshifted.
+  rewrite spec_asr.
+  assert (Htop :
+    to_Z (shl shifted 56) =
+      (to_Z shifted mod 256) * 2 ^ 56).
+  { rewrite spec_shl.
+    rewrite Z.shiftl_mul_pow2 by lia.
+    change (Z.pow_pos 2 56) with (2 ^ 56).
+    set (q := to_Z shifted / 256).
+    set (r := to_Z shifted mod 256).
+    assert (Hdecomp : to_Z shifted = 256 * q + r).
+    { unfold q, r. apply Z.div_mod. lia. }
+    rewrite Hdecomp.
+    unfold base. rewrite width_is_64. simpl.
+    change (Z.pow_pos 2 64) with (2 ^ 64).
+    change (2 ^ Z.of_nat 56) with (2 ^ 56).
+    change (((256 * q + r) * 2 ^ 56) mod 2 ^ 64 = r * 2 ^ 56).
+    rewrite Z.mul_add_distr_r.
+    change 256 with (2 ^ 8).
+    replace (2 ^ 8 * q * 2 ^ 56) with (q * 2 ^ 64) by ring.
+    rewrite Zplus_mod.
+    rewrite Z.mod_mul by lia.
+    rewrite Z.add_0_l.
+    rewrite Z.mod_mod by lia.
+    apply Z.mod_small.
+    unfold r.
+    pose proof (Z.mod_pos_bound (to_Z shifted) 256 ltac:(lia)) as Hbyte.
+    split.
+    - apply Z.mul_nonneg_nonneg; lia.
+    - assert (Hrlt : (to_Z shifted mod 256) * 2 ^ 56 < 256 * 2 ^ 56).
+      { apply Z.mul_lt_mono_pos_r; lia. }
+      replace (256 * 2 ^ 56) with (2 ^ 64) in Hrlt by reflexivity.
+      lia.
+  }
+  rewrite Htop.
+  set (byte := to_Z shifted mod 256).
+  assert (Hbyte : 0 <= byte < 256).
+  { subst byte. apply Z.mod_pos_bound. lia. }
+  destruct (Z.ltb_spec0 byte 128) as [Hbyte_lt|Hbyte_ge].
+  - replace
+      (let byte0 := byte in if byte0 <? 128 then byte0 else base width - 256 + byte0)
+      with byte.
+    2:{ cbn.
+        replace (byte <? 128) with true by (symmetry; apply Z.ltb_lt; lia).
+        reflexivity. }
+    replace (byte * 2 ^ 56 <? base width / 2) with true.
+    2:{ symmetry. apply (proj2 (Z.ltb_lt (byte * 2 ^ 56) (base width / 2))).
+        unfold base. rewrite width_is_64. simpl.
+        change (Z.pow_pos 2 64 / 2) with (2 ^ 63).
+        assert (Hlt : byte * 2 ^ 56 < 128 * 2 ^ 56).
+        { apply Z.mul_lt_mono_pos_r; lia. }
+        replace (128 * 2 ^ 56) with (2 ^ 63) in Hlt by reflexivity.
+        exact Hlt. }
+    rewrite Z.shiftr_div_pow2 by lia.
+    rewrite Z.sub_0_r.
+    rewrite Z.mod_small.
+      change (2 ^ Z.of_nat 56) with (2 ^ 56).
+    + replace (byte * 2 ^ 56 / 2 ^ 56) with byte by
+        (symmetry; apply Z.div_mul; lia).
+      reflexivity.
+    + split.
+      * apply Z.div_pos; lia.
+      * unfold base. rewrite width_is_64. simpl.
+        change (Z.pow_pos 2 64 / 2) with (2 ^ 63).
+        apply Z.div_lt_upper_bound; lia.
+  - replace
+      (let byte0 := byte in if byte0 <? 128 then byte0 else base width - 256 + byte0)
+      with (base width - 256 + byte).
+    2:{ cbn.
+        replace (byte <? 128) with false by (symmetry; apply Z.ltb_ge; lia).
+        reflexivity. }
+    replace (byte * 2 ^ 56 <? base width / 2) with false.
+    2:{ symmetry. apply (proj2 (Z.ltb_ge (byte * 2 ^ 56) (base width / 2))).
+        unfold base. rewrite width_is_64. simpl.
+        change (Z.pow_pos 2 64 / 2) with (2 ^ 63).
+        assert (Hge : 128 * 2 ^ 56 <= byte * 2 ^ 56).
+        { apply Z.mul_le_mono_nonneg_r; lia. }
+        replace (128 * 2 ^ 56) with (2 ^ 63) in Hge by reflexivity.
+        exact Hge. }
+    rewrite Z.shiftr_div_pow2 by lia.
+    assert (Hdiv : (byte * 2 ^ 56 - base width) / 2 ^ 56 = byte - 256).
+    { unfold base. rewrite width_is_64. simpl.
+      change (Z.pow_pos 2 64) with (2 ^ 64).
+      change (Z.pow_pos 2 56) with (2 ^ 56).
+      replace (2 ^ 64) with (256 * 2 ^ 56) by reflexivity.
+      replace (byte * 2 ^ 56 - 256 * 2 ^ 56) with ((byte - 256) * 2 ^ 56) by ring.
+      replace ((byte - 256) * 2 ^ 56 / 2 ^ 56) with (byte - 256) by
+        (symmetry; apply Z.div_mul; lia).
+      reflexivity.
+    }
+    change (2 ^ Z.of_nat 56) with (2 ^ 56).
+    rewrite Hdiv.
+    symmetry.
+    apply Z.mod_unique with (q := -1); [|lia].
+    unfold base; rewrite width_is_64.
+    lia.
+Qed.
+
+Definition signextend_Z (byte_index value : Z) : Z :=
+  if byte_index <? 31 then
+    let bits := 8 * (byte_index + 1) in
+    let low := value mod 2 ^ bits in
+    if low <? 2 ^ (bits - 1)
+    then low
+    else low + (modulus256 - 2 ^ bits)
+  else value.
+
+Theorem signextend_correct : forall byte_index_256 x,
+  to_Z_uint256 (signextend byte_index_256 x) =
+    signextend_Z (to_Z_uint256 byte_index_256) (to_Z_uint256 x).
+Proof.
+  intros [b0 b1 b2 b3] [x0 x1 x2 x3].
+Abort.
 
 Lemma is_two_uint256_true : forall x,
   is_two_uint256 x = true ->

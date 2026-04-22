@@ -108,7 +108,8 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
 
 PrecompileResult ecrecover_execute(byte_string_view const input)
 {
-    return silkpre_execute<silkpre_ecrec_run>(input);
+    auto const clamped_input = input.substr(0, 128);
+    return silkpre_execute<silkpre_ecrec_run>(clamped_input);
 }
 
 PrecompileResult sha256_execute(byte_string_view const input)
@@ -131,12 +132,14 @@ PrecompileResult ripemd160_execute(byte_string_view const input)
 
 PrecompileResult ecadd_execute(byte_string_view const input)
 {
-    return silkpre_execute<silkpre_bn_add_run>(input);
+    auto const clamped_input = input.substr(0, 128);
+    return silkpre_execute<silkpre_bn_add_run>(clamped_input);
 }
 
 PrecompileResult ecmul_execute(byte_string_view const input)
 {
-    return silkpre_execute<silkpre_bn_mul_run>(input);
+    auto const clamped_input = input.substr(0, 96);
+    return silkpre_execute<silkpre_bn_mul_run>(clamped_input);
 }
 
 PrecompileResult identity_execute(byte_string_view const input)

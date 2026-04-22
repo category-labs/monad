@@ -20,6 +20,7 @@
 #include <category/core/assert.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/test/test_fixtures_base.hpp>
@@ -67,7 +68,8 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     monad::mpt::Node::SharedPtr const root{monad::mpt::read_node_blocking(
         aux,
         aux.metadata_ctx().get_root_offset_at_version(latest_version),
-        latest_version)};
+        latest_version,
+        monad::mpt::timeline_id::primary)};
     auto const &key = state()->keys.front().first;
     auto const &value = state()->keys.front().first;
 
@@ -90,7 +92,12 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
 
     // Synchronously load the same key
     EXPECT_EQ(
-        find_blocking(aux, NodeCursor{root}, key, latest_version)
+        find_blocking(
+            aux,
+            NodeCursor{root},
+            key,
+            latest_version,
+            monad::mpt::timeline_id::primary)
             .first.node->value(),
         value);
 

@@ -34,7 +34,7 @@ MONAD_NAMESPACE_BEGIN
 
 class State;
 
-class BlockState final
+class BlockState
 {
     Db &db_;
     vm::VM &vm_;
@@ -44,6 +44,7 @@ class BlockState final
 
 public:
     BlockState(Db &, vm::VM &);
+    virtual ~BlockState() = default;
 
     vm::VM &vm()
     {
@@ -69,6 +70,14 @@ public:
     ReleasedState release() &&;
 
     void log_debug();
+
+protected:
+    // Fetches a storage slot from the DB for a read_storage DB-miss.
+    // Subclasses (MonadBlockState) override to substitute a different
+    // broker. The default reads from a SlotStorageBroker over the Db
+    // passed into the constructor.
+    virtual bytes32_t read_storage_from_broker(
+        Address const &, Incarnation, bytes32_t const &key);
 };
 
 MONAD_NAMESPACE_END

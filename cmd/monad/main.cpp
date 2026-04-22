@@ -133,6 +133,7 @@ try {
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     std::optional<unsigned> ro_sq_thread_cpu;
     std::vector<fs::path> dbname_paths;
+    fs::path secondary_db_path;
     fs::path snapshot;
     fs::path dump_snapshot;
     std::string statesync;
@@ -165,12 +166,20 @@ try {
         ro_sq_thread_cpu,
         "sq_thread_cpu for the read only db (optional, disables SQPOLL if not "
         "specified)");
-    cli.add_option(
+    auto *const db_option = cli.add_option(
         "--db",
         dbname_paths,
         "A comma-separated list of previously created database paths. You can "
         "configure the storage pool with one or more files/devices. If no "
         "value is passed, the replay will run with an in-memory triedb");
+    cli.add_option(
+           "--secondary-db,--secondary_db",
+           secondary_db_path,
+           "Optional path to a secondary database file. When set, "
+           "runloop_monad commits state to this db as well, using page-based "
+           "storage (MonadOnDiskMachine) with no DbCache layer. Used for "
+           "migration. Requires --db (cannot be combined with in-memory).")
+        ->needs(db_option);
     cli.add_option(
         "--dump-snapshot,--dump_snapshot",
         dump_snapshot,
@@ -412,6 +421,33 @@ try {
 
     DbCache db_cache =
         sync_server ? DbCache{*sync_server->ctx} : DbCache{triedb};
+
+    // Optional secondary db for migration: commits go through both the
+    // primary (slot storage, DbCache) and the secondary (page storage, raw).
+    //
+    // TODO: eventually this would not require a separate OnDiskDbConfig, but
+    // you can construct secondary db from the primary db, e.g.
+    // mpt::Db secondary_db(db, secondary_machine);
+    std::unique_ptr<MonadOnDiskMachine> secondary_machine;
+    std::optional<mpt::Db> secondary_raw_db;
+    std::optional<TrieDb> secondary_triedb;
+    if (!secondary_db_path.empty()) {
+        secondary_machine = std::make_unique<MonadOnDiskMachine>();
+        secondary_raw_db.emplace(
+            *secondary_machine,
+            mpt::OnDiskDbConfig{
+                .append = true,
+                .compaction = !no_compaction,
+                .rewind_to_latest_finalized = true,
+                .rd_buffers = 8192,
+                .wr_buffers = 32,
+                .uring_entries = 128,
+                .sq_thread_cpu = sq_thread_cpu,
+                .dbname_paths = {secondary_db_path}});
+        secondary_triedb.emplace(*secondary_raw_db);
+    }
+    Db *const secondary_db = secondary_triedb ? &*secondary_triedb : nullptr;
+
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -444,6 +480,7 @@ try {
                     block_db_timeout);
             }
             else {
+                MONAD_ASSERT(secondary_db != nullptr && !db_in_memory);
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
@@ -455,7 +492,8 @@ try {
                     block_num,
                     end_block_num,
                     stop,
-                    trace_calls);
+                    trace_calls,
+                    *secondary_db);
             }
         }
         MONAD_ABORT_PRINTF("Unsupported chain");

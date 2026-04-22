@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
@@ -45,8 +46,11 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
+#include <category/execution/monad/state2/monad_block_state.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -180,7 +184,7 @@ Result<BlockExecOutput> propose_block(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, DbCache &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
-    bool const enable_tracing, BlockCache &block_cache)
+    bool const enable_tracing, BlockCache &block_cache, Db &secondary_db)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -285,7 +289,21 @@ Result<BlockExecOutput> propose_block(
 
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
-    BlockState block_state(db, vm);
+
+    // Hoist the PageStorageBroker to the outer scope when a secondary db
+    // is present. MonadBlockState uses it during execution to assert
+    // Slot(Db1) == Page(Db2) for every storage read, and commit_secondary
+    // reuses the same broker so MonadCommitBuilder sees the cache of
+    // original pages populated during execution.
+    // TODO: we can remove the unique_ptr and the if part once we make
+    // secondary_db mandate for the migration release
+    std::unique_ptr<BlockState> block_state_ptr;
+    secondary_db.set_block_and_prefix(
+        block.header.number - 1,
+        is_first_block ? bytes32_t{} : consensus_header.parent_id());
+    PageStorageBroker page_broker(secondary_db);
+    MonadBlockState block_state(db, page_broker, vm);
+
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const results,
@@ -308,28 +326,75 @@ Result<BlockExecOutput> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
+    // Db1 and Db2 write the same data to every table; the only difference
+    // is state encoding (Db1 slot, Db2 page). state_deltas is therefore
+    // added separately to each builder so MonadCommitBuilder's override can
+    // kick in for Db2; everything else goes through the shared helper.
+    auto add_common_deltas = [&](CommitBuilder &b) {
+        b.add_code(code)
+            .add_receipts(results)
+            .add_transactions(block.transactions, senders)
+            .add_call_frames(call_frames)
+            .add_ommers(block.ommers);
+        if (block.withdrawals.has_value()) {
+            b.add_withdrawals(block.withdrawals.value());
+        }
+    };
+
+    // Builder for db1
     CommitBuilder builder(block.header.number);
-    builder.add_state_deltas(*state)
-        .add_code(code)
-        .add_receipts(results)
-        .add_transactions(block.transactions, senders)
-        .add_call_frames(call_frames)
-        .add_ommers(block.ommers);
-    if (block.withdrawals.has_value()) {
-        builder.add_withdrawals(block.withdrawals.value());
-    }
-    // TODO: add secondary db (without db_cache) for migration purpose, and
-    // commit to db2 as well
-    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
-        // second stage: populate block header
-        h.receipts_root = db.receipts_root();
-        h.state_root = db.state_root();
-        h.withdrawals_root = db.withdrawals_root();
-        h.transactions_root = db.transactions_root();
+    builder.add_state_deltas(*state);
+    add_common_deltas(builder);
+
+    // `correct_db` is the "source of truth" Db the header populator reads
+    // roots from. Both the Db1 and Db2 commits call populate_header via
+    // this same pointer, so both end up with identical block headers. The
+    // pointer is assigned just before commits run (see the if constexpr
+    // block below). Non-state roots are the same on Db1 and Db2 (same
+    // inputs, only state encoding differs), so the choice only really
+    // changes which state_root is stamped into the header.
+    Db *correct_db;
+    auto populate_header = [&](BlockHeader &h) {
+        MONAD_ASSERT(correct_db != nullptr);
+        h.receipts_root = correct_db->receipts_root();
+        h.state_root = correct_db->state_root();
+        h.withdrawals_root = correct_db->withdrawals_root();
+        h.transactions_root = correct_db->transactions_root();
         h.gas_used = results.empty() ? 0 : results.back().gas_used;
         h.logs_bloom = compute_bloom(results);
         h.ommers_hash = compute_ommers_hash(block.ommers);
-    });
+    };
+
+    // Dual-write the block to Db2. Db2 mirrors every table (page-encoded
+    // state, same inputs everywhere else) and receives the same full block
+    // header as Db1 via the shared populate_header.
+    auto commit_secondary = [&]() {
+        MonadCommitBuilder builder2(block.header.number, page_broker);
+        builder2.add_state_deltas(*state);
+        add_common_deltas(builder2);
+        secondary_db.commit(
+            block_id, builder2, block.header, *state, populate_header);
+    };
+
+    // Whichever Db owns the canonical state_root commits first, so its
+    // state_root is live when the later commit's populate_header runs.
+    //
+    // Pre-fork: Db1 is canonical. Commit Db1 first with correct_db=&db;
+    // Db2 commits after, reading Db1's now-live roots.
+    //
+    // Post-fork: Db2 owns the page-based state_root. Commit Db2 first with
+    // correct_db=secondary_db; Db1 commits after, reading Db2's roots.
+    if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+        correct_db = &secondary_db;
+        commit_secondary();
+        db.commit(block_id, builder, block.header, *state, populate_header);
+    }
+    else {
+        correct_db = &db;
+        db.commit(block_id, builder, block.header, *state, populate_header);
+        commit_secondary();
+    }
+
     db.update_proposal_state(std::move(state), block.header.number, block_id);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -479,7 +544,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing)
+    bool const enable_tracing, Db &secondary_db)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     uint64_t const start_block_num = block_num;
@@ -630,12 +695,15 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              chain_id,
              start_block_num,
              enable_tracing,
-             &block_cache](
+             &block_cache,
+             &secondary_db](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
             auto const block_time_start = std::chrono::steady_clock::now();
 
             db.update_voted_metadata(header.seqno - 1, header.parent_id());
+            secondary_db.update_voted_metadata(
+                header.seqno - 1, header.parent_id());
             record_block_qc(header, last_finalized_block_number);
 
             uint64_t const block_number = header.execution_inputs.number;
@@ -685,7 +753,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     priority_pool,
                     block_number == start_block_num,
                     enable_tracing,
-                    block_cache);
+                    block_cache,
+                    secondary_db);
                 MONAD_ABORT_PRINTF("handled rev value %d", rev);
             };
             BOOST_OUTCOME_TRY(
@@ -693,6 +762,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 record_block_result(propose_dispatch()));
 
             db.update_proposed_metadata(header.seqno, block_id);
+            secondary_db.update_proposed_metadata(header.seqno, block_id);
 
             log_tps(
                 block_number,
@@ -718,6 +788,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 block,
                 block_id);
             db.finalize(block, block_id);
+            secondary_db.finalize(block, block_id);
             block_hash_chain.finalize(block_id);
             record_block_finalized(block_id, block);
             finalized_block_num = block;
@@ -725,6 +796,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             if (!verified_blocks.empty() &&
                 verified_blocks.back() != mpt::INVALID_BLOCK_NUM) {
                 db.update_verified_block(verified_blocks.back());
+                secondary_db.update_verified_block(verified_blocks.back());
             }
             record_block_verified(verified_blocks);
         }

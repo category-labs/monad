@@ -106,7 +106,7 @@ bytes32_t BlockState::read_storage(
     {
         auto const result =
             read_storage
-                ? slot_broker_.read_storage_slot(address, incarnation, key)
+                ? read_storage_from_broker(address, incarnation, key)
                 : bytes32_t{};
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
@@ -121,6 +121,13 @@ bytes32_t BlockState::read_storage(
             return it2->second.second;
         }
     }
+}
+
+bytes32_t BlockState::read_storage_from_broker(
+    Address const &address, Incarnation const incarnation,
+    bytes32_t const &key)
+{
+    return slot_broker_.read_storage_slot(address, incarnation, key);
 }
 
 vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)

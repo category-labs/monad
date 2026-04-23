@@ -215,7 +215,6 @@ public:
         return db_.get_block_number();
     }
 
-private:
     void insert_in_lru_caches(StateDeltas const &state_deltas)
     {
         for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {

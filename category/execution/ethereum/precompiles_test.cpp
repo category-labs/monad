@@ -554,8 +554,6 @@ TYPED_TEST(TraitsTest, point_evaluation)
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0a_address));
     }
     else {
-        ASSERT_TRUE(init_trusted_setup());
-
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
             if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
                 // In MONAD_SEVEN point_evaluation cost is increased by 4x

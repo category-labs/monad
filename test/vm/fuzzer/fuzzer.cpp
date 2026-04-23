@@ -28,6 +28,7 @@
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/crypto/init.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
@@ -629,6 +630,7 @@ static void run_loop(int argc, char **argv)
 int main(int argc, char **argv)
 {
     if (monad::vm::utils::is_fuzzing_monad_vm) {
+        MONAD_ASSERT(monad::init_crypto());
         run_loop(argc, argv);
         return 0;
     }

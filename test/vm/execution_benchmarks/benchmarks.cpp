@@ -15,6 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/crypto/init.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 
@@ -397,6 +398,8 @@ namespace
 
 int main(int argc, char **argv)
 {
+    MONAD_ASSERT(monad::init_crypto());
+
     TestMemory test_memory;
     auto const all_bms = benchmarks(test_memory);
 

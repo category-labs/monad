@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,35 +15,20 @@
 
 #pragma once
 
-#include <gtest/gtest.h>
-
-#include <category/core/assert.h>
 #include <category/core/config.hpp>
-#include <category/core/crypto/init.hpp>
-#include <category/core/log.hpp>
-#include <category/execution/ethereum/trace/event_trace.hpp>
-#include <monad/test/config.hpp>
+
+#include <eip4844/eip4844.h>
+
+#include <openssl/types.h>
 
 MONAD_NAMESPACE_BEGIN
 
-quill::Logger *event_tracer = nullptr;
+bool init_crypto();
+
+// Preconditions for all accessors below: init_crypto() must have been called
+// and returned true.
+KZGSettings const &kzg_trusted_setup();
+EVP_MD const *sha256_md();
+EVP_MD const *ripemd160_md();
 
 MONAD_NAMESPACE_END
-
-MONAD_TEST_NAMESPACE_BEGIN
-
-class Environment : public ::testing::Environment
-{
-public:
-    void SetUp() override
-    {
-        quill::start();
-        MONAD_ASSERT(init_crypto());
-#ifdef ENABLE_EVENT_TRACING
-        event_tracer =
-            quill::create_logger("event_trace", quill::null_handler());
-#endif
-    }
-};
-
-MONAD_TEST_NAMESPACE_END

@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/crypto/digest.hpp>
+#include <category/core/crypto/init.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -25,8 +27,6 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <silkpre/sha256.h>
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
@@ -141,8 +141,8 @@ bytes32_t compute_requests_hash(
         buf.reserve(1 + data.size());
         buf.push_back(type);
         buf.insert(buf.end(), data.begin(), data.end());
-        silkpre_sha256(
-            inner_hashes_buf + inner_hashes_len, buf.data(), buf.size(), true);
+        digest<sha256_md>(
+            inner_hashes_buf + inner_hashes_len, buf.data(), buf.size());
         inner_hashes_len += 32;
     };
 
@@ -152,7 +152,7 @@ bytes32_t compute_requests_hash(
     hash_request(0x02, consolidation_output);
 
     bytes32_t outer_hash;
-    silkpre_sha256(outer_hash.bytes, inner_hashes_buf, inner_hashes_len, true);
+    digest<sha256_md>(outer_hash.bytes, inner_hashes_buf, inner_hashes_len);
     return outer_hash;
 }
 

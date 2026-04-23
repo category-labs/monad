@@ -20,6 +20,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/crypto/init.hpp>
 #include <category/core/fiber/fiber_group.hpp>
 #include <category/core/fiber/fiber_thread_pool.hpp>
 #include <category/core/fiber/priority_pool.hpp>
@@ -1347,6 +1348,10 @@ monad_executor *monad_executor_create(
     char const *const dbpath)
 {
     MONAD_ASSERT(dbpath);
+    // init_crypto is idempotent; calling it here ensures the FFI consumer
+    // never reaches a precompile handler (e.g. point_evaluation) before the
+    // OpenSSL providers and KZG trusted setup are loaded.
+    MONAD_ASSERT(monad::init_crypto());
     std::string const triedb_path{dbpath};
 
     monad_executor *const e = new monad_executor(

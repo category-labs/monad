@@ -116,6 +116,9 @@ add_library(
   "lru/static_lru_cache.hpp"
   "mem/batch_mem_pool.hpp"
   "synchronization/spin_lock.hpp"
+  # crypto
+  "crypto/init.cpp"
+  "crypto/init.hpp"
   # event
   "event/event_iterator.h"
   "event/event_iterator_inline.h"
@@ -210,7 +213,9 @@ else()
 endif()
 
 target_link_libraries(monad_core PUBLIC ankerl_hash)
+target_link_libraries(monad_core PRIVATE blst::blst)
 target_link_libraries(monad_core PUBLIC Boost::fiber TBB::tbb)
+target_link_libraries(monad_core PUBLIC c-kzg-4844)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
@@ -218,6 +223,7 @@ target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC intx)
 target_link_libraries(monad_core PUBLIC quill)
 target_link_libraries(monad_core PUBLIC unordered_dense)
+target_link_libraries(monad_core PUBLIC PkgConfig::libcrypto)
 target_link_libraries(monad_core PUBLIC PkgConfig::zstd)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   target_link_libraries(monad_core PUBLIC hugetlbfs uring)

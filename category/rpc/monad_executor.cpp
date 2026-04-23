@@ -524,15 +524,6 @@ namespace
         for (auto const *bo : block_overrides) {
             MONAD_ASSERT_THROW(bo, "block override cannot be null");
 
-            // We currently do not support overriding blob base fee, as it needs
-            // to be applied to the `tx_context`, which is not accessible in the
-            // current code structure. Supporting blob base fee override would
-            // require refactoring the code to allow passing block overrides to
-            // the `tx_context` construction.
-            MONAD_ASSERT_THROW(
-                !bo->blob_base_fee.has_value(),
-                "blob base fee override is not supported");
-
             // From the specification
             // (https://geth.ethereum.org/docs/interacting-with-geth/rpc/ns-eth):
             // > When overriding multiple blocks, block numbers must
@@ -594,7 +585,6 @@ namespace
             return std::format("0x{}", evmc::hex(b));
         };
 
-        // TODO(dhil): Add native transfer logs.
         auto entry = nlohmann::json::object();
 
         entry["calls"] = nlohmann::json::array();
@@ -780,9 +770,6 @@ namespace
                 // TODO(dhil): Should this default to
                 // zero?
                 .base_fee_per_gas = bo->base_fee_per_gas,
-                // TODO(dhil): bo->blob_base_fee needs to be applied to the tx
-                // context.
-
             };
 
             // Construct state

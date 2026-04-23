@@ -54,5 +54,4 @@ struct monad_block_override
     std::optional<monad::bytes32_t> prev_randao{std::nullopt};
     std::optional<std::vector<monad::Withdrawal>> withdrawals{std::nullopt};
     std::optional<monad::uint256_t> base_fee_per_gas{std::nullopt};
-    std::optional<monad::uint256_t> blob_base_fee{std::nullopt};
 };

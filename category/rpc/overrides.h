@@ -74,9 +74,6 @@ void set_block_override_prev_randao(
 void set_block_override_base_fee_per_gas(
     struct monad_block_override *, uint8_t const *fee, size_t fee_len);
 
-void set_block_override_blob_base_fee(
-    struct monad_block_override *, uint8_t const *fee, size_t fee_len);
-
 void add_block_override_withdrawal(
     struct monad_block_override *, uint64_t index, uint64_t validator_index,
     uint64_t amount, uint8_t const *recipient_addr, size_t recipient_addr_len);

@@ -23,6 +23,7 @@
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <stack>
@@ -38,7 +39,7 @@ struct CallTracerBase
 
     virtual void on_enter(evmc_message const &) = 0;
     virtual void on_exit(evmc::Result const &) = 0;
-    virtual void on_log(Receipt::Log) = 0;
+    virtual void on_log(size_t receipt_index, Receipt::Log) = 0;
     virtual void on_self_destruct(
         Address const &from, Address const &to,
         uint256_t const &transferred_balance) = 0;
@@ -51,7 +52,7 @@ struct NoopCallTracer final : public CallTracerBase
 {
     virtual void on_enter(evmc_message const &) override;
     virtual void on_exit(evmc::Result const &) override;
-    virtual void on_log(Receipt::Log) override;
+    virtual void on_log(size_t, Receipt::Log) override;
     virtual void on_self_destruct(
         Address const &, Address const &, uint256_t const &) override;
     virtual void on_finish(uint64_t const) override;
@@ -74,7 +75,7 @@ public:
 
     virtual void on_enter(evmc_message const &) override;
     virtual void on_exit(evmc::Result const &) override;
-    virtual void on_log(Receipt::Log) override;
+    virtual void on_log(size_t receipt_index, Receipt::Log) override;
     virtual void on_self_destruct(
         Address const &from, Address const &to,
         uint256_t const &transferred_balance) override;

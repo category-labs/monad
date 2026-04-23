@@ -24,6 +24,7 @@
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -49,6 +50,16 @@ struct CallFrame
 {
     struct Log
     {
+        /*
+         * The receipt index is the index this log has in the receipt's log
+         * array (which has all the logs in the transaction), as distinct from
+         * the CallFrame's log array (which has only the logs in this call
+         * frame). The execution events record call frame logs by referring to
+         * their receipt index to avoid copying them twice. This is not
+         * round-tripped by RLP, and always decodes as zero.
+         */
+        std::optional<size_t> receipt_index;
+
         Receipt::Log log;
 
         /*

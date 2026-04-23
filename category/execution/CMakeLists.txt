@@ -131,6 +131,8 @@ add_library(
   "ethereum/create_contract_address.hpp"
   "ethereum/dispatch_transaction.cpp"
   "ethereum/dispatch_transaction.hpp"
+  "ethereum/execution_context.cpp"
+  "ethereum/execution_context.hpp"
   "ethereum/evm.cpp"
   "ethereum/evm.hpp"
   "ethereum/evmc_host.cpp"

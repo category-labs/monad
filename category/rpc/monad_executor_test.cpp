@@ -1940,6 +1940,9 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
                     "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                         "balance": "0x1",
                         "nonce": 1
+                    },
+                    "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                        "balance": "0x0"
                     }
                 },
                 "txHash": "0x659b50d5b5c543fb681ace210eb175938d5b829297bcf579bc186ac0ea0874dd"
@@ -1953,6 +1956,9 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
                     "0xc48513273d60b70ee2f25d5c4256612a91573e1e": {
                         "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                         "nonce": 2
+                    },
+                    "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                        "balance": "0x0"
                     }
                 },
                 "txHash": "0x0b391cd83e5ebd2a5d5c0223c4258eaa364737cc6cb9f88c83eced5eb2543e8b"
@@ -2176,6 +2182,9 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                 "balance": "0x1",
                 "nonce": 1
+            },
+            "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                "balance": "0x0"
             }
         })";
 
@@ -2218,6 +2227,9 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
                 "balance":
                 "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                 "nonce": 2
+            },
+            "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                "balance": "0x0"
             }
         })";
         EXPECT_EQ(
@@ -2717,6 +2729,9 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
             "0xbedcab535cc48a9bd659ac448f092d02ba23a05a": {
                 "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                 "nonce":1
+            },
+            "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                "balance": "0x0"
             }
         })";
         EXPECT_EQ(
@@ -2773,6 +2788,9 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                 "balance": "0x1",
                 "nonce":1
+            },
+            "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                "balance": "0x0"
             }
         })";
 
@@ -3943,9 +3961,8 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
                 "balance": "0x1",
                 "nonce": 1
             },
-            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
-                "balance": "0x0",
-                "nonce": 1
+            "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                "balance": "0x0"
             }
         })";
 
@@ -3984,14 +4001,13 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
                 "balance": "0xabbb",
                 "nonce": 1
             },
-            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
-                "balance": "0x1b7740",
-                "nonce": 1
-            },
             "0xea4f2322426da1c68b6b7b8cc244c4fa0f14b7d3": {
                 "balance":
                 "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                 "nonce": 2
+            },
+            "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                "balance": "0x1b7740"
             }
         })";
         EXPECT_EQ(
@@ -4037,7 +4053,7 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
                 "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                     "balance": "0xabbb"
                 },
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+                "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
                     "balance": "0x1b7740"
                 }
             },
@@ -4049,10 +4065,6 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
                 },
                 "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                     "balance": "0x1",
-                    "nonce": 1
-                },
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
-                    "balance": "0x0",
                     "nonce": 1
                 }
             }
@@ -4093,13 +4105,13 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
                 "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
                     "balance": "0x15775"
                 },
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
-                    "balance": "0x36ee80"
-                },
                 "0xea4f2322426da1c68b6b7b8cc244c4fa0f14b7d3": {
                     "balance":
                     "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0cfc5",
                     "nonce": 3
+                },
+                "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                    "balance": "0x36ee80"
                 }
             },
             "pre": {
@@ -4107,14 +4119,13 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
                     "balance": "0xabbb",
                     "nonce": 1
                 },
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
-                    "balance": "0x1b7740",
-                    "nonce": 1
-                },
                 "0xea4f2322426da1c68b6b7b8cc244c4fa0f14b7d3": {
                     "balance":
                     "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                     "nonce": 2
+                },
+                "0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5": {
+                    "balance": "0x1b7740"
                 }
             }
         })";

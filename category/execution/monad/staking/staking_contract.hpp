@@ -620,6 +620,11 @@ public:
     Result<void> syscall_on_epoch_change(byte_string_view, uint256_t const &);
 
     Result<void> syscall_snapshot(byte_string_view, uint256_t const &);
+
+    /////////////////////////////////
+    //  In-protocol functionality  //
+    /////////////////////////////////
+    Result<void> distribute_priority_fees(uint256_t const &fees);
 };
 
 MONAD_STAKING_NAMESPACE_END

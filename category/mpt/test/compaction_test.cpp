@@ -19,6 +19,7 @@
 #include <category/async/config.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -63,7 +64,11 @@ TEST_F(CompactionTest, first_chunk_is_compacted)
         std::move(state()->root),
         state()->sm,
         std::move(update_ls),
-        state()->version++);
+        state()->version++,
+        /*compaction=*/false,
+        /*can_write_to_fast=*/true,
+        /*write_root=*/true,
+        timeline_id::primary);
     std::cout << "\nBefore compaction:";
     state()->print(std::cout);
     // TODO DO COMPACTION

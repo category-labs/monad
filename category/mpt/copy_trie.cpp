@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/mpt/config.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
@@ -116,7 +117,11 @@ Node::SharedPtr copy_trie_impl(
 {
     MONAD_ASSERT(aux.is_on_disk());
     auto [src_cursor, res] = find_blocking(
-        aux, src_root, src_prefix, aux.metadata_ctx().db_history_max_version());
+        aux,
+        src_root,
+        src_prefix,
+        aux.metadata_ctx().db_history_max_version(),
+        timeline_id::primary);
     MONAD_ASSERT(res == find_result::success);
     Node &src_node = *src_cursor.node;
     if (!dest_root) {
@@ -201,8 +206,11 @@ Node::SharedPtr copy_trie_impl(
         if (node->mask & (1u << nibble)) {
             auto const index = node->to_child_index(nibble);
             if (node->next(index) == nullptr) {
-                auto next_node_ondisk =
-                    read_node_blocking(aux, node->fnext(index), dest_version);
+                auto next_node_ondisk = read_node_blocking(
+                    aux,
+                    node->fnext(index),
+                    dest_version,
+                    timeline_id::primary);
                 MONAD_ASSERT(next_node_ondisk != nullptr);
                 node->set_next(index, std::move(next_node_ondisk));
             }
@@ -283,7 +291,8 @@ Node::SharedPtr copy_trie_to_dest(
         dest_prefix,
         dest_version);
     if (write_root) {
-        write_new_root_node(aux, *dest_root, dest_version);
+        write_new_root_node(
+            aux, *dest_root, dest_version, timeline_id::primary);
         MONAD_ASSERT(
             aux.metadata_ctx().db_history_max_version() >= dest_version);
     }

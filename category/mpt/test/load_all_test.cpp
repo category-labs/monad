@@ -16,6 +16,7 @@
 #include "test_fixtures_gtest.hpp"
 
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/test/test_fixtures_base.hpp>
 #include <category/mpt/trie.hpp>
@@ -36,7 +37,8 @@ TEST_F(LoadAllTest, works)
     monad::mpt::Node::SharedPtr const root{monad::mpt::read_node_blocking(
         state()->aux,
         aux.metadata_ctx().get_latest_root_offset(),
-        aux.metadata_ctx().db_history_max_version())};
+        aux.metadata_ctx().db_history_max_version(),
+        monad::mpt::timeline_id::primary)};
     auto nodes_loaded = monad::mpt::load_all(aux, sm, root);
     EXPECT_GE(nodes_loaded, state()->keys.size());
     std::cout << "   nodes_loaded = " << nodes_loaded << std::endl;

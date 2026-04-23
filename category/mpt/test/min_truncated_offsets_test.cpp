@@ -21,6 +21,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
@@ -75,7 +76,13 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                 update_ls.push_front(updates.back());
             }
             root = upsert(
-                aux, block_id, *sm, std::move(root), std::move(update_ls));
+                aux,
+                block_id,
+                *sm,
+                std::move(root),
+                std::move(update_ls),
+                /*write_root=*/true,
+                timeline_id::primary);
             size_t count_fast = 0;
             for (auto const *ci = aux.metadata_ctx().main()->fast_list_begin();
                  ci != nullptr;

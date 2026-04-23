@@ -15,6 +15,7 @@
 
 #include <category/core/assert.h>
 #include <category/mpt/config.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
@@ -28,7 +29,7 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 find_cursor_result_type find_blocking(
     UpdateAux const &aux, NodeCursor root, NibblesView const key,
-    uint64_t const version)
+    uint64_t const version, timeline_id const tid)
 {
     if (!root.is_valid()) {
         return {NodeCursor{}, find_result::root_node_is_null_failure};
@@ -49,7 +50,7 @@ find_cursor_result_type find_blocking(
                 !node->next(idx)) {
                 MONAD_ASSERT(aux.is_on_disk());
                 auto next_node_ondisk =
-                    read_node_blocking(aux, node->fnext(idx), version);
+                    read_node_blocking(aux, node->fnext(idx), version, tid);
                 if (!next_node_ondisk) {
                     return {NodeCursor{}, find_result::version_no_longer_exist};
                 }

@@ -358,7 +358,7 @@ struct chunk_info_archive_t
             /* Compression level benchmarks:
 
             1 -  972 Mb/sec, max 6 concurrency (I think some pool
-            stalls occured). Wrote 146.25 for 179.56.
+            stalls occurred). Wrote 146.25 for 179.56.
 
             2 - 1086 Mb/sec, max 8 concurrency. Wrote 150.91 for
             179.56 input.

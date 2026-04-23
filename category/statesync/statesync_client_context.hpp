@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/mpt/db.hpp>
 #include <category/statesync/statesync_protocol.hpp>
 
@@ -48,6 +49,14 @@ struct monad_statesync_client_context
     monad::OnDiskMachine machine;
     monad::mpt::Db db;
     monad::TrieDb tdb;
+
+    // Optional secondary (page-encoded) db populated in lockstep with the
+    // primary during the slot-to-page storage migration. Uses
+    // MonadOnDiskMachine so its state table is hashed at page granularity.
+    std::optional<monad::MonadOnDiskMachine> secondary_machine;
+    std::optional<monad::mpt::Db> secondary_db;
+    std::optional<monad::TrieDb> secondary_tdb;
+
     std::vector<std::pair<uint64_t, uint64_t>> progress;
     std::vector<std::unique_ptr<monad::StatesyncProtocol>> protocol;
     std::array<monad::BlockHeader, 256> hdrs;
@@ -67,7 +76,8 @@ struct monad_statesync_client_context
         std::optional<unsigned> sq_thread_cpu, unsigned wr_buffers,
         monad_statesync_client *,
         void (*statesync_send_request)(
-            struct monad_statesync_client *, struct monad_sync_request));
+            struct monad_statesync_client *, struct monad_sync_request),
+        std::optional<std::filesystem::path> secondary_db_path = std::nullopt);
 
     void commit();
 

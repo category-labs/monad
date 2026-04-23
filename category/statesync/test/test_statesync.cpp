@@ -26,6 +26,10 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
@@ -591,6 +595,128 @@ TEST_F(StateSyncFixture, sync_one_account)
             .number = N});
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
+TEST_F(StateSyncFixture, sync_with_page_storage_secondary)
+{
+    // Server stores ADDR_A with five slots: three share one page_key, two
+    // share a different page_key. Client receives slot-encoded upserts and
+    // dual-writes them to Db1 (slot encoding) and Db2 (page encoding).
+    // The server keeps its own page-encoded mirror so the test can compare
+    // state_roots on the two page tries at the end.
+    constexpr auto N = 1'000'000;
+    bytes32_t parent_hash{NULL_HASH};
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
+    for (size_t i = N - 256; i < N; ++i) {
+        stdb.set_block_and_prefix(i - 1);
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+
+    // Slots 0x00, 0x01, 0x7f all map to page_key 0 (low 7 bits are offset).
+    // Slots 0x80, 0x81 map to page_key 1.
+    constexpr auto slot_a = bytes32_t{uint64_t{0x00}};
+    constexpr auto slot_b = bytes32_t{uint64_t{0x01}};
+    constexpr auto slot_c = bytes32_t{uint64_t{0x7f}};
+    constexpr auto slot_d = bytes32_t{uint64_t{0x80}};
+    constexpr auto slot_e = bytes32_t{uint64_t{0x81}};
+    constexpr auto val_a =
+        0x00000000000000000000000000000000000000000000000000000000000000aa_bytes32;
+    constexpr auto val_b =
+        0x00000000000000000000000000000000000000000000000000000000000000bb_bytes32;
+    constexpr auto val_c =
+        0x00000000000000000000000000000000000000000000000000000000000000cc_bytes32;
+    constexpr auto val_d =
+        0x00000000000000000000000000000000000000000000000000000000000000dd_bytes32;
+    constexpr auto val_e =
+        0x00000000000000000000000000000000000000000000000000000000000000ee_bytes32;
+
+    ASSERT_EQ(compute_page_key(slot_a), compute_page_key(slot_b));
+    ASSERT_EQ(compute_page_key(slot_a), compute_page_key(slot_c));
+    ASSERT_EQ(compute_page_key(slot_d), compute_page_key(slot_e));
+    ASSERT_NE(compute_page_key(slot_a), compute_page_key(slot_d));
+
+    StateDeltas const storage_deltas{
+        {ADDR_A,
+         StateDelta{
+             .account = {std::nullopt, Account{.balance = 100}},
+             .storage =
+                 {{slot_a, {bytes32_t{}, val_a}},
+                  {slot_b, {bytes32_t{}, val_b}},
+                  {slot_c, {bytes32_t{}, val_c}},
+                  {slot_d, {bytes32_t{}, val_d}},
+                  {slot_e, {bytes32_t{}, val_e}}}}}};
+
+    // Server commits the slot-encoded view to its primary db.
+    commit_sequential(
+        stdb, storage_deltas, Code{}, BlockHeader{.number = N});
+
+    // Server-side page-encoded mirror: a separate db that the test populates
+    // with the same state via MonadCommitBuilder, so the resulting state
+    // trie is canonical page encoding.
+    auto const sdbname_secondary_server = tmp_dbname();
+    MonadOnDiskMachine server_secondary_machine;
+    mpt::Db server_secondary_db{
+        server_secondary_machine,
+        mpt::OnDiskDbConfig{
+            .append = true, .dbname_paths = {sdbname_secondary_server}}};
+    TrieDb server_secondary_tdb{server_secondary_db};
+    {
+        PageStorageBroker server_secondary_broker{server_secondary_tdb};
+        MonadCommitBuilder builder{N, server_secondary_broker};
+        builder.add_state_deltas(storage_deltas);
+        server_secondary_tdb.reset_root(
+            server_secondary_db.upsert(
+                server_secondary_tdb.get_root(),
+                builder.build(NibblesView{finalized_nibbles}),
+                N,
+                false,
+                false),
+            N);
+    }
+
+    auto const sdbname_secondary = tmp_dbname();
+    cctx = new monad_statesync_client_context{
+        {cdbname},
+        std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),
+        4,
+        &client,
+        &statesync_send_request,
+        std::make_optional(sdbname_secondary)};
+    net = {.client = &client, .cctx = cctx};
+    for (size_t i = 0; i < monad_statesync_client_prefixes(); ++i) {
+        monad_statesync_client_handle_new_peer(
+            cctx, i, monad_statesync_version());
+    }
+    server = monad_statesync_server_create(
+        &sctx,
+        &net,
+        &statesync_server_recv,
+        &statesync_server_send_upsert,
+        &statesync_server_send_done);
+
+    handle_target(
+        cctx,
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .state_root = stdb.state_root(),
+            .number = N});
+    run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    ASSERT_TRUE(cctx->secondary_tdb.has_value());
+    EXPECT_EQ(
+        server_secondary_tdb.state_root(),
+        cctx->secondary_tdb->state_root());
+
+    std::filesystem::remove(sdbname_secondary_server);
+    std::filesystem::remove(sdbname_secondary);
 }
 
 TEST_F(StateSyncFixture, sync_empty)

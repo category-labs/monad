@@ -1971,6 +1971,8 @@ struct monad_executor
                                 return std::make_unique<MonadTestnet>();
                             case CHAIN_CONFIG_MONAD_MAINNET:
                                 return std::make_unique<MonadMainnet>();
+                            case CHAIN_CONFIG_HIVE_NET:
+                                return std::make_unique<HiveNet>();
                             }
                             MONAD_ASSERT(false);
                         }();
@@ -1978,7 +1980,8 @@ struct monad_executor
                         LazyBlockHash const block_hash_buffer{db, block_number};
                         TrieRODb tdb{db};
 
-                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
+                            chain_config == CHAIN_CONFIG_HIVE_NET) {
                             evmc_revision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(

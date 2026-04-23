@@ -1,0 +1,3 @@
+# Bench fixture, produced by scripts/populate-1m.sh. Large binary
+# (4 GiB sparse), should not be committed.
+test_db/

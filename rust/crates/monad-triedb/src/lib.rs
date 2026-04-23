@@ -13,466 +13,491 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::{
-    cmp::Ordering,
-    ffi::CString,
-    path::Path,
-    ptr::{null, null_mut, NonNull},
-    sync::{
-        atomic::{AtomicUsize, Ordering::SeqCst},
-        Arc,
-    },
-};
+use std::{cell::UnsafeCell, path::Path, pin::Pin};
 
+use cxx::UniquePtr;
 use futures::channel::oneshot::Sender;
-use tracing::{debug, error};
 
-use self::{
-    ffi::{validator_data, validator_set},
-    traverse::TraverseCallbackKind,
-};
+use self::ffi::OpaqueContext;
+pub use self::ffi::UpsertEntry;
 
-pub mod ffi;
-mod traverse;
+mod ffi;
 
-#[derive(Debug)]
-pub struct TriedbHandle {
-    db_ptr: *mut ffi::triedb,
+pub type AsyncReadSender = Sender<Option<Box<[u8]>>>;
+
+/// Layout-compatible with `monad::bytes32_t` / `evmc::bytes32`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Bytes32(pub [u8; 32]);
+
+unsafe impl cxx::ExternType for Bytes32 {
+    type Id = cxx::type_id!("monad::bytes32_t");
+    type Kind = cxx::kind::Trivial;
 }
 
-struct SenderContext {
-    sender: Sender<Option<Vec<u8>>>,
-    completed_counter: Arc<AtomicUsize>,
-
-    // The strong count of this dummy Arc<> reflects the total number of currently executing
-    // (concurrent) requests, and this number is used by upstream code to maintain request
-    // backpressure.  When this request completes, this Arc<> is implicitly dropped, which
-    // causes the concurrent request count to be decremented.
-    #[allow(dead_code)]
-    concurrency_tracker: Arc<()>,
+/// Layout-compatible with `monad::staking::Validator` (33 + 48 + 32).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct Validator {
+    pub secp_pubkey: [u8; 33],
+    pub bls_pubkey: [u8; 48],
+    pub stake: [u8; 32],
 }
 
-#[derive(Debug)]
-struct TraverseContext {
-    // values in traversal order
-    data: std::sync::Mutex<Vec<TraverseEntry>>,
-    sender: Sender<Option<Vec<TraverseEntry>>>,
-
-    // The strong count of this dummy Arc<> reflects the total number of currently executing
-    // (concurrent) requests, and this number is used by upstream code to maintain request
-    // backpressure.  When this request completes, this Arc<> is implicitly dropped, which
-    // causes the concurrent request count to be decremented.
-    #[allow(dead_code)]
-    concurrency_tracker: Arc<()>,
+unsafe impl cxx::ExternType for Validator {
+    type Id = cxx::type_id!("monad::staking::Validator");
+    type Kind = cxx::kind::Trivial;
 }
 
-#[derive(Debug)]
-pub struct TraverseEntry {
-    pub key: Vec<u8>,
-    pub value: Vec<u8>,
-}
-
-/// Returns `None` if nibble length validation fails (overflow or insufficient key bytes).
-fn validate_nibble_key(key: &[u8], key_len_nibbles: u8, label: &str) -> Option<()> {
-    if key_len_nibbles >= u8::MAX - 1 {
-        error!("{label} length nibbles exceeds maximum allowed value");
-        return None;
-    }
-    if (key_len_nibbles as usize).div_ceil(2) > key.len() {
-        error!("{label} length is insufficient for the given nibbles");
-        return None;
-    }
-    Some(())
-}
-
-/// Converts a C `u64` sentinel value (`u64::MAX` = not found) to `Option<u64>`.
-fn parse_triedb_block_num(value: u64) -> Option<u64> {
-    if value == u64::MAX {
-        None
-    } else {
-        Some(value)
-    }
-}
-
-const ZERO_BYTES32: [u8; 32] = [0u8; 32];
-
-/// Converts a C `monad_c_bytes32` sentinel value (all-zeros = not found) to `Option<[u8; 32]>`.
-fn parse_triedb_block_id(value: ffi::monad_c_bytes32) -> Option<[u8; 32]> {
-    if value.bytes == ZERO_BYTES32 {
-        return None;
-    }
-    Some(value.bytes)
-}
-
-/// # Safety
-/// This should be used only as a callback for async TrieDB calls.
+/// Borrowed view of a nibble-aligned key.
 ///
-/// This function is called by TrieDB once it processes a single read async call.
-unsafe extern "C" fn read_async_callback(
-    value_ptr: *const u8,
-    value_len: i32,
-    sender_context: *mut std::ffi::c_void,
-) {
-    // Unwrap the sender context struct
-    let sender_context = unsafe { Box::from_raw(sender_context as *mut SenderContext) };
-    // Increment the completed counter
-    sender_context.completed_counter.fetch_add(1, SeqCst);
-
-    let result = match value_len.cmp(&0) {
-        Ordering::Less => None,
-        Ordering::Equal => Some(Vec::new()),
-        Ordering::Greater => {
-            let value =
-                unsafe { std::slice::from_raw_parts(value_ptr, value_len as usize).to_vec() };
-            unsafe { ffi::triedb_finalize(value_ptr) };
-            Some(value)
-        }
-    };
-
-    // Send the retrieved result through the channel
-    let _ = sender_context.sender.send(result);
+/// Odd nibble lengths are supported — the trailing low nibble of the last
+/// byte is ignored when `nibble_len` is odd.
+#[derive(Debug, Clone, Copy)]
+pub struct NibblesView<'a> {
+    bytes: &'a [u8],
+    nibble_len: u8,
 }
 
-// Compile-time assertion that read_async_callback signature matches triedb_async_read_callback_fn
-const _: () = {
-    #[allow(dead_code)]
-    const fn check_signature() {
-        let _: ffi::triedb_async_read_callback_fn = Some(read_async_callback);
+impl<'a> NibblesView<'a> {
+    /// Returns `None` if `bytes` is shorter than `ceil(nibble_len / 2)`.
+    pub fn new(bytes: &'a [u8], nibble_len: u8) -> Option<Self> {
+        ((nibble_len as usize).div_ceil(2) <= bytes.len()).then_some(Self { bytes, nibble_len })
     }
-};
 
-/// # Safety
-/// This is used as a callback when traversing the transaction or receipt trie.
-unsafe extern "C" fn traverse_callback(
-    op_kind: ffi::triedb_async_traverse_callback,
-    context: *mut std::ffi::c_void,
-    key_ptr: *const u8,
-    key_len: usize,
-    value_ptr: *const u8,
-    value_len: usize,
-) {
-    let context = context as *mut TraverseContext;
+    /// Interprets the full slice as a byte-aligned key. Returns `None` if
+    /// the slice is longer than 127 bytes (would overflow `u8` nibbles).
+    pub fn from_bytes(bytes: &'a [u8]) -> Option<Self> {
+        let nibble_len = u8::try_from(bytes.len().saturating_mul(2)).ok()?;
+        Some(Self { bytes, nibble_len })
+    }
 
-    let Some(op_kind) = TraverseCallbackKind::from_c(op_kind) else {
-        error!(
-            "traverse_callback: unexpected op_kind value: {}",
-            op_kind as i32
-        );
-        let _ctx = unsafe { Box::from_raw(context) };
-        return;
-    };
-
-    match op_kind {
-        TraverseCallbackKind::FinishedEarly => {
-            let ctx = unsafe { Box::from_raw(context) };
-            let _ = ctx.sender.send(None);
+    pub const fn empty() -> Self {
+        Self {
+            bytes: &[],
+            nibble_len: 0,
         }
-        TraverseCallbackKind::FinishedNormally => {
-            let ctx = unsafe { Box::from_raw(context) };
-            let data = {
-                let mut lock = ctx.data.lock().expect("mutex poisoned");
-                std::mem::take(&mut *lock)
-            };
-            let _ = ctx.sender.send(Some(data));
-        }
-        TraverseCallbackKind::Value => {
-            let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len).to_vec() };
-            let value = unsafe { std::slice::from_raw_parts(value_ptr, value_len).to_vec() };
+    }
 
-            let mut lock = unsafe { &*context }.data.lock().expect("mutex poisoned");
+    pub fn bytes(&self) -> &'a [u8] {
+        self.bytes
+    }
 
-            lock.push(TraverseEntry { key, value });
-        }
+    pub fn nibble_len(&self) -> u8 {
+        self.nibble_len
     }
 }
 
-// Compile-time assertion that traverse_callback signature matches triedb_async_traverse_callback_fn
-const _: () = {
-    #[allow(dead_code)]
-    const fn check_signature() {
-        let _: ffi::triedb_async_traverse_callback_fn = Some(traverse_callback);
-    }
-};
+#[derive(Debug, Clone)]
+pub struct TraverseEntry {
+    pub key: Box<[u8]>,
+    pub value: Box<[u8]>,
+}
 
-impl TriedbHandle {
-    pub fn try_new(dbdir_path: &Path, node_lru_max_mem: u64) -> Option<Self> {
+/// A value read from the triedb, holding a cursor that pins the underlying
+/// node in the cache. The byte view is valid as long as the `NodeValue` is
+/// alive.
+pub struct NodeValue {
+    cursor: UniquePtr<ffi::NodeCursor>,
+}
+
+impl NodeValue {
+    fn new(cursor: UniquePtr<ffi::NodeCursor>) -> Option<Self> {
+        (!cursor.is_null()).then_some(Self { cursor })
+    }
+
+    fn cursor(&self) -> &ffi::NodeCursor {
+        unsafe { self.cursor.as_ref().unwrap() }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        ffi::node_cursor_value(self.cursor())
+    }
+
+    pub fn into_boxed_slice(self) -> Box<[u8]> {
+        self.bytes().into()
+    }
+}
+
+impl std::fmt::Debug for NodeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeValue")
+            .field("bytes", &self.bytes())
+            .finish()
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum OpenError {
+    NonUtf8Path,
+    /// Diagnostics are emitted to the C++ log.
+    OpenFailed,
+}
+
+impl std::fmt::Display for OpenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NonUtf8Path => f.write_str("triedb path is not valid UTF-8"),
+            Self::OpenFailed => f.write_str("failed to open triedb; see C++ logs"),
+        }
+    }
+}
+
+impl std::error::Error for OpenError {}
+
+/// Read-only triedb handle. Not `Send`.
+pub struct TriedbRoHandle {
+    inner: UniquePtr<ffi::TriedbRoInner>,
+}
+
+/// Read-write triedb handle. Not `Send`.
+pub struct TriedbRwHandle {
+    inner: UniquePtr<ffi::TriedbRwInner>,
+}
+
+impl std::fmt::Debug for TriedbRoHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TriedbRoHandle").finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for TriedbRwHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TriedbRwHandle").finish_non_exhaustive()
+    }
+}
+
+/// Read operations available on both [`TriedbRoHandle`] and [`TriedbRwHandle`].
+///
+/// Metadata getters return `None` when not recorded (`u64::MAX` /
+/// all-zeros sentinel).
+pub trait Triedb {
+    /// Returns `None` if the key is absent.
+    fn find(&self, key: NibblesView<'_>, block_id: u64) -> Option<NodeValue>;
+
+    fn latest_proposed_block(&self) -> Option<u64>;
+
+    /// May return an inconsistent id under concurrent writes.
+    fn latest_proposed_block_id(&self) -> Option<[u8; 32]>;
+
+    fn latest_voted_block(&self) -> Option<u64>;
+
+    /// May return an inconsistent id under concurrent writes.
+    fn latest_voted_block_id(&self) -> Option<[u8; 32]>;
+
+    fn latest_finalized_block(&self) -> Option<u64>;
+
+    fn latest_verified_block(&self) -> Option<u64>;
+
+    fn earliest_finalized_block(&self) -> Option<u64>;
+
+    /// The highest version present in the DB, regardless of finalization.
+    fn latest_version(&self) -> Option<u64>;
+}
+
+macro_rules! impl_triedb {
+    ($handle:ty, $prefix:ident) => {
+        paste::paste! {
+            impl Triedb for $handle {
+                fn find(&self, key: NibblesView<'_>, block_id: u64) -> Option<NodeValue> {
+                    NodeValue::new(ffi::[<$prefix _find>](
+                        &self.inner, key.bytes, key.nibble_len, block_id,
+                    ))
+                }
+
+                #[inline]
+                fn latest_proposed_block(&self) -> Option<u64> {
+                    parse_block_num(ffi::[<$prefix _latest_proposed_version>](&self.inner))
+                }
+
+                #[inline]
+                fn latest_voted_block(&self) -> Option<u64> {
+                    parse_block_num(ffi::[<$prefix _latest_voted_version>](&self.inner))
+                }
+
+                #[inline]
+                fn latest_finalized_block(&self) -> Option<u64> {
+                    parse_block_num(ffi::[<$prefix _latest_finalized_version>](&self.inner))
+                }
+
+                #[inline]
+                fn latest_verified_block(&self) -> Option<u64> {
+                    parse_block_num(ffi::[<$prefix _latest_verified_version>](&self.inner))
+                }
+
+                #[inline]
+                fn earliest_finalized_block(&self) -> Option<u64> {
+                    parse_block_num(ffi::[<$prefix _earliest_version>](&self.inner))
+                }
+
+                #[inline]
+                fn latest_version(&self) -> Option<u64> {
+                    parse_block_num(ffi::[<$prefix _latest_version>](&self.inner))
+                }
+
+                #[inline]
+                fn latest_proposed_block_id(&self) -> Option<[u8; 32]> {
+                    parse_block_id(ffi::[<$prefix _latest_proposed_block_id>](&self.inner))
+                }
+
+                #[inline]
+                fn latest_voted_block_id(&self) -> Option<[u8; 32]> {
+                    parse_block_id(ffi::[<$prefix _latest_voted_block_id>](&self.inner))
+                }
+            }
+        }
+    };
+}
+
+impl_triedb!(TriedbRoHandle, triedb_ro);
+impl_triedb!(TriedbRwHandle, triedb_rw);
+
+impl TriedbRoHandle {
+    /// Open in read-only mode. `dbdir_path` may be a single block device
+    /// or a directory containing block devices.
+    ///
+    /// `disable_mismatching_storage_pool_check = true` bypasses the storage
+    /// pool configuration-hash check, allowing opens against databases
+    /// whose inode changed (e.g. after copying between filesystems).
+    /// Use with caution: it can mask genuine corruption.
+    pub fn open(
+        dbdir_path: &Path,
+        node_lru_max_mem: u64,
+        disable_mismatching_storage_pool_check: bool,
+    ) -> Result<Self, OpenError> {
         monad_cxx::init_cxx_logging(tracing::Level::WARN);
 
-        let path_str = dbdir_path.to_str()?;
-        let path = CString::new(path_str).ok()?;
-
-        let mut db_ptr = null_mut();
-
-        let result =
-            unsafe { ffi::triedb_open(path.as_c_str().as_ptr(), &mut db_ptr, node_lru_max_mem) };
-
-        if result != 0 {
-            debug!("triedb try_new error result: {}", result);
-            return None;
+        let path_str = dbdir_path.to_str().ok_or(OpenError::NonUtf8Path)?;
+        let inner = ffi::triedb_open(
+            path_str,
+            node_lru_max_mem,
+            disable_mismatching_storage_pool_check,
+        );
+        if inner.is_null() {
+            return Err(OpenError::OpenFailed);
         }
-
-        Some(Self { db_ptr })
+        Ok(Self { inner })
     }
 
-    pub fn read(&self, key: &[u8], key_len_nibbles: u8, block_id: u64) -> Option<Vec<u8>> {
-        validate_nibble_key(key, key_len_nibbles, "Key")?;
-
-        let mut value_ptr = null();
-        let result = unsafe {
-            ffi::triedb_read(
-                self.db_ptr,
-                key.as_ptr(),
-                key_len_nibbles,
-                &mut value_ptr,
-                block_id,
-            )
-        };
-        if result == -1 {
-            return None;
-        }
-
-        if result == 0 {
-            return Some(Vec::new());
-        }
-
-        let Ok(value_len): Result<usize, _> = result.try_into() else {
-            error!("Unexpected result from triedb_read: {}", result);
-            return None;
-        };
-
-        let value = unsafe { std::slice::from_raw_parts(value_ptr, value_len) }.to_vec();
-
+    pub fn find_async(&mut self, key: NibblesView<'_>, block_id: u64, sender: AsyncReadSender) {
+        let ctx = Box::into_raw(Box::new(sender)) as *mut OpaqueContext;
         unsafe {
-            ffi::triedb_finalize(value_ptr);
-        }
-
-        Some(value)
-    }
-
-    pub fn read_async(
-        &self,
-        key: &[u8],
-        key_len_nibbles: u8,
-        block_id: u64,
-        completed_counter: Arc<AtomicUsize>,
-        sender: Sender<Option<Vec<u8>>>,
-        concurrency_tracker: Arc<()>,
-    ) {
-        if validate_nibble_key(key, key_len_nibbles, "Key").is_none() {
-            return;
-        }
-
-        // Wrap the sender and completed_counter in a context struct
-        let sender_context = Box::new(SenderContext {
-            sender,
-            completed_counter,
-            concurrency_tracker,
-        });
-
-        unsafe {
-            // Convert the struct into a raw pointer which will be sent to the callback function
-            let sender_context_ptr = Box::into_raw(sender_context);
-
-            ffi::triedb_async_read(
-                self.db_ptr,
-                key.as_ptr(),
-                key_len_nibbles,
-                block_id,
-                Some(read_async_callback), // TrieDB read async callback
-                sender_context_ptr as *mut std::ffi::c_void,
-            );
-        }
-    }
-
-    /// Used to pump async reads in TrieDB.
-    /// if blocking is true, the thread will sleep at least until 1 completion is available to process
-    /// if blocking is false, poll will return if no completion is available to process
-    /// max_completions is used as a bound for maximum completions to process in this poll
-    ///
-    /// Returns the number of completions processed.
-    /// NOTE: could call poll internally: number of calls to this functions != number of completions processed
-    pub fn triedb_poll(&self, blocking: bool, max_completions: usize) -> usize {
-        unsafe { ffi::triedb_poll(self.db_ptr, blocking, max_completions) }
-    }
-
-    pub fn traverse_triedb_async(
-        &self,
-        key: &[u8],
-        key_len_nibbles: u8,
-        block_id: u64,
-        sender: Sender<Option<Vec<TraverseEntry>>>,
-        concurrency_tracker: Arc<()>,
-    ) {
-        if validate_nibble_key(key, key_len_nibbles, "Key").is_none() {
-            return;
-        }
-
-        let traverse_context = Box::new(TraverseContext {
-            data: std::sync::Mutex::new(Vec::default()),
-            sender,
-            concurrency_tracker,
-        });
-
-        unsafe {
-            let context = Box::into_raw(traverse_context) as *mut std::ffi::c_void;
-            ffi::triedb_async_traverse(
-                self.db_ptr,
-                key.as_ptr(),
-                key_len_nibbles,
-                block_id,
-                context,
-                Some(traverse_callback),
-            );
+            ffi::triedb_async_read(self.inner_mut(), key.bytes, key.nibble_len, block_id, ctx)
         };
     }
 
-    pub fn traverse_triedb_sync(
-        &self,
-        key: &[u8],
-        key_len_nibbles: u8,
+    pub fn traverse_blocking(
+        &mut self,
+        key: NibblesView<'_>,
         block_id: u64,
-        sender: Sender<Option<Vec<TraverseEntry>>>,
+        sender: TraverseSender,
     ) {
-        if validate_nibble_key(key, key_len_nibbles, "Key").is_none() {
-            return;
-        }
+        let ctx = Box::into_raw(Box::new(TraverseContext::new(sender))) as *mut OpaqueContext;
+        let completed = unsafe {
+            ffi::triedb_traverse_sync(self.inner_mut(), key.bytes, key.nibble_len, block_id, ctx)
+        };
+        unsafe { traverse_finished_callback(ctx, completed) };
+    }
 
-        let traverse_context = Box::new(TraverseContext {
-            data: std::sync::Mutex::new(Default::default()),
-            sender,
-            concurrency_tracker: Arc::new(()),
-        });
-
+    pub fn traverse(&mut self, key: NibblesView<'_>, block_id: u64, sender: TraverseSender) {
+        let ctx = Box::into_raw(Box::new(TraverseContext::new(sender))) as *mut OpaqueContext;
         unsafe {
-            let context = Box::into_raw(traverse_context) as *mut std::ffi::c_void;
-            // sync result is already handled by traverse_callback
-            let _result = ffi::triedb_traverse(
-                self.db_ptr,
-                key.as_ptr(),
-                key_len_nibbles,
-                block_id,
-                context,
-                Some(traverse_callback),
-            );
+            ffi::triedb_async_traverse(self.inner_mut(), key.bytes, key.nibble_len, block_id, ctx)
         };
     }
 
-    pub fn range_get_triedb_async(
-        &self,
-        prefix_key: &[u8],
-        prefix_key_len_nibbles: u8,
-        min_key: &[u8],
-        min_key_len_nibbles: u8,
-        max_key: &[u8],
-        max_key_len_nibbles: u8,
+    /// Yields every leaf under `prefix` whose full key lies in `[min, max)`.
+    pub fn traverse_range(
+        &mut self,
+        prefix: NibblesView<'_>,
+        min: NibblesView<'_>,
+        max: NibblesView<'_>,
         block_id: u64,
-        sender: Sender<Option<Vec<TraverseEntry>>>,
-        concurrency_tracker: Arc<()>,
+        sender: TraverseSender,
     ) {
-        if validate_nibble_key(min_key, min_key_len_nibbles, "Min key").is_none() {
-            return;
-        }
-        if validate_nibble_key(max_key, max_key_len_nibbles, "Max key").is_none() {
-            return;
-        }
-
-        let traverse_context = Box::new(TraverseContext {
-            data: std::sync::Mutex::new(Default::default()),
-            sender,
-            concurrency_tracker,
-        });
-
+        let ctx = Box::into_raw(Box::new(TraverseContext::new(sender))) as *mut OpaqueContext;
         unsafe {
-            let context = Box::into_raw(traverse_context) as *mut std::ffi::c_void;
             ffi::triedb_async_ranged_get(
-                self.db_ptr,
-                prefix_key.as_ptr(),
-                prefix_key_len_nibbles,
-                min_key.as_ptr(),
-                min_key_len_nibbles,
-                max_key.as_ptr(),
-                max_key_len_nibbles,
+                self.inner_mut(),
+                prefix.bytes,
+                prefix.nibble_len,
+                min.bytes,
+                min.nibble_len,
+                max.bytes,
+                max.nibble_len,
                 block_id,
-                context,
-                Some(traverse_callback),
+                ctx,
             );
-        };
+        }
     }
 
-    pub fn latest_proposed_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_latest_proposed_block(self.db_ptr) })
+    /// If `blocking`, sleeps until at least one completion is available.
+    pub fn poll(&mut self, blocking: bool, max_completions: usize) -> usize {
+        ffi::triedb_poll(self.inner_mut(), blocking, max_completions)
     }
 
-    /// Note that this *can* return an inconsistent blockid if concurrently written to
-    pub fn latest_proposed_block_id(&self) -> Option<[u8; 32]> {
-        parse_triedb_block_id(unsafe { ffi::triedb_latest_proposed_block_id(self.db_ptr) })
-    }
-
-    pub fn latest_voted_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_latest_voted_block(self.db_ptr) })
-    }
-
-    /// Note that this *can* return an inconsistent blockid if concurrently written to
-    pub fn latest_voted_block_id(&self) -> Option<[u8; 32]> {
-        parse_triedb_block_id(unsafe { ffi::triedb_latest_voted_block_id(self.db_ptr) })
-    }
-
-    pub fn latest_finalized_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_latest_finalized_block(self.db_ptr) })
-    }
-
-    pub fn latest_verified_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_latest_verified_block(self.db_ptr) })
-    }
-
-    pub fn earliest_finalized_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_earliest_finalized_block(self.db_ptr) })
-    }
-
+    /// `None` means no valset is stored (distinct from an empty set).
     pub fn validator_set_at_block(
-        &self,
+        &mut self,
         block_num: usize,
         requested_epoch: u64,
-    ) -> Option<ValidatorSet<'_>> {
-        let result_ptr =
-            unsafe { ffi::triedb_read_valset(self.db_ptr, block_num, requested_epoch) };
+    ) -> Option<Vec<Validator>> {
+        let mut found = false;
+        let valset =
+            ffi::triedb_read_valset(self.inner_mut(), block_num, requested_epoch, &mut found);
+        found.then_some(valset)
+    }
 
-        Some(ValidatorSet {
-            ptr: NonNull::new(result_ptr)?,
-            _lifetime: std::marker::PhantomData,
-        })
+    fn inner_mut(&mut self) -> Pin<&mut ffi::TriedbRoInner> {
+        self.inner
+            .as_mut()
+            .expect("TriedbRoInner is never null after construction")
     }
 }
 
-impl Drop for TriedbHandle {
-    fn drop(&mut self) {
-        let result = unsafe { ffi::triedb_close(self.db_ptr) };
-        if result != 0 {
-            error!("Unexpected result from triedb close: {}", result);
+impl TriedbRwHandle {
+    /// Open a new read-write triedb backed by an anonymous in-memory inode.
+    /// Intended for tests and benchmarks.
+    pub fn open_rw_memory(
+        node_lru_max_mem: u64,
+        file_size_gb: i64,
+        compaction: bool,
+    ) -> Result<Self, OpenError> {
+        monad_cxx::init_cxx_logging(tracing::Level::WARN);
+
+        let inner = ffi::triedb_open_rw_memory(node_lru_max_mem, file_size_gb, compaction);
+        if inner.is_null() {
+            return Err(OpenError::OpenFailed);
+        }
+        Ok(Self { inner })
+    }
+
+    /// Create a new read-write triedb, truncating any existing file at
+    /// `dbdir_path` to `file_size_gb` GiB.
+    pub fn create(
+        dbdir_path: &Path,
+        node_lru_max_mem: u64,
+        file_size_gb: i64,
+        compaction: bool,
+    ) -> Result<Self, OpenError> {
+        Self::open_rw_impl(
+            dbdir_path,
+            false,
+            node_lru_max_mem,
+            file_size_gb,
+            compaction,
+        )
+    }
+
+    /// Open an existing read-write triedb at `dbdir_path`, preserving its
+    /// contents. `file_size_gb` is used only if the file does not yet
+    /// exist (it won't, normally, for `open_rw`) — the storage pool
+    /// skips ftruncate on existing files.
+    pub fn open_rw(
+        dbdir_path: &Path,
+        node_lru_max_mem: u64,
+        file_size_gb: i64,
+        compaction: bool,
+    ) -> Result<Self, OpenError> {
+        Self::open_rw_impl(dbdir_path, true, node_lru_max_mem, file_size_gb, compaction)
+    }
+
+    fn open_rw_impl(
+        dbdir_path: &Path,
+        append: bool,
+        node_lru_max_mem: u64,
+        file_size_gb: i64,
+        compaction: bool,
+    ) -> Result<Self, OpenError> {
+        monad_cxx::init_cxx_logging(tracing::Level::WARN);
+
+        let path_str = dbdir_path.to_str().ok_or(OpenError::NonUtf8Path)?;
+        let inner =
+            ffi::triedb_open_rw(path_str, append, node_lru_max_mem, file_size_gb, compaction);
+        if inner.is_null() {
+            return Err(OpenError::OpenFailed);
+        }
+        Ok(Self { inner })
+    }
+
+    /// Apply a batch of upserts at `block_id`, advancing the current root.
+    pub fn upsert(&mut self, updates: &[UpsertEntry], block_id: u64) {
+        ffi::triedb_upsert(self.inner_mut(), updates, block_id);
+    }
+
+    /// Reset the cached root so the next upsert starts from an empty trie.
+    pub fn clear_root(&mut self) {
+        ffi::triedb_clear_root(self.inner_mut());
+    }
+
+    /// Load the root for `version` into the cache. Returns `false` if no
+    /// such version exists on disk.
+    pub fn load_root(&mut self, version: u64) -> bool {
+        ffi::triedb_load_root(self.inner_mut(), version)
+    }
+
+    pub fn update_finalized_version(&mut self, version: u64) {
+        ffi::triedb_update_finalized_version(self.inner_mut(), version);
+    }
+
+    pub fn update_voted_metadata(&mut self, version: u64, block_id: [u8; 32]) {
+        ffi::triedb_update_voted_metadata(self.inner_mut(), version, &Bytes32(block_id));
+    }
+
+    pub fn update_proposed_metadata(&mut self, version: u64, block_id: [u8; 32]) {
+        ffi::triedb_update_proposed_metadata(self.inner_mut(), version, &Bytes32(block_id));
+    }
+
+    fn inner_mut(&mut self) -> Pin<&mut ffi::TriedbRwInner> {
+        self.inner
+            .as_mut()
+            .expect("TriedbRwInner is never null after construction")
+    }
+}
+
+#[inline]
+fn parse_block_num(value: u64) -> Option<u64> {
+    (value != u64::MAX).then_some(value)
+}
+
+#[inline]
+fn parse_block_id(value: Bytes32) -> Option<[u8; 32]> {
+    (value.0 != [0u8; 32]).then_some(value.0)
+}
+
+pub type TraverseSender = Sender<Option<Box<[TraverseEntry]>>>;
+
+struct TraverseContext {
+    data: UnsafeCell<Vec<TraverseEntry>>,
+    sender: TraverseSender,
+}
+
+impl TraverseContext {
+    fn new(sender: TraverseSender) -> Self {
+        Self {
+            data: UnsafeCell::new(Vec::new()),
+            sender,
         }
     }
 }
 
-pub struct ValidatorSet<'s> {
-    ptr: NonNull<validator_set>,
-    _lifetime: std::marker::PhantomData<&'s TriedbHandle>,
+unsafe fn async_read_on_complete(ctx: *mut OpaqueContext, value: &[u8], found: bool) {
+    let sender = unsafe { *Box::from_raw(ctx as *mut AsyncReadSender) };
+    let _ = sender.send(found.then(|| value.into()));
 }
 
-impl<'s> ValidatorSet<'s> {
-    pub fn data(&self) -> &[validator_data] {
-        let val_set_ptr = unsafe { self.ptr.as_ref() };
-
-        let val_set_length: usize = val_set_ptr
-            .length
-            .try_into()
-            .expect("validator_set length fits in usize");
-
-        unsafe { std::slice::from_raw_parts(val_set_ptr.validators, val_set_length) }
-    }
+unsafe fn traverse_value_callback(ctx: *mut OpaqueContext, key: &[u8], value: &[u8]) {
+    let ctx = unsafe { &*(ctx as *const TraverseContext) };
+    unsafe { &mut *ctx.data.get() }.push(TraverseEntry {
+        key: key.into(),
+        value: value.into(),
+    });
 }
 
-impl Drop for ValidatorSet<'_> {
-    fn drop(&mut self) {
-        unsafe { ffi::triedb_free_valset(self.ptr.as_ptr()) }
-    }
+unsafe fn traverse_finished_callback(ctx: *mut OpaqueContext, completed: bool) {
+    let ctx = unsafe { Box::from_raw(ctx as *mut TraverseContext) };
+    let data = std::mem::take(unsafe { &mut *ctx.data.get() });
+    let _ = ctx
+        .sender
+        .send(completed.then_some(data.into_boxed_slice()));
 }

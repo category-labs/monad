@@ -25,28 +25,18 @@
 //! are reproducible. Each returned value is compared against the
 //! fixture's expected `value = key || key` invariant.
 
-use std::{
-    hint::black_box,
-    path::Path,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use std::{hint::black_box, path::Path};
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use futures::channel::oneshot;
-use monad_triedb::TriedbHandle;
+use monad_triedb::{NibblesView, Triedb, TriedbRoHandle};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 const DB_PATH: &str = "./test_db";
 const NODE_LRU_MAX_MEM: u64 = 256 << 20;
 const TOTAL_KEYS: u64 = 1024 * 1024;
 const READ_BLOCK_ID: u64 = 1024;
-const KEY_NIBBLE_LEN: u8 = 16;
 
-// Seeds chosen so each bench has its own reproducible stream. Changing
-// these re-randomises the access pattern.
 const READ_PRESENT_SEED: u64 = 0xA11CE_C0FFEE_01;
 const READ_ABSENT_SEED: u64 = 0xA11CE_C0FFEE_02;
 const READ_ASYNC_SINGLE_SEED: u64 = 0xA11CE_C0FFEE_03;
@@ -65,12 +55,6 @@ fn expected_value(index: u64) -> [u8; 16] {
     value
 }
 
-/// Every leaf in the fixture satisfies `value == full_key || full_key`
-/// where `full_key` is the 8-byte absolute key.
-///
-/// Traverse/range-get callbacks emit keys relative to the subtree root,
-/// i.e. with the traversal prefix stripped. Callers must pass the prefix
-/// bytes so the full key can be reconstructed for validation.
 fn assert_entry_invariant(prefix_bytes: &[u8], relative_key: &[u8], value: &[u8]) {
     let mut full_key = Vec::with_capacity(prefix_bytes.len() + relative_key.len());
     full_key.extend_from_slice(prefix_bytes);
@@ -95,16 +79,16 @@ fn assert_entry_invariant(prefix_bytes: &[u8], relative_key: &[u8], value: &[u8]
     );
 }
 
-fn open_handle() -> TriedbHandle {
-    TriedbHandle::try_new(Path::new(DB_PATH), NODE_LRU_MAX_MEM).unwrap_or_else(|| {
+fn open_handle() -> TriedbRoHandle {
+    TriedbRoHandle::open(Path::new(DB_PATH), NODE_LRU_MAX_MEM, false).unwrap_or_else(|e| {
         panic!(
-            "failed to open triedb at {DB_PATH}; populate it with \
+            "failed to open triedb at {DB_PATH}: {e}; populate it with \
              `scripts/populate-1m.sh` from the monad-triedb crate root"
         )
     })
 }
 
-fn bench_read(c: &mut Criterion) {
+fn bench_find(c: &mut Criterion) {
     let handle = open_handle();
 
     let mut group = c.benchmark_group("read");
@@ -114,22 +98,23 @@ fn bench_read(c: &mut Criterion) {
         let mut rng = StdRng::seed_from_u64(READ_PRESENT_SEED);
         b.iter(|| {
             let index = rng.random_range(1..=TOTAL_KEYS);
-            let key = encode_key(index);
-            let value = handle
-                .read(&key, KEY_NIBBLE_LEN, READ_BLOCK_ID)
+            let key_bytes = encode_key(index);
+            let key = NibblesView::from_bytes(&key_bytes).expect("key fits in u8 nibbles");
+            let node = handle
+                .find(key, READ_BLOCK_ID)
                 .expect("populated key must be present");
-            assert_eq!(value, expected_value(index));
-            black_box(value);
+            assert_eq!(node.bytes(), expected_value(index));
+            black_box(node);
         });
     });
 
     group.bench_function("absent_key", |b| {
         let mut rng = StdRng::seed_from_u64(READ_ABSENT_SEED);
         b.iter(|| {
-            // Pick a random absent index in (TOTAL_KEYS, 2 * TOTAL_KEYS].
             let index = rng.random_range((TOTAL_KEYS + 1)..=(2 * TOTAL_KEYS));
-            let key = encode_key(index);
-            let result = handle.read(&key, KEY_NIBBLE_LEN, READ_BLOCK_ID);
+            let key_bytes = encode_key(index);
+            let key = NibblesView::from_bytes(&key_bytes).expect("key fits in u8 nibbles");
+            let result = handle.find(key, READ_BLOCK_ID);
             assert!(result.is_none(), "absent key must not be found");
             black_box(result);
         });
@@ -138,8 +123,8 @@ fn bench_read(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_read_async_single(c: &mut Criterion) {
-    let handle = open_handle();
+fn bench_find_async_single(c: &mut Criterion) {
+    let mut handle = open_handle();
 
     let mut group = c.benchmark_group("read_async_single");
     group.throughput(Throughput::Elements(1));
@@ -148,31 +133,22 @@ fn bench_read_async_single(c: &mut Criterion) {
         let mut rng = StdRng::seed_from_u64(READ_ASYNC_SINGLE_SEED);
         b.iter(|| {
             let index = rng.random_range(1..=TOTAL_KEYS);
-            let key = encode_key(index);
+            let key_bytes = encode_key(index);
+            let key = NibblesView::from_bytes(&key_bytes).expect("key fits in u8 nibbles");
 
-            let (tx, mut rx) = oneshot::channel();
-            let completed = Arc::new(AtomicUsize::new(0));
-            let tracker = Arc::new(());
+            let (tx, mut rx) = oneshot::channel::<Option<Box<[u8]>>>();
+            handle.find_async(key, READ_BLOCK_ID, tx);
 
-            handle.read_async(
-                &key,
-                KEY_NIBBLE_LEN,
-                READ_BLOCK_ID,
-                Arc::clone(&completed),
-                tx,
-                Arc::clone(&tracker),
-            );
-
-            while completed.load(Ordering::SeqCst) == 0 {
-                handle.triedb_poll(true, 1);
-            }
-
-            let value = rx
-                .try_recv()
-                .expect("sender not dropped")
-                .expect("sender fired")
-                .expect("key must be present");
-            assert_eq!(value, expected_value(index));
+            let value = loop {
+                match rx.try_recv() {
+                    Ok(Some(result)) => break result.expect("key must be present"),
+                    Ok(None) => {
+                        handle.poll(true, 1);
+                    }
+                    Err(_) => panic!("sender dropped"),
+                }
+            };
+            assert_eq!(&*value, &expected_value(index));
             black_box(value);
         });
     });
@@ -180,8 +156,8 @@ fn bench_read_async_single(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_read_async_batch(c: &mut Criterion) {
-    let handle = open_handle();
+fn bench_find_async_batch(c: &mut Criterion) {
+    let mut handle = open_handle();
 
     let mut group = c.benchmark_group("read_async_batch");
 
@@ -195,38 +171,41 @@ fn bench_read_async_batch(c: &mut Criterion) {
             |b, &batch_size| {
                 let mut rng = StdRng::seed_from_u64(READ_ASYNC_BATCH_SEED);
                 b.iter(|| {
-                    let completed = Arc::new(AtomicUsize::new(0));
-                    let tracker = Arc::new(());
-
-                    let mut pending: Vec<(u64, oneshot::Receiver<Option<Vec<u8>>>)> =
+                    let mut pending: Vec<(u64, oneshot::Receiver<Option<Box<[u8]>>>)> =
                         Vec::with_capacity(batch_size);
                     for _ in 0..batch_size {
                         let index = rng.random_range(1..=TOTAL_KEYS);
-                        let key = encode_key(index);
+                        let key_bytes = encode_key(index);
+                        let key =
+                            NibblesView::from_bytes(&key_bytes).expect("key fits in u8 nibbles");
 
                         let (tx, rx) = oneshot::channel();
-                        handle.read_async(
-                            &key,
-                            KEY_NIBBLE_LEN,
-                            READ_BLOCK_ID,
-                            Arc::clone(&completed),
-                            tx,
-                            Arc::clone(&tracker),
-                        );
+                        handle.find_async(key, READ_BLOCK_ID, tx);
                         pending.push((index, rx));
                     }
 
-                    while completed.load(Ordering::SeqCst) < batch_size {
-                        handle.triedb_poll(true, batch_size);
+                    let mut remaining = batch_size;
+                    let mut results: Vec<Option<Box<[u8]>>> = vec![None; batch_size];
+                    while remaining > 0 {
+                        let mut progressed = false;
+                        for (i, (_index, rx)) in pending.iter_mut().enumerate() {
+                            if results[i].is_some() {
+                                continue;
+                            }
+                            if let Ok(Some(result)) = rx.try_recv() {
+                                results[i] = Some(result.expect("key must be present"));
+                                remaining -= 1;
+                                progressed = true;
+                            }
+                        }
+                        if remaining > 0 && !progressed {
+                            handle.poll(true, remaining);
+                        }
                     }
 
-                    for (index, mut rx) in pending {
-                        let value = rx
-                            .try_recv()
-                            .expect("sender not dropped")
-                            .expect("sender fired")
-                            .expect("key must be present");
-                        assert_eq!(value, expected_value(index));
+                    for ((index, _), maybe_value) in pending.iter().zip(results.iter()) {
+                        let value = maybe_value.as_ref().expect("all results populated");
+                        assert_eq!(&**value, &expected_value(*index));
                         black_box(value);
                     }
                 });
@@ -237,51 +216,39 @@ fn bench_read_async_batch(c: &mut Criterion) {
     group.finish();
 }
 
-// Traverse prefix for bench_traverse_async. prefix_nibbles=14 reads
-// only the first 7 bytes of the buffer; the 8th is ignored. The chosen
-// prefix `00 00 00 00 00 00 01` matches keys where byte[6] == 0x01 and
-// byte[7] varies over 0x00..0xFF, i.e. fixture indices 256..=511 (256
-// keys, all populated).
+// Traverse prefix for bench_traverse. prefix_nibbles=14 reads only the
+// first 7 bytes of the buffer; the 8th is ignored. The chosen prefix
+// `00 00 00 00 00 00 01` matches keys where byte[6] == 0x01 and byte[7]
+// varies over 0x00..0xFF, i.e. fixture indices 256..=511 (256 keys, all
+// populated).
 const TRAVERSE_PREFIX: &[u8] = &[0, 0, 0, 0, 0, 0, 0x01, 0x00];
 const TRAVERSE_PREFIX_NIBBLES: u8 = 14;
 const TRAVERSE_EXPECTED_LEAVES: u64 = 256;
 
-// `traverse_triedb_sync` in the current driver calls `Db::find(prefix)`
-// on the C++ side, which asserts the found node is a leaf. Leaves have
-// no children, so the subsequent traversal visits zero nodes and yields
-// an empty result. Internal-node prefixes make `find` abort. Either way
-// the API can't produce observable traversal work, so we don't bench it.
-
 fn bench_traverse_async(c: &mut Criterion) {
-    let handle = open_handle();
+    let mut handle = open_handle();
     let mut group = c.benchmark_group("traverse_async");
     group.throughput(Throughput::Elements(TRAVERSE_EXPECTED_LEAVES));
 
     group.bench_function("subtrie", |b| {
         b.iter(|| {
+            let prefix =
+                NibblesView::new(TRAVERSE_PREFIX, TRAVERSE_PREFIX_NIBBLES).expect("prefix fits");
+
             let (tx, mut rx) = oneshot::channel();
-            let tracker = Arc::new(());
-            handle.traverse_triedb_async(
-                TRAVERSE_PREFIX,
-                TRAVERSE_PREFIX_NIBBLES,
-                READ_BLOCK_ID,
-                tx,
-                Arc::clone(&tracker),
-            );
+            handle.traverse(prefix, READ_BLOCK_ID, tx);
 
             let entries = loop {
                 match rx.try_recv() {
                     Ok(Some(result)) => break result.expect("traverse completed"),
                     Ok(None) => {
-                        handle.triedb_poll(true, 64);
+                        handle.poll(true, 64);
                     }
                     Err(_) => panic!("sender dropped"),
                 }
             };
 
             assert_eq!(entries.len() as u64, TRAVERSE_EXPECTED_LEAVES);
-            // prefix_nibbles=14 means the first 7 bytes of TRAVERSE_PREFIX
-            // are the literal prefix; emitted keys fill the remaining byte.
             let prefix_bytes = &TRAVERSE_PREFIX[..TRAVERSE_PREFIX_NIBBLES as usize / 2];
             for entry in &entries {
                 assert_entry_invariant(prefix_bytes, &entry.key, &entry.value);
@@ -293,44 +260,36 @@ fn bench_traverse_async(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_range_get_async(c: &mut Criterion) {
-    let handle = open_handle();
+fn bench_traverse_range(c: &mut Criterion) {
+    let mut handle = open_handle();
     let mut group = c.benchmark_group("range_get_async");
 
     // Keys in [0x1000, 0x1100) = 256 keys.
-    let min: [u8; 8] = 0x1000u64.to_be_bytes();
-    let max: [u8; 8] = 0x1100u64.to_be_bytes();
+    let min_bytes: [u8; 8] = 0x1000u64.to_be_bytes();
+    let max_bytes: [u8; 8] = 0x1100u64.to_be_bytes();
     const EXPECTED: u64 = 0x100;
 
     group.throughput(Throughput::Elements(EXPECTED));
     group.bench_function("256_keys", |b| {
         b.iter(|| {
+            let prefix = NibblesView::empty();
+            let min = NibblesView::from_bytes(&min_bytes).expect("min fits");
+            let max = NibblesView::from_bytes(&max_bytes).expect("max fits");
+
             let (tx, mut rx) = oneshot::channel();
-            let tracker = Arc::new(());
-            handle.range_get_triedb_async(
-                &[],
-                0,
-                &min,
-                KEY_NIBBLE_LEN,
-                &max,
-                KEY_NIBBLE_LEN,
-                READ_BLOCK_ID,
-                tx,
-                Arc::clone(&tracker),
-            );
+            handle.traverse_range(prefix, min, max, READ_BLOCK_ID, tx);
 
             let entries = loop {
                 match rx.try_recv() {
                     Ok(Some(result)) => break result.expect("range traverse completed"),
                     Ok(None) => {
-                        handle.triedb_poll(true, 64);
+                        handle.poll(true, 64);
                     }
                     Err(_) => panic!("sender dropped"),
                 }
             };
 
             assert_eq!(entries.len() as u64, EXPECTED);
-            // Empty prefix: emitted keys are the absolute 8-byte keys.
             for entry in &entries {
                 assert_entry_invariant(&[], &entry.key, &entry.value);
             }
@@ -372,13 +331,11 @@ fn bench_metadata(c: &mut Criterion) {
 
 fn bench_open_close(c: &mut Criterion) {
     let mut group = c.benchmark_group("open_close");
-    // Spawns a C++ worker thread every iteration; sample size kept low so
-    // the total bench runtime stays reasonable.
     group.sample_size(10);
 
     group.bench_function("try_new_then_drop", |b| {
         b.iter(|| {
-            let handle = TriedbHandle::try_new(Path::new(DB_PATH), NODE_LRU_MAX_MEM)
+            let handle = TriedbRoHandle::open(Path::new(DB_PATH), NODE_LRU_MAX_MEM, false)
                 .expect("open must succeed for bench");
             black_box(&handle);
             drop(handle);
@@ -390,11 +347,11 @@ fn bench_open_close(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_read,
-    bench_read_async_single,
-    bench_read_async_batch,
+    bench_find,
+    bench_find_async_single,
+    bench_find_async_batch,
     bench_traverse_async,
-    bench_range_get_async,
+    bench_traverse_range,
     bench_metadata,
     bench_open_close,
 );

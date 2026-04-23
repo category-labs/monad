@@ -11,15 +11,18 @@ bench = false
 [dependencies]
 monad-cxx = { workspace = true }
 
+cxx = { workspace = true }
 futures = { workspace = true }
+paste = { workspace = true }
 tracing = { workspace = true }
 
 [build-dependencies]
-bindgen = { workspace = true }
-cmake = { workspace = true }
+cxx-build = { workspace = true }
 
 [dev-dependencies]
+clap = { workspace = true, features = ["derive", "std", "help", "usage", "error-context"] }
 criterion = { workspace = true }
+hex = { workspace = true }
 rand = { workspace = true }
 
 [[bench]]

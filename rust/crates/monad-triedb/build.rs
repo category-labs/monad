@@ -15,39 +15,63 @@
 
 use std::{env, path::PathBuf};
 
+const MONAD_ROOT: &str = "../../..";
+
+/// Include dirs, relative to the monad repo root, mirroring the transitive
+/// closure computed by `add_subdirectory(third_party/...)` in the C++ build.
+const MONAD_INCLUDE_DIRS: &[&str] = &[
+    ".", // for `#include <category/...>`
+    "third_party/ankerl",
+    "third_party/concurrentqueue",
+    "third_party/ethash/include",
+    "third_party/evmc/include",
+    "third_party/fiber/include",
+    "third_party/intx/include",
+    "third_party/nlohmann_json/include",
+    "third_party/unordered_dense/include",
+];
+
+const MONAD_COMPILE_DEFINES: &[(&str, &str)] = &[("MONAD_CXX_CTYPES_USE_EVMC_HPP", "1")];
+
 fn main() {
-    println!("cargo:rerun-if-changed=triedb-driver");
-    println!("cargo:rerun-if-changed=../../category");
+    println!("cargo:rerun-if-changed=src/ffi.cpp");
+    println!("cargo:rerun-if-changed=include/ffi.h");
+    println!("cargo:rerun-if-changed={MONAD_ROOT}/category");
     println!("cargo:rerun-if-env-changed=TRIEDB_TARGET");
-    let build_execution_lib =
-        env::var("TRIEDB_TARGET").is_ok_and(|target| target == "triedb_driver");
-    if build_execution_lib {
-        // monad-cxx must set this
-        let monad_execution_dir = env::var("DEP_MONAD_EXECUTION_CMAKE_BINARY_DIR").unwrap();
 
-        let target = "triedb_driver";
-
-        let dst = cmake::Config::new("triedb-driver")
-            .define("BUILD_SHARED_LIBS", "ON")
-            .define("MONAD_EXECUTION_DIR", monad_execution_dir)
-            .build_target(target)
-            .build();
-
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dst.display());
-        println!("cargo:rustc-link-search=native={}/build", dst.display());
-        println!("cargo:rustc-link-lib=dylib={}", target);
+    if env::var("TRIEDB_TARGET").as_deref() != Ok("triedb_driver") {
+        return;
     }
 
-    let bindings = bindgen::Builder::default()
-        .header("triedb-driver/include/triedb.h")
-        .clang_arg("-I../../../")
-        // invalidate on header change
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .generate()
-        .expect("Unable to generate bindings");
+    let manifest_dir =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set by cargo"));
+    let monad_root = manifest_dir
+        .join(MONAD_ROOT)
+        .canonicalize()
+        .expect("monad repo root not found at ../../..");
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
+    let mut build = cxx_build::bridge("src/ffi.rs");
+    build
+        .file("src/ffi.cpp")
+        .std("c++23")
+        .include(&manifest_dir)
+        .flag_if_supported("-Wno-missing-field-initializers")
+        .flag_if_supported("-Wno-attributes=clang::no_sanitize");
+
+    for include in MONAD_INCLUDE_DIRS {
+        build.include(monad_root.join(include));
+    }
+    for (key, value) in MONAD_COMPILE_DEFINES {
+        build.define(key, Some(*value));
+    }
+
+    build.compile("monad_triedb_ffi");
+
+    let monad_execution_dir = env::var("DEP_MONAD_EXECUTION_CMAKE_BINARY_DIR").expect(
+        "DEP_MONAD_EXECUTION_CMAKE_BINARY_DIR not set; ensure monad-cxx ran with \
+         TRIEDB_TARGET=triedb_driver",
+    );
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{monad_execution_dir}");
+    println!("cargo:rustc-link-search=native={monad_execution_dir}");
+    println!("cargo:rustc-link-lib=dylib=monad_execution");
 }

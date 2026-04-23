@@ -1585,29 +1585,8 @@ Result<byte_string> StakingContract::precompile_external_reward(
         return StakingError::InvalidInput;
     }
 
-    // 1. Only validators in the consensus set can invoke this method.
-    auto val_execution = vars.val_execution(val_id);
-    if (MONAD_UNLIKELY(!val_execution.exists())) {
-        return StakingError::UnknownValidator;
-    }
-    auto consensus_view = vars.this_epoch_view(val_id);
-    uint256_t const active_stake = consensus_view.stake().load().native();
-    if (MONAD_UNLIKELY(active_stake == 0)) {
-        return StakingError::NotInValidatorSet;
-    }
-
-    // 2. Apply bounds checks
-    if (MONAD_UNLIKELY(external_reward < limits::min_external_reward())) {
-        return StakingError::ExternalRewardTooSmall;
-    }
-    if (MONAD_UNLIKELY(external_reward > limits::max_external_reward())) {
-        return StakingError::ExternalRewardTooLarge;
-    }
-
-    // 3. Update validator accumulator.
-    BOOST_OUTCOME_TRY(
-        apply_reward(val_id, sender, external_reward, active_stake));
-
+    BOOST_OUTCOME_TRY(apply_external_reward(
+        val_id, sender, external_reward, /* apply_commission */ false));
     return byte_string{abi_encode_bool(true)};
 }
 
@@ -1834,6 +1813,51 @@ Result<void> StakingContract::syscall_snapshot(
     }
 
     vars.in_epoch_delay_period.store(true);
+
+    return outcome::success();
+}
+
+Result<void> StakingContract::apply_external_reward(
+    u64_be const val_id, Address const &sender,
+    uint256_t const &external_reward, bool const apply_commission)
+{
+    // 1. Only validators in the consensus set can receive external rewards.
+    auto val_execution = vars.val_execution(val_id);
+    if (MONAD_UNLIKELY(!val_execution.exists())) {
+        return StakingError::UnknownValidator;
+    }
+    auto consensus_view = vars.this_epoch_view(val_id);
+    uint256_t const active_stake = consensus_view.stake().load().native();
+    if (MONAD_UNLIKELY(active_stake == 0)) {
+        return StakingError::NotInValidatorSet;
+    }
+
+    // 2. Apply bounds checks
+    if (MONAD_UNLIKELY(external_reward < limits::min_external_reward())) {
+        return StakingError::ExternalRewardTooSmall;
+    }
+    if (MONAD_UNLIKELY(external_reward > limits::max_external_reward())) {
+        return StakingError::ExternalRewardTooLarge;
+    }
+
+    // 3. Optionally split off commission to the auth delegator.
+    uint256_t del_reward = external_reward;
+    if (apply_commission) {
+        uint256_t const commission_rate =
+            consensus_view.commission().load().native();
+        BOOST_OUTCOME_TRY(
+            auto const commission,
+            checked_mul_div(external_reward, commission_rate, MON));
+        auto auth = vars.delegator(val_id, val_execution.auth_address());
+        BOOST_OUTCOME_TRY(
+            auto const auth_reward,
+            checked_add(auth.rewards().load().native(), commission));
+        auth.rewards().store(auth_reward);
+        BOOST_OUTCOME_TRY(del_reward, checked_sub(external_reward, commission));
+    }
+
+    // 4. Update validator accumulator.
+    BOOST_OUTCOME_TRY(apply_reward(val_id, sender, del_reward, active_stake));
 
     return outcome::success();
 }

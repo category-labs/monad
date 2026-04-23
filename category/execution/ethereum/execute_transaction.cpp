@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -372,9 +373,14 @@ Receipt ExecuteTransaction<traits>::execute_final(
         }
     }
 
-    auto const reward = calculate_txn_award<traits>(
+    uint256_t const reward = calculate_txn_award<traits>(
         tx_, header_.base_fee_per_gas.value_or(0), gas_used);
-    state.add_to_balance(header_.beneficiary, reward);
+    if constexpr (is_monad_trait_v<traits>) {
+        staking::collect_priority_fee<traits>(state, header_, reward);
+    }
+    else {
+        state.add_to_balance(header_.beneficiary, reward);
+    }
 
     // finalize state, Eqn. 77-79
     state.destruct_suicides<traits>();

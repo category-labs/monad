@@ -667,8 +667,6 @@ pub struct BlockOverride {
     pub prev_randao: Option<B256>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_fee_per_gas: Option<U256>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub blob_base_fee: Option<U256>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub withdrawals: Vec<Withdrawal>,
 }
@@ -756,17 +754,6 @@ pub async fn eth_simulate_v1(
                         override_ctx,
                         base_fee_per_gas_vec.as_ptr(),
                         base_fee_per_gas_vec.len(),
-                    );
-                }
-            }
-
-            if let Some(blob_base_fee) = block_override.blob_base_fee {
-                let blob_base_fee_vec = blob_base_fee.to_be_bytes_vec();
-                unsafe {
-                    ffi::set_block_override_blob_base_fee(
-                        override_ctx,
-                        blob_base_fee_vec.as_ptr(),
-                        blob_base_fee_vec.len(),
                     );
                 }
             }

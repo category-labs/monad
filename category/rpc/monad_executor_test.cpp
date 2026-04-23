@@ -4159,11 +4159,6 @@ TEST(BlockOverride, set_all_fields)
     fee_bytes[31] = 9;
     set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes));
 
-    uint8_t blob_fee_bytes[32] = {};
-    blob_fee_bytes[31] = 1;
-    set_block_override_blob_base_fee(
-        bo, blob_fee_bytes, sizeof(blob_fee_bytes));
-
     EXPECT_EQ(bo->number, 42u);
     EXPECT_EQ(bo->time, 1700000000u);
     EXPECT_EQ(bo->gas_limit, 30'000'000u);
@@ -4179,9 +4174,6 @@ TEST(BlockOverride, set_all_fields)
 
     ASSERT_TRUE(bo->base_fee_per_gas.has_value());
     EXPECT_EQ(*bo->base_fee_per_gas, uint256_t{9});
-
-    ASSERT_TRUE(bo->blob_base_fee.has_value());
-    EXPECT_EQ(*bo->blob_base_fee, uint256_t{1});
 
     monad_block_override_destroy(bo);
 }
@@ -4203,7 +4195,6 @@ TEST(BlockOverride, partial_fields)
     EXPECT_EQ(bo->gas_limit, std::nullopt);
     EXPECT_EQ(bo->fee_recipient, std::nullopt);
     EXPECT_EQ(bo->prev_randao, std::nullopt);
-    EXPECT_EQ(bo->blob_base_fee, std::nullopt);
 
     monad_block_override_destroy(bo);
 }
@@ -4218,14 +4209,6 @@ TEST(BlockOverride, uint256_big_endian)
     set_block_override_base_fee_per_gas(bo, base_fee, sizeof(base_fee));
     ASSERT_TRUE(bo->base_fee_per_gas.has_value());
     EXPECT_EQ(*bo->base_fee_per_gas, uint256_t{9});
-
-    // blob_base_fee = 0x0100 = 256 in big-endian
-    uint8_t blob_fee[32] = {};
-    blob_fee[30] = 0x01;
-    blob_fee[31] = 0x00;
-    set_block_override_blob_base_fee(bo, blob_fee, sizeof(blob_fee));
-    ASSERT_TRUE(bo->blob_base_fee.has_value());
-    EXPECT_EQ(*bo->blob_base_fee, uint256_t{256});
 
     monad_block_override_destroy(bo);
 }

@@ -56,6 +56,7 @@ namespace monad
         { T::eip_7883_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::mip_3_active() } -> std::same_as<bool>;
+        { T::mip_11_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
 
         // Constants
@@ -118,6 +119,11 @@ namespace monad
         }
 
         static consteval bool mip_3_active() noexcept
+        {
+            return false;
+        }
+
+        static consteval bool mip_11_active() noexcept
         {
             return false;
         }
@@ -229,6 +235,11 @@ namespace monad
                 return true;
             }
             return false;
+        }
+
+        static consteval bool mip_11_active() noexcept
+        {
+            return Rev >= MONAD_NEXT;
         }
 
         static consteval bool can_create_inside_delegated() noexcept

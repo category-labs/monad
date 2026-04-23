@@ -39,6 +39,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -352,6 +353,18 @@ Result<std::vector<Receipt>> execute_block(
 
     if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
         process_withdrawal(state, block.withdrawals);
+    }
+
+    if constexpr (traits::eip_7002_active()) {
+        BOOST_OUTCOME_TRY(
+            auto const computed_requests_hash,
+            process_requests<traits>(
+                chain, state, block_hash_buffer, block.header, chain_ctx));
+        MONAD_ASSERT(block.header.requests_hash.has_value());
+        if (MONAD_UNLIKELY(
+                computed_requests_hash != block.header.requests_hash.value())) {
+            return BlockError::InvalidRequestsHash;
+        }
     }
 
     apply_block_reward<traits>(state, block);

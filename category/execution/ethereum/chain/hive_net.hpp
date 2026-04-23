@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,20 +15,18 @@
 
 #pragma once
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
+#include <category/execution/ethereum/chain/chain.hpp>
 
-enum monad_chain_config
+MONAD_NAMESPACE_BEGIN
+
+struct HiveNet : Chain
 {
-    CHAIN_CONFIG_ETHEREUM_MAINNET = 0,
-    CHAIN_CONFIG_MONAD_DEVNET = 1,
-    CHAIN_CONFIG_MONAD_TESTNET = 2,
-    CHAIN_CONFIG_MONAD_MAINNET = 3,
-    CHAIN_CONFIG_HIVE_NET = 4,
+    virtual uint256_t get_chain_id() const override;
+
+    virtual evmc_revision
+    get_revision(uint64_t block_number, uint64_t timestamp) const override;
+
+    virtual GenesisState get_genesis_state() const override;
 };
 
-#ifdef __cplusplus
-}
-#endif
+MONAD_NAMESPACE_END

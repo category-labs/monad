@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -33,10 +34,25 @@ public:
     BlockDb() = delete;
     BlockDb(Block const &) = delete;
     BlockDb(BlockDb &&) = default;
-    explicit BlockDb(std::filesystem::path const &);
-    ~BlockDb() = default;
+    explicit BlockDb(std::filesystem::path const &dir);
+    virtual ~BlockDb() = default;
 
-    bool get(uint64_t, Block &) const;
+    virtual bool get(uint64_t, Block &) const;
+};
+
+class RlpBlockDb : public BlockDb
+{
+    std::vector<Block> rlp_blocks_;
+
+    void import_rlp(std::filesystem::path const &rlp_path);
+
+public:
+    RlpBlockDb(
+        std::filesystem::path const &dir,
+        std::filesystem::path const &rlp_path);
+    ~RlpBlockDb() override = default;
+
+    bool get(uint64_t, Block &) const override;
 };
 
 MONAD_NAMESPACE_END

@@ -48,6 +48,22 @@ namespace
     auto const REFUND_TEST_CODE_HASH = to_bytes(keccak256(REFUND_TEST_CODE));
     auto const REFUND_TEST_ICODE = vm::make_shared_intercode(REFUND_TEST_CODE);
 
+    // EIP-7002/7251 system contract stub (just the STOP opcode).
+    // Deployed at the two predeploy addresses so that execute_block's
+    // process_requests path works for Prague+ traits.
+    auto const SYSTEM_STUB_CODE = 0x00_bytes;
+    auto const SYSTEM_STUB_CODE_HASH = to_bytes(keccak256(SYSTEM_STUB_CODE));
+    auto const SYSTEM_STUB_ICODE = vm::make_shared_intercode(SYSTEM_STUB_CODE);
+
+    constexpr auto WITHDRAWAL_REQUEST_ADDRESS =
+        0x00000961ef480eb55e80d19ad83579a64c007002_address;
+    constexpr auto CONSOLIDATION_REQUEST_ADDRESS =
+        0x0000bbddc7ce488642fb579f8b00f3a590007251_address;
+
+    // sha256("") - requests_hash when all system call outputs are empty.
+    constexpr auto EMPTY_REQUESTS_HASH =
+        0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855_bytes32;
+
     ///////////////////////////////////////////
     // DB Getters
     ///////////////////////////////////////////
@@ -147,8 +163,22 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}}},
-        Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE}},
+                      Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}},
+            {WITHDRAWAL_REQUEST_ADDRESS,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}},
+            {CONSOLIDATION_REQUEST_ADDRESS,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}}},
+        Code{
+            {STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE},
+            {SYSTEM_STUB_CODE_HASH, SYSTEM_STUB_ICODE}},
         BlockHeader{.number = 0});
 
     byte_string block_rlp =
@@ -159,6 +189,10 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
         constants::EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER;
     block_rlp = rlp::encode_block(block.value());
     ASSERT_TRUE(!block.has_error());
+
+    if constexpr (TestFixture::Trait::eip_7002_active()) {
+        block.value().header.requests_hash = EMPTY_REQUESTS_HASH;
+    }
 
     BlockHashBufferFinalized block_hash_buffer;
     block_hash_buffer.set(
@@ -295,8 +329,22 @@ TYPED_TEST(TraitsTest, assertion_exception)
                      {std::nullopt,
                       Account{
                           .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = STRESS_TEST_CODE_HASH}}}}},
-        Code{{STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE}},
+                          .code_hash = STRESS_TEST_CODE_HASH}}}},
+            {WITHDRAWAL_REQUEST_ADDRESS,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}},
+            {CONSOLIDATION_REQUEST_ADDRESS,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}}},
+        Code{
+            {STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE},
+            {SYSTEM_STUB_CODE_HASH, SYSTEM_STUB_ICODE}},
         BlockHeader{.number = 0});
 
     byte_string block_rlp =
@@ -307,6 +355,10 @@ TYPED_TEST(TraitsTest, assertion_exception)
         constants::EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER;
     block_rlp = rlp::encode_block(block.value());
     ASSERT_TRUE(!block.has_error());
+
+    if constexpr (TestFixture::Trait::eip_7002_active()) {
+        block.value().header.requests_hash = EMPTY_REQUESTS_HASH;
+    }
 
     BlockHashBufferFinalized block_hash_buffer;
     block_hash_buffer.set(
@@ -433,8 +485,22 @@ TYPED_TEST(TraitsTest, call_frames_refund)
                       {bytes32_t{0x02}, {bytes32_t{}, bytes32_t{0x01}}},
                       {bytes32_t{0x03}, {bytes32_t{}, bytes32_t{0x01}}},
                       {bytes32_t{0x04}, {bytes32_t{}, bytes32_t{0x01}}},
-                      {bytes32_t{0x05}, {bytes32_t{}, bytes32_t{0x01}}}}}}},
-        Code{{REFUND_TEST_CODE_HASH, REFUND_TEST_ICODE}},
+                      {bytes32_t{0x05}, {bytes32_t{}, bytes32_t{0x01}}}}}},
+            {WITHDRAWAL_REQUEST_ADDRESS,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}},
+            {CONSOLIDATION_REQUEST_ADDRESS,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}}},
+        Code{
+            {REFUND_TEST_CODE_HASH, REFUND_TEST_ICODE},
+            {SYSTEM_STUB_CODE_HASH, SYSTEM_STUB_ICODE}},
         BlockHeader{.number = 0});
 
     byte_string block_rlp =
@@ -445,6 +511,10 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         constants::EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER;
     block_rlp = rlp::encode_block(block.value());
     ASSERT_TRUE(!block.has_error());
+
+    if constexpr (TestFixture::Trait::eip_7002_active()) {
+        block.value().header.requests_hash = EMPTY_REQUESTS_HASH;
+    }
 
     BlockHashBufferFinalized block_hash_buffer;
     block_hash_buffer.set(

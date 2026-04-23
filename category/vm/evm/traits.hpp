@@ -51,6 +51,7 @@ namespace monad
         { T::eip_2565_active() } -> std::same_as<bool>;
         { T::eip_2929_active() } -> std::same_as<bool>;
         { T::eip_4844_active() } -> std::same_as<bool>;
+        { T::eip_7002_active() } -> std::same_as<bool>;
         { T::eip_7823_active() } -> std::same_as<bool>;
         { T::eip_7883_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
@@ -95,6 +96,11 @@ namespace monad
         static consteval bool eip_4844_active() noexcept
         {
             return Rev >= EVMC_CANCUN;
+        }
+
+        static consteval bool eip_7002_active() noexcept
+        {
+            return Rev >= EVMC_PRAGUE;
         }
 
         static consteval bool eip_7823_active() noexcept
@@ -199,6 +205,11 @@ namespace monad
             // if this EIP is ever enabled, reserve balance must be modified
             // such that execution (and consensus) is accounting for the blob
             // gas used (irrevocable) in the reserve balance calculation
+            return false;
+        }
+
+        static consteval bool eip_7002_active() noexcept
+        {
             return false;
         }
 

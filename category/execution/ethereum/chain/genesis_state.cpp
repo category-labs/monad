@@ -18,18 +18,21 @@
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/vm/code.hpp>
 
-#include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 
+#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -40,19 +43,52 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
     MONAD_ASSERT(
         genesis.header.withdrawals_root == NULL_ROOT ||
         !genesis.header.withdrawals_root.has_value());
+
     StateDeltas deltas;
+    Code code_map;
+
     auto const json = nlohmann::json::parse(genesis.alloc);
     for (auto const &item : json.items()) {
         Address const addr = from_hex<Address>(item.key()).value();
+        auto const &value = item.value();
+
         Account account{};
-        account.balance =
-            intx::from_string<uint256_t>(item.value()["wei_balance"]);
-        deltas.emplace(addr, StateDelta{.account = {std::nullopt, account}});
+        account.balance = intx::from_string<uint256_t>(value["wei_balance"]);
+
+        if (auto const it = value.find("nonce"); it != value.end()) {
+            account.nonce = std::stoull(it->get<std::string>(), nullptr, 0);
+        }
+
+        if (auto const it = value.find("code"); it != value.end()) {
+            auto const code = it->get<std::string>();
+            auto const code_bytes = from_hex(code);
+            MONAD_ASSERT(code_bytes.has_value());
+
+            account.code_hash = to_bytes(keccak256(*code_bytes));
+
+            auto const intercode = vm::make_shared_intercode(*code_bytes);
+            code_map.emplace(account.code_hash, intercode);
+        }
+
+        StateDelta state_delta{.account = {std::nullopt, account}};
+        if (auto const it = value.find("storage"); it != value.end()) {
+            for (auto const &storage_item : it->items()) {
+                auto const slot =
+                    from_hex<bytes32_t>(storage_item.key()).value();
+                auto const slot_value =
+                    from_hex<bytes32_t>(storage_item.value().get<std::string>())
+                        .value();
+                state_delta.storage.emplace(
+                    slot, StorageDelta{bytes32_t{}, slot_value});
+            }
+        }
+
+        deltas.emplace(addr, state_delta);
     }
 
     CommitBuilder builder(genesis.header.number);
     builder.add_state_deltas(deltas)
-        .add_code(Code{})
+        .add_code(code_map)
         .add_receipts(std::vector<Receipt>{})
         .add_transactions(std::vector<Transaction>{}, std::vector<Address>{})
         .add_call_frames(std::vector<std::vector<CallFrame>>{})

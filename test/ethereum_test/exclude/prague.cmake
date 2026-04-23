@@ -4,8 +4,6 @@ set(prague_excluded_tests
 
     # Unimplemented Prague EIPs
     "BlockchainTests.prague/eip6110_deposits/*"
-    "BlockchainTests.prague/eip7002_el_triggerable_withdrawals/*"
-    "BlockchainTests.prague/eip7251_consolidations/*"
     "BlockchainTests.prague/eip7685_general_purpose_el_requests/*"
 
     # Long-running tests

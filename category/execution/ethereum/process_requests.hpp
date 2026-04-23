@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,20 +15,21 @@
 
 #pragma once
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
+#include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
+#include <category/vm/evm/traits.hpp>
 
-enum monad_chain_config
-{
-    CHAIN_CONFIG_ETHEREUM_MAINNET = 0,
-    CHAIN_CONFIG_MONAD_DEVNET = 1,
-    CHAIN_CONFIG_MONAD_TESTNET = 2,
-    CHAIN_CONFIG_MONAD_MAINNET = 3,
-    CHAIN_CONFIG_HIVE_NET = 4,
-};
+MONAD_NAMESPACE_BEGIN
 
-#ifdef __cplusplus
-}
-#endif
+class BlockHashBuffer;
+class State;
+struct BlockHeader;
+
+template <Traits traits>
+Result<bytes32_t> process_requests(
+    Chain const &, State &, BlockHashBuffer const &, BlockHeader const &,
+    ChainContext<traits> const &);
+
+MONAD_NAMESPACE_END

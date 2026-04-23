@@ -34,6 +34,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/chain/hive_net.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -870,6 +871,8 @@ struct monad_executor
                             return std::make_unique<MonadTestnet>();
                         case CHAIN_CONFIG_MONAD_MAINNET:
                             return std::make_unique<MonadMainnet>();
+                        case CHAIN_CONFIG_HIVE_NET:
+                            return std::make_unique<HiveNet>();
                         }
                         MONAD_ASSERT(false);
                     }();
@@ -906,7 +909,8 @@ struct monad_executor
                     }();
 
                     auto const res = [&]() -> Result<evmc::Result> {
-                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
+                            chain_config == CHAIN_CONFIG_HIVE_NET) {
                             evmc_revision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(
@@ -1162,6 +1166,8 @@ struct monad_executor
                             return std::make_unique<MonadTestnet>();
                         case CHAIN_CONFIG_MONAD_MAINNET:
                             return std::make_unique<MonadMainnet>();
+                        case CHAIN_CONFIG_HIVE_NET:
+                            return std::make_unique<HiveNet>();
                         }
                         MONAD_ASSERT(false);
                     }();
@@ -1233,7 +1239,8 @@ struct monad_executor
                     LazyBlockHash block_hash_buffer{db, block_number};
 
                     auto const res = [&]() -> Result<nlohmann::json> {
-                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
+                            chain_config == CHAIN_CONFIG_HIVE_NET) {
                             evmc_revision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(

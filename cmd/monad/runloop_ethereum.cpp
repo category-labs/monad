@@ -273,7 +273,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing)
+    bool const enable_tracing, std::filesystem::path const &rlp_path)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -283,7 +283,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     uint64_t batch_gas = 0;
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
-    BlockDb block_db(ledger_dir);
+    auto block_db_base = [&]() -> std::unique_ptr<BlockDb> {
+        if (!rlp_path.empty()) {
+            return std::make_unique<RlpBlockDb>(ledger_dir, rlp_path);
+        }
+        return std::make_unique<BlockDb>(ledger_dir);
+    }();
+    BlockDb &block_db = *block_db_base;
     bytes32_t parent_block_id{};
 
     while (block_num <= end_block_num && stop == 0) {

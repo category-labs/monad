@@ -889,10 +889,40 @@ public:
                             old_metadata->latest_verified_version;
                         metadata->latest_voted_version =
                             old_metadata->latest_voted_version;
+                        metadata->latest_proposed_version =
+                            old_metadata->latest_proposed_version;
                         metadata->latest_voted_block_id =
                             old_metadata->latest_voted_block_id;
+                        metadata->latest_proposed_block_id =
+                            old_metadata->latest_proposed_block_id;
                         metadata->auto_expire_version =
                             old_metadata->auto_expire_version;
+                        // Dual-timeline role + secondary ring header.
+                        // Without primary_ring_idx the restored DB would
+                        // route the primary role at ring_a even when the
+                        // source DB had promoted ring_b — silent data
+                        // loss. Copy the secondary ring header so its
+                        // chunks (restored under the same cnv ids) are
+                        // mapped by map_ring_b_storage at reopen.
+                        metadata->primary_ring_idx =
+                            old_metadata->primary_ring_idx;
+                        metadata->secondary_timeline_active_ =
+                            old_metadata->secondary_timeline_active_;
+                        metadata->secondary_timeline.next_version_ =
+                            old_metadata->secondary_timeline.next_version_;
+                        metadata->secondary_timeline.version_lower_bound_ =
+                            old_metadata->secondary_timeline
+                                .version_lower_bound_;
+                        memcpy(
+                            &metadata->secondary_timeline.storage_,
+                            &old_metadata->secondary_timeline.storage_,
+                            sizeof(metadata->secondary_timeline.storage_));
+                        // Deliberately NOT copied: shrink_grow_seq_ and
+                        // pending_shrink_grow. Both stay at their zero-
+                        // initialised values (seq even, op_kind NONE) so
+                        // the restored DB starts in a quiescent state and
+                        // does not attempt to replay an in-flight op
+                        // against freshly-restored ring data.
                     });
                     fast_list_base_insertion_count =
                         old_metadata->fast_list_begin()->insertion_count();

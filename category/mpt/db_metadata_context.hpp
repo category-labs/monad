@@ -216,6 +216,11 @@ public:
         return is_new_pool_;
     }
 
+    //! \brief Force both metadata copies to durable storage. Public entry
+    //! point for monad-mpt --upgrade's post-migration flush. Requires the
+    //! pool to have been opened writable (asserts can_write_to_map_).
+    void sync_metadata_to_disk();
+
     enum class chunk_list : uint8_t
     {
         free = 0,

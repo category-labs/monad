@@ -332,7 +332,10 @@ TEST(update_aux_test, migrates_monad007_layout_to_monad008)
     static constexpr size_t MONAD007_DB_OFFSETS_OFFSET = 524328;
     static constexpr size_t MONAD007_LIST_TRIPLE_OFFSET = 528488;
 
-    monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+    monad::async::storage_pool::creation_flags flags;
+    flags.allow_migration = true;
+    monad::async::storage_pool pool(
+        monad::async::use_anonymous_inode_tag{}, flags);
 
     // Values that must survive the migration with bit-for-bit fidelity.
     uint64_t const test_history_length = 12345;
@@ -496,7 +499,10 @@ TEST(update_aux_test, migrates_monad007_layout_to_monad008)
 // per-copy branch is the path that actually fixes copy 1.
 TEST(update_aux_test, migrates_monad007_resumes_after_partial_migration)
 {
-    monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+    monad::async::storage_pool::creation_flags flags;
+    flags.allow_migration = true;
+    monad::async::storage_pool pool(
+        monad::async::use_anonymous_inode_tag{}, flags);
     using monad::mpt::detail::db_metadata;
 
     {
@@ -569,6 +575,64 @@ TEST(update_aux_test, migrates_monad007_resumes_after_partial_migration)
                 << "NONE after migration";
         }
     }
+}
+
+// A binary that opens a MONAD007 pool without setting allow_migration must
+// abort with a message directing operators to monad-mpt --upgrade. This is
+// the race-closer: services never migrate on their own, so two services
+// starting in parallel after an apt bump cannot observe a half-migrated
+// layout.
+TEST(update_aux_death_test, aborts_on_monad007_without_allow_migration)
+{
+    using monad::mpt::detail::db_metadata;
+    static constexpr size_t MONAD007_DB_METADATA_SIZE = 528512;
+
+    // Open anonymous pool without allow_migration set (default = false).
+    monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+
+    // Write minimal MONAD007 magic to cnv chunk 0 (both copies).
+    auto &cnv_chunk = pool.chunk(monad::async::storage_pool::cnv, 0);
+    auto const [write_fd, base_offset] = cnv_chunk.write_fd(0);
+    auto const half_capacity = cnv_chunk.capacity() / 2;
+
+    // chunk_info_count convention mirrors AsyncIO::chunk_count(), which
+    // returns seq_chunks.size() only. Although the ctor aborts on
+    // PREVIOUS_MAGIC before consulting chunk_info_count, encoding the
+    // correct value keeps the fixture robust against ctor refactors.
+    uint32_t const chunk_count =
+        static_cast<uint32_t>(pool.chunks(monad::async::storage_pool::seq));
+    std::vector<uint8_t> buf(
+        MONAD007_DB_METADATA_SIZE +
+            size_t(chunk_count) * sizeof(db_metadata::chunk_info_t),
+        0);
+    memcpy(
+        buf.data(), db_metadata::PREVIOUS_MAGIC, db_metadata::MAGIC_STRING_LEN);
+    uint64_t const bitfield = static_cast<uint64_t>(chunk_count) & 0xfffffULL;
+    memcpy(buf.data() + 8, &bitfield, 8);
+
+    for (unsigned copy_idx = 0; copy_idx < 2; copy_idx++) {
+        ssize_t const written = ::pwrite(
+            write_fd,
+            buf.data(),
+            buf.size(),
+            off_t(base_offset) + off_t(copy_idx) * off_t(half_capacity));
+        ASSERT_EQ(ssize_t(buf.size()), written);
+    }
+
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers testbuf =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    monad::async::AsyncIO testio(pool, testbuf);
+
+    ASSERT_DEATH(
+        { DbMetadataContext const ctx{testio}; }, "monad-mpt --upgrade");
 }
 
 TEST(update_aux_test, activate_deactivate_secondary)

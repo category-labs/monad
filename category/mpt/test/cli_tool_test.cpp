@@ -24,6 +24,8 @@
 #include <category/core/io/ring.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/cli_tool_impl.hpp>
+#include <category/mpt/db_metadata_context.hpp>
+#include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
@@ -31,6 +33,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <future>
 #include <iostream>
@@ -416,4 +420,209 @@ struct cli_tool_non_one_one_chunk_ids
 TEST_F(cli_tool_non_one_one_chunk_ids, cli_tool_non_one_one_chunk_ids)
 {
     run_test();
+}
+
+// --upgrade on a pool created with --create and thus already on MONAD008.
+// Must be idempotent: exit 0, print "DB is on version MONAD008".
+TEST(cli_tool, upgrade_idempotent_on_current_pool)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    auto const fd = mkstemp(temppath);
+    if (-1 == fd) {
+        abort();
+    }
+    ::close(fd);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    if (-1 == truncate(temppath, 6ULL * 1024 * 1024 * 1024)) {
+        abort();
+    }
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--upgrade"};
+        int const retcode = main_impl(cout, cerr, args);
+        ASSERT_EQ(0, retcode);
+        EXPECT_NE(
+            std::string::npos, cout.str().find("DB is on version MONAD008"));
+    }
+}
+
+// --upgrade combined with --create must be rejected at CLI parse time
+// because cli_ops_group enforces require_option(0, 1).
+TEST(cli_tool, upgrade_rejects_combined_mutation)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    auto const fd = mkstemp(temppath);
+    if (-1 == fd) {
+        abort();
+    }
+    ::close(fd);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    if (-1 == truncate(temppath, 6ULL * 1024 * 1024 * 1024)) {
+        abort();
+    }
+
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt", "--storage", temppath, "--upgrade", "--create"};
+    int const retcode = main_impl(cout, cerr, args);
+    ASSERT_NE(0, retcode);
+    EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
+}
+
+// Full end-to-end: create a fresh MONAD008 pool, overwrite cnv chunk 0
+// with a MONAD007 layout via the storage_pool's own chunk API (so the
+// file offset is correct regardless of pool internal layout), then run
+// monad-mpt --upgrade and verify the metadata is now MONAD008 and the
+// history_length survived at its new offset.
+TEST(cli_tool, upgrade_migrates_monad007_pool)
+{
+    using monad::mpt::detail::db_metadata;
+    static constexpr size_t MONAD007_DB_METADATA_SIZE = 528512;
+    static constexpr size_t MONAD007_LIST_TRIPLE_OFFSET = 528488;
+
+    char temppath[] = "cli_tool_test_XXXXXX";
+    auto const fd = mkstemp(temppath);
+    if (-1 == fd) {
+        abort();
+    }
+    ::close(fd);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    if (-1 == truncate(temppath, 6ULL * 1024 * 1024 * 1024)) {
+        abort();
+    }
+
+    // Provision the file as a MONAD008 pool via --create.
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+
+    // Overwrite cnv chunk 0 (both halves) with a MONAD007 layout. Open
+    // the pool writable (allow_migration = false because the pool is
+    // already MONAD008 — the ctor won't try to migrate), use the chunk
+    // API to get the correct file offset for chunk 0 and the pool's
+    // real chunk_count, then pwrite MONAD007 bytes over both halves.
+    // Close the pool without writing metadata.
+    //
+    // The chunk_info[] array at MONAD007's offset MONAD007_DB_METADATA_SIZE
+    // is zero-filled — zeros decode as INVALID_CHUNK_ID entries per
+    // db_metadata convention, so relocation is a pure byte move and the
+    // resulting MONAD008 pool passes UpdateAux::init's chunk_info_count
+    // check.
+    uint64_t const test_history_length = 9999;
+    {
+        std::vector<std::filesystem::path> paths{temppath};
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags const flags;
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::span{paths},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+            flags};
+        // chunk_info_count stored on disk must equal io->chunk_count(),
+        // which returns seq_chunks.size() only (see AsyncIO::chunk_count
+        // and the new-pool init in DbMetadataContext ctor). The
+        // chunk_info[] flexible array is sized to match.
+        uint32_t const chunk_count = static_cast<uint32_t>(
+            pool.chunks(MONAD_ASYNC_NAMESPACE::storage_pool::seq));
+        auto &cnv_chunk =
+            pool.chunk(MONAD_ASYNC_NAMESPACE::storage_pool::cnv, 0);
+        auto const [write_fd, base_offset] = cnv_chunk.write_fd(0);
+        off_t const half_capacity = // NOLINT(misc-include-cleaner)
+            static_cast<off_t>(cnv_chunk.capacity() / 2);
+
+        std::vector<uint8_t> buf(
+            MONAD007_DB_METADATA_SIZE +
+                size_t(chunk_count) * sizeof(db_metadata::chunk_info_t),
+            0);
+        memcpy(
+            buf.data(),
+            db_metadata::PREVIOUS_MAGIC,
+            db_metadata::MAGIC_STRING_LEN);
+        uint64_t const bitfield =
+            static_cast<uint64_t>(chunk_count) & 0xfffffULL;
+        memcpy(buf.data() + 8, &bitfield, 8);
+        uint32_t const high_bits_all_set = uint32_t(-1);
+        uint32_t const cnv_len = 0;
+        memcpy(buf.data() + 40, &high_bits_all_set, 4);
+        memcpy(buf.data() + 44, &cnv_len, 4);
+        memcpy(buf.data() + 524344, &test_history_length, 8);
+        uint32_t const invalid = UINT32_MAX;
+        for (int i = 0; i < 6; i++) {
+            memcpy(
+                buf.data() + MONAD007_LIST_TRIPLE_OFFSET + i * 4, &invalid, 4);
+        }
+
+        for (off_t copy_idx = 0; copy_idx < 2;
+             copy_idx++) { // NOLINT(misc-include-cleaner)
+            ssize_t const written = ::pwrite( // NOLINT(misc-include-cleaner)
+                write_fd,
+                buf.data(),
+                buf.size(),
+                off_t(base_offset) + copy_idx * half_capacity);
+            ASSERT_EQ(ssize_t(buf.size()), written);
+        }
+        ASSERT_EQ(0, ::fsync(write_fd));
+    }
+
+    // Run --upgrade. Expect exit 0 and "Success." on stdout.
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--upgrade"};
+        int const retcode = main_impl(cout, cerr, args);
+        ASSERT_EQ(0, retcode) << "stderr: " << cerr.str();
+        EXPECT_NE(std::string::npos, cout.str().find("Success."));
+    }
+
+    // Reopen read-only; magic must now be MONAD008 and history_length
+    // must survive at its new offset.
+    {
+        std::vector<std::filesystem::path> paths{temppath};
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
+        flags.open_read_only = true;
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::span{paths},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+            flags};
+        monad::io::Ring ring;
+        monad::io::Buffers rbuf = monad::io::make_buffers_for_read_only(
+            ring,
+            2,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, rbuf};
+        monad::mpt::DbMetadataContext const ctx{io};
+        auto const *const m = ctx.main();
+        EXPECT_EQ(
+            0,
+            memcmp(
+                m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN));
+        EXPECT_EQ(m->history_length, test_history_length);
+    }
+}
+
+TEST(cli_tool, upgrade_requires_storage)
+{
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {"monad-mpt", "--upgrade"};
+    int const retcode = main_impl(cout, cerr, args);
+    ASSERT_NE(0, retcode);
+    EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
 }

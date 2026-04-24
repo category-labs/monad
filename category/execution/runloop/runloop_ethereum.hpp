@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/db/block_db.hpp>
 #include <category/vm/vm.hpp>
 
 #include <cstdint>
@@ -37,7 +38,7 @@ namespace fiber
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &, std::filesystem::path const &, Db &, vm::VM &,
+    Chain const &, std::filesystem::path const &, BlockDbFormat, Db &, vm::VM &,
     BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
     sig_atomic_t const volatile &, bool enable_tracing,
     std::filesystem::path const &rlp_path = {});

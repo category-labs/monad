@@ -129,6 +129,7 @@ try {
     bool trace_calls = false;
     bool as_eth_blocks = false;
     std::chrono::seconds block_db_timeout = std::chrono::seconds::zero();
+    BlockDbFormat block_db_format = BlockDbFormat::Auto;
     std::string exec_event_ring_config;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     std::optional<unsigned> ro_sq_thread_cpu;
@@ -149,6 +150,18 @@ try {
         ->required();
     cli.add_option("--block-db,--block_db", block_db_path, "block_db directory")
         ->required();
+    std::unordered_map<std::string, BlockDbFormat> const BLOCK_DB_FORMAT_MAP = {
+        {"auto", BlockDbFormat::Auto},
+        {"files", BlockDbFormat::Files},
+        {"tar", BlockDbFormat::Tar}};
+    cli.add_option(
+           "--block-db-format,--block_db_format",
+           block_db_format,
+           "storage layout of --block-db: 'files' (one file per block, "
+           "legacy), 'tar' (one <N>M.tar per million blocks, or a single "
+           ".tar file), or 'auto' (default, inspects path)")
+        ->transform(
+            CLI::CheckedTransformer(BLOCK_DB_FORMAT_MAP, CLI::ignore_case));
     cli.add_option("--nblocks", nblocks, "number of blocks to execute");
     cli.add_option("--log-level,--log_level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
@@ -326,7 +339,7 @@ try {
             auto const n = std::stoul(snapshot.stem());
             auto root = load_from_binary(db, accounts, code, n);
             // load the eth header for snapshot
-            BlockDb block_db{block_db_path};
+            BlockDb block_db{block_db_path, block_db_format};
             Block block;
             MONAD_ASSERT_PRINTF(
                 block_db.get(n, block), "FATAL: Could not load block %lu", n);
@@ -386,7 +399,7 @@ try {
             rodb, start_block_num, block_hash_buffer);
     }
     if (!initialized_headers_from_triedb) {
-        BlockDb block_db{block_db_path};
+        BlockDb block_db{block_db_path, block_db_format};
         MONAD_ASSERT(chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET);
         MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
             block_db, start_block_num, block_hash_buffer));
@@ -418,6 +431,7 @@ try {
             return runloop_ethereum(
                 *chain,
                 block_db_path,
+                block_db_format,
                 db_cache,
                 vm,
                 block_hash_buffer,
@@ -433,6 +447,7 @@ try {
                 return runloop_monad_ethblocks(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
+                    block_db_format,
                     db_cache,
                     vm,
                     block_hash_buffer,

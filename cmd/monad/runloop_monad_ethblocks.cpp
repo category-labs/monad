@@ -320,7 +320,8 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     MonadChain const &chain, std::filesystem::path const &ledger_dir,
-    DbCache &db, vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
+    BlockDbFormat const block_db_format, DbCache &db, vm::VM &vm,
+    BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, std::chrono::seconds const block_db_timeout)
@@ -334,7 +335,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
 
-    BlockDb block_db(ledger_dir);
+    BlockDb block_db(ledger_dir, block_db_format);
     bytes32_t parent_block_id{};
     uint64_t block_num = finalized_block_num;
 

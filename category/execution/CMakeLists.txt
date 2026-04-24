@@ -98,6 +98,8 @@ add_library(
   "ethereum/db/db_snapshot_filesystem.h"
   "ethereum/db/file_db.cpp"
   "ethereum/db/file_db.hpp"
+  "ethereum/db/tar_file_db.cpp"
+  "ethereum/db/tar_file_db.hpp"
   "ethereum/db/trie_db.cpp"
   "ethereum/db/trie_db.hpp"
   "ethereum/db/trie_rodb.hpp"

@@ -18,6 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
+#include <category/execution/ethereum/db/block_db.hpp>
 #include <category/vm/vm.hpp>
 
 #include <chrono>
@@ -39,9 +40,9 @@ namespace fiber
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
-    MonadChain const &, std::filesystem::path const &, DbCache &, vm::VM &,
-    BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
-    sig_atomic_t const volatile &, bool enable_tracing,
+    MonadChain const &, std::filesystem::path const &, BlockDbFormat,
+    DbCache &, vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &,
+    uint64_t &, uint64_t, sig_atomic_t const volatile &, bool enable_tracing,
     std::chrono::seconds block_db_timeout);
 
 MONAD_NAMESPACE_END

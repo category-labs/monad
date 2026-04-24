@@ -806,7 +806,7 @@ int main(int const argc, char *argv[])
     cli.add_option(
            "--db",
            dbname_paths,
-           "A comma-separated list of previously created database paths")
+           "A space-separated list of previously created database paths")
         ->required();
     cli.add_option(
         "--sq-thread-cpu,--sq_thread_cpu",

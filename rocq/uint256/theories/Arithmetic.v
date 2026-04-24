@@ -299,6 +299,30 @@ Definition sar (shift x : uint256) : uint256 :=
   then shift_right_uint256_aux RightShiftArithmetic fill x (w0 shift)
   else filled_uint256 fill.
 
+(* Models the suffix fill loop in the C++ signextend implementation:
+   for (j = start; j < 4; ++j) ret[j] = v. *)
+Fixpoint fill_words_from (ws : words) (start : nat) (v : t) : words :=
+  match ws, start with
+  | [], _ => []
+  | _ :: rest, O => v :: fill_words_from rest O v
+  | w :: rest, S start' => w :: fill_words_from rest start' v
+  end.
+
+Definition signextend_word_index_nat (word_index : t) : nat :=
+  if word_index =? 0 then 0%nat
+  else if word_index =? 1 then 1%nat
+  else if word_index =? (1 + 1) then 2%nat
+  else 3%nat.
+
+Definition signextend_current_word (word : t) (s : nat) : t * t :=
+  let shifted := shr word s in
+  let signed_byte := asr (shl shifted 56) 56 in
+  let upper := shl signed_byte s in
+  let lower_mask := shl 1 s - 1 in
+  let lower := land word lower_mask in
+  let sign_bits := asr signed_byte 63 in
+  (or upper lower, sign_bits).
+
 Definition signextend (byte_index_256 x : uint256) : uint256 :=
   if negb (ltb_uint256 byte_index_256
              (mk_uint256 (shl 1 5 - 1) 0 0 0))
@@ -306,27 +330,14 @@ Definition signextend (byte_index_256 x : uint256) : uint256 :=
   else
     let byte_index := w0 byte_index_256 in
     let word_index := shr byte_index 3 in
+    let word_index_n := signextend_word_index_nat word_index in
+    let ws := uint256_to_words x in
+    let word := get_word ws word_index_n in
     let bit_index := shl (land byte_index (shl 1 3 - 1)) 3 in
     let s := bounded_shift_nat word_width bit_index in
-    let current_word word :=
-      let shifted := shr word s in
-      let signed_byte := asr (shl shifted 56) 56 in
-      let upper := shl signed_byte s in
-      let lower := land word (shl 1 s - 1) in
-      let sign_bits := asr signed_byte 63 in
-      (or upper lower, sign_bits) in
-    if word_index =? 0 then
-      let '(current, sign_bits) := current_word (w0 x) in
-      mk_uint256 current sign_bits sign_bits sign_bits
-    else if word_index =? 1 then
-      let '(current, sign_bits) := current_word (w1 x) in
-      mk_uint256 (w0 x) current sign_bits sign_bits
-    else if word_index =? (1 + 1) then
-      let '(current, sign_bits) := current_word (w2 x) in
-      mk_uint256 (w0 x) (w1 x) current sign_bits
-    else
-      let '(current, _) := current_word (w3 x) in
-      mk_uint256 (w0 x) (w1 x) (w2 x) current.
+    let '(current, sign_bits) := signextend_current_word word s in
+    let ret := set_word ws word_index_n current in
+    words_to_uint256 (fill_words_from ret (S word_index_n) sign_bits).
 
 Definition exp (base exponent : uint256) : uint256 :=
   if is_two_uint256 base

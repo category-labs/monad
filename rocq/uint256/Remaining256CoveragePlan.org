@@ -10,19 +10,19 @@ document:
 
 - `udivrem` is covered and proved.
 - logical right shift and arithmetic right shift are both already
-  ported in [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/Arithmetic.v][theories/Arithmetic.v]] and proved in
-  [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]
+  ported in [[theories/Arithmetic.v][theories/Arithmetic.v]] and proved in
+  [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]
   (`shift_right_uint256_aux_correct`,
   `shift_right_uint256_correct`).
 - `signextend` is already ported in
-  [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/Arithmetic.v][theories/Arithmetic.v]]; the remaining open proof is
+  [[theories/Arithmetic.v][theories/Arithmetic.v]]; the remaining open proof is
   `signextend_correct` in
-  [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
+  [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
 - `byte`, `byteswap`, `countl_zero(uint256_t)`,
   `count_significant_bytes`, `countr_zero`, and `popcount` are still
   missing ports, not merely missing proofs.
 - The `Abort.` blocks in
-  [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]
+  [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]
   are historical sketches for the now-completed `addmod`, `mulmod`,
   and `sdivrem` proofs. Do not treat them as active proof debt.
 
@@ -34,12 +34,21 @@ For immediate proof work, the queue is therefore:
 
 * Immediate Proof Prep: `signextend_correct`
 
-The proof scaffolding is already present in
-[[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]] immediately above the theorem. The next
-`rocq-mcp` pass should be organized around the existing local lemmas
-rather than starting from scratch.
+The current proof plan should follow the refactored Rocq model in
+[[theories/Arithmetic.v][theories/Arithmetic.v]],
+not the older four-constructor proof attempt. The implementation now
+reads:
 
-Recommended branch structure:
+1. guard on `byte_index_256 < 31`
+2. collapse to `byte_index := w0 byte_index_256`
+3. compute `word_index := shr byte_index 3`
+4. translate that word index to `nat`
+5. read the selected word with `get_word`
+6. transform it with `signextend_current_word`
+7. write it back with `set_word`
+8. fill the suffix with `fill_words_from`
+
+Recommended proof structure:
 
 1. Split on the outer `ltb_uint256` guard.
    - false branch: prove `to_Z_uint256 byte_index_256 >= 31`, so
@@ -48,35 +57,52 @@ Recommended branch structure:
 
 2. In the true branch, show the high words of the byte index are zero.
    Use `to_Z_uint256_lt_base_zero_high` after observing that
-   `31 < base width`.
+   `31 < base width`, then rewrite everything in terms of `b0`.
 
-3. Reduce the selected-word logic to four cases.
-   After the high-word collapse, split on `word_index = shr b0 3`
-   corresponding to bytes `0..7`, `8..15`, `16..23`, and `24..30`.
+3. Normalize the local indices:
+   - `word_index = to_Z b0 / 8`
+   - `bit_index = 8 * (to_Z b0 mod 8)`
+   - `bits = 8 * (to_Z b0 + 1)`
+   - `0 <= to_Z (shr b0 3) < 4`
 
-4. For the selected word, rewrite the local `current_word` result to
-   the `signextend_Z` target using the existing signed-byte lemmas.
+4. Rewrite `signextend_word_index_nat` using
+   `signextend_word_index_nat_correct`, then case-split on the resulting
+   `nat` index `0`, `1`, `2`, `3`.
+
+5. For each case, rewrite the concrete writeback shape using the new
+   `signextend_writeback_word{0,1,2,3}` lemmas. This should collapse the
+   `set_word` / `fill_words_from` pipeline to the same four visible
+   result shapes as the C++ control flow.
+
+6. On the selected word, apply `signextend_current_word_correct` and
+   finish by matching the preserved prefix and filled suffix against the
+   `signextend_Z` target.
 
 Primary lemmas already in the file for this proof:
 
 - `ltb_uint256_correct`
+- `to_Z_uint256_lt_base_zero_high`
 - `bounded_shift_nat_correct`
 - `to_Z_shr`
-- `to_Z_low_mask`
 - `to_Z_land_low_mask`
 - `to_Z_asr_63`
 - `signextend_signed_byte64_correct`
-- `modulus_words_1`, `modulus_words_2`, `modulus_words_3`
+- `signextend_current_word_correct`
+- `fill_words_from_length`
+- `fill_words_from_ge_length`
+- `get_fill_words_from_before`
+- `get_fill_words_from_after`
+- `signextend_word_index_nat_correct`
+- `signextend_writeback_word0`
+- `signextend_writeback_word1`
+- `signextend_writeback_word2`
+- `signextend_writeback_word3`
+- `high_word_ltb_split`
 - `modulus_words_scale_mod`
 
-The useful target normalization is:
-
-- `bits = 8 * (to_Z_uint256 byte_index_256 + 1)`
-- `word_index = to_Z_uint256 byte_index_256 / 8`
-- `bit_index = 8 * (to_Z_uint256 byte_index_256 mod 8)`
-
-That puts the proof in the same branch order as the implementation and
-keeps the end-state comparison with the C++ `signextend` readable.
+This plan keeps the proof branch order aligned with the current model
+while still making the side-by-side comparison with the C++ code easy
+to read.
 
 * Proof Worklog: `signextend`
 
@@ -87,18 +113,19 @@ What helps:
 
 - `rocq_start` and `rocq_check` now return both `goals` text and
   `structured_goals` on the live
-  [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]
+  [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]
   proof. The structured payload is useful for reading the exact
   hypothesis list after each branch split without scraping pretty
   text.
-- `rocq_step_multi` is now safer to use for branch exploration because
-  its result entries also include `structured_goals`. This is useful
-  for checking whether a candidate rewrite or `set` introduces the
-  expected local context before committing it with `rocq_check`.
 - Small scratch goals in `rocq-mcp` help validate explicit rewrite
   sequences before transplanting them into the real proof. This is
   much cheaper than rebuilding the whole file after every failed
   algebraic rewrite.
+- The refactored `signextend` model is easier to reason about than the
+  old constructor split. Once `signextend_word_index_nat` is rewritten,
+  each index case should reduce quickly through the writeback lemmas
+  instead of carrying `mk_uint256` case analysis through the whole
+  theorem.
 - In the `word_index = 2` branch of `signextend_correct`,
   `structured_goals` was useful for spotting that the failure at the
   old line-4549 rewrite was a shape mismatch, not a missing arithmetic
@@ -142,35 +169,31 @@ Current working rule:
 
 Current checkpoint from the latest `rocq-mcp` pass:
 
-- In `signextend_correct`, the `word_index = 2` branch now has a
-  working normalization sequence through the `Hcond2` rewrite:
-  unfold `val` in `Hcur`, `Hsign`, `Hmod2`, and `Hcond2`, rewrite
-  `Hmod2`, then rewrite `Hcond2` before destructing the low-word
-  comparison.
-- The `Hcond = true` subbranch of `word_index = 2` closes by explicit
-  rewrites only. No decision procedure is needed there.
-- After rewriting `Hcur`, `Hsign`, `Hbase64`, and the obvious zero
-  terms in the `Hcond = false` subbranch, the remaining goal is:
-
-  `to_Z x0 + 2^64 * (to_Z x1 + 2^64 *`
-  `(to_Z x2 mod 2^(s+8) + (2^64 - 2^(s+8)) + 2^64 * (2^64 - 1)))`
-  `= to_Z x0 + 2^64 * (to_Z x1 + 0) +`
-  `2^128 * (to_Z x2 mod 2^(s+8)) +`
-  `(modulus256 - 2^(128 + s + 8))`
-
-  This is the next arithmetic normalization target. It should be
-  finished by distributing the outer `2^64` factors and then using the
-  existing fill lemmas, not by dropping immediately to `nia`.
-- The `word_index = 3` branch remains after that and still ends in a
-  raw `nia`, so it will need the same treatment in the next session.
+- The old `word_index = 2` / `word_index = 3` checkpoint is obsolete.
+  It belonged to the pre-refactor proof that mirrored the old
+  constructor branches directly.
+- `signextend_correct` has been reset to a clean `Admitted` baseline,
+  while the helper block above it now matches the refactored model:
+  `signextend_current_word_correct`, the `fill_words_from` structural
+  lemmas, `signextend_word_index_nat_correct`, and the four writeback
+  shape lemmas.
+- The next live proof milestone is to complete the in-range branch
+  through:
+  - collapsing the byte index to `b0`
+  - rewriting `signextend_word_index_nat`
+  - case-splitting on the resulting `nat` index
+  - rewriting each case with the corresponding writeback lemma
+- Once that milestone is in place, the remaining obligations should be
+  four smaller selected-word arithmetic branches rather than one large
+  monolithic proof.
 
 *Already covered*
 
 `udivrem` should be treated as already covered:
 
-- Model: [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/Division.v][theories/Division.v]]
-- Generic proof: [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/DivisionProofs.v][theories/DivisionProofs.v]]
-- 256-bit specialization: [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/DivisionProofs.v][theories/DivisionProofs.v]]
+- Model: [[theories/Division.v][theories/Division.v]]
+- Generic proof: [[theories/DivisionProofs.v][theories/DivisionProofs.v]]
+- 256-bit specialization: [[theories/DivisionProofs.v][theories/DivisionProofs.v]]
 
 What is still missing from the overall Rocq development is mostly the
 `uint256.hpp` surface around:
@@ -194,7 +217,7 @@ loading, storing, or parsing helpers unless priorities change.
    Use the same branch order, threshold constants, local names, and
    helper decomposition where practical.
 3. Put the concrete wrapper in
-   [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/Arithmetic.v][theories/Arithmetic.v]]
+   [[theories/Arithmetic.v][theories/Arithmetic.v]]
    only if it is genuinely part of the 256-bit arithmetic surface.
    Put byte and serialization utilities in a separate module if they
    are not arithmetic.
@@ -218,7 +241,7 @@ loading, storing, or parsing helpers unless priorities change.
 
    The implementation is already in place. The remaining work is the
    correctness proof in
-   [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
+   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
    Keep the proof branch-for-branch with the current Rocq definition:
 
    - `byte_index >= 31`
@@ -257,7 +280,7 @@ loading, storing, or parsing helpers unless priorities change.
 * Part 2: Lower-Level Extensions Needed For The Remaining Clean Ports
 
 1. Extend the word interface in
-   [[/home/cmcl/projects/category-labs/rocq-u256/rocq/uint256/theories/Uint.v][theories/Uint.v]]
+   [[theories/Uint.v][theories/Uint.v]]
    with:
 
    - `and`

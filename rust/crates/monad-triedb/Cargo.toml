@@ -17,3 +17,11 @@ tracing = { workspace = true }
 [build-dependencies]
 bindgen = { workspace = true }
 cmake = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+rand = { workspace = true }
+
+[[bench]]
+name = "triedb_api"
+harness = false

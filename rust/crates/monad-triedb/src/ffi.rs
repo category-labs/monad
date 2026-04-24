@@ -14,16 +14,15 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub(crate) use self::bindings::{
-    monad_c_bytes32, triedb, triedb_async_ranged_get, triedb_async_read,
-    triedb_async_read_callback_fn, triedb_async_traverse, triedb_async_traverse_callback,
-    triedb_async_traverse_callback_fn,
+    monad_c_bytes32, triedb_async_ranged_get, triedb_async_read, triedb_async_read_callback_fn,
+    triedb_async_traverse, triedb_async_traverse_callback, triedb_async_traverse_callback_fn,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_early,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_normally,
     triedb_async_traverse_callback_triedb_async_traverse_callback_value, triedb_close,
-    triedb_earliest_finalized_block, triedb_finalize, triedb_free_valset,
-    triedb_latest_finalized_block, triedb_latest_proposed_block, triedb_latest_proposed_block_id,
-    triedb_latest_verified_block, triedb_latest_voted_block, triedb_latest_voted_block_id,
-    triedb_open, triedb_poll, triedb_read, triedb_read_valset, triedb_traverse,
+    triedb_earliest_version, triedb_finalize, triedb_free_valset, triedb_latest_finalized_version,
+    triedb_latest_proposed_block_id, triedb_latest_proposed_version,
+    triedb_latest_verified_version, triedb_latest_voted_block_id, triedb_latest_voted_version,
+    triedb_open, triedb_poll, triedb_read, triedb_read_valset, triedb_traverse, TriedbRoInner,
 };
 pub use self::bindings::{validator_data, validator_set};
 

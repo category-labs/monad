@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "triedb.h"
+#include "ffi.h"
 
 #include <category/core/byte_string.hpp>
 #include <category/core/nibble.h>
@@ -34,36 +34,45 @@
 
 #include <quill/Quill.h>
 
-// Convert a nibble path into a packed byte array.
-void nibbles_to_bytes(
-    uint8_t *dest, monad::mpt::NibblesView const nibbles,
-    size_t const nibble_count)
+struct TriedbRoInner
 {
-    for (unsigned n = 0; n < static_cast<unsigned>(nibble_count); ++n) {
-        set_nibble(dest, n, nibbles.get(n));
+    monad::mpt::AsyncIOContext io_ctx;
+    monad::mpt::Db db;
+    monad::mpt::AsyncContext async_ctx;
+
+    explicit TriedbRoInner(
+        std::vector<std::filesystem::path> dbname_paths,
+        uint64_t const node_lru_max_mem)
+        : io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
+              .disable_mismatching_storage_pool_check = true,
+              .dbname_paths = std::move(dbname_paths)}}
+        , db{io_ctx}
+        , async_ctx{db, node_lru_max_mem}
+    {
+    }
+};
+
+namespace
+{
+    // Convert a nibble path into a packed byte array.
+    void nibbles_to_bytes(
+        uint8_t *dest, monad::mpt::NibblesView const nibbles,
+        size_t const nibble_count)
+    {
+        for (unsigned n = 0; n < static_cast<unsigned>(nibble_count); ++n) {
+            set_nibble(dest, n, nibbles.get(n));
+        }
+    }
+
+    monad::mpt::NibblesView
+    key_to_nibbles_view(uint8_t const *const key, uint8_t const key_len_nibbles)
+    {
+        return monad::mpt::NibblesView{0, key_len_nibbles, key};
     }
 }
 
-struct triedb
-{
-    explicit triedb(
-        std::vector<std::filesystem::path> dbname_paths,
-        uint64_t const node_lru_max_mem)
-        : io_ctx_{monad::mpt::ReadOnlyOnDiskDbConfig{
-              .disable_mismatching_storage_pool_check = true,
-              .dbname_paths = std::move(dbname_paths)}}
-        , db_{io_ctx_}
-        , ctx_{monad::mpt::async_context_create(db_, node_lru_max_mem)}
-    {
-    }
-
-    monad::mpt::AsyncIOContext io_ctx_;
-    monad::mpt::Db db_;
-    monad::mpt::AsyncContextUniquePtr ctx_;
-};
-
 int triedb_open(
-    char const *dbdirpath, triedb **db, uint64_t const node_lru_max_mem)
+    char const *dbdirpath, TriedbRoInner **db, uint64_t const node_lru_max_mem)
 {
     if (dbdirpath == nullptr || db == nullptr || *db != nullptr) {
         return -1;
@@ -88,7 +97,7 @@ int triedb_open(
     }
 
     try {
-        *db = new triedb{std::move(paths), node_lru_max_mem};
+        *db = new TriedbRoInner{std::move(paths), node_lru_max_mem};
     }
     catch (std::exception const &e) {
         std::cerr << e.what();
@@ -97,14 +106,14 @@ int triedb_open(
     return 0;
 }
 
-int triedb_close(triedb *db)
+int triedb_close(TriedbRoInner *db)
 {
     delete db;
     return 0;
 }
 
 int triedb_read(
-    triedb *db, uint8_t const *const key, uint8_t const key_len_nibbles,
+    TriedbRoInner *db, uint8_t const *const key, uint8_t const key_len_nibbles,
     uint8_t const **value, uint64_t const block_id)
 {
     if (db == nullptr || value == nullptr) {
@@ -113,8 +122,8 @@ int triedb_read(
 
     *value = nullptr;
 
-    auto result = db->db_.find(
-        monad::mpt::NibblesView{0, key_len_nibbles, key}, block_id);
+    auto result =
+        db->db.find(key_to_nibbles_view(key, key_len_nibbles), block_id);
     if (!result.has_value()) {
         return -1;
     }
@@ -134,14 +143,12 @@ int triedb_read(
     return value_len;
 }
 
-void triedb_async_read(
-    triedb *db, uint8_t const *const key, uint8_t const key_len_nibbles,
-    uint64_t const block_id, triedb_async_read_callback_fn callback, void *user)
+namespace
 {
-    struct receiver_t
+    struct AsyncReadReceiver
     {
-        triedb_async_read_callback_fn callback_;
-        void *user_;
+        triedb_async_read_callback_fn callback;
+        void *user;
 
         void set_value(
             monad::async::erased_connected_operation *state,
@@ -149,8 +156,6 @@ void triedb_async_read(
         {
             uint8_t const *value = nullptr;
             int length = 0;
-            triedb_async_read_callback_fn const callback = callback_;
-            void *const user = user_;
             if (!result) {
                 length = -1;
             }
@@ -177,26 +182,31 @@ void triedb_async_read(
             callback(value, length, user);
         }
     };
+}
 
+void triedb_async_read(
+    TriedbRoInner *db, uint8_t const *const key, uint8_t const key_len_nibbles,
+    uint64_t const block_id, triedb_async_read_callback_fn callback, void *user)
+{
     auto *state = new auto(monad::async::connect(
         monad::mpt::make_get_sender(
-            db->ctx_.get(),
-            monad::mpt::NibblesView{0, key_len_nibbles, key},
+            &db->async_ctx,
+            key_to_nibbles_view(key, key_len_nibbles),
             block_id),
-        receiver_t{callback, user}));
+        AsyncReadReceiver{callback, user}));
     state->initiate();
 }
 
-namespace detail
+namespace
 {
-    class Traverse final : public monad::mpt::TraverseMachine
+    class CallbackTraverse final : public monad::mpt::TraverseMachine
     {
         void *context_;
         triedb_async_traverse_callback_fn callback_;
         monad::mpt::Nibbles path_;
 
     public:
-        Traverse(
+        CallbackTraverse(
             void *context, triedb_async_traverse_callback_fn callback,
             monad::mpt::NibblesView const initial_path)
             : context_(context)
@@ -255,11 +265,11 @@ namespace detail
 
         virtual std::unique_ptr<TraverseMachine> clone() const override
         {
-            return std::make_unique<Traverse>(*this);
+            return std::make_unique<CallbackTraverse>(*this);
         }
     };
 
-    struct TraverseReceiver
+    struct TraverseFinishedReceiver
     {
         void *context;
         triedb_async_traverse_callback_fn callback;
@@ -285,15 +295,15 @@ namespace detail
         }
     };
 
-    struct GetNodeReceiver
+    struct TraverseRootReceiver
     {
         using ResultType =
             monad::async::result<std::shared_ptr<monad::mpt::Node>>;
 
         monad::mpt::detail::TraverseSender traverse_sender;
-        TraverseReceiver traverse_receiver;
+        TraverseFinishedReceiver traverse_receiver;
 
-        GetNodeReceiver(
+        TraverseRootReceiver(
             void *context, triedb_async_traverse_callback_fn callback,
             monad::mpt::detail::TraverseSender traverse_sender_)
             : traverse_sender(std::move(traverse_sender_))
@@ -325,12 +335,12 @@ namespace detail
 }
 
 bool triedb_traverse(
-    triedb *db, uint8_t const *const key, uint8_t const key_len_nibbles,
+    TriedbRoInner *db, uint8_t const *const key, uint8_t const key_len_nibbles,
     uint64_t const block_id, void *context,
     triedb_async_traverse_callback_fn callback)
 {
     monad::mpt::NibblesView const prefix{0, key_len_nibbles, key};
-    auto cursor = db->db_.find(prefix, block_id);
+    auto cursor = db->db.find(prefix, block_id);
     if (!cursor.has_value()) {
         callback(
             triedb_async_traverse_callback_finished_early,
@@ -342,9 +352,9 @@ bool triedb_traverse(
         return false;
     }
 
-    detail::Traverse machine(context, callback, monad::mpt::NibblesView{});
+    CallbackTraverse machine(context, callback, monad::mpt::NibblesView{});
 
-    bool const completed = db->db_.traverse(cursor.value(), machine, block_id);
+    bool const completed = db->db.traverse(cursor.value(), machine, block_id);
 
     callback(
         completed ? triedb_async_traverse_callback_finished_normally
@@ -358,7 +368,7 @@ bool triedb_traverse(
 }
 
 void triedb_async_ranged_get(
-    triedb *db, uint8_t const *const prefix_key,
+    TriedbRoInner *db, uint8_t const *const prefix_key,
     uint8_t const prefix_len_nibbles, uint8_t const *const min_key,
     uint8_t const min_len_nibbles, uint8_t const *const max_key,
     uint8_t const max_len_nibbles, uint64_t const block_id, void *context,
@@ -392,36 +402,36 @@ void triedb_async_ranged_get(
                 value.size());
         });
     (new auto(monad::async::connect(
-         monad::mpt::make_get_node_sender(db->ctx_.get(), prefix, block_id),
-         detail::GetNodeReceiver(
+         monad::mpt::make_get_node_sender(&db->async_ctx, prefix, block_id),
+         TraverseRootReceiver(
              context,
              callback,
              monad::mpt::make_traverse_sender(
-                 db->ctx_.get(), {}, std::move(machine), block_id)))))
+                 &db->async_ctx, {}, std::move(machine), block_id)))))
         ->initiate();
 }
 
 void triedb_async_traverse(
-    triedb *db, uint8_t const *const key, uint8_t const key_len_nibbles,
+    TriedbRoInner *db, uint8_t const *const key, uint8_t const key_len_nibbles,
     uint64_t const block_id, void *context,
     triedb_async_traverse_callback_fn callback)
 {
     monad::mpt::NibblesView const prefix{0, key_len_nibbles, key};
-    auto machine = std::make_unique<detail::Traverse>(
+    auto machine = std::make_unique<CallbackTraverse>(
         context, callback, monad::mpt::NibblesView{});
     (new auto(monad::async::connect(
-         monad::mpt::make_get_node_sender(db->ctx_.get(), prefix, block_id),
-         detail::GetNodeReceiver(
+         monad::mpt::make_get_node_sender(&db->async_ctx, prefix, block_id),
+         TraverseRootReceiver(
              context,
              callback,
              monad::mpt::make_traverse_sender(
-                 db->ctx_.get(), {}, std::move(machine), block_id)))))
+                 &db->async_ctx, {}, std::move(machine), block_id)))))
         ->initiate();
 }
 
-size_t triedb_poll(triedb *db, bool const blocking, size_t const count)
+size_t triedb_poll(TriedbRoInner *db, bool const blocking, size_t const count)
 {
-    return db->db_.poll(blocking, count);
+    return db->db.poll(blocking, count);
 }
 
 int triedb_finalize(uint8_t const *const value)
@@ -430,45 +440,53 @@ int triedb_finalize(uint8_t const *const value)
     return 0;
 }
 
-uint64_t triedb_latest_proposed_block(triedb *db)
+uint64_t triedb_latest_proposed_version(TriedbRoInner *db)
 {
-    return db->db_.get_latest_proposed_version();
+    return db->db.get_latest_proposed_version();
 }
 
-monad_c_bytes32 triedb_latest_proposed_block_id(triedb *db)
+monad_c_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *db)
 {
-    return db->db_.get_latest_proposed_block_id();
+    return db->db.get_latest_proposed_block_id();
 }
 
-uint64_t triedb_latest_voted_block(triedb *db)
+uint64_t triedb_latest_voted_version(TriedbRoInner *db)
 {
-    return db->db_.get_latest_voted_version();
+    return db->db.get_latest_voted_version();
 }
 
-monad_c_bytes32 triedb_latest_voted_block_id(triedb *db)
+monad_c_bytes32 triedb_latest_voted_block_id(TriedbRoInner *db)
 {
-    return db->db_.get_latest_voted_block_id();
+    return db->db.get_latest_voted_block_id();
 }
 
-uint64_t triedb_latest_finalized_block(triedb *db)
+uint64_t triedb_latest_finalized_version(TriedbRoInner *db)
 {
-    return db->db_.get_latest_finalized_version();
+    return db->db.get_latest_finalized_version();
 }
 
-uint64_t triedb_latest_verified_block(triedb *db)
+uint64_t triedb_latest_verified_version(TriedbRoInner *db)
 {
-    return db->db_.get_latest_verified_version();
+    return db->db.get_latest_verified_version();
 }
 
-uint64_t triedb_earliest_finalized_block(triedb *db)
+uint64_t triedb_earliest_version(TriedbRoInner *db)
 {
-    return db->db_.get_earliest_version();
+    return db->db.get_earliest_version();
 }
 
-validator_set *alloc_valset(uint64_t const length)
+uint64_t triedb_latest_version(TriedbRoInner *db)
 {
-    validator_data *validators = new validator_data[length];
-    return new validator_set{.validators = validators, .length = length};
+    return db->db.get_latest_version();
+}
+
+namespace
+{
+    validator_set *alloc_valset(uint64_t const length)
+    {
+        validator_data *validators = new validator_data[length];
+        return new validator_set{.validators = validators, .length = length};
+    }
 }
 
 void triedb_free_valset(validator_set *valset)
@@ -478,9 +496,9 @@ void triedb_free_valset(validator_set *valset)
 }
 
 validator_set *triedb_read_valset(
-    triedb *db, size_t const block_num, uint64_t const requested_epoch)
+    TriedbRoInner *db, size_t const block_num, uint64_t const requested_epoch)
 {
-    auto ret = monad::staking::read_valset(db->db_, block_num, requested_epoch);
+    auto ret = monad::staking::read_valset(db->db, block_num, requested_epoch);
     if (!ret.has_value()) {
         return nullptr;
     }

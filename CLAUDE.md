@@ -187,6 +187,19 @@ Test code uses `MONAD_TEST_NAMESPACE_BEGIN/END` (from `monad/test/config.hpp`), 
 - Include paths use the full `category/` prefix: `#include <category/core/hex.hpp>`
 - Naming: `snake_case` for functions, `PascalCase` for types (some older code uses `snake_case` types), trailing `_` for private members
 
+### East-const on parameter definitions
+
+Function parameter *definitions* (parameter lists attached to a function body) take top-level `const` in east-const style: value parameters become `T const x`, pointer parameters become `T *const p` (the pointee qualifier is left untouched). This applies equally to out-of-line definitions in `.cpp` files and to in-header definitions of inline, `constexpr`, template, and member functions. Pure declarations — parameter lists ending in `;` with no body — are left untouched; the qualifier has no semantic effect on a declaration.
+
+Carve-outs where the parameter stays non-const:
+
+- References (`T &`, `T &&`).
+- Unnamed parameters (including those replaced by a `/*comment*/` marker).
+- Parameters mutated in the body or member initializer list.
+- Move-only parameters consumed via `std::move(name)` — `const` would silently downgrade the move to a copy.
+- Typedefs that hide pointers, notably `va_list` — adding `const` breaks `va_arg`/`va_copy` on implementations where `va_list` is an array type (see `category/core/format_err.c:33`).
+- Lambda parameters.
+
 ## Adding Tests
 
 Tests use Google Test. CMake helper functions are defined in root `CMakeLists.txt`:

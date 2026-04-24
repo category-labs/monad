@@ -824,6 +824,31 @@ int main(int argc, char **argv)
     BenchmarkBuilder(
         args,
         results,
+        {.title = "BASIC_BIN_MATH, random input",
+         .num_inputs = 2,
+         .has_output = true,
+         .iteration_count = 100,
+         .subject_seqs = basic_bin_math_builders})
+        .make_calldata([](size_t num_inputs) {
+            std::vector<uint8_t> cd(100'000 * num_inputs * 32, 0);
+            for (size_t i = 0; i < cd.size(); i += 64) {
+                auto const a1 = rand_uint256() % 5;
+                auto const mask1 =
+                    std::numeric_limits<runtime::uint256_t>::max() >> (a1 * 64);
+                auto const a2 = rand_uint256() % 5;
+                auto const mask2 =
+                    std::numeric_limits<runtime::uint256_t>::max() >> (a2 * 64);
+                (rand_uint256() & mask1).store_be(&cd[i]);
+                (rand_uint256() & mask2).store_be(&cd[i + 32]);
+            }
+            return cd;
+        })
+        .run_throughput_benchmark()
+        .run_latency_benchmark();
+
+    BenchmarkBuilder(
+        args,
+        results,
         {.title = "EXP, random input",
          .num_inputs = 2,
          .has_output = true,

@@ -330,50 +330,6 @@ TEST(uint256, int_cast)
     ASSERT_EQ(static_cast<int8_t>(x), 0x21);
 }
 
-TEST(uint256, constexpr_fallbacks)
-{
-    uint64_t const inputs[] = {
-        0,
-        1,
-        static_cast<uint64_t>(std::numeric_limits<int64_t>::max()),
-        static_cast<uint64_t>(std::numeric_limits<int64_t>::min()),
-        0xc411987422d1b087,
-        0x3b99b4f6c7da07b2,
-        0x26ff29d37306530f,
-        0x6c955311f20d471c,
-        0x71668f0478f99486,
-        0x37809cb69732cdb7,
-        0xf66eb4528f6aadff,
-        0xd3e0839d43dcc0bc,
-        0x0008a54508aaf378,
-        0x7cc2c8466df30bd5,
-
-    };
-    for (auto x : inputs) {
-        for (auto y : inputs) {
-            for (auto c : {true, false}) {
-                ASSERT_EQ(addc_constexpr(x, y, c), addc_intrinsic(x, y, c));
-                ASSERT_EQ(subb_constexpr(x, y, c), subb_intrinsic(x, y, c));
-            }
-            for (size_t shift = 0; shift < 64; shift++) {
-                auto shift_8 = static_cast<uint8_t>(shift);
-                ASSERT_EQ(
-                    shld_constexpr(x, y, shift_8),
-                    shld_intrinsic(x, y, shift_8));
-                ASSERT_EQ(
-                    shrd_constexpr(x, y, shift_8),
-                    shrd_intrinsic(x, y, shift_8));
-            }
-            for (auto v : inputs) {
-                if (x >= v || v == 0) {
-                    continue;
-                }
-                ASSERT_EQ(div_constexpr(x, y, v), div_intrinsic(x, y, v));
-            }
-        }
-    }
-}
-
 constexpr uint256_t test_inputs[] = {
     {0, 0, 0, 0},
     {1, 0, 0, 0},
@@ -470,11 +426,9 @@ void check_truncating_mul(
     words_t<M> const &x, words_t<N> const &y,
     words_t<M + N> const &full) noexcept
 {
-    auto const prod_rt = truncating_mul_runtime<R>(x, y);
-    auto const prod_ce = truncating_mul_constexpr<R>(x, y);
+    auto const prod = truncating_mul<R>(x, y);
     for (size_t i = 0; i < R; i++) {
-        ASSERT_EQ(prod_rt[i], full[i]);
-        ASSERT_EQ(prod_ce[i], full[i]);
+        ASSERT_EQ(prod[i], full[i]);
     }
 }
 

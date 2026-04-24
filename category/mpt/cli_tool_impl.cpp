@@ -399,6 +399,7 @@ struct impl_t
     bool create_database = false;
     bool truncate_database = false;
     bool create_empty_database = false;
+    bool upgrade_database = false;
     std::optional<uint64_t> rewind_database_to;
     std::optional<uint64_t> reset_history_length;
     bool create_chunk_increasing = false;
@@ -1466,6 +1467,13 @@ opened.
                 "--rewind-to",
                 impl.rewind_database_to,
                 "rewind database to an earlier point in its history.");
+            cli_ops_group->add_flag(
+                "--upgrade",
+                impl.upgrade_database,
+                "migrate the database metadata to the current on-disk "
+                "format (MONAD008) and ensure it is durable on disk "
+                "before exiting. Run after upgrading the monad apt "
+                "package and before starting monad services.");
             cli.add_option(
                 "--archive",
                 impl.archive_database,
@@ -1580,6 +1588,12 @@ opened.
                 impl.flags.open_read_only = false;
                 impl.flags.open_read_only_allow_dirty = false;
             }
+            else if (impl.upgrade_database) {
+                mode = MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
+                impl.flags.open_read_only = false;
+                impl.flags.open_read_only_allow_dirty = false;
+                impl.flags.allow_migration = true;
+            }
             if (mode == MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate) {
                 MONAD_ASYNC_NAMESPACE::storage_pool const pool{
                     {impl.storage_paths}, mode, impl.flags};
@@ -1650,6 +1664,26 @@ opened.
             impl.print_list_info(
                 aux, aux.metadata_ctx().main()->free_list_begin(), "Free");
             impl.print_db_history_summary(aux);
+
+            if (impl.upgrade_database) {
+                if (aux.metadata_ctx().is_new_pool()) {
+                    cout << "\nWARNING: --upgrade found no existing DB "
+                            "metadata; a fresh MONAD008 pool was created. "
+                            "Use --create for an explicit new-pool "
+                            "workflow.\n";
+                }
+                else {
+                    // Neutral wording — when the ctor migrated from
+                    // MONAD007, the quill LOG_INFO inside the ctor has
+                    // already reported that; the tool's job here is just
+                    // to confirm the final state and flush.
+                    cout << "\nDB is on version MONAD008; flushing "
+                            "metadata...\n";
+                }
+                aux.metadata_ctx().sync_metadata_to_disk();
+                cout << "Success.\n";
+                return 0;
+            }
 
             if (impl.reset_history_length) {
                 // set to fixed history length, database will prune any outdated

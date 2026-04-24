@@ -656,6 +656,7 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
 storage_pool::storage_pool(storage_pool const *src, clone_as_read_only_tag_)
     : is_read_only_(true)
     , is_read_only_allow_dirty_(false)
+    , is_migration_allowed_(false)
     , is_newly_truncated_(false)
 {
     devices_.reserve(src->devices_.size());
@@ -710,6 +711,7 @@ storage_pool::storage_pool(
     creation_flags flags)
     : is_read_only_(flags.open_read_only || flags.open_read_only_allow_dirty)
     , is_read_only_allow_dirty_(flags.open_read_only_allow_dirty)
+    , is_migration_allowed_(flags.allow_migration)
     , is_newly_truncated_(mode == mode::truncate)
 {
     devices_.reserve(sources.size());
@@ -770,6 +772,7 @@ storage_pool::storage_pool(
     use_anonymous_sized_inode_tag, off_t len, creation_flags flags)
     : is_read_only_(flags.open_read_only || flags.open_read_only_allow_dirty)
     , is_read_only_allow_dirty_(flags.open_read_only_allow_dirty)
+    , is_migration_allowed_(flags.allow_migration)
     , is_newly_truncated_(false)
 {
     int const fd = make_temporary_inode();

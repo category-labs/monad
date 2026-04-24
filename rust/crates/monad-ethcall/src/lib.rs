@@ -38,6 +38,7 @@ pub enum ChainId {
     MonadMainnet,
     MonadTestnet,
     MonadDevnet,
+    HiveNet,
 }
 
 impl ChainId {
@@ -47,6 +48,7 @@ impl ChainId {
             Self::MonadMainnet => ffi::monad_chain_config_CHAIN_CONFIG_MONAD_MAINNET,
             Self::MonadTestnet => ffi::monad_chain_config_CHAIN_CONFIG_MONAD_TESTNET,
             Self::MonadDevnet => ffi::monad_chain_config_CHAIN_CONFIG_MONAD_DEVNET,
+            Self::HiveNet => ffi::monad_chain_config_CHAIN_CONFIG_HIVE_NET,
         }
     }
 }

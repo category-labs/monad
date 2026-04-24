@@ -17,24 +17,34 @@
 
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/db/file_db.hpp>
+#include <category/execution/ethereum/db/tar_file_db.hpp>
 
 #include <cstdint>
 #include <filesystem>
+#include <variant>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 struct Block;
 
+enum class BlockDbFormat
+{
+    Auto,
+    Files,
+    Tar,
+};
+
 class BlockDb
 {
-    FileDb db_;
+    std::variant<FileDb, TarFileDb> db_;
 
 public:
     BlockDb() = delete;
     BlockDb(Block const &) = delete;
     BlockDb(BlockDb &&) = default;
-    explicit BlockDb(std::filesystem::path const &dir);
+    explicit BlockDb(
+        std::filesystem::path const &, BlockDbFormat = BlockDbFormat::Auto);
     virtual ~BlockDb() = default;
 
     virtual bool get(uint64_t, Block &) const;

@@ -269,8 +269,9 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
-    vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
+    Chain const &chain, std::filesystem::path const &ledger_dir,
+    BlockDbFormat const block_db_format, Db &db, vm::VM &vm,
+    BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, std::filesystem::path const &rlp_path)
@@ -287,7 +288,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         if (!rlp_path.empty()) {
             return std::make_unique<RlpBlockDb>(ledger_dir, rlp_path);
         }
-        return std::make_unique<BlockDb>(ledger_dir);
+        return std::make_unique<BlockDb>(ledger_dir, block_db_format);
     }();
     BlockDb &block_db = *block_db_base;
     bytes32_t parent_block_id{};

@@ -4049,6 +4049,132 @@ Definition signextend_Z (byte_index value : Z) : Z :=
 Theorem signextend_correct : forall byte_index_256 x,
   to_Z_uint256 (signextend byte_index_256 x) =
     signextend_Z (to_Z_uint256 byte_index_256) (to_Z_uint256 x).
+Proof.
+  intros [b0 b1 b2 b3] [x0 x1 x2 x3].
+  set (idx := mk_uint256 b0 b1 b2 b3).
+  remember
+    (ltb_uint256 idx (mk_uint256 (sub (shl one 5) one) zero zero zero))
+    as in_range eqn:Hidx.
+  destruct in_range.
+  2:{ symmetry in Hidx.
+      pose proof Hidx as Hltb.
+      rewrite ltb_uint256_correct in Hltb.
+      rewrite to_Z_signextend_limit in Hltb.
+      apply Z.ltb_ge in Hltb.
+      unfold signextend, signextend_Z.
+      rewrite Hidx.
+      replace (to_Z_uint256 idx <? 31) with false.
+      2:{ symmetry. apply Z.ltb_ge. exact Hltb. }
+      reflexivity. }
+  symmetry in Hidx.
+  pose proof Hidx as Hltb.
+  rewrite ltb_uint256_correct in Hltb.
+  rewrite to_Z_signextend_limit in Hltb.
+  apply Z.ltb_lt in Hltb.
+  assert (Hlt_base : to_Z_uint256 idx < base width)
+    by (unfold base; rewrite width_is_64; lia).
+  destruct (to_Z_uint256_lt_base_zero_high b0 b1 b2 b3 Hlt_base)
+    as [Hb1z [Hb2z Hb3z]].
+  assert (Hb : to_Z_uint256 idx = to_Z b0).
+  { unfold idx, to_Z_uint256, uint256_to_words.
+    cbn [w0 w1 w2 w3 to_Z_words].
+    rewrite Hb1z, Hb2z, Hb3z.
+    rewrite ?Z.mul_0_r, ?Z.add_0_r.
+    reflexivity. }
+  assert (Hword_index : to_Z (shr b0 3) = to_Z b0 / 8)
+    by now rewrite to_Z_shr.
+  assert (Hword_range : 0 <= to_Z (shr b0 3) < 4).
+  { pose proof (spec_to_Z b0) as Hb0_range.
+    rewrite Hword_index.
+    split.
+    - now apply Z.div_pos.
+    - apply Z.div_lt_upper_bound; lia. }
+  assert (Hword_index_n :
+    signextend_word_index_nat (shr b0 3) = Z.to_nat (to_Z (shr b0 3)))
+   by (now apply signextend_word_index_nat_correct).
+  unfold signextend.
+  subst idx.
+  rewrite Hidx.
+  cbn [negb w0 w1 w2 w3].
+  rewrite Hword_index_n, Hb.
+  unfold signextend_Z.
+  replace (to_Z b0 <? 31) with true
+    by (symmetry; apply Z.ltb_lt; lia).
+  set (n := Z.to_nat (to_Z (shr b0 3))).
+  set (s := bounded_shift_nat word_width
+                              (shl (land b0 (shl 1 3 - 1)%Uint) 3)).
+  assert (Hmask3 :
+    to_Z (land b0 (shl 1 3 - 1)%Uint) = to_Z b0 mod 8).
+  { change ((shl 1 3 - 1)%Uint) with (sub (shl one 3) one).
+    assert (H3lt : (3 < Pos.to_nat U64.width)%nat).
+    { rewrite width_is_64. compute. repeat constructor. }
+    pose proof (to_Z_land_low_mask b0 3) as Hmask3'.
+    specialize (Hmask3' H3lt).
+    rewrite Hmask3'.
+    change (2 ^ Z.of_nat 3) with 8.
+    reflexivity. }
+  assert (Hshift_bits :
+    to_Z (shl (land b0 (shl 1 3 - 1)%Uint) 3) = 8 * (to_Z b0 mod 8)).
+  { rewrite spec_shl, Hmask3.
+    rewrite Z.shiftl_mul_pow2 by lia.
+    rewrite Z.mod_small.
+    2:{ split.
+        - pose proof (Z.mod_pos_bound (to_Z b0) 8 ltac:(lia)) as Hmod8.
+          nia.
+        - unfold base. rewrite width_is_64. simpl.
+          pose proof (Z.mod_pos_bound (to_Z b0) 8 ltac:(lia)) as Hmod8.
+          nia. }
+    change (2 ^ Z.of_nat 3) with 8.
+    ring. }
+  assert (Hs_eq : Z.of_nat s = 8 * (to_Z b0 mod 8)).
+  { subst s.
+    rewrite (bounded_shift_nat_correct word_width
+               (shl (land b0 (shl 1 3 - 1)%Uint) 3)).
+    2:{ apply Nat.le_refl. }
+    2:{ rewrite Hshift_bits.
+        unfold word_width.
+        rewrite width_is_64.
+        change (Z.of_nat 64) with 64.
+        pose proof (Z.mod_pos_bound (to_Z b0) 8 ltac:(lia)) as Hmod8.
+        nia. }
+    assert (Hshift_nonneg : 0 <= to_Z (shl (land b0 (shl 1 3 - 1)%Uint) 3)).
+    { rewrite Hshift_bits.
+      pose proof (Z.mod_pos_bound (to_Z b0) 8 ltac:(lia)) as Hmod8.
+      nia. }
+    rewrite Z2Nat.id by exact Hshift_nonneg.
+    exact Hshift_bits. }
+  assert (Hs_le56 : (s <= 56)%nat).
+  { apply Nat2Z.inj_le.
+    change (Z.of_nat 56) with 56.
+    rewrite Hs_eq.
+    pose proof (Z.mod_pos_bound (to_Z b0) 8 ltac:(lia)) as Hmod8.
+    nia. }
+  assert (Hnlt : (n < 4)%nat).
+  { subst n.
+    apply Nat2Z.inj_lt.
+    rewrite Z2Nat.id by lia.
+    lia. }
+  set (word := get_word (uint256_to_words {| w0 := x0; w1 := x1; w2 := x2; w3 := x3 |}) n).
+  destruct n as [|[|[|[|n']]]] eqn:Hn; try lia; cbn [get_word set_word uint256_to_words] in *;
+    destruct (signextend_current_word_correct word s Hs_le56) as [Hcur Hsign].
+  - unfold word in *.
+    cbn [get_word uint256_to_words nth w0 w1 w2 w3] in Hcur, Hsign |- *.
+    assert (Hb0_mod : to_Z b0 mod 8 = to_Z b0).
+    { apply Z.mod_small.
+      pose proof (Z.div_mod (to_Z b0) 8 ltac:(lia)) as Hdm.
+      pose proof (spec_to_Z b0) as Hb0.
+      lia. }
+    assert (Hbits0 : 8 * (to_Z b0 + 1) = Z.of_nat s + 8)
+      by (rewrite Hs_eq, Hb0_mod; ring).
+    rewrite Hbits0.
+    replace (Z.of_nat s + 8 - 1) with (Z.of_nat s + 7) by lia.
+    destruct (signextend_current_word x0 s) as [current sign_bits] eqn:Hcw.
+    cbn [fill_words_from words_to_uint256 fit_words firstn app repeat
+       to_Z_words uint256_to_words to_Z_uint256 w0 w1 w2 w3] in |- *.
+    unfold signextend_current_word in Hcw.
+    inversion Hcw; subst current sign_bits; clear Hcw.
+    rewrite Hcur, Hsign.
+    
 Admitted.
 
 Lemma is_two_uint256_true : forall x,

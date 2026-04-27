@@ -1122,8 +1122,8 @@ Db::Db(OnDiskDbConfig const &config)
     MONAD_ASSERT(impl_->aux().is_on_disk());
 }
 
-Db::Db(AsyncIOContext &io_ctx)
-    : impl_{std::make_unique<ROOnDiskBlocking>(io_ctx, timeline_id::primary)}
+Db::Db(AsyncIOContext &io_ctx, timeline_id const tid)
+    : impl_{std::make_unique<ROOnDiskBlocking>(io_ctx, tid)}
 {
 }
 

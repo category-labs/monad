@@ -47,11 +47,11 @@ bool monad_db_dump_snapshot(
         uint64_t shard, enum monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user),
     void *user, unsigned dump_concurrency_limit, uint64_t total_shards,
-    uint64_t shard_number);
+    uint64_t shard_number, bool dump_from_secondary);
 
 struct monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t block, char const *const *dbname_paths, size_t len,
-    unsigned sq_thread_cpu);
+    unsigned sq_thread_cpu, bool load_to_secondary);
 
 void monad_db_snapshot_loader_load(
     struct monad_db_snapshot_loader *loader, uint64_t shard,

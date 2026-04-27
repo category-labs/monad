@@ -118,7 +118,9 @@ public:
     // and owns the SM internally. Caller must have registered the relevant
     // kinds at process start (e.g. monad::register_ethereum_state_machines()).
     explicit Db(OnDiskDbConfig const &);
-    explicit Db(AsyncIOContext &); // on-disk RO blocking
+    explicit Db(
+        AsyncIOContext &,
+        timeline_id tid = timeline_id::primary); // on-disk RO blocking
 
     Db(Db const &) = delete;
     Db(Db &&) noexcept;

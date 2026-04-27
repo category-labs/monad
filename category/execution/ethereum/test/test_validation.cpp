@@ -21,7 +21,6 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -323,19 +322,6 @@ TYPED_TEST(TraitsTest, invalid_gas_limit)
         static_validate_header<typename TestFixture::Trait>(header);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
-}
-
-TYPED_TEST(EvmTraitsTest, wrong_dao_extra_data)
-{
-    static BlockHeader const header{
-        .number = dao::dao_block_number + 5,
-        .gas_limit = 10000,
-        .extra_data = {0x00, 0x01, 0x02}};
-
-    auto const result =
-        static_validate_header<typename TestFixture::Trait>(header);
-    ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(result.error(), BlockError::WrongDaoExtraData);
 }
 
 #define TEST_OPTIONAL_FIELD(f, default_val, REV)                               \

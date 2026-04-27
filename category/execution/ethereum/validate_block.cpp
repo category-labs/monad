@@ -25,7 +25,6 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/dao.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -77,20 +76,7 @@ bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)
 template <Traits traits>
 Result<void> static_validate_header(BlockHeader const &header)
 {
-    // There's a subtle way in which this introduces a bug that doesn't really
-    // matter - if for some reason we were trying to run non-mainnet Ethereum
-    // blocks with Homestead block numbers, this check would incorrectly get
-    // fired. However this, check will soon be removed once we drop support for
-    // EVMC_HOMESTEAD
-    if constexpr (is_evm_trait_v<traits>) {
-        // EIP-779
-        if (MONAD_UNLIKELY(
-                header.number >= dao::dao_block_number &&
-                header.number <= dao::dao_block_number + 9 &&
-                header.extra_data != dao::extra_data)) {
-            return BlockError::WrongDaoExtraData;
-        }
-    }
+    static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
 
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_limit < 5000)) {
@@ -342,7 +328,6 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::TooManyOmmers, "too many ommers", {}},
         {BlockError::DuplicateOmmers, "duplicate ommers", {}},
         {BlockError::InvalidOmmerHeader, "invalid ommer header", {}},
-        {BlockError::WrongDaoExtraData, "wrong dao extra data", {}},
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
         {BlockError::InvalidGasUsed, "invalid gas used", {}},
         {BlockError::WrongMerkleRoot, "wrong merkle root", {}},

@@ -1172,6 +1172,8 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 
 TYPED_TEST(TraitsTest, cold_account_access)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_HOMESTEAD);
+
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
@@ -1262,12 +1264,8 @@ TYPED_TEST(TraitsTest, cold_account_access)
             else if constexpr (TestFixture::Trait::evm_rev() >= EVMC_ISTANBUL) {
                 return 700;
             }
-            else if constexpr (
-                TestFixture::Trait::evm_rev() >= EVMC_TANGERINE_WHISTLE) {
-                return 400;
-            }
             else {
-                return 20;
+                return 400;
             }
         }
     }();

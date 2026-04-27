@@ -125,12 +125,15 @@ uint64_t monad_db_snapshot_write_filesystem(
 void monad_db_snapshot_load_filesystem(
     char const *const *const dbname_paths, size_t const len,
     unsigned const sq_thread_cpu, char const *const snapshot_dir,
-    uint64_t const block)
+    uint64_t const block, bool const page_mode)
 {
     std::filesystem::path const root{std::format("{}/{}", snapshot_dir, block)};
     MONAD_ASSERT(std::filesystem::is_directory(root));
+    // The input snapshot is always slot-encoded (the standard format produced
+    // by monad_db_dump_snapshot from a slot db). When page_mode is true the
+    // loader converts slot leaves to page leaves on the fly.
     monad_db_snapshot_loader *const loader = monad_db_snapshot_loader_create(
-        block, dbname_paths, len, sq_thread_cpu);
+        block, dbname_paths, len, sq_thread_cpu, page_mode);
 
     auto const do_mmap = [](std::filesystem::path const file) {
         using namespace monad;

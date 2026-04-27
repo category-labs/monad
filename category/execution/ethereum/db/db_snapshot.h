@@ -51,7 +51,7 @@ bool monad_db_dump_snapshot(
 
 struct monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t block, char const *const *dbname_paths, size_t len,
-    unsigned sq_thread_cpu);
+    unsigned sq_thread_cpu, bool page_mode);
 
 void monad_db_snapshot_loader_load(
     struct monad_db_snapshot_loader *loader, uint64_t shard,

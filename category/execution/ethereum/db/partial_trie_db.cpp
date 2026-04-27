@@ -20,6 +20,7 @@
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/rlp/account_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
@@ -267,44 +268,6 @@ namespace
         unsigned char hash[32];
         keccak256(rlp_bytes.data(), rlp_bytes.size(), hash);
         return rlp::encode_string2(byte_string_view{hash, 32});
-    }
-
-    /// Walk the trie rooted at `root` following the given nibble key.
-    /// Returns std::nullopt if the lookup hits an unresolved HashStub,
-    /// a pointer to the leaf value on success, or nullptr if the key is absent.
-    template <typename T>
-    std::optional<T *>
-    trie_lookup(ChildRef<T> const &root, mpt::NibblesView remaining)
-    {
-        PartialNode<T> *node = root.get();
-        while (node != nullptr) {
-            if (auto *leaf = std::get_if<LeafData<T>>(&node->v)) {
-                return (mpt::NibblesView{leaf->path} == remaining)
-                           ? &leaf->value
-                           : nullptr;
-            }
-            else if (auto *ext = std::get_if<ExtensionData<T>>(&node->v)) {
-                mpt::NibblesView const ext_path{ext->path};
-                if (!remaining.starts_with(ext_path)) {
-                    return nullptr;
-                }
-                remaining = remaining.substr(ext_path.nibble_size());
-                node = ext->child.get();
-            }
-            else if (auto *branch = std::get_if<BranchData<T>>(&node->v)) {
-                if (remaining.empty()) {
-                    return branch->value ? &*branch->value : nullptr;
-                }
-                unsigned const nibble = remaining.get(0);
-                remaining = remaining.substr(1);
-                node = branch->children[nibble].get();
-            }
-            else {
-                // HashStub: subtree not present in witness
-                return std::nullopt;
-            }
-        }
-        return nullptr; // null child — key absent
     }
 
     unsigned common_prefix_length(mpt::NibblesView a, mpt::NibblesView b)
@@ -650,7 +613,9 @@ byte_string StorageLeafValue::encode(StorageLeafValue const &v)
     return rlp::encode_bytes32_compact(v.value);
 }
 
-Result<PartialTrieDb> PartialTrieDb::from_reth_witness(
+template <>
+Result<PartialTrieDb<NoopAccessTracker>>
+PartialTrieDb<NoopAccessTracker>::from_reth_witness(
     bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
     byte_string_view encoded_codes)
 {
@@ -693,10 +658,55 @@ Result<PartialTrieDb> PartialTrieDb::from_reth_witness(
         MONAD_DEBUG_ASSERT(pre_state_root_enc.empty());
     }
 
-    return PartialTrieDb{std::move(root_node), std::move(code_index)};
+    // Shared singleton referenced by every PartialTrieDb<NoopAccessTracker>:
+    // the type is stateless and no call site ever dereferences it (all
+    // tracker operations are elided at compile time when Tracker::enabled
+    // is false). Static so the reference outlives this function.
+    static NoopAccessTracker noop_access_tracker{};
+    return PartialTrieDb<NoopAccessTracker>{
+        noop_access_tracker, std::move(root_node), std::move(code_index)};
 }
 
-std::optional<Account> PartialTrieDb::read_account(Address const &addr)
+template <typename Tracker>
+template <LeafValue V>
+std::optional<V *> PartialTrieDb<Tracker>::trie_lookup(
+    ChildRef<V> const &root, mpt::NibblesView remaining) const
+{
+    PartialNode<V> *node = root.get();
+    while (node != nullptr) {
+        if constexpr (Tracker::enabled) {
+            tracker_.mark_accessed(static_cast<void const *>(node));
+        }
+        if (auto *leaf = std::get_if<LeafData<V>>(&node->v)) {
+            return (mpt::NibblesView{leaf->path} == remaining) ? &leaf->value
+                                                               : nullptr;
+        }
+        else if (auto *ext = std::get_if<ExtensionData<V>>(&node->v)) {
+            mpt::NibblesView const ext_path{ext->path};
+            if (!remaining.starts_with(ext_path)) {
+                return nullptr;
+            }
+            remaining = remaining.substr(ext_path.nibble_size());
+            node = ext->child.get();
+        }
+        else if (auto *branch = std::get_if<BranchData<V>>(&node->v)) {
+            if (remaining.empty()) {
+                return branch->value ? &*branch->value : nullptr;
+            }
+            unsigned const nibble = remaining.get(0);
+            remaining = remaining.substr(1);
+            node = branch->children[nibble].get();
+        }
+        else {
+            // HashStub: subtree not present in witness
+            return std::nullopt;
+        }
+    }
+    return nullptr; // null child — key absent
+}
+
+template <typename Tracker>
+std::optional<Account> PartialTrieDb<Tracker>::read_account(Address const &addr)
 {
     auto const key_hash = keccak256(addr.bytes);
     auto const result = trie_lookup(root_, mpt::NibblesView{key_hash});
@@ -707,7 +717,8 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
     return (*result)->account;
 }
 
-bytes32_t PartialTrieDb::read_storage(
+template <typename Tracker>
+bytes32_t PartialTrieDb<Tracker>::read_storage(
     Address const &addr, Incarnation, bytes32_t const &slot)
 {
     auto const acct_hash = keccak256(addr.bytes);
@@ -723,8 +734,9 @@ bytes32_t PartialTrieDb::read_storage(
     return *val_result ? (*val_result)->value : bytes32_t{};
 }
 
+template <typename Tracker>
 std::optional<std::optional<Account>>
-PartialTrieDb::read_account_maybe(Address const &addr)
+PartialTrieDb<Tracker>::read_account_maybe(Address const &addr)
 {
     auto const key_hash = keccak256(addr.bytes);
     auto const result = trie_lookup(root_, mpt::NibblesView{key_hash});
@@ -737,7 +749,8 @@ PartialTrieDb::read_account_maybe(Address const &addr)
     return std::optional<Account>{(*result)->account};
 }
 
-std::optional<bytes32_t> PartialTrieDb::read_storage_maybe(
+template <typename Tracker>
+std::optional<bytes32_t> PartialTrieDb<Tracker>::read_storage_maybe(
     Address const &addr, Incarnation, bytes32_t const &slot)
 {
     auto const acct_hash = keccak256(addr.bytes);
@@ -757,21 +770,30 @@ std::optional<bytes32_t> PartialTrieDb::read_storage_maybe(
     return *val_result ? (*val_result)->value : bytes32_t{};
 }
 
-vm::SharedIntercode PartialTrieDb::read_code(bytes32_t const &code_hash)
+template <typename Tracker>
+vm::SharedIntercode
+PartialTrieDb<Tracker>::read_code(bytes32_t const &code_hash)
 {
     auto it = codes_.find(code_hash);
     if (it == codes_.end()) {
         return vm::make_shared_intercode({});
     }
+    if constexpr (Tracker::enabled) {
+        if (code_hash != NULL_HASH) {
+            tracker_.mark_code(it->second);
+        }
+    }
     return it->second;
 }
 
-BlockHeader PartialTrieDb::read_eth_header()
+template <typename Tracker>
+BlockHeader PartialTrieDb<Tracker>::read_eth_header()
 {
     return last_committed_header_;
 }
 
-bytes32_t PartialTrieDb::state_root()
+template <typename Tracker>
+bytes32_t PartialTrieDb<Tracker>::state_root()
 {
     if (!root_) {
         return NULL_ROOT;
@@ -784,38 +806,69 @@ bytes32_t PartialTrieDb::state_root()
         keccak256(byte_string_view{rlp_bytes.data(), rlp_bytes.size()}));
 }
 
-bytes32_t PartialTrieDb::receipts_root()
+template <typename Tracker>
+bytes32_t PartialTrieDb<Tracker>::receipts_root()
 {
     return last_committed_header_.receipts_root;
 }
 
-bytes32_t PartialTrieDb::transactions_root()
+template <typename Tracker>
+bytes32_t PartialTrieDb<Tracker>::transactions_root()
 {
     return last_committed_header_.transactions_root;
 }
 
-std::optional<bytes32_t> PartialTrieDb::withdrawals_root()
+template <typename Tracker>
+std::optional<bytes32_t> PartialTrieDb<Tracker>::withdrawals_root()
 {
     return last_committed_header_.withdrawals_root;
 }
 
-uint64_t PartialTrieDb::get_block_number() const
+template <typename Tracker>
+uint64_t PartialTrieDb<Tracker>::get_block_number() const
 {
     return block_number_;
 }
 
-void PartialTrieDb::set_block_and_prefix(
+template <typename Tracker>
+void PartialTrieDb<Tracker>::set_block_and_prefix(
     uint64_t block_number, bytes32_t const &)
 {
     block_number_ = block_number;
 }
 
-void PartialTrieDb::commit(
-    bytes32_t const &, CommitBuilder &, BlockHeader const &header,
+template <typename Tracker>
+void PartialTrieDb<Tracker>::commit(
+    bytes32_t const &, CommitBuilder &builder, BlockHeader const &header,
     StateDeltas const &deltas,
     std::function<void(BlockHeader &)> populate_header_fn)
 {
     block_number_ = header.number;
+
+    // Pull codes out of the builder's update list. TrieDb persists
+    // these under CODE_NIBBLE via db_.upsert; PartialTrieDb has no
+    // underlying mpt::Db, so we re-materialize SharedIntercodes into
+    // codes_ where read_code can find them.
+    // build(prefix) wraps the top-level updates_ under a single Update
+    // whose .next is the real list, so descend one level first.
+    auto const updates = builder.build(mpt::NibblesView{});
+    for (auto const &top : updates) {
+        for (auto const &u : top.next) {
+            if (u.key != mpt::NibblesView{code_nibbles}) {
+                continue;
+            }
+            for (auto const &cu : u.next) {
+                MONAD_ASSERT(cu.value.has_value());
+                auto const &bytes = *cu.value;
+                bytes32_t hash;
+                std::memcpy(hash.bytes, cu.key.data(), 32);
+                codes_.try_emplace(
+                    hash,
+                    vm::make_shared_intercode(
+                        std::span<uint8_t const>{bytes.data(), bytes.size()}));
+            }
+        }
+    }
 
     // Pass 1: inserts and updates (accounts that exist in post-state)
     for (auto const &[addr, delta] : deltas) {
@@ -828,6 +881,14 @@ void PartialTrieDb::commit(
 
         auto &existing = trie_get_or_upsert<false>(
             root_, mpt::NibblesView{acct_key}, AccountLeafValue{});
+
+        // Incarnation bump: the account was destroyed and recreated in
+        // this block (CREATE2/SELFDESTRUCT/CREATE2 patterns). The old
+        // storage trie must be wiped before the new slot deltas apply
+        if (delta.account.first.has_value() &&
+            delta.account.first->incarnation != new_account->incarnation) {
+            existing.storage.reset();
+        }
 
         existing.account = *new_account;
 
@@ -867,5 +928,220 @@ void PartialTrieDb::commit(
     MONAD_ASSERT(populate_header_fn);
     populate_header_fn(last_committed_header_);
 }
+
+// Pre-pass for the delete set: walk the delete path and, at every branch
+// whose target child is fully drained, call tracker_.mark_deleted_child to
+// accumulate the child drainage into `deleted_siblings`. Returns true iff
+// the subtree rooted at `root` becomes *empty* (null) after the delete —
+// not merely compressed. Compression (case A: single surviving child,
+// case B: value-only) reshapes the child but leaves the parent's slot
+// alive, so drainage only propagates upward when the child truly empties.
+//
+// Siblings are NOT marked here. A separate post-pass iterates the
+// accumulated `deleted_siblings` entries and, for every branch whose final
+// alive-pointer array has a single non-null entry, marks that survivor
+// (filtered to leaf/extension — branch/stub survivors are wrapped in an
+// extension by trie_delete using just the hash).
+template <typename Tracker>
+template <LeafValue V>
+bool PartialTrieDb<Tracker>::mark_deletion_siblings(
+    ChildRef<V> const &root, mpt::NibblesView key) const
+    requires(Tracker::enabled)
+{
+    if (!root) {
+        return false;
+    }
+    auto const &node = *root;
+
+    if (auto const *leaf = std::get_if<LeafData<V>>(&node.v)) {
+        return mpt::NibblesView{leaf->path} == key;
+    }
+    if (auto const *ext = std::get_if<ExtensionData<V>>(&node.v)) {
+        mpt::NibblesView const ext_path{ext->path};
+        if (!key.starts_with(ext_path)) {
+            return false;
+        }
+        // An extension disappears iff its child does.
+        return mark_deletion_siblings(
+            ext->child, key.substr(ext_path.nibble_size()));
+    }
+    if (auto const *branch = std::get_if<BranchData<V>>(&node.v)) {
+        if (key.empty()) {
+            // setting idx = 16 marks the branch.value as being deleted
+            tracker_.mark_branch_deleted_child(node, 16);
+            return tracker_.is_branch_empty(static_cast<void const *>(&node));
+        }
+
+        unsigned const nibble = key.get(0);
+        if (!mark_deletion_siblings(branch->children[nibble], key.substr(1))) {
+            return false;
+        }
+        // Child at `nibble` is fully deleted. Record
+        // it so the post-pass can detect compression against the cumulative
+        // deletes from every block delete that visits this branch.
+        tracker_.mark_branch_deleted_child(node, nibble);
+        // Only propagate delete upward in this call if this branch is now fully
+        // empty.
+        return tracker_.is_branch_empty(static_cast<void const *>(&node));
+    }
+
+    // HashStub: shouldn't be reachable (trie_delete asserts).
+    MONAD_ASSERT(false);
+}
+
+// Post-order traversal: encode accessed nodes, append their RLPs to `nodes`,
+// and return the child-ref encoding (inline RLP if <32 bytes, else 32-byte
+// hash reference). Unaccessed subtrees fall back to encode_child_ref. Each
+// node is visited exactly once via its parent, so no dedup is required.
+template <typename Tracker>
+template <LeafValue V>
+byte_string PartialTrieDb<Tracker>::collect_accessed_nodes(
+    ChildRef<V> const &child, std::vector<byte_string> &nodes) const
+    requires(Tracker::enabled)
+{
+    if (!child) {
+        return rlp::EMPTY_STRING;
+    }
+    if (auto const *stub = std::get_if<HashStub>(&child->v)) {
+        return rlp::encode_string2(byte_string_view{stub->hash.bytes, 32});
+    }
+    if (!tracker_.was_accessed(static_cast<void const *>(child.get()))) {
+        return encode_child_ref(child);
+    }
+
+    byte_string rlp_bytes = std::visit(
+        Cases{
+            [&](LeafData<V> const &leaf) -> byte_string {
+                if constexpr (std::is_same_v<V, AccountLeafValue>) {
+                    if (leaf.value.storage) {
+                        (void)collect_accessed_nodes(leaf.value.storage, nodes);
+                    }
+                    // Empty storage (storage_root == NULL_ROOT) needs no
+                    // preimage: decode_child_ref short-circuits on
+                    // NULL_ROOT before looking it up in the NodeIndex.
+                }
+                MONAD_ASSERT(leaf.path.nibble_size() <= 64);
+                unsigned char compact_buf[33];
+                auto compact_sv = mpt::compact_encode(
+                    compact_buf,
+                    mpt::NibblesView{leaf.path},
+                    /*terminating=*/true);
+                return rlp::encode_list2(
+                    rlp::encode_string2(compact_sv),
+                    rlp::encode_string2(V::encode(leaf.value)));
+            },
+            [&](ExtensionData<V> const &ext) -> byte_string {
+                MONAD_ASSERT(ext.path.nibble_size() <= 64);
+                unsigned char compact_buf[33];
+                auto compact_sv = mpt::compact_encode(
+                    compact_buf,
+                    mpt::NibblesView{ext.path},
+                    /*terminating=*/false);
+                return rlp::encode_list2(
+                    rlp::encode_string2(compact_sv),
+                    collect_accessed_nodes(ext.child, nodes));
+            },
+            [&](BranchData<V> const &branch) -> byte_string {
+                byte_string body;
+                for (unsigned i = 0; i < 16; ++i) {
+                    body += collect_accessed_nodes(branch.children[i], nodes);
+                }
+                body +=
+                    branch.value ? V::encode(*branch.value) : rlp::EMPTY_STRING;
+                return rlp::encode_list2(body);
+            },
+            [&](HashStub const &) -> byte_string {
+                MONAD_ASSERT(false);
+                return {};
+            },
+        },
+        child->v);
+
+    if (rlp_bytes.size() < 32) {
+        return rlp_bytes; // inlined in parent; no separate entry
+    }
+    bytes32_t hash;
+    keccak256(rlp_bytes.data(), rlp_bytes.size(), hash.bytes);
+    nodes.push_back(std::move(rlp_bytes));
+    return rlp::encode_string2(byte_string_view{hash.bytes, 32});
+}
+
+template <typename Tracker>
+WitnessData
+PartialTrieDb<Tracker>::collect_witness(StateDeltas const &deltas) const
+    requires(Tracker::enabled)
+{
+    WitnessData wd;
+
+    // Mark every delta key as accessed. Reads during execution are
+    // already tracked by trie_lookup; this adds write-only paths that were
+    // never read.
+    for (auto const &[addr, delta] : deltas) {
+        auto const acct_key = keccak256(addr.bytes);
+        auto const acct_result = trie_lookup(root_, mpt::NibblesView{acct_key});
+        if (acct_result && *acct_result) {
+            auto const &storage = (*acct_result)->storage;
+            for (auto const &[slot, _] : delta.storage) {
+                auto const slot_key = keccak256(slot.bytes);
+                (void)trie_lookup(storage, mpt::NibblesView{slot_key});
+            }
+        }
+    }
+
+    // Codes come from the tracker's code set, populated by `read_code`
+    // during block execution. Only actual bytecode loads count,
+    // so EXTCODESIZE/EXTCODEHASH (which read Account.code_hash without
+    // loading) are excluded.
+    wd.codes.assign(
+        tracker_.loaded_codes().begin(), tracker_.loaded_codes().end());
+
+    // For each deletion, call mark_deletion_siblings to track the sibling
+    // (if any) that will be promoted by branch compression.
+    for (auto const &[addr, delta] : deltas) {
+        auto const acct_key = keccak256(addr.bytes);
+        if (!delta.account.second && delta.account.first) {
+            (void)mark_deletion_siblings(root_, mpt::NibblesView{acct_key});
+        }
+        auto const acct_result = trie_lookup(root_, mpt::NibblesView{acct_key});
+        if (acct_result && *acct_result) {
+            auto const &storage = (*acct_result)->storage;
+            for (auto const &[slot, sdelta] : delta.storage) {
+                if (sdelta.first != bytes32_t{} &&
+                    sdelta.second == bytes32_t{}) {
+                    auto const slot_key = keccak256(slot.bytes);
+                    (void)mark_deletion_siblings(
+                        storage, mpt::NibblesView{slot_key});
+                }
+            }
+        }
+    }
+
+    // We touch any children which are the sole survivors in a branch
+    // after all deletes have been recorded.
+    // The witness consumer will need the actual child, instead of a hash stub,
+    // to perform the branch extension/leaf promotion during witness
+    // re-exceution. Empty (zero live) or value-only (value is encoded inline in
+    // the branch's own RLP) cases need no extra marking here.
+    for (auto const &[branch_ptr, access] : tracker_.deleted_siblings) {
+        if (tracker_.will_branch_compress(branch_ptr)) {
+            for (auto const *c : access.children) {
+                if (c) {
+                    tracker_.mark_accessed(c);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Post-order traversal appends RLPs of accessed nodes to
+    // wd.nodes. Each node is visited exactly once via its parent, so no
+    // dedup is needed.
+    (void)collect_accessed_nodes(root_, wd.nodes);
+
+    return wd;
+}
+
+template class PartialTrieDb<AccessTracker>;
+template class PartialTrieDb<NoopAccessTracker>;
 
 MONAD_NAMESPACE_END

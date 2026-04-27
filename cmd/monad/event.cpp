@@ -20,6 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 
@@ -45,9 +46,6 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-#include <quill/LogLevel.h>
-#include <quill/Quill.h>
 
 namespace fs = std::filesystem;
 

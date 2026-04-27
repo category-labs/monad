@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/result.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/account.hpp>
@@ -51,9 +52,6 @@
 #include <boost/outcome/try.hpp>
 
 #include <nlohmann/json_fwd.hpp>
-
-#include <quill/Quill.h> // NOLINT
-#include <quill/detail/LogMacros.h>
 
 #include <algorithm>
 #include <chrono>

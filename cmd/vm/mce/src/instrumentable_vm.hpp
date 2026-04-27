@@ -17,6 +17,7 @@
 #include <stopwatch.hpp>
 
 #include <category/core/assert.h>
+#include <category/core/log.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
@@ -28,7 +29,6 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 #include <evmone/evmone.h>
-#include <quill/Quill.h>
 #include <valgrind/cachegrind.h>
 
 #include "host.hpp"

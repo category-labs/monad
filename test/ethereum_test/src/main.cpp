@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
@@ -28,10 +29,6 @@
 #include <evmc/evmc.h>
 
 #include <CLI/CLI.hpp>
-
-#include <quill/LogLevel.h>
-#include <quill/Quill.h>
-#include <quill/detail/LogMacros.h>
 
 #include <gtest/gtest.h>
 

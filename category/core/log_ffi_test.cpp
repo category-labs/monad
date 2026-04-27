@@ -15,6 +15,8 @@
 
 #include <category/core/log_ffi.h>
 
+#include <category/core/log.hpp>
+
 #include <bit>
 #include <chrono>
 #include <cstdint>
@@ -26,7 +28,6 @@
 #include <string.h>
 
 #include <gtest/gtest.h>
-#include <quill/Quill.h>
 
 static void capture_log(monad_log const *const input_log, uintptr_t const ptr)
 {

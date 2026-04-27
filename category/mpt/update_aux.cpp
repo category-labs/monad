@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/log.hpp>
 #include <category/core/util/stopwatch.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_metadata_context.hpp>
@@ -28,8 +29,6 @@
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
-
-#include <quill/Quill.h>
 
 #include <algorithm>
 #include <atomic>

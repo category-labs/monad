@@ -17,6 +17,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/endian.hpp> // little endian
+#include <category/core/log.hpp>
 #include <category/core/nibble.h>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -26,7 +27,6 @@
 #include <category/mpt/ondisk_db_config.hpp>
 
 #include <ankerl/unordered_dense.h>
-#include <quill/Quill.h>
 
 #include <deque>
 #include <limits>

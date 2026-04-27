@@ -17,6 +17,7 @@
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/log.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
@@ -30,7 +31,6 @@
 #include <category/statesync/statesync_version.h>
 
 #include <ankerl/unordered_dense.h>
-#include <quill/Quill.h>
 
 #include <cstdint>
 #include <deque>

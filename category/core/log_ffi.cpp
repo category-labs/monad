@@ -15,6 +15,8 @@
 
 #include <category/core/log_ffi.h>
 
+#include <category/core/log.hpp>
+
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
@@ -25,10 +27,6 @@
 #include <memory>
 #include <span>
 #include <utility>
-
-#include <quill/LogLevel.h>
-#include <quill/Quill.h>
-#include <quill/handlers/Handler.h>
 
 static thread_local char error_buf[1024];
 

@@ -16,6 +16,7 @@
 #include "triedb.h"
 
 #include <category/core/byte_string.hpp>
+#include <category/core/log.hpp>
 #include <category/core/nibble.h>
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/mpt/db.hpp>
@@ -31,8 +32,6 @@
 #include <optional>
 #include <utility>
 #include <vector>
-
-#include <quill/Quill.h>
 
 // Convert a nibble path into a packed byte array.
 void nibbles_to_bytes(

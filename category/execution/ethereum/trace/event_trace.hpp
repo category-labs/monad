@@ -16,8 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
-
-#include <quill/Quill.h>
+#include <category/core/log.hpp>
 
 #include <chrono>
 #include <cstdint>

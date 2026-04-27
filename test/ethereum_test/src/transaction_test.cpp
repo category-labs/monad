@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/log.hpp>
 #include <revision_map.hpp>
 #include <transaction_test.hpp>
 
@@ -34,9 +35,6 @@
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
-
-#include <quill/bundled/fmt/core.h>
-#include <quill/detail/LogMacros.h>
 
 #include <gtest/gtest.h>
 

@@ -16,10 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
-
-#include <quill/Fmt.h>
-
-namespace fmt = fmtquill::v10;
+#include <category/core/log.hpp>
 
 MONAD_NAMESPACE_BEGIN
 

@@ -22,9 +22,7 @@
 #include <category/core/fmt/int_fmt.hpp>
 #include <category/core/fmt/receipt_fmt.hpp>
 #include <category/core/fmt/transaction_fmt.hpp>
-
-#include <quill/Quill.h>
-#include <quill/bundled/fmt/format.h>
+#include <category/core/log.hpp>
 
 template <>
 struct quill::copy_loggable<monad::BlockHeader> : std::true_type

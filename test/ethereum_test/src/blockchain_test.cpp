@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <blockchain_test.hpp>
+#include <category/core/log.hpp>
 #include <event.hpp>
 #include <revision_map.hpp>
 
@@ -70,10 +71,6 @@
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
-
-#include <quill/bundled/fmt/core.h>
-#include <quill/bundled/fmt/format.h>
-#include <quill/detail/LogMacros.h>
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>

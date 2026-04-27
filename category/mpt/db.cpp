@@ -28,6 +28,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
+#include <category/core/log.hpp>
 #include <category/core/result.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_error.hpp>
@@ -46,8 +47,6 @@
 
 #include <boost/container/deque.hpp>
 #include <boost/fiber/operations.hpp>
-
-#include <quill/Quill.h>
 
 #include <atomic>
 #include <cerrno>

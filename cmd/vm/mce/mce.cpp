@@ -20,6 +20,7 @@
 #include <instrumentation_device.hpp>
 #include <stopwatch.hpp>
 
+#include <category/core/log.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -35,8 +36,6 @@
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
-
-#include <quill/Quill.h>
 
 #include <algorithm>
 #include <cctype>

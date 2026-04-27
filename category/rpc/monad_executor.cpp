@@ -27,6 +27,7 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/lru/static_lru_cache.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
@@ -96,7 +97,6 @@
 #include <evmc/evmc.hpp>
 #include <intx/intx.hpp>
 #include <nlohmann/json_fwd.hpp>
-#include <quill/Quill.h>
 
 using namespace monad;
 using namespace monad::vm;

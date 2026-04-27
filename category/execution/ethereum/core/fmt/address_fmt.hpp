@@ -17,9 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/basic_formatter.hpp>
-
-#include <quill/Quill.h>
-#include <quill/bundled/fmt/format.h>
+#include <category/core/log.hpp>
 
 template <>
 struct quill::copy_loggable<monad::Address> : std::true_type

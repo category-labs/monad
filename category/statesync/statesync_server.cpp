@@ -19,6 +19,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/log.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -26,9 +27,6 @@
 #include <category/mpt/traverse.hpp>
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
-
-#include <quill/Quill.h>
-#include <quill/bundled/fmt/format.h>
 
 #include <chrono>
 #include <fcntl.h>

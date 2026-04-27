@@ -28,6 +28,7 @@
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/keccak.h>
+#include <category/core/log.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/find_request_sender.hpp>
@@ -42,8 +43,6 @@
 #include <boost/fiber/operations.hpp>
 
 #include <ankerl/unordered_dense.h>
-
-#include <quill/Quill.h>
 
 #include <algorithm>
 #include <array>

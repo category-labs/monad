@@ -15,6 +15,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
@@ -27,8 +28,6 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <asmjit/core/jitruntime.h>
-
-#include <quill/Quill.h>
 
 #include <cstddef>
 #include <cstdint>

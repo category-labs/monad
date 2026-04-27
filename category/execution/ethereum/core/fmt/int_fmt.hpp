@@ -17,9 +17,7 @@
 
 #include <category/core/basic_formatter.hpp>
 #include <category/core/int.hpp>
-
-#include <quill/Quill.h>
-#include <quill/bundled/fmt/format.h>
+#include <category/core/log.hpp>
 
 template <unsigned N>
 struct quill::copy_loggable<intx::uint<N>> : std::true_type

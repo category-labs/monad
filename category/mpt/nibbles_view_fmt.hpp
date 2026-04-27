@@ -16,10 +16,8 @@
 #pragma once
 
 #include <category/core/basic_formatter.hpp>
+#include <category/core/log.hpp>
 #include <category/mpt/nibbles_view.hpp>
-
-#include <quill/Quill.h>
-#include <quill/bundled/fmt/format.h>
 
 template <>
 struct quill::copy_loggable<monad::mpt::NibblesView> : std::false_type

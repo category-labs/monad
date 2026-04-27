@@ -17,12 +17,11 @@
 
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/vm/vm.hpp>
 
 #include <category/core/hex.hpp>
-
-#include <quill/Quill.h>
 
 #include <map>
 #include <memory>

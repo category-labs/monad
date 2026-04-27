@@ -23,6 +23,7 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/log.hpp>
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -54,8 +55,6 @@
 
 #include <ankerl/unordered_dense.h>
 #include <boost/outcome/try.hpp>
-#include <quill/Quill.h>
-#include <quill/detail/LogMacros.h>
 
 #include <chrono>
 #include <deque>

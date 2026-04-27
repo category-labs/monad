@@ -17,9 +17,8 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/log.hpp>
 #include <category/statesync/statesync_messages.h>
-
-#include <quill/Quill.h>
 
 #include <array>
 #include <chrono>
@@ -231,10 +230,10 @@ inline void statesync_server_send_upsert(
     LOG_DEBUG(
         "sending upsert type={} {} ns={}",
         std::to_underlying(type),
-        fmtquill::format(
+        fmt::format(
             "v1=0x{:02x} v2=0x{:02x}",
-            fmtquill::join(std::as_bytes(std::span(v1, size1)), ""),
-            fmtquill::join(std::as_bytes(std::span(v2, size2)), "")),
+            fmt::join(std::as_bytes(std::span(v1, size1)), ""),
+            fmt::join(std::as_bytes(std::span(v2, size2)), "")),
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - start));
 }

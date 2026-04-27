@@ -17,14 +17,13 @@
 #include <category/core/basic_formatter.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/mpt/db.hpp>
 #include <category/statesync/statesync_server_context.hpp>
-
-#include <quill/Quill.h>
 
 #include <algorithm>
 #include <cstdint>

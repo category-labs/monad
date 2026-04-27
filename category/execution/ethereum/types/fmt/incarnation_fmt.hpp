@@ -16,10 +16,8 @@
 #pragma once
 
 #include <category/core/basic_formatter.hpp>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
-
-#include <quill/Quill.h>
-#include <quill/bundled/fmt/format.h>
 
 #include <type_traits>
 

@@ -23,6 +23,7 @@
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
@@ -50,10 +51,6 @@
 #include <category/vm/vm.hpp>
 
 #include <CLI/CLI.hpp>
-
-#include <quill/LogLevel.h>
-#include <quill/Quill.h>
-#include <quill/handlers/FileHandler.h>
 
 #include <boost/outcome/try.hpp>
 

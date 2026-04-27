@@ -22,6 +22,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/deserialize_node_from_receiver_result.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -32,8 +33,6 @@
 #include <category/mpt/update.hpp>
 #include <category/mpt/upward_tnode.hpp>
 #include <category/mpt/util.hpp>
-
-#include <quill/Quill.h>
 
 #include <algorithm>
 #include <bit>

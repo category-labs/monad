@@ -16,8 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
-
-#include <quill/LogLevel.h>
+#include <category/core/log.hpp>
 
 #include <string>
 #include <unordered_map>

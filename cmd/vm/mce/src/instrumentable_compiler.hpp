@@ -19,13 +19,13 @@
 #include <stopwatch.hpp>
 
 #include <category/core/assert.h>
+#include <category/core/log.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <asmjit/x86.h>
 #include <evmc/evmc.h>
-#include <quill/Quill.h>
 #include <valgrind/cachegrind.h>
 
 #include <cstdint>

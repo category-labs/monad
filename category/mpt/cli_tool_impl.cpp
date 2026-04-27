@@ -25,13 +25,12 @@
 #include <category/core/hex.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
+#include <category/core/log.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/kbhit.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/trie.hpp>
-
-#include <quill/Quill.h>
 
 #include <CLI/CLI.hpp>
 

@@ -22,6 +22,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/keccak.h>
 #include <category/core/keccak.hpp>
+#include <category/core/log.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -33,8 +34,6 @@
 #include <category/mpt/util.hpp>
 
 #include <CLI/CLI.hpp>
-
-#include <quill/Quill.h>
 
 #include <atomic>
 #include <cmath>

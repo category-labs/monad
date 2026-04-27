@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -28,8 +29,6 @@
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-
-#include <quill/Quill.h>
 
 #include <cstdint>
 #include <memory>

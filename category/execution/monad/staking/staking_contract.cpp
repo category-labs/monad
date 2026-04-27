@@ -17,6 +17,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
@@ -37,8 +38,6 @@
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
-
-#include <quill/Quill.h>
 
 #include <algorithm>
 #include <cstring>

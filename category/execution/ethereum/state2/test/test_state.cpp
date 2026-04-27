@@ -21,6 +21,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
@@ -44,8 +45,6 @@
 #include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
-
-#include <quill/Quill.h>
 
 #include <cstdint>
 #include <cstdlib>

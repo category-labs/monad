@@ -21,6 +21,7 @@
 #include <category/core/assert.h>
 #include <category/core/detail/start_lifetime_as_polyfill.hpp>
 #include <category/core/hash.hpp>
+#include <category/core/log.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -40,8 +41,6 @@
 #include <vector>
 
 #include <stdlib.h>
-
-#include <quill/Quill.h>
 
 #include <asm-generic/ioctl.h>
 #include <fcntl.h>

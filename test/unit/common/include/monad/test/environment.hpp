@@ -19,10 +19,9 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <monad/test/config.hpp>
-
-#include <quill/Quill.h>
 
 MONAD_NAMESPACE_BEGIN
 

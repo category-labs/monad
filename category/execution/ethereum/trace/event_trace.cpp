@@ -15,11 +15,9 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/fmt/event_trace_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/trace/event_trace.hpp>
-
-#include <quill/Quill.h> // NOLINT
-#include <quill/detail/LogMacros.h>
 
 #include <chrono>
 #include <cstdint>

@@ -21,6 +21,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/keccak.h>
 #include <category/core/keccak.hpp>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
@@ -53,9 +54,6 @@
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
-
-#include <quill/bundled/fmt/core.h>
-#include <quill/bundled/fmt/format.h>
 
 #include <algorithm>
 #include <atomic>

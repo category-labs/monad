@@ -20,13 +20,12 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/detail/start_lifetime_as_polyfill.hpp>
+#include <category/core/log.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
-
-#include <quill/Quill.h>
 
 #include <algorithm>
 #include <atomic>

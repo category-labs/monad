@@ -21,6 +21,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/keccak.h>
 #include <category/core/keccak.hpp>
+#include <category/core/log.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/account_fmt.hpp> // NOLINT
@@ -43,9 +44,6 @@
 
 #include <CLI/CLI.hpp>
 #include <evmc/evmc.hpp>
-#include <quill/Quill.h>
-#include <quill/bundled/fmt/core.h>
-#include <quill/bundled/fmt/format.h>
 
 #include <algorithm>
 #include <cctype>

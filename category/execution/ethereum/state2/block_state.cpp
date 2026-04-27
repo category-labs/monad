@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
@@ -36,9 +37,6 @@
 #include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
-
-#include <quill/Quill.h>
-#include <quill/bundled/fmt/format.h>
 
 #include <memory>
 #include <optional>

@@ -20,10 +20,7 @@
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 
-template <>
-struct quill::copy_loggable<monad::SignatureAndChain> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::SignatureAndChain);
 
 template <>
 struct fmt::formatter<monad::SignatureAndChain> : public monad::BasicFormatter

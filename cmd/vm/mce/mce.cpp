@@ -123,7 +123,7 @@ static arguments parse_args(int const argc, char **const argv)
         std::exit(app.exit(e));
     }
 
-    quill::start(true);
+    monad::start_logger_minimal();
 
     return args;
 }
@@ -208,7 +208,7 @@ int mce_main(arguments const &args)
     }();
     if (!ir) {
         LOG_ERROR("Parsing failed.");
-        quill::flush();
+        monad::flush_logger();
         abort();
     }
 

@@ -19,10 +19,7 @@
 #include <category/core/basic_formatter.hpp>
 #include <category/core/log.hpp>
 
-template <>
-struct quill::copy_loggable<monad::Address> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::Address);
 
 template <>
 struct fmt::formatter<monad::Address> : public monad::BasicFormatter

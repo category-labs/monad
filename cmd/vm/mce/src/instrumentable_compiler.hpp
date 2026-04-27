@@ -97,7 +97,7 @@ public:
                 rt_, ir, config_);
         if (!nc->entrypoint()) {
             LOG_ERROR("Compilation failed.");
-            quill::flush();
+            monad::flush_logger();
             abort();
         }
 

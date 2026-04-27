@@ -21,10 +21,7 @@
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/types/fmt/incarnation_fmt.hpp>
 
-template <>
-struct quill::copy_loggable<monad::Account> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::Account);
 
 template <>
 struct fmt::formatter<monad::Account> : public monad::BasicFormatter

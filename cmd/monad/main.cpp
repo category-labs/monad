@@ -231,17 +231,7 @@ try {
         return cli.exit(e);
     }
 
-    auto stdout_handler = quill::stdout_handler();
-    stdout_handler->set_pattern(
-        "%(time) [%(thread_id)] %(file_name):%(line_number) LOG_%(log_level)\t"
-        "%(message)",
-        "%Y-%m-%d %H:%M:%S.%Qns",
-        quill::Timezone::GmtTime);
-    quill::Config cfg;
-    cfg.default_handlers.emplace_back(stdout_handler);
-    quill::configure(cfg);
-    quill::start(true);
-    quill::get_root_logger()->set_log_level(log_level);
+    init_root_logger(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
 
     // Initialize the event system if --exec-event-ring is specified
@@ -263,10 +253,7 @@ try {
     }
 
 #ifdef ENABLE_EVENT_TRACING
-    quill::FileHandlerConfig handler_cfg;
-    handler_cfg.set_pattern("%(message)", "");
-    event_tracer = quill::create_logger(
-        "event_trace", quill::file_handler(trace_log, handler_cfg));
+    event_tracer = create_event_tracer(trace_log);
 #endif
 
     MONAD_ASSERT(init_trusted_setup());

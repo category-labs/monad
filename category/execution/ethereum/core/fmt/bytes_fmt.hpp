@@ -19,10 +19,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/log.hpp>
 
-template <>
-struct quill::copy_loggable<monad::bytes32_t> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::bytes32_t);
 
 template <>
 struct fmt::formatter<monad::bytes32_t> : public monad::BasicFormatter

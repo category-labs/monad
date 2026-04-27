@@ -863,19 +863,9 @@ int main(int const argc, char *argv[])
         return cli.exit(e);
     }
 
-    auto stdout_handler = quill::stdout_handler();
-    stdout_handler->set_pattern(
-        "%(time) [%(thread_id)] %(file_name):%(line_number) LOG_%(log_level)\t"
-        "%(message)",
-        "%Y-%m-%d %H:%M:%S.%Qns",
-        quill::Timezone::GmtTime);
-    quill::Config cfg;
-    cfg.default_handlers.emplace_back(stdout_handler);
-    quill::configure(cfg);
-    quill::start(true);
-    quill::get_root_logger()->set_log_level(log_level);
+    init_root_logger(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
-    quill::flush();
+    flush_logger();
 
     {
         fmt::println("Opening read only database {}.", dbname_paths);

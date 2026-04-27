@@ -397,7 +397,7 @@ int main(int const argc, char *argv[])
                 csv_writer << "\"Keys written\",\"Per second\"\n";
             }
 
-            quill::start(true);
+            monad::start_logger_minimal();
 
             /* This does a good job of emptying the CPU's data caches and
             data TLB. It does not empty instruction caches nor instruction TLB,

@@ -53,4 +53,15 @@ struct ExecutionWitness
 Result<ExecutionWitness>
 parse_execution_witness(byte_string_view witness_bytes);
 
+/// Produce a 7-field RLP witness list:
+///   [block_rlp, pre_state_root, post_state_root,
+///    [nodes...], [codes...], [], [headers...]]
+/// `nodes` and `codes` entries are written in the span's order (caller is
+/// responsible for sorting by keccak hash if byte-for-byte compatibility is
+/// required). The keys list (field [5]) is always empty.
+byte_string encode_execution_witness(
+    byte_string_view block_rlp, bytes32_t const &pre_state_root,
+    bytes32_t const &post_state_root, std::span<byte_string const> nodes,
+    std::span<byte_string const> codes, std::span<byte_string const> headers);
+
 MONAD_NAMESPACE_END

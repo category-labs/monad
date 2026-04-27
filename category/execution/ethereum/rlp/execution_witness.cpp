@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/rlp/decode.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -61,6 +62,39 @@ Result<ExecutionWitness> parse_execution_witness(byte_string_view witness_bytes)
     }
 
     return w;
+}
+
+byte_string encode_execution_witness(
+    byte_string_view const block_rlp, bytes32_t const &pre_state_root,
+    bytes32_t const &post_state_root, std::span<byte_string const> const nodes,
+    std::span<byte_string const> const codes,
+    std::span<byte_string const> const headers)
+{
+    byte_string nodes_body;
+    for (auto const &n : nodes) {
+        nodes_body += rlp::encode_string2(n);
+    }
+
+    byte_string codes_body;
+    for (auto const &c : codes) {
+        codes_body += rlp::encode_string2(c);
+    }
+
+    // Each header is already RLP-encoded as a list; reth wraps each one as
+    // an opaque string in this outer list (first byte 0xb8/0xb9).
+    byte_string headers_body;
+    for (auto const &h : headers) {
+        headers_body += rlp::encode_string2(h);
+    }
+
+    return rlp::encode_list2(
+        rlp::encode_string2(block_rlp),
+        rlp::encode_string2(byte_string_view{pre_state_root.bytes, 32}),
+        rlp::encode_string2(byte_string_view{post_state_root.bytes, 32}),
+        rlp::encode_list2(nodes_body),
+        rlp::encode_list2(codes_body),
+        rlp::encode_list2(),
+        rlp::encode_list2(headers_body));
 }
 
 MONAD_NAMESPACE_END

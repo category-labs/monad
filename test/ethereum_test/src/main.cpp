@@ -59,6 +59,7 @@ int main(int argc, char *argv[])
     std::string record_exec_events_path;
     std::optional<std::filesystem::path> blockchain_tests_path;
     std::optional<std::filesystem::path> transaction_tests_path;
+    bool witness_roundtrip = false;
     bool trace_calls = false;
     unsigned sleep_seconds = 0;
 
@@ -88,6 +89,13 @@ int main(int argc, char *argv[])
            transaction_tests_path,
            "Path to transaction tests, overrides the hard-coded tests path.")
         ->check(CLI::ExistingPath);
+    app.add_flag(
+        "--witness",
+        witness_roundtrip,
+        "For every executed block, generate an execution witness, reconstruct "
+        "a PartialTrieDb from it, and re-execute the block against the "
+        "reconstructed db. Validates that the witness contains enough "
+        "information to replay the block without hitting any HashStubs.");
     CLI::Option const *const record_exec_events =
         app.add_option(
                "--record-exec-events",
@@ -114,7 +122,10 @@ int main(int argc, char *argv[])
     if (blockchain_tests_path || transaction_tests_path) {
         if (blockchain_tests_path) {
             test::register_blockchain_tests_path(
-                *blockchain_tests_path, revision, trace_calls);
+                *blockchain_tests_path,
+                revision,
+                trace_calls,
+                witness_roundtrip);
         }
         if (transaction_tests_path) {
             test::register_transaction_tests_path(
@@ -122,7 +133,8 @@ int main(int argc, char *argv[])
         }
     }
     else {
-        test::register_blockchain_tests(revision, trace_calls);
+        test::register_blockchain_tests(
+            revision, trace_calls, witness_roundtrip);
         test::register_transaction_tests(revision);
     }
 

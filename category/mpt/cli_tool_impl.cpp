@@ -1495,7 +1495,7 @@ opened.
                 cli.parse(std::move(rargs));
             }
 
-            quill::start(true);
+            monad::start_logger_minimal();
 
             auto mode =
                 MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;

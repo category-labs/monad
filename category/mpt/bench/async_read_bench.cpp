@@ -181,7 +181,7 @@ int main(int const argc, char *const argv[])
             std::cout << "  update_delay: " << update_delay_ms << " ms"
                       << std::endl;
 
-            quill::start(true);
+            monad::start_logger_minimal();
 
             struct sigaction sig;
             sig.sa_handler = &on_signal;

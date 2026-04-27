@@ -21,15 +21,9 @@
 #include <category/execution/ethereum/core/fmt/transaction_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 
-template <>
-struct quill::copy_loggable<monad::Receipt::Log> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::Receipt::Log);
 
-template <>
-struct quill::copy_loggable<monad::Receipt> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::Receipt);
 
 template <>
 struct fmt::formatter<monad::Receipt::Log> : public monad::BasicFormatter

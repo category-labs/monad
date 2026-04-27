@@ -6234,3 +6234,132 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     monad_state_override_destroy(so);
     monad_executor_destroy(executor);
 }
+
+// Test time travelling
+TEST_F(EthCallFixture, eth_simulate_v1_time_travel)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address time_contract =
+        0x00000000000000000000000000000000000051c0_address;
+
+    auto const eb =
+        evm_as::latest().sload(0).timestamp().gt().push0().mstore().return_(
+            0, 32);
+    std::vector<uint8_t> bytecode{};
+    ASSERT_TRUE(evm_as::validate(eb));
+    evm_as::compile(eb, bytecode);
+    byte_string_view const code{bytecode.data(), bytecode.size()};
+    auto const code_hash = to_bytes(keccak256(code));
+    auto const icode = vm::make_shared_intercode(code);
+
+    bytes32_t const unlock_time = intx::be::store<bytes32_t>(uint256_t{512});
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {time_contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = code_hash, .nonce = 0}},
+                 .storage = {{bytes32_t{}, {bytes32_t{}, unlock_time}}}}}},
+        Code{
+            {code_hash, icode},
+        },
+        BlockHeader{.number = 0, .timestamp = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(
+            tdb, {}, {}, BlockHeader{.number = i, .timestamp = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .to = time_contract,
+    };
+
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender), rlp::encode_list2(enc_sender)));
+
+    auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_tx), rlp::encode_list2(enc_tx)));
+
+    BlockHeader const header{.number = 255, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    std::vector<monad_state_override *> so = {
+        monad_state_override_create(), monad_state_override_create()};
+    std::vector<monad_block_override *> bo = {
+        monad_block_override_create(), monad_block_override_create()};
+    set_block_override_time(bo[1], 513); // time travel to after unlock_time
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        so.data(),
+        so.size(),
+        bo.data(),
+        bo.size(),
+        true, // emit_native_transfer_logs
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 2);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(
+        output[0]["calls"][0]["returnData"],
+        "0x0000000000000000000000000000000000000000000000000000000000000000");
+
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(
+        output[1]["calls"][0]["returnData"],
+        "0x0000000000000000000000000000000000000000000000000000000000000001");
+
+    for (auto *b : bo) {
+        monad_block_override_destroy(b);
+    }
+    for (auto *s : so) {
+        monad_state_override_destroy(s);
+    }
+    monad_executor_destroy(executor);
+}

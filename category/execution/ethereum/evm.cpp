@@ -279,6 +279,10 @@ evmc::Result execute_create_message(
         if (result.status_code != EVMC_REVERT) {
             result.gas_left = 0;
         }
+        // Successful frames remain in State and are captured when the state
+        // tracer is encoded. Failed frames are about to be rolled back, so
+        // access-list tracing must snapshot them before pop_reject().
+        host->record_access_list();
         bool const ripemd_touched = state.is_touched(ripemd_address);
         state.pop_reject();
         if (MONAD_UNLIKELY(ripemd_touched)) {
@@ -335,6 +339,12 @@ evmc::Result execute_call_message(
         }
     }
 
+    // Successful frames remain in State and are captured when the state
+    // tracer is encoded. Failed frames are about to be rolled back, so
+    // access-list tracing must snapshot them before post_call() rejects them.
+    if (result.status_code != EVMC_SUCCESS) {
+        host->record_access_list();
+    }
     post_call(state, result);
     call_tracer.on_exit(result);
     return result;

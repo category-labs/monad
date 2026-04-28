@@ -95,12 +95,17 @@ namespace trace
             Address const &beneficiary, std::optional<Address> const &to,
             std::span<std::optional<Address> const> authorities);
 
+        // Capture access metadata while it is still visible in State. Reverted
+        // frames are rolled back before the final trace encoding step.
+        void record(State &);
+
         template <Traits traits>
         void encode(State &);
 
     private:
         nlohmann::json &storage_;
         Set<Address> excluded_addresses_{};
+        Map<Address, Set<bytes32_t>> accesses_{};
 
         template <Traits traits>
         bool should_exclude_address(Address const &) const;

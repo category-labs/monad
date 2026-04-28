@@ -336,7 +336,9 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         tx_,
         header_.base_fee_per_gas,
         i_,
-        chain_ctx_};
+        chain_ctx_,
+        false,
+        std::get_if<trace::AccessListTracer>(&state_tracer_)};
 
     return ExecuteTransactionNoValidation<traits>::operator()(state, host);
 }

@@ -328,7 +328,9 @@ namespace
             enriched_txn,
             header.base_fee_per_gas,
             0,
-            chain_context};
+            chain_context,
+            false,
+            std::get_if<trace::AccessListTracer>(&state_tracer)};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
             chain,
             enriched_txn,

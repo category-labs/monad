@@ -28,7 +28,6 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -46,7 +45,7 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
-#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
@@ -326,74 +325,24 @@ Result<BlockExecOutput> propose_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    // Db1 and Db2 write the same data to every table; the only difference
-    // is state encoding (Db1 slot, Db2 page). state_deltas is therefore
-    // added separately to each builder so MonadCommitBuilder's override can
-    // kick in for Db2; everything else goes through the shared helper.
-    auto add_common_deltas = [&](CommitBuilder &b) {
-        b.add_code(code)
-            .add_receipts(results)
-            .add_transactions(block.transactions, senders)
-            .add_call_frames(call_frames)
-            .add_ommers(block.ommers);
-        if (block.withdrawals.has_value()) {
-            b.add_withdrawals(block.withdrawals.value());
-        }
-    };
-
-    // Builder for db1
-    CommitBuilder builder(block.header.number);
-    builder.add_state_deltas(*state);
-    add_common_deltas(builder);
-
-    // `correct_db` is the "source of truth" Db the header populator reads
-    // roots from. Both the Db1 and Db2 commits call populate_header via
-    // this same pointer, so both end up with identical block headers. The
-    // pointer is assigned just before commits run (see the if constexpr
-    // block below). Non-state roots are the same on Db1 and Db2 (same
-    // inputs, only state encoding differs), so the choice only really
-    // changes which state_root is stamped into the header.
-    Db *correct_db;
-    auto populate_header = [&](BlockHeader &h) {
-        MONAD_ASSERT(correct_db != nullptr);
-        h.receipts_root = correct_db->receipts_root();
-        h.state_root = correct_db->state_root();
-        h.withdrawals_root = correct_db->withdrawals_root();
-        h.transactions_root = correct_db->transactions_root();
-        h.gas_used = results.empty() ? 0 : results.back().gas_used;
-        h.logs_bloom = compute_bloom(results);
-        h.ommers_hash = compute_ommers_hash(block.ommers);
-    };
-
-    // Dual-write the block to Db2. Db2 mirrors every table (page-encoded
-    // state, same inputs everywhere else) and receives the same full block
-    // header as Db1 via the shared populate_header.
-    auto commit_secondary = [&]() {
-        MonadCommitBuilder builder2(block.header.number, page_broker);
-        builder2.add_state_deltas(*state);
-        add_common_deltas(builder2);
-        secondary_db.commit(
-            block_id, builder2, block.header, *state, populate_header);
-    };
-
-    // Whichever Db owns the canonical state_root commits first, so its
-    // state_root is live when the later commit's populate_header runs.
-    //
-    // Pre-fork: Db1 is canonical. Commit Db1 first with correct_db=&db;
-    // Db2 commits after, reading Db1's now-live roots.
-    //
-    // Post-fork: Db2 owns the page-based state_root. Commit Db2 first with
-    // correct_db=secondary_db; Db1 commits after, reading Db2's roots.
-    if constexpr (traits::monad_rev() >= MONAD_NEXT) {
-        correct_db = &secondary_db;
-        commit_secondary();
-        db.commit(block_id, builder, block.header, *state, populate_header);
-    }
-    else {
-        correct_db = &db;
-        db.commit(block_id, builder, block.header, *state, populate_header);
-        commit_secondary();
-    }
+    BlockCommitAncillaries const anc{
+        .code = code,
+        .receipts = results,
+        .transactions = block.transactions,
+        .senders = senders,
+        .call_frames = call_frames,
+        .ommers = block.ommers,
+        .withdrawals = block.withdrawals};
+    commit_block<traits>(
+        db,
+        secondary_db,
+        page_broker,
+        block_id,
+        is_first_block ? bytes32_t{} : consensus_header.parent_id(),
+        is_first_block,
+        block.header,
+        *state,
+        anc);
 
     db.update_proposal_state(std::move(state), block.header.number, block_id);
     [[maybe_unused]] auto const commit_time =

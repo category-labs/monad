@@ -548,7 +548,7 @@ namespace
                 // increasing timestamps.
 
                 // If a gap is wide, then we need to count the synthetic
-                // timestamps before validing the possible block timestamp
+                // timestamps before validating the possible block timestamp
                 // override.
                 if (gap > 1) {
                     previous_header.timestamp +=
@@ -561,7 +561,7 @@ namespace
                 previous_header.timestamp = *bo->time;
             }
             else {
-                previous_header.timestamp += 1 * default_timestamp_increment;
+                previous_header.timestamp += gap * default_timestamp_increment;
             }
         }
         MONAD_ASSERT(previous_header.number > header.number);
@@ -667,6 +667,11 @@ namespace
         MONAD_ASSERT(calls.size() == authorities.size());
         MONAD_ASSERT(calls.size() == state_overrides.size());
         MONAD_ASSERT(calls.size() == block_overrides.size());
+
+        for (size_t i = 0; i < calls.size(); ++i) {
+            MONAD_ASSERT(calls[i].size() == senders[i].size());
+            MONAD_ASSERT(calls[i].size() == authorities[i].size());
+        }
 
         // Validate the inputs before constructing the simulation objects. This
         // validation procedure throws on bad input.

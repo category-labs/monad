@@ -150,6 +150,8 @@ add_library(
   "mem/align.h"
   # rlp
   "rlp/config.hpp"
+  "rlp/decode_error.cpp"
+  "rlp/decode_error.hpp"
   "rlp/encode.hpp"
   # runtime
   "runtime/non_temporal_memory.hpp"

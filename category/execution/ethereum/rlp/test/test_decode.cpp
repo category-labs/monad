@@ -14,8 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
-#include <category/execution/ethereum/rlp/decode_error.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 
 #include <gtest/gtest.h>

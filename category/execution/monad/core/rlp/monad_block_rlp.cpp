@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -20,7 +21,6 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
-#include <category/execution/ethereum/rlp/decode_error.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 
 #include <vector>

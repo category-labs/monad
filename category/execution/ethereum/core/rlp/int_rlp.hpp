@@ -20,8 +20,8 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
+#include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
-#include <category/execution/ethereum/rlp/decode_error.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>

@@ -175,8 +175,6 @@ add_library(
   # ethereum/rlp
   "ethereum/rlp/config.hpp"
   "ethereum/rlp/decode.hpp"
-  "ethereum/rlp/decode_error.cpp"
-  "ethereum/rlp/decode_error.hpp"
   "ethereum/rlp/encode2.hpp"
   # ethereum/state2
   "ethereum/state2/block_state.cpp"

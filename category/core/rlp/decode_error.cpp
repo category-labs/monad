@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/execution/ethereum/rlp/decode_error.hpp>
+#include <category/core/rlp/decode_error.hpp>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)

@@ -71,16 +71,6 @@ namespace detail
         {
             return state_->second.get();
         }
-
-        auto wait_for(auto const &dur)
-        {
-            return state_->second.wait_for(dur);
-        }
-
-        auto wait_until(auto const &dur)
-        {
-            return state_->second.wait_until(dur);
-        }
     };
 }
 

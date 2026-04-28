@@ -26,9 +26,6 @@
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 
-#include <boost/fiber/future/future_status.hpp>
-
-#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -478,8 +475,7 @@ TYPED_TEST(PlainTrieTest, large_values)
         monad::threadsafe_boost_fibers_promise<find_cursor_result_type> p;
         auto fut = p.get_future();
         find_notify_fiber_future(this->aux, p, this->root, key1);
-        while (fut.wait_for(std::chrono::seconds(0)) !=
-               ::boost::fibers::future_status::ready) {
+        if (this->aux.io) {
             this->aux.io->wait_until_done();
         }
         auto [leaf_it, res] = fut.get();
@@ -495,8 +491,7 @@ TYPED_TEST(PlainTrieTest, large_values)
         monad::threadsafe_boost_fibers_promise<find_cursor_result_type> p;
         auto fut = p.get_future();
         find_notify_fiber_future(this->aux, p, this->root, key2);
-        while (fut.wait_for(std::chrono::seconds(0)) !=
-               ::boost::fibers::future_status::ready) {
+        if (this->aux.io) {
             this->aux.io->wait_until_done();
         }
         auto [leaf_it, res] = fut.get();

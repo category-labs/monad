@@ -651,7 +651,6 @@ namespace
         std::span<monad_block_override const *const> block_overrides,
         bool emit_native_transfer_logs)
     {
-        (void)emit_native_transfer_logs;
         // TODO(dhil): Geth allows up to 256 blocks to be simulated, including
         // synthetic blocks inserted to fill in possible gaps in the block
         // overrides.

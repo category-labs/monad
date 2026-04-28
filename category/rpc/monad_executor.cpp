@@ -42,11 +42,13 @@
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -56,6 +58,7 @@
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -74,6 +77,7 @@
 #include <boost/outcome/try.hpp>
 #include <boost/scope_exit.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -153,6 +157,77 @@ namespace
         }
     };
 
+    template <Traits traits>
+    class ChainContextBuffer;
+
+    /**
+     * Dummy buffer for EVM trait specializations that do not need chain context
+     * for reserve balance checks.
+     */
+    template <Traits traits>
+        requires(is_evm_trait_v<traits>)
+    class ChainContextBuffer<traits>
+    {
+    public:
+        ChainContext<traits> advance(
+            std::vector<Address> const &,
+            std::vector<std::vector<std::optional<Address>>> const &)
+        {
+            return {};
+        }
+    };
+
+    /**
+     * Circular buffer of combined senders and EIP-7702 authorities for the last
+     * K blocks. Use advance(senders, authorities) to obtain the context needed
+     * for each block's reserve balance checks in eth_simulatev1.
+     */
+    template <Traits traits>
+        requires(is_monad_trait_v<traits>)
+    class ChainContextBuffer<traits>
+    {
+        static constexpr size_t K = 3;
+
+    public:
+        /// Advances the buffer with a new block's senders and authorities,
+        /// discarding the oldest currently stored context, then returns a
+        /// ChainContext for the given traits type. The arguments must outlive
+        /// this buffer.
+        [[nodiscard]] ChainContext<traits> advance(
+            std::vector<Address> const &senders,
+            std::vector<std::vector<std::optional<Address>>> const &authorities)
+        {
+            current_index_ = current_index_ == 0 ? K - 1 : current_index_ - 1;
+            current_senders_ = &senders;
+            current_authorities_ = &authorities;
+            senders_and_authorities_buffer_[current_index_] =
+                combine_senders_and_authorities(senders, authorities);
+
+            return ChainContext<traits>{
+                .grandparent_senders_and_authorities = get<2>(),
+                .parent_senders_and_authorities = get<1>(),
+                .senders_and_authorities = get<0>(),
+                .senders = *current_senders_,
+                .authorities = *current_authorities_,
+            };
+        }
+
+    private:
+        template <size_t age>
+            requires(age < K)
+        ankerl::unordered_dense::segmented_set<Address> const &get() const
+        {
+            return senders_and_authorities_buffer_[(current_index_ + age) % K];
+        }
+
+        size_t current_index_{0};
+        std::array<ankerl::unordered_dense::segmented_set<Address>, K>
+            senders_and_authorities_buffer_{};
+        std::vector<Address> const *current_senders_{};
+        std::vector<std::vector<std::optional<Address>>> const
+            *current_authorities_{};
+    };
+
     char const *const UNEXPECTED_EXCEPTION_ERR_MSG = "unexpected error";
     char const *const EXCEED_QUEUE_SIZE_ERR_MSG =
         "failure to submit eth_call to thread pool: queue size exceeded";
@@ -174,6 +249,8 @@ namespace
         "transaction out of bounds";
     static ankerl::unordered_dense::segmented_set<Address>
         empty_senders_and_authorities{};
+    static std::vector<Address> empty_senders{};
+    static std::vector<std::vector<std::optional<Address>>> empty_authorities{};
 
     void apply_state_overrides(
         BlockState &block_state, Incarnation const incarnation,
@@ -350,6 +427,457 @@ namespace
         trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
+    }
+
+    void store_output_header(
+        Block const &block, std::vector<Receipt> const &receipts,
+        bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes,
+        nlohmann::json &output)
+    {
+        auto const format_hex = [](auto const &b) {
+            return std::format("0x{}", evmc::hex(b));
+        };
+
+        BlockHeader const &header = block.header;
+
+        // TODO(dhil): Computing the correct information for some of these
+        // fields currently requires a roundtrip to the db. However, in
+        // simulation mode we only have readonly access to the db.
+
+        output["hash"] = format_hex(block_hash);
+        output["parentHash"] = format_hex(header.parent_hash);
+        output["sha3Uncles"] = format_hex(header.ommers_hash);
+        output["miner"] = format_hex(header.beneficiary);
+        output["stateRoot"] = format_hex(header.state_root);
+        {
+            auto const encoded = rlp::encode_block(block);
+            output["size"] = std::format("0x{:x}", encoded.size());
+        }
+        output["transactionsRoot"] = format_hex(header.transactions_root);
+        output["receiptsRoot"] = format_hex(header.receipts_root);
+        {
+            Receipt::Bloom bloom = compute_bloom(receipts);
+            output["logsBloom"] =
+                format_hex(byte_string_view{bloom.data(), bloom.size()});
+        }
+        output["difficulty"] =
+            std::format("0x{}", intx::to_string(header.difficulty));
+        output["number"] = std::format("0x{:x}", header.number);
+        output["gasLimit"] = std::format("0x{:x}", header.gas_limit);
+        output["gasUsed"] = std::format("0x{:x}", header.gas_used);
+        output["timestamp"] = std::format("0x{:x}", header.timestamp);
+        output["extraData"] = format_hex(header.extra_data);
+        output["mixHash"] = format_hex(header.prev_randao);
+        output["nonce"] = std::format("0x0000000000000000");
+        output["baseFeePerGas"] = std::format(
+            "0x{}", intx::to_string(header.base_fee_per_gas.value_or(0)));
+        {
+            output["uncles"] = nlohmann::json::array();
+            for (auto const &uncle : block.ommers) {
+                output["uncles"].emplace_back(format_hex(
+                    to_bytes(keccak256(rlp::encode_block_header(uncle)))));
+            }
+        }
+        {
+            output["transactions"] = nlohmann::json::array();
+            for (auto const &txn_hash : txn_hashes) {
+                output["transactions"].emplace_back(format_hex(txn_hash));
+            }
+        }
+        {
+            output["withdrawals"] = nlohmann::json::array();
+            for (auto const &withdrawal :
+                 block.withdrawals.value_or(std::vector<Withdrawal>{})) {
+                output["withdrawals"].emplace_back(nlohmann::json{
+                    {"index", std::format("0x{:x}", withdrawal.index)},
+                    {"validatorIndex",
+                     std::format("0x{:x}", withdrawal.validator_index)},
+                    {"amount", std::format("0x{:x}", withdrawal.amount)},
+                    {"recipient",
+                     std::format("0x{}", evmc::hex(withdrawal.recipient))},
+                });
+            }
+        }
+        // TODO(dhil): We currently do not have a way to compute this
+        // information in simulation mode.
+        output["withdrawalsRoot"] =
+            format_hex(header.withdrawals_root.value_or(bytes32_t{}));
+    }
+
+    void eth_simulate_validate_inputs(
+        size_t max_simulate_blocks, uint64_t default_timestamp_increment,
+        std::vector<std::vector<Transaction>> const &calls,
+        std::span<monad_block_override const *const> block_overrides,
+        std::span<monad_state_override const *const> state_overrides,
+        BlockHeader const &header)
+    {
+
+        MONAD_ASSERT_THROW(calls.size() > 0, "empty input");
+        MONAD_ASSERT_THROW(
+            calls.size() <= max_simulate_blocks, "too many blocks");
+
+        for (auto const *so : state_overrides) {
+            MONAD_ASSERT_THROW(so, "state override cannot be null");
+        }
+
+        BlockHeader previous_header = header;
+        for (auto const *bo : block_overrides) {
+            MONAD_ASSERT_THROW(bo, "block override cannot be null");
+
+            // From the specification
+            // (https://geth.ethereum.org/docs/interacting-with-geth/rpc/ns-eth):
+            // > When overriding multiple blocks, block numbers must
+            // > increment. Skipping numbers is allowed and skipped
+            // > blocks are included in the response.
+            uint64_t const block_number =
+                bo->number.value_or(previous_header.number + 1);
+            MONAD_ASSERT_THROW(
+                block_number > previous_header.number,
+                "block numbers must be strictly increasing");
+            uint64_t const gap = block_number - previous_header.number;
+            // Possible block number override has been validated; we can
+            // partially update our loop carried header.
+            previous_header.number = block_number;
+
+            if (bo->time.has_value()) {
+                // > Time must either increase or remain constant
+                // > relative to the previous block. If time is not
+                // > specified, it's incremented by one for each block.
+                // NOTE(dhil): I am not sure how to interpret the "or remain
+                // constant" part, as the Geth implementation enforces strictly
+                // increasing timestamps.
+
+                // If a gap is wide, then we need to count the synthetic
+                // timestamps before validating the possible block timestamp
+                // override.
+                if (gap > 1) {
+                    previous_header.timestamp +=
+                        gap * default_timestamp_increment;
+                }
+
+                MONAD_ASSERT_THROW(
+                    previous_header.timestamp <= *bo->time,
+                    "block timestamps must be strictly increasing");
+                previous_header.timestamp = *bo->time;
+            }
+            else {
+                previous_header.timestamp += gap * default_timestamp_increment;
+            }
+        }
+        MONAD_ASSERT(previous_header.number > header.number);
+        size_t const num_blocks = previous_header.number - header.number;
+        MONAD_ASSERT(num_blocks > 0);
+        MONAD_ASSERT_THROW(
+            num_blocks <= max_simulate_blocks, "too many blocks");
+    }
+
+    void save_eth_simulate_log_entry(
+        Block const &block, std::vector<Receipt> const &receipts,
+        std::vector<std::vector<CallFrame>> const &call_frames,
+        bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes,
+        nlohmann::json &result)
+    {
+        MONAD_ASSERT(call_frames.size() == block.transactions.size());
+        MONAD_ASSERT(receipts.size() == block.transactions.size());
+        MONAD_ASSERT(txn_hashes.size() == block.transactions.size());
+
+        auto const format_hex = [](auto const &b) {
+            return std::format("0x{}", evmc::hex(b));
+        };
+
+        auto entry = nlohmann::json::object();
+
+        entry["calls"] = nlohmann::json::array();
+        auto &txns = entry["calls"];
+
+        for (size_t tx_idx = 0; tx_idx < block.transactions.size(); ++tx_idx) {
+            MONAD_ASSERT(call_frames[tx_idx].size() > 0);
+            auto call_result = nlohmann::json::object();
+
+            call_result["status"] = std::format(
+                "0x{:x}",
+                call_frames[tx_idx][0].status == EVMC_SUCCESS ? 1 : 0);
+            call_result["returnData"] =
+                format_hex(call_frames[tx_idx][0].output);
+            call_result["gasUsed"] =
+                std::format("0x{:x}", call_frames[tx_idx][0].gas_used);
+
+            if (call_frames[tx_idx][0].status == EVMC_SUCCESS) {
+                call_result["logs"] = nlohmann::json::array();
+                for (auto const &log : receipts[tx_idx].logs) {
+                    call_result["logs"].emplace_back(nlohmann::json{
+                        {"address", format_hex(log.address)},
+                        {"topics", nlohmann::json::array()},
+                        {"data", format_hex(log.data)},
+                        {"blockNumber",
+                         std::format("0x{:x}", block.header.number)},
+                        {
+                            "transactionHash",
+                            format_hex(txn_hashes[tx_idx]),
+                        },
+                        {"transactionIndex", std::format("0x{:x}", tx_idx)},
+                        {"blockHash", format_hex(block_hash)},
+                        {"logIndex", std::format("0x{:x}", tx_idx)},
+                        // NOTE(dhil): Geth always emits logs with "removed"
+                        // fixed to `false`.
+                        {"removed", false},
+                    });
+                    for (auto const &topic : log.topics) {
+                        call_result["logs"].back()["topics"].emplace_back(
+                            format_hex(topic));
+                    }
+                }
+            }
+            else {
+                call_result["error"] = {{"message", "execution reverted"}};
+            }
+
+            txns.emplace_back(std::move(call_result));
+        }
+        store_output_header(block, receipts, block_hash, txn_hashes, entry);
+        result.emplace_back(std::move(entry));
+    }
+
+    template <Traits traits>
+    Result<nlohmann::json> eth_simulate_impl(
+        Chain const &chain, std::vector<std::vector<Transaction>> calls,
+        BlockHeader const &header, uint64_t const block_number,
+        bytes32_t const &block_id, std::vector<std::vector<Address>> senders,
+        std::vector<std::vector<std::vector<std::optional<Address>>>>
+            authorities,
+        TrieRODb &tdb, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+        fiber::FiberGroup &tx_exec_pool,
+        std::span<monad_state_override const *const> state_overrides,
+        std::span<monad_block_override const *const> block_overrides,
+        bool emit_native_transfer_logs)
+    {
+        // TODO(dhil): Geth allows up to 256 blocks to be simulated, including
+        // synthetic blocks inserted to fill in possible gaps in the block
+        // overrides.
+        static constexpr size_t MAX_CALLS = 256;
+        // TODO(dhil): Other providers allow a maximum of 16 blocks to be
+        // simulated (c.f.
+        // https://docs.metamask.io/services/reference/ethereum/json-rpc-methods/eth_simulatev1).
+
+        // TODO(dhil): Decide on the default timestamp increment.
+        static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
+
+        MONAD_ASSERT(calls.size() == senders.size());
+        MONAD_ASSERT(calls.size() == authorities.size());
+        MONAD_ASSERT(calls.size() == state_overrides.size());
+        MONAD_ASSERT(calls.size() == block_overrides.size());
+
+        for (size_t i = 0; i < calls.size(); ++i) {
+            MONAD_ASSERT(calls[i].size() == senders[i].size());
+            MONAD_ASSERT(calls[i].size() == authorities[i].size());
+        }
+
+        // Validate the inputs before constructing the simulation objects. This
+        // validation procedure throws on bad input.
+        eth_simulate_validate_inputs(
+            MAX_CALLS,
+            DEFAULT_TIMESTAMP_INCREMENT,
+            calls,
+            block_overrides,
+            state_overrides,
+            header);
+
+        tdb.set_block_and_prefix(block_number, block_id);
+
+        // Simulate blocks including possibly synthetic blocks.
+        auto context_buffer = ChainContextBuffer<traits>{};
+        auto result = nlohmann::json::array();
+        BlockHeader previous_header = header;
+        std::vector<std::vector<CallFrame>> const empty_call_frames{};
+
+        auto block_state = BlockState{tdb, vm};
+        for (size_t block_idx = 0; block_idx < calls.size(); ++block_idx) {
+            // SAFETY: By `eth_simulate_validate_inputs`, we know that both
+            // block overrides and state overrides are non-null.
+            monad_block_override const *const bo = block_overrides[block_idx];
+
+            // First we have to check whether we need to insert synthetic blocks
+            // to fill in the gap between the previous block and block induced
+            // by `block_idx`.
+            size_t const gap = bo->number.value_or(previous_header.number + 1) -
+                               previous_header.number;
+            // No-op for gap == 1.
+            for (size_t i = 1; i < gap; ++i) {
+                Block const synthetic_block{
+                    // NOTE(dhil): Synthetic blocks do not inherit the previous
+                    // block's header.
+                    .header = BlockHeader{
+                        .number = previous_header.number + 1,
+                        .timestamp = previous_header.timestamp +
+                                     DEFAULT_TIMESTAMP_INCREMENT,
+                    }};
+
+                auto block_metrics = BlockMetrics{};
+                auto call_tracers =
+                    std::vector<std::unique_ptr<CallTracerBase>>{};
+                auto state_tracers =
+                    std::vector<std::unique_ptr<trace::StateTracer>>{};
+
+                auto const chain_context =
+                    context_buffer.advance(empty_senders, empty_authorities);
+
+                BOOST_OUTCOME_TRY(
+                    auto const receipts,
+                    execute_block<traits>(
+                        chain,
+                        synthetic_block,
+                        empty_senders,
+                        empty_authorities,
+                        block_state,
+                        block_hash_buffer,
+                        tx_exec_pool,
+                        block_metrics,
+                        call_tracers,
+                        state_tracers,
+                        chain_context));
+
+                save_eth_simulate_log_entry(
+                    synthetic_block,
+                    receipts,
+                    empty_call_frames,
+                    {}, /* NOTE(dhil): Synthetic blocks do not have any
+                          transactions, hence there can be no log emissions */
+                    {},
+                    result);
+
+                previous_header = synthetic_block.header;
+            }
+            // By this point it must be the case that the distance between the
+            // previous block and the block we are about to construct is
+            // exactly 1.
+            MONAD_ASSERT(
+                bo->number.value_or(previous_header.number + 1) -
+                    previous_header.number ==
+                1);
+
+            // Construct the block header.
+            BlockHeader const current_header{
+                .prev_randao = bo->prev_randao.value_or(bytes32_t{}),
+                // NOTE(dhil): The possible increment by one is correct by
+                // construction of the synthetic blocks.
+                .number = bo->number.value_or(previous_header.number + 1),
+                // NOTE(dhil): The default is to inherit the **previous**
+                // header's gas limit irrespective of whether it is a real
+                // block, a synthetic block, or a user-defined block.
+                .gas_limit = bo->gas_limit.value_or(previous_header.gas_limit),
+                // TODO(dhil): Better Monad timestamp simulation (e.g. pack
+                // multiple blocks into the same timestamp).
+                .timestamp = bo->time.value_or(
+                    previous_header.timestamp + DEFAULT_TIMESTAMP_INCREMENT),
+                .beneficiary =
+                    bo->fee_recipient.value_or(previous_header.beneficiary),
+                // TODO(dhil): Should this default to
+                // zero?
+                .base_fee_per_gas = bo->base_fee_per_gas,
+            };
+
+            // Construct state
+            // State overrides are applied with an incarnation in the *previous*
+            // block, rather than with the current header's block number.
+            auto const override_incarnation = Incarnation{
+                block_number + block_idx, Incarnation::LAST_TX - 1u};
+            apply_state_overrides(
+                block_state, override_incarnation, *state_overrides[block_idx]);
+
+            // Patch up transactions with valid chain_id, signature, and nonce
+            // so that they can pass validation in execute_block.
+            {
+                State state{block_state, override_incarnation};
+
+                for (size_t tx_idx = 0; tx_idx < calls[block_idx].size();
+                     ++tx_idx) {
+                    Transaction &tx = calls[block_idx][tx_idx];
+
+                    tx.sc.chain_id = chain.get_chain_id();
+                    tx.sc.r = 1;
+                    tx.sc.s = 1;
+
+                    // Update tx.nonce to match the expected nonce in the
+                    // current block state.
+                    tx.nonce = state.get_nonce(senders[block_idx][tx_idx]);
+                    state.set_nonce(senders[block_idx][tx_idx], tx.nonce + 1);
+                }
+            }
+
+            auto block_metrics = BlockMetrics{};
+            auto call_frames = std::vector<std::vector<CallFrame>>{};
+            call_frames.reserve(calls[block_idx].size());
+            auto call_tracers = std::vector<std::unique_ptr<CallTracerBase>>{};
+            call_tracers.reserve(calls[block_idx].size());
+            auto state_tracers =
+                std::vector<std::unique_ptr<trace::StateTracer>>{};
+            state_tracers.reserve(calls[block_idx].size());
+
+            for (Transaction const &tx : calls[block_idx]) {
+                call_frames.emplace_back();
+                call_tracers.emplace_back(
+                    std::make_unique<CallTracer>(tx, call_frames.back()));
+                state_tracers.emplace_back(
+                    std::make_unique<trace::StateTracer>());
+            }
+
+            auto const chain_context = context_buffer.advance(
+                senders[block_idx], authorities[block_idx]);
+
+            auto block = Block{
+                .header = current_header,
+                .transactions = std::move(calls[block_idx]),
+                .withdrawals = block_overrides[block_idx]->withdrawals,
+            };
+
+            BOOST_OUTCOME_TRY(
+                auto const receipts,
+                execute_block<traits>(
+                    chain,
+                    block,
+                    senders[block_idx],
+                    authorities[block_idx],
+                    block_state,
+                    block_hash_buffer,
+                    tx_exec_pool,
+                    block_metrics,
+                    call_tracers,
+                    state_tracers,
+                    chain_context,
+                    emit_native_transfer_logs));
+
+            // Patch up the block header for results reporting.
+            // TODO(dhil): Report gas used for Ethereum?
+            if constexpr (is_monad_trait_v<traits>) {
+                // Receipts have cumulative gas_used (YP eq. 22), so
+                // the last receipt's value is the total for the block.
+                size_t const gas_used =
+                    receipts.empty() ? 0 : receipts.back().gas_used;
+                block.header.gas_used = gas_used;
+                if (!bo->gas_limit.has_value() && header.gas_limit == 0) {
+                    block.header.gas_limit = gas_used;
+                }
+            }
+
+            bytes32_t const block_hash =
+                to_bytes(keccak256(rlp::encode_block_header(block.header)));
+
+            std::vector<bytes32_t> txn_hashes{};
+            txn_hashes.reserve(block.transactions.size());
+            for (Transaction const &txn : block.transactions) {
+                txn_hashes.emplace_back(
+                    to_bytes(keccak256(rlp::encode_transaction(txn))));
+            }
+
+            save_eth_simulate_log_entry(
+                block, receipts, call_frames, block_hash, txn_hashes, result);
+
+            previous_header = current_header;
+        }
+
+        // LOG_INFO("res: {}", result.dump(4));
+
+        return result;
     }
 
     std::pair<
@@ -1337,6 +1865,186 @@ struct monad_executor
                 }
             });
     }
+
+    void submit_eth_simulate_to_pool(
+        monad_chain_config const chain_config,
+        std::vector<std::vector<Transaction>> calls,
+        std::vector<std::vector<Address>> senders,
+        std::span<monad_state_override const *const> state_overrides,
+        std::span<monad_block_override const *const> block_overrides,
+        BlockHeader const &block_header, uint64_t const block_number,
+        bytes32_t const &block_id, bool emit_native_transfer_logs,
+        void (*complete)(monad_executor_result *, void *user), void *const user)
+    {
+        monad_executor_result *const result = new monad_executor_result();
+
+        if (!trace_block_group_.try_enqueue()) {
+            result->status_code = EVMC_REJECTED;
+            result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
+
+        auto const priority =
+            call_seq_no_.fetch_add(1, std::memory_order_relaxed);
+        trace_block_group_.group->submit(
+            priority,
+            [calls = std::move(calls),
+             senders = std::move(senders),
+             state_overrides = state_overrides,
+             block_overrides = block_overrides,
+             block_header = block_header,
+             block_number = block_number,
+             block_id = block_id,
+             chain_config = chain_config,
+             &db = db_,
+             emit_native_transfer_logs = emit_native_transfer_logs,
+             fiber_group = &trace_block_group_,
+             tx_exec_group = &trace_tx_exec_group_,
+             &vm = vm_,
+             complete = complete,
+             result = result,
+             user = user]() {
+                try {
+                    fiber_group->queued_count.fetch_sub(
+                        1, std::memory_order_relaxed);
+                    fiber_group->executing_count.fetch_add(
+                        1, std::memory_order_relaxed);
+                    BOOST_SCOPE_EXIT_ALL(&fiber_group)
+                    {
+                        fiber_group->executing_count.fetch_sub(
+                            1, std::memory_order_relaxed);
+                    };
+
+                    auto const res = [&]() -> Result<nlohmann::json> {
+                        auto authorities = std::vector<
+                            std::vector<std::vector<std::optional<Address>>>>(
+                            calls.size());
+                        for (auto block_idx = 0u; block_idx < calls.size();
+                             ++block_idx) {
+                            authorities[block_idx] = std::vector<
+                                std::vector<std::optional<Address>>>(
+                                calls[block_idx].size());
+                            for (auto tx_idx = 0u;
+                                 tx_idx < calls[block_idx].size();
+                                 ++tx_idx) {
+                                authorities[block_idx][tx_idx] =
+                                    std::vector<std::optional<Address>>(
+                                        calls[block_idx][tx_idx]
+                                            .authorization_list.size());
+                                for (auto auth_idx = 0u;
+                                     auth_idx < calls[block_idx][tx_idx]
+                                                    .authorization_list.size();
+                                     ++auth_idx) {
+                                    authorities[block_idx][tx_idx][auth_idx] =
+                                        recover_authority(
+                                            calls[block_idx][tx_idx]
+                                                .authorization_list[auth_idx]);
+                                }
+                            }
+                        }
+
+                        auto const chain =
+                            [chain_config] -> std::unique_ptr<Chain> {
+                            switch (chain_config) {
+                            case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                                return std::make_unique<EthereumMainnet>();
+                            case CHAIN_CONFIG_MONAD_DEVNET:
+                                return std::make_unique<MonadDevnet>();
+                            case CHAIN_CONFIG_MONAD_TESTNET:
+                                return std::make_unique<MonadTestnet>();
+                            case CHAIN_CONFIG_MONAD_MAINNET:
+                                return std::make_unique<MonadMainnet>();
+                            case CHAIN_CONFIG_HIVE_NET:
+                                return std::make_unique<HiveNet>();
+                            }
+                            MONAD_ASSERT(false);
+                        }();
+
+                        LazyBlockHash const block_hash_buffer{db, block_number};
+                        TrieRODb tdb{db};
+
+                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
+                            chain_config == CHAIN_CONFIG_HIVE_NET) {
+                            evmc_revision const rev = chain->get_revision(
+                                block_header.number, block_header.timestamp);
+                            SWITCH_EVM_TRAITS(
+                                eth_simulate_impl,
+                                *chain,
+                                calls,
+                                block_header,
+                                block_number,
+                                block_id,
+                                senders,
+                                authorities,
+                                tdb,
+                                vm,
+                                block_hash_buffer,
+                                *tx_exec_group->group,
+                                state_overrides,
+                                block_overrides,
+                                emit_native_transfer_logs);
+                            MONAD_ASSERT(false);
+                        }
+                        else {
+                            auto const rev =
+                                dynamic_cast<MonadChain *>(chain.get())
+                                    ->get_monad_revision(
+                                        block_header.timestamp);
+                            SWITCH_MONAD_TRAITS(
+                                eth_simulate_impl,
+                                *chain,
+                                calls,
+                                block_header,
+                                block_number,
+                                block_id,
+                                senders,
+                                authorities,
+                                tdb,
+                                vm,
+                                block_hash_buffer,
+                                *tx_exec_group->group,
+                                state_overrides,
+                                block_overrides,
+                                emit_native_transfer_logs);
+                            MONAD_ASSERT(false);
+                        }
+                    }();
+
+                    if (MONAD_UNLIKELY(res.has_error())) {
+                        result->status_code = EVMC_REJECTED;
+                        result->message = strdup(res.error().message().c_str());
+                        MONAD_ASSERT(result->message);
+                        complete(result, user);
+                        return;
+                    }
+                    std::vector<uint8_t> cbor_state_trace =
+                        nlohmann::json::to_cbor(res.assume_value());
+                    result->encoded_trace =
+                        new uint8_t[cbor_state_trace.size()];
+                    result->encoded_trace_len = cbor_state_trace.size();
+                    memcpy(
+                        result->encoded_trace,
+                        cbor_state_trace.data(),
+                        cbor_state_trace.size());
+
+                    complete(result, user);
+                }
+                catch (MonadException const &e) {
+                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->message = strdup(e.message());
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                }
+                catch (...) {
+                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
+                    MONAD_ASSERT(result->message);
+                    complete(result, user);
+                }
+            });
+    }
 };
 
 monad_executor *monad_executor_create(
@@ -1490,4 +2198,98 @@ void monad_executor_run_transactions(
         complete,
         user,
         tracer_config);
+}
+
+namespace
+{
+    template <auto Decoder>
+    using decoder_value_t = typename decltype(Decoder(
+        std::declval<byte_string_view &>()))::value_type;
+
+    template <auto Decoder, bool explicit_parse_string>
+    auto decode_nested_items(byte_string_view &input)
+        -> Result<std::vector<std::vector<decoder_value_t<Decoder>>>>
+    {
+        using Item = decoder_value_t<Decoder>;
+        auto ret = std::vector<std::vector<Item>>{};
+
+        BOOST_OUTCOME_TRY(auto outer_payload, rlp::parse_list_metadata(input));
+        while (!outer_payload.empty()) {
+            ret.emplace_back();
+
+            BOOST_OUTCOME_TRY(
+                auto inner_payload, rlp::parse_list_metadata(outer_payload));
+
+            if constexpr (explicit_parse_string) {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(
+                        auto item_payload,
+                        rlp::parse_string_metadata(inner_payload));
+                    BOOST_OUTCOME_TRY(Item const item, Decoder(item_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+            else {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(Item const item, Decoder(inner_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+        }
+
+        return ret;
+    }
+}
+
+void monad_executor_eth_simulate_submit(
+    struct monad_executor *executor, enum monad_chain_config chain_config,
+    uint8_t const *rlp_senders, size_t rlp_senders_len,
+    uint8_t const *rlp_calls, size_t rlp_calls_len, uint64_t block_number,
+    uint8_t const *rlp_header, size_t rlp_header_len,
+    uint8_t const *rlp_block_id, size_t rlp_block_id_len,
+    struct monad_state_override const *const *state_overrides,
+    size_t n_state_overrides,
+    struct monad_block_override const *const *block_overrides,
+    size_t n_block_overrides, bool emit_native_transfer_logs,
+    void (*complete)(monad_executor_result *, void *user), void *user)
+{
+    byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
+    auto const maybe_senders =
+        decode_nested_items<rlp::decode_address, false>(rlp_senders_view);
+    MONAD_ASSERT(maybe_senders.has_value());
+    auto const &senders = maybe_senders.assume_value();
+
+    byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
+    auto const maybe_txns =
+        decode_nested_items<rlp::decode_transaction, true>(rlp_calls_view);
+    MONAD_ASSERT(maybe_txns.has_value());
+    auto const &txns = maybe_txns.assume_value();
+
+    MONAD_ASSERT(senders.size() == txns.size());
+    MONAD_ASSERT(n_state_overrides == txns.size());
+
+    byte_string_view rlp_header_view({rlp_header, rlp_header_len});
+    auto const block_header_result = rlp::decode_block_header(rlp_header_view);
+    MONAD_ASSERT(!block_header_result.has_error());
+    MONAD_ASSERT(rlp_header_view.empty());
+    auto const &block_header = block_header_result.value();
+
+    byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
+    auto const block_id_result = rlp::decode_bytes32(block_id_view);
+    MONAD_ASSERT(!block_id_result.has_error());
+    MONAD_ASSERT(block_id_view.empty());
+    auto const block_id = block_id_result.value();
+
+    executor->submit_eth_simulate_to_pool(
+        chain_config,
+        txns,
+        senders,
+        std::span{state_overrides, n_state_overrides},
+        std::span{block_overrides, n_block_overrides},
+        block_header,
+        block_number,
+        block_id,
+        emit_native_transfer_logs,
+        complete,
+        user);
 }

@@ -17,6 +17,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/rpc/overrides.h>
 #include <category/rpc/overrides.hpp>
 
@@ -24,6 +25,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 using namespace monad;
 
@@ -233,13 +235,25 @@ void set_block_override_base_fee_per_gas(
     m->base_fee_per_gas = intx::be::unsafe::load<uint256_t>(fee);
 }
 
-void set_block_override_blob_base_fee(
-    monad_block_override *const m, uint8_t const *const fee,
-    size_t const fee_len)
+void add_block_override_withdrawal(
+    struct monad_block_override *const m, uint64_t index,
+    uint64_t validator_index, uint64_t amount, uint8_t const *recipient_addr,
+    size_t recipient_addr_len)
 {
     MONAD_ASSERT(m);
-    MONAD_ASSERT(fee);
-    MONAD_ASSERT(fee_len == sizeof(uint256_t));
-    MONAD_ASSERT(!m->blob_base_fee.has_value());
-    m->blob_base_fee = intx::be::unsafe::load<uint256_t>(fee);
+    MONAD_ASSERT(recipient_addr);
+    MONAD_ASSERT(recipient_addr_len == sizeof(Address));
+    Address recipient;
+    std::memcpy(recipient.bytes, recipient_addr, sizeof(Address));
+
+    if (!m->withdrawals.has_value()) {
+        m->withdrawals = std::vector<Withdrawal>{};
+    }
+
+    m->withdrawals->emplace_back(Withdrawal{
+        .index = index,
+        .validator_index = validator_index,
+        .amount = amount,
+        .recipient = recipient,
+    });
 }

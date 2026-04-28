@@ -4172,9 +4172,42 @@ Proof.
     cbn [fill_words_from words_to_uint256 fit_words firstn app repeat
        to_Z_words uint256_to_words to_Z_uint256 w0 w1 w2 w3] in |- *.
     unfold signextend_current_word in Hcw.
+    cbn zeta in Hcw.
     inversion Hcw; subst current sign_bits; clear Hcw.
-    rewrite Hcur, Hsign.
-    
+    assert (Hs_le64 : Z.of_nat s + 8 <= 64).
+    { apply Nat2Z.inj_le in Hs_le56. lia. }
+    set (hi := WL.U64.to_Z x1 +
+               base WL.U64.width *
+                 (WL.U64.to_Z x2 +
+                  base WL.U64.width * (WL.U64.to_Z x3 + base WL.U64.width * 0))).
+    assert (Hpow64 :
+      base WL.U64.width = 2 ^ (Z.of_nat s + 8) * 2 ^ (64 - (Z.of_nat s + 8))).
+    { unfold base.
+      rewrite width_is_64.
+      rewrite <- Z.pow_add_r by lia.
+      replace (Z.of_nat s + 8 + (64 - (Z.of_nat s + 8))) with 64 by lia.
+      reflexivity. }
+    assert (Hmod_rhs :
+      (WL.U64.to_Z x0 + base WL.U64.width * hi) mod 2 ^ (Z.of_nat s + 8) =
+      WL.U64.to_Z x0 mod 2 ^ (Z.of_nat s + 8)).
+    { rewrite Hpow64.
+      rewrite <- Z.mul_assoc.
+      rewrite Z.mul_comm.
+      rewrite Z.mod_add by (apply Z.pow_nonzero; lia).
+      reflexivity. }
+    rewrite Hmod_rhs.
+    destruct (to_Z x0 mod 2 ^ (Z.of_nat s + 8) <? 2 ^ (Z.of_nat s + 7))
+      eqn:Hcmp0.
+    + rewrite Hcur, Hsign.
+      rewrite ?Z.mul_0_r, ?Z.add_0_r.
+      reflexivity.
+    + rewrite Hcur, Hsign.
+      rewrite Z.mul_0_r, Z.add_0_r.
+      unfold modulus256.
+      rewrite !WL.modulus_words_succ, ?WL.modulus_words_0.
+      ring_simplify.
+      lia.
+  -
 Admitted.
 
 Lemma is_two_uint256_true : forall x,

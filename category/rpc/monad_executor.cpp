@@ -828,13 +828,7 @@ namespace
             auto block = Block{
                 .header = current_header,
                 .transactions = std::move(calls[block_idx]),
-                .withdrawals =
-                    // Apply the block override for withdrawals, if it is
-                    // present.
-                block_overrides[block_idx]->withdrawals.has_value()
-                    ? block_overrides[block_idx]->withdrawals
-                    : std::optional<
-                          std::vector<monad::Withdrawal>>{std::nullopt},
+                .withdrawals = block_overrides[block_idx]->withdrawals,
             };
 
             BOOST_OUTCOME_TRY(

@@ -269,6 +269,321 @@ namespace
         return rlp::encode_string2(byte_string_view{hash, 32});
     }
 
+    /// Walk the trie rooted at `root` following the given nibble key.
+    /// Returns std::nullopt if the lookup hits an unresolved HashStub,
+    /// a pointer to the leaf value on success, or nullptr if the key is absent.
+    template <typename T>
+    std::optional<T *>
+    trie_lookup(ChildRef<T> const &root, mpt::NibblesView remaining)
+    {
+        PartialNode<T> *node = root.get();
+        while (node != nullptr) {
+            if (auto *leaf = std::get_if<LeafData<T>>(&node->v)) {
+                return (mpt::NibblesView{leaf->path} == remaining)
+                           ? &leaf->value
+                           : nullptr;
+            }
+            else if (auto *ext = std::get_if<ExtensionData<T>>(&node->v)) {
+                mpt::NibblesView const ext_path{ext->path};
+                if (!remaining.starts_with(ext_path)) {
+                    return nullptr;
+                }
+                remaining = remaining.substr(ext_path.nibble_size());
+                node = ext->child.get();
+            }
+            else if (auto *branch = std::get_if<BranchData<T>>(&node->v)) {
+                if (remaining.empty()) {
+                    return branch->value ? &*branch->value : nullptr;
+                }
+                unsigned const nibble = remaining.get(0);
+                remaining = remaining.substr(1);
+                node = branch->children[nibble].get();
+            }
+            else {
+                // HashStub: subtree not present in witness
+                return std::nullopt;
+            }
+        }
+        return nullptr; // null child — key absent
+    }
+
+    unsigned common_prefix_length(mpt::NibblesView a, mpt::NibblesView b)
+    {
+        unsigned const n = std::min(a.nibble_size(), b.nibble_size());
+        for (unsigned i = 0; i < n; ++i) {
+            if (a.get(i) != b.get(i)) {
+                return i;
+            }
+        }
+        return n;
+    }
+
+    // Insert or update a leaf in the trie when override = true.
+    // Get or insert when override = false.
+    template <bool override = true, typename T>
+    T &trie_get_or_upsert(ChildRef<T> &root, mpt::NibblesView key, T value)
+    {
+        if (!root) {
+            root = std::make_unique<PartialNode<T>>(
+                LeafData<T>{mpt::Nibbles{key}, std::move(value)});
+            return std::get<LeafData<T>>(root->v).value;
+        }
+
+        if (auto *leaf = std::get_if<LeafData<T>>(&root->v)) {
+            mpt::NibblesView const leaf_path{leaf->path};
+            if (leaf_path == key) {
+                if constexpr (override) {
+                    leaf->value = std::move(value);
+                }
+                return leaf->value;
+            }
+            unsigned const cp = common_prefix_length(leaf_path, key);
+            MONAD_DEBUG_ASSERT(
+                cp < leaf_path.nibble_size() || cp < key.nibble_size());
+            BranchData<T> branch{};
+            T *ret_val{};
+
+            if (cp < leaf_path.nibble_size()) {
+                trie_get_or_upsert<override>(
+                    branch.children[leaf_path.get(cp)],
+                    leaf_path.substr(cp + 1),
+                    std::move(leaf->value));
+            }
+            else {
+                branch.value = std::move(leaf->value);
+            }
+
+            if (cp < key.nibble_size()) {
+                ret_val = &trie_get_or_upsert<override>(
+                    branch.children[key.get(cp)],
+                    key.substr(cp + 1),
+                    std::move(value));
+            }
+            else {
+                if constexpr (override) {
+                    branch.value = std::move(value);
+                }
+                else {
+                    if (!branch.value) {
+                        branch.value = std::move(value);
+                    }
+                }
+            }
+
+            if (cp > 0) {
+                root = std::make_unique<PartialNode<T>>(ExtensionData<T>{
+                    mpt::Nibbles{key.substr(0, cp)},
+                    std::make_unique<PartialNode<T>>(std::move(branch))});
+                // if the value was stored in branch.value, we need to fetch
+                // value's pointer after the move
+                if (!ret_val) {
+                    return *(std::get<BranchData<T>>(
+                                 std::get<ExtensionData<T>>(root->v).child->v)
+                                 .value);
+                }
+            }
+            else {
+                root = std::make_unique<PartialNode<T>>(std::move(branch));
+                // if the value was stored in branch.value, we need to fetch
+                // value's pointer after the move
+                if (!ret_val) {
+                    return *std::get<BranchData<T>>(root->v).value;
+                }
+            }
+            return *ret_val;
+        }
+        else if (auto *ext = std::get_if<ExtensionData<T>>(&root->v)) {
+            mpt::NibblesView const ext_path{ext->path};
+            unsigned const cp = common_prefix_length(ext_path, key);
+            if (cp == ext_path.nibble_size()) {
+                return trie_get_or_upsert<override>(
+                    ext->child, key.substr(cp), std::move(value));
+            }
+
+            BranchData<T> branch{};
+            T *ret_val{};
+
+            branch.children[ext_path.get(cp)] =
+                (cp + 1 < ext_path.nibble_size())
+                    ? std::make_unique<PartialNode<T>>(ExtensionData<T>{
+                          mpt::Nibbles{ext_path.substr(cp + 1)},
+                          std::move(ext->child)})
+                    : std::move(ext->child);
+
+            if (cp < key.nibble_size()) {
+                ret_val = &trie_get_or_upsert<override>(
+                    branch.children[key.get(cp)],
+                    key.substr(cp + 1),
+                    std::move(value));
+            }
+            else {
+                if constexpr (override) {
+                    branch.value = std::move(value);
+                }
+                else {
+                    if (!branch.value) {
+                        branch.value = std::move(value);
+                    }
+                }
+            }
+
+            if (cp > 0) {
+                root = std::make_unique<PartialNode<T>>(ExtensionData<T>{
+                    mpt::Nibbles{key.substr(0, cp)},
+                    std::make_unique<PartialNode<T>>(std::move(branch))});
+                // if the value was stored in branch.value, we need to fetch
+                // value's pointer after the move
+                if (!ret_val) {
+                    return *(std::get<BranchData<T>>(
+                                 std::get<ExtensionData<T>>(root->v).child->v)
+                                 .value);
+                }
+            }
+            else {
+                root = std::make_unique<PartialNode<T>>(std::move(branch));
+                // if the value was stored in branch.value, we need to fetch
+                // value's pointer after the move
+                if (!ret_val) {
+                    return *std::get<BranchData<T>>(root->v).value;
+                }
+            }
+            return *ret_val;
+        }
+        else if (auto *branch = std::get_if<BranchData<T>>(&root->v)) {
+            if (key.empty()) {
+                if constexpr (override) {
+                    branch->value = std::move(value);
+                }
+                else {
+                    if (!branch->value) {
+                        branch->value = std::move(value);
+                    }
+                }
+                return *branch->value;
+            }
+            else {
+                return trie_get_or_upsert<override>(
+                    branch->children[key.get(0)],
+                    key.substr(1),
+                    std::move(value));
+            }
+        }
+        else {
+            // HashStub — witness incomplete
+            MONAD_ASSERT(false);
+        }
+    }
+
+    /// Delete a leaf from the trie at the given nibble key, applying branch
+    /// compression as needed. Returns true if a leaf was actually deleted.
+    template <typename T>
+    bool trie_delete(ChildRef<T> &root, mpt::NibblesView key)
+    {
+        if (!root) {
+            return false;
+        }
+
+        if (auto *leaf = std::get_if<LeafData<T>>(&root->v)) {
+            if (mpt::NibblesView{leaf->path} == key) {
+                root.reset();
+                return true;
+            }
+            return false;
+        }
+        else if (auto *ext = std::get_if<ExtensionData<T>>(&root->v)) {
+            mpt::NibblesView const ext_path{ext->path};
+            unsigned const cp = common_prefix_length(ext_path, key);
+            if (cp < ext_path.nibble_size()) {
+                return false;
+            }
+            if (!trie_delete(ext->child, key.substr(cp))) {
+                return false;
+            }
+            // Compress: merge paths if child is now a leaf or extension
+            if (!ext->child) {
+                root.reset();
+            }
+            else if (
+                auto *child_leaf = std::get_if<LeafData<T>>(&ext->child->v)) {
+                auto const merged = mpt::concat(
+                    mpt::NibblesView{ext->path},
+                    mpt::NibblesView{child_leaf->path});
+                root = std::make_unique<PartialNode<T>>(LeafData<T>{
+                    std::move(merged), std::move(child_leaf->value)});
+            }
+            else if (
+                auto *child_ext =
+                    std::get_if<ExtensionData<T>>(&ext->child->v)) {
+                ext->path = mpt::concat(
+                    mpt::NibblesView{ext->path},
+                    mpt::NibblesView{child_ext->path});
+                ext->child = std::move(child_ext->child);
+            }
+            return true;
+        }
+        else if (auto *branch = std::get_if<BranchData<T>>(&root->v)) {
+            if (key.empty()) {
+                if (!branch->value) {
+                    return false;
+                }
+                branch->value.reset();
+            }
+            else if (!trie_delete(
+                         branch->children[key.get(0)], key.substr(1))) {
+                return false;
+            }
+
+            // Branch compression; only runs if a delete actually occured
+            unsigned child_count = 0;
+            unsigned single_idx = 0;
+            for (unsigned i = 0; i < 16 && child_count < 2; ++i) {
+                if (branch->children[i]) {
+                    ++child_count;
+                    single_idx = i;
+                }
+            }
+            bool const has_value = branch->value.has_value();
+
+            if (child_count == 0 && !has_value) {
+                root.reset();
+            }
+            else if (child_count == 0 && has_value) {
+                root = std::make_unique<PartialNode<T>>(
+                    LeafData<T>{mpt::Nibbles{}, std::move(*branch->value)});
+            }
+            else if (child_count == 1 && !has_value) {
+                auto &child = branch->children[single_idx];
+                if (auto *child_leaf = std::get_if<LeafData<T>>(&child->v)) {
+                    auto const merged = mpt::concat(
+                        static_cast<unsigned char>(single_idx),
+                        mpt::NibblesView{child_leaf->path});
+                    root = std::make_unique<PartialNode<T>>(LeafData<T>{
+                        std::move(merged), std::move(child_leaf->value)});
+                }
+                else if (
+                    auto *child_ext =
+                        std::get_if<ExtensionData<T>>(&child->v)) {
+                    child_ext->path = mpt::concat(
+                        static_cast<unsigned char>(single_idx),
+                        mpt::NibblesView{child_ext->path});
+                    root = std::move(child);
+                }
+                else {
+                    // Branch or HashStub child — wrap in extension
+                    mpt::Nibbles nibble_path{1};
+                    nibble_path.set(0, static_cast<unsigned char>(single_idx));
+                    root = std::make_unique<PartialNode<T>>(ExtensionData<T>{
+                        std::move(nibble_path), std::move(child)});
+                }
+            }
+            return true;
+        }
+        else {
+            // HashStub — witness incomplete
+            MONAD_ASSERT(false);
+        }
+    }
+
 } // anonymous namespace
 
 // ensures enc.empty() if successful
@@ -381,15 +696,65 @@ Result<PartialTrieDb> PartialTrieDb::from_reth_witness(
     return PartialTrieDb{std::move(root_node), std::move(code_index)};
 }
 
-std::optional<Account> PartialTrieDb::read_account(Address const &)
+std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 {
-    return std::nullopt;
+    auto const key_hash = keccak256(addr.bytes);
+    auto const result = trie_lookup(root_, mpt::NibblesView{key_hash});
+    MONAD_ASSERT(result.has_value());
+    if (!*result) {
+        return std::nullopt;
+    }
+    return (*result)->account;
 }
 
-bytes32_t
-PartialTrieDb::read_storage(Address const &, Incarnation, bytes32_t const &)
+bytes32_t PartialTrieDb::read_storage(
+    Address const &addr, Incarnation, bytes32_t const &slot)
 {
-    return {};
+    auto const acct_hash = keccak256(addr.bytes);
+    auto const acct_result = trie_lookup(root_, mpt::NibblesView{acct_hash});
+    MONAD_ASSERT(acct_result.has_value());
+    if (!*acct_result || !(*acct_result)->storage) {
+        return {};
+    }
+    auto const slot_hash = keccak256(slot.bytes);
+    auto const val_result =
+        trie_lookup((*acct_result)->storage, mpt::NibblesView{slot_hash});
+    MONAD_ASSERT(val_result.has_value());
+    return *val_result ? (*val_result)->value : bytes32_t{};
+}
+
+std::optional<std::optional<Account>>
+PartialTrieDb::read_account_maybe(Address const &addr)
+{
+    auto const key_hash = keccak256(addr.bytes);
+    auto const result = trie_lookup(root_, mpt::NibblesView{key_hash});
+    if (!result) {
+        return std::nullopt;
+    }
+    if (!*result) {
+        return std::optional<Account>{std::nullopt};
+    }
+    return std::optional<Account>{(*result)->account};
+}
+
+std::optional<bytes32_t> PartialTrieDb::read_storage_maybe(
+    Address const &addr, Incarnation, bytes32_t const &slot)
+{
+    auto const acct_hash = keccak256(addr.bytes);
+    auto const acct_result = trie_lookup(root_, mpt::NibblesView{acct_hash});
+    if (!acct_result) {
+        return std::nullopt;
+    }
+    if (!*acct_result || !(*acct_result)->storage) {
+        return bytes32_t{};
+    }
+    auto const slot_hash = keccak256(slot.bytes);
+    auto const val_result =
+        trie_lookup((*acct_result)->storage, mpt::NibblesView{slot_hash});
+    if (!val_result) {
+        return std::nullopt;
+    }
+    return *val_result ? (*val_result)->value : bytes32_t{};
 }
 
 vm::SharedIntercode PartialTrieDb::read_code(bytes32_t const &code_hash)
@@ -421,17 +786,17 @@ bytes32_t PartialTrieDb::state_root()
 
 bytes32_t PartialTrieDb::receipts_root()
 {
-    return receipts_root_;
+    return last_committed_header_.receipts_root;
 }
 
 bytes32_t PartialTrieDb::transactions_root()
 {
-    return transactions_root_;
+    return last_committed_header_.transactions_root;
 }
 
 std::optional<bytes32_t> PartialTrieDb::withdrawals_root()
 {
-    return withdrawals_root_;
+    return last_committed_header_.withdrawals_root;
 }
 
 uint64_t PartialTrieDb::get_block_number() const
@@ -446,9 +811,61 @@ void PartialTrieDb::set_block_and_prefix(
 }
 
 void PartialTrieDb::commit(
-    bytes32_t const &, CommitBuilder &, BlockHeader const &,
-    StateDeltas const &, std::function<void(BlockHeader &)>)
+    bytes32_t const &, CommitBuilder &, BlockHeader const &header,
+    StateDeltas const &deltas,
+    std::function<void(BlockHeader &)> populate_header_fn)
 {
+    block_number_ = header.number;
+
+    // Pass 1: inserts and updates (accounts that exist in post-state)
+    for (auto const &[addr, delta] : deltas) {
+        auto const &new_account = delta.account.second;
+        if (!new_account) {
+            continue;
+        }
+
+        auto const acct_key = keccak256(addr.bytes);
+
+        auto &existing = trie_get_or_upsert<false>(
+            root_, mpt::NibblesView{acct_key}, AccountLeafValue{});
+
+        existing.account = *new_account;
+
+        auto &storage = existing.storage;
+
+        // Apply storage deltas: upserts first, then deletions
+        for (auto const &[slot, sdelta] : delta.storage) {
+            if (sdelta.second != bytes32_t{}) {
+                auto const slot_key = keccak256(slot.bytes);
+                trie_get_or_upsert(
+                    storage,
+                    mpt::NibblesView{slot_key},
+                    StorageLeafValue{sdelta.second});
+            }
+        }
+        for (auto const &[slot, sdelta] : delta.storage) {
+            if (sdelta.second == bytes32_t{} && sdelta.first != bytes32_t{}) {
+                auto const slot_key = keccak256(slot.bytes);
+                trie_delete(storage, mpt::NibblesView{slot_key});
+            }
+        }
+    }
+
+    // Pass 2: deletions (accounts removed in post-state)
+    for (auto const &[addr, delta] : deltas) {
+        if (delta.account.second) {
+            continue;
+        }
+        if (!delta.account.first) {
+            continue;
+        }
+        auto const acct_key = keccak256(addr.bytes);
+        trie_delete(root_, mpt::NibblesView{acct_key});
+    }
+
+    last_committed_header_ = header;
+    MONAD_ASSERT(populate_header_fn);
+    populate_header_fn(last_committed_header_);
 }
 
 MONAD_NAMESPACE_END

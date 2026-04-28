@@ -19,18 +19,36 @@
 #include <category/core/int.hpp>
 #include <category/core/log.hpp>
 
-template <unsigned N>
-struct quill::copy_loggable<intx::uint<N>> : std::true_type
+#include <type_traits>
+
+template <>
+struct quill::copy_loggable<monad::uint256_t> : std::true_type
 {
 };
 
-template <unsigned N>
-struct fmt::formatter<intx::uint<N>> : public monad::BasicFormatter
+template <>
+struct fmt::formatter<monad::uint256_t> : public monad::BasicFormatter
 {
     template <typename FormatContext>
-    auto format(intx::uint<N> const &value, FormatContext &ctx) const
+    auto format(monad::uint256_t const &value, FormatContext &ctx) const
     {
-        fmt::format_to(ctx.out(), "{}", intx::to_string(value, 10));
+        fmt::format_to(ctx.out(), "{}", monad::to_string(value, 10));
+        return ctx.out();
+    }
+};
+
+template <>
+struct quill::copy_loggable<monad::uint128_t> : std::true_type
+{
+};
+
+template <>
+struct fmt::formatter<monad::uint128_t> : public monad::BasicFormatter
+{
+    template <typename FormatContext>
+    auto format(monad::uint128_t const &value, FormatContext &ctx) const
+    {
+        fmt::format_to(ctx.out(), "{}", monad::to_string(value, 10));
         return ctx.out();
     }
 };

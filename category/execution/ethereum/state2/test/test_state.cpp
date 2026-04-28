@@ -33,11 +33,9 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/mpt/db.hpp>
-#include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
-#include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -59,6 +57,7 @@
 
 using namespace monad;
 using namespace monad::test;
+using namespace monad::literals;
 
 namespace
 {
@@ -1293,7 +1292,6 @@ TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
 
 TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
 {
-    using namespace intx;
     BlockState bs{this->tdb, this->vm};
     State as{bs, Incarnation{1, 1}};
 

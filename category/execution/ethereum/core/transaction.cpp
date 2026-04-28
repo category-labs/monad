@@ -16,16 +16,14 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 
 #include <silkpre/ecdsa.h>
-
-#include <ethash/hash_types.hpp>
-
-#include <intx/intx.hpp>
 
 #include <secp256k1.h>
 
@@ -54,8 +52,8 @@ ecrecover(SignatureAndChain const &sc, byte_string_view const encoding)
     auto const encoding_hash = keccak256(encoding);
 
     uint8_t signature[sizeof(sc.r) * 2];
-    intx::be::unsafe::store(signature, sc.r);
-    intx::be::unsafe::store(signature + sizeof(sc.r), sc.s);
+    store_be(signature, sc.r);
+    store_be(signature + sizeof(sc.r), sc.s);
 
     thread_local std::unique_ptr<
         secp256k1_context,
@@ -66,6 +64,7 @@ ecrecover(SignatureAndChain const &sc, byte_string_view const encoding)
 
     Address result;
 
+    // TODO: remove silkpre
     if (!silkpre_recover_address(
             result.bytes,
             encoding_hash.bytes,

@@ -109,8 +109,7 @@ namespace monad::vm::utils::evm_as
         EvmBuilder &spush(int64_t const imm) noexcept
         {
             if (imm < 0) {
-                runtime::uint256_t const x{imm};
-                return push(runtime::signextend(7, imm));
+                return push(monad::signextend(uint256_t{7}, uint256_t{imm}));
             }
             return push(static_cast<uint64_t>(imm));
         }
@@ -119,24 +118,23 @@ namespace monad::vm::utils::evm_as
         {
             size_t const n = byte_width(imm);
             MONAD_ASSERT(n <= 32);
-            return push(n, runtime::uint256_t{imm});
+            return push(n, uint256_t{imm});
         }
 
-        EvmBuilder &push(runtime::uint256_t const &imm) noexcept
+        EvmBuilder &push(uint256_t const &imm) noexcept
         {
             size_t const n = byte_width(imm);
             MONAD_ASSERT(n <= 32);
             return push(n, imm);
         }
 
-        EvmBuilder &
-        push(size_t const n_bytes, runtime::uint256_t const &imm) noexcept
+        EvmBuilder &push(size_t const n_bytes, uint256_t const &imm) noexcept
         {
             if (n_bytes > 32) {
                 return insert(InvalidI{std::format("PUSH{}", n_bytes)});
             }
             size_t n = n_bytes;
-            runtime::uint256_t i = imm;
+            uint256_t i = imm;
             if (n_bytes == 0) {
                 if (traits::evm_rev() >= EVMC_SHANGHAI) {
                     return push0();
@@ -152,7 +150,7 @@ namespace monad::vm::utils::evm_as
         EvmBuilder &push(FixedBytes auto const &data) noexcept
             requires(sizeof(data) <= 32)
         {
-            return push(runtime::from_bytes(sizeof(data), data.bytes));
+            return push(from_bytes(sizeof(data), data.bytes));
         }
 
         EvmBuilder &push(Address const &address) noexcept
@@ -265,12 +263,9 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &call(
-            uint64_t const gas, Address const &address,
-            runtime::uint256_t const &value,
-            runtime::uint256_t const &args_offset,
-            runtime::uint256_t const &args_size,
-            runtime::uint256_t const &ret_offset,
-            runtime::uint256_t const &ret_size) noexcept
+            uint64_t const gas, Address const &address, uint256_t const &value,
+            uint256_t const &args_offset, uint256_t const &args_size,
+            uint256_t const &ret_offset, uint256_t const &ret_size) noexcept
         {
             push(ret_size);
             push(ret_offset);
@@ -283,12 +278,9 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &callcode(
-            uint64_t const gas, Address const &address,
-            runtime::uint256_t const &value,
-            runtime::uint256_t const &args_offset,
-            runtime::uint256_t const &args_size,
-            runtime::uint256_t const &ret_offset,
-            runtime::uint256_t const &ret_size) noexcept
+            uint64_t const gas, Address const &address, uint256_t const &value,
+            uint256_t const &args_offset, uint256_t const &args_size,
+            uint256_t const &ret_offset, uint256_t const &ret_size) noexcept
         {
             push(ret_size);
             push(ret_offset);
@@ -302,10 +294,8 @@ namespace monad::vm::utils::evm_as
 
         EvmBuilder &delegatecall(
             uint64_t const gas, Address const &address,
-            runtime::uint256_t const &args_offset,
-            runtime::uint256_t const &args_size,
-            runtime::uint256_t const &ret_offset,
-            runtime::uint256_t const &ret_size) noexcept
+            uint256_t const &args_offset, uint256_t const &args_size,
+            uint256_t const &ret_offset, uint256_t const &ret_size) noexcept
         {
             push(ret_size);
             push(ret_offset);
@@ -318,10 +308,8 @@ namespace monad::vm::utils::evm_as
 
         EvmBuilder &staticcall(
             uint64_t const gas, Address const &address,
-            runtime::uint256_t const &args_offset,
-            runtime::uint256_t const &args_size,
-            runtime::uint256_t const &ret_offset,
-            runtime::uint256_t const &ret_size) noexcept
+            uint256_t const &args_offset, uint256_t const &args_size,
+            uint256_t const &ret_offset, uint256_t const &ret_size) noexcept
         {
             push(ret_size);
             push(ret_offset);
@@ -355,7 +343,7 @@ namespace monad::vm::utils::evm_as
 
         EvmBuilder &log1(
             uint64_t const offset, uint64_t const size,
-            runtime::uint256_t const &topic1) noexcept
+            uint256_t const &topic1) noexcept
         {
             push(topic1);
             push(size);
@@ -364,9 +352,8 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &log2(
-            uint64_t const offset, uint64_t const size,
-            runtime::uint256_t const &topic1,
-            runtime::uint256_t const &topic2) noexcept
+            uint64_t const offset, uint64_t const size, uint256_t const &topic1,
+            uint256_t const &topic2) noexcept
         {
             push(topic2);
             push(topic1);
@@ -376,9 +363,8 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &log3(
-            uint64_t const offset, uint64_t const size,
-            runtime::uint256_t const &topic1, runtime::uint256_t const &topic2,
-            runtime::uint256_t const &topic3) noexcept
+            uint64_t const offset, uint64_t const size, uint256_t const &topic1,
+            uint256_t const &topic2, uint256_t const &topic3) noexcept
         {
             push(topic3);
             push(topic2);
@@ -389,10 +375,9 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &log4(
-            uint64_t const offset, uint64_t const size,
-            runtime::uint256_t const &topic1, runtime::uint256_t const &topic2,
-            runtime::uint256_t const &topic3,
-            runtime::uint256_t const &topic4) noexcept
+            uint64_t const offset, uint64_t const size, uint256_t const &topic1,
+            uint256_t const &topic2, uint256_t const &topic3,
+            uint256_t const &topic4) noexcept
         {
             push(topic4);
             push(topic3);
@@ -410,7 +395,7 @@ namespace monad::vm::utils::evm_as
         }
 
         EvmBuilder &
-        mstore(uint64_t const offset, runtime::uint256_t const &value) noexcept
+        mstore(uint64_t const offset, uint256_t const &value) noexcept
         {
             push(value);
             push(offset);
@@ -423,8 +408,7 @@ namespace monad::vm::utils::evm_as
             return sload();
         }
 
-        EvmBuilder &
-        sstore(uint64_t const key, runtime::uint256_t const &value) noexcept
+        EvmBuilder &sstore(uint64_t const key, uint256_t const &value) noexcept
         {
             push(value);
             push(key);

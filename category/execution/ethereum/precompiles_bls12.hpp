@@ -17,11 +17,13 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/hex.hpp>
+
 #include <category/execution/ethereum/precompiles.hpp>
 
 #include <blst.h>
-#include <intx/intx.hpp>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -29,10 +31,32 @@ MONAD_NAMESPACE_BEGIN
 
 namespace bls12
 {
-    using namespace intx::literals;
+    // 48-byte type for the BLS12-381 field prime, satisfies the FixedBytes
+    // concept so it can be initialised with from_hex.
+    struct fp_bytes_t
+    {
+        uint8_t bytes[48];
+    };
 
-    inline constexpr auto BASE_FIELD_MODULUS =
-        0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab_u384;
+    // BLS12-381 field prime p per EIP-2537:
+    // p =
+    // 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab
+    inline constexpr fp_bytes_t BASE_FIELD_MODULUS =
+        from_hex<fp_bytes_t>(
+            "1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f624"
+            "1eabfffeb153ffffb9feffffffffaaab")
+            .value();
+
+    // 64-byte comparison buffer: 16 zero-padding bytes followed by the
+    // 48-byte big-endian prime. Used by read_fp for the memcmp range check.
+    inline constexpr std::array<uint8_t, 64> BASE_FIELD_MODULUS_BYTES = [] {
+        std::array<uint8_t, 64> buf{};
+        for (std::size_t i = 0; i < sizeof(BASE_FIELD_MODULUS.bytes); ++i) {
+            buf[16 + i] = BASE_FIELD_MODULUS.bytes[i];
+        }
+        return buf;
+    }();
+    static_assert(BASE_FIELD_MODULUS_BYTES.size() == 64);
 
     template <typename Group>
     uint16_t msm_discount(uint64_t);

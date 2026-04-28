@@ -13,26 +13,35 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
-#include <nlohmann/json.hpp>
-
+#include <cstddef>
+#include <cstdint>
 #include <format>
+#include <nlohmann/json.hpp>
 #include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <variant>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -285,7 +294,7 @@ namespace trace
         }
         else {
             res["balance"] =
-                std::format("0x{}", intx::to_string(account->balance, 16));
+                std::format("0x{}", to_string(account->balance, 16));
             if (account->code_hash != NULL_HASH) {
                 auto const icode =
                     state.read_code(account->code_hash)->intercode();
@@ -421,8 +430,7 @@ namespace trace
 
                     if (original_account->balance != current_account->balance) {
                         post[address_key]["balance"] = std::format(
-                            "0x{}",
-                            intx::to_string(current_account->balance, 16));
+                            "0x{}", to_string(current_account->balance, 16));
                     }
                     if (original_account->code_hash !=
                         current_account->code_hash) {

@@ -27,11 +27,9 @@
 #include <optional>
 #include <span>
 
-#include <intx/intx.hpp>
-
 MONAD_STAKING_NAMESPACE_BEGIN
 
-using namespace intx::literals;
+using namespace monad::literals;
 
 // staking contract address
 inline constexpr Address STAKING_CA{0x1000};

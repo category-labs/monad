@@ -16,16 +16,21 @@
 #pragma once
 
 #include <category/core/assert.h>
+#include <category/core/likely.h>
+#include <category/core/runtime/uint128.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <climits>
+#include <concepts>
 #include <cstdint>
 #include <cstring>
 #include <format>
 #include <immintrin.h>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 
 #ifndef __AVX2__
@@ -49,7 +54,7 @@
     #define MONAD_NO_VECTORIZE
 #endif
 
-namespace monad::vm::runtime
+namespace monad
 {
     struct uint256_t;
 
@@ -222,14 +227,12 @@ namespace monad::vm::runtime
         }
     };
 
-    typedef unsigned __int128 uint128_t;
-    typedef __int128 int128_t;
-
     [[gnu::always_inline]]
     constexpr inline div_result<uint64_t>
     div_constexpr(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
     {
-        auto const u = (static_cast<uint128_t>(u_hi) << 64) | u_lo;
+        using u128 = unsigned __int128;
+        auto const u = static_cast<u128>(uint128_t{u_lo, u_hi});
         auto const quot = static_cast<uint64_t>(u / v);
         auto const rem = static_cast<uint64_t>(u % v);
         return {.quot = quot, .rem = rem};
@@ -273,7 +276,8 @@ namespace monad::vm::runtime
         template <typename... T>
         [[gnu::always_inline]] constexpr explicit(false)
             uint256_t(T... v) noexcept
-            requires std::conjunction_v<std::is_convertible<T, uint64_t>...>
+            requires std::conjunction_v<std::is_convertible<T, uint64_t>...> &&
+                     ((sizeof(T) <= sizeof(uint64_t)) && ...)
             : words_{static_cast<uint64_t>(v)...}
         {
         }
@@ -281,7 +285,8 @@ namespace monad::vm::runtime
         template <typename T>
         [[gnu::always_inline]] constexpr explicit(false)
             uint256_t(T x0) noexcept
-            requires std::is_convertible_v<T, uint64_t>
+            requires std::is_convertible_v<T, uint64_t> &&
+                     (sizeof(T) <= sizeof(uint64_t))
             : words_{static_cast<uint64_t>(x0), 0, 0, 0}
         {
             // GCC produces better code for words_{x0, 0, 0, 0} than for
@@ -482,7 +487,8 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         friend inline constexpr uint256_t
         operator<<(uint256_t const &x, T shift0) noexcept
-            requires std::is_convertible_v<T, uint64_t>
+            requires std::is_convertible_v<T, uint64_t> &&
+                     (sizeof(T) <= sizeof(uint64_t))
         {
             if (MONAD_UNLIKELY(static_cast<uint64_t>(shift0) >= 256)) {
                 return 0;
@@ -783,9 +789,9 @@ namespace monad::vm::runtime
         uint64_t const x, uint64_t const y, uint64_t &r_hi,
         uint64_t &r_lo) noexcept
     {
-        uint128_t const prod =
-            static_cast<uint128_t>(x) * static_cast<uint128_t>(y);
-        r_hi = static_cast<uint64_t>(prod >> uint128_t{64});
+        using u128 = unsigned __int128;
+        u128 const prod = static_cast<u128>(x) * static_cast<u128>(y);
+        r_hi = static_cast<uint64_t>(prod >> u128{64});
         r_lo = static_cast<uint64_t>(prod);
     }
 
@@ -1088,6 +1094,54 @@ namespace monad::vm::runtime
         return truncating_mul(lhs, rhs);
     }
 
+    [[gnu::always_inline]] inline constexpr uint256_t &
+    operator+=(uint256_t &lhs, uint256_t const &rhs) noexcept
+    {
+        return lhs = lhs + rhs;
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t &
+    operator-=(uint256_t &lhs, uint256_t const &rhs) noexcept
+    {
+        return lhs = lhs - rhs;
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t &
+    operator*=(uint256_t &lhs, uint256_t const &rhs) noexcept
+    {
+        return lhs = lhs * rhs;
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t &
+    operator/=(uint256_t &lhs, uint256_t const &rhs) noexcept
+    {
+        return lhs = lhs / rhs;
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t &
+    operator%=(uint256_t &lhs, uint256_t const &rhs) noexcept
+    {
+        return lhs = lhs % rhs;
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t &
+    operator^=(uint256_t &lhs, uint256_t const &rhs) noexcept
+    {
+        return lhs = lhs ^ rhs;
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t &
+    operator|=(uint256_t &lhs, uint256_t const &rhs) noexcept
+    {
+        return lhs = lhs | rhs;
+    }
+
+    [[gnu::always_inline]] inline constexpr uint256_t &
+    operator&=(uint256_t &lhs, uint256_t const &rhs) noexcept
+    {
+        return lhs = lhs & rhs;
+    }
+
     [[gnu::always_inline]]
     constexpr uint64_t
     long_div(size_t m, uint64_t const *u, uint64_t v, uint64_t *quot)
@@ -1107,6 +1161,8 @@ namespace monad::vm::runtime
     constexpr void knuth_div(
         size_t m, uint64_t *u, size_t n, uint64_t const *v, uint64_t *quot)
     {
+        using u128 = unsigned __int128;
+        using i128 = __int128;
         constexpr size_t BASE_SHIFT = 64;
 
         MONAD_DEBUG_ASSERT(m >= n);
@@ -1115,7 +1171,7 @@ namespace monad::vm::runtime
 
         for (int i = static_cast<int>(m - n); i >= 0; i--) {
             auto const ix = static_cast<size_t>(i);
-            uint128_t q_hat;
+            u128 q_hat;
             // We diverge from the algorithms in Knuth AOCP and Hacker's Delight
             // as we need to check for potential division overflow before
             // dividing.
@@ -1168,7 +1224,7 @@ namespace monad::vm::runtime
                 }
 
                 q_hat = q_hat0;
-                uint128_t const r_hat = r_hat0;
+                u128 const r_hat = r_hat0;
 
                 if (q_hat * v[n - 2] > (r_hat << BASE_SHIFT) + u[ix + n - 2]) {
                     q_hat--;
@@ -1176,14 +1232,14 @@ namespace monad::vm::runtime
             }
 
             // u[ix+n .. ix] -= q_hat * v[n .. 0]
-            uint128_t t = 0;
-            uint128_t k = 0;
+            u128 t = 0;
+            u128 k = 0;
             for (size_t j = 0; j < n; j++) {
-                uint128_t const prod = q_hat * v[j];
+                u128 const prod = q_hat * v[j];
                 t = u[j + ix] - k - (prod & 0xffffffffffffffff);
                 u[j + ix] = static_cast<uint64_t>(t);
                 k = (prod >> 64) -
-                    static_cast<uint128_t>(static_cast<int128_t>(t) >> 64);
+                    static_cast<u128>(static_cast<i128>(t) >> 64);
             }
             t = u[ix + n] - k;
             u[ix + n] = static_cast<uint64_t>(t);
@@ -1193,9 +1249,9 @@ namespace monad::vm::runtime
             // q_hat -= 1
             if (t >> 127) {
                 q_hat -= 1;
-                uint128_t k = 0;
+                u128 k = 0;
                 for (size_t j = 0; j < n; j++) {
-                    t = static_cast<uint128_t>(u[ix + j]) + v[j] + k;
+                    t = static_cast<u128>(u[ix + j]) + v[j] + k;
                     u[ix + j] = static_cast<uint64_t>(t);
                     k = t >> 64;
                 }
@@ -1360,7 +1416,7 @@ namespace monad::vm::runtime
         auto const x_neg = x[uint256_t::num_words - 1] >> 63;
         auto const y_neg = y[uint256_t::num_words - 1] >> 63;
         auto const diff = x_neg ^ y_neg;
-        // intx branches on the sign bit, which will be mispredicted on
+        // branching on the sign bit will be mispredicted on
         // random data ~50% of the time. The branchless version does not add
         // much overhead so it is probably worth it
         return (~diff & (x < y)) | (x_neg & ~y_neg);
@@ -1483,9 +1539,9 @@ namespace std
 
 {
     template <>
-    struct numeric_limits<monad::vm::runtime::uint256_t>
+    struct numeric_limits<monad::uint256_t>
     {
-        using type = monad::vm::runtime::uint256_t;
+        using type = monad::uint256_t;
 
         static constexpr bool is_specialized = true;
         static constexpr bool is_integer = true;
@@ -1558,7 +1614,7 @@ namespace std
     };
 }
 
-namespace monad::vm::runtime
+namespace monad
 {
     inline size_t bit_width(uint256_t const &x)
     {
@@ -1608,14 +1664,18 @@ namespace monad::vm::runtime
 
     inline constexpr uint256_t uint256_t::from_string(char const *const str)
     {
+        MONAD_ASSERT(str != nullptr);
         static constexpr uint256_t MAX_MULTIPLIABLE_BY_10 =
             std::numeric_limits<uint256_t>::max() / 10;
         char const *ptr = str;
         uint256_t result{};
         size_t num_digits = 0;
 
-        if (ptr[0] == '0' && ptr[1] == 'x') {
+        if (ptr[0] == '0' && (ptr[1] == 'x' || ptr[1] == 'X')) {
             ptr += 2;
+            if (*ptr == '\0') {
+                throw std::invalid_argument(str);
+            }
             size_t const max_digits = sizeof(uint256_t) * 2;
             while (auto const chr = *ptr++) {
                 num_digits += 1;
@@ -1626,6 +1686,9 @@ namespace monad::vm::runtime
             }
         }
         else {
+            if (*ptr == '\0') {
+                throw std::invalid_argument(str);
+            }
             while (auto const chr = *ptr++) {
                 num_digits += 1;
                 if (result > MAX_MULTIPLIABLE_BY_10) {
@@ -1644,15 +1707,14 @@ namespace monad::vm::runtime
 }
 
 template <>
-struct std::formatter<monad::vm::runtime::uint256_t>
+struct std::formatter<monad::uint256_t>
 {
     constexpr auto parse(std::format_parse_context &ctx)
     {
         return ctx.begin();
     }
 
-    auto format(
-        monad::vm::runtime::uint256_t const &v, std::format_context &ctx) const
+    auto format(monad::uint256_t const &v, std::format_context &ctx) const
     {
         return std::format_to(ctx.out(), "0x{}", v.to_string(16));
     }

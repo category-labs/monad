@@ -15,12 +15,14 @@
 
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -31,19 +33,21 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <intx/intx.hpp>
-
 #include <boost/fiber/future/promise.hpp>
 
 #include <gtest/gtest.h>
 
-#include <memory>
+#include <cstdint>
+#include <limits>
 #include <optional>
+#include <variant>
 
 using namespace monad;
 
@@ -52,8 +56,6 @@ using db_t = TrieDb;
 TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
 {
     static_assert(TestFixture::Trait::evm_rev() > EVMC_FRONTIER);
-
-    using intx::operator""_u256;
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -164,7 +166,6 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
 
 TYPED_TEST(TraitsTest, TopLevelCreate)
 {
-    using intx::operator""_u256;
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -249,7 +250,6 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
 
 TYPED_TEST(TraitsTest, refunds_delete)
 {
-    using intx::operator""_u256;
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -466,7 +466,6 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
 TYPED_TEST(TraitsTest, refunds_delete_then_set)
 {
-    using intx::operator""_u256;
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -479,7 +478,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
     static constexpr auto max_fee_per_gas = 100'000'000'000;
 
     static constexpr auto slot = bytes32_t{};
-    auto const initial_value = intx::be::store<bytes32_t>(uint256_t{1});
+    auto const initial_value = store_be_as<bytes32_t>(uint256_t{1});
 
     InMemoryMachine machine;
     mpt::Db db{machine};

@@ -25,11 +25,10 @@
 
 using namespace monad;
 using namespace monad::rlp;
+using namespace monad::literals;
 
 TEST(Rlp_Account, Encode)
 {
-    using namespace intx;
-    using namespace monad::literals;
 
     static constexpr uint256_t b{24'000'000};
     static constexpr bytes32_t storage_root{

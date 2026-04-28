@@ -399,7 +399,7 @@ namespace monad::vm::compiler::basic_blocks
         uint256_t imm_value{0};
 
         if (imm_size > 0) {
-            imm_value = runtime::from_bytes(
+            imm_value = from_bytes(
                 imm_size,
                 bytes.size() - current_offset,
                 bytes.data() + current_offset);

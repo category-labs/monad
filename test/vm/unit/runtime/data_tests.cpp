@@ -29,8 +29,8 @@ using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;
 
-constexpr auto addr = vm::runtime::uint256_t{678};
-constexpr auto wei = vm::runtime::uint256_t{782374};
+constexpr auto addr = uint256_t{678};
+constexpr auto wei = uint256_t{782374};
 
 template <typename Trait>
 constexpr auto gas_remaining_cold_access()
@@ -92,7 +92,7 @@ TEST_F(RuntimeTest, CallDataLoadOutOfBounds)
 {
     auto load = wrap(calldataload);
 
-    ASSERT_EQ(call(calldataload, std::numeric_limits<std::int64_t>::max()), 0);
+    ASSERT_EQ(call(calldataload, std::numeric_limits<int64_t>::max()), 0);
 
     ASSERT_EQ(load(256), 0);
 

@@ -13,10 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/cpu_relax.h>
-#include <category/core/event/event_recorder.h>
 #include <category/core/fiber/fiber_group.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
@@ -44,27 +44,30 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 #include <evmc/evmc.h>
-#include <intx/intx.hpp>
+#include <evmc/evmc.hpp>
 
-#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+using namespace monad::literals;
 
 // EIP-4895
 void process_withdrawal(

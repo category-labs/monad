@@ -70,6 +70,7 @@ static_assert(ASMJIT_ARCH_X86 == 64);
 namespace
 {
     using namespace monad::vm::compiler::native;
+    using monad::uint256_t;
 
     constexpr auto reg_context = x86::rbx;
     constexpr auto reg_stack = x86::rbp;
@@ -135,7 +136,7 @@ namespace
     }
 
     void runtime_print_input_stack_impl(
-        char const *const msg, runtime::uint256_t *const stack,
+        char const *const msg, uint256_t *const stack,
         uint64_t const stack_size)
     {
         std::cout << msg << ": stack: ";
@@ -146,7 +147,7 @@ namespace
     }
 
     uint64_t runtime_store_input_stack_impl(
-        runtime::Context const *const ctx, runtime::uint256_t *const stack,
+        runtime::Context const *const ctx, uint256_t *const stack,
         uint64_t const stack_size, uint64_t const offset,
         uint64_t const base_offset)
     {
@@ -155,15 +156,15 @@ namespace
     }
 
     void runtime_print_top2_impl(
-        char const *const msg, runtime::uint256_t const *const x,
-        runtime::uint256_t const *const y)
+        char const *const msg, uint256_t const *const x,
+        uint256_t const *const y)
     {
         std::cout << msg << ": " << x->to_string() << " and " << y->to_string()
                   << std::endl;
     }
 
-    void runtime_print_top1_impl(
-        char const *const msg, runtime::uint256_t const *const x)
+    void
+    runtime_print_top1_impl(char const *const msg, uint256_t const *const x)
     {
         std::cout << msg << ": " << x->to_string() << std::endl;
     }
@@ -2466,7 +2467,7 @@ namespace monad::vm::compiler::native
             }
             if (src->literal()) {
                 auto const &x = src->literal()->value;
-                push(runtime::byte(i, x));
+                push(monad::byte(i, x));
                 return;
             }
         }
@@ -2517,7 +2518,7 @@ namespace monad::vm::compiler::native
         if (ix->literal() && src->literal()) {
             auto const &i = ix->literal()->value;
             auto const &x = src->literal()->value;
-            push(runtime::signextend(i, x));
+            push(monad::signextend(i, x));
             return;
         }
 
@@ -2602,7 +2603,7 @@ namespace monad::vm::compiler::native
         if (shift->literal() && value->literal()) {
             auto const &i = shift->literal()->value;
             auto const &x = value->literal()->value;
-            return stack_.alloc_literal({runtime::sar(i, x)});
+            return stack_.alloc_literal({monad::sar(i, x)});
         }
         return shift_by_stack_elem<ShiftType::SAR>(
             std::move(shift), std::move(value), live);
@@ -2615,7 +2616,7 @@ namespace monad::vm::compiler::native
 
         if (elem->literal()) {
             auto const &x = elem->literal()->value;
-            push(runtime::countl_zero(x));
+            push(countl_zero(x));
             return;
         }
 
@@ -3966,7 +3967,7 @@ namespace monad::vm::compiler::native
         if (pre_dst->literal() && pre_src->literal()) {
             auto const &x = pre_dst->literal()->value;
             auto const &y = pre_src->literal()->value;
-            push(runtime::slt(x, y));
+            push(monad::slt(x, y));
             return;
         }
 
@@ -7013,11 +7014,11 @@ namespace monad::vm::compiler::native
             a_shift = -a;
         }
 
-        if (runtime::popcount(a_shift) == 1) {
+        if (popcount(a_shift) == 1) {
             stack_.pop();
             stack_.pop();
             auto x = shift_by_literal<ShiftType::SHL>(
-                runtime::countr_zero(a_shift), std::move(b_elem), {});
+                countr_zero(a_shift), std::move(b_elem), {});
             if (a_shift[3] != a[3]) {
                 // The shift was negated. Negate result for correct sign:
                 stack_.push(negate(std::move(x), {}));
@@ -7205,8 +7206,7 @@ namespace monad::vm::compiler::native
                 stack_.pop();
                 stack_.pop();
                 if constexpr (is_sdiv) {
-                    stack_.push_literal(
-                        b == 0 ? 0 : runtime::sdivrem(a, b).quot);
+                    stack_.push_literal(b == 0 ? 0 : sdivrem(a, b).quot);
                 }
                 else {
                     stack_.push_literal(b == 0 ? 0 : a / b);
@@ -7238,10 +7238,10 @@ namespace monad::vm::compiler::native
             return false;
         }();
 
-        if (runtime::popcount(b) == 1) {
+        if (popcount(b) == 1) {
             stack_.pop();
             stack_.pop();
-            auto const shift = runtime::countr_zero(b);
+            auto const shift = countr_zero(b);
             auto dst = [&] {
                 if constexpr (is_sdiv) {
                     return sdiv_by_sar(std::move(a_elem), shift, {});
@@ -7344,8 +7344,7 @@ namespace monad::vm::compiler::native
                 stack_.pop();
                 stack_.pop();
                 if constexpr (is_smod) {
-                    stack_.push_literal(
-                        b == 0 ? 0 : runtime::sdivrem(a, b).rem);
+                    stack_.push_literal(b == 0 ? 0 : sdivrem(a, b).rem);
                 }
                 else {
                     stack_.push_literal(b == 0 ? 0 : a % b);
@@ -7371,7 +7370,7 @@ namespace monad::vm::compiler::native
             stack_.push_literal(0);
             return true;
         }
-        if (runtime::popcount(b) == 1) {
+        if (popcount(b) == 1) {
             stack_.pop();
             stack_.pop();
             if constexpr (is_smod) {
@@ -7652,7 +7651,7 @@ namespace monad::vm::compiler::native
         // (a + b) % m, where m = 2^n
         // as
         // (a + b) & (n - 1)
-        if (runtime::popcount(m) != 1) {
+        if (popcount(m) != 1) {
             return false;
         }
 
@@ -7673,7 +7672,7 @@ namespace monad::vm::compiler::native
             stack_.push(and_(std::move(b_elem), std::move(mask), {}));
         }
         else {
-            size_t const exp = runtime::bit_width(m) - 1;
+            size_t const exp = bit_width(m) - 1;
             // The heavy lifting is done by the following function.
             (this->*ModOpByMask)(std::move(a_elem), std::move(b_elem), exp);
         }
@@ -7684,7 +7683,7 @@ namespace monad::vm::compiler::native
     // Discharge
     bool Emitter::addmod_opt()
     {
-        return modop_optimized<runtime::addmod, 0, 0, &Emitter::add_mod2>();
+        return modop_optimized<monad::addmod, 0, 0, &Emitter::add_mod2>();
     }
 
     void Emitter::add_mod2(
@@ -7984,7 +7983,7 @@ namespace monad::vm::compiler::native
     // Discharge
     bool Emitter::mulmod_opt()
     {
-        return modop_optimized<runtime::mulmod, 1, 0, &Emitter::mul_mod2>();
+        return modop_optimized<monad::mulmod, 1, 0, &Emitter::mul_mod2>();
     }
 
     void Emitter::mul_mod2(
@@ -8189,7 +8188,7 @@ namespace monad::vm::compiler::native
     {
         discharge_deferred_comparison();
 
-        auto const exponent_byte_size = runtime::count_significant_bytes(exp);
+        auto const exponent_byte_size = count_significant_bytes(exp);
         // The static work cost of EXP is already sufficient to cover for
         // the accumulated static work by an optimized EXP, so no gas check:
         auto const gas = static_cast<int32_t>(exponent_byte_size * gas_factor);
@@ -8252,7 +8251,7 @@ namespace monad::vm::compiler::native
                 stack_.pop();
                 stack_.pop();
                 exp_emit_gas_decrement_by_literal(exp, gas_factor);
-                push(runtime::exp(base, exp));
+                push(monad::exp(base, exp));
                 return true;
             }
             else if (exponential_constant_fold_counter_ < 500) {
@@ -8265,7 +8264,7 @@ namespace monad::vm::compiler::native
                 stack_.pop();
                 stack_.pop();
                 exp_emit_gas_decrement_by_literal(exp, gas_factor);
-                push(runtime::exp(base, exp));
+                push(monad::exp(base, exp));
                 return true;
             }
         }

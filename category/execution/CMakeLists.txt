@@ -289,11 +289,11 @@ target_include_directories(
 
 target_compile_definitions(
   monad_execution_ethereum PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
-                                  MONAD_CXX_CTYPES_USE_INTX)
+                                  MONAD_CXX_CTYPES_USE_MONAD_INTS)
 
 target_compile_definitions(
   monad_execution_native PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
-                                MONAD_CXX_CTYPES_USE_INTX)
+                                MONAD_CXX_CTYPES_USE_MONAD_INTS)
 
 target_link_libraries(
   monad_execution_ethereum
@@ -325,7 +325,6 @@ target_link_libraries(
   PUBLIC monad_core
   PUBLIC monad_trie
   PUBLIC evmc
-  PUBLIC intx::intx
   PUBLIC magic_enum::magic_enum
   PUBLIC quill::quill)
 monad_compile_options(monad_execution_native)

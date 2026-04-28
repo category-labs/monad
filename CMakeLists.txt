@@ -219,7 +219,7 @@ configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 
 set(TOP_CURRENT_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 function(monad_add_test target)
-  cmake_parse_arguments(AT "NO_CUSTOM_MAIN" "" "PROPERTIES" ${ARGN})
+  cmake_parse_arguments(AT "NO_CUSTOM_MAIN" "BENCH_FILTER" "PROPERTIES" ${ARGN})
   if(AT_NO_CUSTOM_MAIN)
     add_executable(${target} ${AT_UNPARSED_ARGUMENTS})
   else()
@@ -236,22 +236,55 @@ function(monad_add_test target)
   )# TODO
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
   target_link_libraries(${target} monad_execution GTest::GTest GTest::Main)
-  gtest_discover_tests(
-    ${target} DISCOVERY_MODE PRE_TEST
-    PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
-               UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1 ENVIRONMENT
-               TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer
-               ${AT_PROPERTIES})
+  # If BENCH_FILTER is set, exclude matching tests from normal discovery and
+  # register them as a single ctest entry labeled "bench". Plain `ctest`
+  # still runs them; `ctest -LE bench` skips them for fast fix/build/test cycles.
+  if(AT_BENCH_FILTER)
+    gtest_discover_tests(
+      ${target} DISCOVERY_MODE PRE_TEST
+      TEST_FILTER "-${AT_BENCH_FILTER}"
+      PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
+                 UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1 ENVIRONMENT
+                 TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer
+                 ${AT_PROPERTIES})
+    add_test(
+      NAME ${target}_bench
+      COMMAND ${target} "--gtest_filter=${AT_BENCH_FILTER}")
+    set_tests_properties(
+      ${target}_bench PROPERTIES
+      LABELS bench
+      ENVIRONMENT "ASAN_OPTIONS=abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1;TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer"
+      ${AT_PROPERTIES})
+  else()
+    gtest_discover_tests(
+      ${target} DISCOVERY_MODE PRE_TEST
+      PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
+                 UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1 ENVIRONMENT
+                 TSAN_OPTIONS=external_symbolizer_path=/usr/bin/llvm-symbolizer
+                 ${AT_PROPERTIES})
+  endif()
 endfunction()
 
 function(monad_add_test_folder target)
   cmake_parse_arguments(ATF "" "" "EXCLUDE" ${ARGN})
   file(GLOB_RECURSE test_files CONFIGURE_DEPENDS ${target}/test_*.cpp
        ${target}/*_test.cpp)
-  if(ATF_EXCLUDE)
-    list(REMOVE_ITEM test_files ${ATF_EXCLUDE})
+  # Normalize paths so EXCLUDE lists written with ${CMAKE_CURRENT_SOURCE_DIR}/...
+  # match the `./`-prefixed paths that GLOB_RECURSE returns when target=".".
+  set(normalized_files "")
+  foreach(f ${test_files})
+    get_filename_component(f "${f}" ABSOLUTE)
+    list(APPEND normalized_files "${f}")
+  endforeach()
+  set(normalized_excludes "")
+  foreach(f ${ATF_EXCLUDE})
+    get_filename_component(f "${f}" ABSOLUTE)
+    list(APPEND normalized_excludes "${f}")
+  endforeach()
+  if(normalized_excludes)
+    list(REMOVE_ITEM normalized_files ${normalized_excludes})
   endif()
-  foreach(test_file ${test_files})
+  foreach(test_file ${normalized_files})
     get_filename_component(test_name ${test_file} NAME_WLE)
     monad_add_test(${test_name} ${test_file})
   endforeach()

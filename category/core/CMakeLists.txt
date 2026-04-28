@@ -249,5 +249,6 @@ monad_add_test(log_ffi_test NO_CUSTOM_MAIN log_ffi_test.cpp)
 monad_add_test(event_recorder_test event/event_recorder_test.cpp
   PROPERTIES RUN_SERIAL TRUE)
 monad_add_test(priority_pool_test fiber/priority_pool_test.cpp
+  BENCH_FILTER "PriorityPool.benchmark"
   PROPERTIES RUN_SERIAL TRUE)
 target_compile_definitions(event_reader_extra_test PRIVATE "TEST_DATA_DIR=\"${TEST_DATA_DIR}\"")

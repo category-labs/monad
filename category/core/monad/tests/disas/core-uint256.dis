@@ -1,0 +1,248 @@
+0000000000000000 <monad::addc_disas(unsigned long, unsigned long, bool)>:
+   0:	89 d0                   	mov    %edx,%eax
+   2:	48 01 f7                	add    %rsi,%rdi
+   5:	0f 92 c1                	setb   %cl
+   8:	48 01 f8                	add    %rdi,%rax
+   b:	0f 92 c2                	setb   %dl
+   e:	08 ca                   	or     %cl,%dl
+  10:	c3                      	ret
+  11:	66 66 66 66 66 66 2e 0f 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+  19:	1f 84 00 00 00 00 00 
+
+0000000000000020 <monad::subb_disas(unsigned long, unsigned long, bool)>:
+  20:	48 89 f8                	mov    %rdi,%rax
+  23:	89 d1                   	mov    %edx,%ecx
+  25:	48 29 f0                	sub    %rsi,%rax
+  28:	40 0f 92 c6             	setb   %sil
+  2c:	48 29 c8                	sub    %rcx,%rax
+  2f:	0f 92 c2                	setb   %dl
+  32:	40 08 f2                	or     %sil,%dl
+  35:	c3                      	ret
+  36:	66 2e 0f 1f 84 00 00 00 	cs nopw 0x0(%rax,%rax,1)
+  3e:	00 00 
+
+0000000000000040 <monad::shld_disas(unsigned long, unsigned long, unsigned char)>:
+  40:	89 d1                   	mov    %edx,%ecx
+  42:	48 89 f8                	mov    %rdi,%rax
+  45:	48 0f a5 f0             	shld   %cl,%rsi,%rax
+  49:	c3                      	ret
+  4a:	66 0f 1f 44 00 00       	nopw   0x0(%rax,%rax,1)
+
+0000000000000050 <monad::shrd_disas(unsigned long, unsigned long, unsigned char)>:
+  50:	89 d1                   	mov    %edx,%ecx
+  52:	48 89 f0                	mov    %rsi,%rax
+  55:	48 0f ad f8             	shrd   %cl,%rdi,%rax
+  59:	c3                      	ret
+  5a:	66 0f 1f 44 00 00       	nopw   0x0(%rax,%rax,1)
+
+0000000000000060 <monad::div_disas(unsigned long, unsigned long, unsigned long)>:
+  60:	48 89 d1                	mov    %rdx,%rcx
+  63:	48 89 f0                	mov    %rsi,%rax
+  66:	48 89 fa                	mov    %rdi,%rdx
+  69:	48 f7 f1                	div    %rcx
+  6c:	c3                      	ret
+  6d:	0f 1f 00                	nopl   (%rax)
+
+0000000000000070 <monad::mulx_disas(unsigned long, unsigned long, unsigned long&, unsigned long&)>:
+  70:	48 89 d0                	mov    %rdx,%rax
+  73:	48 89 f2                	mov    %rsi,%rdx
+  76:	c4 e2 cb f6 d7          	mulx   %rdi,%rsi,%rdx
+  7b:	48 89 10                	mov    %rdx,(%rax)
+  7e:	48 89 31                	mov    %rsi,(%rcx)
+  81:	c3                      	ret
+  82:	66 66 66 66 66 2e 0f 1f 	data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+  8a:	84 00 00 00 00 00 
+
+0000000000000090 <monad::uint256_add_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)>:
+  90:	48 89 f8                	mov    %rdi,%rax
+  93:	48 8b 0e                	mov    (%rsi),%rcx
+  96:	48 03 0a                	add    (%rdx),%rcx
+  99:	48 8b 7e 08             	mov    0x8(%rsi),%rdi
+  9d:	48 13 7a 08             	adc    0x8(%rdx),%rdi
+  a1:	4c 8b 46 10             	mov    0x10(%rsi),%r8
+  a5:	4c 13 42 10             	adc    0x10(%rdx),%r8
+  a9:	48 8b 52 18             	mov    0x18(%rdx),%rdx
+  ad:	48 13 56 18             	adc    0x18(%rsi),%rdx
+  b1:	48 89 08                	mov    %rcx,(%rax)
+  b4:	48 89 78 08             	mov    %rdi,0x8(%rax)
+  b8:	4c 89 40 10             	mov    %r8,0x10(%rax)
+  bc:	48 89 50 18             	mov    %rdx,0x18(%rax)
+  c0:	c3                      	ret
+  c1:	66 66 66 66 66 66 2e 0f 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+  c9:	1f 84 00 00 00 00 00 
+
+00000000000000d0 <monad::uint256_sub_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)>:
+  d0:	48 89 f8                	mov    %rdi,%rax
+  d3:	48 8b 0e                	mov    (%rsi),%rcx
+  d6:	48 2b 0a                	sub    (%rdx),%rcx
+  d9:	48 8b 7e 08             	mov    0x8(%rsi),%rdi
+  dd:	48 1b 7a 08             	sbb    0x8(%rdx),%rdi
+  e1:	4c 8b 46 10             	mov    0x10(%rsi),%r8
+  e5:	4c 1b 42 10             	sbb    0x10(%rdx),%r8
+  e9:	48 8b 76 18             	mov    0x18(%rsi),%rsi
+  ed:	48 1b 72 18             	sbb    0x18(%rdx),%rsi
+  f1:	48 89 08                	mov    %rcx,(%rax)
+  f4:	48 89 78 08             	mov    %rdi,0x8(%rax)
+  f8:	4c 89 40 10             	mov    %r8,0x10(%rax)
+  fc:	48 89 70 18             	mov    %rsi,0x18(%rax)
+ 100:	c3                      	ret
+ 101:	66 66 66 66 66 66 2e 0f 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+ 109:	1f 84 00 00 00 00 00 
+
+0000000000000110 <monad::uint256_mul_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)>:
+ 110:	53                      	push   %rbx
+ 111:	48 89 fb                	mov    %rdi,%rbx
+ 114:	e8 00 00 00 00          	call   119 <monad::uint256_mul_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)+0x9>
+			115: R_X86_64_PLT32	monad::vm::runtime::operator*(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)-0x4
+ 119:	48 89 d8                	mov    %rbx,%rax
+ 11c:	5b                      	pop    %rbx
+ 11d:	c3                      	ret
+ 11e:	66 90                   	xchg   %ax,%ax
+
+0000000000000120 <monad::uint256_shl_disas(monad::vm::runtime::uint256_t const&, unsigned long)>:
+ 120:	48 89 f8                	mov    %rdi,%rax
+ 123:	48 81 fa 00 01 00 00    	cmp    $0x100,%rdx
+ 12a:	0f 83 c1 00 00 00       	jae    1f1 <monad::uint256_shl_disas(monad::vm::runtime::uint256_t const&, unsigned long)+0xd1>
+ 130:	48 83 fa 7f             	cmp    $0x7f,%rdx
+ 134:	77 3e                   	ja     174 <monad::uint256_shl_disas(monad::vm::runtime::uint256_t const&, unsigned long)+0x54>
+ 136:	48 83 fa 3f             	cmp    $0x3f,%rdx
+ 13a:	77 67                   	ja     1a3 <monad::uint256_shl_disas(monad::vm::runtime::uint256_t const&, unsigned long)+0x83>
+ 13c:	48 8b 3e                	mov    (%rsi),%rdi
+ 13f:	4c 8b 46 08             	mov    0x8(%rsi),%r8
+ 143:	c4 62 e9 f7 cf          	shlx   %rdx,%rdi,%r9
+ 148:	4d 89 c2                	mov    %r8,%r10
+ 14b:	89 d1                   	mov    %edx,%ecx
+ 14d:	49 0f a5 fa             	shld   %cl,%rdi,%r10
+ 151:	48 8b 7e 10             	mov    0x10(%rsi),%rdi
+ 155:	49 89 fb                	mov    %rdi,%r11
+ 158:	4d 0f a5 c3             	shld   %cl,%r8,%r11
+ 15c:	48 8b 76 18             	mov    0x18(%rsi),%rsi
+ 160:	48 0f a5 fe             	shld   %cl,%rdi,%rsi
+ 164:	4c 89 08                	mov    %r9,(%rax)
+ 167:	4c 89 50 08             	mov    %r10,0x8(%rax)
+ 16b:	4c 89 58 10             	mov    %r11,0x10(%rax)
+ 16f:	48 89 70 18             	mov    %rsi,0x18(%rax)
+ 173:	c3                      	ret
+ 174:	48 8b 3e                	mov    (%rsi),%rdi
+ 177:	48 81 fa bf 00 00 00    	cmp    $0xbf,%rdx
+ 17e:	77 57                   	ja     1d7 <monad::uint256_shl_disas(monad::vm::runtime::uint256_t const&, unsigned long)+0xb7>
+ 180:	89 d1                   	mov    %edx,%ecx
+ 182:	80 e1 7f                	and    $0x7f,%cl
+ 185:	c4 e2 e9 f7 d7          	shlx   %rdx,%rdi,%rdx
+ 18a:	48 8b 76 08             	mov    0x8(%rsi),%rsi
+ 18e:	48 0f a5 fe             	shld   %cl,%rdi,%rsi
+ 192:	c5 f8 57 c0             	vxorps %xmm0,%xmm0,%xmm0
+ 196:	c5 f8 11 00             	vmovups %xmm0,(%rax)
+ 19a:	48 89 50 10             	mov    %rdx,0x10(%rax)
+ 19e:	48 89 70 18             	mov    %rsi,0x18(%rax)
+ 1a2:	c3                      	ret
+ 1a3:	89 d1                   	mov    %edx,%ecx
+ 1a5:	80 e1 3f                	and    $0x3f,%cl
+ 1a8:	48 8b 3e                	mov    (%rsi),%rdi
+ 1ab:	4c 8b 46 08             	mov    0x8(%rsi),%r8
+ 1af:	c4 e2 e9 f7 d7          	shlx   %rdx,%rdi,%rdx
+ 1b4:	4d 89 c1                	mov    %r8,%r9
+ 1b7:	49 0f a5 f9             	shld   %cl,%rdi,%r9
+ 1bb:	48 8b 76 10             	mov    0x10(%rsi),%rsi
+ 1bf:	4c 0f a5 c6             	shld   %cl,%r8,%rsi
+ 1c3:	48 c7 00 00 00 00 00    	movq   $0x0,(%rax)
+ 1ca:	48 89 50 08             	mov    %rdx,0x8(%rax)
+ 1ce:	4c 89 48 10             	mov    %r9,0x10(%rax)
+ 1d2:	48 89 70 18             	mov    %rsi,0x18(%rax)
+ 1d6:	c3                      	ret
+ 1d7:	c4 e2 e9 f7 cf          	shlx   %rdx,%rdi,%rcx
+ 1dc:	c5 f8 57 c0             	vxorps %xmm0,%xmm0,%xmm0
+ 1e0:	c5 f8 11 00             	vmovups %xmm0,(%rax)
+ 1e4:	48 c7 40 10 00 00 00 00 	movq   $0x0,0x10(%rax)
+ 1ec:	48 89 48 18             	mov    %rcx,0x18(%rax)
+ 1f0:	c3                      	ret
+ 1f1:	c5 f8 57 c0             	vxorps %xmm0,%xmm0,%xmm0
+ 1f5:	c5 fc 11 00             	vmovups %ymm0,(%rax)
+ 1f9:	c5 f8 77                	vzeroupper
+ 1fc:	c3                      	ret
+ 1fd:	0f 1f 00                	nopl   (%rax)
+
+0000000000000200 <monad::uint256_shr_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)>:
+ 200:	48 8b 0a                	mov    (%rdx),%rcx
+ 203:	4c 8b 42 10             	mov    0x10(%rdx),%r8
+ 207:	45 31 c9                	xor    %r9d,%r9d
+ 20a:	48 81 f9 00 01 00 00    	cmp    $0x100,%rcx
+ 211:	41 0f 93 c1             	setae  %r9b
+ 215:	4c 0b 42 08             	or     0x8(%rdx),%r8
+ 219:	48 89 f8                	mov    %rdi,%rax
+ 21c:	4d 09 c8                	or     %r9,%r8
+ 21f:	4c 0b 42 18             	or     0x18(%rdx),%r8
+ 223:	0f 85 96 00 00 00       	jne    2bf <monad::uint256_shr_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)+0xbf>
+ 229:	48 8b 7e 18             	mov    0x18(%rsi),%rdi
+ 22d:	c4 e2 f3 f7 d7          	shrx   %rcx,%rdi,%rdx
+ 232:	84 c9                   	test   %cl,%cl
+ 234:	78 2c                   	js     262 <monad::uint256_shr_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)+0x62>
+ 236:	80 f9 3f                	cmp    $0x3f,%cl
+ 239:	77 48                   	ja     283 <monad::uint256_shr_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)+0x83>
+ 23b:	4c 8b 06                	mov    (%rsi),%r8
+ 23e:	4c 8b 4e 08             	mov    0x8(%rsi),%r9
+ 242:	4d 0f ad c8             	shrd   %cl,%r9,%r8
+ 246:	48 8b 76 10             	mov    0x10(%rsi),%rsi
+ 24a:	49 0f ad f1             	shrd   %cl,%rsi,%r9
+ 24e:	48 0f ad fe             	shrd   %cl,%rdi,%rsi
+ 252:	4c 89 00                	mov    %r8,(%rax)
+ 255:	4c 89 48 08             	mov    %r9,0x8(%rax)
+ 259:	48 89 70 10             	mov    %rsi,0x10(%rax)
+ 25d:	48 89 50 18             	mov    %rdx,0x18(%rax)
+ 261:	c3                      	ret
+ 262:	80 f9 bf                	cmp    $0xbf,%cl
+ 265:	77 43                   	ja     2aa <monad::uint256_shr_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)+0xaa>
+ 267:	80 e1 7f                	and    $0x7f,%cl
+ 26a:	48 8b 76 10             	mov    0x10(%rsi),%rsi
+ 26e:	48 0f ad fe             	shrd   %cl,%rdi,%rsi
+ 272:	48 89 30                	mov    %rsi,(%rax)
+ 275:	48 89 50 08             	mov    %rdx,0x8(%rax)
+ 279:	c5 f8 57 c0             	vxorps %xmm0,%xmm0,%xmm0
+ 27d:	c5 f8 11 40 10          	vmovups %xmm0,0x10(%rax)
+ 282:	c3                      	ret
+ 283:	80 e1 3f                	and    $0x3f,%cl
+ 286:	4c 8b 46 08             	mov    0x8(%rsi),%r8
+ 28a:	48 8b 76 10             	mov    0x10(%rsi),%rsi
+ 28e:	49 0f ad f0             	shrd   %cl,%rsi,%r8
+ 292:	48 0f ad fe             	shrd   %cl,%rdi,%rsi
+ 296:	4c 89 00                	mov    %r8,(%rax)
+ 299:	48 89 70 08             	mov    %rsi,0x8(%rax)
+ 29d:	48 89 50 10             	mov    %rdx,0x10(%rax)
+ 2a1:	48 c7 40 18 00 00 00 00 	movq   $0x0,0x18(%rax)
+ 2a9:	c3                      	ret
+ 2aa:	48 89 10                	mov    %rdx,(%rax)
+ 2ad:	c5 f8 57 c0             	vxorps %xmm0,%xmm0,%xmm0
+ 2b1:	c5 f8 11 40 08          	vmovups %xmm0,0x8(%rax)
+ 2b6:	48 c7 40 18 00 00 00 00 	movq   $0x0,0x18(%rax)
+ 2be:	c3                      	ret
+ 2bf:	c5 f8 57 c0             	vxorps %xmm0,%xmm0,%xmm0
+ 2c3:	c5 fc 11 00             	vmovups %ymm0,(%rax)
+ 2c7:	c5 f8 77                	vzeroupper
+ 2ca:	c3                      	ret
+ 2cb:	0f 1f 44 00 00          	nopl   0x0(%rax,%rax,1)
+
+00000000000002d0 <monad::uint256_div_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)>:
+ 2d0:	53                      	push   %rbx
+ 2d1:	48 81 ec 80 00 00 00    	sub    $0x80,%rsp
+ 2d8:	48 89 fb                	mov    %rdi,%rbx
+ 2db:	48 89 e7                	mov    %rsp,%rdi
+ 2de:	e8 00 00 00 00          	call   2e3 <monad::uint256_div_disas(monad::vm::runtime::uint256_t const&, monad::vm::runtime::uint256_t const&)+0x13>
+			2df: R_X86_64_PLT32	monad::vm::runtime::div_result<std::array<unsigned long, 4ul>, std::array<unsigned long, 4ul> > monad::vm::runtime::udivrem<4ul, 4ul>(std::array<unsigned long, 4ul> const&, std::array<unsigned long, 4ul> const&)-0x4
+ 2e3:	c5 fc 10 04 24          	vmovups (%rsp),%ymm0
+ 2e8:	c5 fc 11 44 24 40       	vmovups %ymm0,0x40(%rsp)
+ 2ee:	c5 fc 11 03             	vmovups %ymm0,(%rbx)
+ 2f2:	48 89 d8                	mov    %rbx,%rax
+ 2f5:	48 81 c4 80 00 00 00    	add    $0x80,%rsp
+ 2fc:	5b                      	pop    %rbx
+ 2fd:	c5 f8 77                	vzeroupper
+ 300:	c3                      	ret
+ 301:	66 66 66 66 66 66 2e 0f 	data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+ 309:	1f 84 00 00 00 00 00 
+
+0000000000000310 <monad::uint256_swap_disas(monad::vm::runtime::uint256_t&, monad::vm::runtime::uint256_t&)>:
+ 310:	c5 fc 10 07             	vmovups (%rdi),%ymm0
+ 314:	c5 fc 10 0e             	vmovups (%rsi),%ymm1
+ 318:	c5 fc 11 0f             	vmovups %ymm1,(%rdi)
+ 31c:	c5 fc 11 06             	vmovups %ymm0,(%rsi)
+ 320:	c5 f8 77                	vzeroupper
+ 323:	c3                      	ret

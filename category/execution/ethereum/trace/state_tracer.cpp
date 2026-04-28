@@ -200,15 +200,29 @@ namespace trace
         }
     }
 
-    template <Traits traits>
-    void AccessListTracer::encode(State &state)
+    void AccessListTracer::record(State &state)
     {
-        auto access_list = json::array();
         for (auto const &[address, current_stack] : state.current()) {
-            auto keys = json::array();
+            auto [it, _] = accesses_.try_emplace(address);
             auto const &current_account_state = current_stack.recent();
             for (auto const &key :
                  current_account_state.get_accessed_storage()) {
+                it->second.insert(key);
+            }
+        }
+    }
+
+    template <Traits traits>
+    void AccessListTracer::encode(State &state)
+    {
+        // Merge accepted-frame accesses still visible in State with any
+        // failed-frame accesses recorded before rollback.
+        record(state);
+
+        auto access_list = json::array();
+        for (auto const &[address, storage_keys] : accesses_) {
+            auto keys = json::array();
+            for (auto const &key : storage_keys) {
                 keys.push_back(bytes_to_hex(key.bytes));
             }
 

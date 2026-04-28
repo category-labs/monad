@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -114,19 +115,29 @@ struct EvmcHost final : public EvmcHostBase
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
+    trace::AccessListTracer *access_list_tracer_;
 
     EvmcHost(
         CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
-        bool const log_native_transfers = false) noexcept
+        bool const log_native_transfers = false,
+        trace::AccessListTracer *const access_list_tracer = nullptr) noexcept
         : EvmcHostBase{call_tracer, tx_context, block_hash_buffer, state, log_native_transfers}
         , tx_{tx}
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
         , chain_ctx_{chain_ctx}
+        , access_list_tracer_{access_list_tracer}
     {
+    }
+
+    void record_access_list()
+    {
+        if (access_list_tracer_) {
+            access_list_tracer_->record(state_);
+        }
     }
 
     virtual bool
@@ -240,9 +251,9 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 128);
+static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 136);
 static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 128);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

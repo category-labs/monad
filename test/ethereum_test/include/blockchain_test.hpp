@@ -51,7 +51,7 @@ class BlockchainTest : public testing::Test
     std::filesystem::path const file_;
     std::optional<std::variant<evmc_revision, monad_revision>> const revision_;
     bool enable_tracing_;
-    std::optional<std::filesystem::path> const witness_path_;
+    bool witness_roundtrip_;
 
 public:
     static void SetUpTestSuite();
@@ -61,12 +61,11 @@ public:
         std::filesystem::path const &file,
         std::optional<std::variant<evmc_revision, monad_revision>> const
             &revision,
-        bool const enable_tracing,
-        std::optional<std::filesystem::path> const &witness_path) noexcept
+        bool const enable_tracing, bool const witness_roundtrip) noexcept
         : file_{file}
         , revision_{revision}
         , enable_tracing_{enable_tracing}
-        , witness_path_{witness_path}
+        , witness_roundtrip_{witness_roundtrip}
     {
     }
 
@@ -76,10 +75,10 @@ public:
 void register_blockchain_tests_path(
     std::filesystem::path const &,
     std::optional<std::variant<evmc_revision, monad_revision>> const &, bool,
-    std::optional<std::filesystem::path> const &witness_path = std::nullopt);
+    bool witness_roundtrip = false);
 
 void register_blockchain_tests(
     std::optional<std::variant<evmc_revision, monad_revision>> const &, bool,
-    std::optional<std::filesystem::path> const &witness_path = std::nullopt);
+    bool witness_roundtrip = false);
 
 MONAD_TEST_NAMESPACE_END

@@ -42,6 +42,7 @@ target_sources(
   PRIVATE include/blockchain_test.hpp
           include/event.hpp
           include/revision_map.hpp
+          include/tracking_block_hash_buffer.hpp
           include/transaction_test.hpp
           src/blockchain_test.cpp
           src/event.cpp
@@ -60,10 +61,10 @@ monad_compile_options(monad-ethereum-test)
 
 target_link_libraries(monad-ethereum-test PRIVATE monad_unit_test_common)
 
-set(ETHEREUM_TEST_WITNESS_DIR
-    ""
-    CACHE PATH
-          "Optional directory of .witness files; enables witness verification in ethereum tests")
+option(
+  ETHEREUM_TEST_WITNESS
+  "For every block, generate an execution witness, reconstruct a PartialTrieDb from it, and re-execute the block against the reconstructed db."
+  OFF)
 
 function(add_ethereum_test)
   set(ONE_VALUE_ARGS FORK)
@@ -78,13 +79,15 @@ function(add_ethereum_test)
   set(FILTER "-:${TESTS_EXCLUDED}")
 
   set(WITNESS_ARG "")
-  if(ETHEREUM_TEST_WITNESS_DIR)
-    set(WITNESS_ARG "--witness" "${ETHEREUM_TEST_WITNESS_DIR}")
+  if(ETHEREUM_TEST_WITNESS)
+    set(WITNESS_ARG "--witness")
   endif()
 
-  add_test(NAME ${ADD_ETHEREUM_TEST_FORK}_monad_ethereum_test
-           COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
-                   --record-exec-events ${WITNESS_ARG} --gtest_filter=${FILTER})
+  add_test(
+    NAME ${ADD_ETHEREUM_TEST_FORK}_monad_ethereum_test
+    COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
+            --record-exec-events ${WITNESS_ARG}
+            --gtest_filter=${FILTER})
 endfunction()
 
 function(add_monad_test)

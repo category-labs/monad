@@ -84,13 +84,14 @@ namespace
         return rlp::encode_list2(body);
     }
 
-    Result<PartialTrieDb> try_decode_node(byte_string const &node_rlp)
+    Result<PartialTrieDb<NoopAccessTracker>>
+    try_decode_node(byte_string const &node_rlp)
     {
         bytes32_t const root = to_bytes(
             keccak256(byte_string_view{node_rlp.data(), node_rlp.size()}));
         byte_string const encoded_nodes = rlp::encode_string2(
             byte_string_view{node_rlp.data(), node_rlp.size()});
-        return PartialTrieDb::from_reth_witness(
+        return PartialTrieDb<NoopAccessTracker>::from_reth_witness(
             root,
             byte_string_view{encoded_nodes.data(), encoded_nodes.size()},
             {});
@@ -233,7 +234,8 @@ TEST(PartialTrieDb, StateRoot_HashStubWhenRootAbsentFromNodeIndex)
     constexpr auto sentinel =
         0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_bytes32;
 
-    auto result = PartialTrieDb::from_reth_witness(sentinel, {}, {});
+    auto result =
+        PartialTrieDb<NoopAccessTracker>::from_reth_witness(sentinel, {}, {});
     ASSERT_FALSE(result.has_error());
     EXPECT_EQ(result.value().state_root(), sentinel);
 }

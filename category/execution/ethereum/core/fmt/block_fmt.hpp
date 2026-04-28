@@ -24,10 +24,7 @@
 #include <category/core/fmt/transaction_fmt.hpp>
 #include <category/core/log.hpp>
 
-template <>
-struct quill::copy_loggable<monad::BlockHeader> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::BlockHeader);
 
 template <>
 struct fmt::formatter<monad::BlockHeader> : public monad::BasicFormatter

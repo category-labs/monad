@@ -96,6 +96,8 @@ add_library(
   "keccak.h"
   "keccak.hpp"
   "likely.h"
+  "log.cpp"
+  "log.hpp"
   "log_ffi.cpp"
   "log_ffi.h"
   "math.hpp"

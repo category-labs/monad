@@ -1059,7 +1059,7 @@ TEST_F(StateSyncFixture, benchmark)
     handle_target(cctx, hdr);
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
-    quill::flush();
+    flush_logger();
 }
 
 TEST(Deletions, history_length)

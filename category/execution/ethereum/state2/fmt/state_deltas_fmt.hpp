@@ -28,20 +28,11 @@ struct quill::copy_loggable<monad::Delta<T>>
 {
 };
 
-template <>
-struct quill::copy_loggable<monad::StateDelta> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::StateDelta);
 
-template <>
-struct quill::copy_loggable<monad::StateDeltas> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::StateDeltas);
 
-template <>
-struct quill::copy_loggable<monad::Code> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::Code);
 
 template <>
 struct fmt::formatter<monad::StateDelta> : public monad::BasicFormatter

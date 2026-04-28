@@ -364,7 +364,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
             monad_statesync_server_run_once(server);
         }
     }
-    quill::flush();
+    flush_logger();
     MONAD_ASSERT(monad_statesync_client_has_reached_target(cctx));
     MONAD_ASSERT(monad_statesync_client_finalize(cctx));
 

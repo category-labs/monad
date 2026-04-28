@@ -156,7 +156,7 @@ int main(int const argc, char *const argv[])
 
             cli.parse(argc, argv);
 
-            quill::start(true);
+            monad::start_logger_minimal();
 
             struct sigaction sig;
             sig.sa_handler = &on_signal;

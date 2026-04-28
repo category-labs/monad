@@ -22,25 +22,13 @@
 #include <category/execution/ethereum/core/fmt/signature_fmt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 
-template <>
-struct quill::copy_loggable<monad::TransactionType> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::TransactionType);
 
-template <>
-struct quill::copy_loggable<monad::AccessEntry> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::AccessEntry);
 
-template <>
-struct quill::copy_loggable<monad::AccessList> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::AccessList);
 
-template <>
-struct quill::copy_loggable<monad::Transaction> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::Transaction);
 
 template <>
 struct fmt::formatter<monad::TransactionType> : public monad::BasicFormatter

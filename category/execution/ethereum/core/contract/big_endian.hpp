@@ -60,7 +60,8 @@ struct BigEndian
         return *this;
     }
 
-    [[gnu::always_inline]] static inline BigEndian<T> unsafe_from(const uint8_t* src) noexcept
+    [[gnu::always_inline]] static inline BigEndian<T>
+    unsafe_from(uint8_t const *src) noexcept
     {
         BigEndian<T> be;
         std::memcpy(&be.bytes, src, sizeof(T));

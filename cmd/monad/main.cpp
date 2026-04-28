@@ -21,6 +21,7 @@
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
 #include <category/core/config.hpp>
+#include <category/core/crypto/init.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
@@ -38,7 +39,6 @@
 #include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
-#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
@@ -269,7 +269,7 @@ try {
         "event_trace", quill::file_handler(trace_log, handler_cfg));
 #endif
 
-    MONAD_ASSERT(init_trusted_setup());
+    MONAD_ASSERT(init_crypto());
 
     auto const db_in_memory = dbname_paths.empty();
     [[maybe_unused]] auto const load_start_time =

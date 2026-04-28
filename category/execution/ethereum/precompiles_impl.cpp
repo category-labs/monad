@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/crypto/init.hpp>
 #include <category/core/hex.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
@@ -28,8 +29,6 @@
 
 #include <blst.h>
 
-#include <c-kzg-4844/trusted_setup.hpp>
-
 #include <eip4844/eip4844.h>
 
 #include <evmc/evmc.h>
@@ -40,60 +39,54 @@
 #include <setup/setup.h>
 
 #include <silkpre/precompile.h>
-#include <silkpre/sha256.h>
 
+#include <openssl/evp.h>
+
+#include <cstdlib>
 #include <cstring>
 
-namespace
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+void digest(
+    EVP_MD const *const md, uint8_t *const output,
+    unsigned char const *const data, size_t const size)
 {
-    std::optional<KZGSettings> g_trustedSetup;
-
-    monad::bytes32_t kzg_to_version_hashed(KZGCommitment const &commitment)
-    {
-        constexpr uint8_t VERSION_HASH_VERSION_KZG = 1;
-        monad::bytes32_t h;
-        silkpre_sha256(
-            h.bytes,
-            commitment.bytes,
-            sizeof(KZGCommitment),
-            true /* use_cpu_extensions */);
-        h.bytes[0] = VERSION_HASH_VERSION_KZG;
-        return h;
-    }
-
-    struct bytes64_t
-    {
-        uint8_t bytes[64];
-    };
-
-    constexpr bytes64_t blob_precompile_return_value()
-    {
-        constexpr std::string_view v{
-            "0x0000000000000000000000000000000000000000000000000000000000001000"
-            "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"};
-        constexpr auto r = monad::from_hex<bytes64_t>(v);
-        static_assert(r.has_value());
-        return r.value();
-    }
+    // Some digest implementations invoke memcpy on the input buffer even
+    // when the length is zero; swap a null data pointer for a pointer to
+    // the empty string to stay out of UB.
+    unsigned char const *const safe_data =
+        data != nullptr ? data : reinterpret_cast<unsigned char const *>("");
+    MONAD_ASSERT(
+        EVP_Digest(safe_data, size, output, nullptr, md, nullptr) == 1);
 }
+
+bytes32_t kzg_to_version_hashed(KZGCommitment const &commitment)
+{
+    constexpr uint8_t VERSION_HASH_VERSION_KZG = 1;
+    bytes32_t h;
+    digest(sha256_md(), h.bytes, commitment.bytes, sizeof(KZGCommitment));
+    h.bytes[0] = VERSION_HASH_VERSION_KZG;
+    return h;
+}
+
+struct bytes64_t
+{
+    uint8_t bytes[64];
+};
+
+constexpr bytes64_t blob_precompile_return_value()
+{
+    constexpr std::string_view v{
+        "0x0000000000000000000000000000000000000000000000000000000000001000"
+        "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"};
+    constexpr auto r = from_hex<bytes64_t>(v);
+    static_assert(r.has_value());
+    return r.value();
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
-
-bool init_trusted_setup()
-{
-    if (!g_trustedSetup.has_value()) {
-        auto const setup = c_kzg_4844::trusted_setup_data();
-        KZGSettings settings;
-        FILE *fp = fmemopen((void *)(setup.data()), setup.size(), "r");
-        if (fp) {
-            if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
-                g_trustedSetup.emplace(settings);
-            }
-            fclose(fp);
-        }
-    }
-    return g_trustedSetup.has_value();
-}
 
 template <SilkpreRunFunction Func>
 static inline PrecompileResult silkpre_execute(byte_string_view const input)
@@ -114,20 +107,31 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
 
 PrecompileResult sha256_execute(byte_string_view const input)
 {
-    if (MONAD_UNLIKELY(input.data() == nullptr)) {
-        // Passing a null pointer to the Silkpre sha256 implementation invokes
-        // undefined behaviour. We sidestep the UB here by passing a pointer to
-        // the empty string instead.
-        byte_string_view const nonnull{
-            reinterpret_cast<unsigned char const *>(""), 0UL};
-        return silkpre_execute<silkpre_sha256_run>(nonnull);
-    }
-    return silkpre_execute<silkpre_sha256_run>(input);
+    constexpr size_t SHA256_OUTPUT_SIZE = 32;
+
+    auto *const output =
+        static_cast<uint8_t *>(std::malloc(SHA256_OUTPUT_SIZE));
+    MONAD_ASSERT(output != nullptr);
+    digest(sha256_md(), output, input.data(), input.size());
+    return {EVMC_SUCCESS, output, SHA256_OUTPUT_SIZE};
 }
 
 PrecompileResult ripemd160_execute(byte_string_view const input)
 {
-    return silkpre_execute<silkpre_rip160_run>(input);
+    // The Ethereum RIPEMD-160 precompile returns a 32-byte output with the
+    // 20-byte digest right-aligned and left-padded with zeros.
+    constexpr size_t OUTPUT_SIZE = 32;
+    constexpr size_t RIPEMD160_SIZE = 20;
+
+    auto *const output = static_cast<uint8_t *>(std::malloc(OUTPUT_SIZE));
+    MONAD_ASSERT(output != nullptr);
+    std::memset(output, 0, OUTPUT_SIZE - RIPEMD160_SIZE);
+    digest(
+        ripemd160_md(),
+        output + (OUTPUT_SIZE - RIPEMD160_SIZE),
+        input.data(),
+        input.size());
+    return {EVMC_SUCCESS, output, OUTPUT_SIZE};
 }
 
 PrecompileResult ecadd_execute(byte_string_view const input)
@@ -193,7 +197,7 @@ PrecompileResult point_evaluation_execute(byte_string_view const input)
     }
 
     bool ok{false};
-    verify_kzg_proof(&ok, &commitment, z, y, proof, &g_trustedSetup.value());
+    verify_kzg_proof(&ok, &commitment, z, y, proof, &kzg_trusted_setup());
     if (!ok) {
         return PrecompileResult::failure();
     }

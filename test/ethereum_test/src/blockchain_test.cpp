@@ -25,6 +25,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/crypto/init.hpp>
 #include <category/core/event/event_iterator.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/fiber/priority_pool.hpp>
@@ -640,7 +641,7 @@ MONAD_TEST_NAMESPACE_BEGIN
 void BlockchainTest::SetUpTestSuite()
 {
     pool_ = new fiber::PriorityPool{1, 1};
-    ASSERT_TRUE(monad::init_trusted_setup());
+    ASSERT_TRUE(monad::init_crypto());
 }
 
 void BlockchainTest::TearDownTestSuite()

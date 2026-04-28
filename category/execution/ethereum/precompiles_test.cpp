@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/crypto/init.hpp>
 #include <category/core/hex.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -48,6 +49,17 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    struct CryptoEnvironment final : public ::testing::Environment
+    {
+        void SetUp() override
+        {
+            ASSERT_TRUE(init_crypto());
+        }
+    };
+
+    auto const *const register_crypto_environment =
+        ::testing::AddGlobalTestEnvironment(new CryptoEnvironment);
+
     // the following elliptic curve input data was directly copied from
     // https://github.com/ethereum/go-ethereum/tree/master/core/vm/testdata/precompiles
     static auto const ECRECOVER_UNRECOVERABLE_KEY_INPUT =
@@ -554,8 +566,6 @@ TYPED_TEST(TraitsTest, point_evaluation)
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0a_address));
     }
     else {
-        ASSERT_TRUE(init_trusted_setup());
-
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
             if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
                 // In MONAD_SEVEN point_evaluation cost is increased by 4x

@@ -104,6 +104,7 @@ find_package(Boost REQUIRED COMPONENTS context filesystem json CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
+pkg_check_modules(libcrypto REQUIRED IMPORTED_TARGET libcrypto>=3.0)
 pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 
 # ankerl

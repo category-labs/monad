@@ -306,6 +306,7 @@ target_link_libraries(
   PUBLIC c-kzg-4844
   PRIVATE PkgConfig::brotli
   PRIVATE PkgConfig::crypto++
+  PRIVATE PkgConfig::libcrypto
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC immer

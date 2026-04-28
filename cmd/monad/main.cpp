@@ -469,6 +469,7 @@ try {
                 return runloop_monad_ethblocks(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
+                    db,
                     db_cache,
                     vm,
                     block_hash_buffer,

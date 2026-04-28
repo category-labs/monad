@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_block_events.hpp>
@@ -41,8 +42,12 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
+#include <category/execution/monad/state2/monad_block_state.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
+#include <category/mpt/db.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -208,8 +213,19 @@ Result<void> process_monad_block(
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
-    // TODO: halt at the page store revision, forcing a snapshot reload
-    BlockState block_state(db, vm);
+
+    // Pick the storage encoding based on revision
+    std::optional<PageStorageBroker> page_broker;
+    std::unique_ptr<BlockState> block_state_ptr;
+    if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+        page_broker.emplace(db);
+        block_state_ptr = std::make_unique<MonadBlockState>(*page_broker, vm);
+    }
+    else {
+        block_state_ptr = std::make_unique<BlockState>(db, vm);
+    }
+    BlockState &block_state = *block_state_ptr;
+
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
@@ -232,7 +248,15 @@ Result<void> process_monad_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
+    std::unique_ptr<CommitBuilder> builder_ptr;
+    if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+        builder_ptr = std::make_unique<MonadCommitBuilder>(
+            block.header.number, *page_broker);
+    }
+    else {
+        builder_ptr = std::make_unique<CommitBuilder>(block.header.number);
+    }
+    CommitBuilder &builder = *builder_ptr;
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)
@@ -321,7 +345,8 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     MonadChain const &chain, std::filesystem::path const &ledger_dir,
-    DbCache &db, vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
+    mpt::Db &raw_db, DbCache &db, vm::VM &vm,
+    BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, std::chrono::seconds const block_db_timeout)
@@ -405,6 +430,16 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         }
     }
 
+    // The on-disk state machine swaps between slot-encoded (pre-fork) and
+    // page-encoded (post-fork) merkle hashing depending on the revision of
+    // the block currently being replayed. raw_db.reset_state_machine is
+    // called per block to keep the live state machine in sync with the
+    // block's revision. Storage-encoding migration of existing on-disk
+    // leaves is handled separately by monad-cli / monad-mpt; this loop
+    // assumes the on-disk state for any committed block already matches
+    // its revision, and aborts if the revision changes mid-replay.
+    std::optional<monad_revision> prev_rev;
+
     while (block_num <= end_block_num && stop == 0) {
         Block block;
         get_block_with_retry(block_db, block_num, block, block_db_timeout);
@@ -412,6 +447,22 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         bytes32_t const block_id = bytes32_t{block.header.number};
         monad_revision const rev =
             chain.get_monad_revision(block.header.timestamp);
+
+        MONAD_ASSERT_PRINTF(
+            !prev_rev.has_value() || *prev_rev == rev,
+            "monad revision changed mid-replay (%d -> %d) at block %lu; "
+            "reload the db with the matching storage encoding via monad-cli",
+            *prev_rev,
+            rev,
+            block.header.number);
+        prev_rev = rev;
+
+        if (rev >= MONAD_NEXT) {
+            raw_db.reset_state_machine(std::make_unique<MonadOnDiskMachine>());
+        }
+        else {
+            raw_db.reset_state_machine(std::make_unique<OnDiskMachine>());
+        }
 
         ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
         BOOST_OUTCOME_TRY([&] {

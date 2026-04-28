@@ -16,13 +16,16 @@
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/vm/evm/opcodes.hpp>
 
 #include <category/core/hex.hpp>
-#include <intx/intx.hpp>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <cstdint>
 #include <span>
@@ -68,7 +71,7 @@ nlohmann::json to_json(CallFrame const &f)
             "0x{:02x}",
             fmt::join(std::as_bytes(std::span(f.to.value().bytes)), ""));
     }
-    res["value"] = "0x" + intx::to_string(f.value, 16);
+    res["value"] = "0x" + to_string(f.value, 16);
     res["gas"] = fmt::format("0x{:x}", f.gas);
     res["gasUsed"] = fmt::format("0x{:x}", f.gas_used);
     res["input"] = "0x" + to_hex(f.input);

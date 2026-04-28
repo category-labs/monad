@@ -21,13 +21,27 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <monad/test/traits_test.hpp>
 
+#include <category/core/address.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/mpt/db.hpp>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
 #include <gtest/gtest.h>
-#include <intx/intx.hpp>
 #include <nlohmann/json.hpp>
 
 #include <test_resource_data.h>
 
-#include <bit>
+#include <optional>
+#include <vector>
 
 using namespace monad;
 using namespace monad::test;
@@ -453,7 +467,7 @@ TEST(PrestateTracer, geth_example_prestate)
         .balance = 0x7a48734599f7284, .code_hash = NULL_HASH, .nonce = 1133};
     OriginalAccountState bs{b};
     Account const c{
-        .balance = intx::from_string<uint256_t>("0x2638035a26d133809"),
+        .balance = uint256_t::from_string("0x2638035a26d133809"),
         .code_hash = NULL_HASH,
         .nonce = 0};
     OriginalAccountState cs{c};

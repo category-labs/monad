@@ -18,9 +18,9 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -34,9 +34,8 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <intx/intx.hpp>
-
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -47,7 +46,7 @@ namespace
 
     bool sender_has_balance(State &state, evmc_message const &msg) noexcept
     {
-        uint256_t const value = intx::be::load<uint256_t>(msg.value);
+        uint256_t const value = uint256_t::load_be(msg.value.bytes);
         // for optimistic execution, we do NOT require the original balance to
         // match exactly, just add a lower bound constraint to suffice for this
         // debit
@@ -59,7 +58,7 @@ namespace
         State &state, EvmcHost<traits> &host, evmc_message const &msg,
         Address const &to)
     {
-        uint256_t const value = intx::be::load<uint256_t>(msg.value);
+        uint256_t const value = uint256_t::load_be(msg.value.bytes);
         state.subtract_from_balance(msg.sender, value);
         state.add_to_balance(to, value);
         host.emit_native_transfer_event(msg.sender, to, value);

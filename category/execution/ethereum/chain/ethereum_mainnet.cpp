@@ -19,15 +19,11 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
-#include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet_alloc.hpp>
+#include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/execution/ethereum/precompiles.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/ethereum/validate_transaction.hpp>
 
 #include <evmc/evmc.h>
 
@@ -35,7 +31,8 @@
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
-#include <limits>
+#include <cstdint>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -92,7 +89,7 @@ GenesisState EthereumMainnet::get_genesis_state() const
     BlockHeader header;
     header.difficulty = 17179869184;
     header.gas_limit = 5000;
-    intx::be::unsafe::store<uint64_t>(header.nonce.data(), 66);
+    store_be(header.nonce.data(), uint64_t{66});
     header.extra_data = from_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33a"
                                  "db3db69cbdb7a38e1e50b1b82fa")
                             .value();

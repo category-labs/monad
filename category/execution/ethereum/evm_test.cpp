@@ -13,33 +13,40 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
-#include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 #include <test_resource_data.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <intx/intx.hpp>
-
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -103,7 +110,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000'000'000'000}; // too much
-    intx::be::store(m.value.bytes, v);
+    store_be(m.value.bytes, v);
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -166,7 +173,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000'000'000'000}; // too much balance required
-    intx::be::store(m.value.bytes, v);
+    store_be(m.value.bytes, v);
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -247,7 +254,7 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000};
-    intx::be::store(m.value.bytes, v);
+    store_be(m.value.bytes, v);
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -323,7 +330,7 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000};
-    intx::be::store(m.value.bytes, v);
+    store_be(m.value.bytes, v);
 
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
     auto const result =

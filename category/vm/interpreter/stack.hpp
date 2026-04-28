@@ -31,8 +31,8 @@ namespace monad::vm::interpreter
     template <uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(
         runtime::Context &ctx, Intercode const &,
-        runtime::uint256_t const *const stack_bottom,
-        runtime::uint256_t *const stack_top, int64_t &gas_remaining)
+        uint256_t const *const stack_bottom, uint256_t *const stack_top,
+        int64_t &gas_remaining)
     {
         static constexpr auto info = compiler::opcode_table<traits>[Instr];
 
@@ -74,26 +74,23 @@ namespace monad::vm::interpreter
     }
 
     [[gnu::always_inline]] inline void
-    push(runtime::uint256_t *const stack_top, runtime::uint256_t const &x)
+    push(uint256_t *const stack_top, uint256_t const &x)
     {
         *(stack_top + 1) = x;
     }
 
-    [[gnu::always_inline]] inline runtime::uint256_t &
-    pop(runtime::uint256_t *&stack_top)
+    [[gnu::always_inline]] inline uint256_t &pop(uint256_t *&stack_top)
     {
         return *stack_top--;
     }
 
-    [[gnu::always_inline]] inline auto
-    pop_for_overwrite(runtime::uint256_t *&stack_top)
+    [[gnu::always_inline]] inline auto pop_for_overwrite(uint256_t *&stack_top)
     {
         auto const &a = pop(stack_top);
         return std::tie(a, *stack_top);
     }
 
-    [[gnu::always_inline]] inline auto
-    top_two(runtime::uint256_t *const stack_top)
+    [[gnu::always_inline]] inline auto top_two(uint256_t *const stack_top)
     {
         auto const &a = *stack_top;
         return std::tie(a, *(stack_top - 1));

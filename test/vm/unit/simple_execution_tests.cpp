@@ -15,7 +15,7 @@
 
 #include <vm/vm.h>
 
-#include <intx/intx.hpp>
+#include <category/core/int.hpp>
 
 #include <gtest/gtest.h>
 
@@ -61,7 +61,7 @@ TEST(SimpleExecutionTests, MultiplePushes)
 
 TEST(SimpleExecutionTests, Push32)
 {
-    using namespace intx;
+    using namespace monad::literals;
 
     auto contract = standalone_evm_jit(
         "7F323232323232323232323232323232323232323232323232323232323232323200");

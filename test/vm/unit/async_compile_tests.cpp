@@ -114,8 +114,8 @@ TEST(async_compile_test, stress)
 
             auto const &ret = ctx->result;
             ASSERT_EQ(ret.status, runtime::StatusCode::Success);
-            ASSERT_EQ(runtime::uint256_t::load_le(ret.offset), index);
-            ASSERT_EQ(runtime::uint256_t::load_le(ret.size), 1);
+            ASSERT_EQ(uint256_t::load_le(ret.offset), index);
+            ASSERT_EQ(uint256_t::load_le(ret.size), 1);
         }
     };
 

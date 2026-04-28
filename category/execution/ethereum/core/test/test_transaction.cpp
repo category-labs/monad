@@ -13,11 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 
 #include <evmc/evmc.hpp>
+
+#include <cstdint>
 
 #include <gtest/gtest.h>
 
@@ -82,7 +85,6 @@ TEST(TransactionProcessor, recover_sender_block_14000000)
 
 TEST(TransactionProcessor, no_recover_high_s_auth)
 {
-    using namespace intx::literals;
 
     constexpr auto malleate = [](AuthorizationEntry const &auth) {
         constexpr auto secp256k1_n =

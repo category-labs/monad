@@ -17,6 +17,8 @@
 
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/result.hpp>
+#include <category/execution/ethereum/core/contract/checked_math.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -52,10 +54,10 @@ uint256_t calculate_txn_award(
     Transaction const &, uint256_t const &base_fee_per_gas,
     uint64_t gas_used) noexcept;
 
-inline intx::uint512
+inline Result<uint256_t>
 max_gas_cost(uint64_t const gas_limit, uint256_t const max_fee_per_gas) noexcept
 {
-    return intx::umul(uint256_t{gas_limit}, max_fee_per_gas);
+    return checked_mul(uint256_t{gas_limit}, max_fee_per_gas);
 }
 
 uint256_t calc_blob_fee(Transaction const &, uint64_t) noexcept;

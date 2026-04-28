@@ -13,9 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -32,18 +36,25 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/memory_pool.hpp>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
-#include <intx/intx.hpp>
 
 #include <algorithm>
-#include <functional>
+#include <cstdint>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <span>
 #include <utility>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -92,7 +103,6 @@ template <Traits traits>
 uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
     State &state, EvmcHost<traits> &host)
 {
-    using namespace intx::literals;
 
     MONAD_ASSERT(authorities_.size() == tx_.authorization_list.size());
 
@@ -105,7 +115,7 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         // 1. Verify the chain ID is 0 or the ID of the current chain.
         auto const &chain_id = *auth_entry.sc.chain_id;
         auto const host_chain_id =
-            intx::be::load<uint256_t>(host.get_tx_context()->chain_id);
+            uint256_t::load_be(host.get_tx_context()->chain_id.bytes);
 
         if (!(chain_id == 0 || chain_id == host_chain_id)) {
             continue;
@@ -210,7 +220,7 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
         .memory = msg_memory.get(),
         .memory_capacity = msg_memory_capacity,
     };
-    intx::be::store(msg.value.bytes, tx_.value);
+    store_be(msg.value.bytes, tx_.value);
     return msg;
 }
 

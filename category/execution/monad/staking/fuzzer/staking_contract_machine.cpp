@@ -13,11 +13,32 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/execution/monad/staking/fuzzer/staking_contract_machine.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
+#include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/fuzzing/generator/choice.hpp>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <iostream>
+#include <optional>
+#include <tuple>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include <algorithm>
 
@@ -731,7 +752,7 @@ namespace monad::staking::test
     {
         auto const x = gen_uint256();
         Address a;
-        std::memcpy(a.bytes, intx::as_bytes(x), sizeof(a.bytes));
+        std::memcpy(a.bytes, as_bytes(x), sizeof(a.bytes));
         all_addresses_.push_back(a);
         return a;
     }
@@ -1123,7 +1144,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     std::tuple<
-        Address, byte_string, byte_string, byte_string, Address, uint256_be_t>
+        Address, byte_string, byte_string, byte_string, Address, evmc_uint256be>
     StakingContractMachine<traits>::gen_precompile_add_validator_input(
         uint256_t const &min_stake, uint256_t const &max_stake)
     {
@@ -1133,10 +1154,10 @@ namespace monad::staking::test
 
         Address const sender = gen_new_or_old_address();
         uint256_t const stake = gen_stake(min_stake, max_stake);
-        auto const value = intx::be::store<uint256_be_t>(stake);
+        auto const value = store_be_as<evmc_uint256be>(stake);
         Address const auth_address = gen_new_or_old_address();
         auto const commission = gen_bound_biased_uint256(0, MAX_COMMISSION);
-        auto const secret = intx::be::store<bytes32_t>(gen_uint256());
+        auto const secret = store_be_as<evmc::bytes32>(gen_uint256());
 
         auto [msg, secp, bls, signer] = craft_add_validator_input_raw(
             auth_address, stake, commission, secret);
@@ -1148,7 +1169,7 @@ namespace monad::staking::test
     u64_be StakingContractMachine<traits>::model_precompile_add_validator(
         Address const &signer, byte_string const &msg, byte_string const &secp,
         byte_string const &bls, Address const &sender,
-        uint256_be_t const &value)
+        evmc_uint256be const &value)
     {
         auto result = model_.precompile_add_validator<traits>(
             msg, secp, bls, sender, value);
@@ -1157,7 +1178,7 @@ namespace monad::staking::test
         auto const val_id = result.value();
 
         all_val_ids_.push_back(val_id);
-        if (intx::be::load<uint256_t>(value.bytes) <= MAX_DELEGABLE_STAKE) {
+        if (uint256_t::load_be(value.bytes) <= MAX_DELEGABLE_STAKE) {
             MONAD_ASSERT(model_.val_execution(val_id).exists());
             auto const ins = delegable_val_ids_.insert(val_id.native());
             MONAD_ASSERT(ins);
@@ -1190,7 +1211,7 @@ namespace monad::staking::test
 
         auto const balance_after = model_.balance_of(STAKING_CA);
 
-        auto const stake = intx::be::load<uint256_t>(value);
+        auto const stake = uint256_t::load_be(value.bytes);
 
         MONAD_ASSERT(balance_after - balance_before == stake);
 
@@ -1207,8 +1228,8 @@ namespace monad::staking::test
                 consume_bytes(reader, 48).data());
         auto const auth_address = unaligned_load<Address>(
             consume_bytes(reader, sizeof(Address)).data());
-        auto const signed_stake = unaligned_load<uint256_be_t>(
-            consume_bytes(reader, sizeof(uint256_be_t)).data());
+        auto const signed_stake = unaligned_load<evmc_uint256be>(
+            consume_bytes(reader, sizeof(evmc_uint256be)).data());
         auto const commission = unaligned_load<u256_be>(
             consume_bytes(reader, sizeof(u256_be)).data());
 
@@ -1257,11 +1278,11 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    std::tuple<u64_be, Address, uint256_be_t>
+    std::tuple<u64_be, Address, evmc_uint256be>
     StakingContractMachine<traits>::gen_precompile_delegate_input()
     {
         auto const &sender = gen_new_or_old_address();
-        using R = std::tuple<u64_be, Address, uint256_be_t>;
+        using R = std::tuple<u64_be, Address, evmc_uint256be>;
         return discrete_choice<R>(
             engine_,
             [&, this](auto &) -> R {
@@ -1271,22 +1292,22 @@ namespace monad::staking::test
                 MONAD_ASSERT(val_stake <= MAX_DELEGABLE_STAKE);
                 auto const del_stake =
                     gen_stake(MIN_DELEGATE_STAKE, MAX_STAKE - val_stake);
-                auto const value = intx::be::store<uint256_be_t>(del_stake);
+                auto const value = store_be_as<evmc_uint256be>(del_stake);
                 return {val_id, sender, value};
             },
             Choice(0.01, [&, this](auto &) -> R {
-                return {gen_potential_val_id(), sender, uint256_be_t{}};
+                return {gen_potential_val_id(), sender, evmc_uint256be{}};
             }));
     }
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_delegate(
-        u64_be const val_id, Address const &sender, uint256_be_t const &value)
+        u64_be const val_id, Address const &sender, evmc_uint256be const &value)
     {
         auto result = model_.precompile_delegate<traits>(val_id, sender, value);
         MONAD_ASSERT(result.has_value());
 
-        if (intx::be::load<uint256_t>(value) == 0) {
+        if (uint256_t::load_be(value.bytes) == 0) {
             return;
         }
 
@@ -1330,7 +1351,7 @@ namespace monad::staking::test
 
         auto const balance_after = model_.balance_of(STAKING_CA);
 
-        auto const stake = intx::be::load<uint256_t>(value);
+        auto const stake = uint256_t::load_be(value.bytes);
 
         if (!stake) {
             return;
@@ -1384,7 +1405,7 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    std::optional<std::tuple<u64_be, u256_be, u8_be, Address, uint256_be_t>>
+    std::optional<std::tuple<u64_be, u256_be, u8_be, Address, evmc_uint256be>>
     StakingContractMachine<traits>::gen_precompile_undelegate_input(
         uint256_t const &min_undelegate)
     {
@@ -1438,13 +1459,13 @@ namespace monad::staking::test
 
         auto const undelegate_stake = gen_stake(min_undelegate, del_stake);
 
-        return {{val_id, undelegate_stake, w, sender, uint256_be_t{}}};
+        return {{val_id, undelegate_stake, w, sender, evmc_uint256be{}}};
     }
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_undelegate(
         u64_be const val_id, u256_be const stake, u8_be const wid,
-        Address const &sender, uint256_be_t const &value)
+        Address const &sender, evmc_uint256be const &value)
     {
         MONAD_ASSERT(model_.val_execution(val_id).exists());
 
@@ -1571,7 +1592,7 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    std::optional<std::tuple<u64_be, Address, uint256_be_t>>
+    std::optional<std::tuple<u64_be, Address, evmc_uint256be>>
     StakingContractMachine<traits>::gen_precompile_compound_input()
     {
         u64_be val_id = 0;
@@ -1590,7 +1611,7 @@ namespace monad::staking::test
                 model_.val_execution(val_id).stake().load().native();
             if (val_stake + rewards <= MAX_STAKE &&
                 (rewards == 0 || rewards >= MIN_DELEGATE_STAKE)) {
-                return {{val_id, sender, uint256_be_t{}}};
+                return {{val_id, sender, evmc_uint256be{}}};
             }
         }
         // Try a few times to find a suitable delegator
@@ -1600,13 +1621,13 @@ namespace monad::staking::test
                 model_.delegator(val_id, sender).rewards().load().native() +
                 model_.unaccumulated_rewards(val_id, sender);
             if (rewards == 0) {
-                return {{val_id, sender, uint256_be_t{}}};
+                return {{val_id, sender, evmc_uint256be{}}};
             }
             if (rewards >= MIN_DELEGATE_STAKE) {
                 auto const val_stake =
                     model_.val_execution(val_id).stake().load().native();
                 if (val_stake + rewards <= MAX_STAKE) {
-                    return {{val_id, sender, uint256_be_t{}}};
+                    return {{val_id, sender, evmc_uint256be{}}};
                 }
             }
         }
@@ -1615,7 +1636,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_compound(
-        u64_be const val_id, Address const &sender, uint256_be_t const &value)
+        u64_be const val_id, Address const &sender, evmc_uint256be const &value)
     {
         uint256_t const rewards =
             model_.delegator(val_id, sender).rewards().load().native() +
@@ -1725,7 +1746,7 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    std::optional<std::tuple<u64_be, u8_be, Address, uint256_be_t>>
+    std::optional<std::tuple<u64_be, u8_be, Address, evmc_uint256be>>
     StakingContractMachine<traits>::gen_precompile_withdraw_input()
     {
         if (all_withdrawal_requests_.empty()) {
@@ -1748,13 +1769,13 @@ namespace monad::staking::test
         if (epoch < wepoch) {
             skip_epochs(wepoch - epoch);
         }
-        return {{val_id, wid, sender, uint256_be_t{}}};
+        return {{val_id, wid, sender, evmc_uint256be{}}};
     }
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_withdraw(
         u64_be const val_id, u8_be const wid, Address const &sender,
-        uint256_be_t const &value)
+        evmc_uint256be const &value)
     {
         auto result =
             model_.precompile_withdraw<traits>(val_id, wid, sender, value);
@@ -1822,7 +1843,7 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    std::tuple<u64_be, Address, uint256_be_t>
+    std::tuple<u64_be, Address, evmc_uint256be>
     StakingContractMachine<traits>::gen_precompile_claim_rewards_input()
     {
         u64_be val_id = 0;
@@ -1833,15 +1854,15 @@ namespace monad::staking::test
             sender = gen_new_or_old_address();
         });
         if (sender != Address{}) {
-            return {val_id, sender, uint256_be_t{}};
+            return {val_id, sender, evmc_uint256be{}};
         }
         std::tie(val_id, sender) = gen_delegator();
-        return {val_id, sender, uint256_be_t{}};
+        return {val_id, sender, evmc_uint256be{}};
     }
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_claim_rewards(
-        u64_be const val_id, Address const &sender, uint256_be_t const &value)
+        u64_be const val_id, Address const &sender, evmc_uint256be const &value)
     {
         auto const res =
             model_.precompile_claim_rewards<traits>(val_id, sender, value);
@@ -1883,18 +1904,18 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    std::tuple<u64_be, u256_be, Address, uint256_be_t>
+    std::tuple<u64_be, u256_be, Address, evmc_uint256be>
     StakingContractMachine<traits>::gen_precompile_change_commission_input()
     {
         auto const [val_id, sender] = gen_validator_auth_address();
         auto const commission = gen_bound_biased_uint256(0, MAX_COMMISSION);
-        return {val_id, commission, sender, uint256_be_t{}};
+        return {val_id, commission, sender, evmc_uint256be{}};
     }
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_change_commission(
         u64_be const val_id, u256_be const &commission, Address const &sender,
-        uint256_be_t const &value)
+        evmc_uint256be const &value)
     {
         auto const res = model_.precompile_change_commission<traits>(
             val_id, commission, sender, value);
@@ -1913,14 +1934,14 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    std::optional<std::tuple<u64_be, Address, uint256_be_t>>
+    std::optional<std::tuple<u64_be, Address, evmc_uint256be>>
     StakingContractMachine<traits>::gen_precompile_external_reward_input()
     {
         if (auto const val_id = gen_active_consensus_val_id()) {
             auto const sender = gen_new_or_old_address();
             auto const reward = gen_bound_biased_uint256(
                 MIN_EXTERNAL_REWARD, MAX_EXTERNAL_REWARD);
-            auto const value = intx::be::store<uint256_be_t>(reward);
+            auto const value = store_be_as<evmc_uint256be>(reward);
             return {{*val_id, sender, value}};
         }
         return std::nullopt;
@@ -1928,7 +1949,7 @@ namespace monad::staking::test
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_external_reward(
-        u64_be const val_id, Address const &sender, uint256_be_t const &value)
+        u64_be const val_id, Address const &sender, evmc_uint256be const &value)
     {
         auto const res =
             model_.precompile_external_reward<traits>(val_id, sender, value);
@@ -1944,7 +1965,7 @@ namespace monad::staking::test
         }
         auto const [val_id, sender, value] = *input;
 
-        auto const reward = intx::be::load<uint256_t>(value);
+        auto const reward = uint256_t::load_be(value.bytes);
 
         auto const error_bound_before = model_.error_bound();
 
@@ -1985,29 +2006,29 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    std::tuple<u64_be, Address, Address, uint256_be_t>
+    std::tuple<u64_be, Address, Address, evmc_uint256be>
     StakingContractMachine<traits>::gen_precompile_get_delegator_input()
     {
-        using R = std::tuple<u64_be, Address, Address, uint256_be_t>;
+        using R = std::tuple<u64_be, Address, Address, evmc_uint256be>;
         return discrete_choice<R>(
             engine_,
             [&, this](auto &) -> R {
                 auto const [val_id, addr] = gen_delegator();
                 auto const sender = gen_new_or_old_address();
-                return {val_id, addr, sender, uint256_be_t{}};
+                return {val_id, addr, sender, evmc_uint256be{}};
             },
             Choice(0.05, [&, this](auto &) -> R {
                 auto const val_id = gen() % (model_.last_val_id() + 3);
                 auto const addr = gen_new_or_old_address();
                 auto const sender = gen_new_or_old_address();
-                return {val_id, addr, sender, uint256_be_t{}};
+                return {val_id, addr, sender, evmc_uint256be{}};
             }));
     }
 
     template <Traits traits>
     void StakingContractMachine<traits>::model_precompile_get_delegator(
         u64_be const val_id, Address const &addr, Address const &sender,
-        uint256_be_t const &value)
+        evmc_uint256be const &value)
     {
         auto const res = model_.precompile_get_delegator<traits>(
             val_id, addr, sender, value);

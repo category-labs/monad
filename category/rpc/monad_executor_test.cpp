@@ -22,6 +22,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/account.hpp>
@@ -71,8 +72,6 @@
 #include <evmc/evmc.h>
 
 #include <gtest/gtest.h>
-
-#include <intx/intx.hpp>
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -1035,8 +1034,6 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
 
 TEST_F(EthCallFixture, from_contract_account)
 {
-    using namespace intx;
-
     auto const code =
         0x6000600155600060025560006003556000600455600060055500_bytes;
     auto const code_hash = to_bytes(keccak256(code));
@@ -1101,8 +1098,6 @@ TEST_F(EthCallFixture, from_contract_account)
 
 TEST_F(EthCallFixture, concurrent_eth_calls)
 {
-    using namespace intx;
-
     auto const ca = 0xaaaf5374fce5edbc8e2a8697c15331677e6ebf0b_address;
 
     for (uint64_t i = 0; i < 300; ++i) {
@@ -1345,8 +1340,8 @@ TEST_F(EthCallFixture, call_trace_with_logs)
                         {.data = {},
                          .topics =
                              {
-                                 intx::be::store<bytes32_t, uint256_t>(2),
-                                 intx::be::store<bytes32_t, uint256_t>(1),
+                                 store_be_as<bytes32_t, uint256_t>(2),
+                                 store_be_as<bytes32_t, uint256_t>(1),
                              },
                          .address = a_address},
                     .position = 0,
@@ -1356,7 +1351,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
                         {.data = {},
                          .topics =
                              {
-                                 intx::be::store<bytes32_t, uint256_t>(3),
+                                 store_be_as<bytes32_t, uint256_t>(3),
                              },
                          .address = a_address},
                     .position = 2,
@@ -1412,9 +1407,9 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .depth = 1,
         .logs = std::vector{CallFrame::Log{
             .log =
-                {.data = byte_string{intx::be::store<bytes32_t>(
+                {.data = byte_string{store_be_as<bytes32_t>(
                      std::numeric_limits<uint256_t>::max() - 1)},
-                 .topics = {intx::be::store<bytes32_t, uint256_t>(1)},
+                 .topics = {store_be_as<bytes32_t, uint256_t>(1)},
                  .address = c_address},
             .position = 0,
         }},
@@ -3234,7 +3229,6 @@ TEST_F(EthCallFixture, prestate_state_overrides)
 
 TEST_F(EthCallFixture, prestate_override_state)
 {
-
     static constexpr Address CONTRACT_ADDR =
         0xcccccccccccccccccccccccccccccccccccccccc_address;
 

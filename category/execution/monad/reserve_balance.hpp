@@ -41,17 +41,19 @@ struct Transaction;
 class ReserveBalance
 {
     using FailedSet = ankerl::unordered_dense::segmented_set<Address>;
+    using InitcodeExecSet = ankerl::unordered_dense::segmented_set<Address>;
     using ViolationThresholdMap = ankerl::unordered_dense::segmented_map<
         Address, std::optional<uint256_t>>;
 
     State *state_;
     bool tracking_enabled_{false};
     bool use_recent_code_hash_{false};
-    bool allow_init_selfdestruct_exemption_{false};
+    bool allow_initcode_exemption_{false};
     Address sender_{};
     uint256_t sender_gas_fees_{0};
     bool sender_can_dip_{false};
     FailedSet failed_{};
+    InitcodeExecSet initcode_exec_accounts_{};
     ViolationThresholdMap violation_thresholds_{};
     std::function<uint256_t(Address const &)> get_max_reserve_{};
 
@@ -74,6 +76,10 @@ public:
     void on_pop_reject(FailedSet const &accounts);
 
     void on_set_code(Address const &address, byte_string_view code);
+
+    void on_initcode_execution(Address const &address);
+
+    bool has_executed_initcode(Address const &address) const;
 
     template <Traits traits>
     void init_from_tx(

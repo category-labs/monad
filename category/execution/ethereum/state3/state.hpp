@@ -138,6 +138,8 @@ public:
 
     bool is_current_incarnation(Address const &);
 
+    bool has_executed_initcode(Address const &) const;
+
     bytes32_t get_storage(Address const &, bytes32_t const &key);
 
     bytes32_t get_transient_storage(Address const &, bytes32_t const &key);
@@ -207,6 +209,8 @@ public:
      * to take place before any of the actual transactions in a block.
      */
     void create_account_no_rollback(Address const &);
+
+    void note_initcode_execution(Address const &);
 
     ////////////////////////////////////////
 

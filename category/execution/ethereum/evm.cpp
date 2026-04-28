@@ -251,6 +251,7 @@ evmc::Result execute_create_message(
         .memory_capacity = msg.memory_capacity,
     };
 
+    state.note_initcode_execution(contract_address);
     auto result = state.vm().execute_bytecode<traits>(
         *host, &m_call, {msg.input_data, msg.input_size});
 

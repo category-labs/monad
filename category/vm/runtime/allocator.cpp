@@ -18,5 +18,9 @@
 
 namespace monad::vm::runtime
 {
+#ifdef MONAD_ZKVM
+    CachedAllocatorList EvmStackAllocatorMeta::cache_list;
+#else
     thread_local CachedAllocatorList EvmStackAllocatorMeta::cache_list;
+#endif
 }

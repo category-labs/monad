@@ -1,0 +1,55 @@
+name: ZK Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    types: [ opened, synchronize, reopened, edited ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >
+    ${{
+      (github.event_name == 'push' && format('push-{0}-zk-tests', github.ref))
+      || (github.event_name == 'pull_request' && format('pr-{0}-zk-tests', github.event.pull_request.number))
+      || (github.event_name == 'workflow_dispatch' && format('workflow-dispatch-{0}-zk-tests', github.run_id))
+      || format('{0}-zk-tests', github.run_id)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+    build:
+      name: Compile for RISC-V
+      runs-on: ubuntu-24.04-32
+      steps:
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
+          private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
+          permissions: >-
+            {"contents": "read"}
+
+      - name: Tell git to do submodules in parallel
+        run: |
+          git config --global submodule.fetchJobs "$(nproc)"
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ steps.generate_token.outputs.token }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build `build_zk` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: build_zk
+          cache-from: type=gha,scope=base

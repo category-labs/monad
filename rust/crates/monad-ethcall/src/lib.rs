@@ -808,7 +808,14 @@ pub async fn eth_simulate_v1(
         Ok(r) => r,
         Err(e) => {
             for &ptr in &state_overrides {
-                unsafe { ffi::monad_state_override_destroy(ptr) };
+                unsafe {
+                    ffi::monad_state_override_destroy(ptr);
+                };
+            }
+            for &ptr in &block_overrides {
+                unsafe {
+                    ffi::monad_block_override_destroy(ptr);
+                };
             }
             warn!("callback from eth_simulate_v1 failed: {:?}", e);
 

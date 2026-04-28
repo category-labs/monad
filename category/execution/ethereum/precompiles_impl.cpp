@@ -39,6 +39,7 @@
 #include <setup/settings.h>
 #include <setup/setup.h>
 
+#include <silkpre/ecdsa.h>
 #include <silkpre/precompile.h>
 #include <silkpre/sha256.h>
 
@@ -101,78 +102,139 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
     auto const [output, output_size] = Func(input.data(), input.size());
     if (output == nullptr) {
         MONAD_ASSERT(output_size == 0);
-        return {EVMC_PRECOMPILE_FAILURE, nullptr, 0};
+        return PrecompileResult::failure();
     }
     return {EVMC_SUCCESS, output, output_size};
 }
 
-PrecompileResult ecrecover_execute(byte_string_view const input)
+PrecompileImplResult ecrecover_impl(
+    std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
+    uint8_t recid, std::span<uint8_t, 32> const out)
 {
-    auto const clamped_input = input.substr(0, 128);
-    return silkpre_execute<silkpre_ecrec_run>(clamped_input);
+    std::memset(out.data(), 0, 12);
+    thread_local secp256k1_context *context{
+        secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS)};
+    if (!silkpre_recover_address(
+            out.data() + 12, msg.data(), sig.data(), recid, context)) {
+        return {out.data(), 0};
+    }
+    return {out.data(), 32};
 }
 
-PrecompileResult sha256_execute(byte_string_view const input)
+PrecompileImplResult
+sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out)
 {
     if (MONAD_UNLIKELY(input.data() == nullptr)) {
         // Passing a null pointer to the Silkpre sha256 implementation invokes
         // undefined behaviour. We sidestep the UB here by passing a pointer to
         // the empty string instead.
-        byte_string_view const nonnull{
-            reinterpret_cast<unsigned char const *>(""), 0UL};
-        return silkpre_execute<silkpre_sha256_run>(nonnull);
+        input =
+            byte_string_view{reinterpret_cast<unsigned char const *>(""), 0UL};
     }
-    return silkpre_execute<silkpre_sha256_run>(input);
+    silkpre_sha256(
+        out.data(), input.data(), input.size(), true /* use_cpu_extensions */);
+    return {out.data(), 32};
 }
 
-PrecompileResult ripemd160_execute(byte_string_view const input)
+PrecompileImplResult
+ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    return silkpre_execute<silkpre_rip160_run>(input);
-}
-
-PrecompileResult ecadd_execute(byte_string_view const input)
-{
-    auto const clamped_input = input.substr(0, 128);
-    return silkpre_execute<silkpre_bn_add_run>(clamped_input);
-}
-
-PrecompileResult ecmul_execute(byte_string_view const input)
-{
-    auto const clamped_input = input.substr(0, 96);
-    return silkpre_execute<silkpre_bn_mul_run>(clamped_input);
-}
-
-PrecompileResult identity_execute(byte_string_view const input)
-{
-    if (input.empty()) {
-        return {EVMC_SUCCESS, nullptr, 0};
+    // TODO(dhil): Consider a design that allows us to avoid the copy here.
+    auto const [output, output_size] =
+        silkpre_rip160_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {out.data(), 0};
     }
-
-    auto *const output = static_cast<uint8_t *>(malloc(input.size()));
-    MONAD_ASSERT(output != nullptr);
-    memcpy(output, input.data(), input.size());
-    return {EVMC_SUCCESS, output, input.size()};
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), 32};
 }
 
-PrecompileResult expmod_execute(byte_string_view const input)
+PrecompileImplResult
+ecadd_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
-    return silkpre_execute<silkpre_expmod_run>(input);
+    auto const [output, output_size] =
+        silkpre_bn_add_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), 64};
 }
 
-PrecompileResult snarkv_execute(byte_string_view const input)
+PrecompileImplResult
+ecmul_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
-    return silkpre_execute<silkpre_snarkv_run>(input);
+    auto const [output, output_size] =
+        silkpre_bn_mul_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), 64};
 }
 
-PrecompileResult blake2bf_execute(byte_string_view const input)
+PrecompileImplResult
+identity_impl(byte_string_view const input, std::span<uint8_t> const out)
 {
-    return silkpre_execute<silkpre_blake2_f_run>(input);
+    MONAD_ASSERT(!input.empty());
+
+    std::memcpy(out.data(), input.data(), input.size());
+    return {out.data(), input.size()};
 }
 
-PrecompileResult point_evaluation_execute(byte_string_view const input)
+PrecompileImplResult
+expmod_impl(byte_string_view const input, std::span<uint8_t> const out)
+{
+    auto const [output, output_size] =
+        silkpre_expmod_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {out.data(), 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), out.size()};
+}
+
+PrecompileImplResult
+snarkv_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
+{
+    auto const [output, output_size] =
+        silkpre_snarkv_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), 32};
+}
+
+PrecompileImplResult
+blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
+{
+    auto const [output, output_size] =
+        silkpre_blake2_f_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), 64};
+}
+
+PrecompileImplResult point_evaluation_impl(
+    byte_string_view const input, std::span<uint8_t, 64> const out)
 {
     if (input.size() != 192) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
     bytes32_t versioned_hash;
@@ -189,74 +251,71 @@ PrecompileResult point_evaluation_execute(byte_string_view const input)
 
     KZGCommitment commitment{*commitment_data};
     if (versioned_hash != kzg_to_version_hashed(commitment)) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
     bool ok{false};
     verify_kzg_proof(&ok, &commitment, z, y, proof, &g_trustedSetup.value());
     if (!ok) {
-        return PrecompileResult::failure();
+        return {nullptr, 0};
     }
 
-    auto *const output = static_cast<uint8_t *>(std::malloc(sizeof(bytes64_t)));
-    MONAD_ASSERT(output != nullptr);
     std::memcpy(
-        output, blob_precompile_return_value().bytes, sizeof(bytes64_t));
-
-    return {
-        .status_code = EVMC_SUCCESS,
-        .obuf = output,
-        .output_size = sizeof(bytes64_t),
-    };
+        out.data(), blob_precompile_return_value().bytes, sizeof(bytes64_t));
+    return {out.data(), 64};
 }
 
-PrecompileResult bls12_g1_add_execute(byte_string_view const input)
+PrecompileImplResult bls12_g1_add_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
 {
-    return bls12::add<bls12::G1>(input);
+    return bls12::add<bls12::G1>(input, out);
 }
 
-PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
+PrecompileImplResult bls12_g1_msm_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
 {
-    return bls12::msm<bls12::G1>(input);
+    return bls12::msm<bls12::G1>(input, out);
 }
 
-PrecompileResult bls12_g2_add_execute(byte_string_view const input)
+PrecompileImplResult bls12_g2_add_impl(
+    byte_string_view const input, std::span<uint8_t, 256> const out)
 {
-    return bls12::add<bls12::G2>(input);
+    return bls12::add<bls12::G2>(input, out);
 }
 
-PrecompileResult bls12_g2_msm_execute(byte_string_view const input)
+PrecompileImplResult bls12_g2_msm_impl(
+    byte_string_view const input, std::span<uint8_t, 256> const out)
 {
-    return bls12::msm<bls12::G2>(input);
+    return bls12::msm<bls12::G2>(input, out);
 }
 
-PrecompileResult bls12_pairing_check_execute(byte_string_view const input)
+PrecompileImplResult bls12_pairing_check_impl(
+    byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    return bls12::pairing_check(input);
+    return bls12::pairing_check(input, out);
 }
 
-PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const input)
+PrecompileImplResult bls12_map_fp_to_g1_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
 {
-    return bls12::map_fp_to_g<bls12::G1>(input);
+    return bls12::map_fp_to_g<bls12::G1>(input, out);
 }
 
-PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view const input)
+PrecompileImplResult bls12_map_fp2_to_g2_impl(
+    byte_string_view const input, std::span<uint8_t, 256> const out)
 {
-    return bls12::map_fp_to_g<bls12::G2>(input);
+    return bls12::map_fp_to_g<bls12::G2>(input, out);
 }
 
 // Rollup precompiles
 
 // EIP-7951
-PrecompileResult p256_verify_execute(byte_string_view const input)
+PrecompileImplResult
+p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
     using namespace CryptoPP;
 
-    auto const empty_result = PrecompileResult{
-        .status_code = EVMC_SUCCESS,
-        .obuf = nullptr,
-        .output_size = 0,
-    };
+    static constexpr PrecompileImplResult empty_result{nullptr, 0};
 
     if (input.size() != 160) {
         return empty_result;
@@ -324,17 +383,9 @@ PrecompileResult p256_verify_execute(byte_string_view const input)
     }
 
     // Return 0x000...1
-    auto *const output_buf = static_cast<uint8_t *>(std::malloc(32));
-    MONAD_ASSERT(output_buf != nullptr);
-    std::memset(output_buf, 0, 32);
-
-    output_buf[31] = 1;
-
-    return {
-        .status_code = EVMC_SUCCESS,
-        .obuf = output_buf,
-        .output_size = 32,
-    };
+    std::memset(out.data(), 0, 32);
+    out.data()[31] = 1;
+    return {out.data(), 32};
 }
 
 MONAD_NAMESPACE_END

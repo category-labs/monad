@@ -27,6 +27,13 @@ MONAD_NAMESPACE_BEGIN
 template <class Bytes>
 struct BytesHashCompare
 {
+    using is_avalanching = void;
+
+    uint64_t operator()(Bytes const &a) const noexcept
+    {
+        return komihash(a.bytes, sizeof(Bytes), 0);
+    }
+
     size_t hash(Bytes const &a) const
     {
         return komihash(a.bytes, sizeof(Bytes), 0);

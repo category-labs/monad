@@ -30,7 +30,6 @@
 #include <category/core/keccak.h>
 #include <category/core/log.hpp>
 #include <category/core/small_prng.hpp>
-#include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -866,13 +865,13 @@ int main(int const argc, char *argv[])
                             keccak256(
                                 (unsigned char const *)&key_src, 8, key.data());
 
-                            monad::threadsafe_boost_fibers_promise<
+                            ::boost::fibers::promise<
                                 monad::mpt::find_cursor_result_type>
                                 promise;
+                            auto fut = promise.get_future();
                             find_notify_fiber_future(
-                                *aux, promise, state_start, key);
-                            auto const [node_cursor, errc] =
-                                promise.get_future().get();
+                                *aux, std::move(promise), state_start, key);
+                            auto const [node_cursor, errc] = fut.get();
                             MONAD_ASSERT(node_cursor.is_valid());
                             MONAD_ASSERT(
                                 errc == monad::mpt::find_result::success);
@@ -939,32 +938,21 @@ int main(int const argc, char *argv[])
                         monad::small_prng rand(n);
                         monad::byte_string key;
                         key.resize(32);
-                        // We need to keep these around as destructing them when
-                        // another thread is still using them is apparently not
-                        // allowed in Boost.Fiber
-                        std::array<
-                            monad::threadsafe_boost_fibers_promise<
-                                monad::mpt::find_cursor_result_type>,
-                            4>
-                            promises;
-                        auto *promise_it = promises.begin();
                         while (0 ==
                                signal_done.load(std::memory_order_relaxed)) {
                             size_t key_src = (rand() % (n_slices * SLICE_LEN));
                             keccak256(
                                 (unsigned char const *)&key_src, 8, key.data());
 
-                            if (promise_it == promises.end()) {
-                                promise_it = promises.begin();
-                            }
-                            fiber_find_request_t const request{
-                                .promise = &*promise_it++,
+                            ::boost::fibers::promise<
+                                monad::mpt::find_cursor_result_type>
+                                promise;
+                            auto fut = promise.get_future();
+                            req.enqueue(fiber_find_request_t{
+                                .promise = std::move(promise),
                                 .start = state_start,
-                                .key = key};
-                            request.promise->reset();
-                            req.enqueue(request);
-                            auto const [node_cursor, errc] =
-                                request.promise->get_future().get();
+                                .key = key});
+                            auto const [node_cursor, errc] = fut.get();
                             MONAD_ASSERT(node_cursor.is_valid());
                             MONAD_ASSERT(
                                 errc == monad::mpt::find_result::success);
@@ -993,7 +981,7 @@ int main(int const argc, char *argv[])
                             if (req.try_dequeue(request)) {
                                 find_notify_fiber_future(
                                     *aux,
-                                    *request.promise,
+                                    std::move(request.promise),
                                     request.start,
                                     request.key);
                             }
@@ -1029,7 +1017,7 @@ int main(int const argc, char *argv[])
                         if (req.try_dequeue(request)) {
                             find_notify_fiber_future(
                                 aux,
-                                *request.promise,
+                                std::move(request.promise),
                                 request.start,
                                 request.key);
                         }

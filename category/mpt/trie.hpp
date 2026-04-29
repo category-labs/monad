@@ -54,9 +54,6 @@
 #include <optional>
 #include <vector>
 
-// temporary
-#include "detail/boost_fiber_workarounds.hpp"
-
 MONAD_MPT_NAMESPACE_BEGIN
 
 class Node;
@@ -436,41 +433,68 @@ using find_owning_cursor_result_type = find_result_type<NodeCursor>;
 
 using inflight_map_owning_t = ankerl::unordered_dense::segmented_map<
     virtual_chunk_offset_t,
-    std::vector<
-        std::function<MONAD_ASYNC_NAMESPACE::result<void>(NodeCursor const &)>>,
+    std::vector<std::move_only_function<MONAD_ASYNC_NAMESPACE::result<void>(
+        NodeCursor const &)>>,
     virtual_chunk_offset_t_hasher>;
 
-// The request type to put to the fiber buffered channel for triedb thread
-// to work on
+// The request type queued to the triedb worker thread. Promise is held by
+// value (move-only); the submitting fiber moves it in and keeps the future.
+//
+// boost::fibers::shared_state uses std::aligned_storage internally, which is
+// deprecated in C++23 (-Wdeprecated-declarations); the template instantiation
+// triggered by this by-value member surfaces the diagnostic in every TU that
+// parses this header, so the suppression must wrap the struct definition
+// itself, not just the boost include.
+#ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+#ifdef __GNUC__
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 struct fiber_find_request_t
 {
-    threadsafe_boost_fibers_promise<find_cursor_result_type> *promise;
+    ::boost::fibers::promise<find_cursor_result_type> promise{};
     NodeCursor start{};
     NibblesView key{};
 };
-
-static_assert(sizeof(fiber_find_request_t) == 48);
-static_assert(alignof(fiber_find_request_t) == 8);
+#ifdef __GNUC__
+    #pragma GCC diagnostic pop
+#endif
+#ifdef __clang__
+    #pragma clang diagnostic pop
+#endif
 
 class NodeCache;
 
-//! \warning this is not threadsafe, should only be called from triedb thread
-// during execution, DO NOT invoke it directly from a transaction fiber, as is
-// not race free.
+/*! \brief Walk the trie and resolve `key` into the promise.
+
+The promise is taken by value: ownership flows through the recursion. Sync
+exit paths consume the promise via `set_value` and return; async paths move
+the promise into the I/O receiver's continuation, which carries it forward
+to the next recursive invocation when the read completes. The receiver's
+destruction is the natural lifetime fence, so no external tracker is
+needed.
+
+\warning this is not threadsafe, should only be called from triedb thread
+during execution, DO NOT invoke it directly from a transaction fiber, as it
+is not race-free.
+*/
 void find_notify_fiber_future(
-    UpdateAux &, threadsafe_boost_fibers_promise<find_cursor_result_type> &,
+    UpdateAux &, ::boost::fibers::promise<find_cursor_result_type>,
     NodeCursor const &start, NibblesView key);
 
 // rodb
 void find_owning_notify_fiber_future(
     UpdateAux &, NodeCache &, inflight_map_owning_t &,
-    threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
+    ::boost::fibers::promise<find_owning_cursor_result_type> promise,
     NodeCursor const &start, NibblesView, uint64_t version);
 
 // rodb load root
 void load_root_notify_fiber_future(
     UpdateAux &, NodeCache &, inflight_map_owning_t &,
-    threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
+    ::boost::fibers::promise<find_owning_cursor_result_type> promise,
     uint64_t version);
 
 /*! \brief blocking find node indexed by key from root, It works for both

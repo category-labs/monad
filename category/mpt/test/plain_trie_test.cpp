@@ -21,7 +21,6 @@
 #include <category/core/hex.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/compute.hpp>
-#include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -472,9 +471,9 @@ TYPED_TEST(PlainTrieTest, large_values)
 
     same_upsert_to_clear_nodes_outside_cache_level();
     {
-        monad::threadsafe_boost_fibers_promise<find_cursor_result_type> p;
+        ::boost::fibers::promise<find_cursor_result_type> p;
         auto fut = p.get_future();
-        find_notify_fiber_future(this->aux, p, this->root, key1);
+        find_notify_fiber_future(this->aux, std::move(p), this->root, key1);
         if (this->aux.io) {
             this->aux.io->wait_until_done();
         }
@@ -488,9 +487,9 @@ TYPED_TEST(PlainTrieTest, large_values)
 
     same_upsert_to_clear_nodes_outside_cache_level();
     {
-        monad::threadsafe_boost_fibers_promise<find_cursor_result_type> p;
+        ::boost::fibers::promise<find_cursor_result_type> p;
         auto fut = p.get_future();
-        find_notify_fiber_future(this->aux, p, this->root, key2);
+        find_notify_fiber_future(this->aux, std::move(p), this->root, key2);
         if (this->aux.io) {
             this->aux.io->wait_until_done();
         }

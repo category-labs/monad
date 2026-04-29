@@ -20,7 +20,6 @@
 #include <category/core/assert.h>
 #include <category/core/tl_tid.h>
 #include <category/mpt/config.hpp>
-#include <category/mpt/detail/boost_fiber_workarounds.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cache.hpp>
@@ -49,7 +48,7 @@ namespace
     {
         static constexpr bool lifetime_managed_internally = true;
 
-        std::function<result<void>(NodeCursor const &)> cont;
+        std::move_only_function<result<void>(NodeCursor const &)> cont;
         Node::SharedPtr parent;
         chunk_offset_t rd_offset; // required for sender
         unsigned bytes_to_read; // required for sender too
@@ -57,7 +56,7 @@ namespace
         unsigned const branch_index;
 
         find_receiver(
-            std::function<result<void>(NodeCursor const &)> cont_,
+            std::move_only_function<result<void>(NodeCursor const &)> cont_,
             Node::SharedPtr parent_, unsigned char const branch)
             : cont(std::move(cont_))
             , parent(std::move(parent_))
@@ -151,32 +150,30 @@ namespace
             }
             auto const it = inflights.find(virtual_offset);
             MONAD_ASSERT(it != inflights.end());
-            auto const pendings = std::move(it->second);
+            auto pendings = std::move(it->second);
             inflights.erase(it);
-            for (auto const &cont : pendings) {
+            for (auto &cont : pendings) {
                 MONAD_ASSERT(cont(start_cursor));
             }
         }
     };
 
+    // Caller must verify we are on the I/O-owning thread before calling; the
+    // promise has already been moved into `cont` and can no longer set a
+    // fallback result here.
     void async_read_with_continuation(
         UpdateAux &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
-        threadsafe_boost_fibers_promise<find_owning_cursor_result_type>
-            &promise,
-        auto &&cont, chunk_offset_t const read_offset,
+        std::move_only_function<result<void>(NodeCursor const &)> cont,
+        chunk_offset_t const read_offset,
         virtual_chunk_offset_t const virtual_offset)
     {
-        if (aux.io->owning_thread_id() != get_tl_tid()) {
-            promise.set_value(
-                {NodeCursor{}, find_result::need_to_continue_in_io_thread});
-            return;
-        }
+        MONAD_ASSERT(aux.io->owning_thread_id() == get_tl_tid());
         if (auto const lt = inflights.find(virtual_offset);
             lt != inflights.end()) {
-            lt->second.emplace_back(std::forward<decltype(cont)>(cont));
+            lt->second.emplace_back(std::move(cont));
             return;
         }
-        inflights[virtual_offset].emplace_back(cont);
+        inflights[virtual_offset].emplace_back(std::move(cont));
         find_owning_receiver receiver(
             aux, node_cache, inflights, read_offset, virtual_offset);
         detail::initiate_async_read_update(
@@ -185,8 +182,7 @@ namespace
 }
 
 void find_notify_fiber_future(
-    UpdateAux &aux,
-    threadsafe_boost_fibers_promise<find_cursor_result_type> &promise,
+    UpdateAux &aux, ::boost::fibers::promise<find_cursor_result_type> promise,
     NodeCursor const &root, NibblesView const key)
 {
     if (!root.is_valid()) {
@@ -225,7 +221,7 @@ void find_notify_fiber_future(
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
         if (auto const &next = node->next(child_index); next != nullptr) {
-            find_notify_fiber_future(aux, promise, next, next_key);
+            find_notify_fiber_future(aux, std::move(promise), next, next_key);
             return;
         }
         if (aux.io->owning_thread_id() != get_tl_tid()) {
@@ -234,9 +230,9 @@ void find_notify_fiber_future(
                  find_result::need_to_continue_in_io_thread});
             return;
         }
-        auto cont = [&aux, &promise, next_key](
-                        NodeCursor const &node_cursor) -> result<void> {
-            find_notify_fiber_future(aux, promise, node_cursor, next_key);
+        auto cont = [&aux, p = std::move(promise), next_key](
+                        NodeCursor const &node_cursor) mutable -> result<void> {
+            find_notify_fiber_future(aux, std::move(p), node_cursor, next_key);
             return success();
         };
         find_receiver receiver(std::move(cont), std::move(node), branch);
@@ -254,7 +250,7 @@ void find_notify_fiber_future(
 // Upon read completion, deserialize node and add to node_cache
 void find_owning_notify_fiber_future(
     UpdateAux &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
-    threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
+    ::boost::fibers::promise<find_owning_cursor_result_type> promise,
     NodeCursor const &start, NibblesView const key, uint64_t const version)
 {
     if (!aux.metadata_ctx().version_is_valid_ondisk(version)) {
@@ -313,17 +309,26 @@ void find_owning_notify_fiber_future(
                 aux,
                 node_cache,
                 inflights,
-                promise,
+                std::move(promise),
                 next_cursor,
                 next_key,
                 version);
             return;
         }
+        if (aux.io->owning_thread_id() != get_tl_tid()) {
+            promise.set_value(
+                {NodeCursor{}, find_result::need_to_continue_in_io_thread});
+            return;
+        }
         auto cont =
-            [&aux, &node_cache, &inflights, &promise, next_key, version](
-                NodeCursor const &node_cursor) -> result<void> {
+            [&aux,
+             &node_cache,
+             &inflights,
+             p = std::move(promise),
+             next_key,
+             version](NodeCursor const &node_cursor) mutable -> result<void> {
             if (!node_cursor.is_valid()) {
-                promise.set_value(
+                p.set_value(
                     {NodeCursor{}, find_result::version_no_longer_exist});
                 return success();
             }
@@ -331,7 +336,7 @@ void find_owning_notify_fiber_future(
                 aux,
                 node_cache,
                 inflights,
-                promise,
+                std::move(p),
                 node_cursor,
                 next_key,
                 version);
@@ -341,8 +346,7 @@ void find_owning_notify_fiber_future(
             aux,
             node_cache,
             inflights,
-            promise,
-            cont,
+            std::move(cont),
             next_node_offset,
             next_virtual_offset);
     }
@@ -355,7 +359,7 @@ void find_owning_notify_fiber_future(
 
 void load_root_notify_fiber_future(
     UpdateAux &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
-    threadsafe_boost_fibers_promise<find_owning_cursor_result_type> &promise,
+    ::boost::fibers::promise<find_owning_cursor_result_type> promise,
     uint64_t const version)
 {
     auto const root_offset =
@@ -374,13 +378,18 @@ void load_root_notify_fiber_future(
         promise.set_value({NodeCursor{root}, find_result::success});
         return;
     }
-    auto cont = [&promise](NodeCursor const &node_cursor) -> result<void> {
+    if (aux.io->owning_thread_id() != get_tl_tid()) {
+        promise.set_value(
+            {NodeCursor{}, find_result::need_to_continue_in_io_thread});
+        return;
+    }
+    auto cont = [p = std::move(promise)](
+                    NodeCursor const &node_cursor) mutable -> result<void> {
         if (!node_cursor.is_valid()) {
-            promise.set_value(
-                {node_cursor, find_result::version_no_longer_exist});
+            p.set_value({node_cursor, find_result::version_no_longer_exist});
         }
         else {
-            promise.set_value({node_cursor, find_result::success});
+            p.set_value({node_cursor, find_result::success});
         }
         return success();
     };
@@ -388,8 +397,7 @@ void load_root_notify_fiber_future(
         aux,
         node_cache,
         inflights,
-        promise,
-        cont,
+        std::move(cont),
         root_offset,
         root_virtual_offset);
 }

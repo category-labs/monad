@@ -4710,6 +4710,51 @@ Proof.
       reflexivity.
 Qed.
 
+Definition byte_Z (byte_index value : Z) : Z :=
+  if byte_index <? 32
+  then (value / 2 ^ (8 * (31 - byte_index))) mod 256
+  else 0.
+
+Lemma to_Z_byte_limit :
+  to_Z_uint256 (mk_uint256 (shl one 5) zero zero zero) = 32.
+Proof.
+  unfold to_Z_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3 WL.to_Z_words].
+  rewrite to_Z_shl_one by (rewrite width_is_64; simpl; lia).
+  rewrite !spec_zero.
+  lia.
+Qed.
+
+Lemma byte_word_index_nat_correct : forall word_index,
+  0 <= to_Z word_index < 4 ->
+  byte_word_index_nat word_index = Z.to_nat (to_Z word_index).
+Proof.
+  intros word_index [Hword_ge Hword_lt].
+  assert (Htwo : to_Z (add one one) = 2).
+  { rewrite !spec_add, !spec_one.
+    rewrite Z.mod_small.
+    - reflexivity.
+    - unfold base. rewrite width_is_64. lia. }
+  unfold byte_word_index_nat.
+  destruct (Z.eq_dec (to_Z word_index) 0) as [H0|H0].
+  - rewrite spec_eqb, spec_zero, H0. reflexivity.
+  - rewrite spec_eqb, spec_zero.
+    replace (to_Z word_index =? 0) with false.
+    2:{ symmetry. apply Z.eqb_neq. exact H0. }
+    destruct (Z.eq_dec (to_Z word_index) 1) as [H1|H1].
+    + rewrite spec_eqb, spec_one, H1. reflexivity.
+    + rewrite spec_eqb, spec_one.
+      replace (to_Z word_index =? 1) with false.
+      2:{ symmetry. apply Z.eqb_neq. exact H1. }
+      destruct (Z.eq_dec (to_Z word_index) 2) as [H2|H2].
+      * rewrite spec_eqb, Htwo, H2. reflexivity.
+      * rewrite spec_eqb, Htwo.
+        replace (to_Z word_index =? 2) with false.
+        2:{ symmetry. apply Z.eqb_neq. exact H2. }
+        assert (H3 : to_Z word_index = 3) by lia.
+        rewrite H3. reflexivity.
+Qed.
+
 Lemma is_two_uint256_true : forall x,
   is_two_uint256 x = true ->
   to_Z_uint256 x = 2.

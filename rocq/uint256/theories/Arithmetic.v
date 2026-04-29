@@ -339,6 +339,25 @@ Definition signextend (byte_index_256 x : uint256) : uint256 :=
     let ret := set_word ws word_index_n current in
     words_to_uint256 (fill_words_from ret (S word_index_n) sign_bits).
 
+Definition byte_word_index_nat (word_index : t) : nat :=
+  if word_index =? 0 then 0%nat
+  else if word_index =? 1 then 1%nat
+  else if word_index =? (1 + 1) then 2%nat
+  else 3%nat.
+
+Definition byte (byte_index_256 x : uint256) : uint256 :=
+  if negb (ltb_uint256 byte_index_256 (mk_uint256 (shl 1 5) 0 0 0))
+  then zero_uint256
+  else
+    let byte_index := ((shl 1 5 - 1) - w0 byte_index_256)%Uint in
+    let word_index := shr byte_index 3 in
+    let word_index_n := byte_word_index_nat word_index in
+    let word := get_word (uint256_to_words x) word_index_n in
+    let bit_index := shl (land byte_index (shl 1 3 - 1)) 3 in
+    let s := bounded_shift_nat word_width bit_index in
+    let byte_value := land (shr word s) (shl 1 8 - 1) in
+    mk_uint256 byte_value 0 0 0.
+
 Definition exp (base exponent : uint256) : uint256 :=
   if is_two_uint256 base
   then shift_left_uint256 one_uint256 exponent

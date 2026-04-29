@@ -74,6 +74,7 @@ Result<byte_string> system_call(
         .initcodes_count = 0,
     };
 
+    auto msg_memory = state.vm().message_memory_ref();
     evmc_message const msg = {
         .kind = EVMC_CALL,
         .flags = 0,
@@ -86,9 +87,9 @@ Result<byte_string> system_call(
         .value = {},
         .create2_salt = {},
         .code_address = contract_address,
-        .memory_handle = nullptr,
-        .memory = nullptr,
-        .memory_capacity = 0,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = state.vm().message_memory_capacity(),
     };
 
     state.access_account(contract_address);

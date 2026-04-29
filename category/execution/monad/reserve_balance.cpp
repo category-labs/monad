@@ -36,8 +36,6 @@
 
 #include <ankerl/unordered_dense.h>
 
-#include <intx/intx.hpp>
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>

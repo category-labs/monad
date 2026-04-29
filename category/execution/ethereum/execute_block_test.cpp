@@ -13,21 +13,58 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/monad_exception.hpp>
+#include <category/core/result.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
+#include <category/mpt/nibbles_view.hpp>
+#include <category/mpt/node.hpp>
 #include <category/mpt/traverse_util.hpp>
+#include <category/mpt/util.hpp>
+#include <category/vm/code.hpp>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
 #include <test_resource_data.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <limits>
+#include <memory>
+#include <numeric>
+#include <optional>
+#include <utility>
+#include <variant>
+#include <vector>
 
 using namespace monad;
 using namespace monad::test;
@@ -124,8 +161,6 @@ namespace
 // within the 250'000'000 gas limit in all revisions
 TYPED_TEST(TraitsTest, call_frames_stress_test)
 {
-    using intx::operator""_u256;
-    using intx::operator""_u128;
     using monad::literals::operator""_bytes;
 
     static constexpr auto from{
@@ -149,7 +184,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = 0xffffffffffffffffffffffffffffffff_u128,
+                          .balance = 0xffffffffffffffffffffffffffffffff_u256,
                           .code_hash = NULL_HASH,
                           .nonce = 0x0}}}},
             {to,
@@ -298,7 +333,6 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
 // This test is based on the test `TraitsTest.call_frames_stress_test`
 TYPED_TEST(TraitsTest, assertion_exception)
 {
-    using intx::operator""_u256;
     using monad::literals::operator""_bytes;
 
     static constexpr auto from{
@@ -438,7 +472,6 @@ TYPED_TEST(TraitsTest, assertion_exception)
 // https://github.com/ethereum/tests/blob/v10.0/BlockchainTests/GeneralStateTests/stRefundTest/refund50_1.json
 TYPED_TEST(TraitsTest, call_frames_refund)
 {
-    using intx::operator""_u256;
     using monad::literals::operator""_bytes;
 
     static constexpr auto from{

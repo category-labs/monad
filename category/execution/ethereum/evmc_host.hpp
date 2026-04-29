@@ -32,8 +32,6 @@
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <intx/intx.hpp>
-
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 

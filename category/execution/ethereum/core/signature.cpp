@@ -17,7 +17,6 @@
 #include <category/core/int.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
-
 MONAD_NAMESPACE_BEGIN
 
 void SignatureAndChain::from_v(uint256_t const &v)

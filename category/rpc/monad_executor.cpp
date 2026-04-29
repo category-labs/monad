@@ -24,13 +24,13 @@
 #include <category/core/fiber/fiber_thread_pool.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
-#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/core/lru/static_lru_cache.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
@@ -95,7 +95,6 @@
 #include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <intx/intx.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 using namespace monad;

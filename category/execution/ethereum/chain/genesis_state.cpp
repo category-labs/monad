@@ -14,16 +14,18 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
-#include <category/core/blake3.hpp>
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -53,7 +55,7 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         auto const &value = item.value();
 
         Account account{};
-        account.balance = intx::from_string<uint256_t>(value["wei_balance"]);
+        account.balance = uint256_t::from_string(value["wei_balance"]);
 
         if (auto const it = value.find("nonce"); it != value.end()) {
             account.nonce = std::stoull(it->get<std::string>(), nullptr, 0);

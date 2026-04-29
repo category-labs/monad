@@ -226,7 +226,7 @@ namespace nlohmann
     {
         static void from_json(nlohmann::json const &json, monad::uint128_t &o)
         {
-            o = intx::from_string<monad::uint128_t>(json.get<std::string>());
+            o = monad::from_string<monad::uint128_t>(json.get<std::string>());
         }
     };
 
@@ -287,7 +287,7 @@ namespace nlohmann
     {
         static void from_json(nlohmann::json const &json, monad::uint256_t &o)
         {
-            o = intx::from_string<monad::uint256_t>(json.get<std::string>());
+            o = monad::from_string<monad::uint256_t>(json.get<std::string>());
         }
     };
 

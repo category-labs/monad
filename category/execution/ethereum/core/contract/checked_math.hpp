@@ -41,10 +41,10 @@ enum class MathError
     DivisionByZero,
 };
 
-Result<uint256_t> checked_add(uint256_t const &x, uint256_t const &y);
-Result<uint256_t> checked_sub(uint256_t const &x, uint256_t const &y);
-Result<uint256_t> checked_mul(uint256_t const &x, uint256_t const &y);
-Result<uint256_t> checked_div(uint256_t const &x, uint256_t const &y);
+Result<uint256_t> checked_add(uint256_t const &x, uint256_t const &y) noexcept;
+Result<uint256_t> checked_sub(uint256_t const &x, uint256_t const &y) noexcept;
+Result<uint256_t> checked_mul(uint256_t const &x, uint256_t const &y) noexcept;
+Result<uint256_t> checked_div(uint256_t const &x, uint256_t const &y) noexcept;
 
 MONAD_NAMESPACE_END
 

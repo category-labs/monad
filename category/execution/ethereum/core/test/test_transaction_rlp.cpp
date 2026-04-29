@@ -14,19 +14,21 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 
 #include <evmc/evmc.hpp>
 
-#include <intx/intx.hpp>
-
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <optional>
 
 using namespace monad;
 using namespace monad::rlp;
+using namespace monad::literals;
 
 TEST(Rlp_Transaction, DecodeEncodeAccessList)
 {
@@ -117,8 +119,6 @@ TEST(Rlp_Transaction, EncodeAccessListMultipleEntry)
 // Example data from: EIP-155
 TEST(Rlp_Transaction, DecodeEncodeLegacy)
 {
-    using namespace intx;
-    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -168,8 +168,6 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
 
 TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
 {
-    using namespace intx;
-    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -204,8 +202,6 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
 
 TEST(Rlp_Transaction, EncodeEip155)
 {
-    using namespace intx;
-    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -258,8 +254,6 @@ TEST(Rlp_Transaction, EncodeEip155)
 
 TEST(Rlp_Transaction, EncodeEip2930)
 {
-    using namespace intx;
-    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -346,8 +340,6 @@ TEST(Rlp_Transaction, EncodeEip2930)
 
 TEST(Rlp_Transaction, EncodeEip1559TrueParity)
 {
-    using namespace intx;
-    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -424,8 +416,6 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
 
 TEST(Rlp_Transaction, EncodeEip1559FalseParity)
 {
-    using namespace intx;
-    using namespace monad::literals;
 
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
@@ -502,8 +492,6 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
 
 TEST(Rlp_Transaction, IntTypeMismatchRegression)
 {
-    using intx::operator""_u256;
-    using namespace monad::literals;
 
     static constexpr auto to_addr{
         0x3535353535353535353535353535353535353535_address};

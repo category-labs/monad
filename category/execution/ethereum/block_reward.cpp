@@ -25,11 +25,8 @@
 
 #include <evmc/evmc.h>
 
-#include <intx/intx.hpp>
-
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -59,8 +56,9 @@ constexpr uint256_t calculate_block_reward(
     size_t const ommers_size)
 {
     MONAD_ASSERT(
-        intx::umul(ommer_reward, uint256_t{ommers_size}) <=
-        std::numeric_limits<uint256_t>::max() - reward);
+        ommers_size == 0 ||
+        ommer_reward <=
+            (std::numeric_limits<uint256_t>::max() - reward) / ommers_size);
 
     return reward + ommer_reward * ommers_size;
 }

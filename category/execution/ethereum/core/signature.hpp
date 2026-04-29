@@ -15,8 +15,10 @@
 
 #pragma once
 
+#include <category/core/config.hpp>
 #include <category/core/int.hpp>
 
+#include <cstdint>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -36,7 +38,7 @@ struct SignatureAndChain
      */
     constexpr bool has_upper_s() const
     {
-        using namespace intx::literals;
+        using namespace monad::literals;
         static constexpr auto secp256k1_order =
             0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
         return s > secp256k1_order / 2;

@@ -29,9 +29,10 @@
 #include <string>
 #include <sys/types.h>
 #include <tuple>
+#include <utility>
 #include <vector>
 
-using namespace monad::vm::runtime;
+using namespace monad;
 
 static_assert(
     alignof(uint256_t) == alignof(::intx::uint256),
@@ -463,6 +464,14 @@ TEST(uint256, arithmetic)
         }
         ASSERT_EQ(-x, from_intx(-(to_intx(x))));
     }
+
+    // INT256_MIN / -1: EVM defines result as INT256_MIN (wraps, not UB)
+    constexpr uint256_t int256_min = {0, 0, 0, uint64_t{1} << 63};
+    constexpr uint256_t minus_one = {
+        ~uint64_t{0}, ~uint64_t{0}, ~uint64_t{0}, ~uint64_t{0}};
+    auto const [q, r] = sdivrem(int256_min, minus_one);
+    ASSERT_EQ(q, int256_min);
+    ASSERT_EQ(r, uint256_t{0});
 }
 
 template <size_t R, size_t M, size_t N>
@@ -499,7 +508,7 @@ TEST(uint256, multiplication)
         0xabcda1b2c3d41234};
     for (auto const &x : single_word_inputs) {
         for (auto const &y : single_word_inputs) {
-            auto const product_u128 = static_cast<uint128_t>(x) * y;
+            auto const product_u128 = static_cast<unsigned __int128>(x) * y;
             words_t<2> product{
                 static_cast<uint64_t>(product_u128),
                 static_cast<uint64_t>(product_u128 >> 64)};
@@ -780,4 +789,10 @@ TEST(uint256, string_conversion)
         "129639945";
     ASSERT_THROW(
         uint256_t::from_string(out_of_range_78_digits), std::out_of_range);
+
+    ASSERT_EQ(uint256_t::from_string("0X1a2b"), uint256_t{0x1a2b});
+    ASSERT_EQ(uint256_t::from_string("0Xff"), uint256_t{0xff});
+    ASSERT_THROW(uint256_t::from_string(""), std::invalid_argument);
+    ASSERT_THROW(uint256_t::from_string("0x"), std::invalid_argument);
+    ASSERT_THROW(uint256_t::from_string("0X"), std::invalid_argument);
 }

@@ -37,8 +37,6 @@
 
 #include <evmc/evmc.h>
 
-#include <intx/intx.hpp>
-
 #include <immer/vector.hpp>
 
 #include <algorithm>

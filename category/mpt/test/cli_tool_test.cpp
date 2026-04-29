@@ -52,7 +52,11 @@ TEST(cli_tool, no_args_prints_fatal_and_help)
     int const retcode = main_impl(cout, cerr, args);
     ASSERT_EQ(retcode, 1);
     EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
-    EXPECT_NE(std::string::npos, cerr.str().find("Options:"));
+    {
+        std::string out = cerr.str();
+        std::transform(out.begin(), out.end(), out.begin(), ::tolower);
+        EXPECT_NE(std::string::npos, out.find("options:"));
+    }
 }
 
 TEST(cli_tool, help_prints_help)

@@ -20,9 +20,25 @@
     loop for all bases.  The public 256-bit [exp] definition later in
     the file models the dedicated C++ [base == 2] fast path as well. *)
 
-From Stdlib Require Import PArith List Bool.
+From Stdlib Require Import ZArith PArith List Bool.
 From Uint256 Require Import Uint Base Primitives Words RuntimeMul Division.
 Import ListNotations.
+
+Open Scope Z_scope.
+
+Definition signextend_Z (byte_index value : Z) : Z :=
+  if byte_index <? 31 then
+    let bits := 8 * (byte_index + 1) in
+    let low := value mod 2 ^ bits in
+    if low <? 2 ^ (bits - 1)
+    then low
+    else low + (2 ^ 256 - 2 ^ bits)
+  else value.
+
+Definition byte_Z (byte_index value : Z) : Z :=
+  if byte_index <? 32
+  then (value / 2 ^ (8 * (31 - byte_index))) mod 256
+  else 0.
 
 Module Make (B : Base.BaseSig) (U128 : Uint128Ops)
   (Bridge : UintWidenOps B.U64 U128)

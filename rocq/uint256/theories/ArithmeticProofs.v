@@ -4135,15 +4135,6 @@ Proof.
   intros. reflexivity.
 Qed.
 
-Definition signextend_Z (byte_index value : Z) : Z :=
-  if byte_index <? 31 then
-    let bits := 8 * (byte_index + 1) in
-    let low := value mod 2 ^ bits in
-    if low <? 2 ^ (bits - 1)
-    then low
-    else low + (modulus256 - 2 ^ bits)
-  else value.
-
 Theorem signextend_correct : forall byte_index_256 x,
   to_Z_uint256 (signextend byte_index_256 x) =
     signextend_Z (to_Z_uint256 byte_index_256) (to_Z_uint256 x).
@@ -4196,6 +4187,13 @@ Proof.
   cbn [negb w0 w1 w2 w3].
   rewrite Hword_index_n, Hb.
   unfold signextend_Z.
+  replace (2 ^ 256) with modulus256.
+  2:{ unfold modulus256, modulus_words, WL.modulus_words, base.
+      rewrite width_is_64.
+      change (Z.pow_pos (2 ^ 64) 4) with ((2 ^ 64) ^ 4).
+      rewrite <- Z.pow_mul_r by lia.
+      replace (64 * 4) with 256 by lia.
+      reflexivity. }
   replace (to_Z b0 <? 31) with true
     by (symmetry; apply Z.ltb_lt; lia).
   set (n := Z.to_nat (to_Z (shr b0 3))).
@@ -4709,11 +4707,6 @@ Proof.
                  (Z.of_nat s)) by lia.
       reflexivity.
 Qed.
-
-Definition byte_Z (byte_index value : Z) : Z :=
-  if byte_index <? 32
-  then (value / 2 ^ (8 * (31 - byte_index))) mod 256
-  else 0.
 
 Lemma to_Z_byte_limit :
   to_Z_uint256 (mk_uint256 (shl one 5) zero zero zero) = 32.

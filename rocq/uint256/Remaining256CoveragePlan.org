@@ -22,8 +22,10 @@ document:
   proved by `byte_correct` in
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
 - `countl_zero(uint256_t)` and `count_significant_bytes` are modeled in
-  [[theories/Arithmetic.v][theories/Arithmetic.v]]; their correctness proofs
-  are still open.
+  [[theories/Arithmetic.v][theories/Arithmetic.v]] and proved by
+  `countl_zero_uint256_correct` and
+  `count_significant_bytes_correct` in
+  [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
 - `byteswap`, `countr_zero`, and `popcount` are still missing ports,
   not merely missing proofs.
 - The `Abort.` blocks in
@@ -33,7 +35,7 @@ document:
 
 For immediate coverage work, the queue is therefore:
 
-1. Prove the byte-counting wrappers.
+1. Port `byteswap`.
 2. Extend the word and record-level bitwise interface where needed for
    `countr_zero`, `popcount`, and `byteswap`.
 
@@ -208,8 +210,7 @@ What is still missing from the overall Rocq development is mostly the
 `uint256.hpp` surface around:
 
 - `byteswap`
-- `countl_zero(uint256_t)`, `count_significant_bytes`,
-  `countr_zero`, `popcount`
+- `countr_zero`, `popcount`
 - serialization and byte parsing helpers
 
 Serialization is not a current verification priority and should be
@@ -256,18 +257,20 @@ loading, storing, or parsing helpers unless priorities change.
    - low-word result
 
    The proof-side semantic target is `byte_Z` in
-   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]. The proof
+   [[theories/Arithmetic.v][theories/Arithmetic.v]]. The proof
    reuses the `signextend_correct` setup pattern: collapse the bounded
    index to `b0`, normalize `31 - b0`, split on the selected word
    index, and show the masked shift equals the selected byte of the
    256-bit value.
 
-3. Prove `countl_zero_uint256` and `count_significant_bytes`.
+3. `countl_zero_uint256` and `count_significant_bytes` are complete.
 
    The models in [[theories/Arithmetic.v][theories/Arithmetic.v]] are natural
    wrappers over the existing word-level `countl_zero` and generic
-   `count_significant_words`. The proof should keep the same scan
-   order as the C++ loops.
+   `count_significant_words`. `countl_zero_uint256_correct` proves the
+   high-to-low scan shape, and `count_significant_bytes_correct`
+   proves the byte count is the ceiling of the significant bit count
+   derived from `countl_zero_uint256`.
 
 4. Port `byteswap` after `byte`.
 
@@ -317,7 +320,7 @@ loading, storing, or parsing helpers unless priorities change.
    and obvious, and a direct Rocq match is preferable to a bespoke
    bit-scan encoding.
 
-6. Decide where serialization belongs.
+5. Decide where serialization belongs.
 
    `load_be`, `load_le`, `store_be`, `store_le`, `from_bytes`, and
    string parsing are probably better in a dedicated byte or encoding
@@ -328,7 +331,7 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. `countl_zero_uint256` and `count_significant_bytes`
+1. `byteswap`
 2. interface extension for `and`, `xor`, `not`
-3. `countr_zero`, `popcount`, `byteswap`
+3. `countr_zero`, `popcount`
 4. serialization helpers

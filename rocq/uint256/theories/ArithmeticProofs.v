@@ -5074,6 +5074,171 @@ Proof.
     reflexivity.
 Qed.
 
+Lemma countl_zero_to_Z_zero : forall x,
+  to_Z x = 0 ->
+  countl_zero x = word_width.
+Proof.
+  intros x Hx.
+  assert (Hgo : forall n, countl_zero_go x n = n).
+  { induction n as [|n IH].
+    - reflexivity.
+    - cbn [countl_zero_go].
+      assert (Hshr : (shr x n =? zero)%Uint = true).
+      { rewrite spec_eqb, spec_shr, spec_zero, Hx.
+        rewrite Z.shiftr_0_l.
+        rewrite Z.mod_0_l by (unfold base; pose proof width_is_64; lia).
+        reflexivity. }
+      rewrite Hshr.
+      now f_equal. }
+  unfold countl_zero, word_width.
+  apply Hgo.
+Qed.
+
+Lemma countl_zero_nonzero_lt_width : forall x,
+  to_Z x > 0 ->
+  (countl_zero x < word_width)%nat.
+Proof.
+  intros x Hx.
+  unfold word_width.
+  now apply DP.countl_zero_bound.
+Qed.
+
+Theorem countl_zero_uint256_correct : forall x,
+  countl_zero_uint256 x =
+    match count_significant_words (uint256_to_words x) with
+    | O => (4 * word_width)%nat
+    | S words_before =>
+        (((4 - S words_before) * word_width) +
+          countl_zero (get_word (uint256_to_words x) words_before))%nat
+    end.
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold countl_zero_uint256, count_significant_words, uint256_to_words.
+  cbn [w0 w1 w2 w3 rev skip_leading_zeros length get_word nth].
+  destruct (x3 =? zero)%Uint eqn:Hx3.
+  - pose proof Hx3 as Hx3z.
+    rewrite spec_eqb in Hx3z. apply Z.eqb_eq in Hx3z.
+    rewrite spec_zero in Hx3z.
+    rewrite (countl_zero_to_Z_zero x3 Hx3z).
+    replace (Nat.eqb word_width (1 * word_width)) with true
+      by (symmetry; apply Nat.eqb_eq; lia).
+    destruct (x2 =? zero)%Uint eqn:Hx2.
+    + pose proof Hx2 as Hx2z.
+      rewrite spec_eqb in Hx2z. apply Z.eqb_eq in Hx2z.
+      rewrite spec_zero in Hx2z.
+      rewrite (countl_zero_to_Z_zero x2 Hx2z).
+      replace (Nat.eqb (word_width + word_width) (2 * word_width))
+        with true by (symmetry; apply Nat.eqb_eq; lia).
+      destruct (x1 =? zero)%Uint eqn:Hx1.
+      * pose proof Hx1 as Hx1z.
+        rewrite spec_eqb in Hx1z. apply Z.eqb_eq in Hx1z.
+        rewrite spec_zero in Hx1z.
+        rewrite (countl_zero_to_Z_zero x1 Hx1z).
+        replace (Nat.eqb (word_width + word_width + word_width)
+          (3 * word_width)) with true
+          by (symmetry; apply Nat.eqb_eq; lia).
+        destruct (x0 =? zero)%Uint eqn:Hx0.
+        -- pose proof Hx0 as Hx0z.
+           rewrite spec_eqb in Hx0z. apply Z.eqb_eq in Hx0z.
+           rewrite spec_zero in Hx0z.
+           rewrite (countl_zero_to_Z_zero x0 Hx0z).
+           cbn [app skip_leading_zeros length get_word nth].
+           rewrite Hx3, Hx2, Hx1, Hx0.
+           cbn.
+           lia.
+        -- pose proof Hx0 as Hx0z.
+           rewrite spec_eqb in Hx0z. apply Z.eqb_neq in Hx0z.
+           rewrite spec_zero in Hx0z.
+           pose proof (spec_to_Z x0) as Hx0_bounds.
+           pose proof (countl_zero_nonzero_lt_width x0 ltac:(lia))
+             as Hx0_clz.
+           cbn [app skip_leading_zeros length get_word nth].
+           rewrite Hx3, Hx2, Hx1, Hx0.
+           cbn.
+           lia.
+      * pose proof Hx1 as Hx1z.
+        rewrite spec_eqb in Hx1z. apply Z.eqb_neq in Hx1z.
+        rewrite spec_zero in Hx1z.
+        pose proof (spec_to_Z x1) as Hx1_bounds.
+        pose proof (countl_zero_nonzero_lt_width x1 ltac:(lia))
+          as Hx1_clz.
+        replace (Nat.eqb (word_width + word_width + countl_zero x1)
+          (3 * word_width)) with false.
+        2:{ symmetry. apply Nat.eqb_neq. lia. }
+        cbn [app skip_leading_zeros length get_word nth].
+        rewrite Hx3, Hx2, Hx1.
+        cbn.
+        lia.
+    + pose proof Hx2 as Hx2z.
+      rewrite spec_eqb in Hx2z. apply Z.eqb_neq in Hx2z.
+      rewrite spec_zero in Hx2z.
+      pose proof (spec_to_Z x2) as Hx2_bounds.
+      pose proof (countl_zero_nonzero_lt_width x2 ltac:(lia))
+        as Hx2_clz.
+      replace (Nat.eqb (word_width + countl_zero x2) (2 * word_width))
+        with false.
+      2:{ symmetry. apply Nat.eqb_neq. lia. }
+      cbn [app skip_leading_zeros length get_word nth].
+      rewrite Hx3, Hx2.
+      cbn.
+      lia.
+  - pose proof Hx3 as Hx3z.
+    rewrite spec_eqb in Hx3z. apply Z.eqb_neq in Hx3z.
+    rewrite spec_zero in Hx3z.
+    pose proof (spec_to_Z x3) as Hx3_bounds.
+    pose proof (countl_zero_nonzero_lt_width x3 ltac:(lia)) as Hx3_clz.
+    replace (Nat.eqb (countl_zero x3) (1 * word_width)) with false.
+    2:{ symmetry. apply Nat.eqb_neq. lia. }
+    cbn [app skip_leading_zeros length get_word nth].
+    rewrite Hx3.
+    cbn.
+    lia.
+Qed.
+
+Theorem count_significant_bytes_correct : forall x,
+  count_significant_bytes x =
+    (((4 * word_width - countl_zero_uint256 x) + 7) / 8)%nat.
+Proof.
+  intro x.
+  rewrite countl_zero_uint256_correct.
+  unfold count_significant_bytes.
+  set (ws := uint256_to_words x).
+  pose proof (DP.count_significant_words_bound ws) as Hbound.
+  assert (Hlen : length ws = 4%nat).
+  { subst ws. apply uint256_to_words_length. }
+  rewrite Hlen in Hbound.
+  destruct (count_significant_words ws) as [|words_before] eqn:Hcsw.
+  - replace (4 * word_width - 4 * word_width)%nat with 0%nat by lia.
+    reflexivity.
+  - pose proof (DP.count_significant_words_msw_nonzero ws) as Hmsw.
+    cbv zeta in Hmsw.
+    rewrite Hcsw in Hmsw.
+    specialize (Hmsw ltac:(lia)).
+    replace (S words_before - 1)%nat with words_before in Hmsw by lia.
+    pose proof (countl_zero_nonzero_lt_width
+      (get_word ws words_before) Hmsw) as Hclz.
+    set (c := countl_zero (get_word ws words_before)) in *.
+    unfold word_width in *.
+    rewrite width_is_64 in *.
+    change (Pos.to_nat 64) with 64%nat in *.
+    destruct words_before as [|[|[|[|words_before]]]]; try lia.
+    + replace (4 * 64 - ((4 - 1) * 64 + c))%nat
+        with (64 - c)%nat by lia.
+      lia.
+    + replace (4 * 64 - ((4 - 2) * 64 + c) + 7)%nat
+        with ((64 - c + 7) + 8 * 8)%nat by lia.
+      rewrite Nat.div_add by lia.
+      lia.
+    + replace (4 * 64 - ((4 - 3) * 64 + c) + 7)%nat
+        with ((64 - c + 7) + 16 * 8)%nat by lia.
+      rewrite Nat.div_add by lia.
+      lia.
+    + replace (4 * 64 - ((4 - 4) * 64 + c) + 7)%nat
+        with ((64 - c + 7) + 24 * 8)%nat by lia.
+      rewrite Nat.div_add by lia.
+      lia.
+Qed.
+
 Lemma is_two_uint256_true : forall x,
   is_two_uint256 x = true ->
   to_Z_uint256 x = 2.

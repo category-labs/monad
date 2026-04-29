@@ -322,6 +322,7 @@ namespace
 
         EvmcHost<traits> host{
             call_tracer,
+            state_tracer,
             tx_context,
             buffer,
             state,

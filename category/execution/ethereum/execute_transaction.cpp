@@ -330,6 +330,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         get_tx_context<traits>(tx_, sender_, header_, chain_.get_chain_id());
     EvmcHost<traits> host{
         call_tracer_,
+        state_tracer_,
         tx_context,
         block_hash_buffer_,
         state,
@@ -425,6 +426,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
+        trace::reset(state_tracer_);
 
         auto result = execute_impl2(state);
 
@@ -449,6 +451,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
 
         call_tracer_.reset();
+        trace::reset(state_tracer_);
 
         auto result = execute_impl2(state);
 

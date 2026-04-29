@@ -107,8 +107,10 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
         senders,
         authorities};
 
+    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
         call_tracer,
+        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -315,9 +317,11 @@ void run_dipped_into_reserve_test(
 
     {
         State state{bs, Incarnation{1, 1}};
+        trace::StateTracer noop_state_tracer = std::monostate{};
 
         EvmcHost<traits> host{
             call_tracer,
+            noop_state_tracer,
             tx_context,
             block_hash_buffer,
             state,
@@ -602,8 +606,10 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
         senders,
         authorities};
 
+    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
         call_tracer,
+        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,

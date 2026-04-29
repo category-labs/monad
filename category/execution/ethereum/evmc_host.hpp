@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -114,9 +115,11 @@ struct EvmcHost final : public EvmcHostBase
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
+    trace::StateTracer &state_tracer_;
 
     EvmcHost(
-        CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
+        CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
+        evmc_tx_context const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
@@ -126,7 +129,15 @@ struct EvmcHost final : public EvmcHostBase
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
         , chain_ctx_{chain_ctx}
+        , state_tracer_{state_tracer}
     {
+    }
+
+    // Notify state tracers while the failed frame is still present in State;
+    // callers reject or discard the frame immediately after this hook.
+    void on_frame_reject()
+    {
+        trace::on_frame_reject(state_tracer_, state_);
     }
 
     virtual bool
@@ -240,9 +251,9 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 128);
+static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 136);
 static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 128);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

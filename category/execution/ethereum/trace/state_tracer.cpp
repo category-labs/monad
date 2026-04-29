@@ -31,8 +31,10 @@
 #include <ankerl/unordered_dense.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <format>
 #include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -200,30 +202,82 @@ namespace trace
         }
     }
 
+    void AccessListTracer::capture_accesses(
+        Address const &address, AccountState const &account_state)
+    {
+        auto &storage_keys = accesses_[address];
+        for (auto const &key : account_state.get_accessed_storage()) {
+            storage_keys.insert(key);
+        }
+    }
+
+    void AccessListTracer::capture_accesses(State const &state)
+    {
+        for (auto const &[address, current_stack] : state.current()) {
+            capture_accesses(address, current_stack.recent());
+        }
+    }
+
+    void AccessListTracer::capture_rejected_frame_accesses(State const &state)
+    {
+        auto const &current = state.current();
+        for (auto const &address : state.current_frame_dirty_accounts()) {
+            auto const it = current.find(address);
+            MONAD_ASSERT(it != current.end());
+            capture_accesses(address, it->second.recent());
+        }
+    }
+
+    void AccessListTracer::reset()
+    {
+        accesses_.clear();
+    }
+
     template <Traits traits>
     void AccessListTracer::encode(State &state)
     {
-        auto access_list = json::array();
-        for (auto const &[address, current_stack] : state.current()) {
-            auto keys = json::array();
-            auto const &current_account_state = current_stack.recent();
-            for (auto const &key :
-                 current_account_state.get_accessed_storage()) {
-                keys.push_back(bytes_to_hex(key.bytes));
-            }
+        // Merge accepted-frame accesses still visible in State with any
+        // failed-frame accesses captured before rollback.
+        capture_accesses(state);
 
+        struct AccessListEntry
+        {
+            Address address;
+            std::vector<bytes32_t> storage_keys;
+        };
+
+        std::vector<AccessListEntry> entries;
+        entries.reserve(accesses_.size());
+        for (auto const &[address, storage_keys] : accesses_) {
+            auto &entry = entries.emplace_back();
+            entry.address = address;
+            entry.storage_keys.assign(storage_keys.begin(), storage_keys.end());
+            // Match go-ethereum's access-list tracer output order: storage
+            // keys are sorted within each address, then entries are sorted by
+            // address below.
+            std::ranges::sort(entry.storage_keys);
+        }
+        std::ranges::sort(entries, {}, &AccessListEntry::address);
+
+        auto access_list = json::array();
+        for (auto const &[address, storage_keys] : entries) {
             // If an address is excluded because it's always considered warm, we
             // still want to include it in the access list if it's had storage
             // keys set by this transaction.
-            auto const exclude =
-                keys.empty() && should_exclude_address<traits>(address);
-
-            if (!exclude) {
-                access_list.push_back(json::object({
-                    {"address", bytes_to_hex(address.bytes)},
-                    {"storageKeys", std::move(keys)},
-                }));
+            if (storage_keys.empty() &&
+                should_exclude_address<traits>(address)) {
+                continue;
             }
+
+            auto keys = json::array();
+            for (auto const &key : storage_keys) {
+                keys.push_back(bytes_to_hex(key.bytes));
+            }
+
+            access_list.push_back(json::object({
+                {"address", bytes_to_hex(address.bytes)},
+                {"storageKeys", std::move(keys)},
+            }));
         }
 
         storage_ = std::move(access_list);
@@ -239,6 +293,26 @@ namespace trace
     }
 
     EXPLICIT_TRAITS_MEMBER(AccessListTracer::should_exclude_address);
+
+    void on_frame_reject(StateTracer &tracer, State &state)
+    {
+        std::visit(
+            Cases{
+                [&state](AccessListTracer &access_list) {
+                    access_list.capture_rejected_frame_accesses(state);
+                },
+                [](auto &&) {}},
+            tracer);
+    }
+
+    void reset(StateTracer &tracer)
+    {
+        std::visit(
+            Cases{
+                [](AccessListTracer &access_list) { access_list.reset(); },
+                [](auto &&) {}},
+            tracer);
+    }
 
     template <Traits traits>
     void run_tracer(StateTracer &tracer, State &state)

@@ -2786,7 +2786,13 @@ TYPED_TEST(DbTest, scalability)
         }
         auto begin = std::chrono::steady_clock::now();
         latch = 0;
-        ::boost::this_fiber::sleep_for(std::chrono::seconds(5));
+        {
+            auto const deadline =
+                std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (std::chrono::steady_clock::now() < deadline) {
+                ::boost::this_fiber::yield();
+            }
+        }
         latch = 1;
         auto end = std::chrono::steady_clock::now();
         std::cout << "      Did "
@@ -2835,7 +2841,13 @@ TYPED_TEST(DbTest, scalability)
         }
         begin = std::chrono::steady_clock::now();
         latch = 0;
-        ::boost::this_fiber::sleep_for(std::chrono::seconds(5));
+        {
+            auto const deadline =
+                std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (std::chrono::steady_clock::now() < deadline) {
+                ::boost::this_fiber::yield();
+            }
+        }
         latch = 1;
         end = std::chrono::steady_clock::now();
         std::cout << "      Did "

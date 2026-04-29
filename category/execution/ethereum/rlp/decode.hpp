@@ -130,6 +130,14 @@ namespace detail
         {
             length = enc[0] - 0x80;
             ++i;
+            if (length == 1) {
+                if (MONAD_UNLIKELY(enc.size() < 2)) {
+                    return DecodeError::InputTooShort;
+                }
+                if (MONAD_UNLIKELY(enc[1] < 0x80)) {
+                    return DecodeError::TypeUnexpected;
+                }
+            }
         }
         else // [0xb8, 0xbf] - long string, N+1 bytes for length, then
              // payload
@@ -141,6 +149,9 @@ namespace detail
             }
             BOOST_OUTCOME_TRY(
                 length, decode_length(enc.substr(i, length_of_length)));
+            if (MONAD_UNLIKELY(length < 56)) {
+                return DecodeError::TypeUnexpected;
+            }
             i += length_of_length;
         }
         return extract_payload<RlpType::String, Options...>(enc, i, length);
@@ -170,6 +181,9 @@ namespace detail
             }
             BOOST_OUTCOME_TRY(
                 length, decode_length(enc.substr(i, length_of_length)));
+            if (MONAD_UNLIKELY(length < 56)) {
+                return DecodeError::TypeUnexpected;
+            }
             i += length_of_length;
         }
         return extract_payload<RlpType::List, Options...>(enc, i, length);

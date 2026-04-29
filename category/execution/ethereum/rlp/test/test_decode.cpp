@@ -132,6 +132,64 @@ TEST(Rlp, ParseMetadata)
         EXPECT_EQ(enc.size(), 0);
     }
 
+    // Empty string, encoded as 0x80
+    {
+        byte_string const encoding{0x80};
+        byte_string_view enc{encoding};
+
+        auto const result = parse_metadata(enc);
+        ASSERT_FALSE(result.has_error());
+        EXPECT_EQ(result.value().first, RlpType::String);
+        EXPECT_EQ(result.value().second, byte_string_view{});
+        EXPECT_EQ(enc.size(), 0);
+    }
+
+    // Single byte 0x80 encoded as a short string, i.e. 0x81 0x80
+    // (canonical: 0x80 is not < 0x80, so it cannot be encoded as itself)
+    {
+        byte_string const encoding{0x81, 0x80};
+        byte_string_view enc{encoding};
+
+        auto const result = parse_metadata(enc);
+        ASSERT_FALSE(result.has_error());
+        EXPECT_EQ(result.value().first, RlpType::String);
+        EXPECT_EQ(result.value().second, byte_string_view(encoding).substr(1));
+        EXPECT_EQ(enc.size(), 0);
+    }
+
+    // Single byte `b` in the range 0x00-0x7f encoded as
+    // 0x81, <b> -> TypeUnexpected
+    {
+        byte_string const encoding{0x81, 0x01};
+        byte_string_view enc{encoding};
+
+        auto const result = parse_metadata(enc);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::TypeUnexpected);
+    }
+
+    // Long string form when payload length < 56 bytes, e.g. 0xb8 0x01 0x01 ->
+    // TypeUnexpected
+    {
+        byte_string const encoding{0xb8, 0x01, 0x01};
+        byte_string_view enc{encoding};
+
+        auto const result = parse_metadata(enc);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::TypeUnexpected);
+    }
+
+    // Long list form when payload length < 56 bytes, e.g. 0xf8 0x01 0xc0 ->
+    // TypeUnexpected
+    {
+        byte_string const encoding{0xf8, 0x01, 0xc0};
+        byte_string_view enc{encoding};
+
+        auto const result = parse_metadata(enc);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::TypeUnexpected);
+    }
+
     // parse_string_metadata on a list-prefix input -> TypeUnexpected
     {
         auto encoding = encode_list2(

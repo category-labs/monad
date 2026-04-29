@@ -115,7 +115,13 @@ TEST(FiberGroup, multiple_groups_prevent_deadlock)
             // Submit inner work (like executing transactions)
             inner_group->submit(1, [&, promise] {
                 // Simulate some work
-                boost::this_fiber::sleep_for(std::chrono::milliseconds(10));
+                {
+                    auto const deadline = std::chrono::steady_clock::now() +
+                                          std::chrono::milliseconds(10);
+                    while (std::chrono::steady_clock::now() < deadline) {
+                        boost::this_fiber::yield();
+                    }
+                }
                 promise->set_value();
             });
 

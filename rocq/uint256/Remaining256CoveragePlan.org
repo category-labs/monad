@@ -18,8 +18,8 @@ document:
   [[theories/Arithmetic.v][theories/Arithmetic.v]] and proved by
   `signextend_correct` in
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
-- `byte` is now modeled in [[theories/Arithmetic.v][theories/Arithmetic.v]];
-  the remaining `byte` work is the `byte_correct` proof in
+- `byte` is modeled in [[theories/Arithmetic.v][theories/Arithmetic.v]] and
+  proved by `byte_correct` in
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
 - `byteswap`, `countl_zero(uint256_t)`, `count_significant_bytes`,
   `countr_zero`, and `popcount` are still missing ports, not merely
@@ -31,8 +31,8 @@ document:
 
 For immediate coverage work, the queue is therefore:
 
-1. Prove `byte_correct`, then add the byte-counting wrappers together
-   with their correctness theorems.
+1. Add the byte-counting wrappers together with their correctness
+   theorems.
 2. Extend the word and record-level bitwise interface where needed for
    `countr_zero`, `popcount`, and `byteswap`.
 
@@ -206,7 +206,6 @@ Final checkpoint from the latest `rocq-mcp` pass:
 What is still missing from the overall Rocq development is mostly the
 `uint256.hpp` surface around:
 
-- the remaining `byte` proof
 - `byteswap`
 - `countl_zero(uint256_t)`, `count_significant_bytes`,
   `countr_zero`, `popcount`
@@ -244,7 +243,7 @@ loading, storing, or parsing helpers unless priorities change.
    with `uint256.hpp` is desired. Reuse the existing division model and
    proofs rather than re-proving the algorithm.
 
-2. Prove `byte_correct`.
+2. `byte_correct` is complete.
 
    The model in [[theories/Arithmetic.v][theories/Arithmetic.v]] follows the
    C++ implementation:
@@ -256,11 +255,11 @@ loading, storing, or parsing helpers unless priorities change.
    - low-word result
 
    The proof-side semantic target is `byte_Z` in
-   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]. The next
-   proof should reuse the `signextend_correct` setup pattern: collapse
-   the bounded index to `b0`, normalize `31 - b0`, split on the
-   selected word index, and show the masked shift equals the selected
-   byte of the 256-bit value.
+   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]. The proof
+   reuses the `signextend_correct` setup pattern: collapse the bounded
+   index to `b0`, normalize `31 - b0`, split on the selected word
+   index, and show the masked shift equals the selected byte of the
+   256-bit value.
 
 3. Port `countl_zero(uint256)` and `count_significant_bytes`.
 
@@ -327,8 +326,7 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. `byte_correct`
-2. `countl_zero(uint256)` and `count_significant_bytes`
-3. interface extension for `and`, `xor`, `not`
-4. `countr_zero`, `popcount`, `byteswap`
-5. serialization helpers
+1. `countl_zero(uint256)` and `count_significant_bytes`
+2. interface extension for `and`, `xor`, `not`
+3. `countr_zero`, `popcount`, `byteswap`
+4. serialization helpers

@@ -4755,6 +4755,332 @@ Proof.
         rewrite H3. reflexivity.
 Qed.
 
+Lemma byte_value_to_Z : forall word s,
+  to_Z (land (shr word s) (sub (shl one 8) one)) =
+    (to_Z word / 2 ^ Z.of_nat s) mod 256.
+Proof.
+  intros word s.
+  rewrite to_Z_land_low_mask by (rewrite width_is_64; simpl; lia).
+  rewrite to_Z_shr.
+  change (2 ^ Z.of_nat 8) with 256.
+  reflexivity.
+Qed.
+
+Lemma to_Z_uint256_low_word : forall word,
+  to_Z_uint256 (mk_uint256 word zero zero zero) = to_Z word.
+Proof.
+  intro word.
+  unfold to_Z_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3 WL.to_Z_words].
+  rewrite !spec_zero.
+  rewrite ?Z.mul_0_r, ?Z.add_0_r.
+  reflexivity.
+Qed.
+
+Lemma byte_extract_low_word : forall low tail m,
+  0 <= m <= 56 ->
+  ((to_Z low + 2 ^ 64 * tail) / 2 ^ m) mod 256 =
+    (to_Z low / 2 ^ m) mod 256.
+Proof.
+  intros low tail m Hm.
+  replace (2 ^ 64 * tail) with ((2 ^ (64 - m) * tail) * 2 ^ m).
+  2:{ replace ((2 ^ (64 - m) * tail) * 2 ^ m)
+        with (2 ^ (64 - m) * 2 ^ m * tail) by ring.
+      rewrite <- Z.pow_add_r by lia.
+      replace (64 - m + m) with 64 by lia.
+      ring. }
+  rewrite Z.div_add by (apply Z.pow_nonzero; lia).
+  replace (2 ^ (64 - m) * tail) with ((2 ^ (56 - m) * tail) * 256).
+  2:{ change 256 with (2 ^ 8).
+      replace ((2 ^ (56 - m) * tail) * 2 ^ 8)
+        with (2 ^ (56 - m) * 2 ^ 8 * tail) by ring.
+      rewrite <- Z.pow_add_r by lia.
+      replace (56 - m + 8) with (64 - m) by lia.
+      ring. }
+  rewrite Z.mod_add by lia.
+  reflexivity.
+Qed.
+
+Lemma byte_extract_low_words : forall low rest m,
+  0 <= m <= 56 ->
+  (to_Z_words (low :: rest) / 2 ^ m) mod 256 =
+    (to_Z low / 2 ^ m) mod 256.
+Proof.
+  intros low rest m Hm.
+  cbn [WL.to_Z_words].
+  unfold base.
+  rewrite width_is_64.
+  now apply byte_extract_low_word.
+Qed.
+
+Lemma byte_extract_uint256_word0 : forall x0 x1 x2 x3 m,
+  0 <= m <= 56 ->
+  (to_Z_uint256 (mk_uint256 x0 x1 x2 x3) / 2 ^ m) mod 256 =
+    (to_Z x0 / 2 ^ m) mod 256.
+Proof.
+  intros x0 x1 x2 x3 m Hm.
+  unfold to_Z_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3].
+  now apply byte_extract_low_words.
+Qed.
+
+Lemma byte_extract_uint256_word1 : forall x0 x1 x2 x3 m,
+  0 <= m <= 56 ->
+  (to_Z_uint256 (mk_uint256 x0 x1 x2 x3) / 2 ^ (64 + m)) mod 256 =
+    (to_Z x1 / 2 ^ m) mod 256.
+Proof.
+  intros x0 x1 x2 x3 m Hm.
+  replace (2 ^ (64 + m)) with (2 ^ 64 * 2 ^ m)
+    by (rewrite Z.pow_add_r by lia; reflexivity).
+  rewrite <- Z.div_div by
+    (try apply Z.pow_nonzero; try apply Z.pow_pos_nonneg; lia).
+  replace (2 ^ 64) with (modulus_words 1) by
+    (rewrite modulus_words_1; reflexivity).
+  rewrite to_Z_uint256_div_modulus_words_1.
+  now apply byte_extract_low_words.
+Qed.
+
+Lemma byte_extract_uint256_word2 : forall x0 x1 x2 x3 m,
+  0 <= m <= 56 ->
+  (to_Z_uint256 (mk_uint256 x0 x1 x2 x3) / 2 ^ (128 + m)) mod 256 =
+    (to_Z x2 / 2 ^ m) mod 256.
+Proof.
+  intros x0 x1 x2 x3 m Hm.
+  replace (2 ^ (128 + m)) with (2 ^ 128 * 2 ^ m)
+    by (rewrite Z.pow_add_r by lia; reflexivity).
+  rewrite <- Z.div_div by
+    (try apply Z.pow_nonzero; try apply Z.pow_pos_nonneg; lia).
+  replace (2 ^ 128) with (modulus_words 2) by
+    (rewrite modulus_words_2; reflexivity).
+  rewrite to_Z_uint256_div_modulus_words_2.
+  now apply byte_extract_low_words.
+Qed.
+
+Lemma byte_extract_uint256_word3 : forall x0 x1 x2 x3 m,
+  0 <= m <= 56 ->
+  (to_Z_uint256 (mk_uint256 x0 x1 x2 x3) / 2 ^ (192 + m)) mod 256 =
+    (to_Z x3 / 2 ^ m) mod 256.
+Proof.
+  intros x0 x1 x2 x3 m Hm.
+  replace (2 ^ (192 + m)) with (2 ^ 192 * 2 ^ m)
+    by (rewrite Z.pow_add_r by lia; reflexivity).
+  rewrite <- Z.div_div by
+    (try apply Z.pow_nonzero; try apply Z.pow_pos_nonneg; lia).
+  replace (2 ^ 192) with (modulus_words 3) by
+    (rewrite modulus_words_3; reflexivity).
+  rewrite to_Z_uint256_div_modulus_words_3.
+  now apply byte_extract_low_words.
+Qed.
+
+Theorem byte_correct : forall byte_index_256 x,
+  to_Z_uint256 (byte byte_index_256 x) =
+    byte_Z (to_Z_uint256 byte_index_256) (to_Z_uint256 x).
+Proof.
+  intros [b0 b1 b2 b3] [x0 x1 x2 x3].
+  set (idx := mk_uint256 b0 b1 b2 b3).
+  remember (ltb_uint256 idx (mk_uint256 (shl one 5) zero zero zero))
+    as in_range eqn:Hidx.
+  destruct in_range.
+  2:{ symmetry in Hidx.
+      pose proof Hidx as Hltb.
+      rewrite ltb_uint256_correct in Hltb.
+      rewrite to_Z_byte_limit in Hltb.
+      apply Z.ltb_ge in Hltb.
+      unfold byte.
+      rewrite Hidx.
+      cbn [negb zero_uint256 to_Z_uint256 uint256_to_words w0 w1 w2 w3
+           WL.to_Z_words].
+      rewrite !spec_zero.
+      rewrite ?Z.mul_0_r, ?Z.add_0_r.
+      cbn [to_Z_uint256 uint256_to_words w0 w1 w2 w3 WL.to_Z_words]
+        in Hltb.
+      rewrite ?Z.mul_0_r, ?Z.add_0_r in Hltb.
+      unfold byte_Z.
+      match goal with
+      | |- 0 = (if ?cond then _ else _) => destruct cond eqn:Hcmp
+      end.
+      - apply Z.ltb_lt in Hcmp. lia.
+      - reflexivity. }
+  symmetry in Hidx.
+  pose proof Hidx as Hltb.
+  rewrite ltb_uint256_correct in Hltb.
+  rewrite to_Z_byte_limit in Hltb.
+  apply Z.ltb_lt in Hltb.
+  assert (Hlt_base : to_Z_uint256 idx < base width).
+  { unfold base. rewrite width_is_64. lia. }
+  destruct (to_Z_uint256_lt_base_zero_high b0 b1 b2 b3 Hlt_base)
+    as [Hb1z [Hb2z Hb3z]].
+  assert (Hb : to_Z_uint256 idx = to_Z b0).
+  { unfold idx, to_Z_uint256, uint256_to_words.
+    cbn [w0 w1 w2 w3 to_Z_words].
+    rewrite Hb1z, Hb2z, Hb3z.
+    rewrite ?Z.mul_0_r, ?Z.add_0_r.
+    reflexivity. }
+  assert (Hb0_range : 0 <= to_Z b0 < 32).
+  { pose proof (spec_to_Z b0) as Hb0.
+    lia. }
+  set (byte_index := ((shl 1 5 - 1) - b0)%Uint).
+  assert (Hbyte_index : to_Z byte_index = 31 - to_Z b0).
+  { subst byte_index.
+    rewrite spec_sub.
+    rewrite to_Z_low_mask by (rewrite width_is_64; simpl; lia).
+    rewrite Z.mod_small.
+    - reflexivity.
+    - split.
+      + lia.
+      + unfold base. rewrite width_is_64. lia. }
+  assert (Hword_index : to_Z (shr byte_index 3) = to_Z byte_index / 8)
+    by now rewrite to_Z_shr.
+  assert (Hword_range : 0 <= to_Z (shr byte_index 3) < 4).
+  { rewrite Hword_index, Hbyte_index.
+    split.
+    + apply Z.div_pos; lia.
+    + apply Z.div_lt_upper_bound; lia. }
+  assert (Hword_index_n :
+    byte_word_index_nat (shr byte_index 3) =
+      Z.to_nat (to_Z (shr byte_index 3)))
+    by (now apply byte_word_index_nat_correct).
+  unfold byte.
+  subst idx.
+  rewrite Hidx.
+  cbn [negb w0 w1 w2 w3].
+  fold byte_index.
+  rewrite Hword_index_n, Hb.
+  unfold byte_Z.
+  replace (to_Z b0 <? 32) with true
+    by (symmetry; apply Z.ltb_lt; lia).
+  set (n := Z.to_nat (to_Z (shr byte_index 3))).
+  set (s := bounded_shift_nat word_width
+                              (shl (land byte_index (shl 1 3 - 1)%Uint) 3)).
+  assert (Hmask3 :
+    to_Z (land byte_index (shl 1 3 - 1)%Uint) = to_Z byte_index mod 8).
+  { change ((shl 1 3 - 1)%Uint) with (sub (shl one 3) one).
+    rewrite to_Z_land_low_mask by (rewrite width_is_64; simpl; lia).
+    change (2 ^ Z.of_nat 3) with 8.
+    reflexivity. }
+  assert (Hshift_bits :
+    to_Z (shl (land byte_index (shl 1 3 - 1)%Uint) 3) =
+      8 * (to_Z byte_index mod 8)).
+  { rewrite spec_shl, Hmask3.
+    rewrite Z.shiftl_mul_pow2 by lia.
+    rewrite Z.mod_small.
+    2:{ split.
+        - pose proof (Z.mod_pos_bound (to_Z byte_index) 8 ltac:(lia)) as Hmod.
+          lia.
+        - unfold base. rewrite width_is_64.
+          pose proof (Z.mod_pos_bound (to_Z byte_index) 8 ltac:(lia)) as Hmod.
+          lia. }
+    change (2 ^ Z.of_nat 3) with 8.
+    ring. }
+  assert (Hs_eq : Z.of_nat s = 8 * (to_Z byte_index mod 8)).
+  { subst s.
+    rewrite (bounded_shift_nat_correct word_width
+               (shl (land byte_index (shl 1 3 - 1)%Uint) 3)).
+    2:{ apply Nat.le_refl. }
+    2:{ rewrite Hshift_bits.
+        unfold word_width.
+        rewrite width_is_64.
+        change (Z.of_nat 64) with 64.
+        pose proof (Z.mod_pos_bound (to_Z byte_index) 8 ltac:(lia)) as Hmod.
+        lia. }
+    assert (Hshift_nonneg :
+      0 <= to_Z (shl (land byte_index (shl 1 3 - 1)%Uint) 3)).
+    { rewrite Hshift_bits.
+      pose proof (Z.mod_pos_bound (to_Z byte_index) 8 ltac:(lia)) as Hmod.
+      lia. }
+    rewrite Z2Nat.id by exact Hshift_nonneg.
+    exact Hshift_bits. }
+  assert (Hs_range : 0 <= Z.of_nat s <= 56).
+  { rewrite Hs_eq.
+    pose proof (Z.mod_pos_bound (to_Z byte_index) 8 ltac:(lia)) as Hmod.
+    lia. }
+  assert (Hnlt : (n < 4)%nat).
+  { subst n.
+    apply Nat2Z.inj_lt.
+    rewrite Z2Nat.id by lia.
+    lia. }
+  destruct n as [|[|[|[|n']]]] eqn:Hn; try lia;
+    cbn [get_word uint256_to_words nth w0 w1 w2 w3] in |- *;
+    rewrite to_Z_uint256_low_word;
+    rewrite byte_value_to_Z.
+  - assert (Hbyte_div0 : to_Z byte_index / 8 = 0).
+    { subst n.
+      apply (f_equal Z.of_nat) in Hn.
+      cbn in Hn.
+      rewrite Z2Nat.id in Hn by lia.
+      rewrite <- Hword_index.
+      exact Hn. }
+    assert (Hbyte_decomp : to_Z byte_index = to_Z byte_index mod 8).
+    { pose proof (Z.div_mod (to_Z byte_index) 8 ltac:(lia)) as Hdm.
+      rewrite Hbyte_div0 in Hdm.
+      lia. }
+    assert (Hbits0 : 8 * (31 - to_Z b0) = Z.of_nat s).
+    { rewrite <- Hbyte_index.
+      rewrite Hs_eq.
+      rewrite Hbyte_decomp at 1.
+      reflexivity. }
+    rewrite Hbits0.
+    rewrite byte_extract_uint256_word0 by exact Hs_range.
+    reflexivity.
+  - assert (Hbyte_div1 : to_Z byte_index / 8 = 1).
+    { subst n.
+      apply (f_equal Z.of_nat) in Hn.
+      cbn in Hn.
+      rewrite Z2Nat.id in Hn by lia.
+      rewrite <- Hword_index.
+      exact Hn. }
+    assert (Hbyte_decomp : to_Z byte_index = 8 + to_Z byte_index mod 8).
+    { pose proof (Z.div_mod (to_Z byte_index) 8 ltac:(lia)) as Hdm.
+      rewrite Hbyte_div1 in Hdm.
+      lia. }
+    assert (Hbits1 : 8 * (31 - to_Z b0) = 64 + Z.of_nat s).
+    { rewrite <- Hbyte_index.
+      rewrite Hs_eq.
+      rewrite Hbyte_decomp at 1.
+      lia. }
+    rewrite Hbits1.
+    rewrite byte_extract_uint256_word1 by exact Hs_range.
+    reflexivity.
+  - assert (Hbyte_div2 : to_Z byte_index / 8 = 2).
+    { subst n.
+      apply (f_equal Z.of_nat) in Hn.
+      cbn in Hn.
+      rewrite Z2Nat.id in Hn by lia.
+      rewrite <- Hword_index.
+      exact Hn. }
+    assert (Hbyte_decomp : to_Z byte_index = 16 + to_Z byte_index mod 8).
+    { pose proof (Z.div_mod (to_Z byte_index) 8 ltac:(lia)) as Hdm.
+      rewrite Hbyte_div2 in Hdm.
+      lia. }
+    assert (Hbits2 : 8 * (31 - to_Z b0) = 128 + Z.of_nat s).
+    { rewrite <- Hbyte_index.
+      rewrite Hs_eq.
+      rewrite Hbyte_decomp at 1.
+      lia. }
+    rewrite Hbits2.
+    rewrite byte_extract_uint256_word2 by exact Hs_range.
+    reflexivity.
+  - assert (Hbyte_div3 : to_Z byte_index / 8 = 3).
+    { subst n.
+      apply (f_equal Z.of_nat) in Hn.
+      cbn in Hn.
+      rewrite Z2Nat.id in Hn by lia.
+      rewrite <- Hword_index.
+      exact Hn. }
+    assert (Hbyte_decomp : to_Z byte_index = 24 + to_Z byte_index mod 8).
+    { pose proof (Z.div_mod (to_Z byte_index) 8 ltac:(lia)) as Hdm.
+      rewrite Hbyte_div3 in Hdm.
+      lia. }
+    assert (Hbits3 : 8 * (31 - to_Z b0) = 192 + Z.of_nat s).
+    { rewrite <- Hbyte_index.
+      rewrite Hs_eq.
+      rewrite Hbyte_decomp at 1.
+      lia. }
+    rewrite Hbits3.
+    rewrite byte_extract_uint256_word3 by exact Hs_range.
+    reflexivity.
+Qed.
+
 Lemma is_two_uint256_true : forall x,
   is_two_uint256 x = true ->
   to_Z_uint256 x = 2.

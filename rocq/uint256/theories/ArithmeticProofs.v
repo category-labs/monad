@@ -3581,6 +3581,104 @@ Proof.
     nia.
 Qed.
 
+Lemma ltb_shifted_prefix : forall prefix hi m n,
+  0 <= m ->
+  0 <= n ->
+  0 <= prefix < 2 ^ m ->
+  0 <= hi ->
+  ((prefix + 2 ^ m * hi) <? 2 ^ (m + n)) = (hi <? 2 ^ n).
+Proof.
+  intros prefix hi m n Hm Hn Hprefix Hhi.
+  destruct (hi <? 2 ^ n) eqn:Hcmp.
+  - apply Z.ltb_lt in Hcmp.
+    apply Z.ltb_lt.
+    rewrite Z.pow_add_r by lia.
+    assert (Hprefix_le : prefix <= 2 ^ m - 1) by lia.
+    assert (Hhi_le : hi <= 2 ^ n - 1) by lia.
+    assert (Hmul_le : 2 ^ m * hi <= 2 ^ m * (2 ^ n - 1)).
+    { apply Z.mul_le_mono_nonneg_l.
+      - apply Z.pow_nonneg. lia.
+      - exact Hhi_le. }
+    replace (2 ^ m * 2 ^ n) with (2 ^ m + 2 ^ m * (2 ^ n - 1)) by ring.
+    lia.
+  - apply Z.ltb_ge in Hcmp.
+    apply Z.ltb_ge.
+    rewrite Z.pow_add_r by lia.
+    assert (Hmul_ge : 2 ^ m * 2 ^ n <= 2 ^ m * hi).
+    { apply Z.mul_le_mono_nonneg_l.
+      - apply Z.pow_nonneg. lia.
+      - exact Hcmp. }
+    lia.
+Qed.
+
+Lemma pow_mul_sub_pow : forall a b c,
+  0 <= a ->
+  0 <= b ->
+  0 <= c ->
+  2 ^ a * (2 ^ b - 2 ^ c) = 2 ^ (a + b) - 2 ^ (a + c).
+Proof.
+  intros a b c Ha Hb Hc.
+  rewrite !Z.pow_add_r by lia.
+  ring.
+Qed.
+
+Lemma pow_mul_sub_one : forall a b,
+  0 <= a ->
+  0 <= b ->
+  2 ^ a * (2 ^ b - 1) = 2 ^ (a + b) - 2 ^ a.
+Proof.
+  intros a b Ha Hb.
+  rewrite Z.pow_add_r by lia.
+  ring.
+Qed.
+
+Lemma pow256_from_words :
+  2 ^ 64 * (2 ^ 64 * (2 ^ 64 * (2 ^ 64 * 1))) = 2 ^ 256.
+Proof.
+  change (2 ^ 64 * (2 ^ 64 * (2 ^ 64 * (2 ^ 64 * 1))))
+    with (2 ^ 64 * (2 ^ 64 * (2 ^ 64 * 2 ^ 64))).
+  rewrite <- Z.pow_add_r by lia.
+  rewrite <- Z.pow_add_r by lia.
+  rewrite <- Z.pow_add_r by lia.
+  replace (64 + (64 + (64 + 64))) with 256 by lia.
+  reflexivity.
+Qed.
+
+Lemma signextend_negative_word2 : forall prefix byte m,
+  0 <= m ->
+  prefix +
+  2 ^ 128 * (byte + (2 ^ 64 - 2 ^ (m + 8)) + 2 ^ 64 * (2 ^ 64 - 1)) =
+  prefix + 2 ^ 128 * byte + (2 ^ 256 - 2 ^ (m + 136)).
+Proof.
+  intros prefix byte m Hm.
+  replace
+    (2 ^ 128 * (byte + (2 ^ 64 - 2 ^ (m + 8)) + 2 ^ 64 * (2 ^ 64 - 1)))
+    with
+    (2 ^ 128 * byte + 2 ^ 128 * (2 ^ 64 - 2 ^ (m + 8)) +
+     2 ^ 192 * (2 ^ 64 - 1)) by ring.
+  rewrite (pow_mul_sub_pow 128 64 (m + 8)) by lia.
+  rewrite (pow_mul_sub_one 192 64) by lia.
+  replace (128 + (m + 8)) with (m + 136) by lia.
+  replace (128 + 64) with 192 by lia.
+  replace (192 + 64) with 256 by lia.
+  lia.
+Qed.
+
+Lemma signextend_negative_word3 : forall prefix byte m,
+  0 <= m ->
+  prefix + 2 ^ 192 * (byte + (2 ^ 64 - 2 ^ (m + 8))) =
+  prefix + 2 ^ 192 * byte + (2 ^ 256 - 2 ^ (m + 200)).
+Proof.
+  intros prefix byte m Hm.
+  replace (2 ^ 192 * (byte + (2 ^ 64 - 2 ^ (m + 8))))
+    with
+    (2 ^ 192 * byte + 2 ^ 192 * (2 ^ 64 - 2 ^ (m + 8))) by ring.
+  rewrite (pow_mul_sub_pow 192 64 (m + 8)) by lia.
+  replace (192 + (m + 8)) with (m + 200) by lia.
+  replace (192 + 64) with 256 by lia.
+  lia.
+Qed.
+
 Lemma signextend_word_low_decompose : forall word s,
   to_Z word mod 2 ^ (Z.of_nat s + 8) =
     to_Z word mod 2 ^ Z.of_nat s +
@@ -4208,7 +4306,409 @@ Proof.
       ring_simplify.
       lia.
   -
-Admitted.
+    unfold word in *.
+    cbn [get_word uint256_to_words nth w0 w1 w2 w3] in Hcur, Hsign |- *.
+    assert (Hb0_div1 : to_Z b0 / 8 = 1).
+    { subst n.
+      apply (f_equal Z.of_nat) in Hn.
+      cbn in Hn.
+      rewrite Z2Nat.id in Hn by lia.
+      rewrite <- Hword_index.
+      exact Hn. }
+    assert (Hb0_decomp : to_Z b0 = 8 + to_Z b0 mod 8).
+    { pose proof (Z.div_mod (to_Z b0) 8 ltac:(lia)) as Hdm.
+      rewrite Hb0_div1 in Hdm.
+      lia. }
+    assert (Hbits1 : 8 * (to_Z b0 + 1) = Z.of_nat s + 72).
+    { rewrite Hs_eq, Hb0_decomp.
+      replace (8 * (8 + to_Z b0 mod 8 + 1))
+        with (72 + 8 * (to_Z b0 mod 8)) by ring.
+      rewrite Z.add_mod by lia.
+      change (8 mod 8) with 0.
+      rewrite Z.add_0_l.
+      rewrite Z.mod_mod by lia.
+      rewrite Z.mod_mod by lia.
+      lia. }
+    rewrite Hbits1.
+    replace (Z.of_nat s + 72 - 1) with (Z.of_nat s + 71) by lia.
+    destruct (signextend_current_word x1 s) as [current sign_bits] eqn:Hcw.
+    cbn [fill_words_from words_to_uint256 fit_words firstn app repeat
+       to_Z_words uint256_to_words to_Z_uint256 w0 w1 w2 w3] in |- *.
+    unfold signextend_current_word in Hcw.
+    cbn zeta in Hcw.
+    inversion Hcw; subst current sign_bits; clear Hcw.
+    assert (Hs_le64 : Z.of_nat s + 8 <= 64).
+    { apply Nat2Z.inj_le in Hs_le56. lia. }
+    assert (Hbase64 : base WL.U64.width = 2 ^ 64).
+    { unfold base. rewrite width_is_64. reflexivity. }
+    set (tail := WL.U64.to_Z x2 +
+                 base WL.U64.width *
+                   (WL.U64.to_Z x3 + base WL.U64.width * 0)).
+    set (hi := WL.U64.to_Z x1 + base WL.U64.width * tail).
+    assert (Hmod_hi :
+      hi mod 2 ^ (Z.of_nat s + 8) = WL.U64.to_Z x1 mod 2 ^ (Z.of_nat s + 8)).
+    { unfold hi.
+      rewrite Hbase64.
+      assert (Hpow64 :
+        2 ^ 64 = 2 ^ (Z.of_nat s + 8) * 2 ^ (56 - Z.of_nat s)).
+      { rewrite <- Z.pow_add_r by lia.
+        replace (Z.of_nat s + 8 + (56 - Z.of_nat s)) with 64 by lia.
+        reflexivity. }
+      rewrite Hpow64.
+      replace
+        (WL.U64.to_Z x1 + 2 ^ (Z.of_nat s + 8) * 2 ^ (56 - Z.of_nat s) * tail)
+        with
+        (WL.U64.to_Z x1 + (2 ^ (56 - Z.of_nat s) * tail) *
+           2 ^ (Z.of_nat s + 8)) by ring.
+      rewrite Z.mod_add by (apply Z.pow_nonzero; lia).
+      reflexivity. }
+    assert (Hx0_range : 0 <= WL.U64.to_Z x0 < 2 ^ 64).
+    { pose proof (spec_to_Z x0) as Hx0.
+      rewrite Hbase64 in Hx0.
+      exact Hx0. }
+    assert (Hmod_rhs :
+      (WL.U64.to_Z x0 + base WL.U64.width * hi) mod 2 ^ (Z.of_nat s + 72) =
+      WL.U64.to_Z x0 +
+      base WL.U64.width * (WL.U64.to_Z x1 mod 2 ^ (Z.of_nat s + 8))).
+    { rewrite Hbase64.
+      replace (Z.of_nat s + 72) with (64 + (Z.of_nat s + 8)) by lia.
+      rewrite mod_split_small_prefix by (try lia; exact Hx0_range).
+      rewrite Hmod_hi.
+      reflexivity. }
+    rewrite Hmod_rhs.
+    assert (Hcmp_rhs :
+      (WL.U64.to_Z x0 +
+       base WL.U64.width *
+         (WL.U64.to_Z x1 mod 2 ^ (Z.of_nat s + 8)) <? 2 ^ (Z.of_nat s + 71)) =
+      (WL.U64.to_Z x1 mod 2 ^ (Z.of_nat s + 8) <? 2 ^ (Z.of_nat s + 7))).
+    { rewrite Hbase64.
+      replace (Z.of_nat s + 71) with (64 + (Z.of_nat s + 7)) by lia.
+      apply ltb_shifted_prefix.
+      - lia.
+      - lia.
+      - exact Hx0_range.
+      - pose proof
+          (Z.mod_pos_bound
+             (WL.U64.to_Z x1) (2 ^ (Z.of_nat s + 8))
+             ltac:(apply Z.pow_pos_nonneg; lia)) as Hmod.
+        lia. }
+    rewrite Hcmp_rhs.
+    destruct (WL.U64.to_Z x1 mod 2 ^ (Z.of_nat s + 8) <?
+                2 ^ (Z.of_nat s + 7)) eqn:Hcmp.
+    + rewrite Hcur, Hsign.
+      rewrite ?Z.mul_0_r, ?Z.add_0_r.
+      reflexivity.
+    + rewrite Hcur, Hsign.
+      rewrite Hbase64.
+      replace
+        (WL.U64.to_Z x0 +
+         2 ^ 64 *
+         (to_Z x1 mod 2 ^ (Z.of_nat s + 8) +
+          (2 ^ 64 - 2 ^ (Z.of_nat s + 8)) +
+          2 ^ 64 * (2 ^ 64 - 1 + 2 ^ 64 * (2 ^ 64 - 1 + 2 ^ 64 * 0))))
+        with
+        (WL.U64.to_Z x0 +
+         2 ^ 64 * (to_Z x1 mod 2 ^ (Z.of_nat s + 8)) +
+         2 ^ 64 * (2 ^ 64 - 2 ^ (Z.of_nat s + 8)) +
+         2 ^ 128 * (2 ^ 64 - 1) +
+         2 ^ 192 * (2 ^ 64 - 1)) by ring.
+      unfold modulus256.
+      rewrite !WL.modulus_words_succ, ?WL.modulus_words_0.
+      rewrite Hbase64.
+      rewrite (pow_mul_sub_pow 64 64 (Z.of_nat s + 8)) by lia.
+      rewrite (pow_mul_sub_one 128 64) by lia.
+      rewrite (pow_mul_sub_one 192 64) by lia.
+      replace (64 + (Z.of_nat s + 8)) with (Z.of_nat s + 72) by lia.
+      replace (64 + 64) with 128 by lia.
+      replace (128 + 64) with 192 by lia.
+      replace (192 + 64) with 256 by lia.
+      change (2 ^ 64 * (2 ^ 64 * (2 ^ 64 * (2 ^ 64 * 1))))
+        with (2 ^ 64 * (2 ^ 64 * (2 ^ 64 * 2 ^ 64))).
+      rewrite <- Z.pow_add_r by lia.
+      rewrite <- Z.pow_add_r by lia.
+      rewrite <- Z.pow_add_r by lia.
+      replace (64 + (64 + (64 + 64))) with 256 by lia.
+      replace (192 + 64) with 256 by lia.
+      lia.
+  - unfold word in *.
+    cbn [get_word uint256_to_words nth w0 w1 w2 w3] in Hcur, Hsign |- *.
+    assert (Hb0_div2 : to_Z b0 / 8 = 2).
+    { subst n.
+      apply (f_equal Z.of_nat) in Hn.
+      cbn in Hn.
+      rewrite Z2Nat.id in Hn by lia.
+      rewrite <- Hword_index.
+      exact Hn. }
+    assert (Hb0_decomp : to_Z b0 = 16 + to_Z b0 mod 8).
+    { pose proof (Z.div_mod (to_Z b0) 8 ltac:(lia)) as Hdm.
+      rewrite Hb0_div2 in Hdm.
+      lia. }
+    assert (Hbits2 : 8 * (to_Z b0 + 1) = Z.of_nat s + 136).
+    { rewrite Hs_eq, Hb0_decomp.
+      replace (8 * (16 + to_Z b0 mod 8 + 1))
+        with (136 + 8 * (to_Z b0 mod 8)) by ring.
+      rewrite Z.add_mod by lia.
+      change (136 mod 8) with 0.
+      rewrite Z.add_0_l.
+      rewrite Z.mod_mod by lia.
+      rewrite Z.mod_mod by lia.
+      lia. }
+    rewrite Hbits2.
+    replace (Z.of_nat s + 136 - 1) with (Z.of_nat s + 135) by lia.
+    destruct (signextend_current_word x2 s) as [current sign_bits] eqn:Hcw.
+    cbn [fill_words_from words_to_uint256 fit_words firstn app repeat
+       to_Z_words uint256_to_words to_Z_uint256 w0 w1 w2 w3] in |- *.
+    unfold signextend_current_word in Hcw.
+    cbn zeta in Hcw.
+    inversion Hcw; subst current sign_bits; clear Hcw.
+    assert (Hs_le64 : Z.of_nat s + 8 <= 64).
+    { apply Nat2Z.inj_le in Hs_le56. lia. }
+    assert (Hbase64 : base WL.U64.width = 2 ^ 64).
+    { unfold base. rewrite width_is_64. reflexivity. }
+    set (prefix := WL.U64.to_Z x0 + base WL.U64.width * WL.U64.to_Z x1).
+    assert (Hprefix_range : 0 <= prefix < 2 ^ 128).
+    { unfold prefix.
+      rewrite Hbase64.
+      pose proof (spec_to_Z x0) as Hx0.
+      pose proof (spec_to_Z x1) as Hx1.
+      rewrite Hbase64 in Hx0, Hx1.
+      split; lia. }
+    set (hi := WL.U64.to_Z x2 + base WL.U64.width * WL.U64.to_Z x3).
+    assert (Hmod_hi :
+      hi mod 2 ^ (Z.of_nat s + 8) = WL.U64.to_Z x2 mod 2 ^ (Z.of_nat s + 8)).
+    { unfold hi.
+      rewrite Hbase64.
+      assert (Hpow64 :
+        2 ^ 64 = 2 ^ (Z.of_nat s + 8) * 2 ^ (56 - Z.of_nat s)).
+      { rewrite <- Z.pow_add_r by lia.
+        replace (Z.of_nat s + 8 + (56 - Z.of_nat s)) with 64 by lia.
+        reflexivity. }
+      rewrite Hpow64.
+      replace
+        (WL.U64.to_Z x2 + 2 ^ (Z.of_nat s + 8) * 2 ^ (56 - Z.of_nat s) *
+           WL.U64.to_Z x3)
+        with
+        (WL.U64.to_Z x2 + (2 ^ (56 - Z.of_nat s) * WL.U64.to_Z x3) *
+           2 ^ (Z.of_nat s + 8)) by ring.
+      rewrite Z.mod_add by (apply Z.pow_nonzero; lia).
+      reflexivity. }
+    assert (Hmod_rhs :
+      (prefix + 2 ^ 128 * hi) mod 2 ^ (Z.of_nat s + 136) =
+      prefix + 2 ^ 128 * (WL.U64.to_Z x2 mod 2 ^ (Z.of_nat s + 8))).
+    { replace (Z.of_nat s + 136) with (128 + (Z.of_nat s + 8)) by lia.
+      rewrite mod_split_small_prefix by (try lia; exact Hprefix_range).
+      rewrite Hmod_hi.
+      reflexivity. }
+    rewrite Hbase64.
+    assert (Hfull :
+      WL.U64.to_Z x0 +
+      2 ^ 64 *
+      (WL.U64.to_Z x1 +
+       2 ^ 64 *
+       (WL.U64.to_Z x2 + 2 ^ 64 * (WL.U64.to_Z x3 + 2 ^ 64 * 0))) =
+      prefix + 2 ^ 128 * hi).
+    { unfold prefix, hi.
+      replace (2 ^ 64 * 0) with 0 by ring.
+      replace (2 ^ 128) with (2 ^ 64 * 2 ^ 64).
+      2:{ replace 128 with (64 + 64) by lia.
+          rewrite Z.pow_add_r by lia.
+          reflexivity. }
+      repeat rewrite Z.mul_add_distr_l.
+      repeat rewrite <- Z.mul_assoc.
+      lia. }
+    rewrite Hfull.
+    rewrite Hmod_rhs.
+    assert (Hlhs :
+      WL.U64.to_Z x0 +
+      2 ^ 64 *
+      (WL.U64.to_Z x1 +
+       2 ^ 64 *
+       (WL.U64.to_Z
+          (or (shl (asr (shl (shr x2 s) 56) 56) s) (land x2 (shl 1 s - 1)%Uint)) +
+        2 ^ 64 * (WL.U64.to_Z (asr (asr (shl (shr x2 s) 56) 56) 63) +
+                   2 ^ 64 * 0))) =
+      prefix +
+      2 ^ 128 *
+      (WL.U64.to_Z
+         (or (shl (asr (shl (shr x2 s) 56) 56) s) (land x2 (shl 1 s - 1)%Uint)) +
+       2 ^ 64 * WL.U64.to_Z (asr (asr (shl (shr x2 s) 56) 56) 63))).
+    { unfold prefix.
+      replace (2 ^ 64 * 0) with 0 by ring.
+      replace (2 ^ 128) with (2 ^ 64 * 2 ^ 64).
+      2:{ replace 128 with (64 + 64) by lia.
+          rewrite Z.pow_add_r by lia.
+          reflexivity. }
+      repeat rewrite Z.mul_add_distr_l.
+      repeat rewrite <- Z.mul_assoc.
+      lia. }
+    rewrite Hlhs.
+    assert (Hcmp_rhs :
+      (prefix + 2 ^ 128 * (WL.U64.to_Z x2 mod 2 ^ (Z.of_nat s + 8)) <?
+         2 ^ (Z.of_nat s + 135)) =
+      (WL.U64.to_Z x2 mod 2 ^ (Z.of_nat s + 8) <? 2 ^ (Z.of_nat s + 7))).
+    { replace (Z.of_nat s + 135) with (128 + (Z.of_nat s + 7)) by lia.
+      apply ltb_shifted_prefix.
+      - lia.
+      - lia.
+      - exact Hprefix_range.
+      - pose proof
+          (Z.mod_pos_bound
+             (WL.U64.to_Z x2) (2 ^ (Z.of_nat s + 8))
+             ltac:(apply Z.pow_pos_nonneg; lia)) as Hmod.
+        lia. }
+    rewrite Hcmp_rhs.
+    destruct (WL.U64.to_Z x2 mod 2 ^ (Z.of_nat s + 8) <?
+                2 ^ (Z.of_nat s + 7)) eqn:Hcmp.
+    + rewrite Hcur, Hsign.
+      rewrite ?Z.mul_0_r, ?Z.add_0_r.
+      reflexivity.
+    + rewrite Hcur, Hsign.
+      replace
+        (prefix +
+         2 ^ 128 *
+         (WL.U64.to_Z x2 mod 2 ^ (Z.of_nat s + 8) +
+          (2 ^ 64 - 2 ^ (Z.of_nat s + 8)) +
+          2 ^ 64 * (2 ^ 64 - 1 + 2 ^ 64 * 0)))
+        with
+        (prefix +
+         2 ^ 128 * (WL.U64.to_Z x2 mod 2 ^ (Z.of_nat s + 8)) +
+         2 ^ 128 * (2 ^ 64 - 2 ^ (Z.of_nat s + 8)) +
+         2 ^ 192 * (2 ^ 64 - 1)) by ring.
+      unfold modulus256.
+      rewrite !WL.modulus_words_succ, ?WL.modulus_words_0.
+      rewrite Hbase64.
+      rewrite pow256_from_words.
+      rewrite (signextend_negative_word2 prefix
+                 (WL.U64.to_Z x2 mod 2 ^ (Z.of_nat s + 8))
+                 (Z.of_nat s)) by lia.
+      reflexivity.
+  - unfold word in *.
+    cbn [get_word uint256_to_words nth w0 w1 w2 w3] in Hcur, Hsign |- *.
+    assert (Hb0_div3 : to_Z b0 / 8 = 3).
+    { subst n.
+      apply (f_equal Z.of_nat) in Hn.
+      cbn in Hn.
+      rewrite Z2Nat.id in Hn by lia.
+      rewrite <- Hword_index.
+      exact Hn. }
+    assert (Hb0_decomp : to_Z b0 = 24 + to_Z b0 mod 8).
+    { pose proof (Z.div_mod (to_Z b0) 8 ltac:(lia)) as Hdm.
+      rewrite Hb0_div3 in Hdm.
+      lia. }
+    assert (Hbits3 : 8 * (to_Z b0 + 1) = Z.of_nat s + 200).
+    { rewrite Hs_eq, Hb0_decomp.
+      replace (8 * (24 + to_Z b0 mod 8 + 1))
+        with (200 + 8 * (to_Z b0 mod 8)) by ring.
+      rewrite Z.add_mod by lia.
+      change (200 mod 8) with 0.
+      rewrite Z.add_0_l.
+      rewrite Z.mod_mod by lia.
+      rewrite Z.mod_mod by lia.
+      lia. }
+    rewrite Hbits3.
+    replace (Z.of_nat s + 200 - 1) with (Z.of_nat s + 199) by lia.
+    destruct (signextend_current_word x3 s) as [current sign_bits] eqn:Hcw.
+    cbn [fill_words_from words_to_uint256 fit_words firstn app repeat
+       to_Z_words uint256_to_words to_Z_uint256 w0 w1 w2 w3] in |- *.
+    unfold signextend_current_word in Hcw.
+    cbn zeta in Hcw.
+    inversion Hcw; subst current sign_bits; clear Hcw.
+    assert (Hs_le64 : Z.of_nat s + 8 <= 64).
+    { apply Nat2Z.inj_le in Hs_le56. lia. }
+    assert (Hbase64 : base WL.U64.width = 2 ^ 64).
+    { unfold base. rewrite width_is_64. reflexivity. }
+    set (prefix :=
+      WL.U64.to_Z x0 +
+      base WL.U64.width *
+      (WL.U64.to_Z x1 + base WL.U64.width * WL.U64.to_Z x2)).
+    assert (Hprefix_range : 0 <= prefix < 2 ^ 192).
+    { unfold prefix.
+      rewrite Hbase64.
+      pose proof (spec_to_Z x0) as Hx0.
+      pose proof (spec_to_Z x1) as Hx1.
+      pose proof (spec_to_Z x2) as Hx2.
+      rewrite Hbase64 in Hx0, Hx1, Hx2.
+      split; lia. }
+    assert (Hmod_rhs :
+      (prefix + 2 ^ 192 * WL.U64.to_Z x3) mod 2 ^ (Z.of_nat s + 200) =
+      prefix + 2 ^ 192 * (WL.U64.to_Z x3 mod 2 ^ (Z.of_nat s + 8))).
+    { replace (Z.of_nat s + 200) with (192 + (Z.of_nat s + 8)) by lia.
+      rewrite mod_split_small_prefix by (try lia; exact Hprefix_range).
+      reflexivity. }
+    rewrite Hbase64.
+    assert (Hfull :
+      WL.U64.to_Z x0 +
+      2 ^ 64 *
+      (WL.U64.to_Z x1 +
+       2 ^ 64 * (WL.U64.to_Z x2 + 2 ^ 64 * (WL.U64.to_Z x3 + 2 ^ 64 * 0))) =
+      prefix + 2 ^ 192 * WL.U64.to_Z x3).
+    { unfold prefix.
+      replace (2 ^ 64 * 0) with 0 by ring.
+      replace (2 ^ 192) with (2 ^ 64 * 2 ^ 64 * 2 ^ 64).
+      2:{ replace 192 with (64 + (64 + 64)) by lia.
+          rewrite Z.pow_add_r by lia.
+          rewrite Z.pow_add_r by lia.
+          reflexivity. }
+      repeat rewrite Z.mul_add_distr_l.
+      repeat rewrite <- Z.mul_assoc.
+      lia. }
+    rewrite Hfull.
+    rewrite Hmod_rhs.
+    assert (Hlhs :
+      WL.U64.to_Z x0 +
+      2 ^ 64 *
+      (WL.U64.to_Z x1 +
+       2 ^ 64 *
+       (WL.U64.to_Z x2 +
+        2 ^ 64 *
+        (WL.U64.to_Z
+           (or (shl (asr (shl (shr x3 s) 56) 56) s) (land x3 (shl 1 s - 1)%Uint)) +
+         2 ^ 64 * 0))) =
+      prefix +
+      2 ^ 192 *
+      WL.U64.to_Z
+        (or (shl (asr (shl (shr x3 s) 56) 56) s) (land x3 (shl 1 s - 1)%Uint))).
+    { unfold prefix.
+      replace (2 ^ 64 * 0) with 0 by ring.
+      replace (2 ^ 192) with (2 ^ 64 * 2 ^ 64 * 2 ^ 64).
+      2:{ replace 192 with (64 + (64 + 64)) by lia.
+          rewrite Z.pow_add_r by lia.
+          rewrite Z.pow_add_r by lia.
+          reflexivity. }
+      repeat rewrite Z.mul_add_distr_l.
+      repeat rewrite <- Z.mul_assoc.
+      lia. }
+    rewrite Hlhs.
+    assert (Hcmp_rhs :
+      (prefix + 2 ^ 192 * (WL.U64.to_Z x3 mod 2 ^ (Z.of_nat s + 8)) <?
+         2 ^ (Z.of_nat s + 199)) =
+      (WL.U64.to_Z x3 mod 2 ^ (Z.of_nat s + 8) <? 2 ^ (Z.of_nat s + 7))).
+    { replace (Z.of_nat s + 199) with (192 + (Z.of_nat s + 7)) by lia.
+      apply ltb_shifted_prefix.
+      - lia.
+      - lia.
+      - exact Hprefix_range.
+      - pose proof
+          (Z.mod_pos_bound
+             (WL.U64.to_Z x3) (2 ^ (Z.of_nat s + 8))
+             ltac:(apply Z.pow_pos_nonneg; lia)) as Hmod.
+        lia. }
+    rewrite Hcmp_rhs.
+    destruct (WL.U64.to_Z x3 mod 2 ^ (Z.of_nat s + 8) <?
+                2 ^ (Z.of_nat s + 7)) eqn:Hcmp.
+    + rewrite Hcur.
+      rewrite ?Z.mul_0_r, ?Z.add_0_r.
+      reflexivity.
+    + rewrite Hcur.
+      unfold modulus256.
+      rewrite !WL.modulus_words_succ, ?WL.modulus_words_0.
+      rewrite Hbase64.
+      rewrite pow256_from_words.
+      rewrite (signextend_negative_word3 prefix
+                 (WL.U64.to_Z x3 mod 2 ^ (Z.of_nat s + 8))
+                 (Z.of_nat s)) by lia.
+      reflexivity.
+Qed.
 
 Lemma is_two_uint256_true : forall x,
   is_two_uint256 x = true ->

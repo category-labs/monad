@@ -771,8 +771,6 @@ namespace
                     previous_header.timestamp + DEFAULT_TIMESTAMP_INCREMENT),
                 .beneficiary =
                     bo->fee_recipient.value_or(previous_header.beneficiary),
-                // TODO(dhil): Should this default to
-                // zero?
                 .base_fee_per_gas = bo->base_fee_per_gas,
             };
 

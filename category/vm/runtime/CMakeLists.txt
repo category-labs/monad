@@ -13,7 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-enable_language(ASM)
+if(NOT MONAD_ZKVM)
+  enable_language(ASM)
+endif()
 
 add_library(monad-vm-runtime OBJECT)
 
@@ -24,7 +26,6 @@ target_sources(monad-vm-runtime PRIVATE
     "bin.hpp"
     "call.hpp"
     "call.cpp"
-    "context.S"
     "context.cpp"
     "create.hpp"
     "create.cpp"
@@ -32,13 +33,11 @@ target_sources(monad-vm-runtime PRIVATE
     "data.cpp"
     "detail.hpp"
     "environment.hpp"
-    "environment.cpp"
-    "exit.S"
+    "environment.cpp"    
     "exit.cpp"
     "keccak.hpp"
     "log.hpp"
     "log.cpp"
-    "math.S"
     "math.hpp"
     "memory.hpp"
     "runtime.hpp"
@@ -47,10 +46,18 @@ target_sources(monad-vm-runtime PRIVATE
     "storage.cpp"
     "storage.hpp"
     "storage_costs.hpp"
-    "transmute.S"
     "transmute.hpp"
     "types.hpp"
 )
+
+if(NOT MONAD_ZKVM)
+    target_sources(monad-vm-runtime PRIVATE
+        "context.S"
+        "exit.S"
+        "math.S"
+        "transmute.S"
+    )
+endif()
 
 monad_compile_options(monad-vm-runtime)
 

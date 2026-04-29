@@ -120,6 +120,46 @@ RUN cd src/rust && cargo check --all-targets --all-features
 RUN cd src/rust && cargo doc --all-features --no-deps
 RUN cd src/rust && cargo test --release --doc --all-features
 
+FROM base AS base_riscv_gnu_toolchain
+
+RUN apt-get update && apt-get install -y autoconf automake autotools-dev curl python3 python3-pip python3-tomli libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake libglib2.0-dev libslirp-dev libncurses-dev
+
+RUN git clone https://github.com/riscv-collab/riscv-gnu-toolchain /riscv-gnu-toolchain
+WORKDIR /riscv-gnu-toolchain
+RUN git checkout 98c8ec4cb520443f16cdd36280b65fba3a5c5f54
+
+RUN ./configure --prefix=/root/riscv \
+    --with-arch=rv64ima \
+    --with-abi=lp64
+    
+RUN make -j$(nproc)
+
+ENV PATH="/root/riscv/bin:${PATH}"
+
+WORKDIR /
+
+FROM base_riscv_gnu_toolchain AS base_zisk
+
+RUN apt-get update && apt-get install -y xz-utils jq curl build-essential qemu-system libomp-dev libgmp-dev nlohmann-json3-dev protobuf-compiler uuid-dev libgrpc++-dev libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev openmpi-bin openmpi-common libclang-dev clang
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN curl -L https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/ziskup | bash -s -- --nokey
+
+ENV PATH="/root/.zisk/bin:${PATH}"
+
+FROM base_riscv_gnu_toolchain AS build_zk
+
+COPY . src
+
+RUN cd src && cmake -B build-zkvm -S category/zkvm \
+    -DCMAKE_TOOLCHAIN_FILE=/src/category/core/toolchains/riscv64-elf-toolchain.cmake \
+    -DRISCV_TOOLCHAIN_DIR=/root/riscv \
+    -DCMAKE_BUILD_TYPE=Release
+RUN cd src && cmake --build build-zkvm --target monad-zkvm --parallel
+
 FROM base AS vm_fuzz
 
 RUN apt-get update && apt-get install -y tmux

@@ -374,6 +374,30 @@ Definition byte (byte_index_256 x : uint256) : uint256 :=
     let byte_value := land (shr word s) (shl 1 8 - 1) in
     mk_uint256 byte_value 0 0 0.
 
+(* Models C++ countl_zero(uint256_t const &). *)
+Definition countl_zero_uint256 (x : uint256) : nat :=
+  let cnt := countl_zero (w3 x) in
+  if Nat.eqb cnt (1 * word_width) then
+    let cnt := (cnt + countl_zero (w2 x))%nat in
+    if Nat.eqb cnt (2 * word_width) then
+      let cnt := (cnt + countl_zero (w1 x))%nat in
+      if Nat.eqb cnt (3 * word_width) then
+        (cnt + countl_zero (w0 x))%nat
+      else cnt
+    else cnt
+  else cnt.
+
+Definition count_significant_bytes (x : uint256) : nat :=
+  let significant_words := count_significant_words (uint256_to_words x) in
+  match significant_words with
+  | O => 0%nat
+  | S words_before =>
+      let leading_word := get_word (uint256_to_words x) words_before in
+      let leading_significant_bytes :=
+        ((word_width - countl_zero leading_word + 7) / 8)%nat in
+      (leading_significant_bytes + words_before * 8)%nat
+  end.
+
 Definition exp (base exponent : uint256) : uint256 :=
   if is_two_uint256 base
   then shift_left_uint256 one_uint256 exponent

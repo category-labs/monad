@@ -28,6 +28,8 @@
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/trie.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <future>
 #include <iostream>
@@ -60,7 +62,11 @@ TEST(cli_tool, help_prints_help)
     std::string_view args[] = {"monad-mpt", "--help"};
     int const retcode = main_impl(cout, cerr, args);
     ASSERT_EQ(retcode, 0);
-    EXPECT_NE(std::string::npos, cout.str().find("Options:"));
+    {
+        std::string out = cout.str();
+        std::transform(out.begin(), out.end(), out.begin(), ::tolower);
+        EXPECT_NE(std::string::npos, out.find("options:"));
+    }
 }
 
 TEST(cli_tool, create)

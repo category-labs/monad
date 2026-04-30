@@ -13,6 +13,7 @@ theories/Division.v
 theories/DivisionProofs.v
 theories/RuntimeMul.v
 theories/RuntimeMulProofs.v
+theories/ArithmeticProofs.v
 theories/Barrett.v
 theories/BarrettProofs.v
 theories/Stack.v

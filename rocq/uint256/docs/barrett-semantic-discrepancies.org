@@ -125,6 +125,33 @@ and therefore =BIT_SHIFT = 0=.
 For the current Rocq modeling phase this branch is logged and intentionally not
 treated as part of the verified public surface.
 
+** Generic =MULTIPLIER_BITS= does not bound the stored multiplier bits
+
+The generic constant-multiplier constructor stores =y= in
+=words_t<MULTIPLIER_WORDS>= and checks only that the higher whole words of the
+original =uint256_t= are zero.  However, =MAX_QUOTIENT_BITS= is computed from
+=MULTIPLIER_BITS=, not from =64 * MULTIPLIER_WORDS=.
+
+When =MULTIPLIER_BITS= is not a multiple of 64, the generic template can
+therefore construct reciprocals whose multiplier is too large for the quotient
+and product widths used by =estimate_q=.
+
+Counterexample outside the exported aliases:
+
+- =min_denominator = max_denominator = 1=
+- =input_bits = 1=
+- =multiplier_bits = 1=, hence =MULTIPLIER_WORDS = 1=
+- =y = 2^64 - 1=
+- =d = 1=
+- =x = 1=
+
+Then =MAX_QUOTIENT_BITS = 2= and the product width inside =estimate_q= is one
+word, but the precomputed reciprocal is =y * 2=.  The low-word truncation in
+the product loses a high bit, so the quotient estimate is far below
+=floor(x * y / d)=.  The exported =mulmod_const= aliases instantiate
+=MULTIPLIER_BITS = 256=, so every =uint256_t= multiplier satisfies the required
+bit bound there.
+
 * Consequence for the proof plan
 
 The main proof target should remain the one recommended in the addendum:

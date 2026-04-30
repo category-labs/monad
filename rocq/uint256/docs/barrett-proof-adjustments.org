@@ -106,6 +106,15 @@ lengths, but the C++ fields are fixed-size =words_t<N>= members.  Without
 these length facts, generic theorems over arbitrary Rocq reciprocals include
 states that no C++ constructor can build.
 
+Finally, the predicate records that the reciprocal scale factor is bounded by
+=2^MULTIPLIER_BITS=.  This is automatic for the no-multiplier case and for the
+exported constant-multiplier family with =MULTIPLIER_BITS = 256=.  It is also
+the mathematical precondition used by =MAX_QUOTIENT_BITS=.  The generic C++
+template does not fully enforce this when =MULTIPLIER_BITS= is not a multiple
+of 64; that implementation issue is logged in
+=barrett-semantic-discrepancies.org= and excluded from the generic quotient
+theorems.
+
 ** Add proof-module dependencies to =BarrettProofs.MakeProofs=
 
 The Barrett proofs rely on already-established facts about division, runtime

@@ -4859,15 +4859,12 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
     std::vector<std::unique_ptr<submission>> subs;
     subs.reserve(N);
 
-    // Fire off N submissions as fast as possible.
+    // Fire off N submissions.
     for (size_t i = 0; i < N; ++i) {
-        auto s = std::make_unique<submission>();
-        s->future = s->ctx.promise.get_future();
-        s->so = monad_state_override_create();
-        s->bo = monad_block_override_create();
-
-        monad_state_override *so_ptr = s->so;
-        monad_block_override *bo_ptr = s->bo;
+        subs.emplace_back(std::make_unique<submission>());
+        subs[i]->future = subs[i]->ctx.promise.get_future();
+        subs[i]->so = monad_state_override_create();
+        subs[i]->bo = monad_block_override_create();
 
         monad_executor_eth_simulate_submit(
             executor,
@@ -4881,15 +4878,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             rlp_header.size(),
             rlp_block_id.data(),
             rlp_block_id.size(),
-            &so_ptr,
+            &subs[i]->so,
             1,
-            &bo_ptr,
+            &subs[i]->bo,
             1,
             false,
             complete_callback,
-            (void *)&s->ctx);
-
-        subs.push_back(std::move(s));
+            (void *)&subs[i]->ctx);
     }
 
     // Wait for all to complete and tally results.

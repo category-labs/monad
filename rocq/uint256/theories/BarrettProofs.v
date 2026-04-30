@@ -457,6 +457,368 @@ Proof.
   lia.
 Qed.
 
+Lemma multiplier_words_positive : forall params,
+  (0 < Bar.multiplier_bits params)%nat ->
+  (0 < Bar.multiplier_words params)%nat.
+Proof.
+  intros params Hbits.
+  unfold Bar.multiplier_words, Bar.min_words, Bar.word_width.
+  apply Nat.div_str_pos.
+  pose proof (Pos2Nat.is_pos Bar.U64.width).
+  lia.
+Qed.
+
+Lemma input_bits_aligned : forall params,
+  Bar.bit_shift params = 0%nat ->
+  Bar.input_bits params =
+    (Bar.word_width * Bar.word_shift params)%nat.
+Proof.
+  intros params Hbit.
+  unfold Bar.bit_shift, Bar.word_shift, Bar.word_width, Bar.shift in *.
+  pose proof (Nat.div_mod (Bar.input_bits params)
+    (Pos.to_nat Bar.U64.width) ltac:(pose proof
+      (Pos2Nat.is_pos Bar.U64.width); lia)) as Hdiv.
+  rewrite Hbit in Hdiv.
+  lia.
+Qed.
+
+Lemma numerator_words_with_multiplier_aligned : forall params,
+  (0 < Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
+  Bar.numerator_words params =
+    (Bar.word_shift params + Bar.multiplier_words params)%nat.
+Proof.
+  intros params Hbits Hbit.
+  pose proof (multiplier_words_positive params Hbits) as Hmwords_pos.
+  unfold Bar.numerator_words.
+  replace (Nat.eqb (Bar.multiplier_words params) 0%nat) with false.
+  2: { symmetry. apply Nat.eqb_neq. lia. }
+  unfold Bar.min_words, Bar.word_width.
+  pose proof (input_bits_aligned params Hbit) as Haligned.
+  rewrite Haligned.
+  rewrite Bar.U64.width_is_64.
+  change (Pos.to_nat 64) with 64%nat.
+  change Bar.word_width with (Pos.to_nat Bar.U64.width).
+  rewrite Bar.U64.width_is_64.
+  change (Pos.to_nat 64) with 64%nat.
+  symmetry.
+  apply Nat.div_unique with (r := 63%nat); lia.
+Qed.
+
+Lemma set_segment_start0_same_length : forall ws seg,
+  length ws = length seg ->
+  Div.set_segment ws 0 seg = seg.
+Proof.
+  induction ws as [|w ws IH]; intros [|s seg] Hlen;
+    cbn [Div.set_segment length app skipn] in *; try lia.
+  - reflexivity.
+  - rewrite skipn_all2 by lia.
+    rewrite app_nil_r. reflexivity.
+Qed.
+
+Lemma set_segment_extend_exact : forall start seg,
+  Div.set_segment (Bar.extend_words (start + length seg)) start seg =
+    repeat zero start ++ seg.
+Proof.
+  induction start as [|start IH]; intro seg.
+  - apply set_segment_start0_same_length.
+    rewrite WL.extend_words_length. reflexivity.
+  - replace (S start + length seg)%nat with
+      (S (start + length seg)) by lia.
+    change (Bar.extend_words (S (start + length seg))) with
+      (zero :: Bar.extend_words (start + length seg)).
+    cbn [Div.set_segment repeat app].
+    rewrite IH. reflexivity.
+Qed.
+
+Lemma bounded_segment_exact_value : forall start seg,
+  to_Z_words (Bar.bounded_segment (start + length seg) start seg) =
+    modulus_words start * to_Z_words seg.
+Proof.
+  intros start seg.
+  unfold Bar.bounded_segment.
+  replace (start + length seg - start)%nat with (length seg) by lia.
+  rewrite firstn_all.
+  rewrite set_segment_extend_exact.
+  rewrite WL.to_Z_words_app, WL.to_Z_words_repeat_zero.
+  rewrite repeat_length. ring.
+Qed.
+
+Lemma modulus_words_word_shift_aligned : forall params,
+  Bar.bit_shift params = 0%nat ->
+  modulus_words (Bar.word_shift params) =
+    2 ^ Z.of_nat (Bar.input_bits params).
+Proof.
+  intros params Hbit.
+  unfold modulus_words.
+  replace (base width) with (2 ^ 64).
+  2: { unfold base. rewrite Bar.U64.width_is_64. reflexivity. }
+  rewrite <- Z.pow_mul_r by lia.
+  pose proof (input_bits_aligned params Hbit) as Haligned.
+  unfold Bar.word_width in Haligned.
+  rewrite Bar.U64.width_is_64 in Haligned.
+  change (Pos.to_nat 64) with 64%nat in Haligned.
+  rewrite Haligned.
+  rewrite Nat2Z.inj_mul.
+  change (Z.of_nat 64) with 64.
+  reflexivity.
+Qed.
+
+Lemma numerator_with_multiplier_value_aligned : forall params y,
+  (0 < Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
+  uint256_fits_words (Bar.multiplier_words params) y ->
+  to_Z_words
+    (Bar.numerator_with_multiplier params (Bar.uint256_to_words y)) =
+    to_Z_uint256 y * 2 ^ Z.of_nat (Bar.input_bits params).
+Proof.
+  intros params y Hbits Hbit Hy_fit.
+  unfold Bar.numerator_with_multiplier.
+  rewrite Hbit. cbn [Nat.eqb].
+  rewrite (numerator_words_with_multiplier_aligned params Hbits Hbit).
+  replace (Bar.word_shift params + Bar.multiplier_words params)%nat with
+    (Bar.word_shift params +
+     length (Bar.fit_words (Bar.multiplier_words params)
+       (Bar.uint256_to_words y)))%nat.
+  2: { rewrite fit_words_length. reflexivity. }
+  rewrite bounded_segment_exact_value.
+  rewrite to_Z_fit_uint256_words_small by exact Hy_fit.
+  rewrite modulus_words_word_shift_aligned by exact Hbit.
+  ring.
+Qed.
+
+Lemma numerator_with_multiplier_words_value_aligned : forall params y_words,
+  (0 < Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
+  to_Z_words (Bar.numerator_with_multiplier params y_words) =
+    to_Z_words (Bar.fit_words (Bar.multiplier_words params) y_words) *
+    2 ^ Z.of_nat (Bar.input_bits params).
+Proof.
+  intros params y_words Hbits Hbit.
+  unfold Bar.numerator_with_multiplier.
+  rewrite Hbit. cbn [Nat.eqb].
+  rewrite (numerator_words_with_multiplier_aligned params Hbits Hbit).
+  replace (Bar.word_shift params + Bar.multiplier_words params)%nat with
+    (Bar.word_shift params +
+     length (Bar.fit_words (Bar.multiplier_words params) y_words))%nat.
+  2: { rewrite fit_words_length. reflexivity. }
+  rewrite bounded_segment_exact_value.
+  rewrite modulus_words_word_shift_aligned by exact Hbit.
+  ring.
+Qed.
+
+Lemma to_Z_word_all_ones :
+  to_Z (Bar.U64.sub Bar.U64.zero Bar.U64.one) = base width - 1.
+Proof.
+  change (Bar.U64.sub Bar.U64.zero Bar.U64.one) with (sub zero one).
+  rewrite spec_sub, spec_zero, spec_one.
+  replace (0 - 1) with (-1) by lia.
+  symmetry.
+  apply Z.mod_unique_pos with (q := -1).
+  - unfold base. rewrite Bar.U64.width_is_64. simpl. lia.
+  - ring.
+Qed.
+
+Lemma to_Z_all_ones_words : forall n,
+  to_Z_words (Bar.all_ones_words n) = modulus_words n - 1.
+Proof.
+  induction n as [|n IH].
+  - unfold Bar.all_ones_words, modulus_words. cbn [repeat to_Z_words].
+    lia.
+  - unfold Bar.all_ones_words in *.
+    cbn [repeat to_Z_words].
+    rewrite to_Z_word_all_ones, IH.
+    rewrite WL.modulus_words_succ.
+    ring.
+Qed.
+
+Lemma numerator_with_multiplier_length_aligned : forall params y_words,
+  (0 < Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
+  length (Bar.numerator_with_multiplier params y_words) =
+    Bar.numerator_words params.
+Proof.
+  intros params y_words Hbits Hbit.
+  unfold Bar.numerator_with_multiplier.
+  rewrite Hbit. cbn [Nat.eqb].
+  rewrite (numerator_words_with_multiplier_aligned params Hbits Hbit).
+  unfold Bar.bounded_segment.
+  rewrite DP.set_segment_length.
+  - rewrite WL.extend_words_length. reflexivity.
+  - rewrite WL.extend_words_length, length_firstn.
+    lia.
+Qed.
+
+Lemma udivrem_quotient_with_multiplier_exact : forall params y d r,
+  params_admissible params ->
+  (0 < Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
+  uint256_fits_words (Bar.multiplier_words params) y ->
+  Bar.valid_denominator params d = true ->
+  Div.udivrem (Bar.numerator_words params) Bar.uint256_num_words
+    (Bar.numerator_with_multiplier params (Bar.uint256_to_words y))
+    (Bar.uint256_to_words d) = Some r ->
+  to_Z_words (Div.ud_quot r) =
+    Z.div (to_Z_uint256 y * 2 ^ Z.of_nat (Bar.input_bits params))
+      (to_Z_uint256 d).
+Proof.
+  intros params y d r Hadm Hbits Hbit Hy_fit Hvalid Hdiv.
+  pose proof (valid_denominator_positive params d Hadm Hvalid) as Hd_pos.
+  pose proof (DP.udivrem_correct
+    (Bar.numerator_words params) Bar.uint256_num_words
+    (Bar.numerator_with_multiplier params (Bar.uint256_to_words y))
+    (Bar.uint256_to_words d) r) as Hcorr.
+  specialize (Hcorr (numerator_with_multiplier_length_aligned params
+    (Bar.uint256_to_words y) Hbits Hbit)).
+  assert (Hd_len : length (Bar.uint256_to_words d) = Bar.uint256_num_words).
+  { rewrite uint256_to_words_length. unfold Bar.uint256_num_words.
+    reflexivity. }
+  specialize (Hcorr Hd_len).
+  unfold to_Z_uint256 in Hd_pos.
+  specialize (Hcorr ltac:(lia) Hdiv).
+  destruct Hcorr as [Hvalue Hrem].
+  rewrite numerator_with_multiplier_value_aligned in Hvalue
+    by assumption.
+  unfold to_Z_uint256 in Hvalue.
+  unfold to_Z_uint256.
+  change (to_Z_words (Div.ud_quot r)) with (to_Z_words (DP.ud_quot r)).
+  apply Z.div_unique with (r := to_Z_words (Div.ud_rem r)).
+  - left. exact Hrem.
+  - rewrite Hvalue. ring.
+Qed.
+
+Lemma udivrem_quotient_with_multiplier_words_exact :
+  forall params y_words d r,
+  params_admissible params ->
+  (0 < Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
+  Bar.valid_denominator params d = true ->
+  Div.udivrem (Bar.numerator_words params) Bar.uint256_num_words
+    (Bar.numerator_with_multiplier params y_words)
+    (Bar.uint256_to_words d) = Some r ->
+  to_Z_words (Div.ud_quot r) =
+    Z.div
+      (to_Z_words (Bar.fit_words (Bar.multiplier_words params) y_words) *
+       2 ^ Z.of_nat (Bar.input_bits params))
+      (to_Z_uint256 d).
+Proof.
+  intros params y_words d r Hadm Hbits Hbit Hvalid Hdiv.
+  pose proof (valid_denominator_positive params d Hadm Hvalid) as Hd_pos.
+  pose proof (DP.udivrem_correct
+    (Bar.numerator_words params) Bar.uint256_num_words
+    (Bar.numerator_with_multiplier params y_words)
+    (Bar.uint256_to_words d) r) as Hcorr.
+  specialize (Hcorr (numerator_with_multiplier_length_aligned params
+    y_words Hbits Hbit)).
+  assert (Hd_len : length (Bar.uint256_to_words d) = Bar.uint256_num_words).
+  { rewrite uint256_to_words_length. unfold Bar.uint256_num_words.
+    reflexivity. }
+  specialize (Hcorr Hd_len).
+  unfold to_Z_uint256 in Hd_pos.
+  specialize (Hcorr ltac:(lia) Hdiv).
+  destruct Hcorr as [Hvalue Hrem].
+  rewrite numerator_with_multiplier_words_value_aligned in Hvalue
+    by assumption.
+  unfold to_Z_uint256.
+  change (to_Z_words (Div.ud_quot r)) with (to_Z_words (DP.ud_quot r)).
+  apply Z.div_unique with (r := to_Z_words (Div.ud_rem r)).
+  - left. exact Hrem.
+  - rewrite Hvalue. ring.
+Qed.
+
+Lemma reciprocal_words_with_multiplier : forall params rmax,
+  (0 < Bar.multiplier_bits params)%nat ->
+  Div.udivrem (Bar.numerator_words params) Bar.uint256_num_words
+    (Bar.numerator_with_multiplier params
+       (Bar.all_ones_words (Bar.multiplier_words params)))
+    (Bar.uint256_to_words (Bar.min_denominator params)) = Some rmax ->
+  Bar.reciprocal_words params =
+    Div.count_significant_words (Div.ud_quot rmax).
+Proof.
+  intros params rmax Hbits Hdiv.
+  unfold Bar.reciprocal_words, Bar.reciprocal_bits.
+  pose proof (multiplier_words_positive params Hbits) as Hmwords_pos.
+  replace (Nat.eqb (Bar.multiplier_words params) 0%nat) with false.
+  2: { symmetry. apply Nat.eqb_neq. lia. }
+  rewrite Hdiv.
+  apply min_words_bit_width_words.
+Qed.
+
+Lemma to_Z_fit_all_ones_words : forall n,
+  to_Z_words (Bar.fit_words n (Bar.all_ones_words n)) =
+    modulus_words n - 1.
+Proof.
+  intro n.
+  rewrite to_Z_fit_words_small.
+  - apply to_Z_all_ones_words.
+  - rewrite to_Z_all_ones_words.
+    pose proof (WL.modulus_words_pos n).
+    lia.
+Qed.
+
+Lemma uint256_fits_words_le_all_ones : forall n y,
+  uint256_fits_words n y ->
+  to_Z_uint256 y <= modulus_words n - 1.
+Proof.
+  intros n y Hfits.
+  unfold uint256_fits_words in Hfits.
+  pose proof (WL.to_Z_words_bound (Bar.uint256_to_words y)) as Hy_bound.
+  unfold to_Z_uint256 in *.
+  lia.
+Qed.
+
+Lemma reciprocal_quotient_with_multiplier_fits : forall params y d r rmax,
+  params_admissible params ->
+  (0 < Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
+  uint256_fits_words (Bar.multiplier_words params) y ->
+  Bar.valid_denominator params d = true ->
+  Div.udivrem (Bar.numerator_words params) Bar.uint256_num_words
+    (Bar.numerator_with_multiplier params (Bar.uint256_to_words y))
+    (Bar.uint256_to_words d) = Some r ->
+  Div.udivrem (Bar.numerator_words params) Bar.uint256_num_words
+    (Bar.numerator_with_multiplier params
+       (Bar.all_ones_words (Bar.multiplier_words params)))
+    (Bar.uint256_to_words (Bar.min_denominator params)) = Some rmax ->
+  to_Z_words (Div.ud_quot r) < modulus_words (Bar.reciprocal_words params).
+Proof.
+  intros params y d r rmax Hadm Hbits Hbit Hy_fit Hvalid Hdiv Hdivmax.
+  pose proof (valid_denominator_bounds params d Hvalid) as [Hmin_d _].
+  destruct Hadm as [Hmin_pos Hadm_tail].
+  assert (Hadm' : params_admissible params) by (repeat split; tauto || lia).
+  pose proof
+    (udivrem_quotient_with_multiplier_exact
+       params y d r Hadm' Hbits Hbit Hy_fit Hvalid Hdiv) as Hq.
+  pose proof
+    (udivrem_quotient_with_multiplier_words_exact
+       params (Bar.all_ones_words (Bar.multiplier_words params))
+       (Bar.min_denominator params) rmax Hadm' Hbits Hbit
+       (min_denominator_valid params Hadm') Hdivmax) as Hqmax.
+  rewrite to_Z_fit_all_ones_words in Hqmax.
+  assert (Hq_le : to_Z_words (Div.ud_quot r) <=
+                  to_Z_words (Div.ud_quot rmax)).
+  { rewrite Hq, Hqmax.
+    set (P := 2 ^ Z.of_nat (Bar.input_bits params)).
+    assert (HP_nonneg : 0 <= P) by (unfold P; apply Z.pow_nonneg; lia).
+    assert (Hy_nonneg : 0 <= to_Z_uint256 y).
+    { unfold to_Z_uint256. pose proof
+        (WL.to_Z_words_bound (Bar.uint256_to_words y)); lia. }
+    assert (Hy_le :
+      to_Z_uint256 y <= modulus_words (Bar.multiplier_words params) - 1).
+    { apply uint256_fits_words_le_all_ones. exact Hy_fit. }
+	    transitivity ((to_Z_uint256 y * P) /
+	      to_Z_uint256 (Bar.min_denominator params)).
+	    - apply Z_div_denominator_anti_nonneg.
+	      + apply Z.mul_nonneg_nonneg; lia.
+	      + lia.
+	      + lia.
+    - apply Z.div_le_mono; try lia.
+      nia. }
+  rewrite (reciprocal_words_with_multiplier params rmax Hbits Hdivmax).
+  pose proof (to_Z_words_count_significant_bound (Div.ud_quot rmax)).
+  lia.
+Qed.
+
 Theorem constructor_sound_no_multiplier : forall params d,
   params_admissible params ->
   Bar.multiplier_bits params = 0%nat ->
@@ -505,12 +867,57 @@ Qed.
 Theorem constructor_sound_with_multiplier : forall params y d,
   params_admissible params ->
   (0 < Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
   uint256_fits_words (Bar.multiplier_words params) y ->
   Bar.valid_denominator params d = true ->
   reciprocal_invariant (Bar.reciprocal_of_multiplier params y d) /\
   denominator_Z (Bar.reciprocal_of_multiplier params y d) = to_Z_uint256 d /\
   multiplier_Z (Bar.reciprocal_of_multiplier params y d) = to_Z_uint256 y.
-Admitted.
+Proof.
+  intros params y d Hadm Hbits Hbit Hy_fit Hvalid.
+  pose proof (valid_denominator_positive params d Hadm Hvalid) as Hd_pos.
+  destruct (udivrem_positive_some
+    (Bar.numerator_words params) Bar.uint256_num_words
+    (Bar.numerator_with_multiplier params (Bar.uint256_to_words y))
+    (Bar.uint256_to_words d)) as [r Hdiv].
+  { unfold to_Z_uint256 in Hd_pos. exact Hd_pos. }
+  destruct (udivrem_positive_some
+    (Bar.numerator_words params) Bar.uint256_num_words
+    (Bar.numerator_with_multiplier params
+       (Bar.all_ones_words (Bar.multiplier_words params)))
+    (Bar.uint256_to_words (Bar.min_denominator params))) as [rmax Hdivmax].
+  { unfold params_admissible, to_Z_uint256 in Hadm. lia. }
+  unfold reciprocal_invariant, denominator_Z, reciprocal_Z, multiplier_Z.
+  unfold Bar.reciprocal_of_multiplier.
+  rewrite Hdiv.
+  cbn [Bar.reciprocal_params Bar.denominator_ Bar.multiplier_
+       Bar.reciprocal_].
+  pose proof (valid_denominator_fits_words params d Hvalid) as Hd_fit.
+  pose proof (to_Z_fit_uint256_words_small
+    (Bar.max_denominator_words params) d Hd_fit) as Hden.
+  pose proof (to_Z_fit_uint256_words_small
+    (Bar.multiplier_words params) y Hy_fit) as Hmul.
+  pose proof (reciprocal_quotient_with_multiplier_fits
+    params y d r rmax Hadm Hbits Hbit Hy_fit Hvalid Hdiv Hdivmax)
+    as Hq_fit.
+  pose proof (to_Z_fit_words_small
+    (Bar.reciprocal_words params) (Div.ud_quot r) Hq_fit) as Hq_fit_eq.
+  pose proof (udivrem_quotient_with_multiplier_exact
+    params y d r Hadm Hbits Hbit Hy_fit Hvalid Hdiv) as Hq.
+  rewrite Hden, Hmul, Hq_fit_eq.
+  unfold reciprocal_scale_factor.
+  cbn [Bar.reciprocal_params Bar.multiplier_].
+  replace (Nat.eqb (Bar.multiplier_words params) 0%nat) with false.
+  2: { symmetry. apply Nat.eqb_neq.
+       pose proof (multiplier_words_positive params Hbits). lia. }
+  unfold Bar.shift in Hq |- *.
+  rewrite Hq.
+  repeat split; try lia.
+  unfold multiplier_Z.
+  cbn [Bar.multiplier_].
+  rewrite Hmul.
+  reflexivity.
+Qed.
 
 Theorem estimate_q_sound_no_preshift : forall rec x,
   reciprocal_invariant rec ->
@@ -625,6 +1032,7 @@ Theorem mulmod_const_correct : forall params y d x,
   params_admissible params ->
   (256 <= Bar.input_bits params)%nat ->
   (256 <= Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
   Bar.valid_denominator params d = true ->
   let rec := Bar.reciprocal_of_multiplier params y d in
   to_Z_uint256 (Bar.mulmod_const x rec) =

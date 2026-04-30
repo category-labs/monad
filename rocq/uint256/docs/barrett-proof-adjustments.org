@@ -57,6 +57,19 @@ prefix of =y= in =multiplier_=.  The stored multiplier is zero, while
 =to_Z_uint256 y = 2^64=.  The theorem therefore needs the semantic version of
 the C++ debug assertion: =y= must fit in =MULTIPLIER_WORDS= words.
 
+** Restrict multiplier constructor theorems to the reachable =BIT_SHIFT = 0= branch
+
+The existing semantic-discrepancies log records that the generic C++
+=numerator(y)= branch for =MULTIPLIER_WORDS > 0= and =BIT_SHIFT <> 0= appears
+to read one word past the end of =y=.  The exported constant-multiplier
+families instantiate =INPUT_BITS = 256=, so they use the reachable
+=BIT_SHIFT = 0= path.
+
+The Rocq model describes the intended shifted-word behavior for the dormant
+branch, but proving that generic branch would not be a proof of the current C++
+control flow.  The multiplier constructor theorem and the constant-multiplier
+wrapper theorem are therefore strengthened with =Bar.bit_shift params = 0=.
+
 ** Add proof-module dependencies to =BarrettProofs.MakeProofs=
 
 The Barrett proofs rely on already-established facts about division, runtime

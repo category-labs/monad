@@ -39,8 +39,7 @@ document:
 
 For immediate coverage work, the queue is therefore:
 
-1. Add record-level bitwise wrappers where needed for `countr_zero`
-   and `popcount`.
+1. Prove the record-level bitwise wrappers.
 2. Port `countr_zero` and `popcount`.
 
 * Completed Proof Note: `signextend_correct`
@@ -214,6 +213,7 @@ What is still missing from the overall Rocq development is mostly the
 `uint256.hpp` surface around:
 
 - `countr_zero`, `popcount`
+- record-level bitwise wrappers
 - serialization and byte parsing helpers
 
 Serialization is not a current verification priority and should be
@@ -283,6 +283,13 @@ loading, storing, or parsing helpers unless priorities change.
    `byteswap_correct` states the 256-bit result as the reversed list of
    word-level byte-swaps.
 
+5. Record-level bitwise wrappers are modeled.
+
+   The wrappers in [[theories/Arithmetic.v][theories/Arithmetic.v]] mirror the
+   C++ macro-generated `&`, `|`, and `^` operators and the unary `~`
+   operator by applying the corresponding word operation at indices
+   `0` through `3`. Their correctness proofs are still open.
+
 * Part 2: Lower-Level Extensions Needed For The Remaining Clean Ports
 
 1. Extend the word interface in
@@ -310,8 +317,9 @@ loading, storing, or parsing helpers unless priorities change.
 3. After the interface extension, add record-level bitwise `uint256`
    wrappers.
 
-   Port `&`, `^`, `~`, and `|` as concrete 256-bit operations matching
-   the C++ structure.
+   `&`, `^`, `~`, and `|` are modeled as concrete 256-bit operations
+   matching the C++ structure. Prove the wrappers before using them as
+   dependencies for later ports.
 
 4. Revisit `signextend` only if the model changes.
 

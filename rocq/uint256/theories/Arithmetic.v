@@ -420,6 +420,30 @@ Definition byteswap (x : uint256) : uint256 :=
     (byteswap_word (w1 x))
     (byteswap_word (w0 x)).
 
+Definition bitwise_and_uint256 (x y : uint256) : uint256 :=
+  mk_uint256
+    (land (w0 x) (w0 y))
+    (land (w1 x) (w1 y))
+    (land (w2 x) (w2 y))
+    (land (w3 x) (w3 y)).
+
+Definition bitwise_or_uint256 (x y : uint256) : uint256 :=
+  mk_uint256
+    (or (w0 x) (w0 y))
+    (or (w1 x) (w1 y))
+    (or (w2 x) (w2 y))
+    (or (w3 x) (w3 y)).
+
+Definition bitwise_xor_uint256 (x y : uint256) : uint256 :=
+  mk_uint256
+    (xor (w0 x) (w0 y))
+    (xor (w1 x) (w1 y))
+    (xor (w2 x) (w2 y))
+    (xor (w3 x) (w3 y)).
+
+Definition bitwise_not_uint256 (x : uint256) : uint256 :=
+  mk_uint256 (lnot (w0 x)) (lnot (w1 x)) (lnot (w2 x)) (lnot (w3 x)).
+
 Definition exp (base exponent : uint256) : uint256 :=
   if is_two_uint256 base
   then shift_left_uint256 one_uint256 exponent

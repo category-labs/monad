@@ -87,27 +87,30 @@ namespace
         return rlp::encode_list2(body);
     }
 
-    Result<PartialTrieDb> db_from_rlp_node(byte_string const &node_rlp)
+    Result<PartialTrieDb<NoopAccessTracker>>
+    db_from_rlp_node(byte_string const &node_rlp)
     {
         bytes32_t const root = to_bytes(
             keccak256(byte_string_view{node_rlp.data(), node_rlp.size()}));
         byte_string const encoded_nodes = rlp::encode_string2(
             byte_string_view{node_rlp.data(), node_rlp.size()});
-        return PartialTrieDb::from_reth_witness(
+        return PartialTrieDb<NoopAccessTracker>::from_reth_witness(
             root,
             byte_string_view{encoded_nodes.data(), encoded_nodes.size()},
             {});
     }
 
-    PartialTrieDb make_empty_db()
+    PartialTrieDb<NoopAccessTracker> make_empty_db()
     {
-        auto result = PartialTrieDb::from_reth_witness(NULL_ROOT, {}, {});
+        auto result = PartialTrieDb<NoopAccessTracker>::from_reth_witness(
+            NULL_ROOT, {}, {});
         MONAD_ASSERT(!result.has_error());
         return std::move(result.value());
     }
 
     void commit_with(
-        PartialTrieDb &db, BlockHeader const &header, StateDeltas const &deltas,
+        PartialTrieDb<NoopAccessTracker> &db, BlockHeader const &header,
+        StateDeltas const &deltas,
         std::function<void(BlockHeader &)> populate = [](BlockHeader &) {})
     {
         CommitBuilder builder(header.number);
@@ -116,7 +119,7 @@ namespace
 
     /// Build a witness whose only node is a leaf for `addr` with the given
     /// account and an empty storage trie.
-    Result<PartialTrieDb>
+    Result<PartialTrieDb<NoopAccessTracker>>
     db_from_account(Address const &addr, Account const &acct)
     {
         auto const path_bytes = keccak256(addr.bytes);
@@ -285,7 +288,8 @@ TEST(PartialTrieDb, StateRoot_HashStubWhenRootAbsentFromNodeIndex)
     constexpr auto sentinel =
         0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_bytes32;
 
-    auto result = PartialTrieDb::from_reth_witness(sentinel, {}, {});
+    auto result =
+        PartialTrieDb<NoopAccessTracker>::from_reth_witness(sentinel, {}, {});
     ASSERT_FALSE(result.has_error());
     EXPECT_EQ(result.value().state_root(), sentinel);
 }
@@ -497,7 +501,7 @@ TEST(PartialTrieDb, ReadCode_PresentAndMissing)
         rlp::encode_string2(byte_string_view{code1.data(), code1.size()}) +
         rlp::encode_string2(byte_string_view{code2.data(), code2.size()});
 
-    auto result = PartialTrieDb::from_reth_witness(
+    auto result = PartialTrieDb<NoopAccessTracker>::from_reth_witness(
         NULL_ROOT,
         {},
         byte_string_view{encoded_codes.data(), encoded_codes.size()});

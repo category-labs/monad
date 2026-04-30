@@ -183,6 +183,31 @@ on it for non-word-aligned intervals.  The issue is not present if the
 comparison modulus is the mathematical bit modulus =2^max_r_hat_bits=, but
 the current C++ and Rocq model use whole-word truncation at this point.
 
+** Signed division overflows on =INT_MIN / -1=
+
+The signed Barrett wrapper converts the numerator to an unsigned absolute
+value, calls the unsigned reducer, and then conditionally negates the quotient
+words.  This follows the C++ control flow but does not make the mathematical
+quotient representable in the single signed overflow case.
+
+Concrete counterexample:
+
+- =x= is the signed minimum value, so =to_Z_signed_uint256 x = -2^255=
+- =denominator_neg = true=
+- =denominator_Z rec = 1=
+
+The mathematical quotient is =Z.quot (-2^255) (-1) = 2^255=.  The wrapper's
+absolute unsigned quotient is the word pattern =0x8000...0000=.  Since the
+quotient sign is positive in this branch, the wrapper returns that pattern
+unchanged.  Interpreted as a signed 256-bit word, it denotes =-2^255=, not
+=+2^255=.
+
+The proof theorem =signed_wrapper_correct= therefore excludes this case.  This
+matches the standard C/C++ signed integer overflow exception for division of
+the most-negative value by =-1=; if the intended API instead specifies
+wrapping signed division, the theorem should be restated with a wrapped
+quotient postcondition.
+
 * Consequence for the proof plan
 
 The main proof target should remain the one recommended in the addendum:

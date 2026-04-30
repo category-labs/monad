@@ -45,6 +45,119 @@ Definition to_Z_signed_uint256 (x : Bar.uint256) : Z :=
 Definition to_Z_signed_words (ws : Bar.words) : Z :=
   to_Z_signed_uint256 (Bar.words_to_uint256 ws).
 
+Lemma modulus256_pos : 0 < modulus256.
+Proof.
+  change modulus256 with AP.modulus256.
+  exact AP.modulus256_pos.
+Qed.
+
+Lemma modulus256_twice_sign_threshold :
+  modulus256 = 2 * sign_threshold256.
+Proof.
+  unfold sign_threshold256, modulus256, modulus_words, WL.modulus_words, base.
+  rewrite width_is_64.
+  vm_compute.
+  reflexivity.
+Qed.
+
+Lemma to_Z_uint256_bounds : forall x,
+  0 <= to_Z_uint256 x < modulus256.
+Proof.
+  intro x.
+  unfold to_Z_uint256, modulus256.
+  apply WL.to_Z_words_bound.
+Qed.
+
+Lemma to_Z_signed_uint256_bounds : forall x,
+  - sign_threshold256 <= to_Z_signed_uint256 x < sign_threshold256.
+Proof.
+  intro x.
+  unfold to_Z_signed_uint256.
+  pose proof (to_Z_uint256_bounds x) as Hx.
+  pose proof modulus256_twice_sign_threshold as Hmod.
+  pose proof modulus256_pos as Hpos.
+  destruct (Z.ltb_spec0 (to_Z_uint256 x) sign_threshold256); lia.
+Qed.
+
+Lemma to_Z_signed_uint256_nonnegative : forall x,
+  Arith.is_negative x = false ->
+  to_Z_signed_uint256 x = to_Z_uint256 x.
+Proof.
+  intros x Hneg.
+  change (to_Z_signed_uint256 x) with (AP.to_Z_signed_uint256 x).
+  change (to_Z_uint256 x) with (AP.to_Z_uint256 x).
+  apply AP.to_Z_signed_uint256_nonnegative.
+  change (AP.is_negative x) with (Arith.is_negative x).
+  exact Hneg.
+Qed.
+
+Lemma to_Z_signed_uint256_negative : forall x,
+  Arith.is_negative x = true ->
+  to_Z_signed_uint256 x = - to_Z_uint256 (Arith.negate_uint256 x).
+Proof.
+  intros x Hneg.
+  change (to_Z_signed_uint256 x) with (AP.to_Z_signed_uint256 x).
+  change (to_Z_uint256 (Arith.negate_uint256 x))
+    with (AP.to_Z_uint256 (AP.negate_uint256 x)).
+  apply AP.to_Z_signed_uint256_negative.
+  change (AP.is_negative x) with (Arith.is_negative x).
+  exact Hneg.
+Qed.
+
+Lemma to_Z_signed_words_nonnegative : forall ws,
+  0 <= to_Z_words ws < sign_threshold256 ->
+  to_Z_signed_words ws = to_Z_words ws.
+Proof.
+  intros ws Hws.
+  change (to_Z_signed_words ws) with (AP.to_Z_signed_words ws).
+  rewrite AP.to_Z_signed_words_wrap.
+  - unfold AP.wrap_signed256.
+    change AP.modulus256 with modulus256.
+    change AP.sign_threshold256 with sign_threshold256.
+    rewrite Z.mod_small.
+    + destruct (Z.ltb_spec0 (to_Z_words ws) sign_threshold256); lia.
+    + pose proof modulus256_twice_sign_threshold.
+      pose proof modulus256_pos. lia.
+  - change AP.modulus256 with modulus256.
+    pose proof modulus256_twice_sign_threshold.
+    pose proof modulus256_pos. lia.
+Qed.
+
+Lemma to_Z_signed_negate_words_nonpositive : forall ws,
+  0 <= to_Z_words ws <= sign_threshold256 ->
+  to_Z_signed_words (Arith.negate_words ws) = - to_Z_words ws.
+Proof.
+  intros ws Hws.
+  change (to_Z_signed_words (Arith.negate_words ws))
+    with (AP.to_Z_signed_words (AP.negate_words ws)).
+  rewrite AP.to_Z_signed_negate_words_wrap.
+  - unfold AP.wrap_signed256.
+    change AP.modulus256 with modulus256.
+    change AP.sign_threshold256 with sign_threshold256.
+    pose proof modulus256_twice_sign_threshold as Hmod.
+    pose proof modulus256_pos as Hpos.
+    destruct (Z.eq_dec (to_Z_words ws) 0) as [Hz|Hz].
+    + rewrite Hz, Z.opp_0.
+      replace (0 mod modulus256) with 0 by
+        (symmetry; apply Z.mod_small; lia).
+      destruct (Z.ltb_spec0 0 sign_threshold256); lia.
+    + assert (Hneg : (- to_Z_words ws <? 0) = true).
+      { apply Z.ltb_lt. lia. }
+      pose proof (AP.mod_borrow_decompose modulus256 (- to_Z_words ws)
+        ltac:(lia) ltac:(lia)) as Hborrow.
+      change AP.modulus256 with modulus256 in Hborrow.
+      rewrite Hneg in Hborrow.
+      assert (Hmod_eq :
+        (- to_Z_words ws) mod modulus256 = modulus256 - to_Z_words ws)
+        by lia.
+      rewrite Hmod_eq.
+      destruct (Z.ltb_spec0
+        (modulus256 - to_Z_words ws) sign_threshold256); lia.
+  - change AP.modulus256 with modulus256.
+    pose proof modulus256_twice_sign_threshold.
+    pose proof modulus256_pos. lia.
+Qed.
+
 Definition reciprocal_Z (rec : Bar.reciprocal) : Z :=
   to_Z_words (Bar.reciprocal_ rec).
 
@@ -3583,6 +3696,9 @@ Theorem signed_wrapper_correct : forall params d x denominator_neg,
   Bar.multiplier_bits params = 0%nat ->
   Bar.valid_denominator params d = true ->
   let rec := Bar.reciprocal_of_denominator params d in
+  ~ (to_Z_signed_uint256 x = - sign_threshold256 /\
+     denominator_neg = true /\
+     denominator_Z rec = 1) ->
   let divisor := signed_divisor_Z denominator_neg rec in
   let result := Bar.sdivrem x denominator_neg rec in
   to_Z_signed_words (Div.ud_quot result) = Z.quot (to_Z_signed_uint256 x) divisor /\
@@ -3590,7 +3706,159 @@ Theorem signed_wrapper_correct : forall params d x denominator_neg,
   to_Z_signed_uint256 x =
     to_Z_signed_words (Div.ud_quot result) * divisor +
     to_Z_signed_words (Div.ud_rem result).
-Admitted.
+Proof.
+  intros params d x denominator_neg Hadm Hinput_bits Hmul_bits Hvalid.
+  set (rec := Bar.reciprocal_of_denominator params d).
+  cbn zeta.
+  intros Hno_overflow.
+  pose proof (constructor_sound_no_multiplier params d Hadm Hmul_bits Hvalid)
+    as [Hinv [Hden_value Hmul_value]].
+  pose proof (reciprocal_of_denominator_admissible
+    params d Hadm Hmul_bits Hvalid) as Hadm_rec.
+  set (x_neg := Arith.is_negative x).
+  set (x_abs := if x_neg then Arith.negate_uint256 x else x).
+  set (ures := Bar.udivrem x_abs rec).
+  pose proof (udivrem_correct params d x_abs Hadm Hinput_bits Hmul_bits
+    Hvalid) as Hudiv.
+  fold rec in Hudiv.
+  fold ures in Hudiv.
+  destruct Hudiv as [Hdiv Hrem].
+  fold ures in Hdiv, Hrem.
+  set (q := to_Z_words (Div.ud_quot ures)).
+  set (r := to_Z_words (Div.ud_rem ures)).
+  set (den := denominator_Z rec).
+  fold q in Hdiv.
+  fold r in Hdiv.
+  fold den in Hdiv.
+  fold r in Hrem.
+  fold den in Hrem.
+  assert (Hd_pos : 0 < den).
+  { subst den. change (reciprocal_invariant rec) in Hinv.
+    exact (proj1 Hinv). }
+  assert (Hq_nonneg : 0 <= q).
+  { subst q. pose proof (WL.to_Z_words_bound (Div.ud_quot ures)); lia. }
+  assert (Hq_div : q = to_Z_uint256 x_abs / den).
+  { apply Z.div_unique_pos with (r := r).
+    - exact Hrem.
+    - rewrite Hdiv. ring. }
+  assert (Hr_mod : r = to_Z_uint256 x_abs mod den).
+  { apply Z.mod_unique_pos with (q := q).
+    - exact Hrem.
+    - rewrite Hdiv. ring. }
+  assert (Hq_quot_abs : q = to_Z_uint256 x_abs ÷ den).
+  { rewrite Z.quot_div_nonneg by lia. exact Hq_div. }
+  assert (Hr_rem_abs : r = Z.rem (to_Z_uint256 x_abs) den).
+  { rewrite (proj2 (Zquotrem_Zdiv_eucl_pos (to_Z_uint256 x_abs) den
+      ltac:(lia) ltac:(lia))).
+    exact Hr_mod. }
+  subst x_neg.
+  destruct (Arith.is_negative x) eqn:Hxneg;
+    destruct denominator_neg eqn:Hdenneg;
+    subst x_abs;
+    unfold Bar.sdivrem;
+    rewrite Hxneg;
+    change (Bar.reciprocal_of_denominator params d) with rec;
+    fold ures;
+    cbn [xorb Div.ud_quot Div.ud_rem signed_divisor_Z].
+  - assert (Hsx : to_Z_signed_uint256 x =
+        - to_Z_uint256 (Arith.negate_uint256 x)).
+    { apply to_Z_signed_uint256_negative. exact Hxneg. }
+    assert (Habs_bound :
+      to_Z_uint256 (Arith.negate_uint256 x) <= sign_threshold256).
+    { pose proof (to_Z_signed_uint256_bounds x). lia. }
+    assert (Hq_le_thr : q <= sign_threshold256) by nia.
+    assert (Hr_le_thr : r <= sign_threshold256) by nia.
+    assert (Hq_lt_thr : q < sign_threshold256).
+    { destruct (Z.eq_dec q sign_threshold256) as [Hqeq|Hqneq].
+      - exfalso.
+        pose proof modulus256_twice_sign_threshold.
+        pose proof modulus256_pos.
+        assert (Habs_eq :
+          to_Z_uint256 (Arith.negate_uint256 x) = sign_threshold256) by nia.
+        assert (Hden_eq : den = 1) by nia.
+        apply Hno_overflow.
+        split.
+        + rewrite Hsx. lia.
+        + split; [reflexivity|].
+          change (denominator_Z rec) with den. exact Hden_eq.
+      - lia. }
+    assert (Hq_signed : to_Z_signed_words (Div.ud_quot ures) = q).
+    { apply to_Z_signed_words_nonnegative.
+      change (to_Z_words (Div.ud_quot ures)) with q. lia. }
+    assert (Hr_signed :
+      to_Z_signed_words (Arith.negate_words (Div.ud_rem ures)) = - r).
+    { apply to_Z_signed_negate_words_nonpositive.
+      change (to_Z_words (Div.ud_rem ures)) with r. lia. }
+    rewrite Hq_signed, Hr_signed, Hsx.
+    change (denominator_Z rec) with den.
+    split.
+    + rewrite Z.quot_opp_opp by lia. exact Hq_quot_abs.
+    + split.
+      * rewrite Z.rem_opp_opp by lia. rewrite <- Hr_rem_abs. reflexivity.
+      * rewrite Hdiv. ring.
+  - assert (Hsx : to_Z_signed_uint256 x =
+        - to_Z_uint256 (Arith.negate_uint256 x)).
+    { apply to_Z_signed_uint256_negative. exact Hxneg. }
+    assert (Habs_bound :
+      to_Z_uint256 (Arith.negate_uint256 x) <= sign_threshold256).
+    { pose proof (to_Z_signed_uint256_bounds x). lia. }
+    assert (Hq_le_thr : q <= sign_threshold256) by nia.
+    assert (Hr_le_thr : r <= sign_threshold256) by nia.
+    assert (Hq_signed :
+      to_Z_signed_words (Arith.negate_words (Div.ud_quot ures)) = - q).
+    { apply to_Z_signed_negate_words_nonpositive.
+      change (to_Z_words (Div.ud_quot ures)) with q. lia. }
+    assert (Hr_signed :
+      to_Z_signed_words (Arith.negate_words (Div.ud_rem ures)) = - r).
+    { apply to_Z_signed_negate_words_nonpositive.
+      change (to_Z_words (Div.ud_rem ures)) with r. lia. }
+    rewrite Hq_signed, Hr_signed, Hsx.
+    change (denominator_Z rec) with den.
+    split.
+    + rewrite Z.quot_opp_l by lia. rewrite <- Hq_quot_abs. reflexivity.
+    + split.
+      * rewrite Z.rem_opp_l by lia. rewrite <- Hr_rem_abs. reflexivity.
+      * rewrite Hdiv. ring.
+  - assert (Hsx : to_Z_signed_uint256 x = to_Z_uint256 x).
+    { apply to_Z_signed_uint256_nonnegative. exact Hxneg. }
+    assert (Habs_bound : to_Z_uint256 x < sign_threshold256).
+    { pose proof (to_Z_signed_uint256_bounds x). lia. }
+    assert (Hq_lt_thr : q < sign_threshold256) by nia.
+    assert (Hr_lt_thr : r < sign_threshold256) by nia.
+    assert (Hq_signed :
+      to_Z_signed_words (Arith.negate_words (Div.ud_quot ures)) = - q).
+    { apply to_Z_signed_negate_words_nonpositive.
+      change (to_Z_words (Div.ud_quot ures)) with q. lia. }
+    assert (Hr_signed : to_Z_signed_words (Div.ud_rem ures) = r).
+    { apply to_Z_signed_words_nonnegative.
+      change (to_Z_words (Div.ud_rem ures)) with r. lia. }
+    rewrite Hq_signed, Hr_signed, Hsx.
+    change (denominator_Z rec) with den.
+    split.
+    + rewrite Z.quot_opp_r by lia. rewrite <- Hq_quot_abs. reflexivity.
+    + split.
+      * rewrite Z.rem_opp_r by lia. rewrite <- Hr_rem_abs. reflexivity.
+      * rewrite Hdiv. ring.
+  - assert (Hsx : to_Z_signed_uint256 x = to_Z_uint256 x).
+    { apply to_Z_signed_uint256_nonnegative. exact Hxneg. }
+    assert (Habs_bound : to_Z_uint256 x < sign_threshold256).
+    { pose proof (to_Z_signed_uint256_bounds x). lia. }
+    assert (Hq_lt_thr : q < sign_threshold256) by nia.
+    assert (Hr_lt_thr : r < sign_threshold256) by nia.
+    assert (Hq_signed : to_Z_signed_words (Div.ud_quot ures) = q).
+    { apply to_Z_signed_words_nonnegative.
+      change (to_Z_words (Div.ud_quot ures)) with q. lia. }
+    assert (Hr_signed : to_Z_signed_words (Div.ud_rem ures) = r).
+    { apply to_Z_signed_words_nonnegative.
+      change (to_Z_words (Div.ud_rem ures)) with r. lia. }
+    rewrite Hq_signed, Hr_signed, Hsx.
+    change (denominator_Z rec) with den.
+    split.
+    + exact Hq_quot_abs.
+    + split.
+      * exact Hr_rem_abs.
+      * exact Hdiv.
+Qed.
 
 Theorem addmod_correct : forall params d x y,
   params_admissible params ->

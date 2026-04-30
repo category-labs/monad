@@ -122,3 +122,22 @@ multiplication, and composite uint256 arithmetic.  The C++ semantics do not
 change here; the proof functor is strengthened so it can use the existing
 =DivisionProofs=, =RuntimeMulProofs=, and =ArithmeticProofs= results rather
 than reproving those libraries locally.
+
+** Exclude signed =INT_MIN / -1= overflow from =signed_wrapper_correct=
+
+The signed wrapper theorem is strengthened with the usual two's-complement
+overflow exclusion:
+
+- =to_Z_signed_uint256 x = -sign_threshold256=
+- =denominator_neg = true=
+- =denominator_Z rec = 1=
+
+Without this precondition, the mathematical quotient is =+sign_threshold256=,
+which is not representable as a signed 256-bit value.  The Rocq model follows
+the C++ control flow and returns the two's-complement word pattern
+=0x8000...0000=; interpreted by =to_Z_signed_words=, that word pattern is
+=-sign_threshold256=.
+
+The strengthened theorem keeps the exact mathematical =Z.quot= and =Z.rem=
+postcondition for every representable signed division case instead of proving
+only a wrapped quotient.

@@ -152,6 +152,37 @@ the product loses a high bit, so the quotient estimate is far below
 =MULTIPLIER_BITS = 256=, so every =uint256_t= multiplier satisfies the required
 bit bound there.
 
+** Remainder-only quotient truncation drops non-word-aligned padding bits
+
+The =need_quotient = false= path in =estimate_q= uses
+=relevant_quotient_bits=, but =reduce= later multiplies the estimate by the
+denominator modulo =MAX_R_HAT_WORDS= whole words.  When
+=max_r_hat_bits= is not a multiple of 64, the false path can discard quotient
+bits that are above =max_r_hat_bits= but still inside the final whole-word
+modulus used by =q_hat * denominator=.
+
+Concrete counterexample for the first no-multiplier interval:
+
+- =min_denominator = 2=
+- =max_denominator = 2^65 - 1=
+- =input_bits = 256=
+- =multiplier_bits = 0=
+- =d = 2=
+- =x = 2^68=
+
+Here =max_r_hat_bits = max_denominator_bits + 2 = 67= and
+=MAX_R_HAT_WORDS = 2=.  The full quotient estimate is
+=q_hat = x / d = 2^67=.  The remainder-only quotient keeps only the low
+67 quotient bits, so it stores zero.  Multiplying by the denominator gives a
+difference of =2^68= modulo =2^128=, so the two products are not congruent
+modulo =modulus_words MAX_R_HAT_WORDS=.
+
+This invalidates the current whole-word theorem statement
+=low_product_sufficient= and the false-quotient reducer theorems that depend
+on it for non-word-aligned intervals.  The issue is not present if the
+comparison modulus is the mathematical bit modulus =2^max_r_hat_bits=, but
+the current C++ and Rocq model use whole-word truncation at this point.
+
 * Consequence for the proof plan
 
 The main proof target should remain the one recommended in the addendum:

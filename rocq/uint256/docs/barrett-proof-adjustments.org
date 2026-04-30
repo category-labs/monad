@@ -168,4 +168,6 @@ from the remainder-only and full quotient estimates differ.  The exported
 Barrett parameter families used by the current wrapper theorems have aligned
 post-product shifts, so =low_product_sufficient= and the
 =need_quotient = false= reducer theorem are strengthened with that semantic
-precondition instead of proving invalid generic statements.
+precondition instead of proving invalid generic statements.  The generic
+no-multiplier modular wrapper theorems that call the false reducer carry the
+same precondition.

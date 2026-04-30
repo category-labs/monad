@@ -3608,6 +3608,64 @@ Proof.
   exact Hsmall.
 Qed.
 
+Lemma words_to_uint256_value_small : forall ws,
+  0 <= to_Z_words ws < modulus_words 4%nat ->
+  to_Z_uint256 (Bar.words_to_uint256 ws) = to_Z_words ws.
+Proof.
+  intros ws Hsmall.
+  change (to_Z_uint256 (Bar.words_to_uint256 ws))
+    with (AP.to_Z_uint256 (AP.words_to_uint256 ws)).
+  change (modulus_words 4%nat) with AP.modulus256 in Hsmall.
+  apply AP.to_Z_uint256_words_to_uint256_small.
+  exact Hsmall.
+Qed.
+
+Lemma to_Z_words_uint256_with_carry : forall u c,
+  to_Z_words (Bar.uint256_to_words u ++ [of_bool c]) =
+  to_Z_uint256 u + (if c then modulus_words 4%nat else 0).
+Proof.
+  intros u c.
+  set (ws := Bar.uint256_to_words u).
+  assert (Hlen : length ws = 4%nat).
+  { subst ws. apply uint256_to_words_length. }
+  pose proof (WL.to_Z_words_firstn_skipn (ws ++ [of_bool c]) 4
+    ltac:(rewrite length_app, Hlen; cbn; lia)) as Hsplit.
+  rewrite Hsplit.
+  rewrite firstn_app.
+  rewrite firstn_all2 by lia.
+  replace (4 - length ws)%nat with 0%nat by lia.
+  cbn [firstn app].
+  rewrite skipn_app.
+  rewrite skipn_all2 by lia.
+  replace (4 - length ws)%nat with 0%nat by lia.
+  cbn [skipn app to_Z_words].
+  rewrite app_nil_r.
+  rewrite spec_of_bool.
+  unfold to_Z_uint256.
+  change (Bar.uint256_to_words u) with ws.
+  destruct c.
+  - ring.
+  - ring.
+Qed.
+
+Lemma addmod_sum_words_value : forall x y,
+  to_Z_words
+    (Bar.uint256_to_words (Arith.value256 (Arith.addc x y)) ++
+     [of_bool (Arith.carry256 (Arith.addc x y))]) =
+  to_Z_uint256 x + to_Z_uint256 y.
+Proof.
+  intros x y.
+  rewrite to_Z_words_uint256_with_carry.
+  change (to_Z_uint256 (Arith.value256 (Arith.addc x y)))
+    with (AP.to_Z_uint256 (AP.value256 (AP.addc x y))).
+  change (to_Z_uint256 x) with (AP.to_Z_uint256 x).
+  change (to_Z_uint256 y) with (AP.to_Z_uint256 y).
+  change (Arith.carry256 (Arith.addc x y)) with
+    (AP.carry256 (AP.addc x y)).
+  change (modulus_words 4%nat) with AP.modulus256.
+  apply AP.addc_full_correct.
+Qed.
+
 Lemma to_Z_word_two :
   to_Z (Bar.U64.add Bar.U64.one Bar.U64.one) = 2.
 Proof.
@@ -4471,16 +4529,75 @@ Theorem addmod_correct : forall params d x y,
   params_admissible params ->
   (257 <= Bar.input_bits params)%nat ->
   Bar.multiplier_bits params = 0%nat ->
+  Bar.post_product_bit_shift params = 0%nat ->
   Bar.valid_denominator params d = true ->
   let rec := Bar.reciprocal_of_denominator params d in
   to_Z_uint256 (Bar.addmod x y rec) =
     Z.modulo (to_Z_uint256 x + to_Z_uint256 y) (denominator_Z rec).
-Admitted.
+Proof.
+  intros params d x y Hadm Hinput_bits Hmul_bits Halign Hvalid.
+  set (rec := Bar.reciprocal_of_denominator params d).
+  pose proof (constructor_sound_no_multiplier params d Hadm Hmul_bits Hvalid)
+    as [Hinv _].
+  pose proof (reciprocal_of_denominator_admissible
+    params d Hadm Hmul_bits Hvalid) as Hadm_rec.
+  set (sum_result := Arith.addc x y).
+  set (sum := Bar.uint256_to_words (Arith.value256 sum_result) ++
+    [of_bool (Arith.carry256 sum_result)]).
+  assert (Hsum_value : to_Z_words sum = to_Z_uint256 x + to_Z_uint256 y).
+  { subst sum sum_result. apply addmod_sum_words_value. }
+  assert (Hsum_bound :
+    0 <= to_Z_words sum < 2 ^ Z.of_nat (Bar.input_bits params)).
+  { rewrite Hsum_value.
+    pose proof (to_Z_uint256_bounds x) as Hx.
+    pose proof (to_Z_uint256_bounds y) as Hy.
+    split; [lia|].
+    eapply Z.lt_le_trans with (m := 2 ^ Z.of_nat 257).
+    - assert (Hmod256 : modulus256 = 2 ^ Z.of_nat 256).
+      { unfold modulus256, modulus_words, base.
+        rewrite width_is_64. cbn. reflexivity. }
+      rewrite Hmod256 in Hx, Hy.
+      assert (to_Z_uint256 x <= 2 ^ Z.of_nat 256 - 1) by lia.
+      assert (to_Z_uint256 y <= 2 ^ Z.of_nat 256 - 1) by lia.
+      nia.
+    - apply Z.pow_le_mono_r; lia. }
+  assert (Hinput : input_within_bound rec sum).
+  { unfold input_within_bound, input_value_Z.
+    change (Bar.reciprocal_params rec) with params.
+    rewrite to_Z_fit_words_small.
+    - exact Hsum_bound.
+    - eapply Z.lt_le_trans; [exact (proj2 Hsum_bound)|].
+      unfold Bar.input_words. apply pow_le_modulus_min_words. }
+  assert (Honline_sum : online_numerator_Z rec sum = to_Z_words sum).
+  { unfold online_numerator_Z, Bar.online_numerator.
+    change (Bar.reciprocal_params rec) with params.
+    rewrite (multiplier_words_zero params Hmul_bits). cbn [Nat.eqb].
+    rewrite to_Z_fit_words_small.
+    - reflexivity.
+    - eapply Z.lt_le_trans; [exact (proj2 Hsum_bound)|].
+      unfold Bar.input_words. apply pow_le_modulus_min_words. }
+  set (rr := Bar.reduce false rec sum).
+  pose proof
+    (reduce_correct_remainder_only rec sum Hinv Hadm_rec Halign Hinput)
+    as Hred.
+  fold rr in Hred.
+  unfold Bar.addmod.
+  fold rec sum_result sum rr.
+  cbn zeta in Hred.
+  destruct Hred as [Hrem Hrem_bounds].
+  rewrite words_to_uint256_value_small.
+  - change (to_Z_words (Bar.reduce_rem rr)) with (reduce_rem_Z rr).
+    rewrite Hrem, Honline_sum, Hsum_value. reflexivity.
+  - change (to_Z_words (Bar.reduce_rem rr)) with (reduce_rem_Z rr).
+    pose proof (denominator_lt_modulus256 rec Hadm_rec) as Hden_lt.
+    lia.
+Qed.
 
 Theorem mulmod_correct : forall params d x y,
   params_admissible params ->
   (512 <= Bar.input_bits params)%nat ->
   Bar.multiplier_bits params = 0%nat ->
+  Bar.post_product_bit_shift params = 0%nat ->
   Bar.valid_denominator params d = true ->
   let rec := Bar.reciprocal_of_denominator params d in
   to_Z_uint256 (Bar.mulmod x y rec) =

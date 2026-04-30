@@ -20,7 +20,7 @@ proved and the project build passes.
 
 ** Public Wrappers
 
-- [ ] =addmod_correct=
+- [X] =addmod_correct=
 
   Derive the public addition-modulo wrapper from the remainder-only reducer.
 

@@ -3503,7 +3503,79 @@ Theorem udivrem_correct : forall params d u,
     to_Z_words (Div.ud_quot result) * denominator_Z rec +
     to_Z_words (Div.ud_rem result) /\
   0 <= to_Z_words (Div.ud_rem result) < denominator_Z rec.
-Admitted.
+Proof.
+  intros params d u Hadm Hinput_bits Hmul_bits Hvalid.
+  set (rec := Bar.reciprocal_of_denominator params d).
+  pose proof (constructor_sound_no_multiplier params d Hadm Hmul_bits Hvalid)
+    as [Hinv [Hden Hmul]].
+  pose proof (reciprocal_of_denominator_admissible
+    params d Hadm Hmul_bits Hvalid) as Hadm_rec.
+  set (x := Bar.uint256_to_words u).
+  assert (Hu_bound : 0 <= to_Z_uint256 u < 2 ^ Z.of_nat 256).
+  { unfold to_Z_uint256.
+    pose proof (WL.to_Z_words_bound (Bar.uint256_to_words u)) as Hu.
+    rewrite uint256_to_words_length in Hu.
+    unfold modulus_words, base in Hu.
+    rewrite width_is_64 in Hu.
+    cbn in Hu. exact Hu. }
+  assert (Hu_fit4 : uint256_fits_words 4%nat u).
+  { unfold uint256_fits_words, to_Z_uint256.
+    pose proof (WL.to_Z_words_bound (Bar.uint256_to_words u)) as Hu.
+    rewrite uint256_to_words_length in Hu.
+    exact (proj2 Hu). }
+  assert (Hinput : input_within_bound rec x).
+  { unfold input_within_bound, input_value_Z.
+    subst x rec.
+    change (Bar.reciprocal_params (Bar.reciprocal_of_denominator params d))
+      with params.
+    unfold Bar.input_words, Bar.min_words, Bar.word_width.
+    rewrite Hinput_bits, width_is_64.
+    cbn.
+    rewrite to_Z_fit_uint256_words_small by exact Hu_fit4.
+    exact Hu_bound. }
+  set (rr := Bar.reduce true rec x).
+  pose proof (reduce_correct_with_quotient rec x Hinv Hadm_rec Hinput) as Hred.
+  fold rr in Hred.
+  unfold Bar.udivrem.
+  fold x rr.
+  cbn [Div.ud_quot Div.ud_rem].
+  cbn zeta in Hred.
+  destruct Hred as [Hdecomp Hrem_bounds].
+  assert (Honline : online_numerator_Z rec x = to_Z_uint256 u).
+  { subst x.
+    unfold online_numerator_Z, Bar.online_numerator.
+    change (Bar.reciprocal_params rec) with params.
+    rewrite (multiplier_words_zero params Hmul_bits). cbn [Nat.eqb].
+    unfold Bar.input_words, Bar.min_words, Bar.word_width.
+    rewrite Hinput_bits, width_is_64. cbn.
+    rewrite to_Z_fit_uint256_words_small by exact Hu_fit4.
+    reflexivity. }
+  assert (Hd_pos : 0 < denominator_Z rec).
+  { change (reciprocal_invariant rec) in Hinv. exact (proj1 Hinv). }
+  assert (Hden_lt : denominator_Z rec < modulus_words 4%nat).
+  { apply denominator_lt_modulus256. exact Hadm_rec. }
+  assert (Hrem_copy :
+    to_Z_words (Bar.copy_uint256_words (Bar.reduce_rem rr)) =
+    reduce_rem_Z rr).
+  { unfold reduce_rem_Z. apply copy_uint256_words_value_small.
+    change (to_Z_words (Bar.reduce_rem rr)) with (reduce_rem_Z rr).
+    lia. }
+  assert (Hquot_nonneg : 0 <= reduce_quot_Z rr).
+  { unfold reduce_quot_Z.
+    pose proof (WL.to_Z_words_bound (Bar.reduce_quot rr)); lia. }
+  assert (Hquot_lt : reduce_quot_Z rr < modulus_words 4%nat).
+  { rewrite Honline in Hdecomp.
+    unfold uint256_fits_words in Hu_fit4.
+    nia. }
+  assert (Hquot_copy :
+    to_Z_words (Bar.copy_uint256_words (Bar.reduce_quot rr)) =
+    reduce_quot_Z rr).
+  { unfold reduce_quot_Z. apply copy_uint256_words_value_small.
+    exact Hquot_lt. }
+  rewrite Hquot_copy, Hrem_copy.
+  rewrite <- Honline.
+  split; assumption.
+Qed.
 
 Theorem signed_wrapper_correct : forall params d x denominator_neg,
   params_admissible params ->

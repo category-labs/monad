@@ -16,20 +16,32 @@
 #include "from_json.hpp"
 
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 
 #include <category/vm/vm.hpp>
 
+#include <memory>
+
 #include <test_resource_data.h>
 
 MONAD_TEST_NAMESPACE_BEGIN
 
+template <bool page_encoded>
 TestStateRef JsonState::make_test_state() const
 {
     using namespace ::monad;
 
     auto test_state = std::make_shared<TestState>();
+
+    // TestState constructs its db with the slot-encoded InMemoryMachine by
+    // default. In page mode, swap to MonadInMemoryMachine before any
+    // commit so storage leaves are page-shaped.
+    if constexpr (page_encoded) {
+        test_state->db.reset_state_machine(
+            std::make_unique<MonadInMemoryMachine>());
+    }
 
     if (!init_state.has_value()) {
         return test_state;
@@ -41,7 +53,7 @@ TestStateRef JsonState::make_test_state() const
     init_state.value().at("pre").get_to(state);
     bs.merge(state);
     auto [released_state, released_code] = std::move(bs).release();
-    commit_simple(
+    commit_simple<page_encoded>(
         test_state->trie_db,
         *released_state,
         released_code,
@@ -60,6 +72,9 @@ TestStateRef JsonState::make_test_state() const
 
     return test_state;
 }
+
+template TestStateRef JsonState::make_test_state<false>() const;
+template TestStateRef JsonState::make_test_state<true>() const;
 
 std::vector<monad::Address> JsonState::initial_accounts() const
 {

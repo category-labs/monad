@@ -42,6 +42,7 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/nibbles_view_fmt.hpp> // NOLINT
@@ -371,11 +372,18 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
     {
         TrieDb &db;
         nlohmann::json &json;
+        // True when the trie's state subtree is page-encoded, i.e. each
+        // storage leaf at path keccak256(addr)/keccak256(page_key) holds
+        // an encoded page rather than a single slot value. Drives
+        // handle_storage to fan one trie leaf out into one JSON entry per
+        // populated slot so the output matches a slot-encoded dump.
+        bool const page_mode;
         Nibbles path{};
 
-        explicit Traverse(TrieDb &db, nlohmann::json &json)
+        Traverse(TrieDb &db, nlohmann::json &json, bool const page_mode)
             : db(db)
             , json(json)
+            , page_mode(page_mode)
         {
         }
 
@@ -446,12 +454,48 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             MONAD_ASSERT(node.has_value());
 
             auto encoded_storage = node.value();
-
-            auto const storage = decode_storage_db(encoded_storage);
+            auto raw_res = decode_storage_db_raw(encoded_storage);
+            MONAD_ASSERT(raw_res.has_value());
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
 
+            if (page_mode) {
+                // Page-encoded leaf: first element of the RLP list is the
+                // page_key (compact), second is the page bytes. Fan out
+                // one JSON entry per populated slot, keyed by
+                // keccak256(slot_key) so the output matches a slot dump.
+                bytes32_t const page_key = to_bytes(raw_res.value().first);
+                auto page = decode_storage_page(raw_res.value().second);
+                MONAD_ASSERT(page.has_value());
+                for (uint8_t off = 0; off < storage_page_t::SLOTS; ++off) {
+                    auto const &slot_value = page.value()[off];
+                    if (slot_value == bytes32_t{}) {
+                        continue;
+                    }
+                    bytes32_t const slot_key = compute_slot_key(page_key, off);
+                    auto const hashed_slot_key = to_bytes(
+                        keccak256({slot_key.bytes, sizeof(slot_key.bytes)}));
+                    auto const key = fmt::format("{}", hashed_slot_key);
+                    auto storage_data_json = nlohmann::json::object();
+                    storage_data_json["slot"] = fmt::format(
+                        "0x{:02x}",
+                        fmt::join(
+                            std::as_bytes(std::span(slot_key.bytes)), ""));
+                    storage_data_json["value"] = fmt::format(
+                        "0x{:02x}",
+                        fmt::join(
+                            std::as_bytes(std::span(slot_value.bytes)), ""));
+                    json[acct_key]["storage"][key] = storage_data_json;
+                }
+                return;
+            }
+
+            // Slot-encoded leaf: trie path under the account is
+            // keccak256(slot_key); the leaf carries (slot_key,
+            // slot_value).
+            bytes32_t const slot_key = to_bytes(raw_res.value().first);
+            bytes32_t const slot_value = to_bytes(raw_res.value().second);
             auto const key = fmt::format(
                 "{}",
                 NibblesView{path}.substr(
@@ -460,13 +504,10 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             auto storage_data_json = nlohmann::json::object();
             storage_data_json["slot"] = fmt::format(
                 "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(storage.value().first.bytes)), ""));
+                fmt::join(std::as_bytes(std::span(slot_key.bytes)), ""));
             storage_data_json["value"] = fmt::format(
                 "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(storage.value().second.bytes)),
-                    ""));
+                fmt::join(std::as_bytes(std::span(slot_value.bytes)), ""));
             json[acct_key]["storage"][key] = storage_data_json;
         }
 
@@ -476,13 +517,19 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
         }
     };
 
-    auto json = nlohmann::json::object();
-    Traverse traverse(*this, json);
-
     auto res_cursor =
         db_.find(curr_root_, concat(prefix_, STATE_NIBBLE), block_number_);
     MONAD_ASSERT(res_cursor.has_value());
     MONAD_ASSERT(res_cursor.value().is_valid());
+
+    // The state subtree's root node carries page_encoding_marker as its
+    // value when the trie was committed page-encoded. Read it once here
+    // and let Traverse fan pages out into per-slot JSON entries.
+    bool const page_mode = res_cursor.value().node->value() ==
+                           byte_string_view{page_encoding_marker};
+
+    auto json = nlohmann::json::object();
+    Traverse traverse(*this, json, page_mode);
     // RWOndisk Db prevents any parallel traversal that does blocking i/o
     // from running on the triedb thread, which include to_json. Thus, we can
     // only use blocking traversal for RWOnDisk Db, but can still do parallel

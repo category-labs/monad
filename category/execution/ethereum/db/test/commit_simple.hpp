@@ -20,7 +20,10 @@
 #include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/proposal_overlays.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -30,6 +33,14 @@ MONAD_NAMESPACE_BEGIN
 namespace test
 {
 
+    // Test-side single-block commit helper. The non-type template parameter
+    // selects which CommitBuilder to use. When `page_encoded` is true the
+    // trie write goes through MonadCommitBuilder + a local
+    // PageStorageBroker so storage leaves land as page entries rather than
+    // slot entries; the caller must have configured `db` with a page-aware
+    // state machine (Monad{InMemory,OnDisk}Machine). Default is the
+    // slot-encoded path used by all existing callers.
+    template <bool page_encoded = false>
     inline void commit_simple(
         ::monad::Db &db, StateDeltas const &deltas, Code const &code,
         bytes32_t const &block_id, BlockHeader const &header,
@@ -41,7 +52,18 @@ namespace test
         std::optional<std::vector<Withdrawal>> const &withdrawals =
             std::nullopt)
     {
-        CommitBuilder builder(header.number);
+        std::optional<PageStorageBroker> page_broker;
+        std::unique_ptr<CommitBuilder> builder_ptr;
+        if constexpr (page_encoded) {
+            page_broker.emplace(db);
+            builder_ptr = std::make_unique<MonadCommitBuilder>(
+                header.number, *page_broker);
+        }
+        else {
+            builder_ptr = std::make_unique<CommitBuilder>(header.number);
+        }
+        CommitBuilder &builder = *builder_ptr;
+
         builder.add_state_deltas(deltas)
             .add_code(code)
             .add_receipts(receipts)

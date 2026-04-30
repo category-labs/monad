@@ -58,7 +58,10 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
+#include <category/execution/monad/state2/monad_block_state.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -94,6 +97,17 @@
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
+
+// True for MonadTraits at MONAD_NEXT or later, false for everything else
+// (EvmTraits, pre-fork MonadTraits). EvmTraits has no monad_rev(), so the
+// primary template returns false and a constrained partial specialization
+// supplies the real check for MonadTraits.
+template <Traits T>
+constexpr bool is_post_fork_monad_v = false;
+
+template <Traits T>
+    requires is_monad_trait_v<T>
+constexpr bool is_post_fork_monad_v<T> = T::monad_rev() >= MONAD_NEXT;
 
 template <Traits traits>
 struct TraitsMainnet : MonadChain
@@ -223,7 +237,21 @@ Result<BlockExecOutput> execute(
     TraitsMainnet<traits> const chain{};
     BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
 
-    BlockState block_state(db, vm);
+    // Mirror the page-mode runloop pattern: post-fork the db is
+    // page-encoded, so route reads through a PageStorageBroker and commits
+    // via MonadCommitBuilder. The broker has to outlive both block_state
+    // and the commit builder so the page cache populated during execution
+    // is reused at commit time.
+    std::optional<PageStorageBroker> page_broker;
+    std::unique_ptr<BlockState> block_state_ptr;
+    if constexpr (is_post_fork_monad_v<traits>) {
+        page_broker.emplace(db);
+        block_state_ptr = std::make_unique<MonadBlockState>(*page_broker, vm);
+    }
+    else {
+        block_state_ptr = std::make_unique<BlockState>(db, vm);
+    }
+    BlockState &block_state = *block_state_ptr;
     BlockMetrics metrics;
     auto const recovered_senders = recover_senders(block.transactions, *pool_);
     auto const recovered_authorities =
@@ -295,7 +323,15 @@ Result<BlockExecOutput> execute(
     block_state.log_debug();
     auto [state, code] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
+    std::unique_ptr<CommitBuilder> builder_ptr;
+    if constexpr (is_post_fork_monad_v<traits>) {
+        builder_ptr = std::make_unique<MonadCommitBuilder>(
+            block.header.number, *page_broker);
+    }
+    else {
+        builder_ptr = std::make_unique<CommitBuilder>(block.header.number);
+    }
+    CommitBuilder &builder = *builder_ptr;
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)
@@ -390,7 +426,8 @@ void process_test(
     using namespace test;
 
     auto const json_state = load_blockchain_json_state<traits>(j_contents);
-    auto const test_state = json_state.make_test_state();
+    auto const test_state =
+        json_state.template make_test_state<is_post_fork_monad_v<traits>>();
     vm::VM vm;
     mpt::Db &db = test_state->db;
     monad::TrieDb &tdb = test_state->trie_db;

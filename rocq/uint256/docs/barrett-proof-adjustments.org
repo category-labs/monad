@@ -141,3 +141,30 @@ the C++ control flow and returns the two's-complement word pattern
 The strengthened theorem keeps the exact mathematical =Z.quot= and =Z.rem=
 postcondition for every representable signed division case instead of proving
 only a wrapped quotient.
+
+** Require word-aligned post-product shifts for the low-product theorem
+
+The =need_quotient = false= path computes only the word window needed for the
+remainder.  The C++ implementation does this with whole-word truncating
+multiplication followed by the same word-level right shift as the full
+quotient path.  When =post_product_bit_shift params = 0=, the narrow product
+contains exactly the low quotient words needed by =MAX_R_HAT_WORDS=, and the
+proof of =low_product_sufficient= follows the implementation control flow.
+
+The old generic theorem omitted the alignment hypothesis and was too broad.
+The executable check in
+=theories/BarrettExecutableChecks.v::UnalignedPostProductShift= records a
+concrete non-exported parameter choice:
+
+- =min_denominator = 2=
+- =max_denominator = 3=
+- =input_bits = 34=
+- =multiplier_bits = 0=
+- =d = 2=
+- =x = 2^34 - 1=
+
+For that choice, =post_product_bit_shift params = 33= and the low products
+from the remainder-only and full quotient estimates differ.  The exported
+Barrett parameter families used by the current wrapper theorems have aligned
+post-product shifts, so the theorem is strengthened with that semantic
+precondition instead of proving an invalid generic statement.

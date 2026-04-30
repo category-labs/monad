@@ -1,0 +1,44 @@
+* Barrett Proof Obligations
+
+This checklist tracks the remaining theorem milestones in
+=theories/BarrettProofs.v=.  Each item should be committed when the theorem is
+proved and the project build passes.
+
+** Reducer Core
+
+- [X] =low_product_sufficient=
+
+  Show that the remainder-only quotient estimate and the full quotient
+  estimate give the same low product modulo =MAX_R_HAT_WORDS=.  This is the
+  key dependency for the =need_quotient = false= reducer path.
+
+- [ ] =reduce_correct_remainder_only=
+
+  Prove the =need_quotient = false= reducer returns the exact mathematical
+  remainder.  This depends on =low_product_sufficient= and the already-proved
+  true-quotient reducer.
+
+** Public Wrappers
+
+- [ ] =addmod_correct=
+
+  Derive the public addition-modulo wrapper from the remainder-only reducer.
+
+- [ ] =mulmod_correct=
+
+  Derive the public multiplication-modulo wrapper from the remainder-only
+  reducer.
+
+- [ ] =mulmod_const_correct=
+
+  Derive the public constant-multiplier modulo wrapper from the multiplier
+  constructor and the remainder-only reducer.
+
+** Semantic-Blocker Rule
+
+Only C++ mismatches against the intended mathematical operation are semantic
+blockers.  If a suspected blocker is encountered, first add a concrete Rocq
+check against the executable/model definitions, preferably in
+=theories/BarrettExecutableChecks.v=.  If the issue is only a Rocq-model
+mismatch with the C++ behavior, update the Rocq model to match the C++ and
+continue proof work.

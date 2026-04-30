@@ -102,3 +102,54 @@ Proof.
 Qed.
 
 End RemainderOnlyQuotientTruncationAttempt.
+
+Module UnalignedPostProductShift.
+
+Definition wzero := UintZ.ZUint64.zero.
+Definition wone := UintZ.ZUint64.one.
+Definition wtwo := UintZ.ZUint64.add wone wone.
+Definition wthree := UintZ.ZUint64.add wtwo wone.
+Definition word_2_34 := UintZ.ZUint64.shl wone 34.
+Definition word_2_34_minus_1 := UintZ.ZUint64.sub word_2_34 wone.
+
+(** A deliberately generic, non-exported parameter choice with
+    [post_product_bit_shift <> 0].  It demonstrates why the generic theorem
+    [low_product_sufficient] carries the word-alignment hypothesis. *)
+Definition params : Bar.BarrettParams :=
+  Bar.mk_BarrettParams
+    (Bar.mk_uint256 wtwo wzero wzero wzero)
+    (Bar.mk_uint256 wthree wzero wzero wzero)
+    34
+    0.
+
+Definition d : Bar.uint256 :=
+  Bar.mk_uint256 wtwo wzero wzero wzero.
+
+Definition x : Bar.words :=
+  [word_2_34_minus_1].
+
+Definition rec : Bar.reciprocal :=
+  Bar.reciprocal_of_denominator params d.
+
+Definition R : nat :=
+  Bar.max_r_hat_words params.
+
+Definition prod_false : Bar.words :=
+  Bar.truncating_mul R (Bar.estimate_q false rec x) (Bar.denominator_ rec).
+
+Definition prod_true : Bar.words :=
+  Bar.truncating_mul R (Bar.estimate_q true rec x) (Bar.denominator_ rec).
+
+Example post_product_shift_is_not_word_aligned :
+  Bar.post_product_bit_shift params = 33%nat.
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+Example unaligned_low_products_differ :
+  prod_false <> prod_true.
+Proof.
+  vm_compute. discriminate.
+Qed.
+
+End UnalignedPostProductShift.

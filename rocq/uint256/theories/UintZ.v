@@ -143,6 +143,9 @@ Module ZUint64.
   (** Bitwise OR *)
   Definition or (x y : t) : t := Z.lor x y.
 
+  Definition xor (x y : t) : t := Z.lxor x y.
+  Definition lnot (x : t) : t := Z.lnot x.
+
   (** Comparison *)
   Definition eqb (x y : t) : bool := (norm width x =? norm width y).
   Definition ltb (x y : t) : bool := (norm width x <? norm width y).
@@ -320,6 +323,34 @@ Module ZUint64.
     rewrite !Z.land_ones by lia.
     rewrite !Z.mod_mod by lia.
     reflexivity.
+  Qed.
+
+  Lemma spec_xor : forall x y,
+    to_Z (xor x y) = Z.lxor (to_Z x) (to_Z y) mod base width.
+  Proof.
+    intros. unfold to_Z, xor, norm, wB, base.
+    apply Z.bits_inj'. intros n Hn.
+    destruct (Z_lt_ge_dec n (Z.pos width)).
+    - rewrite !Z.mod_pow2_bits_low by lia.
+      rewrite !Z.lxor_spec.
+      rewrite !Z.mod_pow2_bits_low by lia.
+      reflexivity.
+    - rewrite !Z.mod_pow2_bits_high by lia.
+      reflexivity.
+  Qed.
+
+  Lemma spec_lnot : forall x,
+    to_Z (lnot x) = Z.lnot (to_Z x) mod base width.
+  Proof.
+    intros. unfold to_Z, lnot, norm, wB, base.
+    apply Z.bits_inj'. intros n Hn.
+    destruct (Z_lt_ge_dec n (Z.pos width)).
+    - rewrite !Z.mod_pow2_bits_low by lia.
+      rewrite !Z.lnot_spec by lia.
+      rewrite !Z.mod_pow2_bits_low by lia.
+      reflexivity.
+    - rewrite !Z.mod_pow2_bits_high by lia.
+      reflexivity.
   Qed.
 
   Lemma spec_eqb : forall x y, eqb x y = (to_Z x =? to_Z y).
@@ -527,6 +558,8 @@ Module ZUint128.
              (Z.of_nat n).
   Definition land (x y : t) : t := Z.land x y.
   Definition or (x y : t) : t := Z.lor x y.
+  Definition xor (x y : t) : t := Z.lxor x y.
+  Definition lnot (x : t) : t := Z.lnot x.
   Definition eqb (x y : t) : bool := (norm width x =? norm width y).
   Definition ltb (x y : t) : bool := (norm width x <? norm width y).
   Definition leb (x y : t) : bool := (norm width x <=? norm width y).
@@ -697,6 +730,35 @@ Module ZUint128.
     rewrite !Z.mod_mod by lia.
     reflexivity.
   Qed.
+
+  Lemma spec_xor : forall x y,
+    to_Z (xor x y) = Z.lxor (to_Z x) (to_Z y) mod base width.
+  Proof.
+    intros. unfold to_Z, xor, norm, wB, base.
+    apply Z.bits_inj'. intros n Hn.
+    destruct (Z_lt_ge_dec n (Z.pos width)).
+    - rewrite !Z.mod_pow2_bits_low by lia.
+      rewrite !Z.lxor_spec.
+      rewrite !Z.mod_pow2_bits_low by lia.
+      reflexivity.
+    - rewrite !Z.mod_pow2_bits_high by lia.
+      reflexivity.
+  Qed.
+
+  Lemma spec_lnot : forall x,
+    to_Z (lnot x) = Z.lnot (to_Z x) mod base width.
+  Proof.
+    intros. unfold to_Z, lnot, norm, wB, base.
+    apply Z.bits_inj'. intros n Hn.
+    destruct (Z_lt_ge_dec n (Z.pos width)).
+    - rewrite !Z.mod_pow2_bits_low by lia.
+      rewrite !Z.lnot_spec by lia.
+      rewrite !Z.mod_pow2_bits_low by lia.
+      reflexivity.
+    - rewrite !Z.mod_pow2_bits_high by lia.
+      reflexivity.
+  Qed.
+
   Lemma spec_eqb : forall x y, eqb x y = (to_Z x =? to_Z y). Proof. reflexivity. Qed.
   Lemma spec_ltb : forall x y, ltb x y = (to_Z x <? to_Z y). Proof. reflexivity. Qed.
   Lemma spec_leb : forall x y, leb x y = (to_Z x <=? to_Z y). Proof. reflexivity. Qed.

@@ -136,6 +136,9 @@ Module SigmaUint64.
   (** Bitwise OR *)
   Definition or (x y : t) : t := mk width (Z.lor (val x) (val y)).
 
+  Definition xor (x y : t) : t := mk width (Z.lxor (val x) (val y)).
+  Definition lnot (x : t) : t := mk width (Z.lnot (val x)).
+
   (** Comparison *)
   Definition eqb (x y : t) : bool := (val x =? val y).
   Definition ltb (x y : t) : bool := (val x <? val y).
@@ -327,6 +330,24 @@ Module SigmaUint64.
   Proof.
     intros x y.
     unfold or, to_Z.
+    rewrite val_mk.
+    reflexivity.
+  Qed.
+
+  Lemma spec_xor : forall x y,
+    to_Z (xor x y) = Z.lxor (to_Z x) (to_Z y) mod base width.
+  Proof.
+    intros x y.
+    unfold xor, to_Z.
+    rewrite val_mk.
+    reflexivity.
+  Qed.
+
+  Lemma spec_lnot : forall x,
+    to_Z (lnot x) = Z.lnot (to_Z x) mod base width.
+  Proof.
+    intro x.
+    unfold lnot, to_Z.
     rewrite val_mk.
     reflexivity.
   Qed.
@@ -554,6 +575,9 @@ Module SigmaUint128.
 
   Definition or (x y : t) : t := mk width (Z.lor (val x) (val y)).
 
+  Definition xor (x y : t) : t := mk width (Z.lxor (val x) (val y)).
+  Definition lnot (x : t) : t := mk width (Z.lnot (val x)).
+
   Definition eqb (x y : t) : bool := (val x =? val y).
   Definition ltb (x y : t) : bool := (val x <? val y).
   Definition leb (x y : t) : bool := (val x <=? val y).
@@ -741,6 +765,24 @@ Module SigmaUint128.
   Proof.
     intros x y.
     unfold or, to_Z.
+    rewrite val_mk.
+    reflexivity.
+  Qed.
+
+  Lemma spec_xor : forall x y,
+    to_Z (xor x y) = Z.lxor (to_Z x) (to_Z y) mod base width.
+  Proof.
+    intros x y.
+    unfold xor, to_Z.
+    rewrite val_mk.
+    reflexivity.
+  Qed.
+
+  Lemma spec_lnot : forall x,
+    to_Z (lnot x) = Z.lnot (to_Z x) mod base width.
+  Proof.
+    intro x.
+    unfold lnot, to_Z.
     rewrite val_mk.
     reflexivity.
   Qed.

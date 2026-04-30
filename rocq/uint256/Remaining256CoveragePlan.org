@@ -39,8 +39,9 @@ document:
 
 For immediate coverage work, the queue is therefore:
 
-1. Extend the word and record-level bitwise interface where needed for
-   `countr_zero`, `popcount`, and `byteswap`.
+1. Add record-level bitwise wrappers where needed for `countr_zero`
+   and `popcount`.
+2. Port `countr_zero` and `popcount`.
 
 * Completed Proof Note: `signextend_correct`
 
@@ -288,12 +289,13 @@ loading, storing, or parsing helpers unless priorities change.
    [[theories/Uint.v][theories/Uint.v]]
    with:
 
-   - `and`
-   - `xor`
-   - `not`
+   - `and` / `land`: already present
+   - `xor`: complete
+   - `not` / `lnot`: complete
 
    Add `to_Z` specifications alongside the existing `spec_or`. This is
-   the main missing interface piece.
+   complete in the abstract interface and the Z/sigma consistency
+   witnesses.
 
 2. Decide whether to add 64-bit utility primitives too:
 
@@ -335,6 +337,6 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. interface extension for `and`, `xor`, `not`
+1. record-level bitwise wrappers
 2. `countr_zero`, `popcount`
 3. serialization helpers

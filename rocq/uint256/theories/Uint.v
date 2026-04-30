@@ -65,6 +65,8 @@ Module Type UintOps.
   (** *** Bitwise operations *)
   Parameter land : t -> t -> t.
   Parameter or : t -> t -> t.
+  Parameter xor : t -> t -> t.
+  Parameter lnot : t -> t.
 
   (** *** Comparison *)
   Parameter eqb : t -> t -> bool.
@@ -168,6 +170,10 @@ Module Type Uint <: UintOps.
     to_Z (land x y) = Z.land (to_Z x) (to_Z y) mod base width.
   Axiom spec_or : forall x y,
     to_Z (or x y) = Z.lor (to_Z x) (to_Z y) mod base width.
+  Axiom spec_xor : forall x y,
+    to_Z (xor x y) = Z.lxor (to_Z x) (to_Z y) mod base width.
+  Axiom spec_lnot : forall x,
+    to_Z (lnot x) = Z.lnot (to_Z x) mod base width.
 
   (** Comparison specifications *)
   Axiom spec_eqb : forall x y, eqb x y = (to_Z x =? to_Z y).
@@ -311,9 +317,10 @@ Module UintNotations (U : UintOps).
   Infix "+" := U.add : uint_scope.
   Infix "-" := U.sub : uint_scope.
   Infix "*" := U.mul : uint_scope.
-  (* No infix notation for [or] and [and] — [|] conflicts with
+  (* No infix notation for bitwise operations — [|] conflicts with
      match-branch syntax and [&] has awkward precedence.
-     Use [U.or x y] / [U.land x y] or unqualified when imported. *)
+     Use [U.or x y] / [U.land x y] / [U.xor x y] or unqualified
+     when imported. *)
   Infix "<?" := U.ltb : uint_scope.
   Infix "=?" := U.eqb : uint_scope.
   Infix "<=?" := U.leb : uint_scope.

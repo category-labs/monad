@@ -41,7 +41,7 @@ document:
 
 For immediate coverage work, the queue is therefore:
 
-1. Review whether the thin concrete division facades are still desired.
+1. Prove the thin concrete division facades.
 
 * Completed Proof Note: `signextend_correct`
 
@@ -209,6 +209,9 @@ Final checkpoint from the latest `rocq-mcp` pass:
 - Model: [[theories/Division.v][theories/Division.v]]
 - Generic proof: [[theories/DivisionProofs.v][theories/DivisionProofs.v]]
 - 256-bit specialization: [[theories/DivisionProofs.v][theories/DivisionProofs.v]]
+- Thin uint256 facades: modeled in
+  [[theories/Arithmetic.v][theories/Arithmetic.v]]; correctness proofs
+  still open.
 
 What is still missing from the overall Rocq development is mostly the
 `uint256.hpp` surface around:
@@ -242,10 +245,10 @@ loading, storing, or parsing helpers unless priorities change.
 
 1. Add thin concrete 256-bit division wrappers.
 
-   Even though `udivrem` is already modeled, add the concrete
-   `uint256`-level facade for `udivrem`, `/`, and `%` if API parity
-   with `uint256.hpp` is desired. Reuse the existing division model and
-   proofs rather than re-proving the algorithm.
+   The concrete `uint256`-level facade for `udivrem`, `/`, and `%` is
+   modeled in [[theories/Arithmetic.v][theories/Arithmetic.v]]. Reuse the
+   existing division model and proofs rather than re-proving the
+   algorithm.
 
 2. `byte_correct` is complete.
 

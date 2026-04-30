@@ -85,6 +85,32 @@ Definition add_words_full_uint256 (x y : uint256) : words :=
   let sum := addc x y in
   uint256_to_words (value256 sum) ++ [of_bool (carry256 sum)].
 
+Record udivrem256_result := mk_udivrem256_result {
+  ud_quot256 : uint256;
+  ud_rem256 : uint256
+}.
+
+Definition udivrem_uint256 (u v : uint256) : option udivrem256_result :=
+  match udivrem 4 4 (uint256_to_words u) (uint256_to_words v) with
+  | Some result =>
+      Some (mk_udivrem256_result
+        (words_to_uint256 (ud_quot result))
+        (words_to_uint256 (ud_rem result)))
+  | None => None
+  end.
+
+Definition div_uint256 (x y : uint256) : option uint256 :=
+  match udivrem_uint256 x y with
+  | Some result => Some (ud_quot256 result)
+  | None => None
+  end.
+
+Definition mod_uint256 (x y : uint256) : option uint256 :=
+  match udivrem_uint256 x y with
+  | Some result => Some (ud_rem256 result)
+  | None => None
+  end.
+
 (** ** Modular arithmetic *)
 
 Definition addmod (x y modulus : uint256) : option uint256 :=

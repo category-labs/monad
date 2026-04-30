@@ -26,8 +26,11 @@ document:
   `countl_zero_uint256_correct` and
   `count_significant_bytes_correct` in
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
-- `byteswap`, `countr_zero`, and `popcount` are still missing ports,
-  not merely missing proofs.
+- `byteswap` is modeled in
+  [[theories/Arithmetic.v][theories/Arithmetic.v]]; its correctness proof is
+  still open.
+- `countr_zero` and `popcount` are still missing ports, not merely
+  missing proofs.
 - The `Abort.` blocks in
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]
   are historical sketches for the now-completed `addmod`, `mulmod`,
@@ -35,7 +38,7 @@ document:
 
 For immediate coverage work, the queue is therefore:
 
-1. Port `byteswap`.
+1. Prove `byteswap`.
 2. Extend the word and record-level bitwise interface where needed for
    `countr_zero`, `popcount`, and `byteswap`.
 

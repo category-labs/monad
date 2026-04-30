@@ -398,6 +398,28 @@ Definition count_significant_bytes (x : uint256) : nat :=
       (leading_significant_bytes + words_before * 8)%nat
   end.
 
+Definition low_byte_mask : t := shl 1 8 - 1.
+
+Definition word_byte (word : t) (index : nat) : t :=
+  land (shr word (8 * index)) low_byte_mask.
+
+Definition byteswap_word (word : t) : t :=
+  or (shl (word_byte word 0) 56)
+    (or (shl (word_byte word 1) 48)
+      (or (shl (word_byte word 2) 40)
+        (or (shl (word_byte word 3) 32)
+          (or (shl (word_byte word 4) 24)
+            (or (shl (word_byte word 5) 16)
+              (or (shl (word_byte word 6) 8)
+                (word_byte word 7))))))).
+
+Definition byteswap (x : uint256) : uint256 :=
+  mk_uint256
+    (byteswap_word (w3 x))
+    (byteswap_word (w2 x))
+    (byteswap_word (w1 x))
+    (byteswap_word (w0 x)).
+
 Definition exp (base exponent : uint256) : uint256 :=
   if is_two_uint256 base
   then shift_left_uint256 one_uint256 exponent

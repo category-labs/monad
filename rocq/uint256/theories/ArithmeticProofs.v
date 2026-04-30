@@ -4759,6 +4759,17 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma word_byte_to_Z : forall word index,
+  to_Z (word_byte word index) =
+    (to_Z word / 2 ^ (8 * Z.of_nat index)) mod 256.
+Proof.
+  intros word index.
+  unfold word_byte, low_byte_mask.
+  rewrite byte_value_to_Z.
+  replace (Z.of_nat (8 * index)) with (8 * Z.of_nat index) by lia.
+  reflexivity.
+Qed.
+
 Lemma to_Z_uint256_low_word : forall word,
   to_Z_uint256 (mk_uint256 word zero zero zero) = to_Z word.
 Proof.
@@ -5237,6 +5248,24 @@ Proof.
         with ((64 - c + 7) + 24 * 8)%nat by lia.
       rewrite Nat.div_add by lia.
       lia.
+Qed.
+
+Theorem byteswap_words_correct : forall x,
+  uint256_to_words (byteswap x) =
+    rev (map byteswap_word (uint256_to_words x)).
+Proof.
+  intros [x0 x1 x2 x3].
+  reflexivity.
+Qed.
+
+Theorem byteswap_correct : forall x,
+  to_Z_uint256 (byteswap x) =
+    to_Z_words (rev (map byteswap_word (uint256_to_words x))).
+Proof.
+  intro x.
+  unfold to_Z_uint256.
+  rewrite byteswap_words_correct.
+  reflexivity.
 Qed.
 
 Lemma is_two_uint256_true : forall x,

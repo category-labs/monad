@@ -14,3 +14,20 @@ Always prefix with `opam exec --` from the project root.
 # Interactive Proof Development
 
 Follow the `rocq-skills` workflow and use `rocq-mcp` to prove theorems interactively.
+
+# Semantic Blockers
+
+The only semantic blockers that matter for this development are discrepancies
+where the C++ implementation itself disagrees with the intended mathematical
+operation.  When such a blocker is claimed, first encode a concrete Rocq
+counterexample against the executable/model definitions.  Prefer adding such
+checks to `theories/BarrettExecutableChecks.v`.
+
+Only document the issue as a semantic discrepancy after the concrete Rocq
+counterexample demonstrates the mismatch.  If the check does not reproduce the
+issue, downgrade the note to a candidate or failed counterexample and do not
+treat it as blocking proof work.
+
+If the mismatch is between the Rocq model and the C++ implementation, do not
+treat it as a semantic blocker.  Update the Rocq model to match the C++
+control flow and behavior, then continue the proof work.

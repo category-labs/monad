@@ -16,6 +16,7 @@ theories/RuntimeMulProofs.v
 theories/ArithmeticProofs.v
 theories/Barrett.v
 theories/BarrettProofs.v
+theories/BarrettExecutableChecks.v
 theories/Stack.v
 theories/UintZ.v
 theories/UintRecords.v

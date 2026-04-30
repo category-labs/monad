@@ -213,7 +213,6 @@ What is still missing from the overall Rocq development is mostly the
 `uint256.hpp` surface around:
 
 - `countr_zero`, `popcount`
-- record-level bitwise wrappers
 - serialization and byte parsing helpers
 
 Serialization is not a current verification priority and should be
@@ -283,12 +282,14 @@ loading, storing, or parsing helpers unless priorities change.
    `byteswap_correct` states the 256-bit result as the reversed list of
    word-level byte-swaps.
 
-5. Record-level bitwise wrappers are modeled.
+5. Record-level bitwise wrappers are complete.
 
    The wrappers in [[theories/Arithmetic.v][theories/Arithmetic.v]] mirror the
    C++ macro-generated `&`, `|`, and `^` operators and the unary `~`
    operator by applying the corresponding word operation at indices
-   `0` through `3`. Their correctness proofs are still open.
+   `0` through `3`. Their correctness theorems in
+   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]] state the
+   exact word-list result shape.
 
 * Part 2: Lower-Level Extensions Needed For The Remaining Clean Ports
 
@@ -317,9 +318,8 @@ loading, storing, or parsing helpers unless priorities change.
 3. After the interface extension, add record-level bitwise `uint256`
    wrappers.
 
-   `&`, `^`, `~`, and `|` are modeled as concrete 256-bit operations
-   matching the C++ structure. Prove the wrappers before using them as
-   dependencies for later ports.
+   `&`, `^`, `~`, and `|` are modeled and proved as concrete 256-bit
+   operations matching the C++ structure.
 
 4. Revisit `signextend` only if the model changes.
 
@@ -345,6 +345,5 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. record-level bitwise wrappers
-2. `countr_zero`, `popcount`
-3. serialization helpers
+1. `countr_zero`, `popcount`
+2. serialization helpers

@@ -5268,6 +5268,47 @@ Proof.
   reflexivity.
 Qed.
 
+Theorem bitwise_and_uint256_correct : forall x y,
+  uint256_to_words (bitwise_and_uint256 x y) =
+    [land (w0 x) (w0 y);
+     land (w1 x) (w1 y);
+     land (w2 x) (w2 y);
+     land (w3 x) (w3 y)].
+Proof.
+  intros [x0 x1 x2 x3] [y0 y1 y2 y3].
+  reflexivity.
+Qed.
+
+Theorem bitwise_or_uint256_correct : forall x y,
+  uint256_to_words (bitwise_or_uint256 x y) =
+    [or (w0 x) (w0 y);
+     or (w1 x) (w1 y);
+     or (w2 x) (w2 y);
+     or (w3 x) (w3 y)].
+Proof.
+  intros [x0 x1 x2 x3] [y0 y1 y2 y3].
+  reflexivity.
+Qed.
+
+Theorem bitwise_xor_uint256_correct : forall x y,
+  uint256_to_words (bitwise_xor_uint256 x y) =
+    [xor (w0 x) (w0 y);
+     xor (w1 x) (w1 y);
+     xor (w2 x) (w2 y);
+     xor (w3 x) (w3 y)].
+Proof.
+  intros [x0 x1 x2 x3] [y0 y1 y2 y3].
+  reflexivity.
+Qed.
+
+Theorem bitwise_not_uint256_correct : forall x,
+  uint256_to_words (bitwise_not_uint256 x) =
+    [lnot (w0 x); lnot (w1 x); lnot (w2 x); lnot (w3 x)].
+Proof.
+  intros [x0 x1 x2 x3].
+  reflexivity.
+Qed.
+
 Lemma is_two_uint256_true : forall x,
   is_two_uint256 x = true ->
   to_Z_uint256 x = 2.

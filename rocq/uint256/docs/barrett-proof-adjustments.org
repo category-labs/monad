@@ -70,6 +70,27 @@ branch, but proving that generic branch would not be a proof of the current C++
 control flow.  The multiplier constructor theorem and the constant-multiplier
 wrapper theorem are therefore strengthened with =Bar.bit_shift params = 0=.
 
+** Add reciprocal admissibility to generic reciprocal theorems
+
+The C++ API does not expose arbitrary =reciprocal= objects.  A reciprocal is
+created by a constructor tied to a valid denominator in the parameter interval.
+The Rocq model uses a plain record, so theorem statements over an arbitrary
+=rec : reciprocal= must explicitly require that the stored denominator lies in
+the range described by =reciprocal_params rec=.
+
+Counterexample before strengthening:
+
+- choose =params= with a large =min_denominator=, for example =2^128=
+- choose a record =rec= whose stored =denominator_= is =1=
+- set =reciprocal_= so that =reciprocal_invariant rec= holds
+
+Then =max_quotient_bits params= is computed from the large minimum
+denominator, while the actual denominator used by the theorem is =1=.  The
+quotient storage chosen by =estimate_q= can be too small, so the generic
+theorem may fail by truncating the quotient estimate.  The proof file therefore
+introduces =reciprocal_admissible= and adds it to the generic
+=estimate_q=, low-product, and =reduce= theorem statements.
+
 ** Add proof-module dependencies to =BarrettProofs.MakeProofs=
 
 The Barrett proofs rely on already-established facts about division, runtime

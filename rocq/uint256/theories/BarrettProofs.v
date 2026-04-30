@@ -67,6 +67,12 @@ Definition reciprocal_invariant (rec : Bar.reciprocal) : Prop :=
       (reciprocal_scale_factor rec * 2 ^ (Z.of_nat (Bar.shift params)))
       (denominator_Z rec).
 
+Definition reciprocal_admissible (rec : Bar.reciprocal) : Prop :=
+  let params := Bar.reciprocal_params rec in
+  params_admissible params /\
+  to_Z_uint256 (Bar.min_denominator params) <= denominator_Z rec /\
+  denominator_Z rec <= to_Z_uint256 (Bar.max_denominator params).
+
 Definition input_value_Z (rec : Bar.reciprocal) (x : Bar.words) : Z :=
   let params := Bar.reciprocal_params rec in
   to_Z_words (Bar.fit_words (Bar.input_words params) x).
@@ -919,8 +925,43 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma reciprocal_of_denominator_admissible : forall params d,
+  params_admissible params ->
+  Bar.multiplier_bits params = 0%nat ->
+  Bar.valid_denominator params d = true ->
+  reciprocal_admissible (Bar.reciprocal_of_denominator params d).
+Proof.
+  intros params d Hadm Hbits Hvalid.
+  pose proof (constructor_sound_no_multiplier
+    params d Hadm Hbits Hvalid) as [_ [Hden _]].
+  pose proof (valid_denominator_bounds params d Hvalid) as Hbounds.
+  unfold reciprocal_admissible.
+  cbn [Bar.reciprocal_params].
+  rewrite Hden.
+  tauto.
+Qed.
+
+Lemma reciprocal_of_multiplier_admissible : forall params y d,
+  params_admissible params ->
+  (0 < Bar.multiplier_bits params)%nat ->
+  Bar.bit_shift params = 0%nat ->
+  uint256_fits_words (Bar.multiplier_words params) y ->
+  Bar.valid_denominator params d = true ->
+  reciprocal_admissible (Bar.reciprocal_of_multiplier params y d).
+Proof.
+  intros params y d Hadm Hbits Hbit Hy_fit Hvalid.
+  pose proof (constructor_sound_with_multiplier
+    params y d Hadm Hbits Hbit Hy_fit Hvalid) as [_ [Hden _]].
+  pose proof (valid_denominator_bounds params d Hvalid) as Hbounds.
+  unfold reciprocal_admissible.
+  cbn [Bar.reciprocal_params].
+  rewrite Hden.
+  tauto.
+Qed.
+
 Theorem estimate_q_sound_no_preshift : forall rec x,
   reciprocal_invariant rec ->
+  reciprocal_admissible rec ->
   Bar.pre_product_shift (Bar.reciprocal_params rec) = 0%nat ->
   input_within_bound rec x ->
   let Q := Z.div (online_numerator_Z rec x) (denominator_Z rec) in
@@ -929,6 +970,7 @@ Admitted.
 
 Theorem estimate_q_sound_with_preshift : forall rec x,
   reciprocal_invariant rec ->
+  reciprocal_admissible rec ->
   (0 < Bar.pre_product_shift (Bar.reciprocal_params rec))%nat ->
   input_within_bound rec x ->
   let Q := Z.div (online_numerator_Z rec x) (denominator_Z rec) in
@@ -937,6 +979,7 @@ Admitted.
 
 Theorem low_product_sufficient : forall rec x,
   reciprocal_invariant rec ->
+  reciprocal_admissible rec ->
   input_within_bound rec x ->
   let params := Bar.reciprocal_params rec in
   Z.modulo
@@ -949,6 +992,7 @@ Admitted.
 
 Theorem low_input_product_sufficient : forall rec x,
   reciprocal_invariant rec ->
+  reciprocal_admissible rec ->
   (0 < Bar.multiplier_bits (Bar.reciprocal_params rec))%nat ->
   input_within_bound rec x ->
   let params := Bar.reciprocal_params rec in
@@ -965,6 +1009,7 @@ Admitted.
 
 Theorem reduce_correct_remainder_only : forall rec x,
   reciprocal_invariant rec ->
+  reciprocal_admissible rec ->
   input_within_bound rec x ->
   let result := Bar.reduce false rec x in
   reduce_rem_Z result = Z.modulo (online_numerator_Z rec x) (denominator_Z rec) /\
@@ -973,6 +1018,7 @@ Admitted.
 
 Theorem reduce_correct_with_quotient : forall rec x,
   reciprocal_invariant rec ->
+  reciprocal_admissible rec ->
   input_within_bound rec x ->
   let result := Bar.reduce true rec x in
   online_numerator_Z rec x =

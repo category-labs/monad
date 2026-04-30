@@ -91,6 +91,21 @@ theorem may fail by truncating the quotient estimate.  The proof file therefore
 introduces =reciprocal_admissible= and adds it to the generic
 =estimate_q=, low-product, and =reduce= theorem statements.
 
+The same predicate also records that =multiplier_= fits in
+=MULTIPLIER_WORDS=.  This is enforced by the C++ fixed-size field and by the
+constructor's debug assertion on the high words of =y=.  Without that bound,
+an arbitrary Rocq record could store a much larger multiplier while the
+parameter-derived =MAX_QUOTIENT_BITS= still assumes only =MULTIPLIER_BITS=
+bits.
+
+The predicate also records that the three stored word arrays have the
+parameter-derived lengths used by the C++ object layout:
+=reciprocal_words(params)=, =MAX_DENOMINATOR_WORDS=, and
+=MULTIPLIER_WORDS=.  The Rocq record type itself permits arbitrary list
+lengths, but the C++ fields are fixed-size =words_t<N>= members.  Without
+these length facts, generic theorems over arbitrary Rocq reciprocals include
+states that no C++ constructor can build.
+
 ** Add proof-module dependencies to =BarrettProofs.MakeProofs=
 
 The Barrett proofs rely on already-established facts about division, runtime

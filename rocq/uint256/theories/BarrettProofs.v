@@ -70,8 +70,12 @@ Definition reciprocal_invariant (rec : Bar.reciprocal) : Prop :=
 Definition reciprocal_admissible (rec : Bar.reciprocal) : Prop :=
   let params := Bar.reciprocal_params rec in
   params_admissible params /\
+  length (Bar.reciprocal_ rec) = Bar.reciprocal_words params /\
+  length (Bar.denominator_ rec) = Bar.max_denominator_words params /\
+  length (Bar.multiplier_ rec) = Bar.multiplier_words params /\
   to_Z_uint256 (Bar.min_denominator params) <= denominator_Z rec /\
-  denominator_Z rec <= to_Z_uint256 (Bar.max_denominator params).
+  denominator_Z rec <= to_Z_uint256 (Bar.max_denominator params) /\
+  multiplier_Z rec < modulus_words (Bar.multiplier_words params).
 
 Definition input_value_Z (rec : Bar.reciprocal) (x : Bar.words) : Z :=
   let params := Bar.reciprocal_params rec in
@@ -215,6 +219,45 @@ Proof.
   pose proof (Z.mod_pos_bound a c ltac:(lia)) as Hmod.
   apply Z.div_le_lower_bound; [exact Hb |].
   nia.
+Qed.
+
+Lemma modulus_words_add : forall m n,
+  modulus_words (m + n) = modulus_words m * modulus_words n.
+Proof.
+  intros m n.
+  unfold modulus_words.
+  rewrite Nat2Z.inj_add.
+  rewrite Z.pow_add_r by lia.
+  reflexivity.
+Qed.
+
+Lemma truncating_mul_full_exact : forall xs ys,
+  (0 < length xs)%nat ->
+  (0 < length ys)%nat ->
+  to_Z_words (Bar.truncating_mul (length xs + length ys) xs ys) =
+  to_Z_words xs * to_Z_words ys.
+Proof.
+  intros xs ys Hxs Hys.
+  unfold Bar.truncating_mul.
+  pose proof (RMP.truncating_mul_runtime_correct xs ys
+    (length xs + length ys) Hxs Hys ltac:(lia) ltac:(lia)) as Hcorr.
+  pose proof (RMP.truncating_mul_runtime_length xs ys
+    (length xs + length ys) ltac:(lia)) as Hlen.
+  pose proof (WL.to_Z_words_bound (RMP.truncating_mul_runtime xs ys
+    (length xs + length ys))) as Hres_bound.
+  rewrite Hlen in Hres_bound.
+  pose proof (WL.to_Z_words_bound xs) as Hxs_bound.
+  pose proof (WL.to_Z_words_bound ys) as Hys_bound.
+  assert (Hprod_bound :
+    0 <= to_Z_words xs * to_Z_words ys <
+    modulus_words (length xs + length ys)).
+  { rewrite modulus_words_add.
+    pose proof (WL.modulus_words_pos (length xs)).
+    pose proof (WL.modulus_words_pos (length ys)).
+    nia. }
+  rewrite Z.mod_small in Hcorr by exact Hres_bound.
+  rewrite Z.mod_small in Hcorr by exact Hprod_bound.
+  exact Hcorr.
 Qed.
 
 Lemma min_words_bit_width_words : forall ws,
@@ -472,6 +515,76 @@ Proof.
   apply Nat.div_str_pos.
   pose proof (Pos2Nat.is_pos Bar.U64.width).
   lia.
+Qed.
+
+Lemma min_words_positive : forall bits,
+  (0 < bits)%nat -> (0 < Bar.min_words bits)%nat.
+Proof.
+  intros bits Hbits.
+  unfold Bar.min_words.
+  apply Nat.div_str_pos.
+  pose proof (Pos2Nat.is_pos Bar.U64.width).
+  unfold Bar.word_width.
+  lia.
+Qed.
+
+Lemma min_words_monotone : forall a b,
+  (a <= b)%nat -> (Bar.min_words a <= Bar.min_words b)%nat.
+Proof.
+  intros a b Hab.
+  unfold Bar.min_words.
+  apply Nat.Div0.div_le_mono.
+  lia.
+Qed.
+
+Lemma min_words_add_le : forall a b,
+  (Bar.min_words (a + b) <= Bar.min_words a + Bar.min_words b)%nat.
+Proof.
+  intros a b.
+  unfold Bar.min_words.
+  set (w := Bar.word_width).
+  assert (Hw : w <> 0%nat).
+  { unfold w, Bar.word_width.
+    pose proof (Pos2Nat.is_pos Bar.U64.width).
+    lia. }
+  assert (Hlt :
+    ((a + b + Nat.pred w) / w <
+     (a + Nat.pred w) / w + (b + Nat.pred w) / w + 1)%nat).
+  { apply Nat.Div0.div_lt_upper_bound.
+    pose proof (Nat.div_mod (a + Nat.pred w) w Hw) as Ha.
+    pose proof (Nat.div_mod (b + Nat.pred w) w Hw) as Hb.
+    pose proof (Nat.mod_upper_bound (a + Nat.pred w) w Hw) as Hamod.
+    pose proof (Nat.mod_upper_bound (b + Nat.pred w) w Hw) as Hbmod.
+    assert (Hwpos : (0 < w)%nat) by lia.
+    replace (Nat.pred w) with (w - 1)%nat in * by lia.
+    nia. }
+  lia.
+Qed.
+
+Lemma max_r_hat_words_le_product_words : forall params,
+  (Bar.max_r_hat_words params <=
+   Bar.input_words params + Bar.multiplier_words params)%nat.
+Proof.
+  intro params.
+  unfold Bar.max_r_hat_words, Bar.max_r_hat_bits.
+  eapply Nat.le_trans.
+  - apply min_words_monotone. apply Nat.le_min_l.
+  - unfold Bar.input_words, Bar.multiplier_words.
+    apply min_words_add_le.
+Qed.
+
+Lemma max_r_hat_words_positive : forall params,
+  params_admissible params ->
+  (0 < Bar.multiplier_bits params)%nat ->
+  (0 < Bar.max_r_hat_words params)%nat.
+Proof.
+  intros params Hadm Hbits.
+  apply min_words_positive.
+  unfold Bar.max_r_hat_bits.
+  destruct Hadm as [_ [_ Hinput]].
+  destruct (Nat.min_spec
+    (Bar.input_bits params + Bar.multiplier_bits params)
+    (Bar.max_denominator_bits params + 2)) as [[_ ->]|[_ ->]]; lia.
 Qed.
 
 Lemma input_bits_aligned : forall params,
@@ -933,12 +1046,28 @@ Lemma reciprocal_of_denominator_admissible : forall params d,
 Proof.
   intros params d Hadm Hbits Hvalid.
   pose proof (constructor_sound_no_multiplier
-    params d Hadm Hbits Hvalid) as [_ [Hden _]].
-  pose proof (valid_denominator_bounds params d Hvalid) as Hbounds.
+    params d Hadm Hbits Hvalid) as [_ [Hden Hmul]].
+  pose proof (valid_denominator_bounds params d Hvalid) as [Hmin Hmax].
+  destruct Hadm as [Hminpos [Hminmax Hinputpos]].
   unfold reciprocal_admissible.
-  cbn [Bar.reciprocal_params].
-  rewrite Hden.
-  tauto.
+  change (Bar.reciprocal_params (Bar.reciprocal_of_denominator params d))
+    with params.
+  repeat split; try lia.
+  - unfold Bar.reciprocal_of_denominator.
+    destruct (Div.udivrem (Bar.numerator_words params)
+      Bar.uint256_num_words (Bar.numerator params) (Bar.uint256_to_words d));
+      cbn [Bar.reciprocal_]; apply fit_words_length.
+  - unfold Bar.reciprocal_of_denominator.
+    destruct (Div.udivrem (Bar.numerator_words params)
+      Bar.uint256_num_words (Bar.numerator params) (Bar.uint256_to_words d));
+      cbn [Bar.denominator_]; apply fit_words_length.
+  - unfold Bar.reciprocal_of_denominator.
+    destruct (Div.udivrem (Bar.numerator_words params)
+      Bar.uint256_num_words (Bar.numerator params) (Bar.uint256_to_words d));
+      cbn [Bar.multiplier_]; apply WL.extend_words_length.
+  - rewrite Hmul.
+    pose proof (WL.modulus_words_pos (Bar.multiplier_words params)).
+    lia.
 Qed.
 
 Lemma reciprocal_of_multiplier_admissible : forall params y d,
@@ -951,12 +1080,33 @@ Lemma reciprocal_of_multiplier_admissible : forall params y d,
 Proof.
   intros params y d Hadm Hbits Hbit Hy_fit Hvalid.
   pose proof (constructor_sound_with_multiplier
-    params y d Hadm Hbits Hbit Hy_fit Hvalid) as [_ [Hden _]].
-  pose proof (valid_denominator_bounds params d Hvalid) as Hbounds.
+    params y d Hadm Hbits Hbit Hy_fit Hvalid) as [_ [Hden Hmul]].
+  pose proof (valid_denominator_bounds params d Hvalid) as [Hmin Hmax].
+  destruct Hadm as [Hminpos [Hminmax Hinputpos]].
   unfold reciprocal_admissible.
-  cbn [Bar.reciprocal_params].
-  rewrite Hden.
-  tauto.
+  change (Bar.reciprocal_params (Bar.reciprocal_of_multiplier params y d))
+    with params.
+  repeat split; try lia.
+  - unfold Bar.reciprocal_of_multiplier.
+    destruct (Div.udivrem (Bar.numerator_words params)
+      Bar.uint256_num_words
+      (Bar.numerator_with_multiplier params (Bar.uint256_to_words y))
+      (Bar.uint256_to_words d)); cbn [Bar.reciprocal_];
+      apply fit_words_length.
+  - unfold Bar.reciprocal_of_multiplier.
+    destruct (Div.udivrem (Bar.numerator_words params)
+      Bar.uint256_num_words
+      (Bar.numerator_with_multiplier params (Bar.uint256_to_words y))
+      (Bar.uint256_to_words d)); cbn [Bar.denominator_];
+      apply fit_words_length.
+  - unfold Bar.reciprocal_of_multiplier.
+    destruct (Div.udivrem (Bar.numerator_words params)
+      Bar.uint256_num_words
+      (Bar.numerator_with_multiplier params (Bar.uint256_to_words y))
+      (Bar.uint256_to_words d)); cbn [Bar.multiplier_];
+      apply fit_words_length.
+  - rewrite Hmul.
+    exact Hy_fit.
 Qed.
 
 Theorem estimate_q_sound_no_preshift : forall rec x,
@@ -1005,7 +1155,42 @@ Theorem low_input_product_sufficient : forall rec x,
           (Bar.fit_words (Bar.input_words params) x)
           (Bar.multiplier_ rec)))
     (modulus_words (Bar.max_r_hat_words params)).
-Admitted.
+Proof.
+  intros rec x _ Hadm Hbits _.
+  set (params := Bar.reciprocal_params rec).
+  destruct Hadm as [Hadm_params [Hrec_len [Hden_len [Hmul_len
+    [Hden_min [Hden_max Hmul_fit]]]]]].
+  pose proof (multiplier_words_positive params Hbits) as Hmwords_pos.
+  pose proof (max_r_hat_words_positive params Hadm_params Hbits) as HR_pos.
+  pose proof (max_r_hat_words_le_product_words params) as HR_le.
+  set (xs := Bar.fit_words (Bar.input_words params) x).
+  set (ys := Bar.multiplier_ rec).
+  set (R := Bar.max_r_hat_words params).
+  assert (Hxs_len : length xs = Bar.input_words params).
+  { subst xs. apply fit_words_length. }
+  assert (Hys_len : length ys = Bar.multiplier_words params).
+  { subst ys. exact Hmul_len. }
+  assert (Hxs_pos : (0 < length xs)%nat).
+  { rewrite Hxs_len. unfold Bar.input_words. apply min_words_positive.
+    destruct Hadm_params as [_ [_ Hinput]]. exact Hinput. }
+  assert (Hys_pos : (0 < length ys)%nat).
+  { rewrite Hys_len. exact Hmwords_pos. }
+  assert (HR_le_sum : (R <= length xs + length ys)%nat).
+  { subst R. rewrite Hxs_len, Hys_len. exact HR_le. }
+  unfold online_numerator_Z, Bar.online_numerator.
+  fold params xs ys R.
+  replace (Nat.eqb (Bar.multiplier_words params) 0%nat) with false.
+  2: { symmetry. apply Nat.eqb_neq. lia. }
+  unfold Bar.wide_mul, Bar.truncating_mul.
+  fold xs ys R.
+  change (RM.truncating_mul_runtime xs ys (length xs + length ys)) with
+    (Bar.truncating_mul (length xs + length ys) xs ys).
+  rewrite truncating_mul_full_exact by assumption.
+  pose proof (RMP.truncating_mul_runtime_correct xs ys R
+    Hxs_pos Hys_pos HR_pos HR_le_sum) as Hlow.
+  rewrite Hlow.
+  reflexivity.
+Qed.
 
 Theorem reduce_correct_remainder_only : forall rec x,
   reciprocal_invariant rec ->

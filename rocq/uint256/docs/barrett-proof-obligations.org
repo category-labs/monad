@@ -29,7 +29,7 @@ proved and the project build passes.
   Derive the public multiplication-modulo wrapper from the remainder-only
   reducer.
 
-- [ ] =mulmod_const_correct=
+- [X] =mulmod_const_correct=
 
   Derive the public constant-multiplier modulo wrapper from the multiplier
   constructor and the remainder-only reducer.

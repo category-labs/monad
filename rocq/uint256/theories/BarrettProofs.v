@@ -955,6 +955,13 @@ Proof.
   pose proof (Pos2Nat.is_pos Bar.U64.width). lia.
 Qed.
 
+Lemma min_words_256 : Bar.min_words 256 = 4%nat.
+Proof.
+  unfold Bar.min_words, Bar.word_width.
+  rewrite Bar.U64.width_is_64.
+  reflexivity.
+Qed.
+
 Lemma min_words_monotone : forall a b,
   (a <= b)%nat -> (Bar.min_words a <= Bar.min_words b)%nat.
 Proof.
@@ -4674,7 +4681,97 @@ Theorem mulmod_const_correct : forall params y d x,
   let rec := Bar.reciprocal_of_multiplier params y d in
   to_Z_uint256 (Bar.mulmod_const x rec) =
     Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
-Admitted.
+Proof.
+  intros params y d x Hadm Hinput_bits Hmul_bits Hbit Hvalid.
+  assert (Hmul_pos : (0 < Bar.multiplier_bits params)%nat) by lia.
+  assert (Hmw_ge4 : (4 <= Bar.multiplier_words params)%nat).
+  { unfold Bar.multiplier_words.
+    rewrite <- min_words_256.
+    apply min_words_monotone. exact Hmul_bits. }
+  assert (Hy_fit : uint256_fits_words (Bar.multiplier_words params) y).
+  { unfold uint256_fits_words.
+    pose proof (to_Z_uint256_bounds y) as Hy.
+    change modulus256 with (modulus_words 4%nat) in Hy.
+    eapply Z.lt_le_trans; [exact (proj2 Hy)|].
+    apply WL.modulus_words_le. exact Hmw_ge4. }
+  assert (Hy_bits :
+    to_Z_uint256 y <= 2 ^ Z.of_nat (Bar.multiplier_bits params)).
+  { pose proof (to_Z_uint256_bounds y) as Hy.
+    assert (Hmod256 : modulus256 = 2 ^ Z.of_nat 256).
+    { unfold modulus256, modulus_words, base.
+      rewrite width_is_64. cbn. reflexivity. }
+    rewrite Hmod256 in Hy.
+    eapply Z.lt_le_incl.
+    eapply Z.lt_le_trans; [exact (proj2 Hy)|].
+    apply Z.pow_le_mono_r; lia. }
+  set (rec := Bar.reciprocal_of_multiplier params y d).
+  pose proof (constructor_sound_with_multiplier
+    params y d Hadm Hmul_pos Hbit Hy_fit Hvalid) as [Hinv [Hden Hmul]].
+  pose proof (reciprocal_of_multiplier_admissible
+    params y d Hadm Hmul_pos Hbit Hy_fit Hy_bits Hvalid) as Hadm_rec.
+  assert (Halign : Bar.post_product_bit_shift params = 0%nat).
+  { unfold Bar.post_product_bit_shift, Bar.post_product_shift,
+      Bar.pre_product_shift.
+    replace (Nat.eqb (Bar.multiplier_bits params) 0%nat) with false.
+    2: { symmetry. apply Nat.eqb_neq. lia. }
+    unfold Bar.shift, Bar.bit_shift in Hbit.
+    replace (Bar.shift params - 0)%nat with (Bar.shift params) by lia.
+    exact Hbit. }
+  set (x_words := Bar.uint256_to_words x).
+  assert (Hx_fit : uint256_fits_words (Bar.input_words params) x).
+  { unfold uint256_fits_words.
+    pose proof (to_Z_uint256_bounds x) as Hx.
+    change modulus256 with (modulus_words 4%nat) in Hx.
+    assert (Hiw_ge4 : (4 <= Bar.input_words params)%nat).
+    { unfold Bar.input_words.
+      rewrite <- min_words_256.
+      apply min_words_monotone. exact Hinput_bits. }
+    eapply Z.lt_le_trans; [exact (proj2 Hx)|].
+    apply WL.modulus_words_le. exact Hiw_ge4. }
+  assert (Hinput : input_within_bound rec x_words).
+  { unfold input_within_bound, input_value_Z.
+    change (Bar.reciprocal_params rec) with params.
+    subst x_words.
+    rewrite to_Z_fit_uint256_words_small by exact Hx_fit.
+    pose proof (to_Z_uint256_bounds x) as Hx.
+    assert (Hmod256 : modulus256 = 2 ^ Z.of_nat 256).
+    { unfold modulus256, modulus_words, base.
+      rewrite width_is_64. cbn. reflexivity. }
+    rewrite Hmod256 in Hx.
+    split; [lia|].
+    eapply Z.lt_le_trans; [exact (proj2 Hx)|].
+    apply Z.pow_le_mono_r; lia. }
+  assert (Honline :
+    online_numerator_Z rec x_words = to_Z_uint256 x * to_Z_uint256 y).
+  { rewrite online_numerator_value by exact Hadm_rec.
+    unfold input_value_Z.
+    change (Bar.reciprocal_params rec) with params.
+    subst x_words.
+    rewrite to_Z_fit_uint256_words_small by exact Hx_fit.
+    unfold reciprocal_scale_factor.
+    change (Bar.reciprocal_params rec) with params.
+    replace (Nat.eqb (Bar.multiplier_words params) 0%nat) with false.
+    2: { symmetry. apply Nat.eqb_neq.
+         pose proof (multiplier_words_positive params Hmul_pos). lia. }
+    change (multiplier_Z rec) with
+      (multiplier_Z (Bar.reciprocal_of_multiplier params y d)).
+    rewrite Hmul. ring. }
+  set (rr := Bar.reduce false rec x_words).
+  pose proof
+    (reduce_correct_remainder_only rec x_words Hinv Hadm_rec Halign Hinput)
+    as Hred.
+  fold rr in Hred.
+  unfold Bar.mulmod_const.
+  fold rec x_words rr.
+  cbn zeta in Hred.
+  destruct Hred as [Hrem Hrem_bounds].
+  rewrite words_to_uint256_value_small.
+  - change (to_Z_words (Bar.reduce_rem rr)) with (reduce_rem_Z rr).
+    rewrite Hrem, Honline. reflexivity.
+  - change (to_Z_words (Bar.reduce_rem rr)) with (reduce_rem_Z rr).
+    pose proof (denominator_lt_modulus256 rec Hadm_rec) as Hden_lt.
+    lia.
+Qed.
 
 End MakeProofs.
 

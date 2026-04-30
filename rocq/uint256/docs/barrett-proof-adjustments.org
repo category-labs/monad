@@ -151,8 +151,8 @@ quotient path.  When =post_product_bit_shift params = 0=, the narrow product
 contains exactly the low quotient words needed by =MAX_R_HAT_WORDS=, and the
 proof of =low_product_sufficient= follows the implementation control flow.
 
-The old generic theorem omitted the alignment hypothesis and was too broad.
-The executable check in
+The old generic =low_product_sufficient= theorem omitted the alignment
+hypothesis and was too broad.  The executable check in
 =theories/BarrettExecutableChecks.v::UnalignedPostProductShift= records a
 concrete non-exported parameter choice:
 
@@ -166,5 +166,6 @@ concrete non-exported parameter choice:
 For that choice, =post_product_bit_shift params = 33= and the low products
 from the remainder-only and full quotient estimates differ.  The exported
 Barrett parameter families used by the current wrapper theorems have aligned
-post-product shifts, so the theorem is strengthened with that semantic
-precondition instead of proving an invalid generic statement.
+post-product shifts, so =low_product_sufficient= and the
+=need_quotient = false= reducer theorem are strengthened with that semantic
+precondition instead of proving invalid generic statements.

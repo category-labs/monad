@@ -12,7 +12,7 @@ proved and the project build passes.
   estimate give the same low product modulo =MAX_R_HAT_WORDS=.  This is the
   key dependency for the =need_quotient = false= reducer path.
 
-- [ ] =reduce_correct_remainder_only=
+- [X] =reduce_correct_remainder_only=
 
   Prove the =need_quotient = false= reducer returns the exact mathematical
   remainder.  This depends on =low_product_sufficient= and the already-proved

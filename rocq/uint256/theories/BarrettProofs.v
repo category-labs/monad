@@ -3777,14 +3777,254 @@ Proof.
     subst q d N. reflexivity.
 Qed.
 
+Lemma reduce_initial_residual_value_false : forall rec x,
+  reciprocal_invariant rec ->
+  reciprocal_admissible rec ->
+  Bar.post_product_bit_shift (Bar.reciprocal_params rec) = 0%nat ->
+  input_within_bound rec x ->
+  let params := Bar.reciprocal_params rec in
+  Bar.fit_words (Bar.input_words params) x = x ->
+  let q_hat := Bar.estimate_q false rec x in
+  let q_true := Bar.estimate_q true rec x in
+  let R := Bar.max_r_hat_words params in
+  let qv := Bar.truncating_mul R q_hat (Bar.denominator_ rec) in
+  let r_hat :=
+    if Nat.eqb (Bar.multiplier_bits params) 0%nat
+    then Bar.value_words (Bar.subb_truncating R x qv)
+    else
+      let xy := Bar.truncating_mul R x (Bar.multiplier_ rec) in
+      Bar.value_words (Bar.subb_truncating R xy qv)
+  in
+  to_Z_words r_hat =
+  online_numerator_Z rec x - to_Z_words q_true * denominator_Z rec.
+Proof.
+  intros rec x Hinv Hadm Halign Hinput.
+  set (params := Bar.reciprocal_params rec).
+  cbn zeta.
+  intros Hfit.
+  set (q_hat := Bar.estimate_q false rec x).
+  set (q_true := Bar.estimate_q true rec x).
+  set (q := to_Z_words q_true).
+  set (R := Bar.max_r_hat_words params).
+  set (M := modulus_words R).
+  set (d := denominator_Z rec).
+  set (N := online_numerator_Z rec x).
+  assert (Hadm_params : params_admissible params).
+  { subst params. exact (proj1 Hadm). }
+  assert (HR_pos : (0 < R)%nat).
+  { subst R. apply max_r_hat_words_positive_admissible.
+    exact Hadm_params. }
+  assert (Hq_bounds : N / d - 2 <= q <= N / d).
+  { subst q N d q_true.
+    apply estimate_q_sound_true; assumption. }
+  assert (Hq_nonneg : 0 <= q).
+  { subst q q_true.
+    destruct (estimate_q_true_bound rec x) as [H _].
+    exact H. }
+  assert (Hres_bound : 0 <= N - q * d < M).
+  { subst M N d.
+    apply reduce_residual_bound; try assumption; lia. }
+  set (qv := Bar.truncating_mul R q_hat (Bar.denominator_ rec)).
+  assert (Hqv : to_Z_words qv = (q * d) mod M).
+  { subst qv q d M R q_hat q_true.
+    rewrite q_times_denominator_low_value by assumption.
+    apply low_product_sufficient; assumption. }
+  cbn zeta.
+  destruct (Nat.eqb (Bar.multiplier_bits params) 0%nat) eqn:Hbits.
+  - apply Nat.eqb_eq in Hbits.
+    pose proof (multiplier_words_zero params Hbits) as Hmwords.
+    assert (HN_value : N = to_Z_words x).
+    { subst N.
+      unfold online_numerator_Z, Bar.online_numerator.
+      fold params.
+      rewrite Hmwords. cbn [Nat.eqb].
+      rewrite Hfit. reflexivity. }
+    rewrite subb_truncating_value_mod.
+    rewrite Hqv.
+    change (modulus_words R) with M.
+    rewrite Zminus_mod_idemp_r.
+    rewrite <- HN_value.
+    rewrite Z.mod_small by exact Hres_bound.
+    subst q d. reflexivity.
+  - apply Nat.eqb_neq in Hbits.
+    assert (Hbits_pos : (0 < Bar.multiplier_bits params)%nat) by lia.
+    set (xy := Bar.truncating_mul R x (Bar.multiplier_ rec)).
+    pose proof (low_input_product_sufficient rec x Hinv Hadm
+      Hbits_pos Hinput) as Hxy_low.
+    fold params in Hxy_low.
+    assert (Hxy_mod : N mod M = to_Z_words xy mod M).
+    { subst xy M R N.
+      cbn zeta in Hxy_low.
+      rewrite Hfit in Hxy_low.
+      exact Hxy_low. }
+    rewrite subb_truncating_value_mod.
+    rewrite Hqv.
+    change (modulus_words R) with M.
+    rewrite Zminus_mod_idemp_r.
+    rewrite <- Zminus_mod_idemp_l.
+    rewrite <- Hxy_mod.
+    rewrite Zminus_mod_idemp_l.
+    rewrite Z.mod_small by exact Hres_bound.
+    subst q d N. reflexivity.
+Qed.
+
 Theorem reduce_correct_remainder_only : forall rec x,
   reciprocal_invariant rec ->
   reciprocal_admissible rec ->
+  Bar.post_product_bit_shift (Bar.reciprocal_params rec) = 0%nat ->
   input_within_bound rec x ->
   let result := Bar.reduce false rec x in
   reduce_rem_Z result = Z.modulo (online_numerator_Z rec x) (denominator_Z rec) /\
   0 <= reduce_rem_Z result < denominator_Z rec.
-Admitted.
+Proof.
+  intros rec x Hinv Hadm Halign Hinput.
+  set (params := Bar.reciprocal_params rec).
+  set (x_words := Bar.fit_words (Bar.input_words params) x).
+  set (q_hat := Bar.estimate_q false rec x_words).
+  set (q_true := Bar.estimate_q true rec x_words).
+  set (R := Bar.max_r_hat_words params).
+  set (qv := Bar.truncating_mul R q_hat (Bar.denominator_ rec)).
+  set (r_hat :=
+    if Nat.eqb (Bar.multiplier_bits params) 0%nat
+    then Bar.value_words (Bar.subb_truncating R x_words qv)
+    else
+      let xy := Bar.truncating_mul R x_words (Bar.multiplier_ rec) in
+      Bar.value_words (Bar.subb_truncating R xy qv)).
+  set (r_1 := Bar.subb_zx r_hat (Bar.denominator_ rec)).
+  set (r_2 := Bar.subb_zx (Bar.value_words r_1) (Bar.denominator_ rec)).
+  assert (Hinput_words : input_within_bound rec x_words) by
+    (subst x_words params;
+     apply input_within_bound_fit_input_words; exact Hinput).
+  assert (Honline_words :
+    online_numerator_Z rec x_words = online_numerator_Z rec x) by
+    (subst x_words params; apply online_numerator_fit_input_words).
+  unfold Bar.reduce.
+  fold params x_words q_hat R qv r_hat r_1 r_2.
+  cbn [reduce_rem_Z Bar.reduce_rem].
+  set (q := to_Z_words q_true).
+  set (d := denominator_Z rec).
+  set (N := online_numerator_Z rec x_words).
+  set (Q := N / d).
+  set (rem := N mod d).
+  assert (Hrhat_value : to_Z_words r_hat = N - q * d).
+  { subst r_hat qv R q q_hat q_true d N params.
+    apply reduce_initial_residual_value_false; try assumption;
+      apply fit_words_idempotent. }
+  assert (Hd_pos : 0 < d) by (subst d; exact (proj1 Hinv)).
+  assert (Hq_bounds : Q - 2 <= q <= Q) by
+    (subst Q q d N q_true; apply estimate_q_sound_true; assumption).
+  assert (Hq_nonneg : 0 <= q) by
+    (subst q; pose proof (WL.to_Z_words_bound q_true); lia).
+  assert (Hrem_bounds : 0 <= rem < d) by
+    (subst rem; apply Z.mod_pos_bound; lia).
+  assert (HN_div : N = Q * d + rem) by
+    (subst Q rem; rewrite (Z.div_mod N d ltac:(lia)) at 1; ring).
+  assert (Hres_decomp : N - q * d = (Q - q) * d + rem) by
+    (rewrite HN_div; ring).
+  assert (Hdelta_bounds : 0 <= Q - q <= 2) by lia.
+  destruct (Bar.carry_words r_1) eqn:Hr1_borrow.
+  - assert (Hr1_cmp :=
+      subb_zx_borrow_correct r_hat (Bar.denominator_ rec)).
+    fold r_1 in Hr1_cmp.
+    change (to_Z_words (Bar.denominator_ rec)) with d in Hr1_cmp.
+    rewrite Hr1_borrow in Hr1_cmp.
+    symmetry in Hr1_cmp.
+    apply Z.ltb_lt in Hr1_cmp.
+    rewrite Hrhat_value in Hr1_cmp.
+    assert (Hdelta0 : Q - q = 0) by nia.
+    assert (Hres_rem : N - q * d = rem) by nia.
+    unfold reduce_rem_Z.
+    cbn [Bar.reduce_rem].
+    rewrite copy_uint256_words_value_small.
+    2: { rewrite Hrhat_value, Hres_rem.
+         pose proof (denominator_lt_modulus256 rec Hadm). lia. }
+    rewrite Hrhat_value, Hres_rem.
+    rewrite <- Honline_words.
+    change (online_numerator_Z rec x_words) with N.
+    split; lia.
+  - assert (Hr1_cmp :=
+      subb_zx_borrow_correct r_hat (Bar.denominator_ rec)).
+    fold r_1 in Hr1_cmp.
+    change (to_Z_words (Bar.denominator_ rec)) with d in Hr1_cmp.
+    rewrite Hr1_borrow in Hr1_cmp.
+    symmetry in Hr1_cmp.
+    apply Z.ltb_ge in Hr1_cmp.
+    assert (Hr1_value :
+      to_Z_words (Bar.value_words r_1) = N - q * d - d).
+    { subst r_1.
+      rewrite subb_zx_value_no_borrow.
+      - change (to_Z_words (Bar.denominator_ rec)) with d.
+        rewrite Hrhat_value. ring.
+      - change (to_Z_words (Bar.denominator_ rec)) with d.
+        exact Hr1_cmp. }
+    rewrite Hrhat_value in Hr1_cmp.
+    destruct (Nat.eqb (Bar.pre_product_shift params) 0%nat) eqn:Hpre.
+    + apply Nat.eqb_eq in Hpre.
+      assert (Hq_no : Q - 1 <= q <= Q).
+      { subst Q q d N q_true params.
+        apply estimate_q_sound_no_preshift; assumption. }
+      assert (Hdelta1 : Q - q = 1) by nia.
+      assert (Hr1_rem : to_Z_words (Bar.value_words r_1) = rem) by nia.
+      unfold reduce_rem_Z.
+      cbn [Bar.reduce_rem].
+      rewrite copy_uint256_words_value_small.
+      2: { rewrite Hr1_rem.
+           pose proof (denominator_lt_modulus256 rec Hadm). lia. }
+      rewrite Hr1_rem.
+      rewrite <- Honline_words.
+      change (online_numerator_Z rec x_words) with N.
+      split; lia.
+    + destruct (negb (Bar.carry_words r_2)) eqn:Hr2_neg.
+      * apply negb_true_iff in Hr2_neg.
+        assert (Hr2_cmp := subb_zx_borrow_correct
+          (Bar.value_words r_1) (Bar.denominator_ rec)).
+        fold r_2 in Hr2_cmp.
+        change (to_Z_words (Bar.denominator_ rec)) with d in Hr2_cmp.
+        rewrite Hr2_neg in Hr2_cmp.
+        symmetry in Hr2_cmp.
+        apply Z.ltb_ge in Hr2_cmp.
+        assert (Hr2_value :
+          to_Z_words (Bar.value_words r_2) = N - q * d - d - d).
+        { subst r_2.
+          rewrite subb_zx_value_no_borrow.
+          - change (to_Z_words (Bar.denominator_ rec)) with d.
+            rewrite Hr1_value. ring.
+          - change (to_Z_words (Bar.denominator_ rec)) with d.
+            exact Hr2_cmp. }
+        assert (Hdelta2 : Q - q = 2) by nia.
+        assert (Hr2_rem : to_Z_words (Bar.value_words r_2) = rem)
+          by nia.
+        unfold reduce_rem_Z.
+        cbn [Bar.reduce_rem].
+        rewrite copy_uint256_words_value_small.
+        2: { rewrite Hr2_rem.
+             pose proof (denominator_lt_modulus256 rec Hadm). lia. }
+        rewrite Hr2_rem.
+        rewrite <- Honline_words.
+        change (online_numerator_Z rec x_words) with N.
+        split; lia.
+      * apply negb_false_iff in Hr2_neg.
+        assert (Hr2_cmp := subb_zx_borrow_correct
+          (Bar.value_words r_1) (Bar.denominator_ rec)).
+        fold r_2 in Hr2_cmp.
+        change (to_Z_words (Bar.denominator_ rec)) with d in Hr2_cmp.
+        rewrite Hr2_neg in Hr2_cmp.
+        symmetry in Hr2_cmp.
+        apply Z.ltb_lt in Hr2_cmp.
+        rewrite Hr1_value in Hr2_cmp.
+        assert (Hdelta1 : Q - q = 1) by nia.
+        assert (Hr1_rem : to_Z_words (Bar.value_words r_1) = rem)
+          by nia.
+        unfold reduce_rem_Z.
+        cbn [Bar.reduce_rem].
+        rewrite copy_uint256_words_value_small.
+        2: { rewrite Hr1_rem.
+             pose proof (denominator_lt_modulus256 rec Hadm). lia. }
+        rewrite Hr1_rem.
+        rewrite <- Honline_words.
+        change (online_numerator_Z rec x_words) with N.
+        split; lia.
+Qed.
 
 Theorem reduce_correct_with_quotient : forall rec x,
   reciprocal_invariant rec ->

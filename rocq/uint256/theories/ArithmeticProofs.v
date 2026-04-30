@@ -5309,6 +5309,125 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma word_of_nat_to_Z : forall n,
+  Z.of_nat n < base width ->
+  to_Z (word_of_nat n) = Z.of_nat n.
+Proof.
+  induction n as [|n IH]; intro Hn.
+  - cbn [word_of_nat].
+    rewrite spec_zero.
+    reflexivity.
+  - cbn [word_of_nat].
+    rewrite spec_add, IH by lia.
+    rewrite spec_one.
+    rewrite Z.mod_small.
+    + lia.
+    + split; lia.
+Qed.
+
+Lemma to_Z_uint256_of_nat : forall n,
+  Z.of_nat n < base width ->
+  to_Z_uint256 (uint256_of_nat n) = Z.of_nat n.
+Proof.
+  intros n Hn.
+  unfold uint256_of_nat, to_Z_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3 WL.to_Z_words].
+  rewrite word_of_nat_to_Z by exact Hn.
+  rewrite !spec_zero.
+  lia.
+Qed.
+
+Lemma countr_zero_word_go_bound : forall fuel word,
+  (countr_zero_word_go fuel word <= fuel)%nat.
+Proof.
+  induction fuel as [|fuel IH]; intro word.
+  - reflexivity.
+  - cbn [countr_zero_word_go].
+    pose proof (IH (shr word 1)) as Hshr.
+    destruct (land word one =? zero)%Uint; lia.
+Qed.
+
+Lemma countr_zero_word_bound : forall word,
+  (countr_zero_word word <= word_width)%nat.
+Proof.
+  intro word.
+  unfold countr_zero_word.
+  apply countr_zero_word_go_bound.
+Qed.
+
+Lemma countr_zero_uint256_nat_bound : forall x,
+  (countr_zero_uint256_nat x <= 4 * word_width)%nat.
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold countr_zero_uint256_nat.
+  cbn [w0 w1 w2 w3].
+  pose proof (countr_zero_word_bound x0) as H0.
+  pose proof (countr_zero_word_bound x1) as H1.
+  pose proof (countr_zero_word_bound x2) as H2.
+  pose proof (countr_zero_word_bound x3) as H3.
+  destruct (countr_zero_word x0 <? word_width)%nat; try lia.
+  destruct (countr_zero_word x0 + countr_zero_word x1 <?
+              2 * word_width)%nat; try lia.
+  destruct (countr_zero_word x0 + countr_zero_word x1 +
+              countr_zero_word x2 <? 3 * word_width)%nat; lia.
+Qed.
+
+Lemma popcount_word_go_bound : forall fuel word,
+  (popcount_word_go fuel word <= fuel)%nat.
+Proof.
+  induction fuel as [|fuel IH]; intro word.
+  - reflexivity.
+  - cbn [popcount_word_go].
+    pose proof (IH (shr word 1)) as Hshr.
+    destruct (land word one =? zero)%Uint; lia.
+Qed.
+
+Lemma popcount_word_bound : forall word,
+  (popcount_word word <= word_width)%nat.
+Proof.
+  intro word.
+  unfold popcount_word.
+  apply popcount_word_go_bound.
+Qed.
+
+Lemma popcount_bound : forall x,
+  (popcount x <= 4 * word_width)%nat.
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold popcount.
+  cbn [w0 w1 w2 w3].
+  pose proof (popcount_word_bound x0) as H0.
+  pose proof (popcount_word_bound x1) as H1.
+  pose proof (popcount_word_bound x2) as H2.
+  pose proof (popcount_word_bound x3) as H3.
+  lia.
+Qed.
+
+Theorem countr_zero_correct : forall x,
+  to_Z_uint256 (countr_zero x) = Z.of_nat (countr_zero_uint256_nat x).
+Proof.
+  intro x.
+  unfold countr_zero.
+  apply to_Z_uint256_of_nat.
+  pose proof (countr_zero_uint256_nat_bound x) as Hbound.
+  unfold word_width in Hbound.
+  rewrite width_is_64 in Hbound.
+  cbn in Hbound.
+  unfold base.
+  rewrite width_is_64.
+  cbn.
+  lia.
+Qed.
+
+Theorem popcount_correct : forall x,
+  popcount x =
+    (popcount_word (w0 x) + popcount_word (w1 x) +
+     popcount_word (w2 x) + popcount_word (w3 x))%nat.
+Proof.
+  intros [x0 x1 x2 x3].
+  reflexivity.
+Qed.
+
 Lemma is_two_uint256_true : forall x,
   is_two_uint256 x = true ->
   to_Z_uint256 x = 2.

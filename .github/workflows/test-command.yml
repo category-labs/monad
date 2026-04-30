@@ -1,0 +1,292 @@
+name: Test Command
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  check-command:
+    if: github.event.issue.pull_request && contains(github.event.comment.body, '/test all')
+    runs-on: ubuntu-latest
+    outputs:
+      triggered: ${{ steps.check.outputs.triggered }}
+    steps:
+      - name: Check if comment author has permission
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { number: issue_number } = context.issue;
+            const { login: comment_author } = context.payload.comment.user;
+
+            // Check if the comment author is a collaborator, member, or owner
+            try {
+              const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner,
+                repo,
+                username: comment_author,
+              });
+
+              const hasPermission = ['admin', 'write', 'maintain'].includes(permission.permission);
+
+              if (hasPermission) {
+                // React to comment with rocket emoji
+                await github.rest.reactions.createForIssueComment({
+                  owner,
+                  repo,
+                  comment_id: context.payload.comment.id,
+                  content: 'rocket'
+                });
+
+                // Post starting message
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number,
+                  body: '🚀 Starting full test suite...'
+                });
+
+                core.setOutput('triggered', 'true');
+              } else {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number,
+                  body: '❌ Only collaborators can trigger tests via commands.'
+                });
+                core.setOutput('triggered', 'false');
+              }
+            } catch (error) {
+              console.log(`Error checking permissions: ${error}`);
+              core.setOutput('triggered', 'false');
+            }
+
+  run-tests:
+    needs: check-command
+    if: needs.check-command.outputs.triggered == 'true'
+    runs-on: ubuntu-24.04-32
+    strategy:
+      matrix:
+        build:
+          - CMAKE_BUILD_TYPE: RelWithDebInfo
+            TOOLCHAIN: gcc-avx2
+          - CMAKE_BUILD_TYPE: Debug
+            TOOLCHAIN: gcc-asan
+        compiler:
+          - CXX: g++-15
+            CC: gcc-15
+          - CXX: clang++-19
+            CC: clang-19
+        exclude:
+          # GCC's implementation of ASAN breaks the must-tail calling
+          # convention used by the interpreter, so we need to disable that
+          # configuration when running with sanitizers enabled.
+          - build:
+              CMAKE_BUILD_TYPE: Debug
+              TOOLCHAIN: gcc-asan
+            compiler:
+              CXX: g++-15
+              CC: gcc-15
+    steps:
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { number: issue_number } = context.issue;
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: issue_number,
+            });
+
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('head_repo', pr.head.repo.full_name);
+
+      - name: Generate token
+        # Use the Github App private key to request an installation
+        # token with read-only access to the organization's private
+        # repositories. This token is then used in the checkout step
+        # (but not in subsequent steps that create releases and upload
+        # assets, those still use the default token that has write
+        # access to the current repository).
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
+          private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
+          # Limit permissions to what we need (these need to be
+          # configured in the app settings as well).
+          permissions: >-
+            {"contents": "read"}
+
+      - name: Tell git to do submodules in parallel
+        run: |
+          git config --global submodule.fetchJobs "$(nproc)"
+
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.head_sha }}
+          submodules: recursive
+
+      - uses: actions/checkout@v5
+        with:
+          repository: category-labs/evmone
+          token: ${{ steps.generate_token.outputs.token }}
+          ref: v0.15.0-category
+          path: third_party/evmone
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build `base` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: base
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,scope=base,mode=max
+
+      - name: Run VM Tests
+        id: vm_tests
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: |-
+            CC=${{ matrix.compiler.CC }}
+            CXX=${{ matrix.compiler.CXX }}
+            CMAKE_BUILD_TYPE=${{ matrix.build.CMAKE_BUILD_TYPE }}
+            SKIP_LLVM_TESTS=${{ matrix.build.CMAKE_BUILD_TYPE == 'Debug' && 'true' || 'false' }}
+            TOOLCHAIN=${{ matrix.build.TOOLCHAIN }}
+          target: build_and_test_vm
+          cache-from: type=gha,scope=base
+
+      - name: Code Quality Check
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: vm_code_quality
+          cache-from: type=gha,scope=base
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: scripts/vm/benchmark-analysis/.python-version
+
+      - name: Check Python code
+        working-directory: scripts/vm/benchmark-analysis
+        run: make check
+
+      - name: Post success comment
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { number: issue_number } = context.issue;
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: '✅ All tests passed! The VM tests, code quality checks, and Python checks completed successfully.'
+            });
+
+      - name: Post failure comment
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { number: issue_number } = context.issue;
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: '❌ Tests failed! Please check the workflow logs for details and fix any issues.'
+            });
+
+  run-fuzz-tests:
+    needs: check-command
+    if: needs.check-command.outputs.triggered == 'true'
+    runs-on: ubuntu-24.04-32
+    steps:
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { number: issue_number } = context.issue;
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: issue_number,
+            });
+
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('head_repo', pr.head.repo.full_name);
+
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
+          private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
+          permissions: >-
+            {"contents": "read"}
+
+      - name: Tell git to do submodules in parallel
+        run: |
+          git config --global submodule.fetchJobs "$(nproc)"
+
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.head_sha }}
+          submodules: recursive
+
+      - uses: actions/checkout@v5
+        with:
+          repository: category-labs/evmone
+          token: ${{ steps.generate_token.outputs.token }}
+          ref: v0.15.0-category
+          path: third_party/evmone
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build `base` stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: base
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,scope=base,mode=max
+
+      - name: Run Fuzz Tests
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: vm_fuzz
+          cache-from: type=gha,scope=base

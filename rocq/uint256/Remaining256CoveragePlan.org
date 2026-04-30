@@ -30,8 +30,9 @@ document:
   [[theories/Arithmetic.v][theories/Arithmetic.v]] and proved by
   `byteswap_correct` in
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
-- `countr_zero` and `popcount` are still missing ports, not merely
-  missing proofs.
+- `countr_zero` and `popcount` are modeled in
+  [[theories/Arithmetic.v][theories/Arithmetic.v]]; their correctness proofs
+  are still open.
 - The `Abort.` blocks in
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]
   are historical sketches for the now-completed `addmod`, `mulmod`,
@@ -39,8 +40,7 @@ document:
 
 For immediate coverage work, the queue is therefore:
 
-1. Prove the record-level bitwise wrappers.
-2. Port `countr_zero` and `popcount`.
+1. Prove `countr_zero` and `popcount`.
 
 * Completed Proof Note: `signextend_correct`
 
@@ -212,7 +212,6 @@ Final checkpoint from the latest `rocq-mcp` pass:
 What is still missing from the overall Rocq development is mostly the
 `uint256.hpp` surface around:
 
-- `countr_zero`, `popcount`
 - serialization and byte parsing helpers
 
 Serialization is not a current verification priority and should be
@@ -291,6 +290,14 @@ loading, storing, or parsing helpers unless priorities change.
    [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]] state the
    exact word-list result shape.
 
+6. `countr_zero` and `popcount` are modeled.
+
+   The models in [[theories/Arithmetic.v][theories/Arithmetic.v]] preserve the
+   C++ low-to-high word order. `countr_zero` accumulates a word-level
+   trailing-zero count and returns early when the selected word is not
+   all zero. `popcount` sums the four word-level population counts.
+   Their correctness proofs are still open.
+
 * Part 2: Lower-Level Extensions Needed For The Remaining Clean Ports
 
 1. Extend the word interface in
@@ -329,10 +336,8 @@ loading, storing, or parsing helpers unless priorities change.
 
 5. Port `countr_zero` and `popcount`.
 
-   These are the two utility functions most likely to benefit from new
-   word-level primitives, because their control flow in C++ is simple
-   and obvious, and a direct Rocq match is preferable to a bespoke
-   bit-scan encoding.
+   The models are present. Prove the wrappers and helper bounds before
+   treating this item as complete.
 
 5. Decide where serialization belongs.
 
@@ -345,5 +350,5 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. `countr_zero`, `popcount`
+1. prove `countr_zero`, `popcount`
 2. serialization helpers

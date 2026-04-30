@@ -444,6 +444,54 @@ Definition bitwise_xor_uint256 (x y : uint256) : uint256 :=
 Definition bitwise_not_uint256 (x : uint256) : uint256 :=
   mk_uint256 (lnot (w0 x)) (lnot (w1 x)) (lnot (w2 x)) (lnot (w3 x)).
 
+Fixpoint word_of_nat (n : nat) : t :=
+  match n with
+  | O => 0
+  | S n' => word_of_nat n' + 1
+  end.
+
+Definition uint256_of_nat (n : nat) : uint256 :=
+  mk_uint256 (word_of_nat n) 0 0 0.
+
+Fixpoint countr_zero_word_go (fuel : nat) (word : t) : nat :=
+  match fuel with
+  | O => O
+  | S fuel' =>
+      if (land word 1 =? 0)%Uint
+      then S (countr_zero_word_go fuel' (shr word 1))
+      else O
+  end.
+
+Definition countr_zero_word (word : t) : nat :=
+  countr_zero_word_go word_width word.
+
+Definition countr_zero_uint256_nat (x : uint256) : nat :=
+  let count := countr_zero_word (w0 x) in
+  if Nat.ltb count word_width then count else
+    let count := (count + countr_zero_word (w1 x))%nat in
+    if Nat.ltb count (2 * word_width) then count else
+      let count := (count + countr_zero_word (w2 x))%nat in
+      if Nat.ltb count (3 * word_width) then count else
+        (count + countr_zero_word (w3 x))%nat.
+
+Definition countr_zero (x : uint256) : uint256 :=
+  uint256_of_nat (countr_zero_uint256_nat x).
+
+Fixpoint popcount_word_go (fuel : nat) (word : t) : nat :=
+  match fuel with
+  | O => O
+  | S fuel' =>
+      ((if (land word 1 =? 0)%Uint then 0 else 1) +
+       popcount_word_go fuel' (shr word 1))%nat
+  end.
+
+Definition popcount_word (word : t) : nat :=
+  popcount_word_go word_width word.
+
+Definition popcount (x : uint256) : nat :=
+  (popcount_word (w0 x) + popcount_word (w1 x) +
+   popcount_word (w2 x) + popcount_word (w3 x))%nat.
+
 Definition exp (base exponent : uint256) : uint256 :=
   if is_two_uint256 base
   then shift_left_uint256 one_uint256 exponent

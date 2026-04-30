@@ -1796,6 +1796,60 @@ Proof.
       * exact Hr_range.
 Qed.
 
+Theorem udivrem_uint256_correct : forall u v result,
+  0 < to_Z_uint256 v ->
+  udivrem_uint256 u v = Some result ->
+  to_Z_uint256 (ud_quot256 result) =
+    Z.quot (to_Z_uint256 u) (to_Z_uint256 v) /\
+  to_Z_uint256 (ud_rem256 result) =
+    Z.rem (to_Z_uint256 u) (to_Z_uint256 v) /\
+  0 <= to_Z_uint256 (ud_quot256 result) < modulus256 /\
+  0 <= to_Z_uint256 (ud_rem256 result) < modulus256.
+Proof.
+  intros u v result Hv Hfacade.
+  unfold udivrem_uint256 in Hfacade.
+  destruct (udivrem 4 4 (uint256_to_words u) (uint256_to_words v))
+    as [divr|] eqn:Hdiv; [|discriminate].
+  inversion Hfacade; subst result; clear Hfacade.
+  pose proof (udivrem_uint256_4_4_correct u v divr Hv Hdiv)
+    as [Hquot [Hrem [Hquot_bound Hrem_bound]]].
+  cbn [ud_quot256 ud_rem256].
+  rewrite to_Z_uint256_words_to_uint256_small by exact Hquot_bound.
+  rewrite to_Z_uint256_words_to_uint256_small by exact Hrem_bound.
+  split; [exact Hquot|].
+  split; [exact Hrem|].
+  split; [exact Hquot_bound|exact Hrem_bound].
+Qed.
+
+Theorem div_uint256_correct : forall x y quot,
+  0 < to_Z_uint256 y ->
+  div_uint256 x y = Some quot ->
+  to_Z_uint256 quot = Z.quot (to_Z_uint256 x) (to_Z_uint256 y).
+Proof.
+  intros x y quot Hy Hdiv.
+  unfold div_uint256 in Hdiv.
+  destruct (udivrem_uint256 x y) as [result|] eqn:Hudiv;
+    [|discriminate].
+  inversion Hdiv; subst quot; clear Hdiv.
+  pose proof (udivrem_uint256_correct x y result Hy Hudiv) as [Hquot _].
+  exact Hquot.
+Qed.
+
+Theorem mod_uint256_correct : forall x y rem,
+  0 < to_Z_uint256 y ->
+  mod_uint256 x y = Some rem ->
+  to_Z_uint256 rem = Z.rem (to_Z_uint256 x) (to_Z_uint256 y).
+Proof.
+  intros x y rem Hy Hmod.
+  unfold mod_uint256 in Hmod.
+  destruct (udivrem_uint256 x y) as [result|] eqn:Hudiv;
+    [|discriminate].
+  inversion Hmod; subst rem; clear Hmod.
+  pose proof (udivrem_uint256_correct x y result Hy Hudiv)
+    as [_ [Hrem _]].
+  exact Hrem.
+Qed.
+
 Theorem sdivrem_correct : forall u v r,
   to_Z_uint256 v <> 0 ->
   sdivrem u v = Some r ->

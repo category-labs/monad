@@ -41,7 +41,7 @@ document:
 
 For immediate coverage work, the queue is therefore:
 
-1. Prove the thin concrete division facades.
+1. No active arithmetic or bit-manipulation coverage items remain.
 
 * Completed Proof Note: `signextend_correct`
 
@@ -210,8 +210,10 @@ Final checkpoint from the latest `rocq-mcp` pass:
 - Generic proof: [[theories/DivisionProofs.v][theories/DivisionProofs.v]]
 - 256-bit specialization: [[theories/DivisionProofs.v][theories/DivisionProofs.v]]
 - Thin uint256 facades: modeled in
-  [[theories/Arithmetic.v][theories/Arithmetic.v]]; correctness proofs
-  still open.
+  [[theories/Arithmetic.v][theories/Arithmetic.v]] and proved by
+  `udivrem_uint256_correct`, `div_uint256_correct`, and
+  `mod_uint256_correct` in
+  [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
 
 What is still missing from the overall Rocq development is mostly the
 `uint256.hpp` surface around:
@@ -246,8 +248,9 @@ loading, storing, or parsing helpers unless priorities change.
 1. Add thin concrete 256-bit division wrappers.
 
    The concrete `uint256`-level facade for `udivrem`, `/`, and `%` is
-   modeled in [[theories/Arithmetic.v][theories/Arithmetic.v]]. Reuse the
-   existing division model and proofs rather than re-proving the
+   modeled in [[theories/Arithmetic.v][theories/Arithmetic.v]] and proved in
+   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]. The proofs
+   reuse the existing division model rather than re-proving the
    algorithm.
 
 2. `byte_correct` is complete.
@@ -355,5 +358,4 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. optional concrete division facades
-2. serialization helpers
+1. serialization helpers, if priorities change

@@ -325,6 +325,26 @@ Proof.
     exact Hcorr.
 Qed.
 
+Lemma truncating_mul_runtime_recur_left_nil : forall ys result I R,
+  RM.truncating_mul_runtime_recur [] ys result I R = result.
+Proof.
+  induction ys as [|y ys IH]; intros result I R.
+  - reflexivity.
+  - cbn [RM.truncating_mul_runtime_recur RM.mul_add_line].
+    apply IH.
+Qed.
+
+Lemma truncating_mul_left_nil_value : forall ys R,
+  to_Z_words (Bar.truncating_mul R [] ys) = 0.
+Proof.
+  intros ys R.
+  unfold Bar.truncating_mul, RM.truncating_mul_runtime.
+  destruct ys as [|y ys].
+  - apply WL.to_Z_extend_words.
+  - rewrite truncating_mul_runtime_recur_left_nil.
+    apply WL.to_Z_extend_words.
+Qed.
+
 Lemma min_words_bit_width_words : forall ws,
   Bar.min_words (Bar.bit_width_words ws) =
     Div.count_significant_words ws.
@@ -747,6 +767,14 @@ Proof.
   pose proof (Pos2Nat.is_pos Bar.U64.width).
   unfold Bar.word_width.
   lia.
+Qed.
+
+Lemma min_words_zero : Bar.min_words 0 = 0%nat.
+Proof.
+  unfold Bar.min_words, Bar.word_width.
+  rewrite Nat.add_0_l.
+  apply Nat.div_small.
+  pose proof (Pos2Nat.is_pos Bar.U64.width). lia.
 Qed.
 
 Lemma min_words_monotone : forall a b,
@@ -1416,6 +1444,61 @@ Proof.
       * eapply Z.le_trans; [exact Hden_min_lower|exact Hden_min].
 Qed.
 
+Lemma pre_product_shift_positive_multiplier_bits_zero : forall params,
+  (0 < Bar.pre_product_shift params)%nat ->
+  Bar.multiplier_bits params = 0%nat.
+Proof.
+  intros params Hpre.
+  unfold Bar.pre_product_shift in Hpre.
+  destruct (Nat.eqb (Bar.multiplier_bits params) 0%nat) eqn:Hm.
+  - apply Nat.eqb_eq. exact Hm.
+  - lia.
+Qed.
+
+Lemma reciprocal_scale_no_multiplier_bits : forall rec,
+  Bar.multiplier_bits (Bar.reciprocal_params rec) = 0%nat ->
+  reciprocal_scale_factor rec = 1.
+Proof.
+  intros rec Hbits.
+  unfold reciprocal_scale_factor.
+  rewrite (multiplier_words_zero (Bar.reciprocal_params rec) Hbits).
+  reflexivity.
+Qed.
+
+Lemma pre_product_shift_le_pred_min_denominator_bits : forall params,
+  (Bar.pre_product_shift params <=
+   Nat.pred (Bar.min_denominator_bits params))%nat.
+Proof.
+  intro params.
+  unfold Bar.pre_product_shift.
+  destruct (Nat.eqb (Bar.multiplier_bits params) 0%nat); [|lia].
+  destruct (Nat.leb
+    (Nat.pred (Bar.min_denominator_bits params) mod Bar.word_width)
+    (Bar.bit_shift params)); lia.
+Qed.
+
+Lemma denominator_ge_pre_shift_pow : forall rec,
+  reciprocal_admissible rec ->
+  2 ^ Z.of_nat (Bar.pre_product_shift (Bar.reciprocal_params rec)) <=
+    denominator_Z rec.
+Proof.
+  intros rec Hadm.
+  set (params := Bar.reciprocal_params rec).
+  destruct Hadm as [Hadm_params [Hrec_len [Hden_len [Hmul_len
+    [Hscale_bound [Hden_min [Hden_max Hmul_fit]]]]]]].
+  pose proof (pre_product_shift_le_pred_min_denominator_bits params)
+    as Hpre_le.
+  pose proof (min_denominator_bits_positive params Hadm_params) as HDpos.
+  pose proof (min_denominator_value_lower_bound params Hadm_params)
+    as Hmin_low.
+  replace (Nat.pred (Bar.min_denominator_bits params)) with
+    (Bar.min_denominator_bits params - 1)%nat in Hpre_le by lia.
+  eapply Z.le_trans.
+  - apply Z.pow_le_mono_r; try lia.
+    apply Nat2Z.inj_le. exact Hpre_le.
+  - eapply Z.le_trans; [exact Hmin_low|exact Hden_min].
+Qed.
+
 Lemma online_numerator_value : forall rec x,
   reciprocal_admissible rec ->
   online_numerator_Z rec x =
@@ -1494,6 +1577,96 @@ Proof.
     lia.
 Qed.
 
+Lemma barrett_floor_with_preshift_bound : forall x r d I B,
+  0 <= I ->
+  0 <= B <= I ->
+  0 <= x < 2 ^ I ->
+  0 < d ->
+  2 ^ B <= d ->
+  r = 2 ^ I / d ->
+  let Q := x / d in
+  let qhat := ((x / 2 ^ B) * r) / 2 ^ (I - B) in
+  Q - 2 <= qhat <= Q.
+Proof.
+  intros x r d I B HI HB Hx Hd Hd_ge Hr.
+  set (P := 2 ^ B) in *.
+  set (S := 2 ^ (I - B)) in *.
+  assert (HP : 0 < P) by (subst P; apply Z.pow_pos_nonneg; lia).
+  assert (HS : 0 < S) by (subst S; apply Z.pow_pos_nonneg; lia).
+  assert (HPI : P * S = 2 ^ I).
+  { subst P S. rewrite <- Z.pow_add_r by lia.
+    replace (B + (I - B)) with I by lia. reflexivity. }
+  assert (Hr_nonneg : 0 <= r).
+  { subst r. apply Z.div_pos; [apply Z.pow_nonneg; lia|exact Hd]. }
+  assert (Hr_le_S : r <= S).
+  { subst r.
+    apply Z.div_le_upper_bound; [exact Hd|].
+    rewrite <- HPI.
+    apply Z.mul_le_mono_nonneg_r; lia. }
+  set (xh := x / P).
+  set (xl := x mod P).
+  assert (Hxl : 0 <= xl < P).
+  { subst xl. apply Z.mod_pos_bound. lia. }
+  assert (Hx_decomp : x = P * xh + xl).
+  { subst xh xl. pose proof (Z.div_mod x P ltac:(lia)) as Hdm. lia. }
+  set (q0 := (x * r) / (P * S)).
+  set (qhat := (xh * r) / S).
+  assert (Hq0_bound : x / d - 1 <= q0 <= x / d).
+  { subst q0. rewrite HPI.
+    replace (x / d) with ((x * 1) / d) by
+      (replace (x * 1) with x by ring; reflexivity).
+    replace (x / d) with ((x * 1) / d) by
+      (replace (x * 1) with x by ring; reflexivity).
+    apply barrett_floor_no_preshift_bound with
+      (k := 1) (r := r) (d := d) (S := I); try lia.
+    rewrite Hr. replace (1 * 2 ^ I) with (2 ^ I) by ring.
+    reflexivity. }
+  assert (Hqhat_le_q0 : qhat <= q0).
+  { subst qhat q0.
+    apply Z.div_le_lower_bound; [nia|].
+    rewrite Hx_decomp.
+    assert (HSq : S * (xh * r / S) <= xh * r).
+    { apply Z.mul_div_le. lia. }
+    nia. }
+  assert (Hq0_le_qhat_plus1 : q0 <= qhat + 1).
+  { assert (Hlt : x * r < P * S * (qhat + 2)).
+    { rewrite Hx_decomp.
+      assert (Hxh_lt : xh * r < S * (qhat + 1)).
+      { subst qhat.
+        pose proof (Z.div_mod (xh * r) S ltac:(lia)) as Hdm.
+        pose proof (Z.mod_pos_bound (xh * r) S ltac:(lia)) as Hmod.
+        nia. }
+      assert (Hxlr_lt : xl * r < P * S).
+      { assert (H1 : xl * r <= (P - 1) * r) by nia.
+        assert (H2 : (P - 1) * r <= (P - 1) * S).
+        { apply Z.mul_le_mono_nonneg_l; nia. }
+        nia. }
+      nia. }
+    subst q0.
+    pose proof (Z.div_lt_upper_bound (x * r) (P * S) (qhat + 2)
+      ltac:(nia) Hlt) as Hdiv_lt.
+    lia. }
+  split; lia.
+Qed.
+
+Lemma barrett_floor_with_preshift_bound_nat : forall x r d I B,
+  (B <= I)%nat ->
+  0 <= x < 2 ^ Z.of_nat I ->
+  0 < d ->
+  2 ^ Z.of_nat B <= d ->
+  r = 2 ^ Z.of_nat I / d ->
+  let Q := x / d in
+  let qhat := ((x / 2 ^ Z.of_nat B) * r) / 2 ^ Z.of_nat (I - B) in
+  Q - 2 <= qhat <= Q.
+Proof.
+  intros x r d I B HBI Hx Hd Hd_ge Hr.
+  pose proof (barrett_floor_with_preshift_bound
+    x r d (Z.of_nat I) (Z.of_nat B) ltac:(lia) ltac:(lia)
+    Hx Hd Hd_ge Hr) as H.
+  replace (Z.of_nat I - Z.of_nat B) with (Z.of_nat (I - B)) in H by lia.
+  exact H.
+Qed.
+
 Lemma rshift_aux_zero_skipn : forall rem i ws,
   rem = length (skipn i ws) ->
   Bar.rshift_aux 0 0 i rem ws = skipn i ws.
@@ -1538,6 +1711,19 @@ Proof.
   intros bits shift ws.
   unfold Bar.rshift.
   apply rshift_aux_length.
+Qed.
+
+Lemma rshift_value_ge : forall bits shift ws,
+  (bits <= shift)%nat ->
+  to_Z_words (Bar.rshift bits shift ws) = 0.
+Proof.
+  intros bits shift ws Hle.
+  pose proof (rshift_length bits shift ws) as Hlen.
+  replace (bits - shift)%nat with 0%nat in Hlen by lia.
+  rewrite min_words_zero in Hlen.
+  pose proof (WL.to_Z_words_bound (Bar.rshift bits shift ws)) as Hbound.
+  rewrite Hlen in Hbound.
+  unfold modulus_words in Hbound. cbn in Hbound. lia.
 Qed.
 
 Lemma rshift_zero_value : forall bits ws,
@@ -1901,6 +2087,161 @@ Proof.
   - reflexivity.
 Qed.
 
+Lemma estimate_q_with_preshift_value_small : forall rec x,
+  reciprocal_invariant rec ->
+  reciprocal_admissible rec ->
+  (Bar.pre_product_shift (Bar.reciprocal_params rec) <
+   Bar.input_bits (Bar.reciprocal_params rec))%nat ->
+  input_within_bound rec x ->
+  estimate_q_Z true rec x =
+    ((input_value_Z rec x /
+      2 ^ Z.of_nat (Bar.pre_product_shift (Bar.reciprocal_params rec))) *
+     reciprocal_Z rec) /
+    2 ^ Z.of_nat (Bar.post_product_shift (Bar.reciprocal_params rec)).
+Proof.
+  intros rec x Hinv Hadm Hpre_lt Hinput.
+  set (params := Bar.reciprocal_params rec).
+  assert (Hpre_lt_params :
+    (Bar.pre_product_shift params < Bar.input_bits params)%nat).
+  { subst params. exact Hpre_lt. }
+  destruct Hadm as [Hadm_params0 [Hrec_len [Hden_len [Hmul_len
+    [Hscale_bound [Hden_min [Hden_max Hmul_fit]]]]]]].
+  destruct Hadm_params0 as [Hmin_pos [Hmin_le_max Hinput_pos]].
+  assert (Hadm_params : params_admissible params).
+  { repeat split; assumption. }
+  set (B := Bar.pre_product_shift params).
+  set (T := Bar.post_product_shift params).
+  set (Qbits := Bar.max_quotient_bits params).
+  set (Pbits := (Qbits + T)%nat).
+  set (R := Bar.min_words Pbits).
+  set (x_shift := Bar.rshift (Bar.input_bits params) B x).
+  set (prod := Bar.truncating_mul R x_shift (Bar.reciprocal_ rec)).
+  assert (HT : T = (Bar.input_bits params - B)%nat).
+  { subst T B. unfold Bar.post_product_shift, Bar.shift. reflexivity. }
+  assert (Hx_shift_val :
+    to_Z_words x_shift = input_value_Z rec x / 2 ^ Z.of_nat B).
+  { subst x_shift B. apply rshift_value_small.
+    - lia.
+    - exact Hinput. }
+  assert (Hx_shift_len : length x_shift =
+    Bar.min_words (Bar.input_bits params - B)).
+  { subst x_shift B. apply rshift_length. }
+  assert (Hx_shift_pos : (0 < length x_shift)%nat).
+  { rewrite Hx_shift_len.
+    apply min_words_positive. lia. }
+  assert (HR_pos : (0 < R)%nat).
+  { subst R Pbits Qbits T. apply min_words_positive. lia. }
+  assert (Hadm_rec : reciprocal_admissible rec).
+  { repeat split; try exact Hadm_params; assumption. }
+  pose proof (reciprocal_upper_bound rec Hinv Hadm_rec) as Hrec_upper.
+  assert (Hrec_nonneg : 0 <= reciprocal_Z rec).
+  { unfold reciprocal_Z. pose proof (WL.to_Z_words_bound (Bar.reciprocal_ rec)).
+    lia. }
+  assert (Hx_shift_bound :
+    0 <= input_value_Z rec x / 2 ^ Z.of_nat B < 2 ^ Z.of_nat T).
+  { rewrite HT.
+    destruct Hinput as [Hx_nonneg Hx_lt].
+    split.
+    - apply Z.div_pos; [exact Hx_nonneg|apply Z.pow_pos_nonneg; lia].
+    - apply Z.div_lt_upper_bound.
+      + apply Z.pow_pos_nonneg; lia.
+      + replace (2 ^ Z.of_nat B *
+          2 ^ Z.of_nat (Bar.input_bits params - B)) with
+          (2 ^ Z.of_nat (Bar.input_bits params)).
+        * exact Hx_lt.
+        * rewrite <- Z.pow_add_r by lia.
+          replace (Z.of_nat B + Z.of_nat (Bar.input_bits params - B))
+            with (Z.of_nat (Bar.input_bits params)) by lia.
+          reflexivity. }
+  assert (Hprod_bits_bound :
+    (input_value_Z rec x / 2 ^ Z.of_nat B) * reciprocal_Z rec <
+      2 ^ Z.of_nat Pbits).
+  { subst Pbits Qbits.
+    rewrite Nat2Z.inj_add.
+    rewrite Z.pow_add_r by lia.
+    destruct Hx_shift_bound as [Hx_nonneg Hx_lt].
+    change (Bar.max_quotient_bits (Bar.reciprocal_params rec)) with
+      (Bar.max_quotient_bits params) in Hrec_upper.
+    pose proof (Z.pow_nonneg 2 (Z.of_nat T) ltac:(lia)).
+    pose proof (Z.pow_nonneg 2 (Z.of_nat (Bar.max_quotient_bits params))
+      ltac:(lia)).
+    nia. }
+  assert (Hprod_exact :
+    to_Z_words prod =
+      (input_value_Z rec x / 2 ^ Z.of_nat B) * reciprocal_Z rec).
+  { subst prod R.
+    rewrite <- Hx_shift_val.
+    unfold reciprocal_Z.
+    apply truncating_mul_exact_small_general.
+    - exact Hx_shift_pos.
+    - exact HR_pos.
+    - rewrite Hx_shift_val.
+      fold (reciprocal_Z rec).
+      eapply Z.lt_le_trans; [exact Hprod_bits_bound|].
+      apply pow_le_modulus_min_words. }
+  unfold estimate_q_Z, Bar.estimate_q.
+  fold params.
+  change (Bar.pre_product_shift params) with B.
+  change (Bar.post_product_shift params) with T.
+  change (Bar.max_quotient_bits params) with Qbits.
+  change (Qbits + T)%nat with Pbits.
+  change (Bar.min_words Pbits) with R.
+  change (Bar.rshift (Bar.input_bits params) B x) with x_shift.
+  change (Bar.truncating_mul R x_shift (Bar.reciprocal_ rec)) with prod.
+  rewrite rshift_value_small.
+  - rewrite to_Z_fit_words_small.
+    + rewrite Hprod_exact. reflexivity.
+    + rewrite Hprod_exact.
+      eapply Z.lt_le_trans; [exact Hprod_bits_bound|].
+      apply pow_le_modulus_min_words.
+  - subst Pbits Qbits T. lia.
+  - rewrite to_Z_fit_words_small.
+    + rewrite Hprod_exact.
+      split.
+      * destruct Hx_shift_bound as [Hx_nonneg _].
+        apply Z.mul_nonneg_nonneg; assumption.
+      * exact Hprod_bits_bound.
+    + rewrite Hprod_exact.
+      eapply Z.lt_le_trans; [exact Hprod_bits_bound|].
+      apply pow_le_modulus_min_words.
+Qed.
+
+Lemma estimate_q_preshift_ge_zero : forall rec x,
+  (Bar.input_bits (Bar.reciprocal_params rec) <=
+   Bar.pre_product_shift (Bar.reciprocal_params rec))%nat ->
+  estimate_q_Z true rec x = 0.
+Proof.
+  intros rec x Hge.
+  set (params := Bar.reciprocal_params rec).
+  assert (Hge_params :
+    (Bar.input_bits params <= Bar.pre_product_shift params)%nat).
+  { subst params. exact Hge. }
+  unfold estimate_q_Z, Bar.estimate_q.
+  fold params.
+  set (x_shift := Bar.rshift (Bar.input_bits params)
+    (Bar.pre_product_shift params) x).
+  assert (Hx_shift_nil : x_shift = []).
+  { apply length_zero_iff_nil.
+    subst x_shift. rewrite rshift_length.
+    replace (Bar.input_bits params - Bar.pre_product_shift params)%nat
+      with 0%nat by lia.
+    apply min_words_zero. }
+  rewrite Hx_shift_nil.
+  unfold Bar.post_product_shift, Bar.shift.
+  replace (Bar.input_bits params - Bar.pre_product_shift params)%nat
+    with 0%nat by lia.
+  set (R := Bar.min_words (Bar.max_quotient_bits params + 0)).
+  set (prod := Bar.truncating_mul R [] (Bar.reciprocal_ rec)).
+  change (Bar.truncating_mul R [] (Bar.reciprocal_ rec)) with prod.
+  rewrite rshift_zero_value.
+  rewrite to_Z_fit_words_small.
+  - subst prod. apply truncating_mul_left_nil_value.
+  - subst prod. rewrite truncating_mul_left_nil_value.
+    pose proof (WL.modulus_words_pos
+      (Bar.min_words (Bar.max_quotient_bits params + 0))).
+    lia.
+Qed.
+
 Theorem estimate_q_sound_with_preshift : forall rec x,
   reciprocal_invariant rec ->
   reciprocal_admissible rec ->
@@ -1908,7 +2249,61 @@ Theorem estimate_q_sound_with_preshift : forall rec x,
   input_within_bound rec x ->
   let Q := Z.div (online_numerator_Z rec x) (denominator_Z rec) in
   Q - 2 <= estimate_q_Z true rec x <= Q.
-Admitted.
+Proof.
+  intros rec x Hinv Hadm Hpre_pos Hinput.
+  set (params := Bar.reciprocal_params rec).
+  set (B := Bar.pre_product_shift params).
+  set (I := Bar.input_bits params).
+  assert (Hbits0 : Bar.multiplier_bits params = 0%nat).
+  { subst B I params. apply pre_product_shift_positive_multiplier_bits_zero.
+    exact Hpre_pos. }
+  assert (Hscale1 : reciprocal_scale_factor rec = 1).
+  { subst params. apply reciprocal_scale_no_multiplier_bits. exact Hbits0. }
+  assert (Honline : online_numerator_Z rec x = input_value_Z rec x).
+  { rewrite online_numerator_value by exact Hadm. rewrite Hscale1. ring. }
+  destruct (Nat.lt_ge_cases B I) as [HBlt|HBge].
+  - rewrite (estimate_q_with_preshift_value_small rec x Hinv Hadm).
+    2: { subst B I params. exact HBlt. }
+    2: { exact Hinput. }
+    rewrite Honline.
+    destruct Hinv as [Hd_pos Hr].
+    unfold reciprocal_invariant in Hr.
+    fold params in Hr.
+    unfold Bar.shift in Hr.
+    rewrite Hscale1 in Hr.
+    rewrite Hr.
+    change (Bar.pre_product_shift (Bar.reciprocal_params rec)) with B.
+    replace (Bar.post_product_shift (Bar.reciprocal_params rec)) with
+      (I - B)%nat.
+    2: { subst I B params. unfold Bar.post_product_shift, Bar.shift.
+         reflexivity. }
+    change (Bar.input_bits params) with I.
+    replace (1 * 2 ^ Z.of_nat I / denominator_Z rec) with
+      (2 ^ Z.of_nat I / denominator_Z rec).
+    2: { replace (1 * 2 ^ Z.of_nat I) with (2 ^ Z.of_nat I) by ring.
+         reflexivity. }
+    apply barrett_floor_with_preshift_bound_nat.
+    + lia.
+    + exact Hinput.
+    + exact Hd_pos.
+    + subst B params. apply denominator_ge_pre_shift_pow.
+      exact Hadm.
+    + reflexivity.
+  - rewrite (estimate_q_preshift_ge_zero rec x).
+    2: { subst B I params. exact HBge. }
+    rewrite Honline.
+    assert (HQ0 : input_value_Z rec x / denominator_Z rec = 0).
+    { destruct Hinput as [Hx_nonneg Hx_lt].
+      apply Z.div_small.
+      split; [exact Hx_nonneg|].
+      eapply Z.lt_le_trans; [exact Hx_lt|].
+      subst I B.
+      eapply Z.le_trans.
+      - apply Z.pow_le_mono_r; try lia.
+        apply Nat2Z.inj_le. exact HBge.
+      - subst params. apply denominator_ge_pre_shift_pow. exact Hadm. }
+    rewrite HQ0. lia.
+Qed.
 
 Theorem low_product_sufficient : forall rec x,
   reciprocal_invariant rec ->

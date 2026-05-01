@@ -543,9 +543,6 @@ namespace
                 // > Time must either increase or remain constant
                 // > relative to the previous block. If time is not
                 // > specified, it's incremented by one for each block.
-                // NOTE(dhil): I am not sure how to interpret the "or remain
-                // constant" part, as the Geth implementation enforces strictly
-                // increasing timestamps.
 
                 // If a gap is wide, then we need to count the synthetic
                 // timestamps before validating the possible block timestamp
@@ -703,14 +700,13 @@ namespace
                                previous_header.number;
             // No-op for gap == 1.
             for (size_t i = 1; i < gap; ++i) {
+                previous_header.number += 1;
+                previous_header.timestamp += DEFAULT_TIMESTAMP_INCREMENT;
+                previous_header.parent_hash =
+                    {}; // TODO(dhil): Need a simulation block hash buffer
                 Block const synthetic_block{
-                    // NOTE(dhil): Synthetic blocks do not inherit the previous
-                    // block's header.
-                    .header = BlockHeader{
-                        .number = previous_header.number + 1,
-                        .timestamp = previous_header.timestamp +
-                                     DEFAULT_TIMESTAMP_INCREMENT,
-                    }};
+                    .header = previous_header,
+                };
 
                 auto block_metrics = BlockMetrics{};
                 auto call_tracers =
@@ -757,6 +753,8 @@ namespace
 
             // Construct the block header.
             BlockHeader const current_header{
+                .parent_hash =
+                    {}, // TODO(dhil): Need a simulation block hash buffer
                 .prev_randao = bo->prev_randao.value_or(bytes32_t{}),
                 // NOTE(dhil): The possible increment by one is correct by
                 // construction of the synthetic blocks.
@@ -2265,6 +2263,7 @@ void monad_executor_eth_simulate_submit(
 
     MONAD_ASSERT(senders.size() == txns.size());
     MONAD_ASSERT(n_state_overrides == txns.size());
+    MONAD_ASSERT(n_block_overrides == txns.size());
 
     byte_string_view rlp_header_view({rlp_header, rlp_header_len});
     auto const block_header_result = rlp::decode_block_header(rlp_header_view);

@@ -688,6 +688,7 @@ namespace
 
             if (call_frames[tx_idx][0].status == EVMC_SUCCESS) {
                 call_result["logs"] = nlohmann::json::array();
+                size_t log_index = 0;
                 for (auto const &log : receipts[tx_idx].logs) {
                     call_result["logs"].emplace_back(nlohmann::json{
                         {"address", format_hex(log.address)},
@@ -701,7 +702,7 @@ namespace
                         },
                         {"transactionIndex", std::format("0x{:x}", tx_idx)},
                         {"blockHash", format_hex(block_hash)},
-                        {"logIndex", std::format("0x{:x}", tx_idx)},
+                        {"logIndex", std::format("0x{:x}", log_index++)},
                         // NOTE(dhil): Geth always emits logs with "removed"
                         // fixed to `false`.
                         {"removed", false},

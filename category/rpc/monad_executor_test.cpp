@@ -6262,6 +6262,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     ASSERT_EQ(logs.size(), 2);
 
     // Log 0: sender -> forwarder (10 MON)
+    EXPECT_EQ(logs[0]["logIndex"], "0x0");
     EXPECT_EQ(logs[0]["address"], std::format("0x{}", to_hex(native_token)));
     ASSERT_EQ(logs[0]["topics"].size(), 3);
     EXPECT_EQ(logs[0]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
@@ -6272,6 +6273,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     EXPECT_EQ(logs[0]["data"], std::format("0x{}", to_hex(ten_mon)));
 
     // Log 1: forwarder -> sink (5 MON)
+    EXPECT_EQ(logs[1]["logIndex"], "0x1");
     EXPECT_EQ(logs[1]["address"], std::format("0x{}", to_hex(native_token)));
     ASSERT_EQ(logs[1]["topics"].size(), 3);
     EXPECT_EQ(logs[1]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));

@@ -54,7 +54,7 @@ namespace monad::staking::test
             config.many_active_validators_prob >= 0 &&
             config.many_active_validators_prob <= 1);
 
-        constexpr size_t max_initial_active_vals = 260;
+        constexpr size_t max_initial_active_vals = 300;
 
         // The max initial active validators must be able to fill up
         // a bitset bucket:
@@ -705,7 +705,7 @@ namespace monad::staking::test
             MONAD_ASSERT(res.has_value());
         }
         for (; i < n; ++i) {
-            auto const res1 = model_.syscall_snapshot();
+            auto const res1 = model_.syscall_snapshot<traits>();
             MONAD_ASSERT(res1.has_value());
             auto const res2 = model_.syscall_on_epoch_change(++epoch);
             MONAD_ASSERT(res2.has_value());
@@ -977,7 +977,7 @@ namespace monad::staking::test
         else {
             next_epoch = model_.epoch() + 1;
             if (!model_.in_epoch_delay_period()) {
-                auto const res = model_.syscall_snapshot();
+                auto const res = model_.syscall_snapshot<traits>();
                 MONAD_ASSERT(res.has_value());
             }
             auto const res = model_.syscall_on_epoch_change(next_epoch);
@@ -1007,7 +1007,7 @@ namespace monad::staking::test
             auto const res = model_.syscall_on_epoch_change(model_.epoch() + 1);
             MONAD_ASSERT(res.has_value());
         }
-        auto const res = model_.syscall_snapshot();
+        auto const res = model_.syscall_snapshot<traits>();
         MONAD_ASSERT(res.has_value());
 
         // Post conditions:

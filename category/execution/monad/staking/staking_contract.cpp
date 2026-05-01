@@ -1735,6 +1735,7 @@ Result<void> StakingContract::syscall_reward(
 
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::syscall_reward);
 
+template <Traits traits>
 Result<void> StakingContract::syscall_snapshot(
     byte_string_view input, uint256_t const &value)
 {
@@ -1813,7 +1814,7 @@ Result<void> StakingContract::syscall_snapshot(
         return a.first.native() < b.first.native();
     };
     uint64_t const n =
-        std::min(candidates.size(), limits::active_valset_size());
+        std::min(candidates.size(), limits::active_valset_size<traits>());
     std::partial_sort(
         candidates.begin(),
         candidates.begin() + static_cast<ptrdiff_t>(n),
@@ -1842,6 +1843,8 @@ Result<void> StakingContract::syscall_snapshot(
 
     return outcome::success();
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::syscall_snapshot);
 
 Result<void> StakingContract::distribute_priority_fees(uint256_t const &fees)
 {

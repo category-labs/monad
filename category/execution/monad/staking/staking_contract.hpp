@@ -617,9 +617,10 @@ public:
     template <Traits traits>
     Result<void> syscall_reward(byte_string_view, uint256_t const &);
 
-    Result<void> syscall_on_epoch_change(byte_string_view, uint256_t const &);
-
+    template <Traits traits>
     Result<void> syscall_snapshot(byte_string_view, uint256_t const &);
+
+    Result<void> syscall_on_epoch_change(byte_string_view, uint256_t const &);
 
     /////////////////////////////////
     //  In-protocol functionality  //

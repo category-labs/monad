@@ -5755,6 +5755,195 @@ Proof.
   lia.
 Qed.
 
+Lemma to_Z_land_one : forall word,
+  to_Z (land word one) = Z.b2z (Z.testbit (to_Z word) 0).
+Proof.
+  intro word.
+  rewrite spec_land, spec_one.
+  replace (Z.land (to_Z word) 1) with (to_Z word mod 2).
+  2:{ change 1 with (Z.ones 1).
+      rewrite Z.land_ones by lia.
+      reflexivity. }
+  rewrite <- Z.bit0_mod.
+  rewrite Z.mod_small.
+  - reflexivity.
+  - destruct (Z.testbit (to_Z word) 0); cbn;
+      unfold base; rewrite width_is_64; cbn; lia.
+Qed.
+
+Lemma land_one_eqb_zero_testbit : forall word,
+  (land word one =? zero)%Uint = negb (Z.testbit (to_Z word) 0).
+Proof.
+  intro word.
+  rewrite spec_eqb, to_Z_land_one, spec_zero.
+  destruct (Z.testbit (to_Z word) 0); reflexivity.
+Qed.
+
+Lemma popcount_word_go_correct : forall fuel word,
+  popcount_word_go fuel word = bitcount_Z (to_Z word) fuel.
+Proof.
+  induction fuel as [|fuel IH]; intro word.
+  - reflexivity.
+  - cbn [popcount_word_go bitcount_Z].
+    rewrite land_one_eqb_zero_testbit.
+    rewrite IH.
+    rewrite to_Z_shr.
+    change (2 ^ Z.of_nat 1) with 2.
+    replace (to_Z word / 2)
+      with (Z.shiftr (to_Z word) 1).
+    2:{ change 2 with (2 ^ 1).
+        rewrite Z.shiftr_div_pow2 by lia.
+        reflexivity. }
+    destruct (Z.testbit (to_Z word) 0); reflexivity.
+Qed.
+
+Lemma popcount_word_correct : forall word,
+  popcount_word word = bitcount_Z (to_Z word) word_width.
+Proof.
+  intro word.
+  unfold popcount_word.
+  apply popcount_word_go_correct.
+Qed.
+
+Lemma bitcount_Z_app : forall width1 width2 z,
+  bitcount_Z z (width1 + width2) =
+    (bitcount_Z z width1 +
+     bitcount_Z (Z.shiftr z (Z.of_nat width1)) width2)%nat.
+Proof.
+  induction width1 as [|width1 IH]; intros width2 z.
+  - cbn [bitcount_Z Nat.add Z.of_nat].
+    rewrite Z.shiftr_0_r.
+    reflexivity.
+  - cbn [Nat.add bitcount_Z Z.of_nat].
+    rewrite IH.
+    replace (Z.pos (Pos.of_succ_nat width1))
+      with (1 + Z.of_nat width1) by lia.
+    rewrite <- Z.shiftr_shiftr by lia.
+    destruct (Z.testbit z 0); reflexivity.
+Qed.
+
+Lemma bitcount_Z_ext_low : forall bits z1 z2,
+  (forall n, 0 <= n < Z.of_nat bits ->
+    Z.testbit z1 n = Z.testbit z2 n) ->
+  bitcount_Z z1 bits = bitcount_Z z2 bits.
+Proof.
+  induction bits as [|bits IH]; intros z1 z2 Hbits.
+  - reflexivity.
+  - cbn [bitcount_Z].
+    assert (H0 : Z.testbit z1 0 = Z.testbit z2 0).
+    { apply Hbits. lia. }
+    rewrite H0.
+    apply f_equal.
+    apply IH.
+    intros n Hn.
+    rewrite !Z.shiftr_spec by lia.
+    replace (n + 1) with (Z.succ n) by lia.
+    apply Hbits.
+    lia.
+Qed.
+
+Lemma bitcount_Z_words4_chunk0 : forall x0 x1 x2 x3,
+  bitcount_Z (to_Z_words [x0; x1; x2; x3]) 64 =
+    bitcount_Z (to_Z x0) 64.
+Proof.
+  intros x0 x1 x2 x3.
+  apply bitcount_Z_ext_low.
+  intros n Hn.
+  rewrite testbit_to_Z_words4 by lia.
+  replace (n <? 64) with true by (symmetry; apply Z.ltb_lt; lia).
+  reflexivity.
+Qed.
+
+Lemma bitcount_Z_words4_chunk1 : forall x0 x1 x2 x3,
+  bitcount_Z (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 64) 64 =
+    bitcount_Z (to_Z x1) 64.
+Proof.
+  intros x0 x1 x2 x3.
+  apply bitcount_Z_ext_low.
+  intros n Hn.
+  rewrite Z.shiftr_spec by lia.
+  rewrite testbit_to_Z_words4 by lia.
+  replace (n + 64 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 64 - 64 <? 64) with true
+    by (symmetry; apply Z.ltb_lt; lia).
+  replace (n + 64 - 64) with n by lia.
+  reflexivity.
+Qed.
+
+Lemma bitcount_Z_words4_chunk2 : forall x0 x1 x2 x3,
+  bitcount_Z (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 128) 64 =
+    bitcount_Z (to_Z x2) 64.
+Proof.
+  intros x0 x1 x2 x3.
+  apply bitcount_Z_ext_low.
+  intros n Hn.
+  rewrite Z.shiftr_spec by lia.
+  rewrite testbit_to_Z_words4 by lia.
+  replace (n + 128 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 128 - 64 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 128 - 64 - 64 <? 64) with true
+    by (symmetry; apply Z.ltb_lt; lia).
+  replace (n + 128 - 64 - 64) with n by lia.
+  reflexivity.
+Qed.
+
+Lemma bitcount_Z_words4_chunk3 : forall x0 x1 x2 x3,
+  bitcount_Z (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 192) 64 =
+    bitcount_Z (to_Z x3) 64.
+Proof.
+  intros x0 x1 x2 x3.
+  apply bitcount_Z_ext_low.
+  intros n Hn.
+  rewrite Z.shiftr_spec by lia.
+  rewrite testbit_to_Z_words4 by lia.
+  replace (n + 192 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 192 - 64 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 192 - 64 - 64 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 192 - 64 - 64 - 64 <? 64) with true
+    by (symmetry; apply Z.ltb_lt; lia).
+  replace (n + 192 - 64 - 64 - 64) with n by lia.
+  reflexivity.
+Qed.
+
+Lemma bitcount_Z_to_Z_words4 : forall x0 x1 x2 x3,
+  bitcount_Z (to_Z_words [x0; x1; x2; x3]) 256 =
+    (bitcount_Z (to_Z x0) 64 + bitcount_Z (to_Z x1) 64 +
+     bitcount_Z (to_Z x2) 64 + bitcount_Z (to_Z x3) 64)%nat.
+Proof.
+  intros x0 x1 x2 x3.
+  change 256%nat with (64 + 192)%nat.
+  rewrite bitcount_Z_app.
+  rewrite bitcount_Z_words4_chunk0.
+  change 192%nat with (64 + 128)%nat.
+  rewrite bitcount_Z_app.
+  rewrite bitcount_Z_words4_chunk1.
+  replace (Z.shiftr
+             (Z.shiftr (to_Z_words [x0; x1; x2; x3]) (Z.of_nat 64))
+             (Z.of_nat 64))
+    with (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 128).
+  2:{ rewrite Z.shiftr_shiftr by lia.
+      replace (Z.of_nat 64 + Z.of_nat 64) with 128 by reflexivity.
+      reflexivity. }
+  change 128%nat with (64 + 64)%nat.
+  rewrite bitcount_Z_app.
+  rewrite bitcount_Z_words4_chunk2.
+  replace (Z.shiftr (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 128)
+             (Z.of_nat 64))
+    with (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 192).
+  2:{ rewrite Z.shiftr_shiftr by lia.
+      replace (128 + Z.of_nat 64) with 192 by reflexivity.
+      reflexivity. }
+  rewrite bitcount_Z_words4_chunk3.
+  repeat rewrite Nat.add_assoc.
+  reflexivity.
+Qed.
+
 Theorem countr_zero_correct : forall x,
   to_Z_uint256 (countr_zero x) = Z.of_nat (countr_zero_uint256_nat x).
 Proof.
@@ -5777,6 +5966,19 @@ Theorem popcount_correct : forall x,
      popcount_word (w2 x) + popcount_word (w3 x))%nat.
 Proof.
   intros [x0 x1 x2 x3].
+  reflexivity.
+Qed.
+
+Theorem popcount_correct_Z : forall x,
+  popcount x = bitcount_Z (to_Z_uint256 x) 256.
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold popcount, to_Z_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3].
+  rewrite bitcount_Z_to_Z_words4.
+  rewrite !popcount_word_correct.
+  unfold word_width.
+  rewrite width_is_64.
   reflexivity.
 Qed.
 

@@ -14,6 +14,7 @@
 From Stdlib Require Import ZArith PArith Bool Lia List.
 From Stdlib Require Import DoubleType.
 From Uint256 Require Import Uint RuntimeMulProofs DivisionProofs.
+From Uint256 Require Import Arithmetic ArithmeticProofs.
 
 #[local] Open Scope Z_scope.
 
@@ -1082,3 +1083,20 @@ Module DivisionConsistency.
   Include P.
   Print Assumptions udivrem_correct.
 End DivisionConsistency.
+
+Module ArithmeticConsistency.
+  Module B := Base.MakeProof(SigmaUint64).
+  Module WL := WordsLemmas.MakeProofs(B).
+  Module RM := RuntimeMul.MakeProof(B).
+  Module RMP := RuntimeMulProofs.MakeProofs(B)(RM)(WL).
+  Module Div := Division.Make(B)(SigmaUint128)(SigmaBridge).
+  Module DP :=
+    DivisionProofs.MakeProofs(B)(SigmaUint128)(SigmaBridge)(Div)(WL).
+  Module Arith := Arithmetic.Make(B)(SigmaUint128)(SigmaBridge)(Div)(RM).
+  Module P :=
+    ArithmeticProofs.MakeProofs(B)(SigmaUint128)(SigmaBridge)
+      (WL)(RM)(RMP)(Div)(DP)(Arith).
+  Include P.
+  Print Assumptions P.byteswap_correct_Z.
+  Print Assumptions P.countr_zero_uint256_correct_Z.
+End ArithmeticConsistency.

@@ -8,12 +8,13 @@
     via Z arithmetic and all specs follow from standard library lemmas.
 
     This file is not performance-relevant — it exists solely to audit
-    that the axioms used in RuntimeMulProofs.v and DivisionProofs.v
-    do not introduce unsoundness. *)
+    that the axioms used in RuntimeMulProofs.v, DivisionProofs.v, and
+    ArithmeticProofs.v do not introduce unsoundness. *)
 
 From Stdlib Require Import ZArith PArith Bool Lia List.
 From Stdlib Require Import DoubleType.
 From Uint256 Require Import Uint RuntimeMulProofs DivisionProofs.
+From Uint256 Require Import Arithmetic ArithmeticProofs.
 
 #[local] Open Scope Z_scope.
 
@@ -1035,3 +1036,22 @@ Module DivisionConsistency.
   (** This should print no assumptions once all Admitted above are filled *)
   (* Print Assumptions P.<main_theorem>. *)
 End DivisionConsistency.
+
+(** Arithmetic proofs with no axioms *)
+Module ArithmeticConsistency.
+  Module B := Base.MakeProof(ZUint64).
+  Module WL := WordsLemmas.MakeProofs(B).
+  Module RM := RuntimeMul.MakeProof(B).
+  Module RMP := RuntimeMulProofs.MakeProofs(B)(RM)(WL).
+  Module Div := Division.Make(B)(ZUint128)(ZBridge).
+  Module DP := DivisionProofs.MakeProofs(B)(ZUint128)(ZBridge)(Div)(WL).
+  Module Arith := Arithmetic.Make(B)(ZUint128)(ZBridge)(Div)(RM).
+  Module P :=
+    ArithmeticProofs.MakeProofs(B)(ZUint128)(ZBridge)
+      (WL)(RM)(RMP)(Div)(DP)(Arith).
+  Include P.
+
+  (** This should print no assumptions once all Admitted above are filled *)
+  Print Assumptions P.byteswap_correct_Z.
+  Print Assumptions P.countr_zero_uint256_correct_Z.
+End ArithmeticConsistency.

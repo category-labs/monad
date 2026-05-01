@@ -678,6 +678,8 @@ pub async fn eth_simulate_v1(
     block_header: Header,
     block_number: u64,
     block_id: Option<[u8; 32]>,
+    parent_id: Option<[u8; 32]>,
+    grandparent_id: Option<[u8; 32]>,
     emit_native_transfer_logs: bool,
     eth_call_executor: &EthCallExecutor,
     overrides: &[(&BlockOverride, &StateOverrideSet)],
@@ -694,6 +696,8 @@ pub async fn eth_simulate_v1(
     block_header.encode(&mut rlp_encoded_block_header);
 
     let rlp_encoded_block_id = alloy_rlp::encode(block_id.unwrap_or([0_u8; 32]));
+    let rlp_encoded_parent_id = alloy_rlp::encode(parent_id.unwrap_or([0_u8; 32]));
+    let rlp_encoded_grandparent_id = alloy_rlp::encode(grandparent_id.unwrap_or([0_u8; 32]));
 
     let chain_config = chain_id.to_ffi_chain_config();
 
@@ -794,6 +798,10 @@ pub async fn eth_simulate_v1(
             rlp_encoded_block_header.len(),
             rlp_encoded_block_id.as_ptr(),
             rlp_encoded_block_id.len(),
+            rlp_encoded_parent_id.as_ptr(),
+            rlp_encoded_parent_id.len(),
+            rlp_encoded_grandparent_id.as_ptr(),
+            rlp_encoded_grandparent_id.len(),
             state_overrides.as_ptr() as *const *const ffi::monad_state_override,
             state_overrides.len(),
             block_overrides.as_ptr() as *const *const ffi::monad_block_override,

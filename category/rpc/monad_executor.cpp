@@ -254,7 +254,7 @@ namespace
         /// discarding the oldest currently stored context, then returns a
         /// ChainContext for the given traits type. The arguments must outlive
         /// this buffer.
-        [[nodiscard]] ChainContext<traits> advance(
+        ChainContext<traits> advance(
             std::vector<Address> const &senders,
             std::vector<std::vector<std::optional<Address>>> const &authorities)
         {
@@ -490,6 +490,33 @@ namespace
         return execution_result;
     }
 
+    std::pair<
+        std::vector<Address>, std::vector<std::vector<std::optional<Address>>>>
+    recover_senders_and_authorities(
+        std::vector<Transaction> const &transactions)
+    {
+        std::vector<Address> senders;
+        senders.reserve(transactions.size());
+        for (auto const &txn : transactions) {
+            auto const sender = recover_sender(txn);
+            MONAD_ASSERT_THROW(sender.has_value(), RECOVER_SENDER_ERR_MSG);
+            senders.emplace_back(sender.value());
+        }
+
+        std::vector<std::vector<std::optional<Address>>> authorities;
+        authorities.reserve(transactions.size());
+        for (auto const &txn : transactions) {
+            std::vector<std::optional<Address>> txn_authorities;
+            txn_authorities.reserve(txn.authorization_list.size());
+            for (auto const &auth : txn.authorization_list) {
+                txn_authorities.emplace_back(recover_authority(auth));
+            }
+            authorities.emplace_back(std::move(txn_authorities));
+        }
+
+        return {std::move(senders), authorities};
+    }
+
     void store_output_header(
         Block const &block, std::vector<Receipt> const &receipts,
         bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes,
@@ -700,10 +727,11 @@ namespace
     Result<nlohmann::json> eth_simulate_impl(
         Chain const &chain, std::vector<std::vector<Transaction>> calls,
         BlockHeader const &header, uint64_t const block_number,
-        bytes32_t const &block_id, std::vector<std::vector<Address>> senders,
+        bytes32_t const &block_id, bytes32_t const &grandparent_id,
+        bytes32_t const &parent_id, std::vector<std::vector<Address>> senders,
         std::vector<std::vector<std::vector<std::optional<Address>>>>
             authorities,
-        TrieRODb &tdb, vm::VM &vm,
+        mpt::RODb &db, vm::VM &vm,
         EthSimulateBlockHashBuffer &block_hash_buffer,
         fiber::FiberGroup &tx_exec_pool,
         std::span<monad_state_override const *const> state_overrides,
@@ -741,10 +769,36 @@ namespace
             state_overrides,
             header);
 
+        TrieRODb tdb{db};
         tdb.set_block_and_prefix(block_number, block_id);
 
-        // Simulate blocks including possibly synthetic blocks.
+        // Initialize the chain context buffer.
         auto context_buffer = ChainContextBuffer<traits>{};
+        if (MONAD_LIKELY(block_number > 2)) {
+            auto const grandparent_transactions =
+                monad::get_transactions(db, block_number - 2, grandparent_id);
+            MONAD_ASSERT_THROW(
+                grandparent_transactions.has_value(),
+                GRANDPARENT_TRANSACTIONS_CONTEXT_ERR_MSG);
+            auto const &[grandparent_senders, grandparent_authorities] =
+                recover_senders_and_authorities(
+                    grandparent_transactions.assume_value());
+            context_buffer.advance(
+                grandparent_senders, grandparent_authorities);
+        }
+        if (MONAD_LIKELY(block_number > 1)) {
+            auto const parent_transactions =
+                monad::get_transactions(db, block_number - 1, parent_id);
+            MONAD_ASSERT_THROW(
+                parent_transactions.has_value(),
+                PARENT_TRANSACTIONS_CONTEXT_ERR_MSG);
+            auto const &[parent_senders, parent_authorities] =
+                recover_senders_and_authorities(
+                    parent_transactions.assume_value());
+            context_buffer.advance(parent_senders, parent_authorities);
+        }
+
+        // Simulate blocks including possibly synthetic blocks.
         auto result = nlohmann::json::array();
         BlockHeader previous_header = header;
         std::vector<std::vector<CallFrame>> const empty_call_frames{};
@@ -940,33 +994,6 @@ namespace
         // LOG_INFO("res: {}", result.dump(4));
 
         return result;
-    }
-
-    std::pair<
-        std::vector<Address>, std::vector<std::vector<std::optional<Address>>>>
-    recover_senders_and_authorities(
-        std::vector<Transaction> const &transactions)
-    {
-        std::vector<Address> senders;
-        senders.reserve(transactions.size());
-        for (auto const &txn : transactions) {
-            auto const sender = recover_sender(txn);
-            MONAD_ASSERT_THROW(sender.has_value(), RECOVER_SENDER_ERR_MSG);
-            senders.emplace_back(sender.value());
-        }
-
-        std::vector<std::vector<std::optional<Address>>> authorities;
-        authorities.reserve(transactions.size());
-        for (auto const &txn : transactions) {
-            std::vector<std::optional<Address>> txn_authorities;
-            txn_authorities.reserve(txn.authorization_list.size());
-            for (auto const &auth : txn.authorization_list) {
-                txn_authorities.emplace_back(recover_authority(auth));
-            }
-            authorities.emplace_back(std::move(txn_authorities));
-        }
-
-        return {std::move(senders), authorities};
     }
 
     template <Traits traits>
@@ -1935,7 +1962,8 @@ struct monad_executor
         std::span<monad_state_override const *const> state_overrides,
         std::span<monad_block_override const *const> block_overrides,
         BlockHeader const &block_header, uint64_t const block_number,
-        bytes32_t const &block_id, bool emit_native_transfer_logs,
+        bytes32_t const &block_id, bytes32_t const &grandparent_id,
+        bytes32_t const &parent_id, bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -1959,6 +1987,8 @@ struct monad_executor
              block_header = block_header,
              block_number = block_number,
              block_id = block_id,
+             parent_id = parent_id,
+             grandparent_id = grandparent_id,
              chain_config = chain_config,
              &db = db_,
              emit_native_transfer_logs = emit_native_transfer_logs,
@@ -2026,7 +2056,6 @@ struct monad_executor
 
                         EthSimulateBlockHashBuffer block_hash_buffer{
                             db, block_number};
-                        TrieRODb tdb{db};
 
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
@@ -2039,9 +2068,11 @@ struct monad_executor
                                 block_header,
                                 block_number,
                                 block_id,
+                                parent_id,
+                                grandparent_id,
                                 senders,
                                 authorities,
-                                tdb,
+                                db,
                                 vm,
                                 block_hash_buffer,
                                 *tx_exec_group->group,
@@ -2062,9 +2093,11 @@ struct monad_executor
                                 block_header,
                                 block_number,
                                 block_id,
+                                parent_id,
+                                grandparent_id,
                                 senders,
                                 authorities,
-                                tdb,
+                                db,
                                 vm,
                                 block_hash_buffer,
                                 *tx_exec_group->group,
@@ -2306,10 +2339,14 @@ namespace
 
 void monad_executor_eth_simulate_submit(
     struct monad_executor *executor, enum monad_chain_config chain_config,
-    uint8_t const *rlp_senders, size_t rlp_senders_len,
-    uint8_t const *rlp_calls, size_t rlp_calls_len, uint64_t block_number,
-    uint8_t const *rlp_header, size_t rlp_header_len,
-    uint8_t const *rlp_block_id, size_t rlp_block_id_len,
+    uint8_t const *const rlp_senders, size_t rlp_senders_len,
+    uint8_t const *const rlp_calls, size_t rlp_calls_len, uint64_t block_number,
+    uint8_t const *const rlp_header, size_t rlp_header_len,
+    uint8_t const *const rlp_block_id, size_t rlp_block_id_len,
+    uint8_t const *const rlp_parent_block_id,
+    size_t const rlp_parent_block_id_len,
+    uint8_t const *const rlp_grandparent_block_id,
+    size_t const rlp_grandparent_block_id_len,
     struct monad_state_override const *const *state_overrides,
     size_t n_state_overrides,
     struct monad_block_override const *const *block_overrides,
@@ -2344,6 +2381,22 @@ void monad_executor_eth_simulate_submit(
     MONAD_ASSERT(block_id_view.empty());
     auto const block_id = block_id_result.value();
 
+    byte_string_view parent_block_id_view(
+        {rlp_parent_block_id, rlp_parent_block_id_len});
+    auto const parent_block_id_result =
+        rlp::decode_bytes32(parent_block_id_view);
+    MONAD_ASSERT(!parent_block_id_result.has_error());
+    MONAD_ASSERT(parent_block_id_view.empty());
+    auto const parent_block_id = parent_block_id_result.value();
+
+    byte_string_view grandparent_block_id_view(
+        {rlp_grandparent_block_id, rlp_grandparent_block_id_len});
+    auto const grandparent_block_id_result =
+        rlp::decode_bytes32(grandparent_block_id_view);
+    MONAD_ASSERT(!grandparent_block_id_result.has_error());
+    MONAD_ASSERT(grandparent_block_id_view.empty());
+    auto const grandparent_block_id = grandparent_block_id_result.value();
+
     executor->submit_eth_simulate_to_pool(
         chain_config,
         txns,
@@ -2353,6 +2406,8 @@ void monad_executor_eth_simulate_submit(
         block_header,
         block_number,
         block_id,
+        parent_block_id,
+        grandparent_block_id,
         emit_native_transfer_logs,
         complete,
         user);

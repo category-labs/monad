@@ -332,6 +332,14 @@ loading, storing, or parsing helpers unless priorities change.
    `Z.testbit` semantics over a bounded width. They intentionally avoid
    `Z.popcount`, which is not available in this Rocq environment.
 
+8. Pure Z-level byteswap specifications are present.
+
+   `byte_at_Z`, `word_at_Z`, `byteswap_word_Z`, and `byteswap_Z` in
+   [[theories/Arithmetic.v][theories/Arithmetic.v]] describe byte
+   extraction, word extraction, word byte-swap, and 256-bit byte-swap
+   using only `Z` operations. The correctness theorem connecting
+   `byteswap` to `byteswap_Z` is still pending.
+
 * Part 2: Lower-Level Extensions Needed For The Remaining Clean Ports
 
 1. Extend the word interface in

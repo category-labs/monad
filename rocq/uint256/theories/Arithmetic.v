@@ -57,6 +57,34 @@ Fixpoint countr_zero_Z (z : Z) (width : nat) : nat :=
       else S (countr_zero_Z (Z.shiftr z 1) width')
   end.
 
+Definition byte_at_Z (value : Z) (index : nat) : Z :=
+  (value / 2 ^ (8 * Z.of_nat index)) mod 256.
+
+Definition word_at_Z (value : Z) (index : nat) : Z :=
+  (value / 2 ^ (64 * Z.of_nat index)) mod 2 ^ 64.
+
+Definition word_shl_Z (value : Z) (shift : nat) : Z :=
+  Z.shiftl value (Z.of_nat shift) mod 2 ^ 64.
+
+Definition word_or_Z (x y : Z) : Z :=
+  Z.lor x y mod 2 ^ 64.
+
+Definition byteswap_word_Z (word : Z) : Z :=
+  word_or_Z (word_shl_Z (byte_at_Z word 0) 56)
+    (word_or_Z (word_shl_Z (byte_at_Z word 1) 48)
+      (word_or_Z (word_shl_Z (byte_at_Z word 2) 40)
+        (word_or_Z (word_shl_Z (byte_at_Z word 3) 32)
+          (word_or_Z (word_shl_Z (byte_at_Z word 4) 24)
+            (word_or_Z (word_shl_Z (byte_at_Z word 5) 16)
+              (word_or_Z (word_shl_Z (byte_at_Z word 6) 8)
+                (byte_at_Z word 7))))))).
+
+Definition byteswap_Z (value : Z) : Z :=
+  byteswap_word_Z (word_at_Z value 3) +
+  2 ^ 64 * (byteswap_word_Z (word_at_Z value 2) +
+  2 ^ 64 * (byteswap_word_Z (word_at_Z value 1) +
+  2 ^ 64 * byteswap_word_Z (word_at_Z value 0))).
+
 Module Make (B : Base.BaseSig) (U128 : Uint128Ops)
   (Bridge : UintWidenOps B.U64 U128)
   (Div : Division.DivisionSig(B)(U128)(Bridge))

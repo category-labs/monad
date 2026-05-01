@@ -1850,6 +1850,30 @@ Proof.
   exact Hrem.
 Qed.
 
+Theorem div_uint256_correct_div : forall x y quot,
+  0 < to_Z_uint256 y ->
+  div_uint256 x y = Some quot ->
+  to_Z_uint256 quot = to_Z_uint256 x / to_Z_uint256 y.
+Proof.
+  intros x y quot Hy Hdiv.
+  rewrite (div_uint256_correct x y quot Hy Hdiv).
+  apply Z.quot_div_nonneg.
+  - exact (proj1 (to_Z_uint256_bounds x)).
+  - exact Hy.
+Qed.
+
+Theorem mod_uint256_correct_mod : forall x y rem,
+  0 < to_Z_uint256 y ->
+  mod_uint256 x y = Some rem ->
+  to_Z_uint256 rem = to_Z_uint256 x mod to_Z_uint256 y.
+Proof.
+  intros x y rem Hy Hmod.
+  rewrite (mod_uint256_correct x y rem Hy Hmod).
+  apply Z.rem_mod_nonneg.
+  - exact (proj1 (to_Z_uint256_bounds x)).
+  - exact Hy.
+Qed.
+
 Theorem sdivrem_correct : forall u v r,
   to_Z_uint256 v <> 0 ->
   sdivrem u v = Some r ->

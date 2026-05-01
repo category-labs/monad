@@ -39,9 +39,28 @@ document:
   are historical sketches for the now-completed `addmod`, `mulmod`,
   and `sdivrem` proofs. Do not treat them as active proof debt.
 
-For immediate coverage work, the queue is therefore:
+The word "complete" below now distinguishes two levels:
 
-1. No active arithmetic or bit-manipulation coverage items remain.
+- Modeled + structural: the Rocq definition mirrors the C++ control
+  flow, and the proof records the concrete record/list shape.
+- Semantically proven: the theorem states the mathematical behavior in
+  terms of `to_Z_uint256`, `Z` arithmetic, or a local bit-level spec.
+
+For immediate semantic coverage work, the active queue is:
+
+1. Add unsigned division convenience corollaries stated with `Z.div`
+   and `Z.modulo`, derived from the existing `Z.quot` / `Z.rem`
+   theorems.
+2. Add whole-256-bit bitwise semantic theorems for `&`, `|`, `^`, and
+   `~`. Keep the existing word-list shape theorems as wiring checks.
+3. Add local bounded bit specifications over `Z.testbit` for
+   population count and trailing-zero count. Do not rely on
+   `Z.popcount`, which is not available in this Rocq environment.
+4. Prove `popcount` against the local bounded bit-counting spec.
+5. Prove `byteswap` against a semantic byte-reversal spec.
+6. Prove `countr_zero`, starting with the word-level zero iff
+   `countr_zero_word w = word_width <-> to_Z w = 0`, then the
+   least-set-bit spec, then the four-word lift.
 
 * Completed Proof Note: `signextend_correct`
 
@@ -280,24 +299,26 @@ loading, storing, or parsing helpers unless priorities change.
    proves the byte count is the ceiling of the significant bit count
    derived from `countl_zero_uint256`.
 
-4. `byteswap` is complete.
+4. `byteswap` is modeled and structurally proved.
 
    The model in [[theories/Arithmetic.v][theories/Arithmetic.v]] keeps the
    same reverse-word structure as the C++ initializer and uses a
    word-level helper for the `std::byteswap` operation.
    `byteswap_correct` states the 256-bit result as the reversed list of
-   word-level byte-swaps.
+   word-level byte-swaps. A semantic byte-reversal theorem is still
+   pending.
 
-5. Record-level bitwise wrappers are complete.
+5. Record-level bitwise wrappers are modeled and structurally proved.
 
    The wrappers in [[theories/Arithmetic.v][theories/Arithmetic.v]] mirror the
    C++ macro-generated `&`, `|`, and `^` operators and the unary `~`
    operator by applying the corresponding word operation at indices
    `0` through `3`. Their correctness theorems in
    [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]] state the
-   exact word-list result shape.
+   exact word-list result shape. Whole-value `to_Z_uint256` theorems
+   are still pending.
 
-6. `countr_zero` and `popcount` are complete.
+6. `countr_zero` and `popcount` are modeled and structurally proved.
 
    The models in [[theories/Arithmetic.v][theories/Arithmetic.v]] preserve the
    C++ low-to-high word order. `countr_zero` accumulates a word-level
@@ -305,7 +326,8 @@ loading, storing, or parsing helpers unless priorities change.
    all zero. `popcount` sums the four word-level population counts.
    The proof file records bounds for the word helpers, proves the
    `countr_zero` result contains the accumulated count as a `uint256`,
-   and states the exact four-word sum shape for `popcount`.
+   and states the exact four-word sum shape for `popcount`. Bit-level
+   semantic theorems are still pending.
 
 * Part 2: Lower-Level Extensions Needed For The Remaining Clean Ports
 
@@ -358,4 +380,12 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. serialization helpers, if priorities change
+1. Division convenience corollaries:
+   `div_uint256_correct_div`, `mod_uint256_correct_mod`.
+2. Whole-256-bit bitwise semantic theorems.
+3. Local bounded bit specs:
+   `bitcount_Z`, `countr_zero_Z`.
+4. `popcount` semantic theorems.
+5. `byteswap` semantic theorem.
+6. `countr_zero` semantic theorem, beginning with the word zero iff.
+7. Serialization helpers, if priorities change.

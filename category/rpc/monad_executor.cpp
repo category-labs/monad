@@ -115,14 +115,14 @@ namespace
     // creates its own LazyBlockHash instance.
     class LazyBlockHash : public BlockHashBuffer
     {
-        using BlockHashBuffer::N;
-
         mpt::RODb const &db_;
         uint64_t const n_;
         using Cache = static_lru_cache<uint64_t, bytes32_t>;
         mutable Cache blockhash_cache_;
 
     public:
+        using BlockHashBuffer::N;
+
         LazyBlockHash(mpt::RODb const &db, uint64_t const n)
             : db_{db}
             , n_{n}
@@ -154,6 +154,67 @@ namespace
                 to_bytes(keccak256(cursor_res.value().node->value()));
             auto const res = blockhash_cache_.insert(n, blockhash);
             return res.first->second->val;
+        }
+    };
+
+    // The `eth_simulateV1` method needs to be able to read hashes of both
+    // finalized and simulated blocks. This buffer piggybacks on lazy block hash
+    // buffer for finalized blocks, while allowing pushing of new simulated
+    // block hashes that can be read by subsequent simulated blocks.
+    class EthSimulateBlockHashBuffer : public LazyBlockHash
+    {
+        using BlockHashBuffer::N;
+
+        uint64_t const n_;
+        uint64_t i_;
+        std::vector<bytes32_t> simulated_block_hashes_;
+
+    public:
+        EthSimulateBlockHashBuffer(mpt::RODb const &db, uint64_t const n)
+            : LazyBlockHash(db, n + 1)
+            , n_{n}
+            , i_{0}
+            , simulated_block_hashes_(N, bytes32_t{})
+        {
+        }
+
+        ~EthSimulateBlockHashBuffer() override = default;
+
+        uint64_t n() const override
+        {
+            return n_ + i_ + 1;
+        }
+
+        bytes32_t const &get(uint64_t const n) const override
+        {
+            uint64_t const current_n = this->n();
+            MONAD_ASSERT_PRINTF(
+                n < current_n && n + N >= current_n,
+                "n_=%lu, n=%lu",
+                current_n,
+                n);
+
+            // Simulated blocks begin at n_ + 1. Querying a block number above
+            // n_ means we should read from the simulated-hash window.
+            if (n > n_) {
+                size_t const idx = static_cast<size_t>(n - n_ - 1);
+                MONAD_ASSERT_PRINTF(
+                    idx < i_,
+                    "missing simulated block hash: n=%lu, idx=%zu, i_=%lu",
+                    n,
+                    idx,
+                    i_);
+                return simulated_block_hashes_[idx];
+            }
+
+            return LazyBlockHash::get(n);
+        }
+
+        void push_back(bytes32_t const &simulated_block_hash)
+        {
+            MONAD_ASSERT_PRINTF(
+                i_ < N, "block hash buffer overflow: i_=%lu, N=%u", i_, N);
+            simulated_block_hashes_[i_++] = simulated_block_hash;
         }
     };
 
@@ -470,7 +531,7 @@ namespace
         output["mixHash"] = format_hex(header.prev_randao);
         output["nonce"] = std::format("0x0000000000000000");
         output["baseFeePerGas"] = std::format(
-            "0x{}", intx::to_string(header.base_fee_per_gas.value_or(0)));
+            "0x{}", intx::to_string(header.base_fee_per_gas.value_or(0), 16));
         {
             output["uncles"] = nlohmann::json::array();
             for (auto const &uncle : block.ommers) {
@@ -642,7 +703,8 @@ namespace
         bytes32_t const &block_id, std::vector<std::vector<Address>> senders,
         std::vector<std::vector<std::vector<std::optional<Address>>>>
             authorities,
-        TrieRODb &tdb, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+        TrieRODb &tdb, vm::VM &vm,
+        EthSimulateBlockHashBuffer &block_hash_buffer,
         fiber::FiberGroup &tx_exec_pool,
         std::span<monad_state_override const *const> state_overrides,
         std::span<monad_block_override const *const> block_overrides,
@@ -700,10 +762,11 @@ namespace
                                previous_header.number;
             // No-op for gap == 1.
             for (size_t i = 1; i < gap; ++i) {
+                uint64_t const parent_number = previous_header.number;
                 previous_header.number += 1;
                 previous_header.timestamp += DEFAULT_TIMESTAMP_INCREMENT;
                 previous_header.parent_hash =
-                    {}; // TODO(dhil): Need a simulation block hash buffer
+                    block_hash_buffer.get(parent_number);
                 Block const synthetic_block{
                     .header = previous_header,
                 };
@@ -732,12 +795,15 @@ namespace
                         state_tracers,
                         chain_context));
 
+                bytes32_t const synthetic_block_hash = to_bytes(keccak256(
+                    rlp::encode_block_header(synthetic_block.header)));
+                block_hash_buffer.push_back(synthetic_block_hash);
+
                 save_eth_simulate_log_entry(
                     synthetic_block,
                     receipts,
                     empty_call_frames,
-                    {}, /* NOTE(dhil): Synthetic blocks do not have any
-                          transactions, hence there can be no log emissions */
+                    synthetic_block_hash,
                     {},
                     result);
 
@@ -753,8 +819,7 @@ namespace
 
             // Construct the block header.
             BlockHeader const current_header{
-                .parent_hash =
-                    {}, // TODO(dhil): Need a simulation block hash buffer
+                .parent_hash = block_hash_buffer.get(previous_header.number),
                 .prev_randao = bo->prev_randao.value_or(bytes32_t{}),
                 // NOTE(dhil): The possible increment by one is correct by
                 // construction of the synthetic blocks.
@@ -857,6 +922,7 @@ namespace
 
             bytes32_t const block_hash =
                 to_bytes(keccak256(rlp::encode_block_header(block.header)));
+            block_hash_buffer.push_back(block_hash);
 
             std::vector<bytes32_t> txn_hashes{};
             txn_hashes.reserve(block.transactions.size());
@@ -1958,7 +2024,8 @@ struct monad_executor
                             MONAD_ASSERT(false);
                         }();
 
-                        LazyBlockHash const block_hash_buffer{db, block_number};
+                        EthSimulateBlockHashBuffer block_hash_buffer{
+                            db, block_number};
                         TrieRODb tdb{db};
 
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||

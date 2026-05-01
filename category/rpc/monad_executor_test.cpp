@@ -6358,3 +6358,169 @@ TEST_F(EthCallFixture, eth_simulate_v1_time_travel)
     }
     monad_executor_destroy(executor);
 }
+
+// This test checks that when we read the blockhash of real and simulated blocks
+// during an eth_simulateV1 call.
+TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
+{
+    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address blockhash_contract =
+        0x000000000000000000000000000000000000b10c_address;
+
+    using namespace monad::vm::utils;
+    auto const eb = evm_as::latest()
+                        .push(1)
+                        .number()
+                        .sub()
+                        .blockhash()
+                        .push(0)
+                        .mstore()
+                        .push(32)
+                        .push(0)
+                        .return_();
+
+    ASSERT_TRUE(evm_as::validate(eb));
+
+    std::vector<uint8_t> code{};
+    evm_as::compile(eb, code);
+    byte_string_view const code_view{code.data(), code.size()};
+    auto const code_hash = to_bytes(keccak256(code_view));
+    auto const icode = vm::make_shared_intercode(code_view);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {blockhash_contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = code_hash, .nonce = 0}}}}},
+        Code{{code_hash, icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .to = blockhash_contract,
+    };
+
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender),
+        rlp::encode_list2(enc_sender),
+        rlp::encode_list2(enc_sender)));
+
+    auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_tx),
+        rlp::encode_list2(enc_tx),
+        rlp::encode_list2(enc_tx)));
+
+    BlockHeader const header{.number = 255, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    std::vector<monad_state_override *> so = {
+        monad_state_override_create(),
+        monad_state_override_create(),
+        monad_state_override_create()};
+    std::vector<monad_block_override *> bo = {
+        monad_block_override_create(),
+        monad_block_override_create(),
+        monad_block_override_create()};
+    bo[2]->number = 511; // forces the creation of 254 synthetic blocks
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        so.data(),
+        so.size(),
+        bo.data(),
+        bo.size(),
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    // Check the first two user-defined blocks.
+    ASSERT_EQ(output.size(), 256);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+
+    BlockHeader const finalized_header = tdb.read_eth_header();
+    ASSERT_EQ(finalized_header.number, 255);
+    auto const expected_base_hash = std::format(
+        "0x{}",
+        to_hex(
+            to_bytes(keccak256(rlp::encode_block_header(finalized_header)))));
+    EXPECT_EQ(output[0]["parentHash"], expected_base_hash);
+    EXPECT_EQ(output[0]["calls"][0]["returnData"], expected_base_hash);
+
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[1]["parentHash"], output[0]["hash"]);
+    EXPECT_EQ(output[1]["calls"][0]["returnData"], output[0]["hash"]);
+    EXPECT_NE(output[1]["hash"], output[0]["hash"]);
+
+    // Check the synthetic blocks
+    for (size_t i = 2; i < output.size() - 1; ++i) {
+        ASSERT_EQ(output[i]["calls"].size(), 0);
+        EXPECT_EQ(output[i]["parentHash"], output[i - 1]["hash"]);
+        EXPECT_NE(output[i]["hash"], output[i - 1]["hash"]);
+    }
+
+    // Check the last user-defined block
+    ASSERT_EQ(output[output.size() - 1]["calls"].size(), 1);
+    EXPECT_EQ(output[output.size() - 1]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(
+        output[output.size() - 1]["parentHash"],
+        output[output.size() - 2]["hash"]);
+    EXPECT_EQ(
+        output[output.size() - 1]["calls"][0]["returnData"],
+        output[output.size() - 2]["hash"]);
+    EXPECT_NE(
+        output[output.size() - 1]["hash"], output[output.size() - 2]["hash"]);
+
+    for (auto *b : bo) {
+        monad_block_override_destroy(b);
+    }
+    for (auto *s : so) {
+        monad_state_override_destroy(s);
+    }
+    monad_executor_destroy(executor);
+}

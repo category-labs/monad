@@ -28,16 +28,20 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
 #include <category/vm/code.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <memory>
 #include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
-void load_genesis_state(GenesisState const &genesis, TrieDb &db)
+void load_genesis_state(
+    GenesisState const &genesis, TrieDb &db, bool const page_encoded)
 {
     MONAD_ASSERT(genesis.alloc);
     MONAD_ASSERT(
@@ -86,7 +90,17 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         deltas.emplace(addr, state_delta);
     }
 
-    CommitBuilder builder(genesis.header.number);
+    std::unique_ptr<CommitBuilder> builder_ptr;
+    std::optional<PageStorageBroker> page_broker;
+    if (page_encoded) {
+        page_broker.emplace(db);
+        builder_ptr = std::make_unique<MonadCommitBuilder>(
+            genesis.header.number, *page_broker);
+    }
+    else {
+        builder_ptr = std::make_unique<CommitBuilder>(genesis.header.number);
+    }
+    CommitBuilder &builder = *builder_ptr;
     builder.add_state_deltas(deltas)
         .add_code(code_map)
         .add_receipts(std::vector<Receipt>{})

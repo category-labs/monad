@@ -331,9 +331,26 @@ try {
         }
         else if (triedb.get_root() == nullptr) {
             MONAD_ASSERT(statesync.empty());
+            // Genesis loading writes to a single primary db.
+            MONAD_ASSERT(secondary_db_path.empty());
             LOG_INFO("loading from genesis");
             GenesisState const genesis_state = chain->get_genesis_state();
-            load_genesis_state(genesis_state, triedb);
+            bool const page_encoded = [&]() {
+                auto const *const monad_chain =
+                    dynamic_cast<MonadChain const *>(chain.get());
+                return monad_chain != nullptr &&
+                       monad_chain->get_monad_revision(
+                           genesis_state.header.timestamp) >= MONAD_NEXT;
+            }();
+            if (page_encoded) {
+                db.reset_state_machine(
+                    db_in_memory
+                        ? std::unique_ptr<mpt::StateMachine>{std::make_unique<
+                              MonadInMemoryMachine>()}
+                        : std::unique_ptr<mpt::StateMachine>{
+                              std::make_unique<MonadOnDiskMachine>()});
+            }
+            load_genesis_state(genesis_state, triedb, page_encoded);
         }
         return triedb.get_block_number();
     }();

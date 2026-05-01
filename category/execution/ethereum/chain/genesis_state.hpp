@@ -28,6 +28,12 @@ struct GenesisState
     char const *const alloc{nullptr};
 };
 
-void load_genesis_state(GenesisState const &, TrieDb &);
+// Loads genesis state into a single TrieDb. When `page_encoded` is true the
+// commit goes through MonadCommitBuilder (post-fork page layout); otherwise
+// it goes through the slot-encoded CommitBuilder. The caller is responsible
+// for ensuring the underlying mpt::Db is configured with the matching state
+// machine before calling.
+void load_genesis_state(
+    GenesisState const &, TrieDb &, bool page_encoded = false);
 
 MONAD_NAMESPACE_END

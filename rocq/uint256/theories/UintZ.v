@@ -8,12 +8,13 @@
     via Z arithmetic and all specs follow from standard library lemmas.
 
     This file is not performance-relevant — it exists solely to audit
-    that the axioms used in RuntimeMulProofs.v and DivisionProofs.v
-    do not introduce unsoundness. *)
+    that the axioms used in RuntimeMulProofs.v, DivisionProofs.v, and
+    BarrettProofs.v do not introduce unsoundness. *)
 
 From Stdlib Require Import ZArith PArith Bool Lia List.
 From Stdlib Require Import DoubleType.
 From Uint256 Require Import Uint RuntimeMulProofs DivisionProofs.
+From Uint256 Require Import Arithmetic Barrett BarrettProofs.
 
 #[local] Open Scope Z_scope.
 
@@ -973,3 +974,28 @@ Module DivisionConsistency.
   (** This should print no assumptions once all Admitted above are filled *)
   (* Print Assumptions P.<main_theorem>. *)
 End DivisionConsistency.
+
+(** Barrett proofs with no axioms *)
+Module BarrettConsistency.
+  Module B := Base.MakeProof(ZUint64).
+  Module Div := Division.Make(B)(ZUint128)(ZBridge).
+  Module RM := RuntimeMul.MakeProof(B).
+  Module WL := WordsLemmas.MakeProofs(B).
+  Module RMP := RuntimeMulProofs.MakeProofs(B)(RM)(WL).
+  Module DP := DivisionProofs.MakeProofs(B)(ZUint128)(ZBridge)(Div)(WL).
+  Module Arith := Arithmetic.Make(B)(ZUint128)(ZBridge)(Div)(RM).
+  Module Bar := Barrett.Make(B)(ZUint128)(ZBridge)(Div)(RM)(Arith).
+  Module P := BarrettProofs.MakeProofs(B)(ZUint128)(ZBridge)(WL)(Div)(DP)
+    (RM)(RMP)(Arith)(Bar).
+  Include P.
+
+  Print Assumptions udivrem_correct.
+  Print Assumptions signed_wrapper_correct.
+  Print Assumptions addmod_correct.
+  Print Assumptions mulmod_correct.
+  Print Assumptions mulmod_const_correct.
+  Print Assumptions udivrem_reciprocal_correct.
+  Print Assumptions addmod_reciprocal_correct.
+  Print Assumptions mulmod_reciprocal_correct.
+  Print Assumptions mulmod_const_reciprocal_correct.
+End BarrettConsistency.

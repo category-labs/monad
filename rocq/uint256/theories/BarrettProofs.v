@@ -4773,6 +4773,600 @@ Proof.
     lia.
 Qed.
 
+Lemma to_Z_of_nat_word_small : forall n,
+  Z.of_nat n < base Bar.U64.width ->
+  to_Z (Bar.of_nat_word n) = Z.of_nat n.
+Proof.
+  induction n as [|n IH]; intro Hn.
+  - cbn [Bar.of_nat_word]. rewrite spec_zero. reflexivity.
+  - cbn [Bar.of_nat_word]. rewrite spec_add, IH, spec_one.
+    + rewrite Z.mod_small; lia.
+    + lia.
+Qed.
+
+Lemma to_Z_uint256_of_nat_small : forall n,
+  Z.of_nat n < base Bar.U64.width ->
+  to_Z_uint256 (Bar.uint256_of_nat n) = Z.of_nat n.
+Proof.
+  intros n Hn.
+  unfold to_Z_uint256, Bar.uint256_of_nat.
+  cbn [Bar.uint256_to_words AP.w0 AP.w1 AP.w2 AP.w3 to_Z_words].
+  rewrite to_Z_of_nat_word_small by exact Hn.
+  rewrite !spec_zero.
+  ring.
+Qed.
+
+Lemma shift_left_one_uint256_nat : forall n,
+  (n <= 256)%nat ->
+  to_Z_uint256
+    (Arith.shift_left_uint256 Arith.one_uint256
+       (Bar.uint256_of_nat n)) =
+  if Nat.eqb n 256 then 0 else 2 ^ Z.of_nat n.
+Proof.
+  intros n Hn.
+  change (to_Z_uint256
+    (Arith.shift_left_uint256 Arith.one_uint256
+       (Bar.uint256_of_nat n))) with
+    (AP.to_Z_uint256
+      (AP.shift_left_uint256 AP.one_uint256 (Bar.uint256_of_nat n))).
+  rewrite AP.shift_left_uint256_correct.
+  change (AP.to_Z_uint256 (Bar.uint256_of_nat n)) with
+    (to_Z_uint256 (Bar.uint256_of_nat n)).
+  rewrite to_Z_uint256_of_nat_small.
+  2: { unfold base. rewrite Bar.U64.width_is_64. cbn. lia. }
+  rewrite AP.to_Z_one_uint256.
+  assert (Hbase : (Z.of_nat n <? base Bar.U64.width) = true).
+  { apply Z.ltb_lt. unfold base. rewrite Bar.U64.width_is_64. cbn. lia. }
+  rewrite Hbase.
+  destruct (Nat.eqb_spec n 256) as [->|Hneq].
+  - replace (Z.of_nat 256 <? 256) with false by reflexivity.
+    reflexivity.
+  - replace (Z.of_nat n <? 256) with true.
+    + rewrite Z.mul_1_l.
+      assert (Hmod256 : AP.modulus256 = 2 ^ 256).
+      { unfold AP.modulus256, modulus_words, base.
+        rewrite Bar.U64.width_is_64. cbn. reflexivity. }
+      rewrite Hmod256.
+      rewrite Z.mod_small.
+      * reflexivity.
+      * split; [apply Z.pow_nonneg; lia|].
+        apply Z.pow_lt_mono_r; lia.
+    + symmetry. apply Z.ltb_lt. lia.
+Qed.
+
+Lemma reciprocal_for_range_min_value : forall min_bits cutoff_bits
+    input_bits0 multiplier_bits0,
+  (min_bits < 256)%nat ->
+  to_Z_uint256
+    (Bar.min_denominator
+       (Bar.reciprocal_for_range min_bits cutoff_bits input_bits0
+          multiplier_bits0)) = 2 ^ Z.of_nat min_bits.
+Proof.
+  intros min_bits cutoff_bits input_bits0 multiplier_bits0 Hmin.
+  unfold Bar.reciprocal_for_range. cbn [Bar.min_denominator].
+  rewrite shift_left_one_uint256_nat by lia.
+  replace (Nat.eqb min_bits 256) with false by
+    (symmetry; apply Nat.eqb_neq; lia).
+  reflexivity.
+Qed.
+
+Lemma reciprocal_for_range_max_value : forall min_bits cutoff_bits
+    input_bits0 multiplier_bits0,
+  (0 < cutoff_bits <= 256)%nat ->
+  to_Z_uint256
+    (Bar.max_denominator
+       (Bar.reciprocal_for_range min_bits cutoff_bits input_bits0
+          multiplier_bits0)) = 2 ^ Z.of_nat cutoff_bits - 1.
+Proof.
+  intros min_bits cutoff_bits input_bits0 multiplier_bits0 Hcut.
+  unfold Bar.reciprocal_for_range. cbn [Bar.max_denominator].
+  change (to_Z_uint256
+    (Arith.value256
+       (Arith.subb
+          (Arith.shift_left_uint256 Arith.one_uint256
+             (Bar.uint256_of_nat cutoff_bits))
+          Arith.one_uint256))) with
+    (AP.to_Z_uint256
+      (AP.value256
+        (AP.subb
+          (AP.shift_left_uint256 AP.one_uint256
+             (Bar.uint256_of_nat cutoff_bits))
+          AP.one_uint256))).
+  rewrite AP.subb_value_correct.
+  change (AP.to_Z_uint256
+    (AP.shift_left_uint256 AP.one_uint256
+       (Bar.uint256_of_nat cutoff_bits))) with
+    (to_Z_uint256
+      (Arith.shift_left_uint256 Arith.one_uint256
+        (Bar.uint256_of_nat cutoff_bits))).
+  rewrite shift_left_one_uint256_nat by lia.
+  rewrite AP.to_Z_one_uint256.
+  assert (Hmod256 : AP.modulus256 = 2 ^ 256).
+  { unfold AP.modulus256, modulus_words, base.
+    rewrite Bar.U64.width_is_64. cbn. reflexivity. }
+  rewrite Hmod256.
+  destruct (Nat.eqb_spec cutoff_bits 256) as [->|Hneq].
+  - replace (0 - 1) with (-1) by ring.
+    replace (-1) with ((2 ^ 256 - 1) + (-1) * 2 ^ 256) by ring.
+    rewrite Z_mod_plus_full.
+    rewrite Z.mod_small.
+    + change (Z.of_nat 256) with 256. ring.
+    + change (Z.of_nat 256) with 256.
+      pose proof (Z.pow_pos_nonneg 2 256 ltac:(lia)); lia.
+  - rewrite Z.mod_small.
+    + ring.
+    + split.
+      * pose proof
+          (Z.pow_pos_nonneg 2 (Z.of_nat cutoff_bits) ltac:(lia)).
+        lia.
+      * assert (Z.of_nat cutoff_bits < 256) by lia.
+        assert (2 ^ Z.of_nat cutoff_bits < 2 ^ 256)
+          by (apply Z.pow_lt_mono_r; lia).
+        lia.
+Qed.
+
+Lemma reciprocal_for_range_admissible : forall min_bits cutoff_bits
+    input_bits0 multiplier_bits0,
+  (0 < min_bits)%nat ->
+  (min_bits < cutoff_bits)%nat ->
+  (cutoff_bits <= 256)%nat ->
+  (0 < input_bits0)%nat ->
+  params_admissible
+    (Bar.reciprocal_for_range min_bits cutoff_bits input_bits0
+       multiplier_bits0).
+Proof.
+  intros min_bits cutoff_bits input_bits0 multiplier_bits0.
+  intros Hmin Hlt Hcut Hinput.
+  unfold params_admissible.
+  rewrite reciprocal_for_range_min_value by lia.
+  rewrite reciprocal_for_range_max_value by lia.
+  repeat split.
+  - apply Z.pow_pos_nonneg; lia.
+  - assert (2 ^ Z.of_nat min_bits < 2 ^ Z.of_nat cutoff_bits)
+      by (apply Z.pow_lt_mono_r; lia).
+    lia.
+  - exact Hinput.
+Qed.
+
+Lemma reciprocal_for_range_min_denominator_bits : forall min_bits cutoff_bits
+    input_bits0 multiplier_bits0,
+  (0 < min_bits)%nat ->
+  (min_bits < 256)%nat ->
+  Bar.min_denominator_bits
+    (Bar.reciprocal_for_range min_bits cutoff_bits input_bits0
+       multiplier_bits0) = S min_bits.
+Proof.
+  intros min_bits cutoff_bits input_bits0 multiplier_bits0 Hmin Hlt.
+  unfold Bar.min_denominator_bits, Bar.bit_width_uint256.
+  set (ws := Bar.uint256_to_words
+    (Bar.min_denominator
+      (Bar.reciprocal_for_range min_bits cutoff_bits input_bits0
+        multiplier_bits0))).
+  pose proof (bit_width_words_lower_bound ws) as Hlower.
+  pose proof (bit_width_words_upper_bound ws) as Hupper.
+  assert (Hvalue : to_Z_words ws = 2 ^ Z.of_nat min_bits).
+  { subst ws.
+    change (to_Z_words (Bar.uint256_to_words
+      (Bar.min_denominator
+        (Bar.reciprocal_for_range min_bits cutoff_bits input_bits0
+          multiplier_bits0)))) with
+      (to_Z_uint256
+        (Bar.min_denominator
+          (Bar.reciprocal_for_range min_bits cutoff_bits input_bits0
+            multiplier_bits0))).
+    rewrite reciprocal_for_range_min_value by lia. reflexivity. }
+  rewrite Hvalue in Hlower, Hupper.
+  set (bw := Bar.bit_width_words ws) in *.
+  assert (Hbw_pos : (0 < bw)%nat).
+  { destruct bw as [|bw']; [cbn in Hupper; lia|lia]. }
+  assert (Hle : (bw - 1 <= min_bits)%nat).
+  { apply Nat2Z.inj_le.
+    apply (proj2 (Z.pow_le_mono_r_iff 2 (Z.of_nat (bw - 1))
+      (Z.of_nat min_bits) ltac:(lia) ltac:(lia))).
+    apply Hlower. apply Z.pow_pos_nonneg; lia. }
+  assert (Hgt : (min_bits < bw)%nat).
+  { apply Nat2Z.inj_lt.
+    apply (proj2 (Z.pow_lt_mono_r_iff 2 (Z.of_nat min_bits)
+      (Z.of_nat bw) ltac:(lia) ltac:(lia))).
+    exact Hupper. }
+  lia.
+Qed.
+
+Ltac solve_reciprocal_range_admissible :=
+  unfold Bar.udivrem_reciprocal_1_65, Bar.udivrem_reciprocal_65_129,
+    Bar.udivrem_reciprocal_129_193, Bar.udivrem_reciprocal_193_256,
+    Bar.udivrem_reciprocal, Bar.udivrem_reciprocal_for_range,
+    Bar.addmod_reciprocal_1_65, Bar.addmod_reciprocal_65_129,
+    Bar.addmod_reciprocal_129_193, Bar.addmod_reciprocal_193_256,
+    Bar.addmod_reciprocal, Bar.addmod_reciprocal_for_range,
+    Bar.mulmod_reciprocal_1_65, Bar.mulmod_reciprocal_65_129,
+    Bar.mulmod_reciprocal_129_193, Bar.mulmod_reciprocal_193_256,
+    Bar.mulmod_reciprocal, Bar.mulmod_reciprocal_for_range,
+    Bar.mulmod_const_reciprocal_1_65,
+    Bar.mulmod_const_reciprocal_65_129,
+    Bar.mulmod_const_reciprocal_129_193,
+    Bar.mulmod_const_reciprocal_193_256,
+    Bar.mulmod_const_reciprocal,
+    Bar.mulmod_const_reciprocal_for_range,
+    Bar.reciprocal_interval_0, Bar.reciprocal_interval_1,
+    Bar.reciprocal_interval_2;
+  apply reciprocal_for_range_admissible; lia.
+
+Ltac solve_reciprocal_input :=
+  unfold Bar.udivrem_reciprocal_1_65, Bar.udivrem_reciprocal_65_129,
+    Bar.udivrem_reciprocal_129_193, Bar.udivrem_reciprocal_193_256,
+    Bar.udivrem_reciprocal, Bar.udivrem_reciprocal_for_range,
+    Bar.addmod_reciprocal_1_65, Bar.addmod_reciprocal_65_129,
+    Bar.addmod_reciprocal_129_193, Bar.addmod_reciprocal_193_256,
+    Bar.addmod_reciprocal, Bar.addmod_reciprocal_for_range,
+    Bar.mulmod_reciprocal_1_65, Bar.mulmod_reciprocal_65_129,
+    Bar.mulmod_reciprocal_129_193, Bar.mulmod_reciprocal_193_256,
+    Bar.mulmod_reciprocal, Bar.mulmod_reciprocal_for_range,
+    Bar.mulmod_const_reciprocal_1_65,
+    Bar.mulmod_const_reciprocal_65_129,
+    Bar.mulmod_const_reciprocal_129_193,
+    Bar.mulmod_const_reciprocal_193_256,
+    Bar.mulmod_const_reciprocal,
+    Bar.mulmod_const_reciprocal_for_range;
+  cbn; lia.
+
+Ltac solve_reciprocal_post_product_bit_shift :=
+  unfold Bar.udivrem_reciprocal_1_65, Bar.udivrem_reciprocal_65_129,
+    Bar.udivrem_reciprocal_129_193, Bar.udivrem_reciprocal_193_256,
+    Bar.udivrem_reciprocal, Bar.udivrem_reciprocal_for_range,
+    Bar.addmod_reciprocal_1_65, Bar.addmod_reciprocal_65_129,
+    Bar.addmod_reciprocal_129_193, Bar.addmod_reciprocal_193_256,
+    Bar.addmod_reciprocal, Bar.addmod_reciprocal_for_range,
+    Bar.mulmod_reciprocal_1_65, Bar.mulmod_reciprocal_65_129,
+    Bar.mulmod_reciprocal_129_193, Bar.mulmod_reciprocal_193_256,
+    Bar.mulmod_reciprocal, Bar.mulmod_reciprocal_for_range,
+    Bar.mulmod_const_reciprocal_1_65,
+    Bar.mulmod_const_reciprocal_65_129,
+    Bar.mulmod_const_reciprocal_129_193,
+    Bar.mulmod_const_reciprocal_193_256,
+    Bar.mulmod_const_reciprocal,
+    Bar.mulmod_const_reciprocal_for_range,
+    Bar.reciprocal_interval_0, Bar.reciprocal_interval_1,
+    Bar.reciprocal_interval_2;
+  unfold Bar.post_product_bit_shift, Bar.post_product_shift,
+    Bar.pre_product_shift, Bar.bit_shift, Bar.shift;
+  rewrite reciprocal_for_range_min_denominator_bits by lia;
+  unfold Bar.word_width; rewrite Bar.U64.width_is_64;
+  vm_compute; reflexivity.
+
+Ltac solve_reciprocal_bit_shift :=
+  unfold Bar.mulmod_const_reciprocal_1_65,
+    Bar.mulmod_const_reciprocal_65_129,
+    Bar.mulmod_const_reciprocal_129_193,
+    Bar.mulmod_const_reciprocal_193_256,
+    Bar.mulmod_const_reciprocal,
+    Bar.mulmod_const_reciprocal_for_range;
+  unfold Bar.bit_shift, Bar.shift, Bar.word_width;
+  rewrite Bar.U64.width_is_64;
+  vm_compute; reflexivity.
+
+Corollary udivrem_reciprocal_1_65_correct : forall d u,
+  Bar.valid_denominator Bar.udivrem_reciprocal_1_65 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.udivrem_reciprocal_1_65 d in
+  to_Z_uint256 u =
+    to_Z_words (Div.ud_quot (Bar.udivrem u rec)) * denominator_Z rec +
+    to_Z_words (Div.ud_rem (Bar.udivrem u rec)) /\
+  0 <= to_Z_words (Div.ud_rem (Bar.udivrem u rec)) < denominator_Z rec.
+Proof.
+  intros d u Hvalid.
+  apply udivrem_correct.
+  - solve_reciprocal_range_admissible.
+  - reflexivity.
+  - reflexivity.
+  - exact Hvalid.
+Qed.
+
+Corollary udivrem_reciprocal_65_129_correct : forall d u,
+  Bar.valid_denominator Bar.udivrem_reciprocal_65_129 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.udivrem_reciprocal_65_129 d in
+  to_Z_uint256 u =
+    to_Z_words (Div.ud_quot (Bar.udivrem u rec)) * denominator_Z rec +
+    to_Z_words (Div.ud_rem (Bar.udivrem u rec)) /\
+  0 <= to_Z_words (Div.ud_rem (Bar.udivrem u rec)) < denominator_Z rec.
+Proof.
+  intros d u Hvalid.
+  apply udivrem_correct.
+  - solve_reciprocal_range_admissible.
+  - reflexivity.
+  - reflexivity.
+  - exact Hvalid.
+Qed.
+
+Corollary udivrem_reciprocal_129_193_correct : forall d u,
+  Bar.valid_denominator Bar.udivrem_reciprocal_129_193 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.udivrem_reciprocal_129_193 d in
+  to_Z_uint256 u =
+    to_Z_words (Div.ud_quot (Bar.udivrem u rec)) * denominator_Z rec +
+    to_Z_words (Div.ud_rem (Bar.udivrem u rec)) /\
+  0 <= to_Z_words (Div.ud_rem (Bar.udivrem u rec)) < denominator_Z rec.
+Proof.
+  intros d u Hvalid.
+  apply udivrem_correct.
+  - solve_reciprocal_range_admissible.
+  - reflexivity.
+  - reflexivity.
+  - exact Hvalid.
+Qed.
+
+Corollary udivrem_reciprocal_193_256_correct : forall d u,
+  Bar.valid_denominator Bar.udivrem_reciprocal_193_256 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.udivrem_reciprocal_193_256 d in
+  to_Z_uint256 u =
+    to_Z_words (Div.ud_quot (Bar.udivrem u rec)) * denominator_Z rec +
+    to_Z_words (Div.ud_rem (Bar.udivrem u rec)) /\
+  0 <= to_Z_words (Div.ud_rem (Bar.udivrem u rec)) < denominator_Z rec.
+Proof.
+  intros d u Hvalid.
+  apply udivrem_correct.
+  - solve_reciprocal_range_admissible.
+  - reflexivity.
+  - reflexivity.
+  - exact Hvalid.
+Qed.
+
+Corollary udivrem_reciprocal_correct : forall d u,
+  Bar.valid_denominator Bar.udivrem_reciprocal d = true ->
+  let rec := Bar.reciprocal_of_denominator Bar.udivrem_reciprocal d in
+  to_Z_uint256 u =
+    to_Z_words (Div.ud_quot (Bar.udivrem u rec)) * denominator_Z rec +
+    to_Z_words (Div.ud_rem (Bar.udivrem u rec)) /\
+  0 <= to_Z_words (Div.ud_rem (Bar.udivrem u rec)) < denominator_Z rec.
+Proof.
+  intros d u Hvalid.
+  apply udivrem_correct.
+  - solve_reciprocal_range_admissible.
+  - reflexivity.
+  - reflexivity.
+  - exact Hvalid.
+Qed.
+
+Corollary addmod_reciprocal_1_65_correct : forall d x y,
+  Bar.valid_denominator Bar.addmod_reciprocal_1_65 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.addmod_reciprocal_1_65 d in
+  to_Z_uint256 (Bar.addmod x y rec) =
+    Z.modulo (to_Z_uint256 x + to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply addmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary addmod_reciprocal_65_129_correct : forall d x y,
+  Bar.valid_denominator Bar.addmod_reciprocal_65_129 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.addmod_reciprocal_65_129 d in
+  to_Z_uint256 (Bar.addmod x y rec) =
+    Z.modulo (to_Z_uint256 x + to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply addmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary addmod_reciprocal_129_193_correct : forall d x y,
+  Bar.valid_denominator Bar.addmod_reciprocal_129_193 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.addmod_reciprocal_129_193 d in
+  to_Z_uint256 (Bar.addmod x y rec) =
+    Z.modulo (to_Z_uint256 x + to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply addmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary addmod_reciprocal_193_256_correct : forall d x y,
+  Bar.valid_denominator Bar.addmod_reciprocal_193_256 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.addmod_reciprocal_193_256 d in
+  to_Z_uint256 (Bar.addmod x y rec) =
+    Z.modulo (to_Z_uint256 x + to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply addmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary addmod_reciprocal_correct : forall d x y,
+  Bar.valid_denominator Bar.addmod_reciprocal d = true ->
+  let rec := Bar.reciprocal_of_denominator Bar.addmod_reciprocal d in
+  to_Z_uint256 (Bar.addmod x y rec) =
+    Z.modulo (to_Z_uint256 x + to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply addmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_reciprocal_1_65_correct : forall d x y,
+  Bar.valid_denominator Bar.mulmod_reciprocal_1_65 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.mulmod_reciprocal_1_65 d in
+  to_Z_uint256 (Bar.mulmod x y rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply mulmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_reciprocal_65_129_correct : forall d x y,
+  Bar.valid_denominator Bar.mulmod_reciprocal_65_129 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.mulmod_reciprocal_65_129 d in
+  to_Z_uint256 (Bar.mulmod x y rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply mulmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_reciprocal_129_193_correct : forall d x y,
+  Bar.valid_denominator Bar.mulmod_reciprocal_129_193 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.mulmod_reciprocal_129_193 d in
+  to_Z_uint256 (Bar.mulmod x y rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply mulmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_reciprocal_193_256_correct : forall d x y,
+  Bar.valid_denominator Bar.mulmod_reciprocal_193_256 d = true ->
+  let rec := Bar.reciprocal_of_denominator
+    Bar.mulmod_reciprocal_193_256 d in
+  to_Z_uint256 (Bar.mulmod x y rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply mulmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_reciprocal_correct : forall d x y,
+  Bar.valid_denominator Bar.mulmod_reciprocal d = true ->
+  let rec := Bar.reciprocal_of_denominator Bar.mulmod_reciprocal d in
+  to_Z_uint256 (Bar.mulmod x y rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros d x y Hvalid.
+  apply mulmod_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - reflexivity.
+  - solve_reciprocal_post_product_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_const_reciprocal_1_65_correct : forall y d x,
+  Bar.valid_denominator Bar.mulmod_const_reciprocal_1_65 d = true ->
+  let rec := Bar.reciprocal_of_multiplier
+    Bar.mulmod_const_reciprocal_1_65 y d in
+  to_Z_uint256 (Bar.mulmod_const x rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros y d x Hvalid.
+  apply mulmod_const_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - solve_reciprocal_input.
+  - solve_reciprocal_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_const_reciprocal_65_129_correct : forall y d x,
+  Bar.valid_denominator Bar.mulmod_const_reciprocal_65_129 d = true ->
+  let rec := Bar.reciprocal_of_multiplier
+    Bar.mulmod_const_reciprocal_65_129 y d in
+  to_Z_uint256 (Bar.mulmod_const x rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros y d x Hvalid.
+  apply mulmod_const_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - solve_reciprocal_input.
+  - solve_reciprocal_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_const_reciprocal_129_193_correct : forall y d x,
+  Bar.valid_denominator Bar.mulmod_const_reciprocal_129_193 d = true ->
+  let rec := Bar.reciprocal_of_multiplier
+    Bar.mulmod_const_reciprocal_129_193 y d in
+  to_Z_uint256 (Bar.mulmod_const x rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros y d x Hvalid.
+  apply mulmod_const_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - solve_reciprocal_input.
+  - solve_reciprocal_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_const_reciprocal_193_256_correct : forall y d x,
+  Bar.valid_denominator Bar.mulmod_const_reciprocal_193_256 d = true ->
+  let rec := Bar.reciprocal_of_multiplier
+    Bar.mulmod_const_reciprocal_193_256 y d in
+  to_Z_uint256 (Bar.mulmod_const x rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros y d x Hvalid.
+  apply mulmod_const_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - solve_reciprocal_input.
+  - solve_reciprocal_bit_shift.
+  - exact Hvalid.
+Qed.
+
+Corollary mulmod_const_reciprocal_correct : forall y d x,
+  Bar.valid_denominator Bar.mulmod_const_reciprocal d = true ->
+  let rec := Bar.reciprocal_of_multiplier
+    Bar.mulmod_const_reciprocal y d in
+  to_Z_uint256 (Bar.mulmod_const x rec) =
+    Z.modulo (to_Z_uint256 x * to_Z_uint256 y) (denominator_Z rec).
+Proof.
+  intros y d x Hvalid.
+  apply mulmod_const_correct.
+  - solve_reciprocal_range_admissible.
+  - solve_reciprocal_input.
+  - solve_reciprocal_input.
+  - solve_reciprocal_bit_shift.
+  - exact Hvalid.
+Qed.
+
 End MakeProofs.
 
 Module Type BarrettProofsSig (B : Base.BaseProofSig) (U128 : Uint128)

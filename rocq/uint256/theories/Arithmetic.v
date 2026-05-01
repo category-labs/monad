@@ -40,6 +40,23 @@ Definition byte_Z (byte_index value : Z) : Z :=
   then (value / 2 ^ (8 * (31 - byte_index))) mod 256
   else 0.
 
+Fixpoint bitcount_Z (z : Z) (width : nat) : nat :=
+  match width with
+  | O => O
+  | S width' =>
+      (if Z.testbit z 0 then S else fun count => count)
+        (bitcount_Z (Z.shiftr z 1) width')
+  end.
+
+Fixpoint countr_zero_Z (z : Z) (width : nat) : nat :=
+  match width with
+  | O => O
+  | S width' =>
+      if Z.testbit z 0
+      then O
+      else S (countr_zero_Z (Z.shiftr z 1) width')
+  end.
+
 Module Make (B : Base.BaseSig) (U128 : Uint128Ops)
   (Bridge : UintWidenOps B.U64 U128)
   (Div : Division.DivisionSig(B)(U128)(Bridge))

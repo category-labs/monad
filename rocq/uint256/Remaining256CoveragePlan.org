@@ -48,15 +48,9 @@ The word "complete" below now distinguishes two levels:
 
 For immediate semantic coverage work, the active queue is:
 
-1. Add unsigned division convenience corollaries stated with `Z.div`
-   and `Z.modulo`, derived from the existing `Z.quot` / `Z.rem`
-   theorems.
-2. Add local bounded bit specifications over `Z.testbit` for
-   population count and trailing-zero count. Do not rely on
-   `Z.popcount`, which is not available in this Rocq environment.
-3. Prove `popcount` against the local bounded bit-counting spec.
-4. Prove `byteswap` against a semantic byte-reversal spec.
-5. Prove `countr_zero`, starting with the word-level zero iff
+1. Prove `popcount` against the local bounded bit-counting spec.
+2. Prove `byteswap` against a semantic byte-reversal spec.
+3. Prove `countr_zero`, starting with the word-level zero iff
    `countr_zero_word w = word_width <-> to_Z w = 0`, then the
    least-set-bit spec, then the four-word lift.
 
@@ -330,6 +324,13 @@ loading, storing, or parsing helpers unless priorities change.
    and states the exact four-word sum shape for `popcount`. Bit-level
    semantic theorems are still pending.
 
+7. Local bounded bit specifications are present.
+
+   `bitcount_Z` and `countr_zero_Z` in
+   [[theories/Arithmetic.v][theories/Arithmetic.v]] define low-to-high
+   `Z.testbit` semantics over a bounded width. They intentionally avoid
+   `Z.popcount`, which is not available in this Rocq environment.
+
 * Part 2: Lower-Level Extensions Needed For The Remaining Clean Ports
 
 1. Extend the word interface in
@@ -381,9 +382,7 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. Local bounded bit specs:
-   `bitcount_Z`, `countr_zero_Z`.
-2. `popcount` semantic theorems.
-3. `byteswap` semantic theorem.
-4. `countr_zero` semantic theorem, beginning with the word zero iff.
-5. Serialization helpers, if priorities change.
+1. `popcount` semantic theorems.
+2. `byteswap` semantic theorem.
+3. `countr_zero` semantic theorem, beginning with the word zero iff.
+4. Serialization helpers, if priorities change.

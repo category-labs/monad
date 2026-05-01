@@ -595,8 +595,8 @@ namespace
     void eth_simulate_validate_inputs(
         size_t max_simulate_blocks, uint64_t default_timestamp_increment,
         std::vector<std::vector<Transaction>> const &calls,
-        std::span<monad_block_override const *const> block_overrides,
-        std::span<monad_state_override const *const> state_overrides,
+        std::vector<monad_state_override const *> const &state_overrides,
+        std::vector<monad_block_override const *> const &block_overrides,
         BlockHeader const &header)
     {
 
@@ -605,13 +605,12 @@ namespace
             calls.size() <= max_simulate_blocks, "too many blocks");
 
         for (auto const *so : state_overrides) {
-            MONAD_ASSERT_THROW(so, "state override cannot be null");
+            MONAD_ASSERT_THROW(so, "null pointer in state overrides");
         }
 
         BlockHeader previous_header = header;
-        for (auto const *bo : block_overrides) {
-            MONAD_ASSERT_THROW(bo, "block override cannot be null");
-
+        for (auto const *const bo : block_overrides) {
+            MONAD_ASSERT_THROW(bo, "null pointer in block overrides");
             // From the specification
             // (https://geth.ethereum.org/docs/interacting-with-geth/rpc/ns-eth):
             // > When overriding multiple blocks, block numbers must
@@ -734,8 +733,8 @@ namespace
         mpt::RODb &db, vm::VM &vm,
         EthSimulateBlockHashBuffer &block_hash_buffer,
         fiber::FiberGroup &tx_exec_pool,
-        std::span<monad_state_override const *const> state_overrides,
-        std::span<monad_block_override const *const> block_overrides,
+        std::vector<monad_state_override const *> const &state_overrides,
+        std::vector<monad_block_override const *> const &block_overrides,
         bool emit_native_transfer_logs)
     {
         // TODO(dhil): Geth allows up to 256 blocks to be simulated, including
@@ -765,8 +764,8 @@ namespace
             MAX_CALLS,
             DEFAULT_TIMESTAMP_INCREMENT,
             calls,
-            block_overrides,
             state_overrides,
+            block_overrides,
             header);
 
         TrieRODb tdb{db};
@@ -807,7 +806,7 @@ namespace
         for (size_t block_idx = 0; block_idx < calls.size(); ++block_idx) {
             // SAFETY: By `eth_simulate_validate_inputs`, we know that both
             // block overrides and state overrides are non-null.
-            monad_block_override const *const bo = block_overrides[block_idx];
+            monad_block_override const *bo = block_overrides[block_idx];
 
             // First we have to check whether we need to insert synthetic blocks
             // to fill in the gap between the previous block and block induced
@@ -1959,8 +1958,8 @@ struct monad_executor
         monad_chain_config const chain_config,
         std::vector<std::vector<Transaction>> calls,
         std::vector<std::vector<Address>> senders,
-        std::span<monad_state_override const *const> state_overrides,
-        std::span<monad_block_override const *const> block_overrides,
+        std::vector<monad_state_override const *> state_overrides,
+        std::vector<monad_block_override const *> block_overrides,
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
         bytes32_t const &parent_id, bool emit_native_transfer_logs,
@@ -1982,8 +1981,8 @@ struct monad_executor
             priority,
             [calls = std::move(calls),
              senders = std::move(senders),
-             state_overrides = state_overrides,
-             block_overrides = block_overrides,
+             state_overrides = std::move(state_overrides),
+             block_overrides = std::move(block_overrides),
              block_header = block_header,
              block_number = block_number,
              block_id = block_id,
@@ -2369,6 +2368,17 @@ void monad_executor_eth_simulate_submit(
     MONAD_ASSERT(n_state_overrides == txns.size());
     MONAD_ASSERT(n_block_overrides == txns.size());
 
+    std::vector<struct monad_state_override const *> state_overrides_vec{};
+    state_overrides_vec.reserve(n_state_overrides);
+    for (size_t i = 0; i < n_state_overrides; ++i) {
+        state_overrides_vec.emplace_back(*(state_overrides + i));
+    }
+    std::vector<struct monad_block_override const *> block_overrides_vec{};
+    block_overrides_vec.reserve(n_block_overrides);
+    for (size_t i = 0; i < n_block_overrides; ++i) {
+        block_overrides_vec.emplace_back(*(block_overrides + i));
+    }
+
     byte_string_view rlp_header_view({rlp_header, rlp_header_len});
     auto const block_header_result = rlp::decode_block_header(rlp_header_view);
     MONAD_ASSERT(!block_header_result.has_error());
@@ -2401,8 +2411,8 @@ void monad_executor_eth_simulate_submit(
         chain_config,
         txns,
         senders,
-        std::span{state_overrides, n_state_overrides},
-        std::span{block_overrides, n_block_overrides},
+        state_overrides_vec,
+        block_overrides_vec,
         block_header,
         block_number,
         block_id,

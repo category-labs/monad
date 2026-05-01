@@ -5346,6 +5346,125 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma word_shl_Z_to_Z : forall word shift,
+  to_Z (shl word shift) = word_shl_Z (to_Z word) shift.
+Proof.
+  intros word shift.
+  unfold word_shl_Z.
+  rewrite spec_shl.
+  replace (base width) with (2 ^ 64).
+  - reflexivity.
+  - unfold base. rewrite width_is_64. reflexivity.
+Qed.
+
+Lemma word_or_Z_to_Z : forall x y,
+  to_Z (or x y) = word_or_Z (to_Z x) (to_Z y).
+Proof.
+  intros x y.
+  unfold word_or_Z.
+  rewrite spec_or.
+  replace (base width) with (2 ^ 64).
+  - reflexivity.
+  - unfold base. rewrite width_is_64. reflexivity.
+Qed.
+
+Lemma byteswap_word_to_Z : forall word,
+  to_Z (byteswap_word word) = byteswap_word_Z (to_Z word).
+Proof.
+  intro word.
+  unfold byteswap_word, byteswap_word_Z.
+  repeat rewrite word_or_Z_to_Z.
+  repeat rewrite word_shl_Z_to_Z.
+  repeat rewrite word_byte_to_Z.
+  unfold byte_at_Z.
+  reflexivity.
+Qed.
+
+Lemma to_Z_words_cons_mod_word : forall word rest,
+  to_Z_words (word :: rest) mod 2 ^ 64 = to_Z word.
+Proof.
+  intros word rest.
+  cbn [to_Z_words].
+  replace (base width) with (2 ^ 64).
+  2:{ unfold base. rewrite width_is_64. reflexivity. }
+  replace (to_Z word + 2 ^ 64 * to_Z_words rest)
+    with (to_Z word + to_Z_words rest * 2 ^ 64) by ring.
+  rewrite Z_mod_plus_full.
+  rewrite Z.mod_small.
+  - reflexivity.
+  - pose proof (spec_to_Z word) as Hword.
+    unfold base in Hword. rewrite width_is_64 in Hword.
+    exact Hword.
+Qed.
+
+Lemma word_at_Z_uint256_0 : forall x0 x1 x2 x3,
+  word_at_Z (to_Z_uint256 (mk_uint256 x0 x1 x2 x3)) 0 = to_Z x0.
+Proof.
+  intros x0 x1 x2 x3.
+  unfold word_at_Z.
+  change (64 * Z.of_nat 0) with 0.
+  rewrite Z.pow_0_r, Z.div_1_r.
+  unfold to_Z_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3].
+  apply to_Z_words_cons_mod_word.
+Qed.
+
+Lemma word_at_Z_uint256_1 : forall x0 x1 x2 x3,
+  word_at_Z (to_Z_uint256 (mk_uint256 x0 x1 x2 x3)) 1 = to_Z x1.
+Proof.
+  intros x0 x1 x2 x3.
+  unfold word_at_Z.
+  change (64 * Z.of_nat 1) with 64.
+  replace (2 ^ 64) with (modulus_words 1)
+    by (rewrite modulus_words_1; reflexivity).
+  rewrite to_Z_uint256_div_modulus_words_1.
+  rewrite modulus_words_1.
+  apply to_Z_words_cons_mod_word.
+Qed.
+
+Lemma word_at_Z_uint256_2 : forall x0 x1 x2 x3,
+  word_at_Z (to_Z_uint256 (mk_uint256 x0 x1 x2 x3)) 2 = to_Z x2.
+Proof.
+  intros x0 x1 x2 x3.
+  unfold word_at_Z.
+  change (64 * Z.of_nat 2) with 128.
+  replace (2 ^ 128) with (modulus_words 2)
+    by (rewrite modulus_words_2; reflexivity).
+  rewrite to_Z_uint256_div_modulus_words_2.
+  apply to_Z_words_cons_mod_word.
+Qed.
+
+Lemma word_at_Z_uint256_3 : forall x0 x1 x2 x3,
+  word_at_Z (to_Z_uint256 (mk_uint256 x0 x1 x2 x3)) 3 = to_Z x3.
+Proof.
+  intros x0 x1 x2 x3.
+  unfold word_at_Z.
+  change (64 * Z.of_nat 3) with 192.
+  replace (2 ^ 192) with (modulus_words 3)
+    by (rewrite modulus_words_3; reflexivity).
+  rewrite to_Z_uint256_div_modulus_words_3.
+  apply to_Z_words_cons_mod_word.
+Qed.
+
+Theorem byteswap_correct_Z : forall x,
+  to_Z_uint256 (byteswap x) = byteswap_Z (to_Z_uint256 x).
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold byteswap.
+  unfold to_Z_uint256 at 1.
+  cbn [uint256_to_words w0 w1 w2 w3 WL.to_Z_words].
+  rewrite !byteswap_word_to_Z.
+  replace (base width) with (2 ^ 64).
+  2:{ unfold base. rewrite width_is_64. reflexivity. }
+  unfold byteswap_Z.
+  rewrite !word_at_Z_uint256_0.
+  rewrite !word_at_Z_uint256_1.
+  rewrite !word_at_Z_uint256_2.
+  rewrite !word_at_Z_uint256_3.
+  rewrite Z.mul_0_r, Z.add_0_r.
+  reflexivity.
+Qed.
+
 Theorem bitwise_and_uint256_correct : forall x y,
   uint256_to_words (bitwise_and_uint256 x y) =
     [land (w0 x) (w0 y);

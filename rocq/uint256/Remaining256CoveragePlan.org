@@ -48,8 +48,7 @@ The word "complete" below now distinguishes two levels:
 
 For immediate semantic coverage work, the active queue is:
 
-1. Prove `byteswap` against a semantic byte-reversal spec.
-2. Prove `countr_zero`, starting with the word-level zero iff
+1. Prove `countr_zero`, starting with the word-level zero iff
    `countr_zero_word w = word_width <-> to_Z w = 0`, then the
    least-set-bit spec, then the four-word lift.
 
@@ -290,14 +289,15 @@ loading, storing, or parsing helpers unless priorities change.
    proves the byte count is the ceiling of the significant bit count
    derived from `countl_zero_uint256`.
 
-4. `byteswap` is modeled and structurally proved.
+4. `byteswap` is semantically proved.
 
    The model in [[theories/Arithmetic.v][theories/Arithmetic.v]] keeps the
    same reverse-word structure as the C++ initializer and uses a
    word-level helper for the `std::byteswap` operation.
    `byteswap_correct` states the 256-bit result as the reversed list of
-   word-level byte-swaps. A semantic byte-reversal theorem is still
-   pending.
+   word-level byte-swaps. `byteswap_correct_Z` states the
+   whole-value result against the pure Z-level `byteswap_Z` semantic
+   model.
 
 5. Record-level bitwise wrappers are semantically proved.
 
@@ -332,13 +332,14 @@ loading, storing, or parsing helpers unless priorities change.
    `Z.testbit` semantics over a bounded width. They intentionally avoid
    `Z.popcount`, which is not available in this Rocq environment.
 
-8. Pure Z-level byteswap specifications are present.
+8. Pure Z-level byteswap specifications are proved against the model.
 
    `byte_at_Z`, `word_at_Z`, `byteswap_word_Z`, and `byteswap_Z` in
    [[theories/Arithmetic.v][theories/Arithmetic.v]] describe byte
    extraction, word extraction, word byte-swap, and 256-bit byte-swap
-   using only `Z` operations. The correctness theorem connecting
-   `byteswap` to `byteswap_Z` is still pending.
+   using only `Z` operations. The proof-side `byteswap_word_to_Z` lemma
+   connects the word helper to `byteswap_word_Z`, and
+   `byteswap_correct_Z` connects the 256-bit wrapper to `byteswap_Z`.
 
 * Part 2: Lower-Level Extensions Needed For The Remaining Clean Ports
 
@@ -391,6 +392,5 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. `byteswap` semantic theorem.
-2. `countr_zero` semantic theorem, beginning with the word zero iff.
-3. Serialization helpers, if priorities change.
+1. `countr_zero` semantic theorem, beginning with the word zero iff.
+2. Serialization helpers, if priorities change.

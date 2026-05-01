@@ -51,14 +51,12 @@ For immediate semantic coverage work, the active queue is:
 1. Add unsigned division convenience corollaries stated with `Z.div`
    and `Z.modulo`, derived from the existing `Z.quot` / `Z.rem`
    theorems.
-2. Add whole-256-bit bitwise semantic theorems for `&`, `|`, `^`, and
-   `~`. Keep the existing word-list shape theorems as wiring checks.
-3. Add local bounded bit specifications over `Z.testbit` for
+2. Add local bounded bit specifications over `Z.testbit` for
    population count and trailing-zero count. Do not rely on
    `Z.popcount`, which is not available in this Rocq environment.
-4. Prove `popcount` against the local bounded bit-counting spec.
-5. Prove `byteswap` against a semantic byte-reversal spec.
-6. Prove `countr_zero`, starting with the word-level zero iff
+3. Prove `popcount` against the local bounded bit-counting spec.
+4. Prove `byteswap` against a semantic byte-reversal spec.
+5. Prove `countr_zero`, starting with the word-level zero iff
    `countr_zero_word w = word_width <-> to_Z w = 0`, then the
    least-set-bit spec, then the four-word lift.
 
@@ -308,15 +306,18 @@ loading, storing, or parsing helpers unless priorities change.
    word-level byte-swaps. A semantic byte-reversal theorem is still
    pending.
 
-5. Record-level bitwise wrappers are modeled and structurally proved.
+5. Record-level bitwise wrappers are semantically proved.
 
    The wrappers in [[theories/Arithmetic.v][theories/Arithmetic.v]] mirror the
    C++ macro-generated `&`, `|`, and `^` operators and the unary `~`
    operator by applying the corresponding word operation at indices
    `0` through `3`. Their correctness theorems in
    [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]] state the
-   exact word-list result shape. Whole-value `to_Z_uint256` theorems
-   are still pending.
+   exact word-list result shape. The semantic theorems
+   `bitwise_and_uint256_to_Z`, `bitwise_or_uint256_to_Z`,
+   `bitwise_xor_uint256_to_Z`, and `bitwise_not_uint256_to_Z` state the
+   whole-value `to_Z_uint256` behavior against `Z.land`, `Z.lor`,
+   `Z.lxor`, and bounded `Z.lnot`.
 
 6. `countr_zero` and `popcount` are modeled and structurally proved.
 
@@ -380,12 +381,9 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. Division convenience corollaries:
-   `div_uint256_correct_div`, `mod_uint256_correct_mod`.
-2. Whole-256-bit bitwise semantic theorems.
-3. Local bounded bit specs:
+1. Local bounded bit specs:
    `bitcount_Z`, `countr_zero_Z`.
-4. `popcount` semantic theorems.
-5. `byteswap` semantic theorem.
-6. `countr_zero` semantic theorem, beginning with the word zero iff.
-7. Serialization helpers, if priorities change.
+2. `popcount` semantic theorems.
+3. `byteswap` semantic theorem.
+4. `countr_zero` semantic theorem, beginning with the word zero iff.
+5. Serialization helpers, if priorities change.

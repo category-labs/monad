@@ -5387,6 +5387,280 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma testbit_add_mul_pow2_low : forall a b k n,
+  0 <= k ->
+  0 <= n ->
+  n < k ->
+  0 <= a < 2 ^ k ->
+  Z.testbit (a + 2 ^ k * b) n = Z.testbit a n.
+Proof.
+  intros a b k n Hk _ Hn Ha.
+  rewrite <- (Z.mod_pow2_bits_low (a + 2 ^ k * b) k n Hn).
+  replace (a + 2 ^ k * b) with (a + b * 2 ^ k) by ring.
+  rewrite Z_mod_plus_full.
+  rewrite Z.mod_small by exact Ha.
+  reflexivity.
+Qed.
+
+Lemma testbit_add_mul_pow2_high : forall a b k n,
+  0 <= k ->
+  0 <= n ->
+  k <= n ->
+  0 <= a < 2 ^ k ->
+  Z.testbit (a + 2 ^ k * b) n = Z.testbit b (n - k).
+Proof.
+  intros a b k n Hk Hn Hkn Ha.
+  replace n with (n - k + k) by lia.
+  rewrite <- (Z.shiftr_spec (a + 2 ^ k * b) k (n - k)) by lia.
+  assert (Hshr : Z.shiftr (a + 2 ^ k * b) k = b).
+  { rewrite Z.shiftr_div_pow2 by exact Hk.
+    replace (a + 2 ^ k * b) with (b * 2 ^ k + a) by ring.
+    rewrite Z.div_add_l.
+    - rewrite Z.div_small by exact Ha.
+      lia.
+    - apply Z.pow_nonzero; lia. }
+  rewrite Hshr.
+  replace (n - k + k - k) with (n - k) by lia.
+  reflexivity.
+Qed.
+
+Lemma testbit_to_Z_words_cons : forall w rest n,
+  0 <= n ->
+  Z.testbit (to_Z_words (w :: rest)) n =
+    if n <? 64
+    then Z.testbit (to_Z w) n
+    else Z.testbit (to_Z_words rest) (n - 64).
+Proof.
+  intros w rest n Hn.
+  cbn [to_Z_words].
+  replace (base width) with (2 ^ 64).
+  2:{ unfold base. rewrite width_is_64. reflexivity. }
+  assert (Hw : 0 <= to_Z w < 2 ^ 64).
+  { pose proof (spec_to_Z w) as Hw.
+    unfold base in Hw.
+    rewrite width_is_64 in Hw.
+    exact Hw. }
+  destruct (Z.ltb_spec0 n 64) as [Hlt|Hge].
+  - apply testbit_add_mul_pow2_low; lia.
+  - apply testbit_add_mul_pow2_high; lia.
+Qed.
+
+Lemma testbit_mod_base_width_low : forall z n,
+  0 <= n < 64 ->
+  Z.testbit (z mod base width) n = Z.testbit z n.
+Proof.
+  intros z n Hn.
+  replace (base width) with (2 ^ 64).
+  2:{ unfold base. rewrite width_is_64. reflexivity. }
+  apply Z.mod_pow2_bits_low.
+  lia.
+Qed.
+
+Lemma testbit_to_Z_words4 : forall w0 w1 w2 w3 n,
+  0 <= n ->
+  Z.testbit (to_Z_words [w0; w1; w2; w3]) n =
+    if n <? 64
+    then Z.testbit (to_Z w0) n
+    else if n - 64 <? 64
+         then Z.testbit (to_Z w1) (n - 64)
+         else if n - 64 - 64 <? 64
+              then Z.testbit (to_Z w2) (n - 64 - 64)
+              else if n - 64 - 64 - 64 <? 64
+                   then Z.testbit (to_Z w3) (n - 64 - 64 - 64)
+                   else false.
+Proof.
+  intros w0 w1 w2 w3 n Hn.
+  rewrite testbit_to_Z_words_cons by exact Hn.
+  destruct (n <? 64) eqn:H0; [reflexivity|].
+  apply Z.ltb_ge in H0.
+  rewrite testbit_to_Z_words_cons by lia.
+  destruct (n - 64 <? 64) eqn:H1; [reflexivity|].
+  apply Z.ltb_ge in H1.
+  rewrite testbit_to_Z_words_cons by lia.
+  destruct (n - 64 - 64 <? 64) eqn:H2; [reflexivity|].
+  apply Z.ltb_ge in H2.
+  rewrite testbit_to_Z_words_cons by lia.
+  destruct (n - 64 - 64 - 64 <? 64); [reflexivity|].
+  cbn [to_Z_words].
+  apply Z.bits_0.
+Qed.
+
+Lemma to_Z_words_land4 : forall x0 x1 x2 x3 y0 y1 y2 y3,
+  to_Z_words [land x0 y0; land x1 y1; land x2 y2; land x3 y3] =
+    Z.land (to_Z_words [x0; x1; x2; x3])
+      (to_Z_words [y0; y1; y2; y3]).
+Proof.
+  intros x0 x1 x2 x3 y0 y1 y2 y3.
+  apply Z.bits_inj'. intros n Hn.
+  rewrite Z.land_spec.
+  rewrite !testbit_to_Z_words4 by exact Hn.
+  destruct (n <? 64) eqn:H0.
+  - apply Z.ltb_lt in H0.
+    rewrite spec_land, testbit_mod_base_width_low by lia.
+    rewrite Z.land_spec. reflexivity.
+  - apply Z.ltb_ge in H0.
+    destruct (n - 64 <? 64) eqn:H1.
+    + apply Z.ltb_lt in H1.
+      rewrite spec_land, testbit_mod_base_width_low by lia.
+      rewrite Z.land_spec. reflexivity.
+    + apply Z.ltb_ge in H1.
+      destruct (n - 64 - 64 <? 64) eqn:H2.
+      * apply Z.ltb_lt in H2.
+        rewrite spec_land, testbit_mod_base_width_low by lia.
+        rewrite Z.land_spec. reflexivity.
+      * apply Z.ltb_ge in H2.
+        destruct (n - 64 - 64 - 64 <? 64) eqn:H3.
+        -- apply Z.ltb_lt in H3.
+           rewrite spec_land, testbit_mod_base_width_low by lia.
+           rewrite Z.land_spec. reflexivity.
+        -- reflexivity.
+Qed.
+
+Lemma to_Z_words_or4 : forall x0 x1 x2 x3 y0 y1 y2 y3,
+  to_Z_words [or x0 y0; or x1 y1; or x2 y2; or x3 y3] =
+    Z.lor (to_Z_words [x0; x1; x2; x3])
+      (to_Z_words [y0; y1; y2; y3]).
+Proof.
+  intros x0 x1 x2 x3 y0 y1 y2 y3.
+  apply Z.bits_inj'. intros n Hn.
+  rewrite Z.lor_spec.
+  rewrite !testbit_to_Z_words4 by exact Hn.
+  destruct (n <? 64) eqn:H0.
+  - apply Z.ltb_lt in H0.
+    rewrite spec_or, testbit_mod_base_width_low by lia.
+    rewrite Z.lor_spec. reflexivity.
+  - apply Z.ltb_ge in H0.
+    destruct (n - 64 <? 64) eqn:H1.
+    + apply Z.ltb_lt in H1.
+      rewrite spec_or, testbit_mod_base_width_low by lia.
+      rewrite Z.lor_spec. reflexivity.
+    + apply Z.ltb_ge in H1.
+      destruct (n - 64 - 64 <? 64) eqn:H2.
+      * apply Z.ltb_lt in H2.
+        rewrite spec_or, testbit_mod_base_width_low by lia.
+        rewrite Z.lor_spec. reflexivity.
+      * apply Z.ltb_ge in H2.
+        destruct (n - 64 - 64 - 64 <? 64) eqn:H3.
+        -- apply Z.ltb_lt in H3.
+           rewrite spec_or, testbit_mod_base_width_low by lia.
+           rewrite Z.lor_spec. reflexivity.
+        -- reflexivity.
+Qed.
+
+Lemma to_Z_words_xor4 : forall x0 x1 x2 x3 y0 y1 y2 y3,
+  to_Z_words [xor x0 y0; xor x1 y1; xor x2 y2; xor x3 y3] =
+    Z.lxor (to_Z_words [x0; x1; x2; x3])
+      (to_Z_words [y0; y1; y2; y3]).
+Proof.
+  intros x0 x1 x2 x3 y0 y1 y2 y3.
+  apply Z.bits_inj'. intros n Hn.
+  rewrite Z.lxor_spec.
+  rewrite !testbit_to_Z_words4 by exact Hn.
+  destruct (n <? 64) eqn:H0.
+  - apply Z.ltb_lt in H0.
+    rewrite spec_xor, testbit_mod_base_width_low by lia.
+    rewrite Z.lxor_spec. reflexivity.
+  - apply Z.ltb_ge in H0.
+    destruct (n - 64 <? 64) eqn:H1.
+    + apply Z.ltb_lt in H1.
+      rewrite spec_xor, testbit_mod_base_width_low by lia.
+      rewrite Z.lxor_spec. reflexivity.
+    + apply Z.ltb_ge in H1.
+      destruct (n - 64 - 64 <? 64) eqn:H2.
+      * apply Z.ltb_lt in H2.
+        rewrite spec_xor, testbit_mod_base_width_low by lia.
+        rewrite Z.lxor_spec. reflexivity.
+      * apply Z.ltb_ge in H2.
+        destruct (n - 64 - 64 - 64 <? 64) eqn:H3.
+        -- apply Z.ltb_lt in H3.
+           rewrite spec_xor, testbit_mod_base_width_low by lia.
+           rewrite Z.lxor_spec. reflexivity.
+        -- reflexivity.
+Qed.
+
+Lemma to_Z_words_lnot4 : forall x0 x1 x2 x3,
+  to_Z_words [lnot x0; lnot x1; lnot x2; lnot x3] =
+    Z.lnot (to_Z_words [x0; x1; x2; x3]) mod 2 ^ 256.
+Proof.
+  intros x0 x1 x2 x3.
+  apply Z.bits_inj'. intros n Hn.
+  rewrite Z.testbit_mod_pow2 by lia.
+  rewrite Z.lnot_spec by lia.
+  rewrite !testbit_to_Z_words4 by exact Hn.
+  destruct (n <? 64) eqn:H0.
+  - apply Z.ltb_lt in H0.
+    rewrite spec_lnot, testbit_mod_base_width_low by lia.
+    rewrite Z.lnot_spec by lia.
+    replace (n <? 256) with true by (symmetry; apply Z.ltb_lt; lia).
+    reflexivity.
+  - apply Z.ltb_ge in H0.
+    destruct (n - 64 <? 64) eqn:H1.
+    + apply Z.ltb_lt in H1.
+      rewrite spec_lnot, testbit_mod_base_width_low by lia.
+      rewrite Z.lnot_spec by lia.
+      replace (n <? 256) with true by (symmetry; apply Z.ltb_lt; lia).
+      reflexivity.
+    + apply Z.ltb_ge in H1.
+      destruct (n - 64 - 64 <? 64) eqn:H2.
+      * apply Z.ltb_lt in H2.
+        rewrite spec_lnot, testbit_mod_base_width_low by lia.
+        rewrite Z.lnot_spec by lia.
+        replace (n <? 256) with true by (symmetry; apply Z.ltb_lt; lia).
+        reflexivity.
+      * apply Z.ltb_ge in H2.
+        destruct (n - 64 - 64 - 64 <? 64) eqn:H3.
+        -- apply Z.ltb_lt in H3.
+           rewrite spec_lnot, testbit_mod_base_width_low by lia.
+           rewrite Z.lnot_spec by lia.
+           replace (n <? 256) with true
+             by (symmetry; apply Z.ltb_lt; lia).
+           reflexivity.
+        -- apply Z.ltb_ge in H3.
+           replace (n <? 256) with false
+             by (symmetry; apply Z.ltb_ge; lia).
+           reflexivity.
+Qed.
+
+Theorem bitwise_and_uint256_to_Z : forall x y,
+  to_Z_uint256 (bitwise_and_uint256 x y) =
+    Z.land (to_Z_uint256 x) (to_Z_uint256 y).
+Proof.
+  intros [x0 x1 x2 x3] [y0 y1 y2 y3].
+  unfold to_Z_uint256, bitwise_and_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3].
+  apply to_Z_words_land4.
+Qed.
+
+Theorem bitwise_or_uint256_to_Z : forall x y,
+  to_Z_uint256 (bitwise_or_uint256 x y) =
+    Z.lor (to_Z_uint256 x) (to_Z_uint256 y).
+Proof.
+  intros [x0 x1 x2 x3] [y0 y1 y2 y3].
+  unfold to_Z_uint256, bitwise_or_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3].
+  apply to_Z_words_or4.
+Qed.
+
+Theorem bitwise_xor_uint256_to_Z : forall x y,
+  to_Z_uint256 (bitwise_xor_uint256 x y) =
+    Z.lxor (to_Z_uint256 x) (to_Z_uint256 y).
+Proof.
+  intros [x0 x1 x2 x3] [y0 y1 y2 y3].
+  unfold to_Z_uint256, bitwise_xor_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3].
+  apply to_Z_words_xor4.
+Qed.
+
+Theorem bitwise_not_uint256_to_Z : forall x,
+  to_Z_uint256 (bitwise_not_uint256 x) =
+    Z.lnot (to_Z_uint256 x) mod 2 ^ 256.
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold to_Z_uint256, bitwise_not_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3].
+  apply to_Z_words_lnot4.
+Qed.
+
 Lemma word_of_nat_to_Z : forall n,
   Z.of_nat n < base width ->
   to_Z (word_of_nat n) = Z.of_nat n.

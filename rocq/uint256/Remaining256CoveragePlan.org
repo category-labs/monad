@@ -32,7 +32,8 @@ document:
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
 - `countr_zero` and `popcount` are modeled in
   [[theories/Arithmetic.v][theories/Arithmetic.v]] and proved by
-  `countr_zero_correct` and `popcount_correct` in
+  `countr_zero_correct`, `countr_zero_correct_Z`,
+  `countr_zero_uint256_correct_Z`, and `popcount_correct_Z` in
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]].
 - The `Abort.` blocks in
   [[theories/ArithmeticProofs.v][theories/ArithmeticProofs.v]]
@@ -46,11 +47,9 @@ The word "complete" below now distinguishes two levels:
 - Semantically proven: the theorem states the mathematical behavior in
   terms of `to_Z_uint256`, `Z` arithmetic, or a local bit-level spec.
 
-For immediate semantic coverage work, the active queue is:
-
-1. Prove `countr_zero`, starting with the word-level zero iff
-   `countr_zero_word w = word_width <-> to_Z w = 0`, then the
-   least-set-bit spec, then the four-word lift.
+There is no immediate Arithmetic wrapper semantic proof left in this
+plan. The remaining queued work is serialization, if that becomes a
+priority.
 
 * Completed Proof Note: `signextend_correct`
 
@@ -312,15 +311,15 @@ loading, storing, or parsing helpers unless priorities change.
    whole-value `to_Z_uint256` behavior against `Z.land`, `Z.lor`,
    `Z.lxor`, and bounded `Z.lnot`.
 
-6. `popcount` is semantically proved; `countr_zero` is modeled and
-   structurally proved.
+6. `countr_zero` and `popcount` are semantically proved.
 
    The models in [[theories/Arithmetic.v][theories/Arithmetic.v]] preserve the
    C++ low-to-high word order. `countr_zero` accumulates a word-level
    trailing-zero count and returns early when the selected word is not
    all zero. `popcount` sums the four word-level population counts.
    The proof file records bounds for the word helpers, proves the
-   `countr_zero` result contains the accumulated count as a `uint256`.
+   `countr_zero` result contains the accumulated count as a `uint256`,
+   and connects the count to `countr_zero_Z (to_Z_uint256 x) 256`.
    `popcount_word_correct` proves the word-level scan against
    `bitcount_Z`, and `popcount_correct_Z` proves the 256-bit wrapper
    against `bitcount_Z (to_Z_uint256 x) 256`.
@@ -392,5 +391,4 @@ loading, storing, or parsing helpers unless priorities change.
 
 If an agent needs a short queue, use this order:
 
-1. `countr_zero` semantic theorem, beginning with the word zero iff.
-2. Serialization helpers, if priorities change.
+1. Serialization helpers, if priorities change.

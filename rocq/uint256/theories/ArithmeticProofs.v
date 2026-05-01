@@ -5843,6 +5843,285 @@ Proof.
               countr_zero_word x2 <? 3 * word_width)%nat; lia.
 Qed.
 
+Lemma to_Z_land_one : forall word,
+  to_Z (land word one) = Z.b2z (Z.testbit (to_Z word) 0).
+Proof.
+  intro word.
+  rewrite spec_land, spec_one.
+  replace (Z.land (to_Z word) 1) with (to_Z word mod 2).
+  2:{ change 1 with (Z.ones 1).
+      rewrite Z.land_ones by lia.
+      reflexivity. }
+  rewrite <- Z.bit0_mod.
+  rewrite Z.mod_small.
+  - reflexivity.
+  - destruct (Z.testbit (to_Z word) 0); cbn;
+      unfold base; rewrite width_is_64; cbn; lia.
+Qed.
+
+Lemma land_one_eqb_zero_testbit : forall word,
+  (land word one =? zero)%Uint = negb (Z.testbit (to_Z word) 0).
+Proof.
+  intro word.
+  rewrite spec_eqb, to_Z_land_one, spec_zero.
+  destruct (Z.testbit (to_Z word) 0); reflexivity.
+Qed.
+
+Lemma countr_zero_word_go_correct : forall fuel word,
+  countr_zero_word_go fuel word = countr_zero_Z (to_Z word) fuel.
+Proof.
+  induction fuel as [|fuel IH]; intro word.
+  - reflexivity.
+  - cbn [countr_zero_word_go countr_zero_Z].
+    rewrite land_one_eqb_zero_testbit.
+    destruct (Z.testbit (to_Z word) 0).
+    + reflexivity.
+    + rewrite IH.
+      rewrite to_Z_shr.
+      change (2 ^ Z.of_nat 1) with 2.
+      replace (to_Z word / 2)
+        with (Z.shiftr (to_Z word) 1).
+      2:{ change 2 with (2 ^ 1).
+          rewrite Z.shiftr_div_pow2 by lia.
+          reflexivity. }
+      reflexivity.
+Qed.
+
+Lemma countr_zero_word_correct : forall word,
+  countr_zero_word word = countr_zero_Z (to_Z word) word_width.
+Proof.
+  intro word.
+  unfold countr_zero_word.
+  apply countr_zero_word_go_correct.
+Qed.
+
+Lemma countr_zero_Z_bound : forall bits z,
+  (countr_zero_Z z bits <= bits)%nat.
+Proof.
+  induction bits as [|bits IH]; intro z.
+  - reflexivity.
+  - cbn [countr_zero_Z].
+    destruct (Z.testbit z 0).
+    + apply Nat.le_0_l.
+    + apply le_n_S, IH.
+Qed.
+
+Lemma countr_zero_Z_ext_low : forall bits z1 z2,
+  (forall n, 0 <= n < Z.of_nat bits ->
+    Z.testbit z1 n = Z.testbit z2 n) ->
+  countr_zero_Z z1 bits = countr_zero_Z z2 bits.
+Proof.
+  induction bits as [|bits IH]; intros z1 z2 Hbits.
+  - reflexivity.
+  - cbn [countr_zero_Z].
+    assert (H0 : Z.testbit z1 0 = Z.testbit z2 0).
+    { apply Hbits. lia. }
+    rewrite H0.
+    destruct (Z.testbit z2 0); [reflexivity|].
+    f_equal.
+    apply IH.
+    intros n Hn.
+    rewrite !Z.shiftr_spec by lia.
+    replace (n + 1) with (Z.succ n) by lia.
+    apply Hbits.
+    lia.
+Qed.
+
+Lemma countr_zero_Z_split : forall low_width high_width z,
+  countr_zero_Z z (low_width + high_width) =
+    let low_count := countr_zero_Z z low_width in
+    if (low_count <? low_width)%nat
+    then low_count
+    else (low_width +
+          countr_zero_Z (Z.shiftr z (Z.of_nat low_width)) high_width)%nat.
+Proof.
+  induction low_width as [|low_width IH]; intros high_width z.
+  - cbn [Nat.add countr_zero_Z Z.of_nat].
+    rewrite Z.shiftr_0_r.
+    reflexivity.
+  - cbn [Nat.add countr_zero_Z Z.of_nat].
+    destruct (Z.testbit z 0) eqn:Hz0.
+    + reflexivity.
+    + rewrite IH.
+      set (low_count :=
+        countr_zero_Z (Z.shiftr z 1) low_width).
+      destruct (low_count <? low_width)%nat eqn:Hlt.
+      * cbn zeta.
+        rewrite Hlt.
+        replace (S low_count <? S low_width)%nat with true
+          by (symmetry; apply Nat.ltb_lt; apply Nat.ltb_lt in Hlt; lia).
+        reflexivity.
+      * cbn zeta.
+        rewrite Hlt.
+        pose proof (countr_zero_Z_bound low_width (Z.shiftr z 1))
+          as Hbound.
+        fold low_count in Hbound.
+        assert (Hlow_eq : low_count = low_width)
+          by (apply Nat.ltb_ge in Hlt; lia).
+        rewrite Hlow_eq.
+        replace (S low_width <? S low_width)%nat with false
+          by (symmetry; apply Nat.ltb_ge; lia).
+        replace (Z.pos (Pos.of_succ_nat low_width))
+          with (1 + Z.of_nat low_width) by lia.
+        rewrite <- Z.shiftr_shiftr by lia.
+        reflexivity.
+Qed.
+
+Lemma countr_zero_Z_words4_chunk0 : forall x0 x1 x2 x3,
+  countr_zero_Z (to_Z_words [x0; x1; x2; x3]) 64 =
+    countr_zero_Z (to_Z x0) 64.
+Proof.
+  intros x0 x1 x2 x3.
+  apply countr_zero_Z_ext_low.
+  intros n Hn.
+  rewrite testbit_to_Z_words4 by lia.
+  replace (n <? 64) with true by (symmetry; apply Z.ltb_lt; lia).
+  reflexivity.
+Qed.
+
+Lemma countr_zero_Z_words4_chunk1 : forall x0 x1 x2 x3,
+  countr_zero_Z (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 64) 64 =
+    countr_zero_Z (to_Z x1) 64.
+Proof.
+  intros x0 x1 x2 x3.
+  apply countr_zero_Z_ext_low.
+  intros n Hn.
+  rewrite Z.shiftr_spec by lia.
+  rewrite testbit_to_Z_words4 by lia.
+  replace (n + 64 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 64 - 64 <? 64) with true
+    by (symmetry; apply Z.ltb_lt; lia).
+  replace (n + 64 - 64) with n by lia.
+  reflexivity.
+Qed.
+
+Lemma countr_zero_Z_words4_chunk2 : forall x0 x1 x2 x3,
+  countr_zero_Z (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 128) 64 =
+    countr_zero_Z (to_Z x2) 64.
+Proof.
+  intros x0 x1 x2 x3.
+  apply countr_zero_Z_ext_low.
+  intros n Hn.
+  rewrite Z.shiftr_spec by lia.
+  rewrite testbit_to_Z_words4 by lia.
+  replace (n + 128 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 128 - 64 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 128 - 64 - 64 <? 64) with true
+    by (symmetry; apply Z.ltb_lt; lia).
+  replace (n + 128 - 64 - 64) with n by lia.
+  reflexivity.
+Qed.
+
+Lemma countr_zero_Z_words4_chunk3 : forall x0 x1 x2 x3,
+  countr_zero_Z (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 192) 64 =
+    countr_zero_Z (to_Z x3) 64.
+Proof.
+  intros x0 x1 x2 x3.
+  apply countr_zero_Z_ext_low.
+  intros n Hn.
+  rewrite Z.shiftr_spec by lia.
+  rewrite testbit_to_Z_words4 by lia.
+  replace (n + 192 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 192 - 64 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 192 - 64 - 64 <? 64) with false
+    by (symmetry; apply Z.ltb_ge; lia).
+  replace (n + 192 - 64 - 64 - 64 <? 64) with true
+    by (symmetry; apply Z.ltb_lt; lia).
+  replace (n + 192 - 64 - 64 - 64) with n by lia.
+  reflexivity.
+Qed.
+
+Lemma countr_zero_Z_to_Z_words4 : forall x0 x1 x2 x3,
+  countr_zero_Z (to_Z_words [x0; x1; x2; x3]) 256 =
+    let c0 := countr_zero_Z (to_Z x0) 64 in
+    if (c0 <? 64)%nat then c0 else
+      let c1 := (c0 + countr_zero_Z (to_Z x1) 64)%nat in
+      if (c1 <? 2 * 64)%nat then c1 else
+        let c2 := (c1 + countr_zero_Z (to_Z x2) 64)%nat in
+        if (c2 <? 3 * 64)%nat then c2 else
+          (c2 + countr_zero_Z (to_Z x3) 64)%nat.
+Proof.
+  intros x0 x1 x2 x3.
+  change 256%nat with (64 + 192)%nat.
+  rewrite countr_zero_Z_split.
+  rewrite countr_zero_Z_words4_chunk0.
+  set (c0 := countr_zero_Z (to_Z x0) 64).
+  destruct (c0 <? 64)%nat eqn:Hc0.
+  - cbn zeta.
+    rewrite Hc0.
+    reflexivity.
+  - cbn zeta.
+    rewrite Hc0.
+    apply Nat.ltb_ge in Hc0.
+    pose proof (countr_zero_Z_bound 64 (to_Z x0)) as Hc0_bound.
+    fold c0 in Hc0_bound.
+    assert (Hc0_eq : c0 = 64%nat) by lia.
+    rewrite Hc0_eq.
+    change 192%nat with (64 + 128)%nat.
+    rewrite countr_zero_Z_split.
+    rewrite countr_zero_Z_words4_chunk1.
+    set (c1 := countr_zero_Z (to_Z x1) 64).
+    destruct (c1 <? 64)%nat eqn:Hc1.
+    + cbn zeta.
+      change (64 <? 64)%nat with false.
+      rewrite Hc1.
+      replace (64 + c1 <? 2 * 64)%nat with true
+        by (symmetry; apply Nat.ltb_lt; apply Nat.ltb_lt in Hc1; lia).
+      lia.
+    + cbn zeta.
+      change (64 <? 64)%nat with false.
+      rewrite Hc1.
+      apply Nat.ltb_ge in Hc1.
+      pose proof (countr_zero_Z_bound 64 (to_Z x1)) as Hc1_bound.
+      fold c1 in Hc1_bound.
+      assert (Hc1_eq : c1 = 64%nat) by lia.
+      rewrite Hc1_eq.
+      replace (64 + 64 <? 2 * 64)%nat with false
+        by (symmetry; apply Nat.ltb_ge; lia).
+      replace (64 + 64)%nat with (2 * 64)%nat by lia.
+      replace (Z.shiftr
+        (Z.shiftr (to_Z_words [x0; x1; x2; x3]) (Z.of_nat 64))
+        (Z.of_nat 64))
+        with (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 128).
+      2:{ rewrite Z.shiftr_shiftr by lia.
+          replace (Z.of_nat 64 + Z.of_nat 64) with 128 by reflexivity.
+          reflexivity. }
+      change 128%nat with (64 + 64)%nat.
+      rewrite countr_zero_Z_split.
+      rewrite countr_zero_Z_words4_chunk2.
+      set (c2 := countr_zero_Z (to_Z x2) 64).
+      destruct (c2 <? 64)%nat eqn:Hc2.
+      * cbn zeta.
+        rewrite Hc2.
+        replace (2 * 64 + c2 <? 3 * 64)%nat with true
+          by (symmetry; apply Nat.ltb_lt; apply Nat.ltb_lt in Hc2; lia).
+        lia.
+      * cbn zeta.
+        rewrite Hc2.
+        apply Nat.ltb_ge in Hc2.
+        pose proof (countr_zero_Z_bound 64 (to_Z x2)) as Hc2_bound.
+        fold c2 in Hc2_bound.
+        assert (Hc2_eq : c2 = 64%nat) by lia.
+        rewrite Hc2_eq.
+        replace (2 * 64 + 64 <? 3 * 64)%nat with false
+          by (symmetry; apply Nat.ltb_ge; lia).
+        replace (2 * 64 + 64)%nat with (3 * 64)%nat by lia.
+        replace (Z.shiftr
+          (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 128)
+          (Z.of_nat 64))
+          with (Z.shiftr (to_Z_words [x0; x1; x2; x3]) 192).
+        2:{ rewrite Z.shiftr_shiftr by lia.
+            replace (128 + Z.of_nat 64) with 192 by reflexivity.
+            reflexivity. }
+        rewrite countr_zero_Z_words4_chunk3.
+        lia.
+Qed.
+
 Lemma popcount_word_go_bound : forall fuel word,
   (popcount_word_go fuel word <= fuel)%nat.
 Proof.
@@ -5872,30 +6151,6 @@ Proof.
   pose proof (popcount_word_bound x2) as H2.
   pose proof (popcount_word_bound x3) as H3.
   lia.
-Qed.
-
-Lemma to_Z_land_one : forall word,
-  to_Z (land word one) = Z.b2z (Z.testbit (to_Z word) 0).
-Proof.
-  intro word.
-  rewrite spec_land, spec_one.
-  replace (Z.land (to_Z word) 1) with (to_Z word mod 2).
-  2:{ change 1 with (Z.ones 1).
-      rewrite Z.land_ones by lia.
-      reflexivity. }
-  rewrite <- Z.bit0_mod.
-  rewrite Z.mod_small.
-  - reflexivity.
-  - destruct (Z.testbit (to_Z word) 0); cbn;
-      unfold base; rewrite width_is_64; cbn; lia.
-Qed.
-
-Lemma land_one_eqb_zero_testbit : forall word,
-  (land word one =? zero)%Uint = negb (Z.testbit (to_Z word) 0).
-Proof.
-  intro word.
-  rewrite spec_eqb, to_Z_land_one, spec_zero.
-  destruct (Z.testbit (to_Z word) 0); reflexivity.
 Qed.
 
 Lemma popcount_word_go_correct : forall fuel word,
@@ -6077,6 +6332,30 @@ Proof.
   rewrite width_is_64.
   cbn.
   lia.
+Qed.
+
+Theorem countr_zero_correct_Z : forall x,
+  countr_zero_uint256_nat x = countr_zero_Z (to_Z_uint256 x) 256.
+Proof.
+  intros [x0 x1 x2 x3].
+  unfold countr_zero_uint256_nat, to_Z_uint256, uint256_to_words.
+  cbn [w0 w1 w2 w3].
+  rewrite !countr_zero_word_correct.
+  unfold word_width.
+  rewrite width_is_64.
+  cbn [Pos.to_nat].
+  rewrite countr_zero_Z_to_Z_words4.
+  reflexivity.
+Qed.
+
+Theorem countr_zero_uint256_correct_Z : forall x,
+  to_Z_uint256 (countr_zero x) =
+    Z.of_nat (countr_zero_Z (to_Z_uint256 x) 256).
+Proof.
+  intro x.
+  rewrite countr_zero_correct.
+  rewrite countr_zero_correct_Z.
+  reflexivity.
 Qed.
 
 Theorem popcount_correct : forall x,

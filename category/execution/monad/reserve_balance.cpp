@@ -25,8 +25,8 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
-#include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
@@ -102,9 +102,10 @@ bool dipped_into_reserve(
         // Check if dipped into reserve
         std::optional<uint256_t> const violation_threshold =
             [&] -> std::optional<uint256_t> {
+            ReserveBalanceView reserve_view{state};
+            uint256_t const delayed_urb = reserve_view.get_delayed_urb(addr);
             uint256_t const orig_balance = state.get_original_balance(addr);
-            uint256_t const reserve =
-                std::min(get_max_reserve<traits>(addr), orig_balance);
+            uint256_t const reserve = std::min(delayed_urb, orig_balance);
             if (addr == sender) {
                 if (gas_fees > reserve) { // must be dipping
                     return std::nullopt;

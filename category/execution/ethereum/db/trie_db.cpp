@@ -235,6 +235,14 @@ void TrieDbImpl<page_encoded>::commit(
     BlockHeader const &header, StateDeltas const & /*state_deltas*/,
     std::function<void(BlockHeader &)> const populate_header_fn)
 {
+    MONAD_ASSERT_PRINTF(
+        builder.is_page_encoded() == page_encoded,
+        "encoding mismatch at block %lu: TrieDbImpl<page_encoded=%d> got "
+        "builder with is_page_encoded=%d",
+        header.number,
+        page_encoded,
+        builder.is_page_encoded());
+
     auto const block_number = header.number;
     MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
 

@@ -35,6 +35,11 @@ public:
     // (value = `encode_storage_page(page)`). Use `take_proposal_post_state()`
     // after this to consume the result.
     CommitBuilder &add_state_deltas(StateDeltas const &) override;
+
+    bool is_page_encoded() const override
+    {
+        return true;
+    }
 };
 
 MONAD_NAMESPACE_END

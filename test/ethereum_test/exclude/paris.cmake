@@ -15,8 +15,6 @@ set(paris_excluded_tests
     "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongTimestamp.json" # ParentHeader
     "BlockchainTests.InvalidBlocks/bcInvalidHeaderTest/wrongTransactionsTrie.json" # Trie
     "BlockchainTests.InvalidBlocks/bcMultiChainTest/UncleFromSideChain.json" # Uncle
-    "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding01.json"
-    "TransactionTests.ttWrongRLP/RLPIncorrectByteEncoding127.json"
 
     # Stricter validation of base fee
     "BlockchainTests.london/validation/test_invalid_header.json"

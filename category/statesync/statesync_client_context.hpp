@@ -45,7 +45,6 @@ struct monad_statesync_client_context
 
     using StateDelta = std::pair<monad::Account, StorageDeltas>;
 
-    monad::OnDiskMachine machine;
     monad::mpt::Db db;
     monad::TrieDb tdb;
     std::vector<std::pair<uint64_t, uint64_t>> progress;

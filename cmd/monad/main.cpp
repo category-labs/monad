@@ -266,12 +266,10 @@ try {
     if (!statesync.empty()) {
         net.emplace(statesync.c_str());
     }
-    std::unique_ptr<mpt::StateMachine> machine;
     mpt::Db db = [&] {
         if (!db_in_memory) {
-            machine = std::make_unique<OnDiskMachine>();
             return mpt::Db{
-                *machine,
+                std::make_unique<OnDiskMachine>(),
                 mpt::OnDiskDbConfig{
                     .append = true,
                     .compaction = !no_compaction,
@@ -282,8 +280,7 @@ try {
                     .sq_thread_cpu = sq_thread_cpu,
                     .dbname_paths = dbname_paths}};
         }
-        machine = std::make_unique<InMemoryMachine>();
-        return mpt::Db{*machine};
+        return mpt::Db{std::make_unique<InMemoryMachine>()};
     }();
 
     auto chain = [chain_config] -> std::unique_ptr<Chain> {

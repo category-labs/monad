@@ -37,9 +37,8 @@ struct Storage : public ::testing::Test
 {
     static constexpr auto ADDRESS{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
-    OnDiskMachine machine;
     vm::VM vm;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<OnDiskMachine>()};
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};

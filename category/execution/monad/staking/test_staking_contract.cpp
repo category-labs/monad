@@ -70,9 +70,8 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
 {
     using Trait = MonadTraitsTest<MonadRevisionT>::Trait;
 
-    OnDiskMachine machine;
     vm::VM vm;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<OnDiskMachine>()};
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};

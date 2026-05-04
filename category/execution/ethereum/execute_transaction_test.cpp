@@ -65,8 +65,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     static constexpr auto gas_limit = actual_gas_cost + 2'000;
     static constexpr auto max_fee_per_gas = 10;
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -171,8 +170,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
     static constexpr auto bene{
         0x5353535353535353535353535353535353535353_address};
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -321,8 +319,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
         }
     }();
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -481,8 +478,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
     static constexpr auto slot = bytes32_t{};
     auto const initial_value = intx::be::store<bytes32_t>(uint256_t{1});
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -630,8 +626,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
 
 TYPED_TEST(TraitsTest, static_validate_transaction_failure)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};

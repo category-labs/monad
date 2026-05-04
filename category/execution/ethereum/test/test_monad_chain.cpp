@@ -62,8 +62,7 @@ TYPED_TEST(MonadTraitsTest, compute_gas_refund)
 TYPED_TEST(TraitsTest, Genesis)
 {
     {
-        InMemoryMachine machine;
-        mpt::Db db{machine};
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
         TrieDb tdb{db};
         MonadTestnet const chain;
         load_genesis_state(chain.get_genesis_state(), tdb);
@@ -87,8 +86,7 @@ TYPED_TEST(TraitsTest, Genesis)
     }
 
     {
-        InMemoryMachine machine;
-        mpt::Db db{machine};
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
         TrieDb tdb{db};
         MonadDevnet const chain;
         load_genesis_state(chain.get_genesis_state(), tdb);
@@ -110,8 +108,7 @@ TYPED_TEST(TraitsTest, Genesis)
         }
     }
     {
-        InMemoryMachine machine;
-        mpt::Db db{machine};
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
         TrieDb tdb{db};
         MonadMainnet const chain;
         load_genesis_state(chain.get_genesis_state(), tdb);
@@ -158,8 +155,7 @@ void run_revert_transaction_test(
 {
     static constexpr uint256_t BASE_FEE_PER_GAS = 10;
     static constexpr Address SENDER{1};
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -362,8 +358,7 @@ TYPED_TEST(
         return uint256_t{mon} * 1000000000000000000ULL;
     };
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -438,8 +433,7 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
         return uint256_t{mon} * staking::MON;
     };
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -564,8 +558,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         return uint256_t{mon} * 1000000000000000000ULL;
     };
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -643,8 +636,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
         return uint256_t{mon} * 1000000000000000000ULL;
     };
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -714,8 +706,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
         return uint256_t{mon} * 1000000000000000000ULL;
     };
 
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
@@ -789,8 +780,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
 
 TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
 {
-    InMemoryMachine machine;
-    mpt::Db db{machine};
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};

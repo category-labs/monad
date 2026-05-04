@@ -906,10 +906,6 @@ namespace
         struct monad_block_override_vec const &block_overrides,
         bool emit_native_transfer_logs)
     {
-        // TODO(dhil): Pass `emit_native_transfer_logs` through to the EvmcHost
-        // instantiation.
-        (void)emit_native_transfer_logs;
-
         // TODO(dhil): Geth allows up to 256 blocks to be simulated, including
         // synthetic blocks inserted to fill in possible gaps in the block
         // overrides.
@@ -1049,7 +1045,8 @@ namespace
                         block_metrics,
                         call_tracers,
                         state_tracers,
-                        chain_context));
+                        chain_context,
+                        emit_native_transfer_logs));
 
                 bytes32_t const synthetic_block_hash = to_bytes(keccak256(
                     rlp::encode_block_header(synthetic_block.header)));
@@ -1162,7 +1159,8 @@ namespace
                     block_metrics,
                     call_tracers,
                     state_tracers,
-                    chain_context));
+                    chain_context,
+                    emit_native_transfer_logs));
 
             // Patch up the block header for results reporting.
             // TODO(dhil): Report gas used for Ethereum?

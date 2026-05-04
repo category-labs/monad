@@ -13,63 +13,71 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "account.hpp"
-#include "state.hpp"
-
 #include <category/core/assert.h>
+#include <category/execution/ethereum/state3/state.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <algorithm>
 #include <span>
-
-using namespace evmone::state;
+#include <unordered_map>
 
 namespace monad::vm::fuzzing
 {
-    void assert_equal(StorageValue const &a, StorageValue const &b)
+    void assert_equal(
+        AccountState::StorageMap const &a, AccountState::StorageMap const &b)
     {
-        MONAD_ASSERT(a.current == b.current);
-        MONAD_ASSERT(a.original == b.original);
-        MONAD_ASSERT(a.access_status == b.access_status);
+        MONAD_ASSERT(a.size() == b.size());
+        for (auto const &[k, v] : a) {
+            auto const *found = b.find(k);
+            MONAD_ASSERT(found != nullptr);
+            MONAD_ASSERT(*found == v);
+        }
     }
 
-    void assert_equal(Account const &a, Account const &b)
+    void assert_equal(
+        Address const &k, State &a, AccountState const &as, State &b,
+        AccountState const &bs)
     {
-        MONAD_ASSERT(a.transient_storage.size() == b.transient_storage.size());
-        for (auto const &[k, v] : a.transient_storage) {
-            auto const found = b.transient_storage.find(k);
-            MONAD_ASSERT(found != b.transient_storage.end());
-            MONAD_ASSERT(found->second == v);
-        }
+        MONAD_ASSERT(a.account_exists(k) == b.account_exists(k));
+        MONAD_ASSERT(a.get_nonce(k) == b.get_nonce(k));
+        MONAD_ASSERT(a.account_is_dead(k) == b.account_is_dead(k));
+        MONAD_ASSERT(a.get_balance(k) == b.get_balance(k));
+        MONAD_ASSERT(a.get_original_balance(k) == b.get_original_balance(k));
+        MONAD_ASSERT(a.get_code_hash(k) == b.get_code_hash(k));
+        MONAD_ASSERT(a.is_destructed(k) == b.is_destructed(k));
+        MONAD_ASSERT(
+            a.is_current_incarnation(k) == b.is_current_incarnation(k));
+        MONAD_ASSERT(a.is_touched(k) == b.is_touched(k));
 
-        MONAD_ASSERT(a.storage.size() == b.storage.size());
-        for (auto const &[k, v] : a.storage) {
-            auto const found = b.storage.find(k);
-            MONAD_ASSERT(found != b.storage.end());
-            assert_equal(v, found->second);
-        }
-
-        MONAD_ASSERT(a.nonce == b.nonce);
-        MONAD_ASSERT(a.balance == b.balance);
-        MONAD_ASSERT(a.code_hash == b.code_hash);
-        MONAD_ASSERT(a.destructed == b.destructed);
-        MONAD_ASSERT(a.erase_if_empty == b.erase_if_empty);
-        MONAD_ASSERT(a.just_created == b.just_created);
-        MONAD_ASSERT(a.access_status == b.access_status);
+        assert_equal(as.storage_, bs.storage_);
+        assert_equal(as.transient_storage_, bs.transient_storage_);
+        MONAD_ASSERT(as.get_accessed_storage() == bs.get_accessed_storage());
     }
 
-    void assert_equal(State const &a, State const &b)
+    void assert_equal(State &a, State &b)
     {
-        auto const &a_accs = a.get_modified_accounts();
-        auto const &b_accs = b.get_modified_accounts();
+        MONAD_ASSERT(a.current().size() == b.current().size());
 
-        MONAD_ASSERT(a_accs.size() == b_accs.size());
+        // Deep copy to prevent mutation of the given account maps:
+        std::unordered_map<Address, AccountState> a_accs;
+        for (auto const &[k, v] : a.current()) {
+            MONAD_ASSERT(v.size() == 1);
+            auto const [_, is_new] = a_accs.insert({k, v.recent()});
+            MONAD_ASSERT(is_new);
+        }
+        std::unordered_map<Address, AccountState> b_accs;
+        for (auto const &[k, v] : b.current()) {
+            MONAD_ASSERT(v.size() == 1);
+            auto const [_, is_new] = b_accs.insert({k, v.recent()});
+            MONAD_ASSERT(is_new);
+        }
+
         for (auto const &[k, v] : a_accs) {
             auto const found = b_accs.find(k);
             MONAD_ASSERT(found != b_accs.end());
-            assert_equal(v, found->second);
+            assert_equal(k, a, v, b, found->second);
         }
     }
 

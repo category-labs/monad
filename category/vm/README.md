@@ -37,23 +37,23 @@ $ cmake --build build
 
 The ethereum blockchain tests can be executed with the command
 ```
-$ build/test/blockchain/compiler-blockchain-tests
+$ build/test/ethereum_test/monad-ethereum-test
 ```
 It will implicitly skip blockchain tests which
 * contain invalid blocks and
 * contain unexpected json format and
 * execute slowly.
 
-Use the `--gtest_filter` flag to enable or disable specific tests. See
+Use the `--gtest_filter` flag to enable or disable specific tests. Use the
+`--vm_mode` flag to select between Dual, CompilerOnly and InterpreterOnly. See
 ```
-$ build/test/blockchain/compiler-blockchain-tests --help
+$ build/test/ethereum_test/monad-ethereum-test --help
 ```
 
 ### Configuring blockchain test VM
 
 Environment variables can be used for debugging tests based on the
-blockchain test vm. Both the fuzzer and the etherum tests are based on
-the blockchain test vm.
+blockchain test vm. The fuzzer is based on the blockchain test vm.
 
 By setting the `MONAD_COMPILER_ASM_DIR` environment
 variable to a valid directory, the compiler will print contract
@@ -66,8 +66,7 @@ remaining when a jump destination is reached. For example,
 ```
 $ export MONAD_COMPILER_ASM_DIR=/tmp/debug
 $ export MONAD_COMPILER_DEBUG_TRACE=1
-$ build/test/blockchain/compiler-blockchain-tests \
-    --gtest_filter="*.jumpiNonConst"
+$ scripts/vm/fuzzer.sh
 ```
 will print something like
 ```
@@ -77,16 +76,9 @@ Block 0x2d: gas remaining: 378784
 Block 0x00: gas remaining: 379000
 ...
 ```
-and create assembly file with name the address of the called contract,
+and create assembly files with name the address of the called contracts,
 ```
 /tmp/debug/095e7baea6a6c7c4c2dfeb977efac326af552d87
-```
-
-To run the blockchain test vm using only evmone without compiler,
-define the `MONAD_COMPILER_EVMONE_ONLY=1` environment variable:
-```
-$ export MONAD_COMPILER_EVMONE_ONLY=1
-$ build/test/blockchain/compiler-blockchain-tests
 ```
 
 ### The `MONAD_COMPILER_TESTING` configuration
@@ -103,8 +95,7 @@ For example
 ```
 $ export MONAD_COMPILER_DEBUG_TRACE=1
 $ export EVMONE_DEBUG_TRACE=1
-$ build/test/blockchain/compiler-blockchain-tests \
-    --gtest_filter="*.jumpiNonConst"
+$ scrips/vm/fuzzer.sh
 ...
 offset: 0x59  opcode: 0x90  gas_left: 29977858
 offset: 0x5a  opcode: 0x62  gas_left: 29977855
@@ -125,10 +116,6 @@ START baseline_execute address 095E7BAEA6A6C7C4C2DFEB977EFAC326AF552D87 with gas
 Block 0x00: gas remaining: 379000
 END baseline_execute address 095E7BAEA6A6C7C4C2DFEB977EFAC326AF552D87
 ```
-
-Note that evmone is being used for executing certain contracts, even when
-the `MONAD_COMPILER_EVMONE_ONLY=1` environment variable is not set.
-For example, `CREATE` and `CREATE2` calls are always executed with evmone.
 
 The lines starting with `offset` contain runtime debug information from
 evmone, with one line for each instruction executed by evmone. The

@@ -268,6 +268,13 @@ namespace monad::vm::fuzzing
         return dist(gen);
     }
 
+    template <typename Engine>
+    uint64_t random_uint64(Engine &gen)
+    {
+        auto dist = std::uniform_int_distribution<uint64_t>();
+        return dist(gen);
+    }
+
     template <size_t Bits = 256, typename Engine = void>
     Constant random_constant(Engine &gen)
         requires(Bits % 64 == 0 && Bits > 0 && Bits <= 256)
@@ -312,6 +319,26 @@ namespace monad::vm::fuzzing
     {
         auto dist = std::uniform_int_distribution<uint64_t>(0, 1 << 16);
         return Constant{dist(gen)};
+    }
+
+    template <typename Engine>
+    Constant some_good_constant(Engine &gen)
+    {
+        return discrete_choice<Constant>(
+            gen,
+            [](auto &g) { return random_constant(g); },
+            Choice(0.1, [](auto &g) { return meaningful_constant(g); }),
+            Choice(0.1, [](auto &g) { return small_constant(g); }),
+            Choice(0.1, [](auto &g) { return power_of_32_constant(g); }),
+            Choice(
+                0.1, [](auto &g) { return negated_power_of_32_constant(g); }),
+            Choice(0.1, [](auto &g) { return power_of_two_constant(g); }),
+            Choice(
+                0.1, [](auto &g) { return negated_power_of_two_constant(g); }),
+            Choice(
+                0.1,
+                [](auto &g) { return random_constant_with_cleared_words(g); }),
+            Choice(0.1, [](auto &g) { return memory_constant(g); }));
     }
 
     using Push = std::variant<ValidAddress, ValidJumpDest, Constant>;
@@ -1071,8 +1098,8 @@ namespace monad::vm::fuzzing
             },
             Choice(0.10, [](auto &) { return 0.0; }));
 
-        auto const factor =
-            address_lookup(target).size() * contract_addresses.size();
+        auto const factor = address_lookup(target)->intercode()->size() *
+                            contract_addresses.size();
 
         auto scale_dist = std::normal_distribution(
             /* mean */ 32.0, /* stddev */ 16.0);

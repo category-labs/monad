@@ -21,6 +21,7 @@
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/utils/debug.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -61,10 +62,21 @@ namespace monad::vm
 
     template <Traits traits>
     SharedNativecode Compiler::compile(
-        SharedIntercode const &icode, CompilerConfig const &config)
+        SharedIntercode const &icode, CompilerConfig const &pre_config,
+        bytes32_t const &fallback_base_name)
     {
+        CompilerConfig const *config = &pre_config;
+#ifdef MONAD_COMPILER_TESTING
+        auto const log_path_buffer =
+            utils::make_compiler_asm_log_path(fallback_base_name);
+        CompilerConfig test_config{pre_config};
+        if (!test_config.asm_log_path && log_path_buffer) {
+            test_config.asm_log_path = log_path_buffer->c_str();
+        }
+        config = &test_config;
+#endif
         return compiler::native::compile<traits>(
-            asmjit_rt_, icode->code(), icode->code_size(), config);
+            asmjit_rt_, icode->code(), icode->code_size(), *config);
     }
 
     EXPLICIT_TRAITS_MEMBER(Compiler::compile);
@@ -81,7 +93,7 @@ namespace monad::vm
             }
         }
         auto const start = std::chrono::steady_clock::now();
-        auto ncode = compile<traits>(icode, config);
+        auto ncode = compile<traits>(icode, config, code_hash);
         auto const end = std::chrono::steady_clock::now();
         varcode_cache_.set(code_hash, icode, ncode);
         stats_.event_new_compiled_code_cached(icode, ncode, start, end);

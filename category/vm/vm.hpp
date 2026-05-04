@@ -27,6 +27,7 @@
 #include <category/vm/utils/debug.hpp>
 
 #include <array>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -134,12 +135,23 @@ namespace monad::vm
             InterpreterOnly
         };
 
+#ifdef MONAD_COMPILER_TESTING
+        using ExecuteOverride = std::function<evmc::Result(
+            evmc_host_interface const *host, evmc_host_context *context,
+            evmc_revision rev, evmc_message const *msg, uint8_t const *code,
+            size_t code_size)>;
+#endif // MONAD_COMPILER_TESTING
+
     private:
         Mode mode_;
         Compiler compiler_;
         CompilerConfig compiler_config_;
         runtime::EvmStackAllocator stack_allocator_;
         MemoryPool memory_pool_;
+
+#ifdef MONAD_COMPILER_TESTING
+        ExecuteOverride execute_override_;
+#endif // MONAD_COMPILER_TESTING
 
     public:
         explicit VM(Mode mode = Dual);
@@ -169,6 +181,11 @@ namespace monad::vm
         CompilerConfig const &compiler_config()
         {
             return compiler_config_;
+        }
+
+        void set_compiler_config(CompilerConfig const &x)
+        {
+            compiler_config_ = x;
         }
 
         MemoryPool::Ref message_memory_ref()
@@ -239,6 +256,13 @@ namespace monad::vm
         {
             return compiler_.print_stats();
         }
+
+#ifdef MONAD_COMPILER_TESTING
+        void set_execute_override(ExecuteOverride execute_override)
+        {
+            execute_override_ = execute_override;
+        }
+#endif // MONAD_COMPILER_TESTING
 
         static std::string mode_to_string(Mode);
         static std::optional<Mode> mode_from_string(std::string);

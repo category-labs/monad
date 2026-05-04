@@ -24,6 +24,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/utils/debug.hpp>
 
 #include <category/vm/vm.hpp>
 
@@ -90,26 +91,15 @@ namespace
 
         return impl;
     }
-
-    bool is_compiler_runtime_debug_trace_enabled()
-    {
-        static auto *const debug_trace_env =
-            std::getenv("MONAD_COMPILER_DEBUG_TRACE");
-        static bool const debug_trace =
-            debug_trace_env && std::strcmp(debug_trace_env, "1") == 0;
-        return debug_trace;
-    }
 }
 
 BlockchainTestVM::BlockchainTestVM(
     Implementation impl, native::EmitterHook post_hook)
     : evmc_vm{EVMC_ABI_VERSION, "monad-compiler-blockchain-test-vm", "0.0.0", ::destroy, ::execute, ::get_capabilities, nullptr}
     , impl_{impl_from_env(impl)}
-    , debug_dir_{std::getenv("MONAD_COMPILER_ASM_DIR")}
-    , base_config{.runtime_debug_trace = is_compiler_runtime_debug_trace_enabled(), .max_code_size_offset = code_size_t::max(), .post_instruction_emit_hook = post_hook}
+    , base_config{.runtime_debug_trace = monad::vm::utils::is_compiler_runtime_debug_trace_enabled, .max_code_size_offset = code_size_t::max(), .post_instruction_emit_hook = post_hook}
     , rt_ctx_{nullptr}
 {
-    MONAD_ASSERT(!debug_dir_ || fs::is_directory(debug_dir_));
 }
 
 evmc::Result BlockchainTestVM::execute(
@@ -187,30 +177,11 @@ BlockchainTestVM::get_intercode_nativecode(
     auto const &icode = get_intercode(code_hash, code, code_size);
 
     monad::vm::SharedNativecode ncode;
-    if (debug_dir_) {
-        std::ostringstream file(std::ostringstream::ate);
-        file.str(debug_dir_);
-        file << '/';
-        file << to_hex(code_hash);
-        native::CompilerConfig config{base_config};
-        auto asm_log_path = file.str();
-        config.asm_log_path = asm_log_path.c_str();
-        ncode = [&] {
-            SWITCH_EVM_TRAITS(
-                monad_vm_.compiler().cached_compile, code_hash, icode, config);
-            MONAD_ABORT();
-        }();
-    }
-    else {
-        ncode = [&] {
-            SWITCH_EVM_TRAITS(
-                monad_vm_.compiler().cached_compile,
-                code_hash,
-                icode,
-                base_config);
-            MONAD_ABORT();
-        }();
-    }
+    ncode = [&] {
+        SWITCH_EVM_TRAITS(
+            monad_vm_.compiler().cached_compile, code_hash, icode, base_config);
+        MONAD_ABORT();
+    }();
 
     return {icode, ncode};
 }

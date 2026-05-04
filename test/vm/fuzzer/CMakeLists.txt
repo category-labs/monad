@@ -22,16 +22,16 @@ target_sources(monad-compiler-fuzzer PRIVATE
   fuzzer.cpp)
 
 target_link_libraries(monad-compiler-fuzzer
-  PRIVATE evmone::state
   PRIVATE evmone
   PRIVATE blockchain-test-vm
   PRIVATE monad-vm::monad-vm-fuzzing
   PRIVATE monad_execution
+  PRIVATE monad-test-utils
+  PRIVATE monad-vm-test-utils
   PRIVATE CLI11::CLI11
 )
 monad_compile_options(monad-compiler-fuzzer)
 
-# TODO(BSC): fix this via evmone
 target_include_directories(monad-compiler-fuzzer
-  PRIVATE "${ROOT_DIRECTORY}/third_party/evmone/test/state"
+  PRIVATE "${ROOT_DIRECTORY}"
 )

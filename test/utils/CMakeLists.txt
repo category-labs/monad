@@ -24,8 +24,8 @@ target_sources(
           test_state.hpp)
 
 target_include_directories(
-    monad-test-utils PRIVATE ${PROJECT_SOURCE_DIR}/test/unit/common/include
-                             "${TOP_CURRENT_BINARY_DIR}/test")
+    monad-test-utils PUBLIC  ${PROJECT_SOURCE_DIR}/test/unit/common/include
+                     PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
 
 target_link_libraries(monad-test-utils PUBLIC nlohmann_json::nlohmann_json
                                               monad_execution)

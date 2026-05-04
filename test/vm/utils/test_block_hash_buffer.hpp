@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 
 #include <array>
@@ -38,6 +39,12 @@ namespace monad::test
         void set_block_number(uint64_t const block_number)
         {
             block_number_ = block_number;
+        }
+
+        void set_blockhash(size_t i, bytes32_t const &h)
+        {
+            MONAD_ASSERT(i < N);
+            blockhashes_[i] = h;
         }
 
         uint64_t n() const override

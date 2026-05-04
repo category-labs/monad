@@ -13,22 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "account.hpp"
-#include "state.hpp"
+#include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 
 #include <evmc/evmc.hpp>
 
 namespace monad::vm::fuzzing
 {
     void assert_equal(
-        evmone::state::StorageValue const &a,
-        evmone::state::StorageValue const &b);
+        AccountState::StorageMap const &a, AccountState::StorageMap const &b);
 
     void assert_equal(
-        evmone::state::Account const &a, evmone::state::Account const &b);
+        Address const &k, State &a, AccountState const &as, State &b,
+        AccountState const &bs);
 
-    void
-    assert_equal(evmone::state::State const &a, evmone::state::State const &b);
+    void assert_equal(State &, State &);
 
     void assert_equal(
         evmc::Result const &evmone_result, evmc::Result const &compiler_result,

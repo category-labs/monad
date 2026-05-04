@@ -727,10 +727,6 @@ namespace
         uint64_t const gas_limit, size_t const max_calls,
         bool emit_native_transfer_logs)
     {
-        // TODO(dhil): Pass `emit_native_transfer_logs` through to the EvmcHost
-        // instantiation.
-        (void)emit_native_transfer_logs;
-
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
 
@@ -865,7 +861,8 @@ namespace
                         block_metrics,
                         call_tracers,
                         state_tracers,
-                        chain_context));
+                        chain_context,
+                        emit_native_transfer_logs));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
                 // `gas_consumed_so_far`.
@@ -982,7 +979,8 @@ namespace
                     block_metrics,
                     call_tracers,
                     state_tracers,
-                    chain_context));
+                    chain_context,
+                    emit_native_transfer_logs));
 
             // Receipts have cumulative gas_used (YP eq. 22), so
             // the last receipt's value is the total for the block.

@@ -158,8 +158,9 @@ namespace monad::vm
 
         /// Compile `Intercode` for `revision` and return compilation result.
         template <Traits traits>
-        SharedNativecode
-        compile(SharedIntercode const &, CompilerConfig const & = {});
+        SharedNativecode compile(
+            SharedIntercode const &, CompilerConfig const & = {},
+            bytes32_t const &fallback_log_path_base_name = {});
 
         /// Find nativecode in cache, else compile and add to cache.
         template <Traits traits>

@@ -53,6 +53,12 @@ public:
 
     virtual CommitBuilder &add_state_deltas(StateDeltas const &);
 
+    // Identifies the storage encoding this builder produces
+    virtual bool is_page_encoded() const
+    {
+        return false;
+    }
+
     CommitBuilder &add_code(Code const &);
 
     CommitBuilder &add_receipts(std::vector<Receipt> const &);

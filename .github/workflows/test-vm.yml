@@ -58,36 +58,17 @@ jobs:
                   CC: gcc-15
 
         steps:
-            - name: Generate token
-              # Use the Github App private key to request an installation
-              # token with read-only access to the organization's private
-              # repositories. This token is then used in the checkout step
-              # (but not in subsequent steps that create releases and upload
-              # assets, those still use the default token that has write
-              # access to the current repository).
-              id: generate_token
-              uses: tibdex/github-app-token@v2
-              with:
-                app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
-                private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
-                # Limit permissions to what we need (these need to be
-                # configured in the app settings as well).
-                permissions: >-
-                  {"contents": "read"}
-
             - name: Tell git to do submodules in parallel
               run: |
                 git config --global submodule.fetchJobs "$(nproc)"
 
             - uses: actions/checkout@v4
               with:
-                token: ${{ steps.generate_token.outputs.token }}
                 submodules: recursive
 
             - uses: actions/checkout@v5
               with:
                 repository: category-labs/evmone
-                token: ${{ steps.generate_token.outputs.token }}
                 ref: v0.18.0-category
                 path: third_party/evmone
 
@@ -111,15 +92,6 @@ jobs:
       name: VM Fuzz Tests
       runs-on: ubuntu-24.04-32
       steps:
-      - name: Generate token
-        id: generate_token
-        uses: tibdex/github-app-token@v2
-        with:
-          app_id: ${{ secrets.REPO_READONLY_GITHUB_APP_ID }}
-          private_key: ${{ secrets.REPO_READONLY_GITHUB_APP_KEY }}
-          permissions: >-
-            {"contents": "read"}
-
       - name: Tell git to do submodules in parallel
         run: |
           git config --global submodule.fetchJobs "$(nproc)"
@@ -127,12 +99,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ steps.generate_token.outputs.token }}
 
       - uses: actions/checkout@v5
         with:
           repository: category-labs/evmone
-          token: ${{ steps.generate_token.outputs.token }}
           ref: v0.18.0-category
           path: third_party/evmone
 

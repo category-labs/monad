@@ -47,6 +47,7 @@
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -1643,4 +1644,121 @@ void monad_executor_run_transactions(
         complete,
         user,
         tracer_config);
+}
+
+namespace
+{
+    template <auto Decoder>
+    using decoder_value_t = typename decltype(Decoder(
+        std::declval<byte_string_view &>()))::value_type;
+
+    template <auto Decoder, bool explicit_parse_string>
+    auto decode_nested_items(byte_string_view &input)
+        -> Result<std::vector<std::vector<decoder_value_t<Decoder>>>>
+    {
+        using Item = decoder_value_t<Decoder>;
+        auto ret = std::vector<std::vector<Item>>{};
+
+        BOOST_OUTCOME_TRY(auto outer_payload, rlp::parse_list_metadata(input));
+        while (!outer_payload.empty()) {
+            ret.emplace_back();
+
+            BOOST_OUTCOME_TRY(
+                auto inner_payload, rlp::parse_list_metadata(outer_payload));
+
+            if constexpr (explicit_parse_string) {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(
+                        auto item_payload,
+                        rlp::parse_string_metadata(inner_payload));
+                    BOOST_OUTCOME_TRY(Item const item, Decoder(item_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+            else {
+                while (!inner_payload.empty()) {
+                    BOOST_OUTCOME_TRY(Item const item, Decoder(inner_payload));
+                    ret.back().emplace_back(std::move(item));
+                }
+            }
+        }
+
+        return ret;
+    }
+}
+
+void monad_executor_eth_simulate_submit(
+    struct monad_executor *executor, enum monad_chain_config chain_config,
+    uint8_t const *const rlp_senders, size_t rlp_senders_len,
+    uint8_t const *const rlp_calls, size_t rlp_calls_len, uint64_t block_number,
+    uint8_t const *const rlp_header, size_t rlp_header_len,
+    uint8_t const *const rlp_block_id, size_t rlp_block_id_len,
+    uint8_t const *const rlp_grandparent_block_id,
+    size_t const rlp_grandparent_block_id_len,
+    struct monad_state_override_vec const *const state_overrides,
+    struct monad_block_override_vec const *const block_overrides,
+    bool emit_native_transfer_logs,
+    void (*complete)(monad_executor_result *, void *user), void *user)
+{
+
+    MONAD_ASSERT(executor);
+    MONAD_ASSERT(rlp_senders);
+    MONAD_ASSERT(rlp_calls);
+    MONAD_ASSERT(rlp_header);
+    MONAD_ASSERT(rlp_block_id);
+    MONAD_ASSERT(rlp_grandparent_block_id);
+    MONAD_ASSERT(state_overrides);
+    MONAD_ASSERT(block_overrides);
+
+    byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
+    auto const maybe_senders =
+        decode_nested_items<rlp::decode_address, false>(rlp_senders_view);
+    MONAD_ASSERT(maybe_senders.has_value());
+    auto const &senders = maybe_senders.assume_value();
+
+    byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
+    auto const maybe_txns =
+        decode_nested_items<rlp::decode_transaction, true>(rlp_calls_view);
+    MONAD_ASSERT(maybe_txns.has_value());
+    auto const &txns = maybe_txns.assume_value();
+
+    MONAD_ASSERT(senders.size() == txns.size());
+    MONAD_ASSERT(state_overrides->size == txns.size());
+    MONAD_ASSERT(block_overrides->size == txns.size());
+
+    byte_string_view rlp_header_view({rlp_header, rlp_header_len});
+    auto const block_header_result = rlp::decode_block_header(rlp_header_view);
+    MONAD_ASSERT(!block_header_result.has_error());
+    MONAD_ASSERT(rlp_header_view.empty());
+    auto const &block_header = block_header_result.value();
+
+    byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
+    auto const block_id_result = rlp::decode_bytes32(block_id_view);
+    MONAD_ASSERT(!block_id_result.has_error());
+    MONAD_ASSERT(block_id_view.empty());
+    auto const block_id = block_id_result.value();
+
+    byte_string_view grandparent_block_id_view(
+        {rlp_grandparent_block_id, rlp_grandparent_block_id_len});
+    auto const grandparent_block_id_result =
+        rlp::decode_bytes32(grandparent_block_id_view);
+    MONAD_ASSERT(!grandparent_block_id_result.has_error());
+    MONAD_ASSERT(grandparent_block_id_view.empty());
+    auto const grandparent_block_id = grandparent_block_id_result.value();
+
+    // TODO(dhil): Pass through to the eth_simulateV1 submitter once it's
+    // implemented.
+    (void)chain_config;
+    (void)txns;
+    (void)senders;
+    (void)state_overrides;
+    (void)block_overrides;
+    (void)block_header;
+    (void)block_number;
+    (void)block_id;
+    (void)grandparent_block_id;
+    (void)emit_native_transfer_logs;
+    (void)complete;
+    (void)user;
+    MONAD_ASSERT(false);
 }

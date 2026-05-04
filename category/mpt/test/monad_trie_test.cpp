@@ -30,6 +30,7 @@
 #include <category/core/keccak.h>
 #include <category/core/log.hpp>
 #include <category/core/small_prng.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -151,7 +152,14 @@ Node::SharedPtr batch_upsert_commit(
 
     auto const ts_before = std::chrono::steady_clock::now();
     auto new_root = aux.do_update(
-        std::move(prev_root), sm, std::move(updates), block_id, compaction);
+        std::move(prev_root),
+        sm,
+        std::move(updates),
+        block_id,
+        compaction,
+        /*can_write_to_fast=*/true,
+        /*write_root=*/true,
+        timeline_id::primary);
     auto const ts_after = std::chrono::steady_clock::now();
     double const tm_ram =
         static_cast<double>(
@@ -556,7 +564,8 @@ int main(int const argc, char *argv[])
                     root = read_node_blocking(
                         aux,
                         aux.metadata_ctx().get_latest_root_offset(),
-                        aux.metadata_ctx().db_history_max_version());
+                        aux.metadata_ctx().db_history_max_version(),
+                        timeline_id::primary);
                 }
                 auto block_id =
                     in_memory
@@ -706,12 +715,14 @@ int main(int const argc, char *argv[])
                     root = read_node_blocking(
                         aux,
                         aux.metadata_ctx().get_latest_root_offset(),
-                        aux.metadata_ctx().db_history_max_version());
+                        aux.metadata_ctx().db_history_max_version(),
+                        timeline_id::primary);
                     auto [res, errc] = find_blocking(
                         aux,
                         root,
                         state_nibbles,
-                        aux.metadata_ctx().db_history_max_version());
+                        aux.metadata_ctx().db_history_max_version(),
+                        timeline_id::primary);
                     MONAD_ASSERT(errc == find_result::success);
                     state_start = res;
                     return ret;

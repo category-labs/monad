@@ -19,6 +19,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -239,29 +240,29 @@ TYPED_TEST(TrieTest, insert_unrelated_leaves_then_read)
         this->root_hash(),
         0xd339cf4033aca65996859d35da4612b642664cc40734dbdd40738aa47f1e3e44_bytes);
 
-    auto [leaf_it, res] =
-        find_blocking(this->aux, this->root, kv[0].first, version);
+    auto [leaf_it, res] = find_blocking(
+        this->aux, this->root, kv[0].first, version, timeline_id::primary);
     EXPECT_EQ(res, monad::mpt::find_result::success);
     EXPECT_EQ(
         (monad::byte_string_view{
             leaf_it.node->value_data(), leaf_it.node->value_len}),
         kv[0].second);
-    std::tie(leaf_it, res) =
-        find_blocking(this->aux, this->root, kv[1].first, version);
+    std::tie(leaf_it, res) = find_blocking(
+        this->aux, this->root, kv[1].first, version, timeline_id::primary);
     EXPECT_EQ(res, monad::mpt::find_result::success);
     EXPECT_EQ(
         (monad::byte_string_view{
             leaf_it.node->value_data(), leaf_it.node->value_len}),
         kv[1].second);
-    std::tie(leaf_it, res) =
-        find_blocking(this->aux, this->root, kv[2].first, version);
+    std::tie(leaf_it, res) = find_blocking(
+        this->aux, this->root, kv[2].first, version, timeline_id::primary);
     EXPECT_EQ(res, monad::mpt::find_result::success);
     EXPECT_EQ(
         (monad::byte_string_view{
             leaf_it.node->value_data(), leaf_it.node->value_len}),
         kv[2].second);
-    std::tie(leaf_it, res) =
-        find_blocking(this->aux, this->root, kv[3].first, version);
+    std::tie(leaf_it, res) = find_blocking(
+        this->aux, this->root, kv[3].first, version, timeline_id::primary);
     EXPECT_EQ(res, monad::mpt::find_result::success);
     EXPECT_EQ(
         (monad::byte_string_view{
@@ -595,9 +596,12 @@ TYPED_TEST(TrieTest, aux_do_update_fixed_history_len)
             *this->sm,
             std::move(ul_prefix),
             block_id,
-            true /*compaction*/);
-        auto [state_it, res] =
-            find_blocking(this->aux, this->root, prefix, block_id);
+            true /*compaction*/,
+            /*can_write_to_fast=*/true,
+            /*write_root=*/true,
+            timeline_id::primary);
+        auto [state_it, res] = find_blocking(
+            this->aux, this->root, prefix, block_id, timeline_id::primary);
         EXPECT_EQ(res, find_result::success);
         EXPECT_EQ(
             state_it.node->data(),
@@ -680,14 +684,15 @@ TYPED_TEST(TrieTest, variable_length_trie)
 
     // find
     {
-        auto [node0, res] = find_blocking(this->aux, this->root, key0, version);
+        auto [node0, res] = find_blocking(
+            this->aux, this->root, key0, version, timeline_id::primary);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node0.node->value(), long_value);
     }
 
     {
-        auto [node_long, res] =
-            find_blocking(this->aux, this->root, keylong, version);
+        auto [node_long, res] = find_blocking(
+            this->aux, this->root, keylong, version, timeline_id::primary);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node_long.node->value(), long_value);
     }
@@ -723,7 +728,14 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
     u_prefix.next = std::move(updates);
     UpdateList ul_prefix;
     ul_prefix.push_front(u_prefix);
-    this->root = upsert(this->aux, 0, *this->sm, {}, std::move(ul_prefix));
+    this->root = upsert(
+        this->aux,
+        0,
+        *this->sm,
+        {},
+        std::move(ul_prefix),
+        /*write_root=*/true,
+        timeline_id::primary);
 
     EXPECT_EQ(
         this->root->data(),
@@ -731,15 +743,23 @@ TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
 
     // find
     {
-        auto [node0, res] =
-            find_blocking(this->aux, this->root, prefix + key0, version);
+        auto [node0, res] = find_blocking(
+            this->aux,
+            this->root,
+            prefix + key0,
+            version,
+            timeline_id::primary);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node0.node->value(), value);
     }
 
     {
-        auto [node_long, res] =
-            find_blocking(this->aux, this->root, prefix + keylong, version);
+        auto [node_long, res] = find_blocking(
+            this->aux,
+            this->root,
+            prefix + keylong,
+            version,
+            timeline_id::primary);
         EXPECT_EQ(res, monad::mpt::find_result::success);
         EXPECT_EQ(node_long.node->value(), value);
     }
@@ -761,7 +781,14 @@ TYPED_TEST(TrieTest, single_value_variable_length_trie_with_prefix)
     u_prefix.next = std::move(updates);
     UpdateList ul_prefix;
     ul_prefix.push_front(u_prefix);
-    this->root = upsert(this->aux, 0, *this->sm, {}, std::move(ul_prefix));
+    this->root = upsert(
+        this->aux,
+        0,
+        *this->sm,
+        {},
+        std::move(ul_prefix),
+        /*write_root=*/true,
+        timeline_id::primary);
 
     EXPECT_EQ(
         this->root->data(),

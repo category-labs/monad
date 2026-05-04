@@ -17,35 +17,41 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/lru/static_lru_cache.hpp>
-#include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/mpt/db.hpp>
+#include <category/rpc/lazy_block_hash.hpp>
 
+#include <array>
 #include <cstdint>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
-// eth call on latest uses eip-2935. historical eth calls use this class,
-// which lazily loads the block header from the DB and computes BLOCKHASH.
-// historical can always query from the finalized prefix.
-//
-// A thread-safe LRU is not needed. Each submitted call to the executor pool
-// creates its own LazyBlockHash instance.
-class LazyBlockHash : public BlockHashBuffer
+// The `eth_simulateV1` method needs to be able to read hashes of both
+// finalized and simulated blocks. This buffer piggybacks on lazy block hash
+// buffer for finalized blocks, while providing a method for appending the
+// block hashes of simulated blocks such that they can be read by later
+// simulated blocks.
+class EthSimulateBlockHashBuffer : public LazyBlockHash
 {
-    mpt::RODb const &db_;
+    using LazyBlockHash::N;
+
     uint64_t const n_;
-    using Cache = static_lru_cache<uint64_t, bytes32_t>;
-    mutable Cache blockhash_cache_;
+    uint64_t i_;
+    std::optional<bytes32_t const> const base_block_hash_;
+    std::array<bytes32_t, N> simulated_block_hashes_;
 
 public:
-    using BlockHashBuffer::N;
+    EthSimulateBlockHashBuffer(
+        mpt::RODb const &db, uint64_t const n,
+        std::optional<bytes32_t const> const &base_block_hash);
 
-    LazyBlockHash(mpt::RODb const &db, uint64_t const n);
-    ~LazyBlockHash() override = default;
+    ~EthSimulateBlockHashBuffer() override = default;
 
     uint64_t n() const override;
-    bytes32_t const &get(uint64_t const n) const override;
+
+    bytes32_t const &get(uint64_t const) const override;
+
+    void advance(bytes32_t const &);
 };
 
 MONAD_NAMESPACE_END

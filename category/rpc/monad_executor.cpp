@@ -73,6 +73,7 @@
 #include <boost/outcome/try.hpp>
 #include <boost/scope_exit.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>

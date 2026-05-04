@@ -4155,10 +4155,9 @@ TEST(BlockOverride, set_all_fields)
     fee_bytes[31] = 9;
     set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes));
 
-    uint8_t blob_fee_bytes[32] = {};
-    blob_fee_bytes[31] = 1;
-    set_block_override_blob_base_fee(
-        bo, blob_fee_bytes, sizeof(blob_fee_bytes));
+    add_block_override_withdrawal(bo, 1, 2, 3, addr_bytes, sizeof(addr_bytes));
+    addr_bytes[19] = 0xCD;
+    add_block_override_withdrawal(bo, 4, 5, 6, addr_bytes, sizeof(addr_bytes));
 
     EXPECT_EQ(bo->number, 42u);
     EXPECT_EQ(bo->time, 1700000000u);
@@ -4176,8 +4175,20 @@ TEST(BlockOverride, set_all_fields)
     ASSERT_TRUE(bo->base_fee_per_gas.has_value());
     EXPECT_EQ(*bo->base_fee_per_gas, uint256_t{9});
 
-    ASSERT_TRUE(bo->blob_base_fee.has_value());
-    EXPECT_EQ(*bo->blob_base_fee, uint256_t{1});
+    ASSERT_TRUE(bo->withdrawals.has_value());
+    EXPECT_EQ(bo->withdrawals->size(), 2u);
+    EXPECT_EQ(bo->withdrawals->at(0).index, 1u);
+    EXPECT_EQ(bo->withdrawals->at(0).validator_index, 2u);
+    EXPECT_EQ(bo->withdrawals->at(0).amount, 3u);
+    EXPECT_EQ(
+        bo->withdrawals->at(0).recipient,
+        0x00000000000000000000000000000000000000ab_address);
+    EXPECT_EQ(bo->withdrawals->at(1).index, 4u);
+    EXPECT_EQ(bo->withdrawals->at(1).validator_index, 5u);
+    EXPECT_EQ(bo->withdrawals->at(1).amount, 6u);
+    EXPECT_EQ(
+        bo->withdrawals->at(1).recipient,
+        0x00000000000000000000000000000000000000cd_address);
 
     monad_block_override_destroy(bo);
 }
@@ -4199,7 +4210,7 @@ TEST(BlockOverride, partial_fields)
     EXPECT_EQ(bo->gas_limit, std::nullopt);
     EXPECT_EQ(bo->fee_recipient, std::nullopt);
     EXPECT_EQ(bo->prev_randao, std::nullopt);
-    EXPECT_EQ(bo->blob_base_fee, std::nullopt);
+    EXPECT_EQ(bo->withdrawals, std::nullopt);
 
     monad_block_override_destroy(bo);
 }
@@ -4214,14 +4225,6 @@ TEST(BlockOverride, uint256_big_endian)
     set_block_override_base_fee_per_gas(bo, base_fee, sizeof(base_fee));
     ASSERT_TRUE(bo->base_fee_per_gas.has_value());
     EXPECT_EQ(*bo->base_fee_per_gas, uint256_t{9});
-
-    // blob_base_fee = 0x0100 = 256 in big-endian
-    uint8_t blob_fee[32] = {};
-    blob_fee[30] = 0x01;
-    blob_fee[31] = 0x00;
-    set_block_override_blob_base_fee(bo, blob_fee, sizeof(blob_fee));
-    ASSERT_TRUE(bo->blob_base_fee.has_value());
-    EXPECT_EQ(*bo->blob_base_fee, uint256_t{256});
 
     monad_block_override_destroy(bo);
 }
@@ -4259,4 +4262,174 @@ TEST(BlockOverride, prev_randao_32_bytes)
         0xfffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0_bytes32);
 
     monad_block_override_destroy(bo);
+}
+
+TEST(StateOverrideVec, create_destroy)
+{
+    auto *vec = monad_state_override_vec_create(2);
+    ASSERT_NE(vec, nullptr);
+    EXPECT_EQ(vec->size, 2u);
+    ASSERT_NE(vec->overrides, nullptr);
+    monad_state_override_vec_destroy(vec);
+}
+
+TEST(StateOverrideVec, set_fields_at_index)
+{
+    auto *vec = monad_state_override_vec_create(2);
+
+    Address addr{};
+    addr.bytes[19] = 0xAB;
+
+    uint8_t balance_bytes[32] = {};
+    balance_bytes[31] = 7;
+
+    uint8_t const code_bytes[] = {0x60, 0x00, 0x55};
+
+    bytes32_t state_key{};
+    state_key.bytes[31] = 0x01;
+    bytes32_t state_value{};
+    state_value.bytes[31] = 0x02;
+
+    bytes32_t state_diff_key{};
+    state_diff_key.bytes[31] = 0x03;
+    bytes32_t state_diff_value{};
+    state_diff_value.bytes[31] = 0x04;
+
+    add_override_address_at(vec, 1, addr.bytes, sizeof(addr.bytes));
+    set_override_balance_at(
+        vec,
+        1,
+        addr.bytes,
+        sizeof(addr.bytes),
+        balance_bytes,
+        sizeof(balance_bytes));
+    set_override_nonce_at(vec, 1, addr.bytes, sizeof(addr.bytes), 42);
+    set_override_code_at(
+        vec, 1, addr.bytes, sizeof(addr.bytes), code_bytes, sizeof(code_bytes));
+    set_override_state_at(
+        vec,
+        1,
+        addr.bytes,
+        sizeof(addr.bytes),
+        state_key.bytes,
+        sizeof(state_key.bytes),
+        state_value.bytes,
+        sizeof(state_value.bytes));
+    set_override_state_diff_at(
+        vec,
+        1,
+        addr.bytes,
+        sizeof(addr.bytes),
+        state_diff_key.bytes,
+        sizeof(state_diff_key.bytes),
+        state_diff_value.bytes,
+        sizeof(state_diff_value.bytes));
+
+    EXPECT_TRUE(vec->overrides[0].override_sets.empty());
+
+    auto const set_it = vec->overrides[1].override_sets.find(addr);
+    ASSERT_NE(set_it, vec->overrides[1].override_sets.end());
+    auto const &obj = set_it->second;
+
+    ASSERT_TRUE(obj.balance.has_value());
+    EXPECT_EQ(*obj.balance, uint256_t{7});
+
+    ASSERT_TRUE(obj.nonce.has_value());
+    EXPECT_EQ(*obj.nonce, 42u);
+
+    ASSERT_TRUE(obj.code.has_value());
+    byte_string const expected_code{
+        code_bytes, code_bytes + sizeof(code_bytes)};
+    EXPECT_EQ(*obj.code, expected_code);
+
+    auto const state_it = obj.state.find(state_key);
+    ASSERT_NE(state_it, obj.state.end());
+    EXPECT_EQ(state_it->second, state_value);
+
+    auto const state_diff_it = obj.state_diff.find(state_diff_key);
+    ASSERT_NE(state_diff_it, obj.state_diff.end());
+    EXPECT_EQ(state_diff_it->second, state_diff_value);
+
+    monad_state_override_vec_destroy(vec);
+}
+
+TEST(BlockOverrideVec, create_destroy)
+{
+    auto *vec = monad_block_override_vec_create(2);
+    ASSERT_NE(vec, nullptr);
+    EXPECT_EQ(vec->size, 2u);
+    ASSERT_NE(vec->overrides, nullptr);
+    monad_block_override_vec_destroy(vec);
+}
+
+TEST(BlockOverrideVec, set_fields_at_index)
+{
+    auto *vec = monad_block_override_vec_create(2);
+
+    uint8_t addr_bytes[20] = {};
+    addr_bytes[19] = 0xAB;
+
+    uint8_t randao_bytes[32] = {};
+    randao_bytes[0] = 0xFF;
+    randao_bytes[31] = 0x01;
+
+    uint8_t fee_bytes[32] = {};
+    fee_bytes[31] = 9;
+
+    set_block_override_number_at(vec, 1, 42);
+    set_block_override_time_at(vec, 1, 1700000000);
+    set_block_override_gas_limit_at(vec, 1, 30'000'000);
+    set_block_override_fee_recipient_at(vec, 1, addr_bytes, sizeof(addr_bytes));
+    set_block_override_prev_randao_at(
+        vec, 1, randao_bytes, sizeof(randao_bytes));
+    set_block_override_base_fee_per_gas_at(
+        vec, 1, fee_bytes, sizeof(fee_bytes));
+    add_block_override_withdrawal_at(
+        vec, 1, 1, 2, 3, addr_bytes, sizeof(addr_bytes));
+    addr_bytes[19] = 0xCD;
+    add_block_override_withdrawal_at(
+        vec, 1, 4, 5, 6, addr_bytes, sizeof(addr_bytes));
+
+    auto const &empty = vec->overrides[0];
+    EXPECT_EQ(empty.number, std::nullopt);
+    EXPECT_EQ(empty.time, std::nullopt);
+    EXPECT_EQ(empty.gas_limit, std::nullopt);
+    EXPECT_EQ(empty.fee_recipient, std::nullopt);
+    EXPECT_EQ(empty.prev_randao, std::nullopt);
+    EXPECT_EQ(empty.base_fee_per_gas, std::nullopt);
+    EXPECT_EQ(empty.withdrawals, std::nullopt);
+
+    auto const &bo = vec->overrides[1];
+    EXPECT_EQ(bo.number, 42u);
+    EXPECT_EQ(bo.time, 1700000000u);
+    EXPECT_EQ(bo.gas_limit, 30'000'000u);
+
+    ASSERT_TRUE(bo.fee_recipient.has_value());
+    EXPECT_EQ(
+        *bo.fee_recipient, 0x00000000000000000000000000000000000000ab_address);
+
+    ASSERT_TRUE(bo.prev_randao.has_value());
+    EXPECT_EQ(
+        *bo.prev_randao,
+        0xff00000000000000000000000000000000000000000000000000000000000001_bytes32);
+
+    ASSERT_TRUE(bo.base_fee_per_gas.has_value());
+    EXPECT_EQ(*bo.base_fee_per_gas, uint256_t{9});
+
+    ASSERT_TRUE(bo.withdrawals.has_value());
+    ASSERT_EQ(bo.withdrawals->size(), 2u);
+    EXPECT_EQ(bo.withdrawals->at(0).index, 1u);
+    EXPECT_EQ(bo.withdrawals->at(0).validator_index, 2u);
+    EXPECT_EQ(bo.withdrawals->at(0).amount, 3u);
+    EXPECT_EQ(
+        bo.withdrawals->at(0).recipient,
+        0x00000000000000000000000000000000000000ab_address);
+    EXPECT_EQ(bo.withdrawals->at(1).index, 4u);
+    EXPECT_EQ(bo.withdrawals->at(1).validator_index, 5u);
+    EXPECT_EQ(bo.withdrawals->at(1).amount, 6u);
+    EXPECT_EQ(
+        bo.withdrawals->at(1).recipient,
+        0x00000000000000000000000000000000000000cd_address);
+
+    monad_block_override_vec_destroy(vec);
 }

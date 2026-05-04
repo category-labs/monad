@@ -66,6 +66,7 @@
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -538,6 +539,82 @@ namespace
             return Result<nlohmann::json>{std::move(traces)};
         }
     }
+
+    template <Traits traits>
+    class ChainContextBuffer;
+
+    /**
+     * Dummy buffer for EVM trait specializations that do not need chain context
+     * for reserve balance checks.
+     */
+    template <Traits traits>
+        requires(is_evm_trait_v<traits>)
+    class ChainContextBuffer<traits>
+    {
+    public:
+        ChainContext<traits> advance(
+            std::vector<Address> const &,
+            std::vector<std::vector<std::optional<Address>>> const &)
+        {
+            return {};
+        }
+    };
+
+    /**
+     * Circular buffer of combined senders and EIP-7702 authorities for the last
+     * K blocks. Use advance(senders, authorities) to obtain the context needed
+     * for each block's reserve balance checks in eth_simulatev1.
+     */
+    template <Traits traits>
+        requires(is_monad_trait_v<traits>)
+    class ChainContextBuffer<traits>
+    {
+        static constexpr size_t K = 3;
+
+    public:
+        /// Advances the buffer with a new block's senders and authorities,
+        /// discarding the oldest currently stored context, then returns a
+        /// ChainContext for the given traits type. The arguments must outlive
+        /// this buffer.
+        ChainContext<traits> advance(
+            std::vector<Address> const &senders,
+            std::vector<std::vector<std::optional<Address>>> const &authorities)
+        {
+            current_index_ = current_index_ == 0 ? K - 1 : current_index_ - 1;
+            current_senders_ = &senders;
+            current_authorities_ = &authorities;
+            senders_and_authorities_buffer_[current_index_] =
+                combine_senders_and_authorities(senders, authorities);
+
+            return ChainContext<traits>{
+                .grandparent_senders_and_authorities = get<2>(),
+                .parent_senders_and_authorities = get<1>(),
+                .senders_and_authorities = get<0>(),
+                .senders = *current_senders_,
+                .authorities = *current_authorities_,
+            };
+        }
+
+    private:
+        template <size_t age>
+            requires(age < K)
+        ankerl::unordered_dense::segmented_set<Address> const &get() const
+        {
+            return senders_and_authorities_buffer_[(current_index_ + age) % K];
+        }
+
+        size_t current_index_{0};
+        std::array<ankerl::unordered_dense::segmented_set<Address>, K>
+            senders_and_authorities_buffer_{};
+        std::vector<Address> const *current_senders_{};
+        std::vector<std::vector<std::optional<Address>>> const
+            *current_authorities_{};
+    };
+
+    // TODO(dhil): These cases can be removed once the `eth_simulateV1`
+    // implementation has been added.
+    EXPLICIT_EVM_TRAITS_CLASS(ChainContextBuffer);
+    EXPLICIT_MONAD_TRAITS_CLASS(ChainContextBuffer);
 }
 
 namespace monad

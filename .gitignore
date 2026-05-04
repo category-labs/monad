@@ -160,9 +160,6 @@ vcpkg_installed/
 # VM Fuzzer log files
 tmux-fuzzer-log/
 
-# optional third-party dependencies
-third_party/evmone/
-
 # Claude Code — ignore everything except shared commands
 .claude/*
 !.claude/commands/

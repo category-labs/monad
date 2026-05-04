@@ -15,6 +15,9 @@
 
 #pragma once
 
+#include <optional>
+#include <string>
+
 namespace monad::vm::utils
 {
 #ifdef MONAD_COMPILER_TESTING
@@ -33,5 +36,22 @@ namespace monad::vm::utils
     static constexpr bool collect_monad_compiler_hot_path_stats = true;
 #else
     static constexpr bool collect_monad_compiler_hot_path_stats = false;
+#endif
+
+#ifdef MONAD_COMPILER_TESTING
+    extern bool is_compiler_runtime_debug_trace_enabled;
+#else
+    static constexpr bool is_compiler_runtime_debug_trace_enabled = false;
+#endif
+
+#ifdef MONAD_COMPILER_TESTING
+    std::optional<std::string>
+    make_compiler_asm_log_path(bytes32_t const &base_name);
+#else
+    __attribute__((always_inline)) constexpr std::optional<std::string>
+    make_compiler_asm_log_path(bytes32_t const &)
+    {
+        return std::nullopt;
+    }
 #endif
 }

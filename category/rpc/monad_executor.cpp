@@ -75,6 +75,7 @@
 #include <boost/outcome/try.hpp>
 #include <boost/scope_exit.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -112,14 +113,14 @@ namespace
     // creates its own LazyBlockHash instance.
     class LazyBlockHash : public BlockHashBuffer
     {
-        using BlockHashBuffer::N;
-
         mpt::RODb const &db_;
         uint64_t const n_;
         using Cache = static_lru_cache<uint64_t, bytes32_t>;
         mutable Cache blockhash_cache_;
 
     public:
+        using BlockHashBuffer::N;
+
         LazyBlockHash(mpt::RODb const &db, uint64_t const n)
             : db_{db}
             , n_{n}
@@ -615,6 +616,81 @@ namespace
     // implementation has been added.
     EXPLICIT_EVM_TRAITS_CLASS(ChainContextBuffer);
     EXPLICIT_MONAD_TRAITS_CLASS(ChainContextBuffer);
+
+    // The `eth_simulateV1` method needs to be able to read hashes of both
+    // finalized and simulated blocks. This buffer piggybacks on lazy block hash
+    // buffer for finalized blocks, while providing a method for appending the
+    // block hashes of simulated blocks such that they can be read by later
+    // simulated blocks.
+    class EthSimulateBlockHashBuffer : public LazyBlockHash
+    {
+        using LazyBlockHash::N;
+
+        uint64_t const n_;
+        uint64_t i_;
+        std::optional<bytes32_t const> const base_block_hash_;
+        std::array<bytes32_t, N> simulated_block_hashes_;
+
+    public:
+        EthSimulateBlockHashBuffer(
+            mpt::RODb const &db, uint64_t const n,
+            std::optional<bytes32_t const> const &base_block_hash)
+            : LazyBlockHash(db, n)
+            , n_{n}
+            , i_{0}
+            , base_block_hash_{base_block_hash}
+            , simulated_block_hashes_{}
+        {
+        }
+
+        ~EthSimulateBlockHashBuffer() override = default;
+
+        uint64_t n() const override
+        {
+            return n_ + i_;
+        }
+
+        bytes32_t const &get(uint64_t const n) const override
+        {
+            uint64_t const current_n = this->n();
+            MONAD_ASSERT_PRINTF(
+                n < current_n && n + N >= current_n,
+                "n_=%lu, n=%lu",
+                current_n,
+                n);
+
+            // Simulated blocks begin at `n_`. Querying a block number at or
+            // above `n_` means we should read from the simulated-hash window.
+            if (n >= n_) {
+                size_t const idx = static_cast<size_t>(n - n_);
+                MONAD_ASSERT_PRINTF(
+                    idx < i_,
+                    "missing simulated block hash: n=%lu, idx=%zu, i_=%lu",
+                    n,
+                    idx,
+                    i_);
+                return simulated_block_hashes_[idx];
+            }
+
+            // If we are querying the base block, then we need to take care, as
+            // the base block may not have been finalized yet, meaning a call to
+            // `LazyBlockHash::get(n)` would throw (since it only reads
+            // finalized blocks). Therefore we special case this query to return
+            // the provided base block hash.
+            if (n + 1 == n_ && base_block_hash_.has_value()) {
+                return *base_block_hash_;
+            }
+
+            return LazyBlockHash::get(n);
+        }
+
+        void advance(bytes32_t const &simulated_block_hash)
+        {
+            MONAD_ASSERT_PRINTF(
+                i_ < N, "block hash buffer overflow: i_=%lu, N=%u", i_, N);
+            simulated_block_hashes_[i_++] = simulated_block_hash;
+        }
+    };
 }
 
 namespace monad

@@ -66,6 +66,11 @@ CommitBuilder::CommitBuilder(uint64_t const block_number)
 {
 }
 
+byte_string_view CommitBuilder::state_marker() const
+{
+    return {};
+}
+
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
     UpdateList account_updates;

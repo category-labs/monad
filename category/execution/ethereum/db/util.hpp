@@ -157,6 +157,13 @@ inline mpt::Nibbles const withdrawal_nibbles = mpt::concat(WITHDRAWAL_NIBBLE);
 inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
 inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
 
+// Marker byte stamped into the value of the top-level state_nibbles entry
+// for page-encoded databases. Slot-encoded databases leave the value empty.
+// MonadCommitBuilder, the statesync client (page-mode secondary), and the
+// page-mode snapshot loader all stamp this byte; TrieDb::commit cross-checks
+// the existing on-disk value against the builder's expected marker.
+inline byte_string const page_encoding_marker{0x01};
+
 //////////////////////////////////////////////////////////
 // Proposed and finialized subtries. Active on all tables.
 //////////////////////////////////////////////////////////

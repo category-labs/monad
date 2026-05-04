@@ -181,6 +181,28 @@ void TrieDb::commit(
     }
     block_number_ = block_number;
 
+    // Cross-check the on-disk encoding against what the builder is about to
+    // write. The state_nibbles entry carries an empty value for slot
+    // encoding and the page-encoding marker byte for page encoding.
+    // Mismatch means the db was opened (or had its state machine reset)
+    // with the wrong encoding for this commit.
+    if (curr_root_ != nullptr) {
+        auto const find_res = db_.find(
+            curr_root_,
+            concat(NibblesView{prefix_}, NibblesView{state_nibbles}),
+            block_number_);
+        byte_string_view const existing_marker =
+            find_res.has_value() ? find_res.value().node->value()
+                                 : byte_string_view{};
+        MONAD_ASSERT_PRINTF(
+            existing_marker == builder.state_marker(),
+            "state encoding mismatch at block %lu: existing marker size=%zu, "
+            "builder expects size=%zu",
+            block_number_,
+            existing_marker.size(),
+            builder.state_marker().size());
+    }
+
     curr_root_ = db_.upsert(
         std::move(curr_root_),
         builder.build(prefix_),

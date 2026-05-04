@@ -111,12 +111,17 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 
     updates_.push_front(update_alloc_.emplace_back(Update{
         .key = state_nibbles,
-        .value = byte_string_view{},
+        .value = page_encoding_marker,
         .incarnation = false,
         .next = std::move(account_updates),
         .version = static_cast<int64_t>(block_number_)}));
 
     return *this;
+}
+
+byte_string_view MonadCommitBuilder::state_marker() const
+{
+    return page_encoding_marker;
 }
 
 MONAD_NAMESPACE_END

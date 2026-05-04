@@ -45,6 +45,8 @@ public:
     {
         return std::move(leaf_overlay_);
     }
+
+    byte_string_view state_marker() const override;
 };
 
 MONAD_NAMESPACE_END

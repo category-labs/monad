@@ -147,7 +147,8 @@ void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
 
     Update state_update{
         .key = state_nibbles,
-        .value = byte_string_view{},
+        .value = loader->page_mode ? byte_string_view{page_encoding_marker}
+                                   : byte_string_view{},
         .incarnation = false,
         .next = std::move(loader->state_updates),
         .version = static_cast<int64_t>(loader->block)};

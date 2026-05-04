@@ -47,6 +47,13 @@ public:
 
     virtual CommitBuilder &add_state_deltas(StateDeltas const &);
 
+    // Value the builder writes at the top-level state_nibbles entry. Slot
+    // encoding leaves it empty; page encoding stamps a marker byte so the
+    // db's encoding can be cross-checked at commit time. Used by
+    // TrieDb::commit to assert the on-disk encoding matches what the builder
+    // is about to write.
+    virtual byte_string_view state_marker() const;
+
     CommitBuilder &add_code(Code const &);
 
     CommitBuilder &add_receipts(std::vector<Receipt> const &);

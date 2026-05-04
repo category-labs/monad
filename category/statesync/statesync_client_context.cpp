@@ -234,10 +234,13 @@ void monad_statesync_client_context::commit()
     };
 
     // Assemble the full finalized/state/code/block_header UpdateList for one
-    // db and upsert it. Storage encoding is delegated via `build_storage`.
+    // db and upsert it. Storage encoding is delegated via `build_storage`,
+    // and `state_marker` is stamped as the value of the top-level
+    // state_nibbles entry (empty for slot, page_encoding_marker for page).
     auto build_and_upsert = [this, &header_rlp](
                                 mpt::Db &target_db,
                                 TrieDb &target_tdb,
+                                byte_string_view const state_marker,
                                 auto build_storage) {
         std::deque<mpt::Update> alloc;
         std::deque<byte_string> bytes_alloc;
@@ -273,7 +276,7 @@ void monad_statesync_client_context::commit()
 
         auto state_update = Update{
             .key = state_nibbles,
-            .value = byte_string_view{},
+            .value = state_marker,
             .incarnation = false,
             .next = std::move(accounts),
             .version = static_cast<int64_t>(current)};
@@ -317,6 +320,7 @@ void monad_statesync_client_context::commit()
     build_and_upsert(
         db,
         tdb,
+        byte_string_view{},
         [&](Address const &,
             StorageDeltas const &slot_deltas,
             std::deque<mpt::Update> &alloc,
@@ -334,6 +338,7 @@ void monad_statesync_client_context::commit()
         build_and_upsert(
             *secondary_db,
             *secondary_tdb,
+            byte_string_view{page_encoding_marker},
             [&](Address const &addr,
                 StorageDeltas const &slot_deltas,
                 std::deque<mpt::Update> &alloc,

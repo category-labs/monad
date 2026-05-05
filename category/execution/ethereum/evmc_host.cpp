@@ -97,7 +97,7 @@ size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
 {
     MONAD_TRY
     {
-        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
+        if (MONAD_UNLIKELY(trace::is_witness_tracer(state_tracer_))) {
             bytes32_t const hash = state_.get_code_hash(address);
             if (hash == NULL_HASH) {
                 return 0;
@@ -139,7 +139,7 @@ size_t EvmcHostBase::copy_code(
 {
     MONAD_TRY
     {
-        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
+        if (MONAD_UNLIKELY(trace::is_witness_tracer(state_tracer_))) {
             bytes32_t const hash = state_.get_code_hash(address);
             if (hash != NULL_HASH) {
                 auto const vcode = state_.read_code(hash);
@@ -180,6 +180,10 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
         bytes32_t const block_hash =
             block_hash_buffer_.get(static_cast<uint64_t>(block_number));
         MONAD_ASSERT(block_hash != bytes32_t{});
+        if (MONAD_UNLIKELY(trace::is_witness_tracer(state_tracer_))) {
+            trace::on_block_hash(
+                state_tracer_, static_cast<uint64_t>(block_number));
+        }
         return block_hash;
     }
     MONAD_CATCH(...)

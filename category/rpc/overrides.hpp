@@ -17,11 +17,13 @@
 
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 
 #include <ankerl/unordered_dense.h>
 
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 struct monad_state_override
 {
@@ -43,6 +45,18 @@ struct monad_state_override
         override_sets;
 };
 
+struct monad_state_override_vec
+{
+    size_t const size;
+    monad_state_override *overrides;
+
+    explicit monad_state_override_vec(size_t size)
+        : size(size)
+        , overrides(new monad_state_override[size]())
+    {
+    }
+};
+
 struct monad_block_override
 {
     std::optional<uint64_t> number{std::nullopt};
@@ -51,5 +65,17 @@ struct monad_block_override
     std::optional<monad::Address> fee_recipient{std::nullopt};
     std::optional<monad::bytes32_t> prev_randao{std::nullopt};
     std::optional<monad::uint256_t> base_fee_per_gas{std::nullopt};
-    std::optional<monad::uint256_t> blob_base_fee{std::nullopt};
+    std::optional<std::vector<monad::Withdrawal>> withdrawals{std::nullopt};
+};
+
+struct monad_block_override_vec
+{
+    size_t const size;
+    monad_block_override *overrides;
+
+    explicit monad_block_override_vec(size_t size)
+        : size(size)
+        , overrides(new monad_block_override[size]())
+    {
+    }
 };

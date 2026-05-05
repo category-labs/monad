@@ -20,7 +20,7 @@ use std::{
 };
 
 use alloy_consensus::{Header, Transaction as _, TxEnvelope};
-use alloy_eips::eip2718::Encodable2718;
+use alloy_eips::{eip2718::Encodable2718, eip4895::Withdrawal};
 use alloy_primitives::{Address, Bytes, B256, U256, U64};
 use alloy_rlp::Encodable;
 use alloy_sol_types::decode_revert_reason;
@@ -188,6 +188,24 @@ pub struct RevertCallResult {
 
 pub struct SenderContext {
     sender: Sender<*mut monad_executor_result>,
+}
+
+#[derive(Clone, Debug)]
+pub enum SimulateResult {
+    Success(SuccessSimulateResult),
+    Failure(FailureSimulateResult),
+}
+
+#[derive(Clone, Debug)]
+pub struct SuccessSimulateResult {
+    pub output_data: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct FailureSimulateResult {
+    pub error_code: EthCallResult,
+    pub message: String,
+    pub data: Option<String>,
 }
 
 /// # Safety
@@ -621,6 +639,294 @@ pub async fn eth_trace_block_or_transaction(
         ffi::monad_executor_result_release(result);
 
         call_result
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number: Option<U64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time: Option<U64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_limit: Option<U64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fee_recipient: Option<Address>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prev_randao: Option<B256>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_fee_per_gas: Option<U256>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub withdrawals: Vec<Withdrawal>,
+}
+
+pub async fn eth_simulate_v1(
+    chain_id: ChainId,
+    senders: &Vec<Vec<Address>>,
+    calls: &Vec<Vec<TxEnvelope>>,
+    block_header: Header,
+    block_number: u64,
+    block_id: Option<[u8; 32]>,
+    grandparent_id: Option<[u8; 32]>,
+    emit_native_transfer_logs: bool,
+    eth_call_executor: &EthCallExecutor,
+    overrides: &[(&BlockOverride, &StateOverrideSet)],
+) -> SimulateResult {
+    assert_eq!(calls.len(), overrides.len());
+    assert_eq!(calls.len(), senders.len());
+    for (txs, senders) in calls.iter().zip(senders.iter()) {
+        assert_eq!(txs.len(), senders.len());
+    }
+
+    let mut rlp_encoded_senders = vec![];
+    senders.encode(&mut rlp_encoded_senders);
+
+    let mut rlp_encoded_txns = vec![];
+    calls.encode(&mut rlp_encoded_txns);
+
+    let mut rlp_encoded_block_header = vec![];
+    block_header.encode(&mut rlp_encoded_block_header);
+
+    let rlp_encoded_block_id = alloy_rlp::encode(block_id.unwrap_or([0_u8; 32]));
+    let rlp_encoded_grandparent_id = alloy_rlp::encode(grandparent_id.unwrap_or([0_u8; 32]));
+
+    let chain_config = chain_id.to_ffi_chain_config();
+
+    let state_overrides = unsafe { ffi::monad_state_override_vec_create(calls.len()) };
+    for (i, (_, state_override)) in overrides.iter().enumerate() {
+        for (addr, obj) in state_override.iter() {
+            let addr: &[u8] = addr.as_slice();
+
+            unsafe {
+                ffi::add_override_address_at(state_overrides, i, addr.as_ptr(), addr.len());
+
+                if let Some(balance) = obj.balance {
+                    // Big Endianess is to match with decode in eth_call.cpp (intx::be::load)
+                    let balance_vec = balance.to_be_bytes_vec();
+
+                    ffi::set_override_balance_at(
+                        state_overrides,
+                        i,
+                        addr.as_ptr(),
+                        addr.len(),
+                        balance_vec.as_ptr(),
+                        balance_vec.len(),
+                    );
+                }
+
+                if let Some(nonce) = obj.nonce {
+                    ffi::set_override_nonce_at(
+                        state_overrides,
+                        i,
+                        addr.as_ptr(),
+                        addr.len(),
+                        nonce.as_limbs()[0],
+                    )
+                }
+
+                if let Some(code) = &obj.code {
+                    ffi::set_override_code_at(
+                        state_overrides,
+                        i,
+                        addr.as_ptr(),
+                        addr.len(),
+                        code.as_ptr(),
+                        code.len(),
+                    )
+                }
+
+                match &obj.storage_override {
+                    Some(StorageOverride::State(storage_override)) => {
+                        for (k, v) in storage_override {
+                            ffi::set_override_state_at(
+                                state_overrides,
+                                i,
+                                addr.as_ptr(),
+                                addr.len(),
+                                k.as_ptr(),
+                                k.len(),
+                                v.as_ptr(),
+                                v.len(),
+                            )
+                        }
+                    }
+                    Some(StorageOverride::StateDiff(override_state_diff)) => {
+                        for (k, v) in override_state_diff {
+                            ffi::set_override_state_diff_at(
+                                state_overrides,
+                                i,
+                                addr.as_ptr(),
+                                addr.len(),
+                                k.as_ptr(),
+                                k.len(),
+                                v.as_ptr(),
+                                v.len(),
+                            )
+                        }
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
+
+    let block_overrides = unsafe { ffi::monad_block_override_vec_create(calls.len()) };
+    for (i, (block_override, _)) in overrides.iter().enumerate() {
+        if let Some(number) = block_override.number {
+            unsafe {
+                ffi::set_block_override_number_at(block_overrides, i, number.as_limbs()[0]);
+            }
+        }
+
+        if let Some(time) = block_override.time {
+            unsafe {
+                ffi::set_block_override_time_at(block_overrides, i, time.as_limbs()[0]);
+            }
+        }
+
+        if let Some(gas_limit) = block_override.gas_limit {
+            unsafe {
+                ffi::set_block_override_gas_limit_at(block_overrides, i, gas_limit.as_limbs()[0]);
+            }
+        }
+
+        if let Some(fee_recipient) = block_override.fee_recipient {
+            let fee_recipient_bytes: &[u8] = fee_recipient.as_slice();
+            unsafe {
+                ffi::set_block_override_fee_recipient_at(
+                    block_overrides,
+                    i,
+                    fee_recipient_bytes.as_ptr(),
+                    fee_recipient_bytes.len(),
+                );
+            }
+        }
+
+        if let Some(prev_randao) = block_override.prev_randao {
+            let prev_randao_vec = prev_randao.as_slice();
+            unsafe {
+                ffi::set_block_override_prev_randao_at(
+                    block_overrides,
+                    i,
+                    prev_randao_vec.as_ptr(),
+                    prev_randao_vec.len(),
+                );
+            }
+        }
+
+        if let Some(base_fee_per_gas) = block_override.base_fee_per_gas {
+            let base_fee_per_gas_vec = base_fee_per_gas.to_be_bytes_vec();
+            unsafe {
+                ffi::set_block_override_base_fee_per_gas_at(
+                    block_overrides,
+                    i,
+                    base_fee_per_gas_vec.as_ptr(),
+                    base_fee_per_gas_vec.len(),
+                );
+            }
+        }
+
+        for withdrawal in &block_override.withdrawals {
+            let address_bytes: &[u8] = withdrawal.address.as_slice();
+            unsafe {
+                ffi::add_block_override_withdrawal_at(
+                    block_overrides,
+                    i,
+                    withdrawal.index,
+                    withdrawal.validator_index,
+                    withdrawal.amount,
+                    address_bytes.as_ptr(),
+                    address_bytes.len(),
+                );
+            }
+        }
+    }
+
+    let (send, recv) = channel();
+    let sender_ctx = Box::new(SenderContext { sender: send });
+
+    unsafe {
+        let sender_ctx_ptr = Box::into_raw(sender_ctx);
+
+        ffi::monad_executor_eth_simulate_submit(
+            eth_call_executor.eth_call_executor,
+            chain_config,
+            rlp_encoded_senders.as_ptr(),
+            rlp_encoded_senders.len(),
+            rlp_encoded_txns.as_ptr(),
+            rlp_encoded_txns.len(),
+            block_number,
+            rlp_encoded_block_header.as_ptr(),
+            rlp_encoded_block_header.len(),
+            rlp_encoded_block_id.as_ptr(),
+            rlp_encoded_block_id.len(),
+            rlp_encoded_grandparent_id.as_ptr(),
+            rlp_encoded_grandparent_id.len(),
+            state_overrides,
+            block_overrides,
+            emit_native_transfer_logs,
+            Some(eth_call_submit_callback),
+            sender_ctx_ptr as *mut std::ffi::c_void,
+        );
+    }
+
+    let result = match recv.await {
+        Ok(r) => r,
+        Err(e) => {
+            unsafe {
+                ffi::monad_state_override_vec_destroy(state_overrides);
+            };
+
+            unsafe {
+                ffi::monad_block_override_vec_destroy(block_overrides);
+            };
+            warn!("callback from eth_simulate_v1 failed: {:?}", e);
+
+            return SimulateResult::Failure(FailureSimulateResult {
+                error_code: EthCallResult::OtherError,
+                message: "internal eth_simulate_v1 error".to_string(),
+                data: None,
+            });
+        }
+    };
+
+    unsafe {
+        let status_code = (*result).status_code;
+
+        let sim_result = match status_code {
+            ETH_CALL_SUCCESS => {
+                let output_data_len = (*result).encoded_trace_len;
+                let output_data = if output_data_len != 0 {
+                    std::slice::from_raw_parts((*result).encoded_trace, output_data_len).to_vec()
+                } else {
+                    vec![]
+                };
+
+                SimulateResult::Success(SuccessSimulateResult { output_data })
+            }
+            _ => {
+                let cstr_msg = CStr::from_ptr((*result).message.cast());
+                let message = match cstr_msg.to_str() {
+                    Ok(str) => String::from(str),
+                    Err(_) => String::from("execution error eth_simulate_v1 message invalid utf-8"),
+                };
+
+                SimulateResult::Failure(FailureSimulateResult {
+                    error_code: EthCallResult::OtherError,
+                    message,
+                    data: None,
+                })
+            }
+        };
+
+        ffi::monad_executor_result_release(result);
+
+        ffi::monad_state_override_vec_destroy(state_overrides);
+
+        ffi::monad_block_override_vec_destroy(block_overrides);
+
+        sim_result
     }
 }
 

@@ -17,6 +17,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/rpc/overrides.h>
 #include <category/rpc/overrides.hpp>
 
@@ -24,6 +25,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 using namespace monad;
 
@@ -162,6 +164,78 @@ void set_override_state(
     state_object.emplace(k, v);
 }
 
+struct monad_state_override_vec *monad_state_override_vec_create(size_t size)
+{
+    auto *const vec = new monad_state_override_vec(size);
+    return vec;
+}
+
+void monad_state_override_vec_destroy(struct monad_state_override_vec *v)
+{
+    MONAD_ASSERT(v);
+    delete[] v->overrides;
+    delete v;
+}
+
+void add_override_address_at(
+    struct monad_state_override_vec *v, size_t index, uint8_t const *addr,
+    size_t addr_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    add_override_address(&v->overrides[index], addr, addr_len);
+}
+
+void set_override_balance_at(
+    struct monad_state_override_vec *v, size_t index, uint8_t const *addr,
+    size_t addr_len, uint8_t const *balance, size_t balance_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_override_balance(
+        &v->overrides[index], addr, addr_len, balance, balance_len);
+}
+
+void set_override_nonce_at(
+    struct monad_state_override_vec *v, size_t index, uint8_t const *addr,
+    size_t addr_len, uint64_t nonce)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_override_nonce(&v->overrides[index], addr, addr_len, nonce);
+}
+
+void set_override_code_at(
+    struct monad_state_override_vec *v, size_t index, uint8_t const *addr,
+    size_t addr_len, uint8_t const *code, size_t code_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_override_code(&v->overrides[index], addr, addr_len, code, code_len);
+}
+
+void set_override_state_diff_at(
+    struct monad_state_override_vec *v, size_t index, uint8_t const *addr,
+    size_t addr_len, uint8_t const *key, size_t key_len, uint8_t const *value,
+    size_t value_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_override_state_diff(
+        &v->overrides[index], addr, addr_len, key, key_len, value, value_len);
+}
+
+void set_override_state_at(
+    struct monad_state_override_vec *v, size_t index, uint8_t const *addr,
+    size_t addr_len, uint8_t const *key, size_t key_len, uint8_t const *value,
+    size_t value_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_override_state(
+        &v->overrides[index], addr, addr_len, key, key_len, value, value_len);
+}
+
 monad_block_override *monad_block_override_create()
 {
     return new monad_block_override();
@@ -233,13 +307,105 @@ void set_block_override_base_fee_per_gas(
     m->base_fee_per_gas = intx::be::unsafe::load<uint256_t>(fee);
 }
 
-void set_block_override_blob_base_fee(
-    monad_block_override *const m, uint8_t const *const fee,
-    size_t const fee_len)
+void add_block_override_withdrawal(
+    struct monad_block_override *const m, uint64_t index,
+    uint64_t validator_index, uint64_t amount, uint8_t const *recipient_addr,
+    size_t recipient_addr_len)
 {
     MONAD_ASSERT(m);
-    MONAD_ASSERT(fee);
-    MONAD_ASSERT(fee_len == sizeof(uint256_t));
-    MONAD_ASSERT(!m->blob_base_fee.has_value());
-    m->blob_base_fee = intx::be::unsafe::load<uint256_t>(fee);
+    MONAD_ASSERT(recipient_addr);
+    MONAD_ASSERT(recipient_addr_len == sizeof(Address));
+    Address recipient;
+    std::memcpy(recipient.bytes, recipient_addr, sizeof(Address));
+
+    if (!m->withdrawals.has_value()) {
+        m->withdrawals = std::vector<Withdrawal>{};
+    }
+
+    m->withdrawals->emplace_back(Withdrawal{
+        .index = index,
+        .validator_index = validator_index,
+        .amount = amount,
+        .recipient = recipient,
+    });
+}
+
+struct monad_block_override_vec *monad_block_override_vec_create(size_t size)
+{
+    auto *const vec = new monad_block_override_vec(size);
+    return vec;
+}
+
+void monad_block_override_vec_destroy(struct monad_block_override_vec *v)
+{
+    MONAD_ASSERT(v);
+    delete[] v->overrides;
+    delete v;
+}
+
+void set_block_override_number_at(
+    struct monad_block_override_vec *v, size_t index, uint64_t number)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_block_override_number(&v->overrides[index], number);
+}
+
+void set_block_override_time_at(
+    struct monad_block_override_vec *v, size_t index, uint64_t time)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_block_override_time(&v->overrides[index], time);
+}
+
+void set_block_override_gas_limit_at(
+    struct monad_block_override_vec *v, size_t index, uint64_t gas_limit)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_block_override_gas_limit(&v->overrides[index], gas_limit);
+}
+
+void set_block_override_fee_recipient_at(
+    struct monad_block_override_vec *v, size_t index, uint8_t const *addr,
+    size_t addr_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_block_override_fee_recipient(&v->overrides[index], addr, addr_len);
+}
+
+void set_block_override_prev_randao_at(
+    struct monad_block_override_vec *v, size_t index, uint8_t const *randao,
+    size_t randao_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_block_override_prev_randao(&v->overrides[index], randao, randao_len);
+}
+
+void set_block_override_base_fee_per_gas_at(
+    struct monad_block_override_vec *v, size_t index, uint8_t const *fee,
+    size_t fee_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_block_override_base_fee_per_gas(&v->overrides[index], fee, fee_len);
+}
+
+void add_block_override_withdrawal_at(
+    struct monad_block_override_vec *v, size_t index, uint64_t withdrawal_index,
+    uint64_t validator_index, uint64_t amount, uint8_t const *recipient_addr,
+    size_t recipient_addr_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    add_block_override_withdrawal(
+        &v->overrides[index],
+        withdrawal_index,
+        validator_index,
+        amount,
+        recipient_addr,
+        recipient_addr_len);
 }

@@ -88,7 +88,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         limits::active_validator_stake<Trait>();
 
     static constexpr uint256_t ACTIVE_VALSET_SIZE =
-        limits::active_valset_size();
+        limits::active_valset_size<Trait>();
 
     static constexpr uint256_t DUST_THRESHOLD = limits::dust_threshold();
 
@@ -184,7 +184,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     Result<void> syscall_snapshot()
     {
         state.push();
-        auto res = contract.syscall_snapshot({}, 0);
+        auto res = contract.syscall_snapshot<Trait>({}, 0);
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         return outcome::success();
@@ -672,7 +672,7 @@ TEST_F(StakeLatest, nonpayable_functions_revert)
 {
     // syscalls
     EXPECT_EQ(
-        contract.syscall_snapshot({}, 5 * MON).assume_error(),
+        contract.syscall_snapshot<Trait>({}, 5 * MON).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
         contract.syscall_on_epoch_change({}, 5 * MON).assume_error(),

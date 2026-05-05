@@ -155,6 +155,7 @@ namespace monad::staking::test
 
         Result<void> syscall_on_epoch_change(u64_be);
 
+        template <Traits traits>
         Result<void> syscall_snapshot();
 
         template <Traits traits>

@@ -83,8 +83,12 @@ namespace limits
         return 10000000000000000000000000_u256; // 1e25
     };
 
+    template <Traits traits>
     constexpr uint64_t active_valset_size()
     {
+        if constexpr (traits::mip_9_active()) {
+            return 300;
+        }
         return 200;
     }
 

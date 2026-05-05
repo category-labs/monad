@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/proposal_overlays.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -1610,7 +1611,7 @@ TEST_F(OnDiskStateTest, proposal_basics)
         bytes32_t{11},
         BlockHeader{.number = 11});
     db_cache.update_proposal_state(
-        std::move(released_state1), 11, bytes32_t{11});
+        from_slot_state_deltas(*released_state1), 11, bytes32_t{11});
     db_cache.finalize(11, bytes32_t{11});
 
     db_cache.set_block_and_prefix(11, bytes32_t{11});
@@ -1629,7 +1630,7 @@ TEST_F(OnDiskStateTest, proposal_basics)
         bytes32_t{12},
         BlockHeader{.number = 12});
     db_cache.update_proposal_state(
-        std::move(released_state2), 12, bytes32_t{12});
+        from_slot_state_deltas(*released_state2), 12, bytes32_t{12});
     EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
     db_cache.finalize(12, bytes32_t{12});
     EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
@@ -1676,7 +1677,8 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         Code{},
         bytes32_t{10},
         BlockHeader{.number = 10});
-    db_cache.update_proposal_state(std::move(state_deltas), 10, bytes32_t{10});
+    db_cache.update_proposal_state(
+        from_slot_state_deltas(*state_deltas), 10, bytes32_t{10});
     db_cache.finalize(10, bytes32_t{10});
     EXPECT_TRUE(db_cache.read_account(a).has_value());
     EXPECT_TRUE(db_cache.read_account(b).has_value());
@@ -1713,7 +1715,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         bytes32_t{111},
         BlockHeader{.number = 11});
     db_cache.update_proposal_state(
-        std::move(released_state_111), 11, bytes32_t{111});
+        from_slot_state_deltas(*released_state_111), 11, bytes32_t{111});
     auto const state_root_round_111 = db_cache.state_root();
     db_cache.set_block_and_prefix(11, bytes32_t{111});
     EXPECT_TRUE(db_cache.read_account(a).has_value());
@@ -1751,7 +1753,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         bytes32_t{121},
         BlockHeader{.number = 12});
     db_cache.update_proposal_state(
-        std::move(released_state_121), 12, bytes32_t{121});
+        from_slot_state_deltas(*released_state_121), 12, bytes32_t{121});
     db_cache.set_block_and_prefix(12, bytes32_t{121});
     EXPECT_TRUE(db_cache.read_account(a).has_value());
     EXPECT_TRUE(db_cache.read_account(b).has_value());
@@ -1789,7 +1791,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         bytes32_t{112},
         BlockHeader{.number = 11});
     db_cache.update_proposal_state(
-        std::move(released_state_112), 11, bytes32_t{112});
+        from_slot_state_deltas(*released_state_112), 11, bytes32_t{112});
 
     LOG_INFO("block 12 round 122 on block 11 round 112");
     db_cache.set_block_and_prefix(11, bytes32_t{112});
@@ -1810,7 +1812,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         bytes32_t{122},
         BlockHeader{.number = 12});
     db_cache.update_proposal_state(
-        std::move(released_state_122), 12, bytes32_t{122});
+        from_slot_state_deltas(*released_state_122), 12, bytes32_t{122});
 
     LOG_INFO("block 13 round 131 on block 12 round 121");
     db_cache.set_block_and_prefix(12, bytes32_t{121});
@@ -1834,7 +1836,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         bytes32_t{131},
         BlockHeader{.number = 13});
     db_cache.update_proposal_state(
-        std::move(released_state_131), 13, bytes32_t{131});
+        from_slot_state_deltas(*released_state_131), 13, bytes32_t{131});
     auto const state_root_round_131 = db_cache.state_root();
 
     LOG_INFO("block 13 round 132 on block 12 round 122");
@@ -1856,7 +1858,7 @@ TEST_F(OnDiskStateTest, undecided_proposals)
         bytes32_t{132},
         BlockHeader{.number = 13});
     db_cache.update_proposal_state(
-        std::move(released_state_132), 13, bytes32_t{132});
+        from_slot_state_deltas(*released_state_132), 13, bytes32_t{132});
 
     //  b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
     //  b11 r111 r100           +40 v2 --
@@ -2159,7 +2161,7 @@ namespace
                     get_dummy_block_id(proposal_seed),
                     BlockHeader{.number = block});
                 db2_.update_proposal_state(
-                    std::move(state2),
+                    from_slot_state_deltas(*state2),
                     block,
                     get_dummy_block_id(proposal_seed));
             }

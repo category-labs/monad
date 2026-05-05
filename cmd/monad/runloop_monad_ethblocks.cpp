@@ -276,7 +276,19 @@ Result<void> process_monad_block(
         h.logs_bloom = compute_bloom(receipts);
         h.ommers_hash = compute_ommers_hash(block.ommers);
     });
-    db.update_proposal_state(std::move(state), block.header.number, block_id);
+    if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+        db.update_proposal_state(
+            from_page_state_deltas(
+                *state,
+                std::move(static_cast<MonadCommitBuilder &>(builder))
+                    .take_leaf_overlay()),
+            block.header.number,
+            block_id);
+    }
+    else {
+        db.update_proposal_state(
+            from_slot_state_deltas(*state), block.header.number, block_id);
+    }
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);

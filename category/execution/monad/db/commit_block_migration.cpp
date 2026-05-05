@@ -22,6 +22,8 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/proposal_overlays.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -94,8 +96,7 @@ void commit_block(
         MonadCommitBuilder builder2(header.number, page_broker);
         builder2.add_state_deltas(state);
         add_common_deltas(builder2);
-        secondary_db.commit(
-            block_id, builder2, header, state, populate_header);
+        secondary_db.commit(block_id, builder2, header, state, populate_header);
     };
 
     // Whichever Db owns the canonical state_root commits first, so its
@@ -115,6 +116,11 @@ void commit_block(
         correct_db = &primary_db;
         primary_db.commit(block_id, builder, header, state, populate_header);
         commit_secondary();
+    }
+
+    if (auto *const db_cache = dynamic_cast<DbCache *>(&primary_db)) {
+        db_cache->update_proposal_state(
+            from_slot_state_deltas(state), header.number, block_id);
     }
 }
 

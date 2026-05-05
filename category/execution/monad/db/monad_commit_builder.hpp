@@ -16,9 +16,11 @@
 #pragma once
 
 #include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/proposal_overlays.hpp>
 #include <category/vm/evm/monad/revision.h>
 
 #include <memory>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -27,11 +29,22 @@ class PageStorageBroker;
 class MonadCommitBuilder : public CommitBuilder
 {
     PageStorageBroker &broker_;
+    // Populated during add_state_deltas: one entry per touched page,
+    // keyed by (addr, inc, page_key) with value encode_storage_page(page).
+    // Empty byte_string for an emptied page. The runloop hands this off
+    // to ProposalOverlays so DbCache caches page-shaped entries that the
+    // PageStorageBroker can read back.
+    LeafOverlay leaf_overlay_;
 
 public:
     MonadCommitBuilder(uint64_t block_number, PageStorageBroker &broker);
 
     CommitBuilder &add_state_deltas(StateDeltas const &) override;
+
+    LeafOverlay take_leaf_overlay() &&
+    {
+        return std::move(leaf_overlay_);
+    }
 };
 
 MONAD_NAMESPACE_END

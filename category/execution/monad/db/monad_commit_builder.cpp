@@ -87,6 +87,9 @@ MonadCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                     .incarnation = false,
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(block_number_)}));
+                StorageKey const sk{addr, inc, page_key};
+                leaf_overlay_[sk] =
+                    is_empty ? byte_string{} : encode_storage_page(page);
             }
             value = bytes_alloc_.emplace_back(
                 encode_account_db(addr, account.value()));

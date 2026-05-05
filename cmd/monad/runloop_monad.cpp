@@ -343,7 +343,6 @@ Result<BlockExecOutput> propose_block(
         *state,
         anc);
 
-    db.update_proposal_state(std::move(state), block.header.number, block_id);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);

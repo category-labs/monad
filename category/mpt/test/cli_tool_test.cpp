@@ -626,3 +626,298 @@ TEST(cli_tool, upgrade_requires_storage)
     ASSERT_NE(0, retcode);
     EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
 }
+
+namespace
+{
+    // RAII temp file sized for monad-mpt's expected pool layout.
+    class TempPool
+    {
+        char path_[sizeof("cli_tool_test_XXXXXX")] = "cli_tool_test_XXXXXX";
+
+    public:
+        TempPool()
+        {
+            int const fd = mkstemp(path_);
+            if (fd == -1) {
+                abort();
+            }
+            ::close(fd);
+            if (truncate(path_, 6ULL * 1024 * 1024 * 1024) == -1) {
+                abort();
+            }
+        }
+
+        ~TempPool() noexcept
+        {
+            unlink(path_);
+        }
+
+        TempPool(TempPool const &) = delete;
+        TempPool &operator=(TempPool const &) = delete;
+
+        char const *path() const noexcept
+        {
+            return path_;
+        }
+    };
+
+    void create_pool(char const *const path)
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {"monad-mpt", "--storage", path, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+
+    bool secondary_timeline_active(char const *const path)
+    {
+        std::vector<std::filesystem::path> paths{path};
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
+        flags.open_read_only = true;
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::span{paths},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+            flags};
+        monad::io::Ring ring;
+        monad::io::Buffers rbuf = monad::io::make_buffers_for_read_only(
+            ring,
+            2,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, rbuf};
+        monad::mpt::DbMetadataContext const ctx{io};
+        return ctx.timeline_active(monad::mpt::timeline_id::secondary);
+    }
+
+    uint8_t primary_ring_idx(char const *const path)
+    {
+        std::vector<std::filesystem::path> paths{path};
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
+        flags.open_read_only = true;
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::span{paths},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+            flags};
+        monad::io::Ring ring;
+        monad::io::Buffers rbuf = monad::io::make_buffers_for_read_only(
+            ring,
+            2,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, rbuf};
+        monad::mpt::DbMetadataContext const ctx{io};
+        return ctx.primary_ring_idx();
+    }
+}
+
+// --activate-secondary-timeline marks the secondary active in metadata.
+TEST(cli_tool, activate_secondary_timeline_creates_secondary)
+{
+    TempPool const tp;
+    ASSERT_NO_FATAL_FAILURE(create_pool(tp.path()));
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            tp.path(),
+            "--activate-secondary-timeline",
+            "100"};
+        int const retcode = main_impl(cout, cerr, args);
+        ASSERT_EQ(0, retcode) << "stderr: " << cerr.str();
+        EXPECT_NE(
+            std::string::npos,
+            cout.str().find(
+                "Activated secondary timeline at fork version 100"));
+    }
+    EXPECT_TRUE(secondary_timeline_active(tp.path()));
+}
+
+// Activating a second time without deactivating fails with a clear error.
+TEST(cli_tool, activate_secondary_rejects_when_already_active)
+{
+    TempPool const tp;
+    ASSERT_NO_FATAL_FAILURE(create_pool(tp.path()));
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            tp.path(),
+            "--activate-secondary-timeline",
+            "0"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            tp.path(),
+            "--activate-secondary-timeline",
+            "10"};
+        int const retcode = main_impl(cout, cerr, args);
+        ASSERT_NE(0, retcode);
+        EXPECT_NE(
+            std::string::npos,
+            cerr.str().find("secondary timeline is already active"));
+    }
+}
+
+// --deactivate-secondary-timeline drops a previously activated secondary.
+TEST(cli_tool, deactivate_secondary_timeline_removes_secondary)
+{
+    TempPool const tp;
+    ASSERT_NO_FATAL_FAILURE(create_pool(tp.path()));
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            tp.path(),
+            "--activate-secondary-timeline",
+            "0"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    EXPECT_TRUE(secondary_timeline_active(tp.path()));
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            tp.path(),
+            "--deactivate-secondary-timeline"};
+        int const retcode = main_impl(cout, cerr, args);
+        ASSERT_EQ(0, retcode) << "stderr: " << cerr.str();
+        EXPECT_NE(
+            std::string::npos,
+            cout.str().find("Deactivated secondary timeline"));
+    }
+    EXPECT_FALSE(secondary_timeline_active(tp.path()));
+}
+
+// Deactivating without an active secondary fails.
+TEST(cli_tool, deactivate_without_active_secondary_fails)
+{
+    TempPool const tp;
+    ASSERT_NO_FATAL_FAILURE(create_pool(tp.path()));
+
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt", "--storage", tp.path(), "--deactivate-secondary-timeline"};
+    int const retcode = main_impl(cout, cerr, args);
+    ASSERT_NE(0, retcode);
+    EXPECT_NE(
+        std::string::npos, cerr.str().find("requires an active secondary"));
+}
+
+// Promoting without an active secondary fails.
+TEST(cli_tool, promote_without_active_secondary_fails)
+{
+    TempPool const tp;
+    ASSERT_NO_FATAL_FAILURE(create_pool(tp.path()));
+
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt", "--storage", tp.path(), "--promote-secondary-timeline"};
+    int const retcode = main_impl(cout, cerr, args);
+    ASSERT_NE(0, retcode);
+    EXPECT_NE(
+        std::string::npos, cerr.str().find("requires an active secondary"));
+}
+
+// --promote-secondary-timeline flips the on-disk primary_ring_idx.
+TEST(cli_tool, promote_secondary_timeline_swaps_roles)
+{
+    TempPool const tp;
+    ASSERT_NO_FATAL_FAILURE(create_pool(tp.path()));
+
+    uint8_t const idx_before_activate = primary_ring_idx(tp.path());
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            tp.path(),
+            "--activate-secondary-timeline",
+            "0"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    EXPECT_EQ(idx_before_activate, primary_ring_idx(tp.path()))
+        << "activate alone should not change primary_ring_idx";
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            tp.path(),
+            "--promote-secondary-timeline"};
+        int const retcode = main_impl(cout, cerr, args);
+        ASSERT_EQ(0, retcode) << "stderr: " << cerr.str();
+        EXPECT_NE(
+            std::string::npos,
+            cout.str().find("Promoted secondary timeline to primary"));
+    }
+    EXPECT_NE(idx_before_activate, primary_ring_idx(tp.path()))
+        << "promote should flip primary_ring_idx";
+}
+
+// CLI11's require_option(0, 1) on the mutating-ops group rejects pairs.
+TEST(cli_tool, secondary_timeline_flags_mutually_exclusive)
+{
+    TempPool const tp;
+    ASSERT_NO_FATAL_FAILURE(create_pool(tp.path()));
+
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt",
+        "--storage",
+        tp.path(),
+        "--activate-secondary-timeline",
+        "0",
+        "--deactivate-secondary-timeline"};
+    int const retcode = main_impl(cout, cerr, args);
+    ASSERT_NE(0, retcode);
+    EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
+}
+
+TEST(cli_tool, secondary_timeline_flags_require_storage)
+{
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--activate-secondary-timeline", "0"};
+        int const retcode = main_impl(cout, cerr, args);
+        ASSERT_NE(0, retcode);
+        EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {"monad-mpt", "--promote-secondary-timeline"};
+        int const retcode = main_impl(cout, cerr, args);
+        ASSERT_NE(0, retcode);
+        EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--deactivate-secondary-timeline"};
+        int const retcode = main_impl(cout, cerr, args);
+        ASSERT_NE(0, retcode);
+        EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
+    }
+}

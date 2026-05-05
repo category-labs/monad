@@ -29,6 +29,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/kbhit.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/trie.hpp>
 
@@ -402,6 +403,9 @@ struct impl_t
     bool truncate_database = false;
     bool create_empty_database = false;
     bool upgrade_database = false;
+    std::optional<uint64_t> activate_secondary_timeline;
+    bool promote_secondary_timeline = false;
+    bool deactivate_secondary_timeline = false;
     std::optional<uint64_t> rewind_database_to;
     std::optional<uint64_t> reset_history_length;
     bool create_chunk_increasing = false;
@@ -1477,6 +1481,25 @@ opened.
                 "format (MONAD008) and ensure it is durable on disk "
                 "before exiting. Run after upgrading the monad apt "
                 "package and before starting monad services.");
+            cli_ops_group->add_option(
+                "--activate-secondary-timeline",
+                impl.activate_secondary_timeline,
+                "activate the secondary timeline at the given fork "
+                "version. The secondary remains attached to the primary "
+                "until --promote-secondary-timeline or "
+                "--deactivate-secondary-timeline is run.");
+            cli_ops_group->add_flag(
+                "--promote-secondary-timeline",
+                impl.promote_secondary_timeline,
+                "atomically swap primary and secondary roles. The "
+                "previous secondary becomes the primary on disk; the "
+                "previous primary is dropped. Requires the secondary to "
+                "be currently active.");
+            cli_ops_group->add_flag(
+                "--deactivate-secondary-timeline",
+                impl.deactivate_secondary_timeline,
+                "drop the secondary timeline. Metadata returns to "
+                "single-timeline state.");
             cli.add_option(
                 "--archive",
                 impl.archive_database,
@@ -1597,6 +1620,14 @@ opened.
                 impl.flags.open_read_only_allow_dirty = false;
                 impl.flags.allow_migration = true;
             }
+            else if (
+                impl.activate_secondary_timeline ||
+                impl.promote_secondary_timeline ||
+                impl.deactivate_secondary_timeline) {
+                mode = MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
+                impl.flags.open_read_only = false;
+                impl.flags.open_read_only_allow_dirty = false;
+            }
             if (mode == MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate) {
                 MONAD_ASYNC_NAMESPACE::storage_pool const pool{
                     {impl.storage_paths}, mode, impl.flags};
@@ -1685,6 +1716,50 @@ opened.
                 }
                 aux.metadata_ctx().sync_metadata_to_disk();
                 cout << "Success.\n";
+                return 0;
+            }
+
+            if (impl.activate_secondary_timeline) {
+                auto const fork_version = *impl.activate_secondary_timeline;
+                if (aux.metadata_ctx().timeline_active(
+                        MONAD_MPT_NAMESPACE::timeline_id::secondary)) {
+                    cerr << "\nERROR: secondary timeline is already active. "
+                            "Run --deactivate-secondary-timeline first to "
+                            "re-fork.\n";
+                    return 1;
+                }
+                aux.activate_secondary_timeline(fork_version);
+                aux.metadata_ctx().sync_metadata_to_disk();
+                cout << "\nActivated secondary timeline at fork version "
+                     << fork_version << ".\n";
+                return 0;
+            }
+
+            if (impl.promote_secondary_timeline) {
+                if (!aux.metadata_ctx().timeline_active(
+                        MONAD_MPT_NAMESPACE::timeline_id::secondary)) {
+                    cerr << "\nERROR: --promote-secondary-timeline requires "
+                            "an active secondary; none is currently "
+                            "active.\n";
+                    return 1;
+                }
+                aux.promote_secondary_to_primary();
+                aux.metadata_ctx().sync_metadata_to_disk();
+                cout << "\nPromoted secondary timeline to primary.\n";
+                return 0;
+            }
+
+            if (impl.deactivate_secondary_timeline) {
+                if (!aux.metadata_ctx().timeline_active(
+                        MONAD_MPT_NAMESPACE::timeline_id::secondary)) {
+                    cerr << "\nERROR: --deactivate-secondary-timeline "
+                            "requires an active secondary; none is "
+                            "currently active.\n";
+                    return 1;
+                }
+                aux.deactivate_secondary_timeline();
+                aux.metadata_ctx().sync_metadata_to_disk();
+                cout << "\nDeactivated secondary timeline.\n";
                 return 0;
             }
 

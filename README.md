@@ -116,6 +116,17 @@ You can also run the full test suite in parallel with:
 CTEST_PARALLEL_LEVEL=$(nproc) ctest
 ```
 
+The execution test suite under `test/ethereum_test/` registers one
+ctest target per fork (e.g. `cancun_monad_ethereum_test`). Configuring
+with `-DETHEREUM_TEST_WITNESS=ON` enables witness round-trip validation
+for blockchain tests that run in `InterpreterOnly` VM mode: for every
+block, the runner generates an execution witness, reconstructs a
+`PartialTrieDb` from it, and re-executes the block against the
+reconstructed db, asserting the post-state root matches the live tdb.
+Other VM modes currently skip this witness-based re-execution, so they
+are not witness-validated by this setting. CI runs with this option
+enabled by default.
+
 ## A tour of execution
 
 To understand how the source code is organized, you should start by reading

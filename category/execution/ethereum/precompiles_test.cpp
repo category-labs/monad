@@ -17,6 +17,7 @@
 #include <category/core/hex.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <monad/test/traits_test.hpp>

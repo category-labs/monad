@@ -18,8 +18,6 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -30,6 +28,9 @@
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
+
+class State;
+struct CallTracerBase;
 
 bool init_trusted_setup();
 

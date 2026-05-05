@@ -124,7 +124,8 @@ Node::SharedPtr copy_trie_impl(
             src_node,
             dest_prefix.substr(1),
             src_node.opt_value(),
-            static_cast<int64_t>(dest_version));
+            static_cast<int64_t>(dest_version),
+            false /* copy instead of move */);
         ChildData child{
             .ptr = std::move(new_node), .branch = dest_prefix.get(0)};
         child.subtrie_min_version = calc_min_version(*child.ptr);
@@ -154,8 +155,8 @@ Node::SharedPtr copy_trie_impl(
         parents_and_indexes{std::move(vec_pairs)};
 
     // Insert `dest` to trie, create the `dest` node to have the same
-    // children as node at `src`. Disconnect src_node's in memory children to
-    // avoid double references
+    // children as node at `src`. Child pointers are copied (not moved) so
+    // the in-memory subtrie under `src` remains cached after the call.
     while (prefix_index < dest_prefix.nibble_size()) {
         auto const nibble = dest_prefix.get(prefix_index);
         if (node_prefix_index < node->path_nibbles_len()) {
@@ -177,7 +178,8 @@ Node::SharedPtr copy_trie_impl(
                 dest_prefix.substr(
                     static_cast<unsigned char>(prefix_index) + 1u),
                 src_node.opt_value(),
-                src_node.version);
+                src_node.version,
+                false /* copy instead of move */);
             auto node_latter_half = make_node(
                 *node,
                 node_path.substr(
@@ -220,7 +222,8 @@ Node::SharedPtr copy_trie_impl(
             src_node,
             dest_prefix.substr(static_cast<unsigned char>(prefix_index) + 1u),
             src_node.opt_value(),
-            src_node.version);
+            src_node.version,
+            false /* copy instead of move */);
         new_node = create_node_add_new_branch(
             aux,
             node.get(),
@@ -240,7 +243,8 @@ Node::SharedPtr copy_trie_impl(
             src_node,
             node->path_nibble_view(),
             src_node.opt_value(),
-            static_cast<int64_t>(dest_version));
+            static_cast<int64_t>(dest_version),
+            false /* copy instead of move */);
     }
     if (node.get() == dest_root.get()) {
         MONAD_ASSERT(parents_and_indexes.empty());

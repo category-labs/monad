@@ -254,6 +254,11 @@ bool State::is_current_incarnation(Address const &address)
     return false;
 }
 
+bool State::has_executed_initcode(Address const &address) const
+{
+    return rb_.has_executed_initcode(address);
+}
+
 bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
 {
     auto const it = current_.find(address);
@@ -609,6 +614,11 @@ void State::create_account_no_rollback(Address const &address)
             incarnation_.get_block(),
             Incarnation::LAST_TX,
         }};
+}
+
+void State::note_initcode_execution(Address const &address)
+{
+    rb_.on_initcode_execution(address);
 }
 
 immer::vector<Receipt::Log> const &State::logs()

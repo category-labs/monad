@@ -16,6 +16,8 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/crypto/rmd160.h>
+#include <category/core/crypto/sha256.h>
 #include <category/core/hex.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
@@ -40,7 +42,6 @@
 #include <setup/setup.h>
 
 #include <silkpre/precompile.h>
-#include <silkpre/sha256.h>
 
 #include <cstring>
 
@@ -52,7 +53,7 @@ namespace
     {
         constexpr uint8_t VERSION_HASH_VERSION_KZG = 1;
         monad::bytes32_t h;
-        silkpre_sha256(
+        monad_sha256(
             h.bytes,
             commitment.bytes,
             sizeof(KZGCommitment),
@@ -114,20 +115,30 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
 
 PrecompileResult sha256_execute(byte_string_view const input)
 {
-    if (MONAD_UNLIKELY(input.data() == nullptr)) {
-        // Passing a null pointer to the Silkpre sha256 implementation invokes
-        // undefined behaviour. We sidestep the UB here by passing a pointer to
-        // the empty string instead.
-        byte_string_view const nonnull{
-            reinterpret_cast<unsigned char const *>(""), 0UL};
-        return silkpre_execute<silkpre_sha256_run>(nonnull);
-    }
-    return silkpre_execute<silkpre_sha256_run>(input);
+    auto *const output = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(output != nullptr);
+
+    // Avoid passing a null pointer to monad_sha256; even with length zero the
+    // buffer-state setup would invoke undefined behaviour.
+    auto const *const data = input.data() != nullptr
+                                 ? input.data()
+                                 : reinterpret_cast<uint8_t const *>("");
+    monad_sha256(output, data, input.size(), /*use_cpu_extensions=*/true);
+
+    return {EVMC_SUCCESS, output, 32};
 }
 
 PrecompileResult ripemd160_execute(byte_string_view const input)
 {
-    return silkpre_execute<silkpre_rip160_run>(input);
+    auto *const output = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(output != nullptr);
+
+    // Ethereum's RIPEMD-160 precompile returns the 20-byte digest left-padded
+    // with 12 zero bytes to a 32-byte ABI word.
+    std::memset(output, 0, 12);
+    monad_rmd160(output + 12, input.data(), input.size());
+
+    return {EVMC_SUCCESS, output, 32};
 }
 
 PrecompileResult ecadd_execute(byte_string_view const input)

@@ -11,4 +11,4 @@ if [ -n "${CMAKE_TOOLCHAIN_FILE:-}" ]; then
   cmake_args+=("-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
 fi
 
-cmake "${cmake_args[@]}"
+cmake "${cmake_args[@]}" "$@"

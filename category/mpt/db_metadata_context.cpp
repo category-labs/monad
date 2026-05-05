@@ -176,6 +176,14 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
     };
     if (is_previous_magic(copies_[0].main) ||
         is_previous_magic(copies_[1].main)) {
+        if (!io_->storage_pool().is_migration_allowed()) {
+            MONAD_ABORT_PRINTF(
+                "DB is on older format (magic=%s) and this binary expects "
+                "%s. Run 'monad-mpt --upgrade --storage <path>' before "
+                "starting monad services.",
+                detail::db_metadata::PREVIOUS_MAGIC,
+                detail::db_metadata::MAGIC);
+        }
         if (!can_write_to_map_) {
             MONAD_ABORT_PRINTF(
                 "Detected pre-dual-timeline DB (magic=%s), which requires "
@@ -905,6 +913,11 @@ void DbMetadataContext::replay_pending_shrink_grow_()
     sync_ring_data_to_disk_();
     sync_metadata_to_disk_();
     clear_pending_shrink_grow_();
+    sync_metadata_to_disk_();
+}
+
+void DbMetadataContext::sync_metadata_to_disk()
+{
     sync_metadata_to_disk_();
 }
 

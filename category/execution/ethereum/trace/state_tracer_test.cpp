@@ -622,6 +622,112 @@ TYPED_TEST(TraitsTest, access_list_empty)
     EXPECT_EQ(storage, nlohmann::json::parse("[]"));
 }
 
+TYPED_TEST(TraitsTest, access_list_state_view_excludes_rejected_frame)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.push();
+    s.access_storage(addr4, key4);
+    s.pop_reject();
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    AccessListTracer tracer{storage, addr1, addr2, std::nullopt, authorities};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    // Rejected frames must not leak accessed storage back into State. RPC
+    // access-list observability needs to be handled by tracer-specific capture.
+    EXPECT_EQ(storage, nlohmann::json::parse("[]"));
+}
+
+TYPED_TEST(TraitsTest, access_list_records_rejected_frame_storage)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    StateTracer tracer =
+        AccessListTracer{storage, addr1, addr2, std::nullopt, authorities};
+
+    s.push();
+    s.access_storage(addr4, key4);
+    on_frame_reject(tracer, s);
+    s.pop_reject();
+
+    run_tracer<typename TestFixture::Trait>(tracer, s);
+
+    auto const json_str = R"(
+        [
+            {
+                "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
+                "storageKeys": [
+                    "0x0000000000000000000000000000000000000000000000000000000000000000"
+                ]
+            }
+        ]
+    )";
+
+    EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+}
+
+TYPED_TEST(TraitsTest, access_list_records_rejected_frame_regular_account)
+{
+    StateDeltas state_deltas{};
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, state_deltas, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    StateTracer tracer =
+        AccessListTracer{storage, addr1, addr2, std::nullopt, authorities};
+
+    s.push();
+    s.access_account(addr4);
+    on_frame_reject(tracer, s);
+    s.pop_reject();
+
+    run_tracer<typename TestFixture::Trait>(tracer, s);
+
+    auto const json_str = R"(
+        [
+            {
+                "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
+                "storageKeys": []
+            }
+        ]
+    )";
+
+    EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+}
+
 TYPED_TEST(TraitsTest, access_list_write)
 {
     StateDeltas state_deltas{};

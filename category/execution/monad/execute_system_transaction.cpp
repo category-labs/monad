@@ -111,6 +111,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
+        trace::reset(state_tracer_);
 
         auto result = execute(state);
 
@@ -135,6 +136,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
 
         call_tracer_.reset();
+        trace::reset(state_tracer_);
 
         auto result = execute(state);
 

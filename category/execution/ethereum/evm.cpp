@@ -117,6 +117,8 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
 
     if (msg.kind != EVMC_DELEGATECALL) {
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+            // The pushed frame exits before bytecode, account access, or
+            // storage access, so there is no access-list metadata to capture.
             state.pop_reject();
             return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         }
@@ -139,7 +141,24 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
     return std::nullopt;
 }
 
-void post_call(State &state, evmc::Result const &result)
+template <Traits traits>
+void reject_frame(EvmcHost<traits> &host, State &state)
+{
+    // Successful frames remain in State and are captured when the state tracer
+    // is encoded. Failed frames are about to be rolled back, so the state
+    // tracer lifecycle hook runs before pop_reject().
+    host.on_frame_reject();
+
+    bool const ripemd_touched = state.is_touched(ripemd_address);
+    state.pop_reject();
+    if (MONAD_UNLIKELY(ripemd_touched)) {
+        // YP K.1. Deletion of an Account Despite Out-of-gas.
+        state.touch(ripemd_address);
+    }
+}
+
+template <Traits traits>
+void post_call(EvmcHost<traits> &host, State &state, evmc::Result const &result)
 {
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
     MONAD_ASSERT(
@@ -152,12 +171,7 @@ void post_call(State &state, evmc::Result const &result)
         state.pop_accept();
     }
     else {
-        bool const ripemd_touched = state.is_touched(ripemd_address);
-        state.pop_reject();
-        if (MONAD_UNLIKELY(ripemd_touched)) {
-            // YP K.1. Deletion of an Account Despite Out-of-gas.
-            state.touch(ripemd_address);
-        }
+        reject_frame(host, state);
     }
 }
 
@@ -279,12 +293,7 @@ evmc::Result execute_create_message(
         if (result.status_code != EVMC_REVERT) {
             result.gas_left = 0;
         }
-        bool const ripemd_touched = state.is_touched(ripemd_address);
-        state.pop_reject();
-        if (MONAD_UNLIKELY(ripemd_touched)) {
-            // YP K.1. Deletion of an Account Despite Out-of-gas.
-            state.touch(ripemd_address);
-        }
+        reject_frame(*host, state);
     }
 
     call_tracer.on_exit(result);
@@ -335,7 +344,7 @@ evmc::Result execute_call_message(
         }
     }
 
-    post_call(state, result);
+    post_call(*host, state, result);
     call_tracer.on_exit(result);
     return result;
 }

@@ -98,9 +98,30 @@ namespace trace
         template <Traits traits>
         void encode(State &);
 
+        void reset();
+
     private:
+        // Merge one account's access metadata into tracer-owned storage.
+        void
+        capture_accesses(Address const &, AccountState const &account_state);
+
+        // Capture accepted-frame accesses that are still visible in State at
+        // final encoding time.
+        void capture_accesses(State const &);
+
+        // Capture rollback-sensitive accesses from the frame that is about to
+        // be rejected. Must be called while that State frame is still pushed.
+        void capture_rejected_frame_accesses(State const &);
+
+        friend void on_frame_reject(
+            std::variant<
+                std::monostate, PrestateTracer, StateDiffTracer,
+                AccessListTracer> &,
+            State &);
+
         nlohmann::json &storage_;
         Set<Address> excluded_addresses_{};
+        Map<Address, Set<bytes32_t>> accesses_{};
 
         template <Traits traits>
         bool should_exclude_address(Address const &) const;
@@ -109,6 +130,16 @@ namespace trace
     using StateTracer = std::variant<
         std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer>;
 
+    // State-tracer lifecycle hook for a failed frame. Call immediately before
+    // State::pop_reject(), while rejected-frame access metadata is still
+    // visible through State.
+    void on_frame_reject(StateTracer &, State &);
+
+    // Clear execution-attempt-local tracer state before speculative execution.
+    void reset(StateTracer &);
+
+    // Finalise and serialise tracer output after transaction execution, once
+    // accepted-frame state has been merged into the visible State view.
     template <Traits traits>
     void run_tracer(StateTracer &tracer, State &state);
 

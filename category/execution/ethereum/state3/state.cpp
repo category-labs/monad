@@ -119,6 +119,14 @@ State::Map<bytes32_t, vm::SharedVarcode> const &State::code() const
     return code_;
 }
 
+State::Set<Address> const &State::current_frame_dirty_accounts() const
+{
+    MONAD_ASSERT(version_);
+    MONAD_ASSERT(dirty_.size() == version_);
+
+    return dirty_.back();
+}
+
 void State::push()
 {
     MONAD_ASSERT(dirty_.size() == version_);

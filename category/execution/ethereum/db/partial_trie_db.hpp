@@ -140,9 +140,8 @@ using CodeIndex = ankerl::unordered_dense::map<bytes32_t, vm::SharedIntercode>;
 
 /// A sparse Ethereum account + storage MPT that implements the Db interface.
 ///
-/// Built from a Reth witness bundle; serves as a drop-in replacement for
-/// TrieDb during zkVM STF proving. The trie IS the pre-state — there are no
-/// separate account or storage vectors.
+/// Built from an execution witness bundle; serves as a drop-in replacement
+/// for TrieDb during zkVM STF proving.
 class PartialTrieDb final : public Db
 {
     AccountTrie root_;

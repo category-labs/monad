@@ -52,6 +52,7 @@ class BlockchainTest : public testing::Test
     std::optional<std::variant<evmc_revision, monad_revision>> const revision_;
     std::optional<vm::VM::Mode> fixed_vm_mode_;
     bool enable_tracing_;
+    bool witness_roundtrip_;
 
 public:
     static void SetUpTestSuite();
@@ -62,11 +63,12 @@ public:
         std::optional<std::variant<evmc_revision, monad_revision>> const
             &revision,
         std::optional<vm::VM::Mode> const fixed_vm_mode,
-        bool const enable_tracing) noexcept
+        bool const enable_tracing, bool const witness_roundtrip) noexcept
         : file_{file}
         , revision_{revision}
         , fixed_vm_mode_{fixed_vm_mode}
         , enable_tracing_{enable_tracing}
+        , witness_roundtrip_{witness_roundtrip}
     {
     }
 
@@ -76,10 +78,10 @@ public:
 void register_blockchain_tests_path(
     std::filesystem::path const &,
     std::optional<std::variant<evmc_revision, monad_revision>> const &,
-    std::optional<vm::VM::Mode>, bool);
+    std::optional<vm::VM::Mode>, bool, bool witness_roundtrip = false);
 
 void register_blockchain_tests(
     std::optional<std::variant<evmc_revision, monad_revision>> const &,
-    std::optional<vm::VM::Mode>, bool);
+    std::optional<vm::VM::Mode>, bool, bool witness_roundtrip = false);
 
 MONAD_TEST_NAMESPACE_END

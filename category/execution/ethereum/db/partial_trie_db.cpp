@@ -697,10 +697,11 @@ Result<PartialTrieDb> PartialTrieDb::from_witness(
     {
         while (!encoded_nodes.empty()) {
             BOOST_OUTCOME_TRY(
-                auto payload, rlp::parse_string_metadata(encoded_nodes));
-            bytes32_t key = to_bytes(keccak256(payload));
+                auto const node_bytes,
+                rlp::parse_list_metadata_raw(encoded_nodes));
+            bytes32_t const key = to_bytes(keccak256(node_bytes));
             node_index.emplace(
-                key, byte_string{payload.data(), payload.size()});
+                key, byte_string{node_bytes.data(), node_bytes.size()});
         }
     }
 

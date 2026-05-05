@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
@@ -2039,6 +2040,151 @@ TEST_F(StakeLatest, validator_external_rewards_uniform_reward_pool)
         EXPECT_EQ(
             contract.vars.delegator(val.id, d).rewards().load().native(),
             4 * MON);
+    }
+}
+
+/////////////////////
+// priority fee tests
+/////////////////////
+
+TEST_F(StakeLatest, priority_fee_distribution_empty_block)
+{
+    uint256_t const staking_ca_before = get_balance(STAKING_CA);
+    distribute_priority_fees(state);
+    EXPECT_EQ(get_balance(PRIORITY_FEE_DIST_ADDRESS), 0);
+    EXPECT_EQ(get_balance(STAKING_CA), staking_ca_before);
+}
+
+TEST_F(StakeLatest, priority_fee_distribution_e2e)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto const val_res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(val_res.has_error());
+    auto const val = val_res.value();
+    skip_to_next_epoch();
+
+    uint256_t const staking_ca_before = get_balance(STAKING_CA);
+
+    // Reward txn runs first in the block; this is what sets proposer_val_id.
+    EXPECT_FALSE(syscall_reward(val.sign_address).has_error());
+
+    // User txns accumulate priority fees via the per-tx entry point.
+    constexpr uint256_t tx_fee = 5 * MON;
+    constexpr uint64_t num_txs = 4;
+    for (uint64_t i = 0; i < num_txs; ++i) {
+        collect_priority_fee(state, tx_fee);
+    }
+    uint256_t const total_fees = num_txs * tx_fee;
+    EXPECT_EQ(get_balance(PRIORITY_FEE_DIST_ADDRESS), total_fees);
+
+    distribute_priority_fees(state);
+
+    EXPECT_EQ(get_balance(PRIORITY_FEE_DIST_ADDRESS), 0);
+    EXPECT_EQ(get_balance(STAKING_CA), staking_ca_before + REWARD + total_fees);
+
+    // The sole delegator claims the block reward and the full priority-fee
+    // distribution. If STAKING_CA weren't credited during distribution,
+    // send_tokens would underflow here.
+    EXPECT_EQ(get_balance(auth_address), 0);
+    EXPECT_FALSE(claim_rewards(val.id, auth_address).has_error());
+    EXPECT_EQ(get_balance(auth_address), REWARD + total_fees);
+    EXPECT_EQ(get_balance(STAKING_CA), staking_ca_before);
+}
+
+// Distribution path has no per-call cap on fees; a single block can credit
+// arbitrarily large totals to the validator pool.
+TEST_F(StakeLatest, priority_fee_distribution_above_max_external_reward)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto const val_res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(val_res.has_error());
+    auto const val = val_res.value();
+    skip_to_next_epoch();
+
+    EXPECT_FALSE(
+        syscall_reward(val.sign_address, 0 /* isolate priority-fee path */)
+            .has_error());
+
+    uint256_t const staking_ca_before = get_balance(STAKING_CA);
+
+    uint256_t const huge_fees = MAX_EXTERNAL_REWARD + MON;
+    collect_priority_fee(state, huge_fees);
+    distribute_priority_fees(state);
+
+    EXPECT_EQ(get_balance(PRIORITY_FEE_DIST_ADDRESS), 0);
+    EXPECT_EQ(get_balance(STAKING_CA), staking_ca_before + huge_fees);
+    pull_delegator_up_to_date(val.id, auth_address);
+    EXPECT_EQ(
+        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        huge_fees);
+}
+
+TEST_F(StakeLatest, priority_fee_distribution_no_reward_txn_burns)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto const val_res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(val_res.has_error());
+    auto const val = val_res.value();
+    skip_to_next_epoch();
+
+    // Deliberately skip syscall_reward — proposer_val_id stays at its
+    // default of 0. val_id 0 is never assigned (first validator id is 1),
+    // so apply_external_reward returns UnknownValidator and the
+    // accumulator update reverts.
+    uint256_t const staking_ca_before = get_balance(STAKING_CA);
+    constexpr uint256_t total_fees = 10 * MON;
+    collect_priority_fee(state, total_fees);
+
+    distribute_priority_fees(state);
+
+    // apply_external_reward returns UnknownValidator, so the credit to
+    // STAKING_CA and the accumulator update both revert. The dist-address
+    // subtract is outside the push, so fees are removed from total supply.
+    EXPECT_EQ(get_balance(PRIORITY_FEE_DIST_ADDRESS), 0);
+    EXPECT_EQ(get_balance(STAKING_CA), staking_ca_before);
+    pull_delegator_up_to_date(val.id, auth_address);
+    EXPECT_EQ(
+        contract.vars.delegator(val.id, auth_address).rewards().load().native(),
+        0);
+}
+
+TEST_F(StakeLatest, priority_fee_distribution_uniform_pool)
+{
+    constexpr uint256_t commission_rate = MON / 10; // 10%
+    auto const auth_address = 0xdeadbeef_address;
+    auto const val_res =
+        add_validator(auth_address, ACTIVE_VALIDATOR_STAKE, commission_rate);
+    ASSERT_FALSE(val_res.has_error());
+    auto const val = val_res.value();
+
+    std::array<Address, 3> const delegators = {
+        auth_address, 0xaaaa_address, 0xbbbb_address};
+    for (auto const &d : delegators) {
+        if (d != auth_address) {
+            EXPECT_FALSE(
+                delegate(val.id, d, ACTIVE_VALIDATOR_STAKE).has_error());
+        }
+    }
+    skip_to_next_epoch();
+
+    EXPECT_FALSE(
+        syscall_reward(val.sign_address, 0 /* isolate priority-fee path */)
+            .has_error());
+
+    // 10 MON total fees, 10% commission → 1 MON to auth, 9 MON to the pool.
+    // 3 equal-stake delegators split the 9 MON pool evenly (3 MON each).
+    // Auth ends up with 1 MON commission + 3 MON pool share = 4 MON.
+    constexpr uint256_t total_fees = 10 * MON;
+    collect_priority_fee(state, total_fees);
+
+    distribute_priority_fees(state);
+
+    for (auto const &d : delegators) {
+        pull_delegator_up_to_date(val.id, d);
+        uint256_t const expected = (d == auth_address) ? 4 * MON : 3 * MON;
+        EXPECT_EQ(
+            contract.vars.delegator(val.id, d).rewards().load().native(),
+            expected);
     }
 }
 

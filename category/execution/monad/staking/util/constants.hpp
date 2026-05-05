@@ -36,6 +36,9 @@ using namespace intx::literals;
 // staking contract address
 inline constexpr Address STAKING_CA{0x1000};
 
+inline constexpr Address PRIORITY_FEE_DIST_ADDRESS{
+    0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5_address};
+
 // 1e18 constant
 inline constexpr uint256_t MON{1000000000000000000_u256};
 

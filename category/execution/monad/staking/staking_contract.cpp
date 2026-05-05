@@ -358,6 +358,15 @@ Result<void> function_not_payable(uint256_be_t const &value)
     return outcome::success();
 }
 
+Result<std::pair<uint256_t, uint256_t>>
+split_commission(uint256_t const &reward, uint256_t const &commission_rate)
+{
+    BOOST_OUTCOME_TRY(
+        auto const commission, checked_mul_div(reward, commission_rate, MON));
+    BOOST_OUTCOME_TRY(auto const del_reward, checked_sub(reward, commission));
+    return std::pair{commission, del_reward};
+}
+
 MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 
 MONAD_STAKING_NAMESPACE_BEGIN
@@ -1699,14 +1708,12 @@ Result<void> StakingContract::syscall_reward(
 
     mint_tokens(raw_reward);
 
-    // 3. subtract commission
+    // 3. Split off commission and credit it to the auth delegator.
     uint256_t const commission_rate =
         consensus_view.commission().load().native();
     BOOST_OUTCOME_TRY(
-        auto const commission,
-        checked_mul_div(raw_reward, commission_rate, MON));
-
-    // 4. Send commission to the auth address
+        auto const split, split_commission(raw_reward, commission_rate));
+    auto const &[commission, del_reward] = split;
     auto val_execution = vars.val_execution(val_id.value());
     auto auth = vars.delegator(val_id.value(), val_execution.auth_address());
     BOOST_OUTCOME_TRY(
@@ -1714,13 +1721,11 @@ Result<void> StakingContract::syscall_reward(
         checked_add(auth.rewards().load().native(), commission));
     auth.rewards().store(auth_reward);
 
-    BOOST_OUTCOME_TRY(
-        auto const del_reward, checked_sub(raw_reward, commission));
-    // 5. update accumulator and unclaimed rewards for this validator pool
+    // 4. update accumulator and unclaimed rewards for this validator pool
     BOOST_OUTCOME_TRY(
         apply_reward(val_id.value(), SYSTEM_SENDER, del_reward, active_stake));
 
-    // 6. Store the proposer validator id for other contracts to query.
+    // 5. Store the proposer validator id for other contracts to query.
     if constexpr (traits::monad_rev() >= MONAD_FIVE) {
         vars.proposer_val_id.store(val_id.value());
     }
@@ -1834,6 +1839,47 @@ Result<void> StakingContract::syscall_snapshot(
     }
 
     vars.in_epoch_delay_period.store(true);
+
+    return outcome::success();
+}
+
+Result<void> StakingContract::distribute_priority_fees(uint256_t const &fees)
+{
+    // 1. Validate the proposer is in the consensus set.
+    u64_be const val_id = vars.proposer_val_id.load();
+    auto val_execution = vars.val_execution(val_id);
+    if (MONAD_UNLIKELY(!val_execution.exists())) {
+        return StakingError::UnknownValidator;
+    }
+    auto consensus_view = vars.this_epoch_view(val_id);
+    uint256_t const active_stake = consensus_view.stake().load().native();
+    if (MONAD_UNLIKELY(active_stake == 0)) {
+        return StakingError::NotInValidatorSet;
+    }
+
+    // 2. Sub-dust fees burn rather than distribute.
+    //
+    // NOTE: max external reward is deliberately NOT checked. In-protocol
+    // distribution has no upper-bound.
+    if (MONAD_UNLIKELY(fees < limits::min_external_reward())) {
+        return StakingError::ExternalRewardTooSmall;
+    }
+
+    // 3. Split off commission and credit it to the auth delegator.
+    uint256_t const commission_rate =
+        consensus_view.commission().load().native();
+    BOOST_OUTCOME_TRY(
+        auto const split, split_commission(fees, commission_rate));
+    auto const &[commission, del_reward] = split;
+    auto auth = vars.delegator(val_id, val_execution.auth_address());
+    BOOST_OUTCOME_TRY(
+        auto const auth_reward,
+        checked_add(auth.rewards().load().native(), commission));
+    auth.rewards().store(auth_reward);
+
+    // 4. Update validator accumulator.
+    BOOST_OUTCOME_TRY(apply_reward(
+        val_id, PRIORITY_FEE_DIST_ADDRESS, del_reward, active_stake));
 
     return outcome::success();
 }

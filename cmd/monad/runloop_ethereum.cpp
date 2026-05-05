@@ -28,7 +28,6 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
-#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
@@ -37,10 +36,12 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
-#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/db/monad_commit_builder.hpp>
+#include <category/execution/monad/db/page_storage_broker.hpp>
+#include <category/execution/monad/state2/monad_block_state.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -149,7 +150,9 @@ Result<void> process_ethereum_block(
     // changes but does not commit them
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
-    BlockState block_state(db, vm);
+
+    PageStorageBroker page_broker(db);
+    MonadBlockState block_state(page_broker, vm);
 
     ChainContext<traits> const chain_ctx{};
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
@@ -174,7 +177,7 @@ Result<void> process_ethereum_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
+    MonadCommitBuilder builder(block.header.number, page_broker);
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)
@@ -202,7 +205,9 @@ Result<void> process_ethereum_block(
         h.ommers_hash = compute_ommers_hash(block.ommers);
     });
     db.update_proposal_state(
-        from_slot_state_deltas(*state), block.header.number, block_id);
+        from_page_state_deltas(*state, std::move(builder).take_leaf_overlay()),
+        block.header.number,
+        block_id);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
@@ -223,7 +228,7 @@ Result<void> process_ethereum_block(
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
     exec_output.eth_block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+        to_bytes(keccak256(rlp::encode_block_header(block.header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_output);

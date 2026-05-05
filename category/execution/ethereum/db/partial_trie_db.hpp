@@ -149,9 +149,6 @@ class PartialTrieDb final : public Db
     CodeIndex codes_;
     uint64_t block_number_{0};
     BlockHeader last_committed_header_{};
-    bytes32_t receipts_root_{};
-    bytes32_t transactions_root_{};
-    std::optional<bytes32_t> withdrawals_root_{};
 
     PartialTrieDb(AccountTrie root, CodeIndex codes)
         : root_{std::move(root)}

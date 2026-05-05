@@ -27,6 +27,7 @@
 #include <category/core/config.hpp>
 #include <category/core/event/event_recorder.h>
 #include <category/core/event/event_ring.h>
+#include <category/core/mem/align.h>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 
 #include <array>
@@ -206,8 +207,15 @@ ReservedExecEvent<T> ExecutionEventRecorder::reserve_block_event(
     // calls, and also the handling of the RECORD_ERROR type, which writes
     // diagnostic truncated payloads on overflow
 
+    // payload_size is the true size requested, and alloc_payload_size is the
+    // aligned size actually allocated from the event ring. The former is
+    // recorded in the event descriptor, but the latter must be used for the
+    // various size overflow checks.
     size_t const payload_size = (size(trailing_bufs) + ... + sizeof(T));
-    if (payload_size > std::numeric_limits<uint32_t>::max()) [[unlikely]] {
+    size_t const alloc_payload_size =
+        monad_round_size_to_align(payload_size, MONAD_EVENT_PAYLOAD_ALIGN);
+    if (alloc_payload_size > std::numeric_limits<uint32_t>::max())
+        [[unlikely]] {
         std::array<std::span<std::byte const>, sizeof...(trailing_bufs)> const
             trailing_bufs_array = {trailing_bufs...};
         auto const [event, header_buf, seqno] = setup_record_error_event(
@@ -218,8 +226,8 @@ ReservedExecEvent<T> ExecutionEventRecorder::reserve_block_event(
             payload_size);
         return {event, reinterpret_cast<T *>(header_buf), seqno};
     }
-    if (payload_size >=
-        exec_ring_.payload_buf_mask + 1 - 2 * MONAD_EVENT_WINDOW_INCR) {
+    if (alloc_payload_size >= exec_ring_.payload_buf_mask + 1 -
+                                  2 * MONAD_EVENT_WINDOW_INCR) [[unlikely]] {
         // The payload is smaller than the maximum possible size, but still
         // cannot fit entirely in the event ring's payload buffer. For example,
         // suppose we tried to allocate 300 MiB from a 256 MiB payload buffer.

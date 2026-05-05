@@ -66,9 +66,18 @@ public:
             }
         }
 
+        // Load without holding any tbb accessor: db_.read_storage yields
+        // the fiber waiting on an mpt promise. Holding a tbb bucket lock
+        // across that yield deadlocks against other fibers that need the
+        // same bucket - tbb's spin/futex isn't fiber-aware, so the OS
+        // thread blocks and the fiber dispatcher can't make progress.
+        // Two fibers may load the same page; only the first insert keeps
+        // its result, the rest is wasted work but safe.
+        auto loaded = load_page(addr, inc, page_key);
+
         PageMap::accessor acc;
         if (pages_.insert(acc, pk)) {
-            acc->second = load_page(addr, inc, page_key);
+            acc->second = std::move(loaded);
         }
         return acc->second[slot_offset];
     }
@@ -85,9 +94,13 @@ public:
             }
         }
 
+        // See read_storage_slot: load outside the accessor to avoid a
+        // tbb-vs-fiber deadlock when db_.read_storage yields.
+        auto loaded = load_page(addr, inc, page_key);
+
         PageMap::accessor acc;
         if (pages_.insert(acc, pk)) {
-            acc->second = load_page(addr, inc, page_key);
+            acc->second = std::move(loaded);
         }
         return acc->second;
     }

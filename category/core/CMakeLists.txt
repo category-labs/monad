@@ -232,7 +232,9 @@ add_library(
   # core
   "math_disas.cpp" "spinlock_disas.c"
   # rlp
-  "rlp/encode_disas.cpp")
+  "rlp/encode_disas.cpp"
+  # runtime
+  "runtime/uint256_disas.cpp")
 monad_compile_options(monad_core_disas)
 target_link_libraries(monad_core_disas PUBLIC monad_core)
 

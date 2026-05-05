@@ -17,15 +17,22 @@
 
 #include <category/core/assert.h>
 
-#include <immintrin.h>
-
 #include <cstddef>
 #include <cstdint>
+
+#ifdef MONAD_ZKVM
+    #include <cstring>
+#else
+    #include <immintrin.h>
+#endif
 
 namespace monad::vm::runtime
 {
     inline void non_temporal_bzero(void *dest, size_t n)
     {
+#ifdef MONAD_ZKVM
+        std::memset(dest, 0, n);
+#else
         MONAD_ASSERT((reinterpret_cast<uintptr_t>(dest) & 31) == 0);
         MONAD_ASSERT((n & 31) == 0);
         auto *d = static_cast<uint8_t *>(dest);
@@ -35,10 +42,14 @@ namespace monad::vm::runtime
             _mm256_stream_si256(reinterpret_cast<__m256i *>(d), zero);
             d += 32;
         }
+#endif
     }
 
     inline void non_temporal_memcpy(void *dest, void *src, size_t n)
     {
+#ifdef MONAD_ZKVM
+        std::memcpy(dest, src, n);
+#else
         MONAD_ASSERT((reinterpret_cast<uintptr_t>(dest) & 31) == 0);
         MONAD_ASSERT((reinterpret_cast<uintptr_t>(src) & 31) == 0);
         MONAD_ASSERT((n & 31) == 0);
@@ -52,5 +63,6 @@ namespace monad::vm::runtime
             d += 32;
             s += 32;
         }
+#endif
     }
 }

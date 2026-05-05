@@ -89,7 +89,7 @@ public:
         return acct.value();
     }
 
-    virtual bytes32_t read_storage(
+    virtual byte_string read_storage(
         Address const &addr, Incarnation, bytes32_t const &key) override
     {
         auto storage_leaf_res = db_.find(
@@ -109,7 +109,7 @@ public:
         auto encoded_storage = storage_leaf_res.value().node->value();
         auto const storage = decode_storage_db_ignore_slot(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
-        return to_bytes(storage.value());
+        return byte_string{storage.value()};
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override

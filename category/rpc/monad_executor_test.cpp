@@ -3287,10 +3287,10 @@ TEST_F(EthCallFixture, prestate_override_state)
     commit_sequential(
         tdb, deltas, {{code_hash, compiled_code}}, BlockHeader{.number = 0});
 
-    auto const storage = tdb.read_storage(
+    auto const storage = to_bytes(tdb.read_storage(
         CONTRACT_ADDR,
         Incarnation{0, 0},
-        to_bytes(to_big_endian(uint256_t{0})));
+        to_bytes(to_big_endian(uint256_t{0}))));
     ASSERT_EQ(storage, to_bytes(to_big_endian(uint256_t{uint64_t{64}})));
 
     for (uint64_t i = 1; i < 256; ++i) {

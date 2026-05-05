@@ -386,7 +386,7 @@ std::optional<Account> PartialTrieDb::read_account(Address const &)
     return std::nullopt;
 }
 
-bytes32_t
+byte_string
 PartialTrieDb::read_storage(Address const &, Incarnation, bytes32_t const &)
 {
     return {};

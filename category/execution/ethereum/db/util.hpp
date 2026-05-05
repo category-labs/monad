@@ -136,6 +136,13 @@ inline constexpr unsigned char FINALIZED_NIBBLE = 1;
 inline mpt::Nibbles const proposal_nibbles = mpt::concat(PROPOSAL_NIBBLE);
 inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
+// Returns the zeroless big-endian representation of a storage slot value.
+// This is the canonical on-disk and in-cache form of a storage value, matching
+// return of `Db::read_storage()`, and the second element of the pair returned
+// by `decode_storage_db_raw()`. The returned view aliases the input, so the
+// `bytes32_t` argument must outlive the view.
+byte_string_view compact_storage_view(bytes32_t const &);
+
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
 

@@ -118,6 +118,9 @@ add_library(
   "lru/static_lru_cache.hpp"
   "mem/batch_mem_pool.hpp"
   "synchronization/spin_lock.hpp"
+  # crypto (vendored from silkpre; see crypto/NOTICE)
+  "crypto/sha256.c"
+  "crypto/sha256.h"
   # event
   "event/event_iterator.h"
   "event/event_iterator_inline.h"
@@ -198,6 +201,12 @@ endif()
 
 monad_compile_options(monad_core)
 target_include_directories(monad_core PUBLIC ${CATEGORY_MAIN_DIR})
+
+# Vendored from silkpre; relax warnings the upstream build does not enforce.
+set_source_files_properties(
+  "crypto/sha256.c"
+  TARGET_DIRECTORY monad_core
+  PROPERTIES COMPILE_OPTIONS "-Wno-conversion;-Wno-sign-conversion")
 
 if(MONAD_CORE_FORCE_DEBUG_ASSERT)
   target_compile_definitions(monad_core PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT")

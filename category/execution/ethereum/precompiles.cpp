@@ -19,13 +19,13 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/precompiles.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <silkpre/precompile.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 #include <evmc/helpers.h>
+
+#include <intx/intx.hpp>
 
 #include <array>
 #include <cstdint>
@@ -189,5 +189,243 @@ check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
 }
 
 EXPLICIT_EVM_TRAITS(check_call_precompile);
+
+static void
+right_pad(std::basic_string<uint8_t> &str, size_t const min_size) noexcept
+{
+    if (str.length() < min_size) {
+        str.resize(min_size, '\0');
+    }
+}
+
+PrecompileResult from_impl_result(PrecompileImplResult result)
+{
+    auto const [data, size] = result;
+    if (data == nullptr) {
+        MONAD_DEBUG_ASSERT(size == 0);
+        return PrecompileResult::failure();
+    }
+    return {EVMC_SUCCESS, data, size};
+}
+
+PrecompileResult ecrecover_execute(byte_string_view const input)
+{
+    using namespace intx;
+
+    static constexpr auto kSecp256k1n =
+        0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
+
+    uint8_t *out{static_cast<uint8_t *>(std::malloc(32))};
+
+    std::basic_string<uint8_t> d(input.data(), input.size());
+    right_pad(d, 128);
+    auto const v{intx::be::unsafe::load<intx::uint256>(&d[32])};
+    auto const r{intx::be::unsafe::load<intx::uint256>(&d[64])};
+    auto const s{intx::be::unsafe::load<intx::uint256>(&d[96])};
+
+    if (!r || !s || r >= kSecp256k1n || s >= kSecp256k1n) {
+        return {EVMC_SUCCESS, out, 0};
+    }
+
+    if (v != 27 && v != 28) {
+        return {EVMC_SUCCESS, out, 0};
+    }
+
+    return from_impl_result(ecrecover_impl(
+        std::span<uint8_t const, 32>{&d[0], 32},
+        std::span<uint8_t const, 64>{&d[64], 64},
+        v != 27,
+        std::span<uint8_t, 32>{out, 32}));
+}
+
+PrecompileResult sha256_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        sha256_impl(input, std::span<uint8_t, 32>{out, 32}));
+}
+
+PrecompileResult ripemd160_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        ripemd160_impl(input, std::span<uint8_t, 32>{out, 32}));
+}
+
+static void right_pad_copy(
+    uint8_t *dst, size_t dst_size, uint8_t const *src, size_t src_size,
+    size_t offset) noexcept
+{
+    std::memset(dst, 0, dst_size);
+    if (offset < src_size) {
+        auto const avail = src_size - offset;
+        auto const to_copy = std::min(avail, dst_size);
+        std::memcpy(dst, src + offset, to_copy);
+    }
+}
+
+PrecompileResult expmod_execute(byte_string_view const input)
+{
+    uint8_t lengths[96];
+    right_pad_copy(lengths, 96, input.data(), input.size(), 0);
+
+    uint64_t const mod_len = intx::be::unsafe::load<uint64_t>(&lengths[88]);
+
+    if (mod_len == 0) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
+    auto *const out = static_cast<uint8_t *>(std::malloc(mod_len));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        expmod_impl(input, std::span<uint8_t>{out, mod_len}));
+}
+
+PrecompileResult ecadd_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(64));
+    MONAD_ASSERT(out != nullptr);
+    auto const clamped_input = input.substr(0, 128);
+    auto const result =
+        ecadd_impl(clamped_input, std::span<uint8_t, 64>{out, 64});
+    if (result.data == nullptr) {
+        std::free(out);
+    }
+    return from_impl_result(result);
+}
+
+PrecompileResult ecmul_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(64));
+    MONAD_ASSERT(out != nullptr);
+    auto const clamped_input = input.substr(0, 96);
+    auto const result =
+        ecmul_impl(clamped_input, std::span<uint8_t, 64>{out, 64});
+    if (result.data == nullptr) {
+        std::free(out);
+    }
+    return from_impl_result(result);
+}
+
+PrecompileResult snarkv_execute(byte_string_view const input)
+{
+    if (input.size() % 192 != 0) {
+        return PrecompileResult::failure();
+    }
+
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    auto const result = snarkv_impl(input, std::span<uint8_t, 32>{out, 32});
+    if (result.data == nullptr) {
+        std::free(out);
+    }
+    return from_impl_result(result);
+}
+
+PrecompileResult blake2bf_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(64));
+    MONAD_ASSERT(out != nullptr);
+    auto const result = blake2bf_impl(input, std::span<uint8_t, 64>{out, 64});
+    if (result.data == nullptr) {
+        std::free(out);
+    }
+    return from_impl_result(result);
+}
+
+PrecompileResult point_evaluation_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(64));
+    MONAD_ASSERT(out != nullptr);
+    auto const result =
+        point_evaluation_impl(input, std::span<uint8_t, 64>{out, 64});
+    if (result.data == nullptr) {
+        std::free(out);
+    }
+    return from_impl_result(result);
+}
+
+PrecompileResult bls12_g1_add_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(128));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_g1_add_impl(input, std::span<uint8_t, 128>{out, 128}));
+}
+
+PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(128));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_g1_msm_impl(input, std::span<uint8_t, 128>{out, 128}));
+}
+
+PrecompileResult bls12_g2_add_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(256));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_g2_add_impl(input, std::span<uint8_t, 256>{out, 256}));
+}
+
+PrecompileResult bls12_g2_msm_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(256));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_g2_msm_impl(input, std::span<uint8_t, 256>{out, 256}));
+}
+
+PrecompileResult bls12_pairing_check_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_pairing_check_impl(input, std::span<uint8_t, 32>{out, 32}));
+}
+
+PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(128));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_map_fp_to_g1_impl(input, std::span<uint8_t, 128>{out, 128}));
+}
+
+PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(256));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_map_fp2_to_g2_impl(input, std::span<uint8_t, 256>{out, 256}));
+}
+
+PrecompileResult p256_verify_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    auto const result =
+        p256_verify_impl(input, std::span<uint8_t, 32>{out, 32});
+    if (result.data == nullptr) {
+        std::free(out);
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+    return {EVMC_SUCCESS, result.data, result.size};
+}
+
+PrecompileResult identity_execute(byte_string_view const input)
+{
+    if (input.empty()) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+    auto *const out = static_cast<uint8_t *>(std::malloc(input.size()));
+    MONAD_ASSERT(out != nullptr);
+    auto const result =
+        identity_impl(input, std::span<uint8_t>{out, input.size()});
+    return {EVMC_SUCCESS, result.data, result.size};
+}
 
 MONAD_NAMESPACE_END

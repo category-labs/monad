@@ -18,8 +18,6 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -28,8 +26,12 @@
 #include <bit>
 #include <cstring>
 #include <optional>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
+
+class State;
+struct CallTracerBase;
 
 bool init_trusted_setup();
 
@@ -160,4 +162,64 @@ PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view);
 // Rollup precompiles
 PrecompileResult p256_verify_execute(byte_string_view);
 
+struct PrecompileImplResult
+{
+    uint8_t *data;
+    size_t size;
+};
+
+PrecompileImplResult ecrecover_impl(
+    std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
+    uint8_t recid, std::span<uint8_t, 32> const out);
+
+PrecompileImplResult
+sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out);
+
+PrecompileImplResult
+ripemd160_impl(byte_string_view input, std::span<uint8_t, 32> const out);
+
+PrecompileImplResult
+expmod_impl(byte_string_view input, std::span<uint8_t> const out);
+
+PrecompileImplResult
+ecadd_impl(byte_string_view input, std::span<uint8_t, 64> const out);
+
+PrecompileImplResult
+ecmul_impl(byte_string_view input, std::span<uint8_t, 64> const out);
+
+PrecompileImplResult
+snarkv_impl(byte_string_view input, std::span<uint8_t, 32> const out);
+
+PrecompileImplResult
+blake2bf_impl(byte_string_view input, std::span<uint8_t, 64> const out);
+
+PrecompileImplResult
+point_evaluation_impl(byte_string_view input, std::span<uint8_t, 64> const out);
+
+PrecompileImplResult
+bls12_g1_add_impl(byte_string_view input, std::span<uint8_t, 128> const out);
+
+PrecompileImplResult
+bls12_g1_msm_impl(byte_string_view input, std::span<uint8_t, 128> const out);
+
+PrecompileImplResult
+bls12_g2_add_impl(byte_string_view input, std::span<uint8_t, 256> const out);
+
+PrecompileImplResult
+bls12_g2_msm_impl(byte_string_view input, std::span<uint8_t, 256> const out);
+
+PrecompileImplResult bls12_pairing_check_impl(
+    byte_string_view input, std::span<uint8_t, 32> const out);
+
+PrecompileImplResult bls12_map_fp_to_g1_impl(
+    byte_string_view input, std::span<uint8_t, 128> const out);
+
+PrecompileImplResult bls12_map_fp2_to_g2_impl(
+    byte_string_view input, std::span<uint8_t, 256> const out);
+
+PrecompileImplResult
+p256_verify_impl(byte_string_view input, std::span<uint8_t, 32> const out);
+
+PrecompileImplResult
+identity_impl(byte_string_view input, std::span<uint8_t> const out);
 MONAD_NAMESPACE_END

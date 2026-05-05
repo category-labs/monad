@@ -24,7 +24,11 @@ namespace monad::vm::runtime
         using base_type = uint256_t;
         static constexpr size_t size = 1024;
         static constexpr size_t alignment = 32;
+#ifdef MONAD_ZKVM
+        static CachedAllocatorList cache_list;
+#else
         static thread_local CachedAllocatorList cache_list;
+#endif
     };
 
     using EvmStackAllocator = CachedAllocator<EvmStackAllocatorMeta>;

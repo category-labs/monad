@@ -116,6 +116,23 @@ You can also run the full test suite in parallel with:
 CTEST_PARALLEL_LEVEL=$(nproc) ctest
 ```
 
+## Compiling zkVM binary
+
+To compile monad as a guest program for various zkVMs, such as ZisK or SP1, we need to use a riscv64 cross-compiler. The cmake build extracts only the needed libc objects (setjmp/longjmp) from the unmodified newlib; malloc and syscalls are weakly linked by the zkVM frameworks.
+
+```shell
+cmake -B build-zkvm -S category/zkvm \
+   -DCMAKE_TOOLCHAIN_FILE=category/core/toolchains/riscv64-elf-toolchain.cmake \
+   -DRISCV_TOOLCHAIN_DIR=PATH-TO-RISCV-COMPILER \
+   -DCMAKE_BUILD_TYPE=Release -GNinja
+```
+
+We can then build the static library:
+
+```shell
+cmake --build build-zkvm --target monad-zkvm
+```
+
 ## A tour of execution
 
 To understand how the source code is organized, you should start by reading

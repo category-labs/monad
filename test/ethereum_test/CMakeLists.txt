@@ -52,6 +52,7 @@ target_sources(
   PRIVATE include/blockchain_test.hpp
           include/event.hpp
           include/revision_map.hpp
+          include/tracking_block_hash_buffer.hpp
           include/transaction_test.hpp
           src/blockchain_test.cpp
           src/event.cpp
@@ -70,6 +71,11 @@ monad_compile_options(monad-ethereum-test)
 
 target_link_libraries(monad-ethereum-test PRIVATE monad_unit_test_common)
 
+option(
+  ETHEREUM_TEST_WITNESS
+  "For every block, generate an execution witness, reconstruct an PartialTrieDb from it, and re-execute the block against the reconstructed db. Skipped outside InterpreterOnly VM mode and on MIP-8 revisions."
+  OFF)
+
 function(add_ethereum_test)
   set(ONE_VALUE_ARGS FORK)
   cmake_parse_arguments(ADD_ETHEREUM_TEST "" "${ONE_VALUE_ARGS}" "" ${ARGN})
@@ -82,9 +88,16 @@ function(add_ethereum_test)
   list(JOIN ${TESTS_EXCLUDED} ":" TESTS_EXCLUDED)
   set(FILTER "-:${TESTS_EXCLUDED}")
 
-  add_test(NAME ${ADD_ETHEREUM_TEST_FORK}_monad_ethereum_test
-           COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
-                   --record-exec-events --gtest_filter=${FILTER})
+  set(WITNESS_ARG "")
+  if(ETHEREUM_TEST_WITNESS)
+    set(WITNESS_ARG "--witness")
+  endif()
+
+  add_test(
+    NAME ${ADD_ETHEREUM_TEST_FORK}_monad_ethereum_test
+    COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
+            --record-exec-events ${WITNESS_ARG}
+            --gtest_filter=${FILTER})
 endfunction()
 
 function(add_monad_test)
@@ -99,10 +112,16 @@ function(add_monad_test)
   list(JOIN ${TESTS_EXCLUDED} ":" TESTS_EXCLUDED)
   set(FILTER "-:${TESTS_EXCLUDED}")
 
+  set(WITNESS_ARG "")
+  if(ETHEREUM_TEST_WITNESS)
+    set(WITNESS_ARG "--witness")
+  endif()
+
   add_test(NAME ${ADD_MONAD_TEST_FORK}_monad_ethereum_test
            COMMAND monad-ethereum-test --fork ${ADD_MONAD_TEST_FORK}
                   # TODO: not ready yet
                   #  --record-exec-events
+                   ${WITNESS_ARG}
                    --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadSpecTestFixtures/blockchain_tests
                    --gtest_filter=${FILTER})
 endfunction()

@@ -110,6 +110,8 @@ add_library(
   "ethereum/db/trie_rodb.hpp"
   "ethereum/db/util.cpp"
   "ethereum/db/util.hpp"
+  "ethereum/db/witness_generator.hpp"
+  "ethereum/db/witness_generator.cpp"
   # ethereum/event
   "ethereum/event/exec_event_ctypes.h"
   "ethereum/event/exec_event_ctypes_metadata.c"

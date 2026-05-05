@@ -119,6 +119,8 @@ add_library(
   "mem/batch_mem_pool.hpp"
   "synchronization/spin_lock.hpp"
   # crypto (vendored from silkpre; see crypto/NOTICE)
+  "crypto/rmd160.c"
+  "crypto/rmd160.h"
   "crypto/sha256.c"
   "crypto/sha256.h"
   # event
@@ -204,6 +206,7 @@ target_include_directories(monad_core PUBLIC ${CATEGORY_MAIN_DIR})
 
 # Vendored from silkpre; relax warnings the upstream build does not enforce.
 set_source_files_properties(
+  "crypto/rmd160.c"
   "crypto/sha256.c"
   TARGET_DIRECTORY monad_core
   PROPERTIES COMPILE_OPTIONS "-Wno-conversion;-Wno-sign-conversion")

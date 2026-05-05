@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/crypto/rmd160.h>
 #include <category/core/crypto/sha256.h>
 #include <category/core/hex.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
@@ -129,7 +130,15 @@ PrecompileResult sha256_execute(byte_string_view const input)
 
 PrecompileResult ripemd160_execute(byte_string_view const input)
 {
-    return silkpre_execute<silkpre_rip160_run>(input);
+    auto *const output = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(output != nullptr);
+
+    // Ethereum's RIPEMD-160 precompile returns the 20-byte digest left-padded
+    // with 12 zero bytes to a 32-byte ABI word.
+    std::memset(output, 0, 12);
+    monad_rmd160(output + 12, input.data(), input.size());
+
+    return {EVMC_SUCCESS, output, 32};
 }
 
 PrecompileResult ecadd_execute(byte_string_view const input)

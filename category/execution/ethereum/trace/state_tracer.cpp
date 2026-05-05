@@ -51,6 +51,26 @@ namespace trace
         return std::format("0x{}", to_hex(view));
     }
 
+    namespace
+    {
+        template <uint8_t shift>
+        constexpr bytes32_t compute_page_key(bytes32_t const &key) noexcept
+        {
+            static_assert(
+                shift < 8,
+                "shift == 8 zeros the carry term, producing the wrong page "
+                "key");
+            bytes32_t result{};
+            result.bytes[0] = static_cast<uint8_t>(key.bytes[0] >> shift);
+            for (int i = 1; i < 32; ++i) {
+                result.bytes[i] = static_cast<uint8_t>(
+                    (key.bytes[i - 1] << (8 - shift)) |
+                    (key.bytes[i] >> shift));
+            }
+            return result;
+        }
+    } // namespace
+
     bool PrestateTracer::retain_beneficiary(State const &state) const
     {
         // The following logic determines whether to include the beneficiary in
@@ -205,11 +225,31 @@ namespace trace
     {
         auto access_list = json::array();
         for (auto const &[address, current_stack] : state.current()) {
-            auto keys = json::array();
             auto const &current_account_state = current_stack.recent();
-            for (auto const &key :
-                 current_account_state.get_accessed_storage()) {
-                keys.push_back(bytes_to_hex(key.bytes));
+            auto const &accessed = current_account_state.get_accessed_storage();
+
+            auto keys = json::array();
+            if constexpr (traits::page_gas_active()) {
+                // Under page-gas (MIP-8), warming one slot per page warms
+                // all 128 slots on that page. Keep only the minimum slot
+                // per page to avoid charging users for redundant entries.
+                Map<bytes32_t, bytes32_t> page_to_min_slot{};
+                for (auto const &key : accessed) {
+                    auto const page_key =
+                        compute_page_key<traits::storage_page_shift()>(key);
+                    auto const it = page_to_min_slot.find(page_key);
+                    if (it == page_to_min_slot.end() || key < it->second) {
+                        page_to_min_slot.insert_or_assign(page_key, key);
+                    }
+                }
+                for (auto const &[_, slot] : page_to_min_slot) {
+                    keys.push_back(bytes_to_hex(slot.bytes));
+                }
+            }
+            else {
+                for (auto const &key : accessed) {
+                    keys.push_back(bytes_to_hex(key.bytes));
+                }
             }
 
             // If an address is excluded because it's always considered warm, we

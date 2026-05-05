@@ -49,6 +49,10 @@ namespace
         0x8d8ebb65ec00cb973d4fe086a607728fd1b9de14aa48208381eed9592f0dee9a_bytes32;
     constexpr auto key7 =
         0xff896b09014882056009dedb136458f017fcef9a4729467d0d00b4fd413fb1f1_bytes32;
+    constexpr auto page0_slot1 =
+        0x0000000000000000000000000000000000000000000000000000000000000001_bytes32;
+    constexpr auto page1_slot0 =
+        0x0000000000000000000000000000000000000000000000000000000000000080_bytes32;
     constexpr auto value1 =
         0x0000000000000000000000000000000000000000000000000000000000000003_bytes32;
     constexpr auto value2 =
@@ -1659,4 +1663,301 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
 
         EXPECT_EQ(trace, nlohmann::json::parse(json_str));
     }
+}
+
+// Under page-gas (MIP-8, monad_pricing_version >= 2), eth_createAccessList
+// deduplicates storage keys to one minimum-slot representative per page.
+
+TYPED_TEST(MonadTraitsTest, access_list_page_dedup_same_page)
+{
+    if constexpr (!TestFixture::Trait::page_gas_active()) {
+        GTEST_SKIP()
+            << "page-gas dedup only active at monad_pricing_version >= 2";
+    }
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.create_account_no_rollback(addr1);
+    s.create_account_no_rollback(addr2);
+    s.create_account_no_rollback(addr3);
+    s.create_account_no_rollback(addr4);
+
+    // key4 (0x...00) and page0_slot1 (0x...01) are on the same page (both <
+    // 128)
+    s.access_storage(addr4, key4);
+    s.access_storage(addr4, page0_slot1);
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    auto const to = std::optional<Address>{addr3};
+    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    auto const json_str = R"([
+        {
+            "address": "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
+            "storageKeys": [
+                "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+        }
+    ])";
+
+    EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+}
+
+TYPED_TEST(MonadTraitsTest, access_list_page_dedup_same_page_three_slots)
+{
+    if constexpr (!TestFixture::Trait::page_gas_active()) {
+        GTEST_SKIP()
+            << "page-gas dedup only active at monad_pricing_version >= 2";
+    }
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.create_account_no_rollback(addr1);
+    s.create_account_no_rollback(addr2);
+    s.create_account_no_rollback(addr3);
+    s.create_account_no_rollback(addr4);
+
+    // Slots 0, 1, 2 are all on page 0; only slot 0 should survive.
+    constexpr auto page0_slot2 =
+        0x0000000000000000000000000000000000000000000000000000000000000002_bytes32;
+    s.access_storage(addr4, key4);
+    s.access_storage(addr4, page0_slot1);
+    s.access_storage(addr4, page0_slot2);
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    auto const to = std::optional<Address>{addr3};
+    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    auto const json_str = R"([
+        {
+            "address": "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
+            "storageKeys": [
+                "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+        }
+    ])";
+
+    EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+}
+
+TYPED_TEST(MonadTraitsTest, access_list_page_gas_passthrough_two_addresses)
+{
+    if constexpr (!TestFixture::Trait::page_gas_active()) {
+        GTEST_SKIP()
+            << "page-gas dedup only active at monad_pricing_version >= 2";
+    }
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.create_account_no_rollback(addr1);
+    s.create_account_no_rollback(addr2);
+    s.create_account_no_rollback(addr3);
+    s.create_account_no_rollback(addr4);
+    s.create_account_no_rollback(addr5);
+
+    // Two addresses each with one slot in page-gas mode; both must appear in
+    // the output unchanged (no dedup occurs because each address sees only one
+    // slot).
+    s.access_storage(addr4, key4);
+    s.access_storage(addr5, page1_slot0);
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    auto const to = std::optional<Address>{addr3};
+    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    // Sort outer array by address for deterministic comparison
+    std::sort(storage.begin(), storage.end(), [](auto const &a, auto const &b) {
+        return a["address"] < b["address"];
+    });
+
+    auto const json_str = R"([
+        {
+            "address": "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
+            "storageKeys": [
+                "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+        },
+        {
+            "address": "0xe02ad958162c9acb9c3eb90f67b02db21b10d3e0",
+            "storageKeys": [
+                "0x0000000000000000000000000000000000000000000000000000000000000080"
+            ]
+        }
+    ])";
+
+    EXPECT_EQ(storage, nlohmann::json::parse(json_str));
+}
+
+TYPED_TEST(MonadTraitsTest, access_list_page_dedup_one_addr_two_pages)
+{
+    if constexpr (!TestFixture::Trait::page_gas_active()) {
+        GTEST_SKIP()
+            << "page-gas dedup only active at monad_pricing_version >= 2";
+    }
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.create_account_no_rollback(addr1);
+    s.create_account_no_rollback(addr2);
+    s.create_account_no_rollback(addr3);
+    s.create_account_no_rollback(addr4);
+
+    // key4 (0x...00, page 0) and page1_slot0 (0x...80 = 128, page 1) are on
+    // different pages under the same address — both representatives must
+    // survive
+    s.access_storage(addr4, key4);
+    s.access_storage(addr4, page1_slot0);
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    auto const to = std::optional<Address>{addr3};
+    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    ASSERT_EQ(storage.size(), 1U);
+    EXPECT_EQ(
+        storage[0]["address"], "0xc8ba32cab1757528daf49033e3673fae77dcf05d");
+    auto two_page_keys = storage[0]["storageKeys"];
+    std::sort(two_page_keys.begin(), two_page_keys.end());
+    ASSERT_EQ(two_page_keys.size(), 2U);
+    EXPECT_EQ(
+        two_page_keys[0],
+        "0x0000000000000000000000000000000000000000000000000000000000000000");
+    EXPECT_EQ(
+        two_page_keys[1],
+        "0x0000000000000000000000000000000000000000000000000000000000000080");
+}
+
+TYPED_TEST(MonadTraitsTest, access_list_page_dedup_old_revision)
+{
+    if constexpr (TestFixture::Trait::page_gas_active()) {
+        GTEST_SKIP() << "old-revision behaviour only tested before "
+                        "monad_pricing_version 2";
+    }
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.create_account_no_rollback(addr1);
+    s.create_account_no_rollback(addr2);
+    s.create_account_no_rollback(addr3);
+    s.create_account_no_rollback(addr4);
+
+    // Same page, but old revisions return all accessed slots unchanged
+    s.access_storage(addr4, key4);
+    s.access_storage(addr4, page0_slot1);
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    auto const to = std::optional<Address>{addr3};
+    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    ASSERT_EQ(storage.size(), 1U);
+    EXPECT_EQ(
+        storage[0]["address"], "0xc8ba32cab1757528daf49033e3673fae77dcf05d");
+    auto old_keys = storage[0]["storageKeys"];
+    std::sort(old_keys.begin(), old_keys.end());
+    ASSERT_EQ(old_keys.size(), 2U);
+    EXPECT_EQ(
+        old_keys[0],
+        "0x0000000000000000000000000000000000000000000000000000000000000000");
+    EXPECT_EQ(
+        old_keys[1],
+        "0x0000000000000000000000000000000000000000000000000000000000000001");
+}
+
+TYPED_TEST(MonadTraitsTest, access_list_page_dedup_page_boundary)
+{
+    if constexpr (!TestFixture::Trait::page_gas_active()) {
+        GTEST_SKIP()
+            << "page-gas dedup only active at monad_pricing_version >= 2";
+    }
+
+    InMemoryMachine machine;
+    mpt::Db db{machine};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    s.create_account_no_rollback(addr1);
+    s.create_account_no_rollback(addr2);
+    s.create_account_no_rollback(addr3);
+    s.create_account_no_rollback(addr4);
+
+    // 0x7f (127) is the last slot on page 0; 0x80 (128) is the first slot on
+    // page 1. Both must survive deduplication since they are on different
+    // pages.
+    constexpr auto page0_last =
+        0x000000000000000000000000000000000000000000000000000000000000007f_bytes32;
+    s.access_storage(addr4, page0_last);
+    s.access_storage(addr4, page1_slot0);
+
+    nlohmann::json storage;
+    auto const authorities = std::vector<std::optional<Address>>{};
+    auto const to = std::optional<Address>{addr3};
+    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
+    tracer.encode<typename TestFixture::Trait>(s);
+
+    ASSERT_EQ(storage.size(), 1U);
+    EXPECT_EQ(
+        storage[0]["address"], "0xc8ba32cab1757528daf49033e3673fae77dcf05d");
+    auto boundary_keys = storage[0]["storageKeys"];
+    std::sort(boundary_keys.begin(), boundary_keys.end());
+    ASSERT_EQ(boundary_keys.size(), 2U);
+    EXPECT_EQ(
+        boundary_keys[0],
+        "0x000000000000000000000000000000000000000000000000000000000000007f");
+    EXPECT_EQ(
+        boundary_keys[1],
+        "0x0000000000000000000000000000000000000000000000000000000000000080");
 }

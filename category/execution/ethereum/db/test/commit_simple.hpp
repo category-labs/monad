@@ -17,9 +17,12 @@
 
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/proposal_overlays.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
 #include <optional>
+#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -60,6 +63,29 @@ namespace test
             h.logs_bloom = compute_bloom(receipts);
             h.ommers_hash = compute_ommers_hash(ommers);
         });
+
+        // When the test wraps a TrieDb in a DbCache, mirror the runloop:
+        // hand the matching ProposalOverlays into update_proposal_state so
+        // the proposal cache holds the same shape entries the trie just
+        // received. Page mode threads the LeafOverlay produced by
+        // MonadCommitBuilder so cached storage entries are page-keyed
+        // page bytes (not slot-keyed slot bytes that would alias with
+        // small slot keys).
+        if (auto *const db_cache = dynamic_cast<DbCache *>(&db)) {
+            if constexpr (page_encoded) {
+                auto &monad_builder =
+                    static_cast<MonadCommitBuilder &>(builder);
+                db_cache->update_proposal_state(
+                    from_page_state_deltas(
+                        deltas, std::move(monad_builder).take_leaf_overlay()),
+                    header.number,
+                    block_id);
+            }
+            else {
+                db_cache->update_proposal_state(
+                    from_slot_state_deltas(deltas), header.number, block_id);
+            }
+        }
     }
 
 } // namespace test

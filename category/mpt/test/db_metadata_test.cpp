@@ -22,12 +22,14 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <ostream>
 #include <stop_token>
 #include <thread>
+#include <utility>
 
 TEST(db_metadata, DISABLED_copy)
 {
@@ -96,4 +98,145 @@ TEST(db_metadata, DISABLED_copy)
     thread.join();
     EXPECT_GT(count, 0);
     std::cout << count << std::endl;
+}
+
+// -------------------------------------------------------------------
+// secondary_timeline_header_t layout and semantics
+// -------------------------------------------------------------------
+
+TEST(db_metadata, total_size)
+{
+    // Both rings now use the same ring-header type. The total metadata size
+    // is dominated by the cnv_chunks lists in each ring (SIZE_=32).
+    EXPECT_EQ(sizeof(monad::mpt::detail::db_metadata), 4480u);
+}
+
+TEST(db_metadata, ring_b_layout_matches_ring_a)
+{
+    using md = monad::mpt::detail::db_metadata;
+    // Both physical rings use the same header type, so promote is a mere
+    // label flip — no structural asymmetry between the rings.
+    EXPECT_EQ(
+        sizeof(md::root_offsets_ring_t),
+        sizeof(std::declval<md &>().root_offsets));
+    EXPECT_EQ(
+        sizeof(md::root_offsets_ring_t),
+        sizeof(std::declval<md &>().secondary_timeline));
+
+    // Layout order: root_offsets → ... → secondary_timeline →
+    // primary_ring_idx → secondary_timeline_active_ → reserved_timeline_[6]
+    // → shrink_grow_seq_ → pending_shrink_grow → future_variables_unused.
+    auto const offset_secondary = offsetof(md, secondary_timeline);
+    auto const offset_primary_ring_idx = offsetof(md, primary_ring_idx);
+    auto const offset_active = offsetof(md, secondary_timeline_active_);
+    auto const offset_reserved = offsetof(md, reserved_timeline_);
+    auto const offset_seq = offsetof(md, shrink_grow_seq_);
+    auto const offset_pending = offsetof(md, pending_shrink_grow);
+    auto const offset_future = offsetof(md, future_variables_unused);
+    EXPECT_EQ(
+        offset_primary_ring_idx - offset_secondary,
+        sizeof(md::root_offsets_ring_t));
+    EXPECT_EQ(offset_active, offset_primary_ring_idx + 1);
+    EXPECT_EQ(offset_reserved, offset_active + 1);
+    EXPECT_EQ(offset_seq, offset_reserved + 6);
+    EXPECT_EQ(offset_pending, offset_seq + 8);
+    EXPECT_EQ(
+        offset_future, offset_pending + sizeof(md::pending_shrink_grow_t));
+}
+
+TEST(db_metadata, role_bytes_zero_initialized)
+{
+    // A freshly created (zeroed) db_metadata has ring_a as primary and
+    // the secondary role inactive. Backward-compat: older DBs opened by
+    // new code see the secondary as inactive and ring_a as primary.
+    auto *m = (monad::mpt::detail::db_metadata *)calloc(
+        1, sizeof(monad::mpt::detail::db_metadata));
+    auto const cleanup = monad::make_scope_exit([&]() noexcept { free(m); });
+
+    EXPECT_EQ(m->secondary_timeline.version_lower_bound_, 0u);
+    EXPECT_EQ(m->secondary_timeline.next_version_, 0u);
+    EXPECT_EQ(m->primary_ring_idx, 0u);
+    EXPECT_EQ(m->secondary_timeline_active_, 0u);
+}
+
+TEST(db_metadata, secondary_timeline_header_read_write)
+{
+    using md = monad::mpt::detail::db_metadata;
+    // Verify fields can be set and read back through the metadata struct.
+    auto *m = static_cast<md *>(calloc(1, sizeof(md)));
+    auto const cleanup = monad::make_scope_exit([&]() noexcept { free(m); });
+
+    m->secondary_timeline.version_lower_bound_ = 42;
+    m->secondary_timeline.next_version_ = 43;
+    m->secondary_timeline_active_ = 1;
+    m->primary_ring_idx = 1;
+
+    EXPECT_EQ(m->secondary_timeline.version_lower_bound_, 42u);
+    EXPECT_EQ(m->secondary_timeline.next_version_, 43u);
+    EXPECT_EQ(m->secondary_timeline_active_, 1u);
+    EXPECT_EQ(m->primary_ring_idx, 1u);
+}
+
+TEST(db_metadata, secondary_timeline_header_survives_metadata_copy)
+{
+    using md = monad::mpt::detail::db_metadata;
+    // The dual-copy crash-safety mechanism uses raw memcpy between the two
+    // metadata copies. The secondary header and top-level role bytes must
+    // survive this.
+    auto *src = static_cast<md *>(calloc(1, sizeof(md)));
+    auto const cleanup_src =
+        monad::make_scope_exit([&]() noexcept { free(src); });
+    src->secondary_timeline.version_lower_bound_ = 100;
+    src->secondary_timeline.next_version_ = 200;
+    src->secondary_timeline_active_ = 1;
+    src->primary_ring_idx = 1;
+
+    auto *dst = static_cast<md *>(calloc(1, sizeof(md)));
+    auto const cleanup_dst =
+        monad::make_scope_exit([&]() noexcept { free(dst); });
+    std::memcpy(dst, src, sizeof(md));
+
+    EXPECT_EQ(dst->secondary_timeline.version_lower_bound_, 100u);
+    EXPECT_EQ(dst->secondary_timeline.next_version_, 200u);
+    EXPECT_EQ(dst->secondary_timeline_active_, 1u);
+    EXPECT_EQ(dst->primary_ring_idx, 1u);
+}
+
+TEST(db_metadata, secondary_timeline_does_not_overlap_consensus_fields)
+{
+    using md = monad::mpt::detail::db_metadata;
+    // The secondary header must not overlap with consensus fields that
+    // precede it.
+    auto const end_of_proposed_block_id =
+        offsetof(md, latest_proposed_block_id) +
+        sizeof(std::declval<md &>().latest_proposed_block_id);
+    auto const start_of_secondary = offsetof(md, secondary_timeline);
+    EXPECT_GE(start_of_secondary, end_of_proposed_block_id);
+}
+
+// db_copy zeroes next_version_ on dest before the bulk memcpy, then atomically
+// restores both root_offsets.next_version_ and secondary_timeline.next_version_
+// after, so concurrent readers never observe a half-copied ring with a stale
+// advance cursor. Verify the secondary cursor is preserved.
+TEST(db_metadata, db_copy_preserves_secondary_next_version)
+{
+    using md = monad::mpt::detail::db_metadata;
+    auto *src = static_cast<md *>(calloc(1, sizeof(md)));
+    auto *dst = static_cast<md *>(calloc(1, sizeof(md)));
+    auto const cleanup = monad::make_scope_exit([&]() noexcept {
+        free(src);
+        free(dst);
+    });
+
+    src->secondary_timeline.version_lower_bound_ = 7;
+    src->secondary_timeline.next_version_ = 42;
+    src->secondary_timeline_active_ = 1;
+    src->primary_ring_idx = 1;
+
+    monad::mpt::detail::db_copy(dst, src, sizeof(md));
+
+    EXPECT_EQ(dst->secondary_timeline.version_lower_bound_, 7u);
+    EXPECT_EQ(dst->secondary_timeline.next_version_, 42u);
+    EXPECT_EQ(dst->secondary_timeline_active_, 1u);
+    EXPECT_EQ(dst->primary_ring_idx, 1u);
 }

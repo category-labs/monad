@@ -23,6 +23,7 @@
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/state_machine.hpp>
@@ -220,12 +221,6 @@ class UpdateAux
         MIN_COMPACT_VIRTUAL_OFFSET};
     compact_virtual_chunk_offset_t last_block_disk_growth_slow_{
         MIN_COMPACT_VIRTUAL_OFFSET};
-    // compaction range
-    compact_virtual_chunk_offset_t compact_offset_range_fast_{
-        MIN_COMPACT_VIRTUAL_OFFSET};
-    compact_virtual_chunk_offset_t compact_offset_range_slow_{
-        MIN_COMPACT_VIRTUAL_OFFSET};
-
     bool alternate_slow_fast_writer_{false};
     bool can_write_to_fast_{true};
 
@@ -233,9 +228,17 @@ public:
     // Allocate the first cnv chunk for db metadata copies
     static constexpr unsigned cnv_chunks_for_db_metadata = 1;
 
-    int64_t curr_upsert_auto_expire_version{0};
-    compact_offset_pair compact_offsets{
-        MIN_COMPACT_VIRTUAL_OFFSET, MIN_COMPACT_VIRTUAL_OFFSET};
+    timeline_compaction_state timeline_[NUM_TIMELINES];
+
+    timeline_compaction_state &tl(timeline_id id) noexcept
+    {
+        return timeline_[static_cast<unsigned>(id)];
+    }
+
+    timeline_compaction_state const &tl(timeline_id id) const noexcept
+    {
+        return timeline_[static_cast<unsigned>(id)];
+    }
 
     // On disk stuff
     MONAD_ASYNC_NAMESPACE::AsyncIO *io{nullptr};
@@ -354,12 +357,18 @@ public:
                (double)num_chunks(chunk_list::free) / (double)io->chunk_count();
     }
 
-    uint32_t num_chunks(chunk_list list) const noexcept;
+    uint32_t num_chunks(chunk_list const list) const noexcept;
+
+    // Timeline lifecycle. The metadata-header portion of each operation lives
+    // on DbMetadataContext; these methods keep the per-timeline compaction
+    // state (tl()) in sync with the header.
+    void activate_secondary_timeline(uint64_t fork_version);
+    void deactivate_secondary_timeline();
+    void promote_secondary_to_primary();
 };
 
-// sizeof changed: db_metadata_[2] replaced by unique_ptr<DbMetadataContext>
 static_assert(
-    sizeof(UpdateAux) == 96 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 120 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>

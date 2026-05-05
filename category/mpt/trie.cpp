@@ -25,6 +25,7 @@
 #include <category/core/log.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/deserialize_node_from_receiver_result.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
@@ -146,7 +147,8 @@ void maybe_expire_or_compact_child(
         }
     }
     if (sm.auto_expire() &&
-        subtrie_min_version < aux.curr_upsert_auto_expire_version) {
+        subtrie_min_version <
+            aux.tl(timeline_id::primary).curr_upsert_auto_expire_version) {
         bool const cache = child_ptr != nullptr;
         expire_(
             aux,
@@ -159,7 +161,8 @@ void maybe_expire_or_compact_child(
             cache);
         return;
     }
-    if (sm.compact() && min_offsets.any_below(aux.compact_offsets)) {
+    if (sm.compact() &&
+        min_offsets.any_below(aux.tl(timeline_id::primary).compact_offsets)) {
         compact_(
             aux,
             sm,
@@ -167,7 +170,8 @@ void maybe_expire_or_compact_child(
             index,
             std::move(child_ptr),
             child_offset,
-            min_offsets.fast_below(aux.compact_offsets));
+            min_offsets.fast_below(
+                aux.tl(timeline_id::primary).compact_offsets));
     }
     else {
         tnode.child_done();
@@ -505,7 +509,9 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
         node_fast[j] = orig_fast[orig_j];
         node_slow[j] = orig_slow[orig_j];
         auto const ver = orig_ver[orig_j];
-        MONAD_ASSERT(ver >= aux.curr_upsert_auto_expire_version);
+        MONAD_ASSERT(
+            ver >=
+            aux.tl(timeline_id::primary).curr_upsert_auto_expire_version);
         node_ver[j] = ver;
         if (tnode->cache_mask & (1u << orig_j)) {
             node_ptrs[j] = std::exchange(orig_ptrs[orig_j], Node::SharedPtr{});
@@ -566,7 +572,8 @@ Node::SharedPtr create_node_from_children_if_any(
                     calc_min_offsets(*child.ptr, child_virtual_offset);
                 MONAD_ASSERT(
                     !(sm.compact() &&
-                      child.min_offsets.any_below(aux.compact_offsets)));
+                      child.min_offsets.any_below(
+                          aux.tl(timeline_id::primary).compact_offsets)));
             }
             // apply cache based on state machine state, always cache node that
             // is a single child
@@ -642,7 +649,7 @@ void create_node_compute_data_possibly_async(
         if (sm.auto_expire()) {
             MONAD_ASSERT(
                 entry.subtrie_min_version >=
-                aux.curr_upsert_auto_expire_version);
+                aux.tl(timeline_id::primary).curr_upsert_auto_expire_version);
         }
         parent.child_done();
     }
@@ -803,7 +810,8 @@ void create_new_trie_from_requests_(
     entry.finalize(std::move(node), sm.get_compute(), sm.cache());
     if (sm.auto_expire()) {
         MONAD_ASSERT(
-            entry.subtrie_min_version >= aux.curr_upsert_auto_expire_version);
+            entry.subtrie_min_version >=
+            aux.tl(timeline_id::primary).curr_upsert_auto_expire_version);
     }
 }
 
@@ -1113,7 +1121,8 @@ void expire_(
         return;
     }
     MONAD_ASSERT(sm.auto_expire() == true && sm.compact() == true);
-    if (node->version < aux.curr_upsert_auto_expire_version) {
+    if (node->version <
+        aux.tl(timeline_id::primary).curr_upsert_auto_expire_version) {
         // entire subtrie is expired, erase from parent
         erase_child_from_parent(
             parent, static_cast<uint8_t>(branch), static_cast<uint8_t>(index));
@@ -1163,7 +1172,9 @@ void fillin_parent_after_expiration(
             min_offsets.fast != INVALID_COMPACT_VIRTUAL_OFFSET ||
             min_offsets.slow != INVALID_COMPACT_VIRTUAL_OFFSET);
         auto const min_version = calc_min_version(*new_node);
-        MONAD_ASSERT(min_version >= aux.curr_upsert_auto_expire_version);
+        MONAD_ASSERT(
+            min_version >=
+            aux.tl(timeline_id::primary).curr_upsert_auto_expire_version);
         if (parent->type == tnode_type::update) {
             auto &child = static_cast<UpdateTNode *>(parent)->children[index];
             MONAD_ASSERT(!child.ptr); // been transferred to tnode
@@ -1249,9 +1260,10 @@ void compact_(
     if (virtual_node_offset != INVALID_VIRTUAL_OFFSET) {
         compact_virtual_chunk_offset_t const compacted_virtual_offset{
             virtual_node_offset};
-        auto const threshold = virtual_node_offset.in_fast_list()
-                                   ? aux.compact_offsets.fast
-                                   : aux.compact_offsets.slow;
+        auto const threshold =
+            virtual_node_offset.in_fast_list()
+                ? aux.tl(timeline_id::primary).compact_offsets.fast
+                : aux.tl(timeline_id::primary).compact_offsets.slow;
         rewrite_to_fast = compacted_virtual_offset >= threshold;
     }
 
@@ -1273,7 +1285,8 @@ void compact_(
     for (unsigned j = 0; j < n; ++j) {
         auto child_ptr = std::exchange(ptrs[j], Node::SharedPtr{});
         compact_offset_pair const child_min_offsets{fast[j], slow[j]};
-        if (sm.compact() && child_min_offsets.any_below(aux.compact_offsets)) {
+        if (sm.compact() && child_min_offsets.any_below(
+                                aux.tl(timeline_id::primary).compact_offsets)) {
             compact_(
                 aux,
                 sm,
@@ -1281,7 +1294,8 @@ void compact_(
                 j,
                 std::move(child_ptr),
                 fnext[j],
-                child_min_offsets.fast_below(aux.compact_offsets));
+                child_min_offsets.fast_below(
+                    aux.tl(timeline_id::primary).compact_offsets));
         }
         else {
             tnode->child_done();
@@ -1319,7 +1333,8 @@ void try_fillin_parent_with_rewritten_node(
         min_offsets.slow =
             std::min(min_offsets.slow, truncated_new_virtual_offset);
     }
-    MONAD_ASSERT(!min_offsets.any_below(aux.compact_offsets));
+    MONAD_ASSERT(
+        !min_offsets.any_below(aux.tl(timeline_id::primary).compact_offsets));
     TNodeBase *parent = tnode->parent();
     auto const index = tnode->index;
     if (parent->type == tnode_type::update) {

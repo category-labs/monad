@@ -47,6 +47,10 @@ struct monad_statesync_client_context
 
     monad::mpt::Db db;
     monad::TrieDb tdb;
+
+    monad::mpt::Db secondary_db;
+    monad::PagedTrieDb secondary_tdb;
+
     std::vector<std::pair<uint64_t, uint64_t>> progress;
     std::vector<std::unique_ptr<monad::StatesyncProtocol>> protocol;
     std::array<monad::BlockHeader, 256> hdrs;

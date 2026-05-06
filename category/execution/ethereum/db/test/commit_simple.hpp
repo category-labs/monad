@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 
 #include <optional>
 #include <vector>
@@ -27,7 +28,7 @@ MONAD_NAMESPACE_BEGIN
 
 namespace test
 {
-
+    template <bool page_encoded = false>
     inline void commit_simple(
         ::monad::Db &db, StateDeltas const &deltas, Code const &code,
         bytes32_t const &block_id, BlockHeader const &header,
@@ -39,7 +40,16 @@ namespace test
         std::optional<std::vector<Withdrawal>> const &withdrawals =
             std::nullopt)
     {
-        CommitBuilder builder(header.number);
+        std::unique_ptr<CommitBuilder> builder_ptr;
+        if constexpr (page_encoded) {
+            builder_ptr =
+                std::make_unique<PageCommitBuilder>(header.number, db);
+        }
+        else {
+            builder_ptr = std::make_unique<CommitBuilder>(header.number);
+        }
+        CommitBuilder &builder = *builder_ptr;
+
         builder.add_state_deltas(deltas)
             .add_code(code)
             .add_receipts(receipts)

@@ -58,6 +58,8 @@ class TrieDbImpl final : public ::monad::Db
     std::unique_ptr<DbCache> cache_;
 
 public:
+    static constexpr bool is_page_encoded = page_encoded;
+
     explicit TrieDbImpl(mpt::Db &, bool enable_multiblock_cache = false);
     ~TrieDbImpl();
 

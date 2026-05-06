@@ -385,13 +385,13 @@ Result<std::vector<Receipt>> execute_and_record(
 template <Traits traits>
 void process_test(
     std::string const &name, nlohmann::json const &j_contents,
-    bool enable_tracing)
+    vm::VM::Mode const vm_mode, bool enable_tracing)
 {
     using namespace test;
 
     auto const json_state = load_blockchain_json_state<traits>(j_contents);
     auto const test_state = json_state.make_test_state();
-    vm::VM vm;
+    vm::VM vm{vm_mode};
     mpt::Db &db = test_state->db;
     monad::TrieDb &tdb = test_state->trie_db;
 
@@ -620,16 +620,18 @@ void process_test(
 void process_test(
     std::variant<evmc_revision, monad_revision> const &revision,
     std::string const &name, nlohmann::json const &j_contents,
-    bool const enable_tracing)
+    vm::VM::Mode const vm_mode, bool const enable_tracing)
 {
     if (std::holds_alternative<evmc_revision>(revision)) {
         auto const rev = std::get<evmc_revision>(revision);
         MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
-        SWITCH_EVM_TRAITS(process_test, name, j_contents, enable_tracing);
+        SWITCH_EVM_TRAITS(
+            process_test, name, j_contents, vm_mode, enable_tracing);
     }
     else {
         auto const rev = std::get<monad_revision>(revision);
-        SWITCH_MONAD_TRAITS(process_test, name, j_contents, enable_tracing);
+        SWITCH_MONAD_TRAITS(
+            process_test, name, j_contents, vm_mode, enable_tracing);
     }
 }
 
@@ -672,7 +674,15 @@ void BlockchainTest::TestBody()
 
         executed = true;
 
-        process_test(rev, name, j_contents, enable_tracing_);
+        for (auto const vm_mode : vm::VM::all_modes) {
+            if (fixed_vm_mode_.has_value() &&
+                fixed_vm_mode_.value() != vm_mode) {
+                continue;
+            }
+            auto const enum_name = vm::VM::mode_to_string(vm_mode);
+            auto const full_name = name + "(" + enum_name + " VM mode)";
+            process_test(rev, full_name, j_contents, vm_mode, enable_tracing_);
+        }
     }
 
     if (!executed && revision_.has_value()) {
@@ -687,12 +697,12 @@ void BlockchainTest::TestBody()
 void register_blockchain_tests_path(
     std::filesystem::path const &root,
     std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
-    bool const enable_tracing)
+    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing)
 {
     namespace fs = std::filesystem;
     MONAD_ASSERT(fs::exists(root));
 
-    auto register_test = [&root, &revision, enable_tracing](
+    auto register_test = [&root, &revision, vm_mode, enable_tracing](
                              fs::path const &path) {
         if (path.extension() == ".json") {
             MONAD_ASSERT(fs::is_regular_file(path));
@@ -712,7 +722,7 @@ void register_blockchain_tests_path(
                 0,
                 [=] {
                     return new test::BlockchainTest(
-                        path, revision, enable_tracing);
+                        path, revision, vm_mode, enable_tracing);
                 });
         }
     };
@@ -730,7 +740,7 @@ void register_blockchain_tests_path(
 
 void register_blockchain_tests(
     std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
-    bool const enable_tracing)
+    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing)
 {
     // skip slow tests
     testing::FLAGS_gtest_filter +=
@@ -743,13 +753,18 @@ void register_blockchain_tests(
     register_blockchain_tests_path(
         test_resource::ethereum_tests_dir / "BlockchainTests",
         revision,
+        vm_mode,
         enable_tracing);
     register_blockchain_tests_path(
-        test_resource::internal_blockchain_tests_dir, revision, enable_tracing);
+        test_resource::internal_blockchain_tests_dir,
+        revision,
+        vm_mode,
+        enable_tracing);
     register_blockchain_tests_path(
         test_resource::build_dir /
             "src/ExecutionSpecTestFixtures/blockchain_tests",
         revision,
+        vm_mode,
         enable_tracing);
 }
 

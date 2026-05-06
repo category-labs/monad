@@ -30,9 +30,15 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <quill/Quill.h>
+
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string>
 
 namespace monad::vm
 {
@@ -219,4 +225,40 @@ namespace monad::vm
     }
 
     EXPLICIT_TRAITS_MEMBER(VM::execute_native_entrypoint_raw);
+
+    std::string VM::mode_to_string(Mode const mode)
+    {
+        switch (mode) {
+        case Dual:
+            return "Dual";
+        case CompilerOnly:
+            return "CompilerOnly";
+        case InterpreterOnly:
+            return "InterpreterOnly";
+        }
+        MONAD_ABORT();
+    }
+
+    std::optional<VM::Mode> VM::mode_from_string(std::string s)
+    {
+        std::transform(s.begin(), s.end(), s.begin(), [](auto const c) {
+            return std::tolower(c);
+        });
+        if (s == "dual") {
+            return Dual;
+        }
+        if (s == "compileronly") {
+            return CompilerOnly;
+        }
+        if (s == "interpreteronly") {
+            return InterpreterOnly;
+        }
+        return std::nullopt;
+    }
+
+    std::array<VM::Mode, 3> const VM::all_modes{
+        Dual, CompilerOnly, InterpreterOnly};
+
+    std::array<std::string, 3> const VM::all_mode_names{
+        "Dual", "CompilerOnly", "InterpreterOnly"};
 }

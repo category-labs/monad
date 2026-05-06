@@ -39,6 +39,7 @@ using namespace monad::mpt;
 unsigned const MONAD_SQPOLL_DISABLED = unsigned(-1);
 
 monad_statesync_client_context *monad_statesync_client_context_create(
+    monad_chain_config const chain_config,
     char const *const *const dbname_paths, size_t const len,
     unsigned const sq_thread_cpu, monad_statesync_client *const sync,
     void (*statesync_send_request)(
@@ -53,6 +54,7 @@ monad_statesync_client_context *monad_statesync_client_context_create(
     register_ethereum_state_machines();
     register_monad_state_machines();
     return new monad_statesync_client_context{
+        chain_config,
         paths,
         sq_thread_cpu == MONAD_SQPOLL_DISABLED
             ? std::nullopt
@@ -223,10 +225,20 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     }
     ctx->db.update_finalized_version(tgrt.number);
 
-    TrieDb db{ctx->db};
-    MONAD_ASSERT(db.get_block_number() == tgrt.number);
-
-    return db.state_root() == tgrt.state_root;
+    // Pick the right TrieDb to read state_root from based on the target's
+    // revision.
+    auto const monad_rev = ctx->chain->get_monad_revision(tgrt.timestamp);
+    bool const page_encoded = monad_rev >= MONAD_NEXT;
+    TrieDb *db = &ctx->tdb;
+    if (page_encoded != db->is_page_encoded()) {
+        MONAD_ASSERT(
+            ctx->secondary_tdb &&
+            ctx->secondary_tdb->is_page_encoded() == page_encoded);
+        db = ctx->secondary_tdb.get();
+    }
+    db->set_block_and_prefix(ctx->db.get_latest_finalized_version());
+    MONAD_ASSERT(db->get_block_number() == tgrt.number);
+    return db->state_root() == tgrt.state_root;
 }
 
 void monad_statesync_client_context_destroy(

@@ -236,9 +236,6 @@ void UpdateAux::clear_ondisk_db()
 {
     MONAD_ASSERT(is_on_disk());
     // No finalized version means no anchor for either timeline; wipe both.
-    if (metadata_ctx_->timeline_active(timeline_id::secondary)) {
-        deactivate_secondary_timeline();
-    }
     auto do_ = [&](unsigned const which) {
         auto const g = metadata_ctx_->main_mutable(which)->hold_dirty();
         metadata_ctx_->root_offsets(which).reset_all(0);

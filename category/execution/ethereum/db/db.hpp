@@ -67,7 +67,7 @@ struct Db
     // two-stage commit
     virtual void commit(
         bytes32_t const &block_id, CommitBuilder &builder,
-        BlockHeader const &header, StateDeltas const &state_deltas,
+        BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) = 0;
 
     virtual std::string print_stats()

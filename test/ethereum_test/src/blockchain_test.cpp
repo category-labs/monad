@@ -310,7 +310,7 @@ Result<BlockExecOutput> execute(
         bytes32_t{block.header.number},
         builder,
         block.header,
-        *state,
+        std::move(state),
         [&](BlockHeader &h) {
             if constexpr (traits::evm_rev() <= EVMC_BYZANTIUM) {
                 // TrieDb receipts root is not valid pre-Byzantium; use the

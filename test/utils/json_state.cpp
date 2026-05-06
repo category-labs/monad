@@ -43,7 +43,7 @@ TestStateRef JsonState::make_test_state() const
     auto [released_state, released_code] = std::move(bs).release();
     commit_simple(
         test_state->trie_db,
-        *released_state,
+        std::move(released_state),
         released_code,
         NULL_HASH_BLAKE3,
         header,

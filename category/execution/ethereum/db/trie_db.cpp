@@ -73,12 +73,13 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-TrieDb::TrieDb(mpt::Db &db)
+TrieDb::TrieDb(mpt::Db &db, bool const enable_multiblock_cache)
     : db_{db}
     , block_number_{db.get_latest_finalized_version()}
     , proposal_block_id_{bytes32_t{}}
     , prefix_{finalized_nibbles}
     , curr_root_{db.load_root_for_version(block_number_)}
+    , cache_{enable_multiblock_cache ? std::make_unique<DbCache>() : nullptr}
 {
 }
 
@@ -97,6 +98,10 @@ Node::SharedPtr const &TrieDb::get_root() const
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
+    std::optional<Account> result;
+    if (cache_ && cache_->try_read_account(addr, result)) {
+        return result;
+    }
     auto const res = db_.find(
         curr_root_,
         concat(
@@ -109,15 +114,17 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
         return std::nullopt;
     }
     stats_account_value();
-
     auto encoded_account = res.value().node->value();
-    auto const acct = decode_account_db_ignore_address(encoded_account);
-    return acct.value();
+    return decode_account_db_ignore_address(encoded_account).value();
 }
 
-bytes32_t
-TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
+bytes32_t TrieDb::read_storage(
+    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
+    bytes32_t result{};
+    if (cache_ && cache_->try_read_storage(addr, incarnation, key, result)) {
+        return result;
+    }
     auto const res = db_.find(
         curr_root_,
         concat(
@@ -135,7 +142,7 @@ TrieDb::read_storage(Address const &addr, Incarnation, bytes32_t const &key)
     auto const storage = decode_storage_db_ignore_slot(encoded_storage);
     MONAD_ASSERT(!storage.has_error());
     return to_bytes(storage.value());
-};
+}
 
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
@@ -155,11 +162,12 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 
 void TrieDb::commit(
     bytes32_t const &block_id, CommitBuilder &builder,
-    BlockHeader const &header, StateDeltas const &,
+    BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
     std::function<void(BlockHeader &)> const populate_header_fn)
 {
     auto const block_number = header.number;
     MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
+    MONAD_ASSERT(state_deltas);
 
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk() && block_id != proposal_block_id_) {
@@ -194,11 +202,19 @@ void TrieDb::commit(
     builder.add_block_header(complete_header);
     curr_root_ = db_.upsert(
         std::move(curr_root_), builder.build(prefix_), block_number_, false);
+
+    if (cache_) {
+        cache_->update_proposal_state(
+            std::move(state_deltas), header.number, block_id);
+    }
 }
 
 void TrieDb::set_block_and_prefix(
     uint64_t const block_number, bytes32_t const &block_id)
 {
+    if (cache_) {
+        cache_->set_block_and_prefix(block_number, block_id);
+    }
     // set read state
     if (!db_.is_on_disk()) {
         MONAD_ASSERT(proposal_block_id_ == bytes32_t{});
@@ -243,6 +259,9 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
     }
     block_number_ = block_number;
     db_.update_finalized_version(block_number);
+    if (cache_) {
+        cache_->on_finalize(block_number, block_id);
+    }
 }
 
 void TrieDb::update_verified_block(uint64_t const block_number)
@@ -338,6 +357,10 @@ std::string TrieDb::print_stats()
     n_account_value_.store(0, std::memory_order_release);
     n_storage_no_value_.store(0, std::memory_order_release);
     n_storage_value_.store(0, std::memory_order_release);
+    if (cache_) {
+        ret += ",ac=" + cache_->accounts_stats() +
+               ",sc=" + cache_->storage_stats();
+    }
     return ret;
 }
 

@@ -49,11 +49,11 @@ namespace monad::staking::test
     {
         commit_simple(
             trie_db_,
-            StateDeltas{
-                {STAKING_CA,
-                 StateDelta{
-                     .account =
-                         {std::nullopt, Account{.balance = 0, .nonce = 1}}}}},
+            sd(
+                {{STAKING_CA,
+                  StateDelta{
+                      .account =
+                          {std::nullopt, Account{.balance = 0, .nonce = 1}}}}}),
             Code{},
             NULL_HASH_BLAKE3,
             BlockHeader{},

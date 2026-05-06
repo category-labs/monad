@@ -29,7 +29,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
-#include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_block_events.hpp>
@@ -86,7 +86,7 @@ void log_tps(
 // Process a single historical Ethereum block
 template <Traits traits>
 Result<void> process_ethereum_block(
-    Chain const &chain, DbCache &db, vm::VM &vm,
+    Chain const &chain, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing)
@@ -184,24 +184,24 @@ Result<void> process_ethereum_block(
     if (block.withdrawals.has_value()) {
         builder.add_withdrawals(block.withdrawals.value());
     }
-    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
-        // second stage: populate block header
-        if constexpr (traits::evm_rev() <= EVMC_BYZANTIUM) {
-            // TrieDb receipts root is not valid pre-Byzantium; use the
-            // block's original receipts root.
-            h.receipts_root = block.header.receipts_root;
-        }
-        else {
-            h.receipts_root = db.receipts_root();
-        }
-        h.state_root = db.state_root();
-        h.withdrawals_root = db.withdrawals_root();
-        h.transactions_root = db.transactions_root();
-        h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
-        h.logs_bloom = compute_bloom(receipts);
-        h.ommers_hash = compute_ommers_hash(block.ommers);
-    });
-    db.update_proposal_state(std::move(state), block.header.number, block_id);
+    db.commit(
+        block_id, builder, block.header, std::move(state), [&](BlockHeader &h) {
+            // second stage: populate block header
+            if constexpr (traits::evm_rev() <= EVMC_BYZANTIUM) {
+                // TrieDb receipts root is not valid pre-Byzantium; use the
+                // block's original receipts root.
+                h.receipts_root = block.header.receipts_root;
+            }
+            else {
+                h.receipts_root = db.receipts_root();
+            }
+            h.state_root = db.state_root();
+            h.withdrawals_root = db.withdrawals_root();
+            h.transactions_root = db.transactions_root();
+            h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
+            h.logs_bloom = compute_bloom(receipts);
+            h.ommers_hash = compute_ommers_hash(block.ommers);
+        });
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
@@ -269,7 +269,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &chain, std::filesystem::path const &ledger_dir, DbCache &db,
+    Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
     vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,

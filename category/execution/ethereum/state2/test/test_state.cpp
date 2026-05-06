@@ -26,7 +26,6 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
-#include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -105,8 +104,21 @@ namespace
     {
         OnDiskMachine machine;
         mpt::Db db{machine, mpt::OnDiskDbConfig{}};
-        TrieDb tdb{db};
+        TrieDb tdb;
         vm::VM vm;
+
+        explicit OnDiskStateTest(bool const cache = false)
+            : tdb{db, cache}
+        {
+        }
+    };
+
+    struct OnDiskStateTestCached : public OnDiskStateTest
+    {
+        OnDiskStateTestCached()
+            : OnDiskStateTest(/*cache=*/true)
+        {
+        }
     };
 
     struct InMemoryStateTest
@@ -127,8 +139,9 @@ namespace
         OnDiskMachine machine;
         mpt::Db db1{machine, mpt::OnDiskDbConfig{.file_size_db = 8}};
         mpt::Db db2{machine, mpt::OnDiskDbConfig{.file_size_db = 8}};
+        // baseline noncaching db for tdb1
         TrieDb tdb1{db1};
-        TrieDb tdb2{db2};
+        TrieDb tdb2{db2, /*enable_multiblock_cache=*/true};
         vm::VM vm;
     };
 }
@@ -140,10 +153,10 @@ TEST_F(InMemoryStateTest, access_account)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 10'000}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 10'000}}}}}),
         Code{},
         BlockHeader{});
 
@@ -160,10 +173,10 @@ TEST_F(InMemoryStateTest, account_exists)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 10'000}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 10'000}}}}}),
         Code{},
         BlockHeader{});
 
@@ -194,10 +207,10 @@ TEST_F(InMemoryStateTest, get_balance)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 10'000}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 10'000}}}}}),
         Code{},
         BlockHeader{});
 
@@ -213,8 +226,7 @@ TEST_F(InMemoryStateTest, add_to_balance)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a, StateDelta{.account = {std::nullopt, Account{.balance = 1}}}}},
+        sd({{a, StateDelta{.account = {std::nullopt, Account{.balance = 1}}}}}),
         Code{},
         BlockHeader{});
 
@@ -231,8 +243,7 @@ TEST_F(InMemoryStateTest, get_nonce)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a, StateDelta{.account = {std::nullopt, Account{.nonce = 2}}}}},
+        sd({{a, StateDelta{.account = {std::nullopt, Account{.nonce = 2}}}}}),
         Code{},
         BlockHeader{});
 
@@ -258,10 +269,10 @@ TEST_F(InMemoryStateTest, get_code_hash)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.code_hash = hash1}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.code_hash = hash1}}}}}),
         Code{},
         BlockHeader{});
 
@@ -288,12 +299,11 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{.account = {std::nullopt, Account{.balance = 18'000}}}},
             {c,
              StateDelta{
-                 .account = {std::nullopt, Account{.balance = 38'000}}}}},
+                 .account = {std::nullopt, Account{.balance = 38'000}}}}}),
         Code{},
         BlockHeader{});
 
@@ -334,8 +344,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{
                  .account =
                      {std::nullopt,
@@ -348,7 +357,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
                      {std::nullopt,
                       Account{
                           .balance = 38'000,
-                          .incarnation = Incarnation{1, 1}}}}}},
+                          .incarnation = Incarnation{1, 1}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -377,8 +386,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_same_tx)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{
                  .account =
                      {std::nullopt,
@@ -391,7 +399,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_same_tx)
                      {std::nullopt,
                       Account{
                           .balance = 38'000,
-                          .incarnation = Incarnation{1, 1}}}}}},
+                          .incarnation = Incarnation{1, 1}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -415,10 +423,10 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_separate_tx)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 18'000}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}}}}}),
         Code{},
         BlockHeader{});
 
@@ -450,14 +458,14 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 18'000,
-                          .incarnation = Incarnation{1, 1}}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 18'000,
+                           .incarnation = Incarnation{1, 1}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -478,11 +486,11 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_incarnation)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 18'000}},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
         Code{},
         BlockHeader{});
     {
@@ -512,11 +520,11 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_create_incarnation)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 18'000}},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
         Code{},
         BlockHeader{});
     {
@@ -561,11 +569,11 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 18'000}},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
         Code{},
         BlockHeader{});
     {
@@ -586,7 +594,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
         auto [released_state, released_code] = std::move(bs).release();
         commit_simple(
             this->tdb,
-            *released_state,
+            std::move(released_state),
             released_code,
             bytes32_t{1},
             BlockHeader{.number = 1},
@@ -609,13 +617,13 @@ TYPED_TEST(
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{}},
-                 .storage =
-                     {{key1, {bytes32_t{}, value2}},
-                      {key3, {bytes32_t{}, value3}}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{}},
+                  .storage =
+                      {{key1, {bytes32_t{}, value2}},
+                       {key3, {bytes32_t{}, value3}}}}}}),
         Code{},
         BlockHeader{});
     {
@@ -641,7 +649,7 @@ TYPED_TEST(
         auto [released_state, released_code] = std::move(bs).release();
         commit_simple(
             this->tdb,
-            *released_state,
+            std::move(released_state),
             released_code,
             bytes32_t{1},
             BlockHeader{.number = 1},
@@ -701,7 +709,7 @@ TYPED_TEST(
         auto [released_state, released_code] = std::move(bs).release();
         commit_simple(
             this->tdb,
-            *released_state,
+            std::move(released_state),
             released_code,
             NULL_HASH_BLAKE3,
             BlockHeader{.number = 0},
@@ -724,11 +732,11 @@ TEST_F(InMemoryStateTest, create_conflict_address_incarnation)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 18'000}},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -746,10 +754,9 @@ TYPED_TEST(InMemoryStateTraitsTest, destruct_touched_dead)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{.account = {std::nullopt, Account{.balance = 10'000}}}},
-            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
 
@@ -806,8 +813,7 @@ TEST_F(InMemoryStateTest, get_storage)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{
                  .account = {std::nullopt, Account{}},
                  .storage =
@@ -816,7 +822,7 @@ TEST_F(InMemoryStateTest, get_storage)
             {b,
              StateDelta{
                  .account = {std::nullopt, Account{}},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+                 .storage = {{key1, {bytes32_t{}, value1}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -836,12 +842,11 @@ TEST_F(InMemoryStateTest, set_storage_modified)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{
                  .account = {std::nullopt, Account{}},
                  .storage = {{key2, {bytes32_t{}, value2}}}}},
-            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
 
@@ -857,11 +862,11 @@ TEST_F(InMemoryStateTest, set_storage_deleted)
 
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {b,
-             StateDelta{
-                 .account = {std::nullopt, Account{}},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        sd(
+            {{b,
+              StateDelta{
+                  .account = {std::nullopt, Account{}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -880,7 +885,7 @@ TEST_F(InMemoryStateTest, set_storage_added)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        sd({{b, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
 
@@ -899,12 +904,11 @@ TEST_F(InMemoryStateTest, set_storage_different_assigned)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{
                  .account = {std::nullopt, Account{}},
                  .storage = {{key2, {bytes32_t{}, value2}}}}},
-            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
 
@@ -921,12 +925,11 @@ TEST_F(InMemoryStateTest, set_storage_unchanged_assigned)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{
                  .account = {std::nullopt, Account{}},
                  .storage = {{key2, {bytes32_t{}, value2}}}}},
-            {b, StateDelta{.account = {std::nullopt, Account{}}}}},
+            {b, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
 
@@ -941,7 +944,7 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        sd({{b, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
 
@@ -958,7 +961,7 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted_null)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{{b, StateDelta{.account = {std::nullopt, Account{}}}}},
+        sd({{b, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
 
@@ -975,11 +978,11 @@ TEST_F(InMemoryStateTest, set_storage_modify_delete)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {b,
-             StateDelta{
-                 .account = {std::nullopt, Account{}},
-                 .storage = {{key2, {bytes32_t{}, value2}}}}}},
+        sd(
+            {{b,
+              StateDelta{
+                  .account = {std::nullopt, Account{}},
+                  .storage = {{key2, {bytes32_t{}, value2}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -996,11 +999,11 @@ TEST_F(InMemoryStateTest, set_storage_delete_restored)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {b,
-             StateDelta{
-                 .account = {std::nullopt, Account{}},
-                 .storage = {{key2, {bytes32_t{}, value2}}}}}},
+        sd(
+            {{b,
+              StateDelta{
+                  .account = {std::nullopt, Account{}},
+                  .storage = {{key2, {bytes32_t{}, value2}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -1017,11 +1020,11 @@ TEST_F(InMemoryStateTest, set_storage_modified_restored)
     BlockState bs{this->tdb, this->vm};
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {b,
-             StateDelta{
-                 .account = {std::nullopt, Account{}},
-                 .storage = {{key2, {bytes32_t{}, value2}}}}}},
+        sd(
+            {{b,
+              StateDelta{
+                  .account = {std::nullopt, Account{}},
+                  .storage = {{key2, {bytes32_t{}, value2}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -1040,7 +1043,7 @@ TEST_F(InMemoryStateTest, get_code_size)
     Account acct{.code_hash = code_hash1};
     commit_sequential(
         this->tdb,
-        StateDeltas{{a, StateDelta{.account = {std::nullopt, acct}}}},
+        sd({{a, StateDelta{.account = {std::nullopt, acct}}}}),
         Code{{code_hash1, icode1}},
         BlockHeader{});
 
@@ -1056,9 +1059,8 @@ TEST_F(InMemoryStateTest, copy_code)
 
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a, StateDelta{.account = {std::nullopt, acct_a}}},
-            {b, StateDelta{.account = {std::nullopt, acct_b}}}},
+        sd({{a, StateDelta{.account = {std::nullopt, acct_a}}},
+            {b, StateDelta{.account = {std::nullopt, acct_b}}}}),
         Code{{code_hash1, icode1}, {code_hash2, icode2}},
         BlockHeader{});
 
@@ -1108,10 +1110,11 @@ TEST_F(InMemoryStateTest, get_code)
 
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.code_hash = code_hash1}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account =
+                      {std::nullopt, Account{.code_hash = code_hash1}}}}}),
         Code{{code_hash1, vm::make_shared_intercode(contract)}},
         BlockHeader{});
 
@@ -1151,8 +1154,7 @@ TEST_F(InMemoryStateTest, can_merge_same_account_different_storage)
 
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {b,
+        sd({{b,
              StateDelta{
                  .account = {std::nullopt, Account{.balance = 40'000}},
                  .storage =
@@ -1163,7 +1165,7 @@ TEST_F(InMemoryStateTest, can_merge_same_account_different_storage)
                  .account = {std::nullopt, Account{.balance = 50'000}},
                  .storage =
                      {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
+                      {key2, {bytes32_t{}, value2}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -1186,11 +1188,11 @@ TEST_F(InMemoryStateTest, cant_merge_colliding_storage)
 
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {b,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 40'000}},
-                 .storage = {{key1, {bytes32_t{}, value1}}}}}},
+        sd(
+            {{b,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 40'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -1222,8 +1224,7 @@ TYPED_TEST(InMemoryStateTraitsTest, merge_txn0_and_txn1)
 
     commit_sequential(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
             {b,
              StateDelta{
@@ -1236,7 +1237,7 @@ TYPED_TEST(InMemoryStateTraitsTest, merge_txn0_and_txn1)
                  .account = {std::nullopt, Account{.balance = 50'000}},
                  .storage =
                      {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
+                      {key2, {bytes32_t{}, value2}}}}}}),
         Code{},
         BlockHeader{});
 
@@ -1273,7 +1274,7 @@ TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
     auto [released_state, released_code] = std::move(bs).release();
     commit_simple(
         this->tdb,
-        *released_state,
+        std::move(released_state),
         released_code,
         NULL_HASH_BLAKE3,
         BlockHeader{.number = 0},
@@ -1304,7 +1305,7 @@ TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
     auto [released_state, released_code] = std::move(bs).release();
     commit_simple(
         this->tdb,
-        *released_state,
+        std::move(released_state),
         released_code,
         NULL_HASH_BLAKE3,
         {},
@@ -1328,8 +1329,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
     this->tdb.set_block_and_prefix(8);
     commit_simple(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
             {b,
              StateDelta{
@@ -1342,7 +1342,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
                  .account = {std::nullopt, Account{.balance = 50'000}},
                  .storage =
                      {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
+                      {key2, {bytes32_t{}, value2}}}}}}),
         Code{},
         bytes32_t{9},
         BlockHeader{.number = 9});
@@ -1364,7 +1364,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         auto [released_state, released_code] = std::move(bs).release();
         commit_simple(
             this->tdb,
-            *released_state,
+            std::move(released_state),
             released_code,
             bytes32_t{10},
             BlockHeader{.number = 10});
@@ -1391,7 +1391,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         auto [released_state, released_code] = std::move(bs).release();
         commit_simple(
             this->tdb,
-            *released_state,
+            std::move(released_state),
             released_code,
             bytes32_t{11},
             BlockHeader{.number = 11});
@@ -1434,8 +1434,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
     this->tdb.set_block_and_prefix(9);
     commit_simple(
         this->tdb,
-        StateDeltas{
-            {a,
+        sd({{a,
              StateDelta{.account = {std::nullopt, Account{.balance = 30'000}}}},
             {b,
              StateDelta{
@@ -1448,7 +1447,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
                  .account = {std::nullopt, Account{.balance = 50'000}},
                  .storage =
                      {{key1, {bytes32_t{}, value1}},
-                      {key2, {bytes32_t{}, value2}}}}}},
+                      {key2, {bytes32_t{}, value2}}}}}}),
         Code{},
         bytes32_t{10},
         BlockHeader{.number = 10},
@@ -1473,7 +1472,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         auto [released_state, released_code] = std::move(bs).release();
         commit_simple(
             this->tdb,
-            *released_state,
+            std::move(released_state),
             released_code,
             bytes32_t{118},
             BlockHeader{.number = 11});
@@ -1501,7 +1500,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         auto [released_state, released_code] = std::move(bs).release();
         commit_simple(
             this->tdb,
-            *released_state,
+            std::move(released_state),
             released_code,
             bytes32_t{116},
             BlockHeader{.number = 11});
@@ -1531,7 +1530,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         auto [released_state, released_code] = std::move(bs).release();
         commit_simple(
             this->tdb,
-            *released_state,
+            std::move(released_state),
             released_code,
             bytes32_t{117},
             BlockHeader{.number = 11});
@@ -1553,67 +1552,62 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
     EXPECT_EQ(state_root_round8, this->tdb.state_root());
 }
 
-TEST_F(OnDiskStateTest, proposal_basics)
+TEST_F(OnDiskStateTestCached, proposal_basics)
 {
     this->tdb.reset_root(
         load_header({}, this->db, BlockHeader{.number = 9}), 9);
     Db &db = this->tdb;
     commit_simple(
         db,
-        StateDeltas{
-            {a,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 30'000}}}}},
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 30'000}}}}}),
         Code{},
         bytes32_t{10},
         BlockHeader{.number = 10});
     db.set_block_and_prefix(10, bytes32_t{10});
     EXPECT_EQ(db.read_account(a).value().balance, 30'000);
 
-    DbCache db_cache(db);
-    db_cache.set_block_and_prefix(10, bytes32_t{10});
-    BlockState bs1(db_cache, this->vm);
+    db.set_block_and_prefix(10, bytes32_t{10});
+    BlockState bs1(db, this->vm);
     EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
     auto [released_state1, released_code1] = std::move(bs1).release();
     commit_simple(
-        db_cache,
-        *released_state1,
+        db,
+        std::move(released_state1),
         released_code1,
         bytes32_t{11},
         BlockHeader{.number = 11});
-    db_cache.update_proposal_state(
-        std::move(released_state1), 11, bytes32_t{11});
-    db_cache.finalize(11, bytes32_t{11});
+    db.finalize(11, bytes32_t{11});
 
-    db_cache.set_block_and_prefix(11, bytes32_t{11});
-    BlockState bs2(db_cache, this->vm);
+    db.set_block_and_prefix(11, bytes32_t{11});
+    BlockState bs2(db, this->vm);
     State as{bs2, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(a));
     as.add_to_balance(a, 10'000);
     EXPECT_TRUE(bs2.can_merge(as));
     bs2.merge(as);
-    EXPECT_EQ(db_cache.read_account(a).value().balance, 30'000);
+    EXPECT_EQ(db.read_account(a).value().balance, 30'000);
     auto [released_state2, released_code2] = std::move(bs2).release();
     commit_simple(
-        db_cache,
-        *released_state2,
+        db,
+        std::move(released_state2),
         released_code2,
         bytes32_t{12},
         BlockHeader{.number = 12});
-    db_cache.update_proposal_state(
-        std::move(released_state2), 12, bytes32_t{12});
-    EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
-    db_cache.finalize(12, bytes32_t{12});
-    EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
+    EXPECT_EQ(db.read_account(a).value().balance, 40'000);
+    db.finalize(12, bytes32_t{12});
+    EXPECT_EQ(db.read_account(a).value().balance, 40'000);
     // read an older block's state
-    db_cache.set_block_and_prefix(11); // set to block 11 finalized
-    EXPECT_EQ(db_cache.read_account(a).value().balance, 30'000);
+    db.set_block_and_prefix(11); // set to block 11 finalized
+    EXPECT_EQ(db.read_account(a).value().balance, 30'000);
 }
 
-TEST_F(OnDiskStateTest, undecided_proposals)
+TEST_F(OnDiskStateTestCached, undecided_proposals)
 {
     load_header({}, this->db, BlockHeader{.number = 9});
-    DbCache db_cache(this->tdb);
+    Db &db = this->tdb;
 
     // b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
     // b11 r111 r100           +40 v2 --
@@ -1641,29 +1635,28 @@ TEST_F(OnDiskStateTest, undecided_proposals)
              .storage = {
                  {key1, {bytes32_t{}, value1}},
                  {key2, {bytes32_t{}, value2}}}}}}};
-    db_cache.set_block_and_prefix(9);
+    db.set_block_and_prefix(9);
     commit_simple(
-        db_cache,
-        *state_deltas,
+        db,
+        std::move(state_deltas),
         Code{},
         bytes32_t{10},
         BlockHeader{.number = 10});
-    db_cache.update_proposal_state(std::move(state_deltas), 10, bytes32_t{10});
-    db_cache.finalize(10, bytes32_t{10});
-    EXPECT_TRUE(db_cache.read_account(a).has_value());
-    EXPECT_TRUE(db_cache.read_account(b).has_value());
-    EXPECT_TRUE(db_cache.read_account(c).has_value());
-    EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
-    EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{20'000});
-    EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{30'000});
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), value2);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
+    db.finalize(10, bytes32_t{10});
+    EXPECT_TRUE(db.read_account(a).has_value());
+    EXPECT_TRUE(db.read_account(b).has_value());
+    EXPECT_TRUE(db.read_account(c).has_value());
+    EXPECT_EQ(db.read_account(a).value().balance, uint256_t{10'000});
+    EXPECT_EQ(db.read_account(b).value().balance, uint256_t{20'000});
+    EXPECT_EQ(db.read_account(c).value().balance, uint256_t{30'000});
+    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key2), value2);
+    EXPECT_EQ(db.read_storage(c, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(db.read_storage(c, Incarnation{0, 0}, key2), value2);
 
     LOG_INFO("block 11 round 111 on block 10 round 100");
-    db_cache.set_block_and_prefix(10, bytes32_t{10});
-    BlockState bs_111(db_cache, this->vm);
+    db.set_block_and_prefix(10, bytes32_t{10});
+    BlockState bs_111(db, this->vm);
     // b11 r111 r100           +40 v2 --
     {
         State as{bs_111, Incarnation{11, 1}};
@@ -1675,29 +1668,27 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     }
     auto [released_state_111, released_code_111] = std::move(bs_111).release();
     commit_simple(
-        db_cache,
-        *released_state_111,
+        db,
+        std::move(released_state_111),
         released_code_111,
         bytes32_t{111},
         BlockHeader{.number = 11});
-    db_cache.update_proposal_state(
-        std::move(released_state_111), 11, bytes32_t{111});
-    auto const state_root_round_111 = db_cache.state_root();
-    db_cache.set_block_and_prefix(11, bytes32_t{111});
-    EXPECT_TRUE(db_cache.read_account(a).has_value());
-    EXPECT_TRUE(db_cache.read_account(b).has_value());
-    EXPECT_TRUE(db_cache.read_account(c).has_value());
-    EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
-    EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{60'000});
-    EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{30'000});
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value2);
+    auto const state_root_round_111 = db.state_root();
+    db.set_block_and_prefix(11, bytes32_t{111});
+    EXPECT_TRUE(db.read_account(a).has_value());
+    EXPECT_TRUE(db.read_account(b).has_value());
+    EXPECT_TRUE(db.read_account(c).has_value());
+    EXPECT_EQ(db.read_account(a).value().balance, uint256_t{10'000});
+    EXPECT_EQ(db.read_account(b).value().balance, uint256_t{60'000});
+    EXPECT_EQ(db.read_account(c).value().balance, uint256_t{30'000});
+    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(db.read_storage(c, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(db.read_storage(c, Incarnation{0, 0}, key2), value2);
 
     LOG_INFO("block 12 round 121 on block 11 round 111");
-    db_cache.set_block_and_prefix(11, bytes32_t{111});
-    BlockState bs_121(db_cache, this->vm);
+    db.set_block_and_prefix(11, bytes32_t{111});
+    BlockState bs_121(db, this->vm);
     // b12 r121 r111                        +10    v1
     {
         State as{bs_121, Incarnation{12, 1}};
@@ -1708,28 +1699,26 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     }
     auto [released_state_121, released_code_121] = std::move(bs_121).release();
     commit_simple(
-        db_cache,
-        *released_state_121,
+        db,
+        std::move(released_state_121),
         released_code_121,
         bytes32_t{121},
         BlockHeader{.number = 12});
-    db_cache.update_proposal_state(
-        std::move(released_state_121), 12, bytes32_t{121});
-    db_cache.set_block_and_prefix(12, bytes32_t{121});
-    EXPECT_TRUE(db_cache.read_account(a).has_value());
-    EXPECT_TRUE(db_cache.read_account(b).has_value());
-    EXPECT_TRUE(db_cache.read_account(c).has_value());
-    EXPECT_EQ(db_cache.read_account(a).value().balance, uint256_t{10'000});
-    EXPECT_EQ(db_cache.read_account(b).value().balance, uint256_t{60'000});
-    EXPECT_EQ(db_cache.read_account(c).value().balance, uint256_t{40'000});
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), value1);
+    db.set_block_and_prefix(12, bytes32_t{121});
+    EXPECT_TRUE(db.read_account(a).has_value());
+    EXPECT_TRUE(db.read_account(b).has_value());
+    EXPECT_TRUE(db.read_account(c).has_value());
+    EXPECT_EQ(db.read_account(a).value().balance, uint256_t{10'000});
+    EXPECT_EQ(db.read_account(b).value().balance, uint256_t{60'000});
+    EXPECT_EQ(db.read_account(c).value().balance, uint256_t{40'000});
+    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key2), bytes32_t{});
+    EXPECT_EQ(db.read_storage(c, Incarnation{0, 0}, key1), value1);
+    EXPECT_EQ(db.read_storage(c, Incarnation{0, 0}, key2), value1);
 
     LOG_INFO("block 11 round 112 on block 10 round 100");
-    db_cache.set_block_and_prefix(10, bytes32_t{10});
-    BlockState bs_112(db_cache, this->vm);
+    db.set_block_and_prefix(10, bytes32_t{10});
+    BlockState bs_112(db, this->vm);
     // b11 r112 r100    +20        --           --
     {
         State as{bs_112, Incarnation{11, 1}};
@@ -1741,17 +1730,15 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     }
     auto [released_state_112, released_code_112] = std::move(bs_112).release();
     commit_simple(
-        db_cache,
-        *released_state_112,
+        db,
+        std::move(released_state_112),
         released_code_112,
         bytes32_t{112},
         BlockHeader{.number = 11});
-    db_cache.update_proposal_state(
-        std::move(released_state_112), 11, bytes32_t{112});
 
     LOG_INFO("block 12 round 122 on block 11 round 112");
-    db_cache.set_block_and_prefix(11, bytes32_t{112});
-    BlockState bs_122(db_cache, this->vm);
+    db.set_block_and_prefix(11, bytes32_t{112});
+    BlockState bs_122(db, this->vm);
     //  b12 r122 r112           +20 v3              v1
     {
         State as{bs_122, Incarnation{12, 1}};
@@ -1762,17 +1749,15 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     }
     auto [released_state_122, released_code_122] = std::move(bs_122).release();
     commit_simple(
-        db_cache,
-        *released_state_122,
+        db,
+        std::move(released_state_122),
         released_code_122,
         bytes32_t{122},
         BlockHeader{.number = 12});
-    db_cache.update_proposal_state(
-        std::move(released_state_122), 12, bytes32_t{122});
 
     LOG_INFO("block 13 round 131 on block 12 round 121");
-    db_cache.set_block_and_prefix(12, bytes32_t{121});
-    BlockState bs_131(db_cache, this->vm);
+    db.set_block_and_prefix(12, bytes32_t{121});
+    BlockState bs_131(db, this->vm);
     //  b13 r131 r121    +30    +20    v1        v2 __
     {
         State as{bs_131, Incarnation{13, 1}};
@@ -1786,18 +1771,16 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     }
     auto [released_state_131, released_code_131] = std::move(bs_131).release();
     commit_simple(
-        db_cache,
-        *released_state_131,
+        db,
+        std::move(released_state_131),
         released_code_131,
         bytes32_t{131},
         BlockHeader{.number = 13});
-    db_cache.update_proposal_state(
-        std::move(released_state_131), 13, bytes32_t{131});
-    auto const state_root_round_131 = db_cache.state_root();
+    auto const state_root_round_131 = db.state_root();
 
     LOG_INFO("block 13 round 132 on block 12 round 122");
-    db_cache.set_block_and_prefix(12, bytes32_t{122});
-    BlockState bs_132(db_cache, this->vm);
+    db.set_block_and_prefix(12, bytes32_t{122});
+    BlockState bs_132(db, this->vm);
     // b13 r132 r122                  --        v3
     {
         State as{bs_132, Incarnation{13, 1}};
@@ -1808,13 +1791,11 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     }
     auto [released_state_132, released_code_132] = std::move(bs_132).release();
     commit_simple(
-        db_cache,
-        *released_state_132,
+        db,
+        std::move(released_state_132),
         released_code_132,
         bytes32_t{132},
         BlockHeader{.number = 13});
-    db_cache.update_proposal_state(
-        std::move(released_state_132), 13, bytes32_t{132});
 
     //  b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
     //  b11 r111 r100           +40 v2 --
@@ -1822,28 +1803,28 @@ TEST_F(OnDiskStateTest, undecided_proposals)
     //  b13 r131 r121    +30    +20    v1        v2 --
     //                  a 40   b 80 v2 v1   c 40 v2 --
     //  finalize r111 r121 r131
-    db_cache.finalize(11, bytes32_t{111});
-    db_cache.finalize(12, bytes32_t{121});
-    db_cache.finalize(13, bytes32_t{131});
+    db.finalize(11, bytes32_t{111});
+    db.finalize(12, bytes32_t{121});
+    db.finalize(13, bytes32_t{131});
 
-    db_cache.set_block_and_prefix(13, bytes32_t{131});
-    EXPECT_TRUE(db_cache.read_account(a).has_value());
-    EXPECT_TRUE(db_cache.read_account(b).has_value());
-    EXPECT_TRUE(db_cache.read_account(c).has_value());
-    EXPECT_EQ(db_cache.read_account(a).value().balance, 40'000);
-    EXPECT_EQ(db_cache.read_account(b).value().balance, 80'000);
-    EXPECT_EQ(db_cache.read_account(c).value().balance, 40'000);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(b, Incarnation{0, 0}, key2), value1);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key1), value2);
-    EXPECT_EQ(db_cache.read_storage(c, Incarnation{0, 0}, key2), bytes32_t{});
+    db.set_block_and_prefix(13, bytes32_t{131});
+    EXPECT_TRUE(db.read_account(a).has_value());
+    EXPECT_TRUE(db.read_account(b).has_value());
+    EXPECT_TRUE(db.read_account(c).has_value());
+    EXPECT_EQ(db.read_account(a).value().balance, 40'000);
+    EXPECT_EQ(db.read_account(b).value().balance, 80'000);
+    EXPECT_EQ(db.read_account(c).value().balance, 40'000);
+    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(db.read_storage(b, Incarnation{0, 0}, key2), value1);
+    EXPECT_EQ(db.read_storage(c, Incarnation{0, 0}, key1), value2);
+    EXPECT_EQ(db.read_storage(c, Incarnation{0, 0}, key2), bytes32_t{});
 
     // check state root of previous rounds
-    db_cache.set_block_and_prefix(11, bytes32_t{111});
-    EXPECT_EQ(state_root_round_111, db_cache.state_root());
+    db.set_block_and_prefix(11, bytes32_t{111});
+    EXPECT_EQ(state_root_round_111, db.state_root());
 
-    db_cache.set_block_and_prefix(13, bytes32_t{131});
-    EXPECT_EQ(state_root_round_131, db_cache.state_root());
+    db.set_block_and_prefix(13, bytes32_t{131});
+    EXPECT_EQ(state_root_round_131, db.state_root());
 }
 
 namespace
@@ -1862,7 +1843,7 @@ namespace
 
         std::mt19937_64 rng_;
         Db &db1_;
-        DbCache &db2_;
+        Db &db2_;
         vm::VM &vm_;
         uint64_t finalized_block_{0};
         uint64_t finalized_proposal_seed_{0};
@@ -1884,7 +1865,7 @@ namespace
 
     public:
         RandomProposalGenerator(
-            uint64_t const seed, Db &db1, DbCache &db2, vm::VM &vm)
+            uint64_t const seed, Db &db1, Db &db2, vm::VM &vm)
             : rng_(seed)
             , db1_(db1)
             , db2_(db2)
@@ -2100,7 +2081,7 @@ namespace
                 auto [state1, code1] = std::move(bs1).release();
                 commit_simple(
                     db1_,
-                    *state1,
+                    std::move(state1),
                     code1,
                     get_dummy_block_id(proposal_seed),
                     BlockHeader{.number = block});
@@ -2109,14 +2090,10 @@ namespace
                 auto [state2, code2] = std::move(bs2).release();
                 commit_simple(
                     db2_,
-                    *state2,
+                    std::move(state2),
                     code2,
                     get_dummy_block_id(proposal_seed),
                     BlockHeader{.number = block});
-                db2_.update_proposal_state(
-                    std::move(state2),
-                    block,
-                    get_dummy_block_id(proposal_seed));
             }
         }
 
@@ -2237,8 +2214,8 @@ TEST_F(TwoOnDisk, random_proposals)
         load_header({}, this->db1, BlockHeader{.number = 0}), 0);
     this->tdb2.reset_root(
         load_header({}, this->db2, BlockHeader{.number = 0}), 0);
-    TrieDb &db1 = this->tdb1;
-    DbCache db2(this->tdb2);
+    Db &db1 = this->tdb1;
+    Db &db2 = this->tdb2;
 
     uint64_t const seed = [] {
         char const *str = std::getenv("MONAD_RANDOM_PROPOSALS_SEED");

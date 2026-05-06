@@ -30,7 +30,7 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
-#include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
@@ -177,7 +177,7 @@ template <Traits traits, class MonadConsensusBlockHeader>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
-    BlockHashChain &block_hash_chain, MonadChain const &chain, DbCache &db,
+    BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
     bool const enable_tracing, BlockCache &block_cache)
 {
@@ -306,6 +306,7 @@ Result<BlockExecOutput> propose_block(
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code] = std::move(block_state).release();
+    MONAD_ASSERT(state);
 
     CommitBuilder builder(block.header.number);
     builder.add_state_deltas(*state)
@@ -317,17 +318,17 @@ Result<BlockExecOutput> propose_block(
     if (block.withdrawals.has_value()) {
         builder.add_withdrawals(block.withdrawals.value());
     }
-    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
-        // second stage: populate block header
-        h.receipts_root = db.receipts_root();
-        h.state_root = db.state_root();
-        h.withdrawals_root = db.withdrawals_root();
-        h.transactions_root = db.transactions_root();
-        h.gas_used = results.empty() ? 0 : results.back().gas_used;
-        h.logs_bloom = compute_bloom(results);
-        h.ommers_hash = compute_ommers_hash(block.ommers);
-    });
-    db.update_proposal_state(std::move(state), block.header.number, block_id);
+    db.commit(
+        block_id, builder, block.header, std::move(state), [&](BlockHeader &h) {
+            // second stage: populate block header
+            h.receipts_root = db.receipts_root();
+            h.state_root = db.state_root();
+            h.withdrawals_root = db.withdrawals_root();
+            h.transactions_root = db.transactions_root();
+            h.gas_used = results.empty() ? 0 : results.back().gas_used;
+            h.logs_bloom = compute_bloom(results);
+            h.ommers_hash = compute_ommers_hash(block.ommers);
+        });
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
@@ -472,7 +473,7 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &chain, std::filesystem::path const &ledger_dir,
-    mpt::Db &raw_db, DbCache &db, vm::VM &vm,
+    mpt::Db &raw_db, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,

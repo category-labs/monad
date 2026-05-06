@@ -28,7 +28,7 @@
 MONAD_NAMESPACE_BEGIN
 
 struct Chain;
-class DbCache;
+struct Db;
 class BlockHashBufferFinalized;
 
 namespace fiber
@@ -37,7 +37,7 @@ namespace fiber
 }
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &, std::filesystem::path const &, DbCache &, vm::VM &,
+    Chain const &, std::filesystem::path const &, Db &, vm::VM &,
     BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
     sig_atomic_t const volatile &, bool enable_tracing,
     std::filesystem::path const &rlp_path = {});

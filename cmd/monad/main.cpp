@@ -35,7 +35,6 @@
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
-#include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/precompiles.hpp>
@@ -267,7 +266,7 @@ try {
         net.emplace(statesync.c_str());
     }
     std::unique_ptr<mpt::StateMachine> machine;
-    mpt::Db db = [&] {
+    mpt::Db raw_db = [&] {
         if (!db_in_memory) {
             machine = std::make_unique<OnDiskMachine>();
             return mpt::Db{
@@ -302,7 +301,10 @@ try {
         MONAD_ASSERT(false);
     }();
 
-    TrieDb triedb{db}; // init block number to latest finalized block
+    TrieDb triedb{
+        raw_db,
+        /*enable_multiblock_cache=*/true}; // init block number to latest
+                                           // finalized block
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
@@ -314,13 +316,13 @@ try {
             std::ifstream accounts(snapshot / "accounts");
             std::ifstream code(snapshot / "code");
             auto const n = std::stoul(snapshot.stem());
-            auto root = load_from_binary(db, accounts, code, n);
+            auto root = load_from_binary(raw_db, accounts, code, n);
             // load the eth header for snapshot
             BlockDb block_db{block_db_path};
             Block block;
             MONAD_ASSERT_PRINTF(
                 block_db.get(n, block), "FATAL: Could not load block %lu", n);
-            root = load_header(std::move(root), db, block.header);
+            root = load_header(std::move(root), raw_db, block.header);
             triedb.reset_root(std::move(root), n);
         }
         else if (triedb.get_root() == nullptr) {
@@ -346,8 +348,8 @@ try {
         "last verified block = {}, state root = {}, time elapsed "
         "= {}",
         init_block_num,
-        db.get_latest_finalized_version(),
-        db.get_latest_verified_version(),
+        raw_db.get_latest_finalized_version(),
+        raw_db.get_latest_verified_version(),
         triedb.state_root(),
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
@@ -402,15 +404,15 @@ try {
     // codes that are required to serve RPC responses that include call traces.
     vm::VM vm{trace_calls ? vm::VM::InterpreterOnly : vm::VM::Dual};
 
-    DbCache db_cache =
-        sync_server ? DbCache{*sync_server->ctx} : DbCache{triedb};
+    Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
+                         : static_cast<Db &>(triedb);
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
             return runloop_ethereum(
                 *chain,
                 block_db_path,
-                db_cache,
+                db,
                 vm,
                 block_hash_buffer,
                 priority_pool,
@@ -422,7 +424,7 @@ try {
             return runloop_ethereum(
                 *chain,
                 block_db_path,
-                db_cache,
+                db,
                 vm,
                 block_hash_buffer,
                 priority_pool,
@@ -438,7 +440,7 @@ try {
                 return runloop_monad_ethblocks(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
-                    db_cache,
+                    db,
                     vm,
                     block_hash_buffer,
                     priority_pool,
@@ -452,8 +454,8 @@ try {
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
+                    raw_db,
                     db,
-                    db_cache,
                     vm,
                     block_hash_buffer,
                     priority_pool,

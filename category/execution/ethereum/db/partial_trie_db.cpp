@@ -447,7 +447,7 @@ void PartialTrieDb::set_block_and_prefix(
 
 void PartialTrieDb::commit(
     bytes32_t const &, CommitBuilder &, BlockHeader const &,
-    StateDeltas const &, std::function<void(BlockHeader &)>)
+    std::unique_ptr<StateDeltas>, std::function<void(BlockHeader &)>)
 {
 }
 

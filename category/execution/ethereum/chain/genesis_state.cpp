@@ -97,7 +97,11 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         builder.add_withdrawals({});
     }
     db.commit(
-        NULL_HASH_BLAKE3, builder, genesis.header, deltas, [&](BlockHeader &h) {
+        NULL_HASH_BLAKE3,
+        builder,
+        genesis.header,
+        std::make_unique<StateDeltas>(std::move(deltas)),
+        [&](BlockHeader &h) {
             h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();
             h.withdrawals_root = db.withdrawals_root();

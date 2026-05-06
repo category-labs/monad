@@ -98,9 +98,10 @@ inline auto const H_CODE_HASH = to_bytes(keccak256(H_CODE));
 inline auto const H_ICODE = vm::make_shared_intercode(H_CODE);
 
 using monad::test::commit_simple;
+using monad::test::sd;
 
 inline bytes32_t commit_sequential(
-    monad::Db &db, StateDeltas const &deltas, Code const &code,
+    monad::Db &db, std::unique_ptr<StateDeltas> deltas, Code const &code,
     BlockHeader const &eth_header, std::vector<Receipt> const &receipts = {},
     std::vector<std::vector<CallFrame>> const &call_frames = {},
     std::vector<Address> const &senders = {},
@@ -111,7 +112,7 @@ inline bytes32_t commit_sequential(
     bytes32_t const block_id =
         eth_header.number ? bytes32_t{eth_header.number} : NULL_HASH_BLAKE3;
 
-    commit_simple(db, deltas, code, block_id, eth_header,
+    commit_simple(db, std::move(deltas), code, block_id, eth_header,
         receipts, call_frames, senders, txns, ommers, withdrawals);
 
     db.finalize(eth_header.number, block_id);
@@ -125,7 +126,7 @@ inline void load_db(TrieDb &db, uint64_t const n)
 {
     commit_sequential(
         db,
-        StateDeltas{
+        monad::test::sd({
             {ADDR_A,
              StateDelta{
                  .account =
@@ -179,7 +180,7 @@ inline void load_db(TrieDb &db, uint64_t const n)
                      {std::nullopt,
                       Account{
                           .balance = 0xba1a9ce0ba1a9cf,
-                          .code_hash = H_CODE_HASH}}}}},
+                          .code_hash = H_CODE_HASH}}}}}),
         Code{
             {A_CODE_HASH, A_ICODE},
             {B_CODE_HASH, B_ICODE},

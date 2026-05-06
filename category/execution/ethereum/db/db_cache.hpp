@@ -21,23 +21,19 @@
 #include <category/core/config.hpp>
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
-#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
-#include <category/vm/vm.hpp>
 
-#include <evmc/evmc.hpp>
-
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <optional>
+#include <string>
 
 MONAD_NAMESPACE_BEGIN
 
-class DbCache final : public Db
+class DbCache final
 {
-    Db &db_;
-
     struct StorageKey
     {
         static constexpr size_t k_bytes =
@@ -71,62 +67,60 @@ class DbCache final : public Db
     Proposals proposals_;
 
 public:
-    DbCache(Db &db)
-        : db_{db}
-    {
-    }
+    DbCache() = default;
 
-    virtual std::optional<Account> read_account(Address const &address) override
+    bool
+    try_read_account(Address const &address, std::optional<Account> &result)
     {
-        std::optional<Account> result;
         auto const res = proposals_.try_read_account(address, result);
         if (res.found) {
-            return result;
+            return true;
         }
         if (!res.truncated) {
             AccountsCache::ConstAccessor acc{};
             if (accounts_.find(acc, address)) {
-                return acc->second.value_;
+                result = acc->second.value_;
+                return true;
             }
         }
-        return db_.read_account(address);
+        return false;
     }
 
-    virtual bytes32_t read_storage(
+    bool try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key) override
+        bytes32_t const &key, bytes32_t &result)
     {
-        bytes32_t result;
         auto const res =
             proposals_.try_read_storage(address, incarnation, key, result);
         if (res.found) {
-            return result;
+            return true;
         }
         if (!res.truncated) {
             StorageKey const skey{address, incarnation, key};
             StorageCache::ConstAccessor acc{};
             if (storage_.find(acc, skey)) {
-                return acc->second.value_;
+                result = acc->second.value_;
+                return true;
             }
         }
-        return db_.read_storage(address, incarnation, key);
+        return false;
     }
 
-    virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
-    {
-        return db_.read_code(code_hash);
-    }
-
-    virtual void set_block_and_prefix(
-        uint64_t const block_number,
-        bytes32_t const &block_id = bytes32_t{}) override
+    void
+    set_block_and_prefix(uint64_t const block_number, bytes32_t const &block_id)
     {
         proposals_.set_block_and_prefix(block_number, block_id);
-        db_.set_block_and_prefix(block_number, block_id);
     }
 
-    virtual void
-    finalize(uint64_t const block_number, bytes32_t const &block_id) override
+    void update_proposal_state(
+        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
+        bytes32_t const &block_id)
+    {
+        MONAD_ASSERT(state_deltas);
+        proposals_.commit(std::move(state_deltas), block_number, block_id);
+    }
+
+    void on_finalize(uint64_t const block_number, bytes32_t const &block_id)
     {
         std::unique_ptr<ProposalState> const ps =
             proposals_.finalize(block_number, block_id);
@@ -138,82 +132,16 @@ public:
             accounts_.clear();
             storage_.clear();
         }
-        db_.finalize(block_number, block_id);
-        proposals_.set_block_and_prefix(block_number, block_id);
     }
 
-    virtual void update_verified_block(uint64_t const block_number) override
+    std::string accounts_stats()
     {
-        db_.update_verified_block(block_number);
+        return accounts_.print_stats();
     }
 
-    virtual void update_voted_metadata(
-        uint64_t const block_number, bytes32_t const &block_id) override
+    std::string storage_stats()
     {
-        db_.update_voted_metadata(block_number, block_id);
-    }
-
-    virtual void update_proposed_metadata(
-        uint64_t const block_number, bytes32_t const &block_id) override
-    {
-        db_.update_proposed_metadata(block_number, block_id);
-    }
-
-    virtual void commit(
-        bytes32_t const &block_id, CommitBuilder &builder,
-        BlockHeader const &header, StateDeltas const &state_deltas,
-        std::function<void(BlockHeader &)> populate_header_fn) override
-    {
-        db_.commit(
-            block_id,
-            builder,
-            header,
-            state_deltas,
-            std::move(populate_header_fn));
-    }
-
-    void update_proposal_state(
-        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
-        bytes32_t const &block_id)
-    {
-        MONAD_ASSERT(state_deltas);
-        proposals_.commit(std::move(state_deltas), block_number, block_id);
-    }
-
-    virtual BlockHeader read_eth_header() override
-    {
-        return db_.read_eth_header();
-    }
-
-    virtual bytes32_t state_root() override
-    {
-        return db_.state_root();
-    }
-
-    virtual bytes32_t receipts_root() override
-    {
-        return db_.receipts_root();
-    }
-
-    virtual bytes32_t transactions_root() override
-    {
-        return db_.transactions_root();
-    }
-
-    virtual std::optional<bytes32_t> withdrawals_root() override
-    {
-        return db_.withdrawals_root();
-    }
-
-    virtual std::string print_stats() override
-    {
-        return db_.print_stats() + ",ac=" + accounts_.print_stats() +
-               ",sc=" + storage_.print_stats();
-    }
-
-    virtual uint64_t get_block_number() const override
-    {
-        return db_.get_block_number();
+        return storage_.print_stats();
     }
 
 private:

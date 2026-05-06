@@ -295,12 +295,17 @@ void monad_statesync_server_context::update_proposed_metadata(
 
 void monad_statesync_server_context::commit(
     bytes32_t const &block_id, CommitBuilder &builder,
-    BlockHeader const &header, StateDeltas const &state_deltas,
+    BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
     std::function<void(BlockHeader &)> populate_header_fn)
 {
-    on_commit(*this, state_deltas, header.number, block_id);
+    MONAD_ASSERT(state_deltas);
+    on_commit(*this, *state_deltas, header.number, block_id);
     rw.commit(
-        block_id, builder, header, state_deltas, std::move(populate_header_fn));
+        block_id,
+        builder,
+        header,
+        std::move(state_deltas),
+        std::move(populate_header_fn));
 }
 
 uint64_t monad_statesync_server_context::get_block_number() const

@@ -106,11 +106,11 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     {
         commit_sequential(
             tdb,
-            StateDeltas{
-                {STAKING_CA,
-                 StateDelta{
-                     .account =
-                         {std::nullopt, Account{.balance = 0, .nonce = 1}}}}},
+            sd(
+                {{STAKING_CA,
+                  StateDelta{
+                      .account =
+                          {std::nullopt, Account{.balance = 0, .nonce = 1}}}}}),
             Code{},
             BlockHeader{});
         state.add_to_balance(STAKING_CA, 0); // create account like a txn would

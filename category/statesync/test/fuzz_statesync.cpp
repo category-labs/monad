@@ -311,7 +311,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
     // write the genesis block
     {
         monad::test::commit_simple(
-            *sctx, StateDeltas{}, Code{}, NULL_HASH_BLAKE3, hdr);
+            *sctx, monad::test::sd({}), Code{}, NULL_HASH_BLAKE3, hdr);
         sctx->finalize(0, NULL_HASH_BLAKE3);
         auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
         parent_hash = to_bytes(keccak256(rlp));
@@ -353,7 +353,8 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         hdr.parent_hash = parent_hash;
         bytes32_t const curr_block_id = bytes32_t{hdr.number};
         sctx->set_block_and_prefix(hdr.number - 1);
-        monad::test::commit_simple(*sctx, deltas, {}, curr_block_id, hdr);
+        monad::test::commit_simple(
+            *sctx, monad::test::sd(std::move(deltas)), {}, curr_block_id, hdr);
         sctx->finalize(hdr.number, curr_block_id);
         auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
         parent_hash = to_bytes(keccak256(rlp));

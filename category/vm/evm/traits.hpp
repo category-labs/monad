@@ -219,6 +219,14 @@ namespace monad
     template <monad_eth_revision Rev>
     detail::TraitsKey EvmTraits<Rev>::key;
 
+    // Runtime sibling to MonadTraits::mip_8_active(), for code holding a
+    // monad_revision value rather than a trait type. Single source of the
+    // mip-8 (page-encoding) activation cutoff.
+    constexpr bool mip_8_active(monad_revision const rev) noexcept
+    {
+        return rev >= MONAD_NEXT;
+    }
+
     template <monad_revision Rev>
     struct MonadTraits
     {
@@ -311,7 +319,7 @@ namespace monad
 
         static consteval bool mip_8_active() noexcept
         {
-            return Rev >= MONAD_NEXT;
+            return ::monad::mip_8_active(Rev);
         }
 
         // Pricing version 1 activates the changes in:

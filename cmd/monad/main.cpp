@@ -354,6 +354,9 @@ try {
 
     std::unique_ptr<monad::StateSyncServer> sync_server;
     if (!statesync.empty()) {
+        // Works for either encoding: a page-encoded primary expands each
+        // page leaf into slot-format upserts in the server traversal, so no
+        // protocol changes are needed.
         sync_server = monad::make_statesync_server(monad::StateSyncServerConfig{
             .triedb = &triedb,
             .network = &net.value(),

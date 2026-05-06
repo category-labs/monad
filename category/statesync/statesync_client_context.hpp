@@ -18,9 +18,11 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/mpt/db.hpp>
 #include <category/statesync/statesync_protocol.hpp>
 
@@ -45,8 +47,17 @@ struct monad_statesync_client_context
 
     using StateDelta = std::pair<monad::Account, StorageDeltas>;
 
+    // Chain instance for revision lookups (e.g. determining whether the
+    // sync target is at MONAD_NEXT, which decides whether the slot or
+    // page state_root is canonical at finalize time). Owned.
+    std::unique_ptr<monad::MonadChain const> chain;
+
     monad::mpt::Db db;
     monad::TrieDb tdb;
+
+    std::unique_ptr<monad::mpt::Db> secondary_db;
+    std::unique_ptr<monad::TrieDb> secondary_tdb;
+
     std::vector<std::pair<uint64_t, uint64_t>> progress;
     std::vector<std::unique_ptr<monad::StatesyncProtocol>> protocol;
     std::array<monad::BlockHeader, 256> hdrs;
@@ -62,6 +73,7 @@ struct monad_statesync_client_context
         struct monad_statesync_client *, struct monad_sync_request);
 
     monad_statesync_client_context(
+        monad_chain_config chain_config,
         std::vector<std::filesystem::path> dbname_paths,
         std::optional<unsigned> sq_thread_cpu, unsigned wr_buffers,
         monad_statesync_client *,

@@ -62,10 +62,7 @@ evmc_revision HiveNet::get_revision(
     if (block_number >= 6) {
         return EVMC_SPURIOUS_DRAGON;
     }
-    if (block_number >= 3) {
-        return EVMC_TANGERINE_WHISTLE;
-    }
-    return EVMC_HOMESTEAD;
+    MONAD_ASSERT(false, "unsupported fork");
 }
 
 GenesisState HiveNet::get_genesis_state() const

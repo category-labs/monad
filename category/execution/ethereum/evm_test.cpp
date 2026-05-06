@@ -872,6 +872,8 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
 
 TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
     InMemoryMachine machine;
@@ -885,27 +887,23 @@ TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
         BlockHeader{});
     BlockState bs{tdb, vm};
 
-    if constexpr (
-        TestFixture::Trait::max_code_size() <
-        std::numeric_limits<size_t>::max()) {
-        uint8_t const ptr[250000]{0x00};
-        byte_string code{ptr, 250000};
-        static_assert(TestFixture::Trait::max_code_size() < 250000);
+    uint8_t const ptr[250000]{0x00};
+    byte_string code{ptr, 250000};
+    static_assert(TestFixture::Trait::max_code_size() < 250000);
 
-        State s{bs, Incarnation{0, 0}};
+    State s{bs, Incarnation{0, 0}};
 
-        evmc::Result r{
-            EVMC_SUCCESS,
-            std::numeric_limits<int64_t>::max(),
-            0,
-            code.data(),
-            code.size()};
-        auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
-            s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
-        EXPECT_EQ(r2.gas_left, 0);
-        EXPECT_EQ(r2.create_address, 0x00_address);
-    }
+    evmc::Result r{
+        EVMC_SUCCESS,
+        std::numeric_limits<int64_t>::max(),
+        0,
+        code.data(),
+        code.size()};
+    auto const r2 =
+        deploy_contract_code<typename TestFixture::Trait>(s, a, std::move(r));
+    EXPECT_EQ(r2.status_code, EVMC_OUT_OF_GAS);
+    EXPECT_EQ(r2.gas_left, 0);
+    EXPECT_EQ(r2.create_address, 0x00_address);
 }
 
 TYPED_TEST(TraitsTest, deploy_contract_code_validation)

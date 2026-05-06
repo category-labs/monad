@@ -356,6 +356,8 @@ template <Traits traits>
 Receipt ExecuteTransaction<traits>::execute_final(
     State &state, evmc::Result const &result)
 {
+    static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
     MONAD_ASSERT(tx_.gas_limit >= static_cast<uint64_t>(result.gas_left));
@@ -389,9 +391,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
 
     // finalize state, Eqn. 77-79
     state.destruct_suicides<traits>();
-    if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
-        state.destruct_touched_dead();
-    }
+    state.destruct_touched_dead();
 
     Receipt receipt{
         .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,

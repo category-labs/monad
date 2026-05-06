@@ -30,8 +30,8 @@ namespace monad
     namespace constants
     {
         inline constexpr evmc_revision EARLIEST_SUPPORTED_EVM_FORK =
-            EVMC_TANGERINE_WHISTLE;
-        inline constexpr uint64_t EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER = 2463000;
+            EVMC_SPURIOUS_DRAGON;
+        inline constexpr uint64_t EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER = 2675000;
 
         inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
         inline constexpr size_t MAX_INITCODE_SIZE_EIP3860 =
@@ -75,8 +75,7 @@ namespace monad
     struct EvmTraits
     {
         static_assert(
-            Rev >= constants::EARLIEST_SUPPORTED_EVM_FORK,
-            "EVM revision is not supported");
+            Rev >= EVMC_SPURIOUS_DRAGON, "EVM revision is not supported");
 
         static consteval evmc_revision evm_rev() noexcept
         {
@@ -130,11 +129,7 @@ namespace monad
 
         static consteval size_t max_code_size() noexcept
         {
-            if constexpr (Rev >= EVMC_SPURIOUS_DRAGON) {
-                return constants::MAX_CODE_SIZE_EIP170;
-            }
-
-            return std::numeric_limits<size_t>::max();
+            return constants::MAX_CODE_SIZE_EIP170;
         }
 
         static consteval size_t max_initcode_size() noexcept
@@ -313,7 +308,7 @@ namespace monad
         is_specialization_of_v<MonadTraits, T>;
 
     static_assert(is_monad_trait_v<MonadTraits<MONAD_ZERO>> == true);
-    static_assert(is_monad_trait_v<EvmTraits<EVMC_TANGERINE_WHISTLE>> == false);
+    static_assert(is_monad_trait_v<EvmTraits<EVMC_SPURIOUS_DRAGON>> == false);
     static_assert(is_evm_trait_v<MonadTraits<MONAD_ZERO>> == false);
-    static_assert(is_evm_trait_v<EvmTraits<EVMC_TANGERINE_WHISTLE>> == true);
+    static_assert(is_evm_trait_v<EvmTraits<EVMC_SPURIOUS_DRAGON>> == true);
 }

@@ -62,7 +62,7 @@ namespace monad::vm::runtime
         evmc_call_kind const call_kind, bool const static_call,
         int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+        static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
 
         ctx->env.clear_return_data();
 
@@ -129,11 +129,7 @@ namespace monad::vm::runtime
                 ctx->exit(error_code);
             }
 
-            auto has_empty_cost = true;
-            if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
-                has_empty_cost = has_value;
-            }
-            if (has_empty_cost &&
+            if (has_value &&
                 !ctx->host->account_exists(ctx->context, &dest_address)) {
                 ctx->gas_remaining -= 25000;
             }

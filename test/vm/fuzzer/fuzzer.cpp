@@ -211,14 +211,12 @@ static evmc::Result transition(
     // until Byzantium where intermediate state root hashes are part of the
     // transaction receipt.
     // TODO: Consider limiting this only to Spurious Dragon.
-    if (rev >= EVMC_SPURIOUS_DRAGON) {
-        std::erase_if(
-            state.get_modified_accounts(),
-            [](std::pair<address const, Account> const &p) noexcept {
-                auto const &acc = p.second;
-                return acc.erase_if_empty && acc.is_empty();
-            });
-    }
+    std::erase_if(
+        state.get_modified_accounts(),
+        [](std::pair<address const, Account> const &p) noexcept {
+            auto const &acc = p.second;
+            return acc.erase_if_empty && acc.is_empty();
+        });
 
     return result;
 }
@@ -377,8 +375,6 @@ static arguments parse_args(int const argc, char **const argv)
         "Print message result statistics when logging");
 
     auto const rev_map = std::map<std::string, evmc_revision>{
-        {"TANGERINE_WHISTLE", EVMC_TANGERINE_WHISTLE},
-        {"TANGERINE WHISTLE", EVMC_TANGERINE_WHISTLE},
         {"SPURIOUS_DRAGON", EVMC_SPURIOUS_DRAGON},
         {"SPURIOUS DRAGON", EVMC_SPURIOUS_DRAGON},
         {"BYZANTIUM", EVMC_BYZANTIUM},

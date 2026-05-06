@@ -37,11 +37,6 @@ namespace monad::vm::utils::evm_as
         return EvmBuilder<EvmTraits<constants::EARLIEST_SUPPORTED_EVM_FORK>>{};
     }
 
-    inline EvmBuilder<EvmTraits<EVMC_TANGERINE_WHISTLE>> tangerine_whistle()
-    {
-        return EvmBuilder<EvmTraits<EVMC_TANGERINE_WHISTLE>>{};
-    }
-
     inline EvmBuilder<EvmTraits<EVMC_SPURIOUS_DRAGON>> spurious_dragon()
     {
         return EvmBuilder<EvmTraits<EVMC_SPURIOUS_DRAGON>>{};

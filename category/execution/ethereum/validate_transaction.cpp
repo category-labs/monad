@@ -52,13 +52,10 @@ Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id)
 {
-    static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+    static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
 
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
-        if constexpr (traits::evm_rev() < EVMC_SPURIOUS_DRAGON) {
-            return TransactionError::TypeNotSupported;
-        }
         if (MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
             return TransactionError::WrongChainId;
         }

@@ -273,37 +273,31 @@ TYPED_TEST(InMemoryStateTraitsTest, insufficent_balance_overflow)
 // EIP-3860
 TYPED_TEST(TraitsTest, init_code_exceed_limit)
 {
-    // Before Spurious Dragon, max_code_size is uncapped
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
-        byte_string long_data;
-        for (auto i = 0u; i <= 2 * TestFixture::Trait::max_code_size(); ++i) {
-            long_data += {0xc0};
-        }
-        // exceed EIP-3860 limit
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
 
-        static Transaction const t{
-            .sc = {.r = r, .s = s},
-            .max_fee_per_gas = 0,
-            .gas_limit = 20'000'000,
-            .value = 0,
-            .data = long_data};
+    byte_string long_data;
+    for (auto i = 0u; i <= 2 * TestFixture::Trait::max_code_size(); ++i) {
+        long_data += {0xc0};
+    }
+    // exceed EIP-3860 limit
 
-        auto const result =
-            static_validate_transaction<typename TestFixture::Trait>(
-                t, 0, std::nullopt, 1);
-        // init codesize validation since EIP-3860
-        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_SHANGHAI) {
-            ASSERT_TRUE(result.has_error());
-            EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);
-        }
-        else {
-            EXPECT_TRUE(result.has_value());
-        }
+    static Transaction const t{
+        .sc = {.r = r, .s = s},
+        .max_fee_per_gas = 0,
+        .gas_limit = 20'000'000,
+        .value = 0,
+        .data = long_data};
+
+    auto const result =
+        static_validate_transaction<typename TestFixture::Trait>(
+            t, 0, std::nullopt, 1);
+    // init codesize validation since EIP-3860
+    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_SHANGHAI) {
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);
     }
     else {
-        static_assert(
-            TestFixture::Trait::max_code_size() ==
-            std::numeric_limits<size_t>::max());
+        EXPECT_TRUE(result.has_value());
     }
 }
 

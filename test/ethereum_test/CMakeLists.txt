@@ -101,7 +101,6 @@ add_monad_test(FORK MONAD_EIGHT)
 add_monad_test(FORK MONAD_NINE)
 
 add_ethereum_test(FORK eip158)
-add_ethereum_test(FORK eip150)
 add_ethereum_test(FORK byzantium)
 add_ethereum_test(FORK constantinoplefix)
 add_ethereum_test(FORK istanbul)

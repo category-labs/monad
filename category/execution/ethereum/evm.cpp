@@ -70,7 +70,7 @@ template <Traits traits>
 evmc::Result deploy_contract_code(
     State &state, Address const &address, evmc::Result result) noexcept
 {
-    static_assert(traits::evm_rev() > EVMC_FRONTIER);
+    static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
 
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
@@ -81,10 +81,8 @@ evmc::Result deploy_contract_code(
         }
     }
     // EIP-170
-    if constexpr (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
-        if (result.output_size > traits::max_code_size()) {
-            return evmc::Result{EVMC_OUT_OF_GAS};
-        }
+    if (result.output_size > traits::max_code_size()) {
+        return evmc::Result{EVMC_OUT_OF_GAS};
     }
 
     auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
@@ -178,6 +176,8 @@ template <Traits traits>
 evmc::Result execute_create_message(
     EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
+    static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
     auto &call_tracer = host->get_call_tracer();
@@ -242,9 +242,7 @@ evmc::Result execute_create_message(
     state.create_contract(contract_address);
 
     // EIP-161
-    constexpr auto starting_nonce =
-        traits::evm_rev() >= EVMC_SPURIOUS_DRAGON ? 1 : 0;
-    state.set_nonce(contract_address, starting_nonce);
+    state.set_nonce(contract_address, 1);
     transfer_balances<traits>(state, *host, msg, contract_address);
 
     evmc_message const m_call{

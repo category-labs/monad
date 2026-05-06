@@ -33,6 +33,8 @@ using namespace monad::vm::compiler::test;
 
 TYPED_TEST(RuntimeTraitsTest, CallBasic)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
 
@@ -55,12 +57,7 @@ TYPED_TEST(RuntimeTraitsTest, CallBasic)
                 return 92000;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
-            return 66997;
-        }
-        else {
-            return 91997;
-        }
+        return 91997;
     }();
 
     ASSERT_EQ(this->ctx_.gas_remaining, gas_remaining);
@@ -97,7 +94,7 @@ TYPED_TEST(RuntimeTraitsTest, CallWithValueCold)
 
 TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_HOMESTEAD);
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
@@ -118,10 +115,7 @@ TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
                 return 2882;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() == EVMC_TANGERINE_WHISTLE) {
-            return 2648;
-        }
-        else if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
             return 3039;
         }
         else {
@@ -134,6 +128,8 @@ TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 
 TYPED_TEST(RuntimeTraitsTest, CallFailure)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
 
@@ -151,10 +147,7 @@ TYPED_TEST(RuntimeTraitsTest, CallFailure)
                 return 80'000;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_TANGERINE_WHISTLE) {
-            return 65'000;
-        }
-        else if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
             return 90'000;
         }
         else {

@@ -116,12 +116,8 @@ namespace monad::vm::runtime
     [[gnu::always_inline]]
     inline constexpr uint32_t exp_dynamic_gas_cost_multiplier() noexcept
     {
-        if (traits::evm_rev() >= EVMC_SPURIOUS_DRAGON) {
-            return 50;
-        }
-        else {
-            return 10;
-        }
+        static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+        return 50;
     }
 
     template <Traits traits>

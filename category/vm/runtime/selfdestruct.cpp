@@ -29,7 +29,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void selfdestruct [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
     {
-        static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+        static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
 
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
@@ -47,9 +47,6 @@ namespace monad::vm::runtime
         }
 
         auto const non_zero_transfer = [ctx] {
-            if constexpr (traits::evm_rev() == EVMC_TANGERINE_WHISTLE) {
-                return true;
-            }
             auto const balance = static_cast<bytes32_t>(
                 ctx->host->get_balance(ctx->context, &ctx->env.recipient));
             return balance != bytes32_t{};

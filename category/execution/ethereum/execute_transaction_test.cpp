@@ -629,6 +629,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
 
 TYPED_TEST(TraitsTest, static_validate_transaction_failure)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+
     InMemoryMachine machine;
     mpt::Db db{machine};
     db_t tdb{db};
@@ -670,10 +672,5 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
 
     ASSERT_TRUE(receipt.has_error());
 
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_SPURIOUS_DRAGON) {
-        ASSERT_EQ(receipt.error(), TransactionError::TypeNotSupported);
-    }
-    else {
-        ASSERT_EQ(receipt.error(), TransactionError::WrongChainId);
-    }
+    ASSERT_EQ(receipt.error(), TransactionError::WrongChainId);
 }

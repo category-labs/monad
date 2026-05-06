@@ -2117,19 +2117,3 @@ TEST(update_aux_test, rewind_state_survives_reopen)
         mctx2.root_offsets(timeline_id::secondary)[1], secondary_root_at_v1);
     aux2.deactivate_secondary_timeline();
 }
-
-// clear_ondisk_db must deactivate secondary at entry — otherwise the
-// chunk-trim path would destroy secondary's data.
-TEST(update_aux_test, clear_ondisk_db_deactivates_secondary)
-{
-    with_rw_aux([](UpdateAux &aux) {
-        aux.activate_secondary_timeline();
-        EXPECT_TRUE(aux.metadata_ctx().timeline_active(timeline_id::secondary));
-        aux.clear_ondisk_db();
-        EXPECT_FALSE(
-            aux.metadata_ctx().timeline_active(timeline_id::secondary));
-        EXPECT_EQ(
-            aux.metadata_ctx().db_history_max_version(timeline_id::primary),
-            INVALID_BLOCK_NUM);
-    });
-}

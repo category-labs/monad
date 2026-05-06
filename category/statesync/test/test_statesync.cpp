@@ -27,7 +27,9 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -189,9 +191,19 @@ namespace
             , ro{io_ctx}
         {
             sctx.ro = &ro;
+            // The client context now requires a secondary timeline to
+            // already be active on the client db.
+            mpt::Db primary{
+                std::make_unique<OnDiskMachine>(),
+                OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            [[maybe_unused]] mpt::Db secondary =
+                primary.activate_secondary_timeline(
+                    std::make_unique<MonadOnDiskMachine>());
+            MONAD_ASSERT(primary.timeline_active(mpt::timeline_id::secondary));
         }
 
-        void init()
+        void
+        init(monad_chain_config const chain_config = CHAIN_CONFIG_MONAD_TESTNET)
         {
             // Production C ABI (monad_statesync_client_context_create) does
             // this; tests that bypass the C ABI and call the C++ ctor
@@ -199,6 +211,7 @@ namespace
             monad::register_ethereum_state_machines();
             monad::register_monad_state_machines();
             cctx = new monad_statesync_client_context{
+                chain_config,
                 {cdbname},
                 std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),
                 4,
@@ -348,7 +361,13 @@ TEST_F(StateSyncFixture, sync_from_some)
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
+        auto db2_opt =
+            db.open_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+        MONAD_ASSERT(db2_opt.has_value());
+        TrieDb tdb2{db2_opt.value()};
+        ASSERT_TRUE(tdb2.is_page_encoded());
         load_genesis_state(GENESIS_STATE, tdb);
+        load_genesis_state(GENESIS_STATE, tdb2);
         // commit some proposal to client db
         commit_simple(
             tdb,
@@ -356,9 +375,17 @@ TEST_F(StateSyncFixture, sync_from_some)
             {},
             NULL_HASH_BLAKE3,
             BlockHeader{.number = 1});
+        commit_simple(
+            tdb2,
+            StateDeltas({}),
+            {},
+            NULL_HASH_BLAKE3,
+            BlockHeader{.number = 1});
+        EXPECT_TRUE(db2_opt->load_root_for_version(0) != nullptr);
         load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
+
     ASSERT_TRUE(stdb.get_root() != nullptr);
     auto const res = sdb.find(
         stdb.get_root(), concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
@@ -550,7 +577,14 @@ TEST_F(StateSyncFixture, deletion_proposal)
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
+        auto db2_opt =
+            db.open_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+        MONAD_ASSERT(db2_opt.has_value());
+        TrieDb tdb2{db2_opt.value()};
+        ASSERT_TRUE(tdb2.is_page_encoded());
         load_genesis_state(GENESIS_STATE, tdb);
+        load_genesis_state(GENESIS_STATE, tdb2);
+
         load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
@@ -639,6 +673,96 @@ TEST_F(StateSyncFixture, sync_one_account)
             .number = N});
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
+TEST_F(StateSyncFixture, sync_check_secondary_db_state_root)
+{
+    mpt::Db secondary_sdb =
+        sdb.activate_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+    TrieDb secondary_stdb{secondary_sdb};
+    ASSERT_TRUE(secondary_stdb.is_page_encoded());
+
+    // Server stores ADDR_A with five slots: three share one page_key, two
+    // share a different page_key. Client receives slot-encoded upserts and
+    // dual-writes them to Db1 (slot encoding) and Db2 (page encoding).
+    // The server keeps its own page-encoded mirror so the test can compare
+    // state_roots on the two page tries at the end.
+    constexpr auto N = 1'000'000;
+    bytes32_t parent_hash{NULL_HASH};
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
+    load_header(
+        secondary_sdb.load_root_for_version(N - 257),
+        secondary_sdb,
+        BlockHeader{.number = N - 257});
+    for (size_t i = N - 256; i < N; ++i) {
+        stdb.set_block_and_prefix(i - 1);
+        secondary_stdb.set_block_and_prefix(i - 1);
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        commit_sequential(
+            secondary_stdb,
+            {},
+            {},
+            BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+
+    // Slots 0x00, 0x01, 0x7f all map to page_key 0 (low 7 bits are offset).
+    // Slots 0x80, 0x81 map to page_key 1.
+    constexpr auto slot_a = bytes32_t{uint64_t{0x00}};
+    constexpr auto slot_b = bytes32_t{uint64_t{0x01}};
+    constexpr auto slot_c = bytes32_t{uint64_t{0x7f}};
+    constexpr auto slot_d = bytes32_t{uint64_t{0x80}};
+    constexpr auto slot_e = bytes32_t{uint64_t{0x81}};
+    constexpr auto val_a =
+        0x00000000000000000000000000000000000000000000000000000000000000aa_bytes32;
+    constexpr auto val_b =
+        0x00000000000000000000000000000000000000000000000000000000000000bb_bytes32;
+    constexpr auto val_c =
+        0x00000000000000000000000000000000000000000000000000000000000000cc_bytes32;
+    constexpr auto val_d =
+        0x00000000000000000000000000000000000000000000000000000000000000dd_bytes32;
+    constexpr auto val_e =
+        0x00000000000000000000000000000000000000000000000000000000000000ee_bytes32;
+
+    ASSERT_EQ(compute_page_key(slot_a), compute_page_key(slot_b));
+    ASSERT_EQ(compute_page_key(slot_a), compute_page_key(slot_c));
+    ASSERT_EQ(compute_page_key(slot_d), compute_page_key(slot_e));
+    ASSERT_NE(compute_page_key(slot_a), compute_page_key(slot_d));
+
+    StateDeltas const storage_deltas{
+        {ADDR_A,
+         StateDelta{
+             .account = {std::nullopt, Account{.balance = 100}},
+             .storage = {
+                 {slot_a, {bytes32_t{}, val_a}},
+                 {slot_b, {bytes32_t{}, val_b}},
+                 {slot_c, {bytes32_t{}, val_c}},
+                 {slot_d, {bytes32_t{}, val_d}},
+                 {slot_e, {bytes32_t{}, val_e}}}}}};
+
+    // Server commits the slot-encoded view to both primary and secondary dbs.
+    commit_sequential(stdb, storage_deltas, Code{}, BlockHeader{.number = N});
+    commit_sequential(
+        secondary_stdb, storage_deltas, Code{}, BlockHeader{.number = N});
+
+    init();
+
+    handle_target(
+        cctx,
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .state_root = stdb.state_root(),
+            .number = N});
+    run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    EXPECT_EQ(secondary_stdb.state_root(), cctx->secondary_tdb->state_root());
 }
 
 TEST_F(StateSyncFixture, sync_empty)

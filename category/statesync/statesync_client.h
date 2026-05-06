@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/statesync/statesync_messages.h>
 
 #ifdef __cplusplus
@@ -28,8 +29,8 @@ struct monad_statesync_client;
 struct monad_statesync_client_context;
 
 struct monad_statesync_client_context *monad_statesync_client_context_create(
-    char const *const *dbname_paths, size_t len, unsigned sq_thread_cpu,
-    struct monad_statesync_client *,
+    enum monad_chain_config chain_config, char const *const *dbname_paths,
+    size_t len, unsigned sq_thread_cpu, struct monad_statesync_client *,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request));
 

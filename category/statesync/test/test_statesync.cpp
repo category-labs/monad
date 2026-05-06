@@ -22,13 +22,21 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/chain/chain_factory.hpp>
+#include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -39,6 +47,9 @@
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
 #include <category/statesync/statesync_version.h>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>
@@ -164,8 +175,34 @@ namespace
         }
     }
 
-    struct StateSyncFixture : public ::testing::Test
+    // single-timeline server, dual-timeline client
+    template <bool MIP_8_ACTIVE>
+    struct StateSyncFixtureT : public ::testing::Test
     {
+        static std::unique_ptr<OnDiskMachine> make_server_machine()
+        {
+            if constexpr (MIP_8_ACTIVE) { // if mip_8_is_active, we make server
+                                          // primary db page encoded
+                return std::make_unique<MonadOnDiskMachine>();
+            }
+            else {
+                return std::make_unique<OnDiskMachine>();
+            }
+        }
+
+        struct RevisionConfig
+        {
+            monad_chain_config chain_config;
+            uint64_t timestamp;
+        };
+
+        // This is THE single place to update when a chain's mip8 activation
+        // timestamp changes or MONAD_NEXT is promoted to a concrete revision.
+        // Pre-mip8: testnet at timestamp 0 maps to MONAD_ZERO (slot canonical).
+        static constexpr RevisionConfig PRE_MIP8{CHAIN_CONFIG_MONAD_TESTNET, 0};
+        // Post-mip8: devnet currently maps to MONAD_NEXT for any timestamp
+        static constexpr RevisionConfig POST_MIP8{CHAIN_CONFIG_MONAD_DEVNET, 0};
+
         std::filesystem::path cdbname;
         monad_statesync_client client;
         monad_statesync_client_context *cctx;
@@ -175,21 +212,35 @@ namespace
         monad_statesync_server_context sctx;
         mpt::AsyncIOContext io_ctx;
         mpt::Db ro;
+        RevisionConfig const revision_config;
         monad_statesync_server_network net;
         monad_statesync_server *server{};
 
-        StateSyncFixture()
+        static constexpr bool mip_8_is_active = MIP_8_ACTIVE;
+
+        StateSyncFixtureT()
             : cdbname{tmp_dbname()}
             , cctx{nullptr}
             , sdbname{tmp_dbname()}
-            , sdb{std::make_unique<OnDiskMachine>(),
+            , sdb{make_server_machine(),
                   OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}}
             , stdb{sdb}
             , sctx{stdb}
             , io_ctx{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {sdbname}}}
             , ro{io_ctx}
+            , revision_config{MIP_8_ACTIVE ? POST_MIP8 : PRE_MIP8}
         {
+            MONAD_ASSERT(MIP_8_ACTIVE == stdb.is_page_encoded());
             sctx.ro = &ro;
+            // The client context now requires a secondary timeline to
+            // already be active on the client db.
+            mpt::Db primary{
+                std::make_unique<OnDiskMachine>(),
+                OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            [[maybe_unused]] mpt::Db secondary =
+                primary.activate_secondary_timeline(
+                    std::make_unique<MonadOnDiskMachine>());
+            MONAD_ASSERT(primary.timeline_active(mpt::timeline_id::secondary));
         }
 
         void init()
@@ -200,6 +251,7 @@ namespace
             monad::register_ethereum_state_machines();
             monad::register_monad_state_machines();
             cctx = new monad_statesync_client_context{
+                revision_config.chain_config,
                 {cdbname},
                 std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),
                 4,
@@ -225,7 +277,13 @@ namespace
             }
         }
 
-        ~StateSyncFixture()
+        monad_revision get_monad_revision() const
+        {
+            return make_monad_chain(revision_config.chain_config)
+                ->get_monad_revision(revision_config.timestamp);
+        }
+
+        ~StateSyncFixtureT()
         {
             monad_statesync_client_context_destroy(cctx);
             monad_statesync_server_destroy(server);
@@ -233,49 +291,173 @@ namespace
             std::filesystem::remove(sdbname);
         }
     };
+
+    // Slot-encoded server primary for pre-mip8 fork.
+    using StateSyncFixture = StateSyncFixtureT<false>;
+    // Page-encoded server primary for post-mip8 fork
+    using PageServerStateSyncFixture = StateSyncFixtureT<true>;
+
+    template <typename TFixture>
+    struct StateSyncTestBothForks : public TFixture
+    {
+    };
+
+    using StateSyncTestTypes =
+        ::testing::Types<StateSyncFixture, PageServerStateSyncFixture>;
+    TYPED_TEST_SUITE(StateSyncTestBothForks, StateSyncTestTypes);
+
+    // Trait-aware dispatch wrapper for commit_block
+    void commit_block_dispatch(
+        monad::Db &primary, monad::Db *const secondary,
+        monad_revision const rev, bytes32_t const &block_id,
+        BlockHeader const &header, StateDeltas const &deltas,
+        BlockCommitAncillaries const &anc)
+    {
+        SWITCH_MONAD_TRAITS(
+            commit_block, primary, secondary, block_id, header, deltas, anc);
+        MONAD_ASSERT(false);
+    }
+
+    // Commit one block proposal through the production commit_block path, which
+    // stamps the canonical state_root (slot pre-mip8, page post-mip8) into the
+    // header(s)
+    bytes32_t commit_simple_revision_aware(
+        monad::Db &primary, monad::Db *const secondary,
+        monad_revision const rev, StateDeltas const &deltas, Code const &code,
+        BlockHeader const &header, std::vector<Receipt> const &receipts = {},
+        std::vector<std::vector<CallFrame>> const &call_frames = {},
+        std::vector<Address> const &senders = {},
+        std::vector<Transaction> const &txns = {},
+        std::vector<BlockHeader> const &ommers = {},
+        std::optional<std::vector<Withdrawal>> const &withdrawals =
+            std::nullopt)
+    {
+        bytes32_t const block_id =
+            header.number ? bytes32_t{header.number} : NULL_HASH_BLAKE3;
+        BlockCommitAncillaries const anc{
+            .code = code,
+            .receipts = receipts,
+            .transactions = txns,
+            .senders = senders,
+            .call_frames = call_frames,
+            .ommers = ommers,
+            .withdrawals = withdrawals};
+        commit_block_dispatch(
+            primary, secondary, rev, block_id, header, deltas, anc);
+        return block_id;
+    }
+
+    // Like commit_simple_revision_aware, then finalize and reposition both
+    // timelines (the finalized-block analogue of commit_sequential).
+    void commit_sequential_revision_aware(
+        monad::Db &primary, monad::Db *const secondary,
+        monad_revision const rev, StateDeltas const &deltas, Code const &code,
+        BlockHeader const &header, std::vector<Receipt> const &receipts = {},
+        std::vector<std::vector<CallFrame>> const &call_frames = {},
+        std::vector<Address> const &senders = {},
+        std::vector<Transaction> const &txns = {},
+        std::vector<BlockHeader> const &ommers = {},
+        std::optional<std::vector<Withdrawal>> const &withdrawals =
+            std::nullopt)
+    {
+        bytes32_t const block_id = commit_simple_revision_aware(
+            primary,
+            secondary,
+            rev,
+            deltas,
+            code,
+            header,
+            receipts,
+            call_frames,
+            senders,
+            txns,
+            ommers,
+            withdrawals);
+        primary.finalize(header.number, block_id);
+        primary.set_block_and_prefix(header.number);
+        if (secondary != nullptr) {
+            secondary->finalize(header.number, block_id);
+            secondary->set_block_and_prefix(header.number);
+        }
+    }
 }
 
-TEST_F(StateSyncFixture, sync_from_latest)
+// single timeline server -> slot and page-encoded dual db client
+TYPED_TEST(StateSyncTestBothForks, sync_from_latest)
 {
     constexpr auto N = 1'000'000;
     bytes32_t parent_hash{NULL_HASH};
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            OnDiskDbConfig{.append = true, .dbname_paths = {this->cdbname}}};
         TrieDb tdb{db};
-        uint64_t const block_number = N - 257;
-        load_header(
-            db.load_root_for_version(block_number),
-            db,
-            BlockHeader{.number = block_number});
-        for (size_t i = N - 256; i < N; ++i) {
-            BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-            tdb.set_block_and_prefix(i - 1);
-            commit_sequential(tdb, StateDeltas({}), {}, hdr);
-            parent_hash = to_bytes(
-                keccak256(rlp::encode_block_header(tdb.read_eth_header())));
+        // In dual-db set up, both primary and secondary should stay in
+        // lockstep.
+        {
+            auto db2 = db.open_secondary_timeline(
+                std::make_unique<MonadOnDiskMachine>());
+            MONAD_ASSERT(db2.has_value());
+            TrieDb tdb2{*db2};
+            ASSERT_TRUE(tdb2.is_page_encoded());
+            uint64_t const block_number = N - 257;
+            load_header(
+                db.load_root_for_version(block_number),
+                db,
+                BlockHeader{.number = block_number});
+            load_header(
+                db2->load_root_for_version(block_number),
+                *db2,
+                BlockHeader{.number = block_number});
+            for (size_t i = N - 256; i < N; ++i) {
+                BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
+                tdb.set_block_and_prefix(i - 1);
+                tdb2.set_block_and_prefix(i - 1);
+                // Pre-fork (slot canonical): dual-write so both client dbs'
+                // headers carry the same slot state_root.
+                commit_sequential_revision_aware(
+                    tdb,
+                    &tdb2,
+                    this->get_monad_revision(),
+                    StateDeltas({}),
+                    {},
+                    hdr);
+                parent_hash = to_bytes(
+                    keccak256(rlp::encode_block_header(tdb.read_eth_header())));
+            }
+            // Block N: dual-write so both client dbs carry the canonical
+            // header
+            commit_sequential_revision_aware(
+                tdb,
+                &tdb2,
+                this->get_monad_revision(),
+                init_deltas(),
+                init_code(),
+                BlockHeader{.number = N});
+            // a pending proposal at N+1 (not finalized)
+            commit_simple_revision_aware(
+                tdb,
+                &tdb2,
+                this->get_monad_revision(),
+                StateDeltas({}),
+                {},
+                BlockHeader{.number = N + 1});
         }
-        load_db(tdb, N);
-        // commit some proposal to client db
-        tdb.set_block_and_prefix(N);
-        commit_simple(
-            tdb,
-            StateDeltas({}),
-            {},
-            bytes32_t{N + 1},
-            BlockHeader{.number = N + 1});
-        init();
+        this->init();
     }
+    // Canonical root of the load_db state: slot-encoded pre-mip8, page-encoded
+    // post-mip8.
     handle_target(
-        cctx,
+        this->cctx,
         BlockHeader{
             .parent_hash = parent_hash,
             .state_root =
-                0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32,
+                this->mip_8_is_active
+                    ? 0x3438aff12a8d7d87cfae57d462e250c2dd03b5b06a5fa50a2eb3c8d397877e79_bytes32
+                    : 0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32,
             .number = N});
-    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
-    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+    EXPECT_TRUE(monad_statesync_client_has_reached_target(this->cctx));
+    EXPECT_TRUE(monad_statesync_client_finalize(this->cctx));
 }
 
 TEST_F(StateSyncFixture, sync_from_empty)
@@ -342,14 +524,21 @@ TEST_F(StateSyncFixture, sync_from_empty)
     EXPECT_EQ(hdr.value(), tgrt);
 }
 
-TEST_F(StateSyncFixture, sync_from_some)
+// single timeline server -> slot and page-encoded dual db client
+TYPED_TEST(StateSyncTestBothForks, sync_from_some)
 {
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            OnDiskDbConfig{.append = true, .dbname_paths = {this->cdbname}}};
         TrieDb tdb{db};
+        auto db2_opt =
+            db.open_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+        MONAD_ASSERT(db2_opt.has_value());
+        TrieDb tdb2{db2_opt.value()};
+        ASSERT_TRUE(tdb2.is_page_encoded());
         load_genesis_state(GENESIS_STATE, tdb);
+        load_genesis_state(GENESIS_STATE, tdb2);
         // commit some proposal to client db
         commit_simple(
             tdb,
@@ -357,180 +546,147 @@ TEST_F(StateSyncFixture, sync_from_some)
             {},
             NULL_HASH_BLAKE3,
             BlockHeader{.number = 1});
-        load_genesis_state(GENESIS_STATE, stdb);
-        init();
+        commit_simple(
+            tdb2,
+            StateDeltas({}),
+            {},
+            NULL_HASH_BLAKE3,
+            BlockHeader{.number = 1});
+        EXPECT_TRUE(db2_opt->load_root_for_version(0) != nullptr);
+        load_genesis_state(GENESIS_STATE, this->stdb);
+        this->init();
     }
-    ASSERT_TRUE(stdb.get_root() != nullptr);
-    auto const res = sdb.find(
-        stdb.get_root(), concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
+
+    ASSERT_TRUE(this->stdb.get_root() != nullptr);
+    auto const res = this->sdb.find(
+        this->stdb.get_root(), concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
     ASSERT_TRUE(res.has_value() && res.value().is_valid());
-    BlockHeader const hdr1{
-        .parent_hash = to_bytes(keccak256(res.value().node->value())),
-        .state_root =
-            0x5d651a344741e37c613b580048934ae0deb58b72b542b61416cf7d1fb81d5a79_bytes32,
-        .number = 1};
-    // delete existing account
-    {
-        constexpr auto ADDR1 =
-            0x000d836201318ec6899a67540690382780743280_address;
-        auto const acct = stdb.read_account(ADDR1);
-        MONAD_ASSERT(acct.has_value());
-        commit_sequential(
-            sctx,
-            StateDeltas({{ADDR1, {.account = {acct, std::nullopt}}}}),
-            Code{},
-            hdr1);
-        EXPECT_EQ(stdb.read_eth_header(), hdr1);
-    }
-    BlockHeader const hdr2{
-        .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr1))),
-        .state_root =
-            0xd1afa4d8e4546cd3ca0314f2ea5ed7c2de22162b2d72b0ca3f56bcfa551e9e5f_bytes32,
-        .number = 2};
-    // new storage to existing account
-    {
-        constexpr auto ADDR1 =
-            0x02d4a30968a39e2b3498c3a6a4ed45c1c6646822_address;
-        auto const acct = stdb.read_account(ADDR1);
-        commit_sequential(
-            sctx,
-            StateDeltas(
-                {{ADDR1,
-                  {.account = {acct, acct},
-                   .storage =
-                       {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
-                         {{},
-                          0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}}),
-            Code{},
-            hdr2);
-        EXPECT_EQ(stdb.read_eth_header(), hdr2);
-    }
-    BlockHeader const hdr3{
-        .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr2))),
-        .state_root =
-            0x1922e617443693307d169df71f44688795793a91c4bf40742765c096e00413d7_bytes32,
-        .number = 3};
-    // add new smart contract
-    {
-        constexpr auto ADDR1 =
-            0x5353535353535353535353535353535353535353_address;
-        auto const code =
-            from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                     "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                     "ffffffffffffffffffffff0160005500")
-                .value();
-        auto const code_hash = to_bytes(keccak256(code));
-        auto const icode = vm::make_shared_intercode(code);
-        commit_sequential(
-            sctx,
-            StateDeltas(
-                {{ADDR1,
-                  {.account =
-                       {std::nullopt,
-                        Account{
-                            .balance = 1337,
-                            .code_hash = code_hash,
-                            .nonce = 1,
-                            .incarnation = Incarnation{3, 0}}},
-                   .storage =
-                       {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
-                         {{},
-                          0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}
+    // Commit a server block, then capture its committed header. The committed
+    // state_root is slot pre-mip8 / page post-mip8.
+    bytes32_t parent_hash = to_bytes(keccak256(res.value().node->value()));
+    auto const commit_server_block_update_parent_hash =
+        [&](StateDeltas const &deltas,
+            Code const &code,
+            uint64_t const number) {
+            commit_sequential_revision_aware(
+                this->sctx,
+                nullptr,
+                this->get_monad_revision(),
+                deltas,
+                code,
+                BlockHeader{.parent_hash = parent_hash, .number = number});
+            BlockHeader const committed = this->stdb.read_eth_header();
+            parent_hash =
+                to_bytes(keccak256(rlp::encode_block_header(committed)));
+            return committed;
+        };
 
-                }),
-            Code{{code_hash, icode}},
-            hdr3);
-        EXPECT_EQ(stdb.read_eth_header(), hdr3);
-    }
-    BlockHeader const hdr4{
-        .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr3))),
-        .state_root =
-            0x589b5012c41144a33447c07b0cc1f3108181774b7f1eec1fa0f466ffa9bc74b3_bytes32,
-        .number = 4};
-    // delete storage
-    {
-        constexpr auto ADDR1 =
-            0x02d4a30968a39e2b3498c3a6a4ed45c1c6646822_address;
-        auto const acct = stdb.read_account(ADDR1);
-        commit_sequential(
-            sctx,
-            StateDeltas(
-                {{ADDR1,
-                  {.account = {acct, acct},
-                   .storage =
-                       {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
-                         {0x0000000000000013370000000000000000000000000000000000000000000003_bytes32,
-                          {}}}}}}}),
-            Code{},
-            hdr4);
-        EXPECT_EQ(stdb.read_eth_header(), hdr4);
-    }
-    BlockHeader const hdr5{
-        .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr4))),
-        .state_root =
-            0x1922e617443693307d169df71f44688795793a91c4bf40742765c096e00413d7_bytes32,
-        .number = 5};
-    // account incarnation
-    {
-        constexpr auto ADDR1 =
-            0x02d4a30968a39e2b3498c3a6a4ed45c1c6646822_address;
-        auto const old = stdb.read_account(ADDR1);
-        auto acct = old;
-        acct->incarnation = Incarnation{5, 0};
-        commit_sequential(
-            sctx,
-            StateDeltas(
-                {{ADDR1,
-                  {.account = {old, acct},
-                   .storage =
-                       {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
-                         {{},
-                          0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}}),
-            Code{},
-            hdr5);
-        EXPECT_EQ(stdb.read_eth_header(), hdr5);
-    }
-    BlockHeader const hdr6{
-        .parent_hash = to_bytes(keccak256(rlp::encode_block_header(hdr5))),
-        .state_root =
-            0xd1afa4d8e4546cd3ca0314f2ea5ed7c2de22162b2d72b0ca3f56bcfa551e9e5f_bytes32,
-        .number = 6};
-    // delete smart contract
-    {
-        constexpr auto ADDR1 =
-            0x5353535353535353535353535353535353535353_address;
-        auto const acct = stdb.read_account(ADDR1);
-        MONAD_ASSERT(acct.has_value());
-        commit_sequential(
-            sctx,
-            StateDeltas({{ADDR1, {.account = {acct, std::nullopt}}}}),
-            Code{},
-            hdr6);
-        EXPECT_EQ(stdb.read_eth_header(), hdr6);
-    }
+    // existing accounts in genesis
+    constexpr auto ADDR1 = 0x000d836201318ec6899a67540690382780743280_address;
+    constexpr auto ADDR2 = 0x02d4a30968a39e2b3498c3a6a4ed45c1c6646822_address;
+    // new account address
+    constexpr auto ADDR3 = 0x5353535353535353535353535353535353535353_address;
 
-    handle_target(cctx, hdr1);
-    run();
+    // delete existing account ADDR1
+    auto const acct1 = this->stdb.read_account(ADDR1);
+    MONAD_ASSERT(acct1.has_value());
+    auto const hdr1 = commit_server_block_update_parent_hash(
+        StateDeltas({{ADDR1, {.account = {acct1, std::nullopt}}}}), Code{}, 1);
 
-    handle_target(cctx, hdr2);
-    run();
+    // new storage to existing account ADDR2
+    auto acct2 = this->stdb.read_account(ADDR2);
+    auto const hdr2 = commit_server_block_update_parent_hash(
+        StateDeltas(
+            {{ADDR2,
+              {.account = {acct2, acct2},
+               .storage =
+                   {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
+                     {{},
+                      0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}}),
+        Code{},
+        2);
 
-    handle_target(cctx, hdr3);
-    run();
+    // add new smart contract ADDR3
+    auto const code =
+        from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                 "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+                 "ffffffffffffffffffffff0160005500")
+            .value();
+    auto const code_hash = to_bytes(keccak256(code));
+    auto const icode = vm::make_shared_intercode(code);
+    auto const hdr3 = commit_server_block_update_parent_hash(
+        StateDeltas(
+            {{ADDR3,
+              {.account =
+                   {std::nullopt,
+                    Account{
+                        .balance = 1337,
+                        .code_hash = code_hash,
+                        .nonce = 1,
+                        .incarnation = Incarnation{3, 0}}},
+               .storage =
+                   {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
+                     {{},
+                      0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}}),
+        Code{{code_hash, icode}},
+        3);
 
-    handle_target(cctx, hdr4);
-    run();
+    // delete storage in account ADDR2
+    acct2 = this->stdb.read_account(ADDR2);
+    auto const hdr4 = commit_server_block_update_parent_hash(
+        StateDeltas(
+            {{ADDR2,
+              {.account = {acct2, acct2},
+               .storage =
+                   {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
+                     {0x0000000000000013370000000000000000000000000000000000000000000003_bytes32,
+                      {}}}}}}}),
+        Code{},
+        4);
 
-    handle_target(cctx, hdr5);
-    run();
+    // account incarnation for ADDR2
+    auto const old = this->stdb.read_account(ADDR2);
+    acct2 = old;
+    acct2->incarnation = Incarnation{5, 0};
+    auto const hdr5 = commit_server_block_update_parent_hash(
+        StateDeltas(
+            {{ADDR2,
+              {.account = {old, acct2},
+               .storage =
+                   {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
+                     {{},
+                      0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}}),
+        Code{},
+        5);
 
-    handle_target(cctx, hdr6);
-    run();
+    // delete smart contract at ADDR3
+    auto const acct3 = this->stdb.read_account(ADDR3);
+    MONAD_ASSERT(acct3.has_value());
+    auto const hdr6 = commit_server_block_update_parent_hash(
+        StateDeltas({{ADDR3, {.account = {acct3, std::nullopt}}}}), Code{}, 6);
 
-    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+    handle_target(this->cctx, hdr1);
+    this->run();
+
+    handle_target(this->cctx, hdr2);
+    this->run();
+
+    handle_target(this->cctx, hdr3);
+    this->run();
+
+    handle_target(this->cctx, hdr4);
+    this->run();
+
+    handle_target(this->cctx, hdr5);
+    this->run();
+
+    handle_target(this->cctx, hdr6);
+    this->run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(this->cctx));
 
     // find transaction trie
-    mpt::RODb cdb{ReadOnlyOnDiskDbConfig{.dbname_paths = {cdbname}}};
+    mpt::RODb cdb{ReadOnlyOnDiskDbConfig{.dbname_paths = {this->cdbname}}};
     for (auto const nibble :
          {RECEIPT_NIBBLE,
           TRANSACTION_NIBBLE,
@@ -544,31 +700,38 @@ TEST_F(StateSyncFixture, sync_from_some)
     }
 }
 
-TEST_F(StateSyncFixture, deletion_proposal)
+TYPED_TEST(StateSyncTestBothForks, deletion_proposal)
 {
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            OnDiskDbConfig{.append = true, .dbname_paths = {this->cdbname}}};
         TrieDb tdb{db};
+        auto db2_opt =
+            db.open_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+        MONAD_ASSERT(db2_opt.has_value());
+        TrieDb tdb2{db2_opt.value()};
+        ASSERT_TRUE(tdb2.is_page_encoded());
         load_genesis_state(GENESIS_STATE, tdb);
-        load_genesis_state(GENESIS_STATE, stdb);
-        init();
+        load_genesis_state(GENESIS_STATE, tdb2);
+
+        load_genesis_state(GENESIS_STATE, this->stdb);
+        this->init();
     }
-    ASSERT_TRUE(stdb.get_root() != nullptr);
-    auto const res = sdb.find(
-        stdb.get_root(), concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
+    ASSERT_TRUE(this->stdb.get_root() != nullptr);
+    auto const res = this->sdb.find(
+        this->stdb.get_root(), concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
     ASSERT_TRUE(res.has_value() && res.value().is_valid());
     // delete ADDR1 on one fork
     {
         constexpr auto ADDR1 =
             0x000d836201318ec6899a67540690382780743280_address;
-        auto const acct = sctx.read_account(ADDR1);
+        auto const acct = this->sctx.read_account(ADDR1);
         ASSERT_TRUE(acct.has_value());
         StateDeltas deltas{{ADDR1, {.account = {acct, std::nullopt}}}};
-        sctx.set_block_and_prefix(0);
+        this->sctx.set_block_and_prefix(0);
         commit_simple(
-            sctx,
+            this->sctx,
             StateDeltas(std::move(deltas)),
             Code{},
             bytes32_t{1},
@@ -578,30 +741,30 @@ TEST_F(StateSyncFixture, deletion_proposal)
     {
         constexpr auto ADDR2 =
             0x001762430ea9c3a26e5749afdb70da5f78ddbb8c_address;
-        auto const acct = sctx.read_account(ADDR2);
+        auto const acct = this->sctx.read_account(ADDR2);
         ASSERT_TRUE(acct.has_value());
         StateDeltas deltas{{ADDR2, {.account = {acct, std::nullopt}}}};
-        sctx.set_block_and_prefix(0);
+        this->sctx.set_block_and_prefix(0);
         commit_simple(
-            sctx,
+            this->sctx,
             StateDeltas(std::move(deltas)),
             Code{},
             bytes32_t{2},
             BlockHeader{.number = 1});
     }
-    sctx.finalize(1, bytes32_t{2});
+    this->sctx.finalize(1, bytes32_t{2});
 
-    sctx.set_block_and_prefix(1, bytes32_t{1});
-    auto const bad_header = sctx.read_eth_header();
+    this->sctx.set_block_and_prefix(1, bytes32_t{1});
+    auto const bad_header = this->sctx.read_eth_header();
 
-    sctx.set_block_and_prefix(1, bytes32_t{2});
-    auto const finalized_header = sctx.read_eth_header();
+    this->sctx.set_block_and_prefix(1, bytes32_t{2});
+    auto const finalized_header = this->sctx.read_eth_header();
 
     EXPECT_NE(finalized_header.state_root, bad_header.state_root);
-    handle_target(cctx, finalized_header);
-    run();
+    handle_target(this->cctx, finalized_header);
+    this->run();
 
-    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+    EXPECT_TRUE(monad_statesync_client_finalize(this->cctx));
 }
 
 TEST_F(StateSyncFixture, sync_one_account)
@@ -640,6 +803,210 @@ TEST_F(StateSyncFixture, sync_one_account)
             .number = N});
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
+// Pre-fork dual-timeline server -> dual-timeline client
+TEST_F(StateSyncFixture, pre_fork_dual_timeline_server_to_dual_db_client)
+{
+    mpt::Db secondary_sdb =
+        sdb.activate_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+    TrieDb secondary_stdb{secondary_sdb};
+    ASSERT_TRUE(secondary_stdb.is_page_encoded());
+
+    init();
+    uint64_t const timestamp = revision_config.timestamp;
+    monad_revision const rev = cctx->chain->get_monad_revision(timestamp);
+
+    // ADDR_A holds five slots: three share one page_key, two share another, so
+    // the page secondary holds genuine multi-slot pages. The server dual-writes
+    // every block to both its slot primary and page secondary via commit_block;
+    // the client in turn receives slot-encoded upserts and dual-writes them to
+    // its own slot Db1 and page Db2. The test compares the two page tries at
+    // the end.
+    constexpr auto N = 1'000'000;
+    bytes32_t parent_hash{NULL_HASH};
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
+    load_header(
+        secondary_sdb.load_root_for_version(N - 257),
+        secondary_sdb,
+        BlockHeader{.number = N - 257});
+    for (size_t i = N - 256; i < N; ++i) {
+        stdb.set_block_and_prefix(i - 1);
+        secondary_stdb.set_block_and_prefix(i - 1);
+        commit_sequential_revision_aware(
+            stdb,
+            &secondary_stdb,
+            rev,
+            {},
+            Code{},
+            BlockHeader{
+                .parent_hash = parent_hash,
+                .number = i,
+                .timestamp = timestamp});
+        EXPECT_EQ(
+            stdb.read_eth_header().state_root,
+            secondary_stdb.read_eth_header().state_root);
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+
+    // Slots 0x00, 0x01, 0x7f all map to page_key 0 (low 7 bits are offset).
+    // Slots 0x80, 0x81 map to page_key 1.
+    constexpr auto slot_a = bytes32_t{uint64_t{0x00}};
+    constexpr auto slot_b = bytes32_t{uint64_t{0x01}};
+    constexpr auto slot_c = bytes32_t{uint64_t{0x7f}};
+    constexpr auto slot_d = bytes32_t{uint64_t{0x80}};
+    constexpr auto slot_e = bytes32_t{uint64_t{0x81}};
+    constexpr auto val_a =
+        0x00000000000000000000000000000000000000000000000000000000000000aa_bytes32;
+    constexpr auto val_b =
+        0x00000000000000000000000000000000000000000000000000000000000000bb_bytes32;
+    constexpr auto val_c =
+        0x00000000000000000000000000000000000000000000000000000000000000cc_bytes32;
+    constexpr auto val_d =
+        0x00000000000000000000000000000000000000000000000000000000000000dd_bytes32;
+    constexpr auto val_e =
+        0x00000000000000000000000000000000000000000000000000000000000000ee_bytes32;
+
+    ASSERT_EQ(compute_page_key(slot_a), compute_page_key(slot_b));
+    ASSERT_EQ(compute_page_key(slot_a), compute_page_key(slot_c));
+    ASSERT_EQ(compute_page_key(slot_d), compute_page_key(slot_e));
+    ASSERT_NE(compute_page_key(slot_a), compute_page_key(slot_d));
+
+    StateDeltas const storage_deltas{
+        {ADDR_A,
+         StateDelta{
+             .account = {std::nullopt, Account{.balance = 100}},
+             .storage = {
+                 {slot_a, {bytes32_t{}, val_a}},
+                 {slot_b, {bytes32_t{}, val_b}},
+                 {slot_c, {bytes32_t{}, val_c}},
+                 {slot_d, {bytes32_t{}, val_d}},
+                 {slot_e, {bytes32_t{}, val_e}}}}}};
+
+    // Dual-write the state block to both timelines
+    commit_sequential_revision_aware(
+        stdb,
+        &secondary_stdb,
+        rev,
+        storage_deltas,
+        Code{},
+        BlockHeader{.number = N, .timestamp = timestamp});
+
+    handle_target(
+        cctx,
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .state_root = stdb.read_eth_header().state_root,
+            .number = N,
+            .timestamp = timestamp});
+    run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    // both timelines db state root should match
+    cctx->tdb.set_block_and_prefix(N);
+    stdb.set_block_and_prefix(N);
+    EXPECT_EQ(stdb.state_root(), cctx->tdb.state_root());
+
+    cctx->secondary_tdb->set_block_and_prefix(N);
+    secondary_stdb.set_block_and_prefix(N);
+    EXPECT_EQ(secondary_stdb.state_root(), cctx->secondary_tdb->state_root());
+}
+
+TEST_F(
+    PageServerStateSyncFixture, post_fork_sync_page_primary_to_dual_db_client)
+{
+    ASSERT_TRUE(this->stdb.is_page_encoded());
+
+    this->init();
+    uint64_t const timestamp = this->revision_config.timestamp;
+    monad_revision const rev = this->cctx->chain->get_monad_revision(timestamp);
+    ASSERT_TRUE(mip_8_active(rev));
+
+    // ADDR_A holds five slots: 0x00/0x01/0x7f share one page, 0x80/0x81 a
+    // second page, so the server holds genuine multi-slot pages to expand.
+    constexpr auto slot_a = bytes32_t{uint64_t{0x00}};
+    constexpr auto slot_b = bytes32_t{uint64_t{0x01}};
+    constexpr auto slot_c = bytes32_t{uint64_t{0x7f}};
+    constexpr auto slot_d = bytes32_t{uint64_t{0x80}};
+    constexpr auto slot_e = bytes32_t{uint64_t{0x81}};
+    constexpr auto val_a =
+        0x00000000000000000000000000000000000000000000000000000000000000aa_bytes32;
+    constexpr auto val_b =
+        0x00000000000000000000000000000000000000000000000000000000000000bb_bytes32;
+    constexpr auto val_c =
+        0x00000000000000000000000000000000000000000000000000000000000000cc_bytes32;
+    constexpr auto val_d =
+        0x00000000000000000000000000000000000000000000000000000000000000dd_bytes32;
+    constexpr auto val_e =
+        0x00000000000000000000000000000000000000000000000000000000000000ee_bytes32;
+
+    ASSERT_EQ(compute_page_key(slot_a), compute_page_key(slot_b));
+    ASSERT_EQ(compute_page_key(slot_a), compute_page_key(slot_c));
+    ASSERT_EQ(compute_page_key(slot_d), compute_page_key(slot_e));
+    ASSERT_NE(compute_page_key(slot_a), compute_page_key(slot_d));
+
+    constexpr auto N = 1'000'000;
+    bytes32_t parent_hash{NULL_HASH};
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
+    for (size_t i = N - 256; i < N; ++i) {
+        stdb.set_block_and_prefix(i - 1);
+        commit_sequential_revision_aware(
+            stdb,
+            nullptr,
+            rev,
+            {},
+            Code{},
+            BlockHeader{
+                .parent_hash = parent_hash,
+                .number = i,
+                .timestamp = timestamp});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+
+    StateDeltas const storage_deltas{
+        {ADDR_A,
+         StateDelta{
+             .account = {std::nullopt, Account{.balance = 100}},
+             .storage = {
+                 {slot_a, {bytes32_t{}, val_a}},
+                 {slot_b, {bytes32_t{}, val_b}},
+                 {slot_c, {bytes32_t{}, val_c}},
+                 {slot_d, {bytes32_t{}, val_d}},
+                 {slot_e, {bytes32_t{}, val_e}}}}}};
+
+    commit_sequential_revision_aware(
+        stdb,
+        nullptr,
+        rev,
+        storage_deltas,
+        Code{},
+        BlockHeader{.number = N, .timestamp = timestamp});
+
+    handle_target(
+        cctx,
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .state_root = stdb.state_root(),
+            .number = N,
+            .timestamp = timestamp});
+    run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    // Post-fork the client's page secondary must match the page-encoded server
+    // primary.
+    stdb.set_block_and_prefix(N);
+    cctx->secondary_tdb->set_block_and_prefix(N);
+    EXPECT_EQ(stdb.state_root(), cctx->secondary_tdb->state_root());
 }
 
 TEST_F(StateSyncFixture, sync_empty)
@@ -1459,7 +1826,12 @@ TEST(ProtocolValidation, upserts_reject_trailing_bytes)
         monad::register_ethereum_state_machines();
         monad_statesync_client client;
         monad_statesync_client_context ctx{
-            {dbname}, std::nullopt, 4, &client, &statesync_send_request};
+            CHAIN_CONFIG_MONAD_TESTNET,
+            {dbname},
+            std::nullopt,
+            4,
+            &client,
+            &statesync_send_request};
 
         Address a{0xdeadbeef};
         Account acct{.balance = 1};

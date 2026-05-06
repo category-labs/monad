@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
@@ -216,6 +217,14 @@ bool statesync_server_handle_request(
         {
         }
 
+        // When the server's primary is page-encoded, storage leaves hold
+        // encoded pages rather than single slots; we expand each page into
+        // slot-format upserts so v1 clients sync unchanged.
+        bool server_is_page_encoded() const
+        {
+            return sync->context->is_page_encoded();
+        }
+
         virtual bool down(unsigned char const branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
@@ -271,6 +280,36 @@ bool statesync_server_handle_request(
                     *upsert_bytes += size1 + size2;
                 };
 
+                // Expand a page-encoded storage leaf into one slot-format
+                // upsert per non-zero slot, so the wire stays identical to a
+                // slot-encoded server. The leaf value is
+                // encode_storage_page_db(page_key, page); compute_slot_key
+                // recovers each original storage key from (page_key, offset).
+                auto const send_storage_page = [&](byte_string_view enc) {
+                    auto const raw = decode_storage_db_raw(enc);
+                    MONAD_ASSERT(raw.has_value());
+                    auto const page_key = to_bytes(raw.value().first);
+                    auto const page = decode_storage_page(raw.value().second);
+                    MONAD_ASSERT(page.has_value());
+                    for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
+                        bytes32_t const slot_val = page.value()[i];
+                        if (slot_val == bytes32_t{}) {
+                            continue;
+                        }
+                        auto const entry = encode_storage_db(
+                            compute_slot_key(page_key, i), slot_val);
+                        sync->statesync_server_send_upsert(
+                            sync->net,
+                            SYNC_TYPE_UPSERT_STORAGE,
+                            reinterpret_cast<unsigned char const *>(&addr),
+                            sizeof(addr),
+                            entry.data(),
+                            entry.size());
+                        ++(*num_upserts);
+                        *upsert_bytes += sizeof(addr) + entry.size();
+                    }
+                };
+
                 if (nibble == CODE_NIBBLE) {
                     MONAD_ASSERT(depth == HASH_SIZE);
                     send_upsert(SYNC_TYPE_UPSERT_CODE);
@@ -282,10 +321,15 @@ bool statesync_server_handle_request(
                     }
                     else {
                         MONAD_ASSERT(depth == (HASH_SIZE * 2));
-                        send_upsert(
-                            SYNC_TYPE_UPSERT_STORAGE,
-                            reinterpret_cast<unsigned char *>(&addr),
-                            sizeof(addr));
+                        if (server_is_page_encoded()) {
+                            send_storage_page(node.value());
+                        }
+                        else {
+                            send_upsert(
+                                SYNC_TYPE_UPSERT_STORAGE,
+                                reinterpret_cast<unsigned char *>(&addr),
+                                sizeof(addr));
+                        }
                     }
                 }
             }

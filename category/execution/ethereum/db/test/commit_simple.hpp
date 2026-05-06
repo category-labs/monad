@@ -28,7 +28,6 @@ MONAD_NAMESPACE_BEGIN
 
 namespace test
 {
-
     inline void commit_simple(
         ::monad::Db &db, StateDeltas const &deltas, Code const &code,
         bytes32_t const &block_id, BlockHeader const &header,

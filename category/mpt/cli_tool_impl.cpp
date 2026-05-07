@@ -33,6 +33,7 @@
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
+#include <category/mpt/util.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -524,6 +525,25 @@ public:
              << aux.metadata_ctx().get_auto_expire_version_metadata(
                     monad::mpt::timeline_id::secondary)
              << " (secondary)\n";
+
+        if (aux.metadata_ctx().timeline_active(
+                monad::mpt::timeline_id::secondary)) {
+            auto const max_v = aux.metadata_ctx().db_history_max_version(
+                monad::mpt::timeline_id::secondary);
+            cout << "Secondary timeline is active: ";
+            if (max_v == monad::mpt::INVALID_BLOCK_NUM) {
+                cout << "empty (no roots written yet — version_lower_bound "
+                        "and next_version are seeded by the first secondary "
+                        "upsert).\n";
+            }
+            else {
+                auto const min_v =
+                    aux.metadata_ctx().db_history_min_valid_version(
+                        monad::mpt::timeline_id::secondary);
+                cout << (1 + max_v - min_v) << " history, earliest is " << min_v
+                     << ", latest is " << max_v << ".\n";
+            }
+        }
     }
 
     void do_restore_database()

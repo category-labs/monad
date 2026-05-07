@@ -147,17 +147,13 @@ public:
 private:
     void insert_in_lru_caches(StateDeltas const &state_deltas)
     {
-        for (auto it = state_deltas.cbegin(); it != state_deltas.cend(); ++it) {
-            auto const &address = it->first;
-            auto const &account_delta = it->second.account;
+        for (auto const &[address, delta] : state_deltas) {
+            auto const &account_delta = delta.account;
             accounts_.insert(address, account_delta.second);
-            auto const &storage = it->second.storage;
+            auto const &storage = delta.storage;
             auto const &account = account_delta.second;
             if (account.has_value()) {
-                for (auto it2 = storage.cbegin(); it2 != storage.cend();
-                     ++it2) {
-                    auto const &key = it2->first;
-                    auto const &storage_delta = it2->second;
+                for (auto const &[key, storage_delta] : storage) {
                     auto const incarnation = account->incarnation;
                     storage_.insert(
                         StorageKey(address, incarnation, key),

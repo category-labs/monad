@@ -35,9 +35,11 @@ namespace monad::vm::utils
         auto program = std::vector<uint8_t>(static_cast<size_t>(hex_size / 2));
 
         auto output_it = program.begin();
-        auto out_end = program.end();
+        // Round down to a whole number of hex pairs so that `input_it` does
+        // not advance one past `end` for odd-length inputs.
+        auto pairs_end = begin + (hex_size / 2) * 2;
 
-        for (auto input_it = begin; input_it != end && output_it != out_end;
+        for (auto input_it = begin; input_it != pairs_end;
              input_it += 2, output_it++) {
             auto *begin_char = &*input_it;
             auto *end_char = begin_char + 2;

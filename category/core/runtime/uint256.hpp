@@ -1931,8 +1931,8 @@ namespace monad::vm::runtime
             /**
              * For Barrett reduction, we compute the quotient approximant
              *     q_hat = floor((x*reciprocal_) / 2^SHIFT)
-             * Under some conditions we can pre-divide x by 2^SHIFT to narrow
-             * the multiplications involved. The quantity computed is
+             * Under some conditions we can pre-divide x by 2^PRE_PRODUCT_SHIFT
+             * to narrow the multiplications involved. The quantity computed is
              *     q_hat = floor(
              *         floor(x/2^PRE_PRODUCT_SHIFT)*reciprocal_
              *         / 2^POST_PRODUCT_SHIFT
@@ -1941,11 +1941,12 @@ namespace monad::vm::runtime
              */
             static constexpr size_t PRE_PRODUCT_SHIFT = []() -> size_t {
                 if (MULTIPLIER_BITS) {
-                    // If there is a multiplier, then we cannot pre-shift the
-                    // input as this would mean we're discarding too many bits.
-                    // This is because (x - lowest_n_bits_x) / 1^n differs from
-                    // x / 1^n by at most 1, but ((x-lowest_n_bits_x)*y)/1^n
-                    // doesn't.
+                    // If there is a multiplier, then we cannot pre-shift x
+                    // uniformly. Dropping the low n bits omits
+                    // lowest_n_bits_x * y from the numerator, so the discarded
+                    // contribution is not bounded by one.
+                    // Without a multiplier, the discarded contribution is
+                    // lowest_n_bits_x / 2^n < 1.
                     // We could in principle calculate the number of bits that
                     // can be dropped by looking at the multiplier, but it would
                     // lead to a combinatorial explosion of parameters for
@@ -1963,7 +1964,7 @@ namespace monad::vm::runtime
                 //   2. (SHIFT - k) == 0 mod 64
                 //     * This ensures that the pre-product shift does not add
                 //       any extra shr steps
-                size_t max_pre_product_shift = bit_width(MIN_DENOMINATOR) - 1;
+                size_t max_pre_product_shift = MIN_DENOMINATOR_BITS - 1;
                 size_t const max_pre_product_shift_64 =
                     max_pre_product_shift % 64;
                 size_t const shift_64 = BIT_SHIFT;
@@ -2030,8 +2031,10 @@ namespace monad::vm::runtime
             /**
              * Maximum number of words needed to hold the approximate remainder.
              * In all cases, we are underestimating the quotient by at most 2.
-             * Therefore, we are overestimating the remainder by at most
-             * 2*denominator_ which fits in MAX_DENOMINATOR_BITS + 2 bits
+             * Therefore, the approximate remainder can contain the true
+             * remainder plus up to two denominator copies that were not
+             * subtracted. This is bounded by three times the denominator and
+             * fits in MAX_DENOMINATOR_BITS + 2 bits.
              */
             static constexpr size_t MAX_R_HAT_BITS = std::min(
                 INPUT_BITS + MULTIPLIER_BITS, MAX_DENOMINATOR_BITS + 2UL);
@@ -2040,10 +2043,13 @@ namespace monad::vm::runtime
             /**
              * Maximum number of words to hold the relevant part of the
              * quotient.
-             * Since we only care about the remainder (except for udivrem)
-             * and we know that the initial approximant and subsequent
-             * refinements will fit in MAX_R_HAT_WORDS, we only need
-             * to compute the quotient estimate up to RELEVANT_QUOTIENT_BITS
+             *
+             * Since we only care about the remainder (except for udivrem), the
+             * relevant quotient bits are those that can affect the truncated
+             * product with denominator_. That product is kept only up to
+             * MAX_R_HAT_BITS, so higher quotient bits cannot affect the
+             * approximate remainder.
+             *
              * The quotient that we obtain from Barrett reduction is only
              * correct when RELEVANT_QUOTIENT_WORDS == MAX_QUOTIENT_WORDS
              */
@@ -2071,10 +2077,10 @@ namespace monad::vm::runtime
              *         floor(x / 2^PRE_PRODUCT_SHIFT) * reciprocal_
              *         / 2^POST_PRODUCT_SHIFT
              *     )
-             * If PRE_PRODUCT_SHIFT == 0, then q_hat underapproximates q by at
-             * most 1
-             * If PRE_PRODUCT_SHIFT != 0, then q_hat underapproximates q by at
-             * most 2
+             * If PRE_PRODUCT_SHIFT == 0, then q_hat underapproximates the true
+             * quotient by at most 1
+             * If PRE_PRODUCT_SHIFT != 0, then q_hat underapproximates the true
+             * quotient by at most 2
              *
              * If need_quotient is false, then the quotient is only computed
              * up to RELEVANT_QUOTIENT_WORDS, which is sufficient to compute
@@ -2106,27 +2112,45 @@ namespace monad::vm::runtime
                     quot,
                 std::span<uint64_t, uint256_t::num_words> rem) const noexcept
             {
-                // Let B = PRE_PRODUCT_SHIFT
+                // Let S = SHIFT = INPUT_BITS, B = PRE_PRODUCT_SHIFT, and
+                // d = denominator_.
+                //
                 // We are approximating the shifted product
                 //     floor(r * x / 2^S)
                 // by the shifted product
-                //     floor(r * floor(x/2^B) / 2^(S - B))
-                // As seen in the definition of PRE_PRODUCT_SHIFT, B is chosen
-                // so that d > 2^B
+                //     floor(r * floor(x / 2^B) / 2^(S - B)).
+                //
+                // As seen in the definition of PRE_PRODUCT_SHIFT, B is
+                // chosen so that 2^B <= d.
+                //
                 // To see why this is sound, let
                 //     q = floor(x / d)
-                //     x = x_1 * 2^(S-B) + x_0
-                //           where x_1 is (256-S) bits and x_0 is S bits
-                //     q1 = floor(x_1 * 2^(256-S) / d)
-                //     q1_hat = floor(r * x_1 / 2^B)
-                //            = floor((r * x_1*2^B)/2^(S-B))
-                // By the correctness proof of the reciprocal above, we know
-                //     q1 - 1 <= q1_hat <= q1
-                // However, since u_0 < v, we also know q1 <= q <= q1+1 and
-                // therefore
-                //     q - 2 <= q1_hat <= q
+                //     x = x_1 * 2^B + x_0
+                //         where x_1 = floor(x / 2^B)
+                //         and x_0 = x mod 2^B.
+                //
+                // Then x_0 < 2^B <= d.
+                //
+                // Let
+                //     q1 = floor((x_1 * 2^B) / d)
+                //     q_hat = floor(r * x_1 / 2^(S - B))
+                //           = floor((r * x_1 * 2^B) / 2^S).
+                //
+                // By the correctness proof of the reciprocal above, applied
+                // to x_1 * 2^B, we know
+                //     q1 - 1 <= q_hat <= q1.
+                //
+                // Since x and x_1 * 2^B differ by x_0, and x_0 < d, we also
+                // know
+                //     q1 <= q <= q1 + 1.
+                //
+                // Therefore
+                //     q - 2 <= q_hat <= q.
+                //
+                // If a constant multiplier is stored in the reciprocal, then
+                // B is zero and the true numerator is x * multiplier_.
                 // This optimization is similar to the version of Barrett
-                // reduction described in Modern Computer Arithithmetic.
+                // reduction described in Modern Computer Arithmetic.
                 auto const q_hat = estimate_q<need_quotient>(x);
 
                 // The bit width of q_hat is often of the form 64*k+1. In
@@ -2136,8 +2160,10 @@ namespace monad::vm::runtime
                 words_t<MAX_R_HAT_WORDS> const qv =
                     truncating_mul<MAX_R_HAT_WORDS>(q_hat, denominator_);
 
-                // We may have underestimated the quotient by up to 2, so the
-                // remainder may need one extra word to fit.
+                // If the quotient estimate is too small, r_hat keeps the true
+                // remainder plus the denominator copies that were not
+                // subtracted. MAX_R_HAT_WORDS provides room for that
+                // overestimate.
                 words_t<MAX_R_HAT_WORDS> r_hat;
                 if constexpr (MULTIPLIER_BITS) {
                     auto const xy =
@@ -2382,10 +2408,10 @@ namespace monad::vm::runtime
             barrett::reciprocal<Params> const &rec) noexcept
             requires(Params.input_bits >= 257)
         {
-            auto const &d = rec.denominator_;
-            // When d >= 2^192 and x, y < d we could implement the same
-            // optimization as we do for division-based addmod, but the Barrett
-            // version is fast enough that branch mispredictions dominate.
+            // When denominator_ >= 2^192 and x, y < denominator_, we could
+            // implement the same optimization as we do for division-based
+            // addmod, but the Barrett version is fast enough that branch
+            // mispredictions dominate.
             auto const [sum_base, sum_carry] = addc(x, y);
             words_t<5> const sum{
                 sum_base[0], sum_base[1], sum_base[2], sum_base[3], sum_carry};

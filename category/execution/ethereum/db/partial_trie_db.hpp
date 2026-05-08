@@ -168,6 +168,9 @@ public:
     bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
 
+    storage_page_t read_storage_page(
+        Address const &, Incarnation, bytes32_t const &page_key) override;
+
     vm::SharedIntercode read_code(bytes32_t const &code_hash) override;
 
     BlockHeader read_eth_header() override;

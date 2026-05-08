@@ -85,7 +85,9 @@ static_assert(sizeof(ProposedDeletions) == 64);
 static_assert(alignof(ProposedDeletions) == 8);
 
 struct CallFrame;
-class TrieDb;
+template <bool page_encoded>
+class TrieDbImpl;
+using TrieDb = TrieDbImpl<false>;
 
 MONAD_NAMESPACE_END
 
@@ -104,6 +106,10 @@ struct monad_statesync_server_context final : public monad::Db
     virtual monad::bytes32_t read_storage(
         monad::Address const &addr, monad::Incarnation,
         monad::bytes32_t const &key) override;
+
+    virtual monad::storage_page_t read_storage_page(
+        monad::Address const &addr, monad::Incarnation,
+        monad::bytes32_t const &page_key) override;
 
     virtual monad::vm::SharedIntercode
     read_code(monad::bytes32_t const &hash) override;

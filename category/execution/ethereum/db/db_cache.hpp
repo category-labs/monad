@@ -22,42 +22,24 @@
 #include <category/core/config.hpp>
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
-#include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/db/storage_key.hpp>
+#include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 
 #include <cstdint>
-#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
 
 MONAD_NAMESPACE_BEGIN
 
+// Encoding-agnostic LRU + proposal cache for accounts and storage leaves.
+// Storage values are held in the same byte-shape that ProposalPostState uses:
+// zeroless slot bytes for slot encoding, encoded-page bytes for page encoding.
+// The cache itself does not interpret the bytes, TrieDb does, based on its
+// compile-time `page_encoded` parameter.
 class DbCache final
 {
-    struct StorageKey
-    {
-        static constexpr size_t k_bytes =
-            sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
-
-        uint8_t bytes[k_bytes];
-
-        StorageKey() = default;
-
-        StorageKey(
-            Address const &addr, Incarnation const incarnation,
-            bytes32_t const &key)
-        {
-            memcpy(bytes, addr.bytes, sizeof(Address));
-            memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
-            memcpy(
-                &bytes[sizeof(Address) + sizeof(Incarnation)],
-                key.bytes,
-                sizeof(bytes32_t));
-        }
-    };
-
     using AddressHashCompare = BytesHashCompare<Address>;
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using AccountsCache =
@@ -116,11 +98,10 @@ public:
     }
 
     void update_proposal_state(
-        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
+        ProposalPostState post_state, uint64_t const block_number,
         bytes32_t const &block_id)
     {
-        MONAD_ASSERT(state_deltas);
-        proposals_.commit(std::move(state_deltas), block_number, block_id);
+        proposals_.commit(std::move(post_state), block_number, block_id);
     }
 
     void on_finalize(uint64_t const block_number, bytes32_t const &block_id)
@@ -128,7 +109,7 @@ public:
         std::unique_ptr<ProposalState> const ps =
             proposals_.finalize(block_number, block_id);
         if (ps) {
-            insert_in_lru_caches(ps->state());
+            insert_in_lru_caches(ps->post_state());
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.
@@ -148,22 +129,13 @@ public:
     }
 
 private:
-    void insert_in_lru_caches(StateDeltas const &state_deltas)
+    void insert_in_lru_caches(ProposalPostState const &post_state)
     {
-        for (auto const &[address, delta] : state_deltas) {
-            auto const &account_delta = delta.account;
-            accounts_.insert(address, account_delta.second);
-            auto const &storage = delta.storage;
-            auto const &account = account_delta.second;
-            if (account.has_value()) {
-                for (auto const &[key, storage_delta] : storage) {
-                    auto const incarnation = account->incarnation;
-                    storage_.insert(
-                        StorageKey(address, incarnation, key),
-                        byte_string{
-                            compact_storage_view(storage_delta.second)});
-                }
-            }
+        for (auto const &[addr, acct] : post_state.accounts) {
+            accounts_.insert(addr, acct);
+        }
+        for (auto const &[sk, leaf] : post_state.storage) {
+            storage_.insert(sk, leaf);
         }
     }
 };

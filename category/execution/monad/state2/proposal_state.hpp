@@ -19,30 +19,28 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/log.hpp>
-#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
-#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
-#include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/db/storage_key.hpp>
+#include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/vm/vm.hpp>
-
-#include <category/core/hex.hpp>
 
 #include <map>
 #include <memory>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
 class ProposalState
 {
-    std::unique_ptr<StateDeltas> state_;
+    ProposalPostState post_state_;
     uint64_t parent_block_;
     bytes32_t parent_id_;
 
 public:
     ProposalState(
-        std::unique_ptr<StateDeltas> state, uint64_t const parent_block_number,
+        ProposalPostState post_state, uint64_t const parent_block_number,
         bytes32_t const &parent_id)
-        : state_(std::move(state))
+        : post_state_(std::move(post_state))
         , parent_block_(parent_block_number)
         , parent_id_(parent_id)
     {
@@ -53,39 +51,45 @@ public:
         return {parent_block_, parent_id_};
     }
 
-    StateDeltas const &state() const
+    ProposalPostState const &post_state() const
     {
-        return *state_;
+        return post_state_;
     }
 
     bool try_read_account(
         Address const &address, std::optional<Account> &result) const
     {
-        StateDeltas::const_accessor it{};
-        if (state_->find(it, address)) {
-            result = it->second.account.second;
+        auto const it = post_state_.accounts.find(address);
+        if (it != post_state_.accounts.end()) {
+            result = it->second;
             return true;
         }
         return false;
     }
 
+    // Returns the encoded leaf bytes the underlying trie would return for
+    // read_storage at this key (zeroless slot bytes for slot encoding,
+    // encode_storage_page output for page encoding). An empty result means
+    // "no entry / cleared". The caller is responsible for decoding the
+    // bytes per its expected encoding.
     bool try_read_storage(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, byte_string &result) const
     {
-        StateDeltas::const_accessor it{};
-        if (!state_->find(it, address)) {
-            return false;
+        auto const acct_it = post_state_.accounts.find(address);
+        if (acct_it != post_state_.accounts.end()) {
+            auto const &acct = acct_it->second;
+            if (!acct.has_value() || acct->incarnation != incarnation) {
+                // Account deleted or incarnation cleared in this proposal:
+                // all storage at the requested incarnation is gone.
+                result = {};
+                return true;
+            }
         }
-        auto const &account = it->second.account.second;
-        if (!account || incarnation != account->incarnation) {
-            result = {};
-            return true;
-        }
-        auto const &storage = it->second.storage;
-        StorageDeltas::const_accessor it2{};
-        if (storage.find(it2, key)) {
-            result = compact_storage_view(it2->second.second);
+        StorageKey const sk{address, incarnation, key};
+        auto const it = post_state_.storage.find(sk);
+        if (it != post_state_.storage.end()) {
+            result = it->second;
             return true;
         }
         return false;
@@ -154,7 +158,7 @@ public:
     }
 
     void commit(
-        std::unique_ptr<StateDeltas> state_deltas, uint64_t const block_number,
+        ProposalPostState post_state, uint64_t const block_number,
         bytes32_t const &block_id)
     {
         if (proposal_map_.size() >= MAX_PROPOSAL_MAP_SIZE) {
@@ -166,7 +170,7 @@ public:
                 .insert(
                     {key,
                      std::unique_ptr<ProposalState>(new ProposalState(
-                         std::move(state_deltas), block_, block_id_))})
+                         std::move(post_state), block_, block_id_))})
                 .second == true);
         block_ = block_number;
         block_id_ = block_id;

@@ -759,6 +759,12 @@ bytes32_t PartialTrieDb::read_storage(
     return !val_result ? bytes32_t{} : val_result->value;
 }
 
+storage_page_t PartialTrieDb::read_storage_page(
+    Address const &, Incarnation, bytes32_t const &)
+{
+    MONAD_ABORT("PartialTrieDb is slot-encoded; read_storage_page unsupported");
+}
+
 vm::SharedIntercode PartialTrieDb::read_code(bytes32_t const &code_hash)
 {
     auto it = codes_.find(code_hash);

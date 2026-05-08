@@ -20,7 +20,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class TrieDb;
+template <bool page_encoded>
+class TrieDbImpl;
 
 struct GenesisState
 {
@@ -28,6 +29,7 @@ struct GenesisState
     char const *const alloc{nullptr};
 };
 
-void load_genesis_state(GenesisState const &, TrieDb &);
+template <bool page_encoded = false>
+void load_genesis_state(GenesisState const &, TrieDbImpl<page_encoded> &);
 
 MONAD_NAMESPACE_END

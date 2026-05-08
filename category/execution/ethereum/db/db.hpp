@@ -36,6 +36,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class CommitBuilder;
+struct storage_page_t;
 
 struct Db
 {
@@ -43,6 +44,9 @@ struct Db
 
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
+
+    virtual storage_page_t read_storage_page(
+        Address const &, Incarnation, bytes32_t const &page_key) = 0;
 
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 

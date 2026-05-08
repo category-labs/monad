@@ -37,11 +37,13 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/nibbles_view_fmt.hpp> // NOLINT
@@ -73,7 +75,9 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-TrieDb::TrieDb(mpt::Db &db, bool const enable_multiblock_cache)
+template <bool page_encoded>
+TrieDbImpl<page_encoded>::TrieDbImpl(
+    mpt::Db &db, bool const enable_multiblock_cache)
     : db_{db}
     , block_number_{db.get_latest_finalized_version()}
     , proposal_block_id_{bytes32_t{}}
@@ -83,20 +87,26 @@ TrieDb::TrieDb(mpt::Db &db, bool const enable_multiblock_cache)
 {
 }
 
-TrieDb::~TrieDb() = default;
+template <bool page_encoded>
+TrieDbImpl<page_encoded>::~TrieDbImpl() = default;
 
-void TrieDb::reset_root(Node::SharedPtr root, uint64_t const block_number)
+template <bool page_encoded>
+void TrieDbImpl<page_encoded>::reset_root(
+    Node::SharedPtr root, uint64_t const block_number)
 {
     curr_root_ = std::move(root);
     block_number_ = block_number;
 }
 
-Node::SharedPtr const &TrieDb::get_root() const
+template <bool page_encoded>
+Node::SharedPtr const &TrieDbImpl<page_encoded>::get_root() const
 {
     return curr_root_;
 }
 
-std::optional<Account> TrieDb::read_account(Address const &addr)
+template <bool page_encoded>
+std::optional<Account>
+TrieDbImpl<page_encoded>::read_account(Address const &addr)
 {
     std::optional<Account> result;
     if (cache_ && cache_->try_read_account(addr, result)) {
@@ -118,12 +128,22 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     return decode_account_db_ignore_address(encoded_account).value();
 }
 
-bytes32_t TrieDb::read_storage(
+template <bool page_encoded>
+bytes32_t TrieDbImpl<page_encoded>::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
+    bytes32_t const lookup_key = page_encoded ? compute_page_key(key) : key;
     byte_string cached;
-    if (cache_ && cache_->try_read_storage(addr, incarnation, key, cached)) {
-        return to_bytes(cached);
+    if (cache_ &&
+        cache_->try_read_storage(addr, incarnation, lookup_key, cached)) {
+        if constexpr (page_encoded) {
+            auto const page = decode_storage_page(cached);
+            MONAD_ASSERT(!page.has_error());
+            return page.value()[compute_slot_offset(key)];
+        }
+        else {
+            return to_bytes(cached);
+        }
     }
     auto const res = db_.find(
         curr_root_,
@@ -131,7 +151,8 @@ bytes32_t TrieDb::read_storage(
             prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+            NibblesView{
+                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
         block_number_);
     if (res.has_error()) {
         stats_storage_no_value();
@@ -139,12 +160,60 @@ bytes32_t TrieDb::read_storage(
     }
     stats_storage_value();
     auto encoded_storage = res.value().node->value();
-    auto const storage = decode_storage_db_ignore_key(encoded_storage);
-    MONAD_ASSERT(!storage.has_error());
-    return to_bytes(storage.value());
+    auto const value = decode_storage_db_ignore_key(encoded_storage);
+    MONAD_ASSERT(!value.has_error());
+    if constexpr (page_encoded) {
+        auto const page = decode_storage_page(value.value());
+        MONAD_ASSERT(!page.has_error());
+        return page.value()[compute_slot_offset(key)];
+    }
+    else {
+        return to_bytes(value.value());
+    }
 }
 
-vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
+template <bool page_encoded>
+storage_page_t TrieDbImpl<page_encoded>::read_storage_page(
+    Address const &addr, Incarnation const incarnation,
+    bytes32_t const &page_key)
+{
+    if constexpr (!page_encoded) {
+        MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
+    }
+    else {
+        byte_string cached;
+        if (cache_ &&
+            cache_->try_read_storage(addr, incarnation, page_key, cached)) {
+            auto const page = decode_storage_page(cached);
+            MONAD_ASSERT(!page.has_error());
+            return page.value();
+        }
+        auto const res = db_.find(
+            curr_root_,
+            concat(
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                NibblesView{
+                    keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+            block_number_);
+        if (res.has_error()) {
+            stats_storage_no_value();
+            return {};
+        }
+        stats_storage_value();
+        auto encoded_storage = res.value().node->value();
+        auto const value = decode_storage_db_ignore_key(encoded_storage);
+        MONAD_ASSERT(!value.has_error());
+        auto const page = decode_storage_page(value.value());
+        MONAD_ASSERT(!page.has_error());
+        return page.value();
+    }
+}
+
+template <bool page_encoded>
+vm::SharedIntercode
+TrieDbImpl<page_encoded>::read_code(bytes32_t const &code_hash)
 {
     // TODO read intercode object
     auto const res = db_.find(
@@ -160,7 +229,8 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
     return vm::make_shared_intercode(res.value().node->value());
 }
 
-void TrieDb::commit(
+template <bool page_encoded>
+void TrieDbImpl<page_encoded>::commit(
     bytes32_t const &block_id, CommitBuilder &builder,
     BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
     std::function<void(BlockHeader &)> const populate_header_fn)
@@ -205,11 +275,12 @@ void TrieDb::commit(
 
     if (cache_) {
         cache_->update_proposal_state(
-            std::move(state_deltas), header.number, block_id);
+            builder.take_proposal_post_state(), header.number, block_id);
     }
 }
 
-void TrieDb::set_block_and_prefix(
+template <bool page_encoded>
+void TrieDbImpl<page_encoded>::set_block_and_prefix(
     uint64_t const block_number, bytes32_t const &block_id)
 {
     if (cache_) {
@@ -236,7 +307,9 @@ void TrieDb::set_block_and_prefix(
 }
 
 // also changes internal state to the finalized state
-void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
+template <bool page_encoded>
+void TrieDbImpl<page_encoded>::finalize(
+    uint64_t const block_number, bytes32_t const &block_id)
 {
     // no re-finalization
     auto const latest_finalized = db_.get_latest_finalized_version();
@@ -264,7 +337,9 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
     }
 }
 
-void TrieDb::update_verified_block(uint64_t const block_number)
+template <bool page_encoded>
+void TrieDbImpl<page_encoded>::update_verified_block(
+    uint64_t const block_number)
 {
     // no re-verification
     auto const latest_verified = db_.get_latest_verified_version();
@@ -276,34 +351,40 @@ void TrieDb::update_verified_block(uint64_t const block_number)
     db_.update_verified_version(block_number);
 }
 
-void TrieDb::update_voted_metadata(
+template <bool page_encoded>
+void TrieDbImpl<page_encoded>::update_voted_metadata(
     uint64_t const block_number, bytes32_t const &block_id)
 {
     db_.update_voted_metadata(block_number, block_id);
 }
 
-void TrieDb::update_proposed_metadata(
+template <bool page_encoded>
+void TrieDbImpl<page_encoded>::update_proposed_metadata(
     uint64_t const block_number, bytes32_t const &block_id)
 {
     db_.update_proposed_metadata(block_number, block_id);
 }
 
-bytes32_t TrieDb::state_root()
+template <bool page_encoded>
+bytes32_t TrieDbImpl<page_encoded>::state_root()
 {
     return merkle_root(state_nibbles);
 }
 
-bytes32_t TrieDb::receipts_root()
+template <bool page_encoded>
+bytes32_t TrieDbImpl<page_encoded>::receipts_root()
 {
     return merkle_root(receipt_nibbles);
 }
 
-bytes32_t TrieDb::transactions_root()
+template <bool page_encoded>
+bytes32_t TrieDbImpl<page_encoded>::transactions_root()
 {
     return merkle_root(transaction_nibbles);
 }
 
-std::optional<bytes32_t> TrieDb::withdrawals_root()
+template <bool page_encoded>
+std::optional<bytes32_t> TrieDbImpl<page_encoded>::withdrawals_root()
 {
     auto const res =
         db_.find(curr_root_, concat(prefix_, WITHDRAWAL_NIBBLE), block_number_);
@@ -318,7 +399,8 @@ std::optional<bytes32_t> TrieDb::withdrawals_root()
     return to_bytes(data);
 }
 
-bytes32_t TrieDb::merkle_root(Nibbles const &nibbles)
+template <bool page_encoded>
+bytes32_t TrieDbImpl<page_encoded>::merkle_root(Nibbles const &nibbles)
 {
     auto const res = db_.find(
         curr_root_, concat(prefix_, NibblesView{nibbles}), block_number_);
@@ -330,7 +412,8 @@ bytes32_t TrieDb::merkle_root(Nibbles const &nibbles)
     return to_bytes(data);
 }
 
-BlockHeader TrieDb::read_eth_header()
+template <bool page_encoded>
+BlockHeader TrieDbImpl<page_encoded>::read_eth_header()
 {
     auto const query_res = db_.find(
         curr_root_, concat(prefix_, BLOCKHEADER_NIBBLE), block_number_);
@@ -344,7 +427,8 @@ BlockHeader TrieDb::read_eth_header()
     return std::move(decode_res.value());
 }
 
-std::string TrieDb::print_stats()
+template <bool page_encoded>
+std::string TrieDbImpl<page_encoded>::print_stats()
 {
     std::string ret;
     ret += std::format(
@@ -364,15 +448,16 @@ std::string TrieDb::print_stats()
     return ret;
 }
 
-nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
+template <bool page_encoded>
+nlohmann::json TrieDbImpl<page_encoded>::to_json(size_t const concurrency_limit)
 {
     struct Traverse : public TraverseMachine
     {
-        TrieDb &db;
+        TrieDbImpl<page_encoded> &db;
         nlohmann::json &json;
         Nibbles path{};
 
-        explicit Traverse(TrieDb &db, nlohmann::json &json)
+        explicit Traverse(TrieDbImpl<page_encoded> &db, nlohmann::json &json)
             : db(db)
             , json(json)
         {
@@ -445,28 +530,61 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             MONAD_ASSERT(node.has_value());
 
             auto encoded_storage = node.value();
-
-            auto const storage = decode_storage_db(encoded_storage);
+            auto raw_res = decode_storage_db_raw(encoded_storage);
+            MONAD_ASSERT(raw_res.has_value());
 
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
 
-            auto const key = fmt::format(
-                "{}",
-                NibblesView{path}.substr(
-                    KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
+            if constexpr (page_encoded) {
+                // Page-encoded leaf: first element of the RLP list is the
+                // page_key (compact), second is the encoded page bytes.
+                // Fan out one JSON entry per populated slot, keyed by
+                // keccak256(slot_key) so the output matches a slot dump.
+                bytes32_t const page_key = to_bytes(raw_res.value().first);
+                auto const page = decode_storage_page(raw_res.value().second);
+                MONAD_ASSERT(page.has_value());
+                for (uint8_t off = 0; off < storage_page_t::SLOTS; ++off) {
+                    auto const &slot_value = page.value()[off];
+                    if (slot_value == bytes32_t{}) {
+                        continue;
+                    }
+                    bytes32_t const slot_key = compute_slot_key(page_key, off);
+                    auto const hashed_slot_key = to_bytes(
+                        keccak256({slot_key.bytes, sizeof(slot_key.bytes)}));
+                    auto const key = fmt::format("{}", hashed_slot_key);
+                    auto storage_data_json = nlohmann::json::object();
+                    storage_data_json["slot"] = fmt::format(
+                        "0x{:02x}",
+                        fmt::join(
+                            std::as_bytes(std::span(slot_key.bytes)), ""));
+                    storage_data_json["value"] = fmt::format(
+                        "0x{:02x}",
+                        fmt::join(
+                            std::as_bytes(std::span(slot_value.bytes)), ""));
+                    json[acct_key]["storage"][key] = storage_data_json;
+                }
+            }
+            else {
+                // Slot-encoded leaf: trie path under the account is
+                // keccak256(slot_key); the leaf carries (slot_key,
+                // slot_value).
+                bytes32_t const slot_key = to_bytes(raw_res.value().first);
+                bytes32_t const slot_value = to_bytes(raw_res.value().second);
+                auto const key = fmt::format(
+                    "{}",
+                    NibblesView{path}.substr(
+                        KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
 
-            auto storage_data_json = nlohmann::json::object();
-            storage_data_json["slot"] = fmt::format(
-                "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(storage.value().first.bytes)), ""));
-            storage_data_json["value"] = fmt::format(
-                "0x{:02x}",
-                fmt::join(
-                    std::as_bytes(std::span(storage.value().second.bytes)),
-                    ""));
-            json[acct_key]["storage"][key] = storage_data_json;
+                auto storage_data_json = nlohmann::json::object();
+                storage_data_json["slot"] = fmt::format(
+                    "0x{:02x}",
+                    fmt::join(std::as_bytes(std::span(slot_key.bytes)), ""));
+                storage_data_json["value"] = fmt::format(
+                    "0x{:02x}",
+                    fmt::join(std::as_bytes(std::span(slot_value.bytes)), ""));
+                json[acct_key]["storage"][key] = storage_data_json;
+            }
         }
 
         virtual std::unique_ptr<TraverseMachine> clone() const override
@@ -498,14 +616,19 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
     return json;
 }
 
-uint64_t TrieDb::get_block_number() const
+template <bool page_encoded>
+uint64_t TrieDbImpl<page_encoded>::get_block_number() const
 {
     return block_number_;
 }
 
-uint64_t TrieDb::get_history_length() const
+template <bool page_encoded>
+uint64_t TrieDbImpl<page_encoded>::get_history_length() const
 {
     return db_.get_history_length();
 }
+
+template class TrieDbImpl<false>;
+template class TrieDbImpl<true>;
 
 MONAD_NAMESPACE_END

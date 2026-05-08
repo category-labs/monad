@@ -30,6 +30,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+// TODO: add runtime page_encoded flag as well. Will need it for post fork in
+// release2
 class TrieRODb final : public ::monad::Db
 {
     ::monad::mpt::RODb &db_;
@@ -110,6 +112,12 @@ public:
         auto const storage = decode_storage_db_ignore_key(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
         return to_bytes(storage.value());
+    }
+
+    virtual storage_page_t
+    read_storage_page(Address const &, Incarnation, bytes32_t const &) override
+    {
+        MONAD_ABORT("TrieRODb read_storage_page is currently not supported");
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override

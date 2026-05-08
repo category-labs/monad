@@ -55,10 +55,18 @@ class TrieDb final : public ::monad::Db
     // We only want to pay that price when the cache is enabled, hence
     // the need for unique_ptr.
     std::unique_ptr<DbCache> cache_;
+    // True iff this trie reads / writes page-encoded storage (MIP-8).
+    // Set at construction; immutable. Exposed via is_page_encoded().
+    bool const page_encoded_;
 
 public:
     explicit TrieDb(mpt::Db &, bool enable_multiblock_cache = false);
     ~TrieDb();
+
+    bool is_page_encoded() const override
+    {
+        return page_encoded_;
+    }
 
     void reset_root(::monad::mpt::Node::SharedPtr root, uint64_t block_number);
     ::monad::mpt::Node::SharedPtr const &get_root() const;
@@ -66,6 +74,8 @@ public:
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
+    virtual storage_page_t read_storage_page(
+        Address const &, Incarnation, bytes32_t const &page_key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
     virtual void set_block_and_prefix(
         uint64_t block_number,

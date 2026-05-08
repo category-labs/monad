@@ -219,6 +219,11 @@ monad_statesync_server_context::monad_statesync_server_context(TrieDb &rw)
 {
 }
 
+bool monad_statesync_server_context::is_page_encoded() const
+{
+    return rw.is_page_encoded();
+}
+
 std::optional<Account>
 monad_statesync_server_context::read_account(Address const &addr)
 {
@@ -229,6 +234,13 @@ bytes32_t monad_statesync_server_context::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
     return rw.read_storage(addr, incarnation, key);
+}
+
+storage_page_t monad_statesync_server_context::read_storage_page(
+    Address const &addr, Incarnation const incarnation,
+    bytes32_t const &page_key)
+{
+    return rw.read_storage_page(addr, incarnation, page_key);
 }
 
 monad::vm::SharedIntercode

@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <gtest/gtest.h>
@@ -231,4 +232,62 @@ TEST(MonadDb, page_commit_asymmetric_pair)
     EXPECT_NE(c_left, c_right);
     EXPECT_NE(c_left, bytes32_t{});
     EXPECT_NE(c_right, bytes32_t{});
+}
+
+// Slots on the same page are merged into a single page on commit.
+// Block 0 writes slots 0 and 1. Block 1 updates slot 0 only.
+// After block 1 commit, both the updated slot 0 and the untouched slot 1
+// must be present in the same page.
+TEST(MonadDb, page_write_merges_slots)
+{
+    constexpr auto slot_key_0 = bytes32_t{uint64_t{0x00}};
+    constexpr auto slot_key_1 = bytes32_t{uint64_t{0x01}};
+    constexpr auto val_0 =
+        0x000000000000000000000000000000000000000000000000000000000000aaaa_bytes32;
+    constexpr auto val_1 =
+        0x000000000000000000000000000000000000000000000000000000000000bbbb_bytes32;
+    constexpr auto val_0_updated =
+        0x000000000000000000000000000000000000000000000000000000000000dddd_bytes32;
+
+    Account const acct{.nonce = 1};
+    mpt::Db mpt_db{std::make_unique<MonadInMemoryMachine>()};
+    TrieDb tdb{mpt_db};
+    ASSERT_TRUE(tdb.is_page_encoded()) << "test requires page-encoded storage";
+
+    // Block 0: seed two slots on the same page.
+    {
+        PageCommitBuilder builder(0, tdb);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, acct},
+                 .storage = {
+                     {slot_key_0, {bytes32_t{}, val_0}},
+                     {slot_key_1, {bytes32_t{}, val_1}}}}}});
+        auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
+        tdb.reset_root(std::move(root), 0);
+    }
+
+    // Block 1: update slot 0, leave slot 1 untouched.
+    {
+        ASSERT_EQ(
+            tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), val_0);
+        ASSERT_EQ(
+            tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
+
+        PageCommitBuilder builder(1, tdb);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {acct, acct},
+                 .storage = {{slot_key_0, {val_0, val_0_updated}}}}}});
+        auto root =
+            mpt_db.upsert(tdb.get_root(), builder.build(finalized_nibbles), 1);
+        tdb.reset_root(std::move(root), 1);
+    }
+
+    // Verify: db reads back both values from the committed page.
+    EXPECT_EQ(
+        tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), val_0_updated);
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
 }

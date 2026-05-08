@@ -15,37 +15,26 @@
 
 #pragma once
 
-#include <category/core/config.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#include <komihash.h>
-#pragma GCC diagnostic pop
+#include <memory>
 
 MONAD_NAMESPACE_BEGIN
 
-template <class Bytes>
-struct BytesHashCompare
+struct Db;
+
+class PageCommitBuilder : public CommitBuilder
 {
-    // Ankerl-style hasher requirement.
-    using is_avalanching = void;
+    Db &db_;
 
-    size_t hash(Bytes const &a) const
-    {
-        return komihash(a.bytes, sizeof(Bytes), 0);
-    }
+public:
+    PageCommitBuilder(uint64_t block_number, Db &db);
 
-    // TBB concurrent_hash_map calls hash() / equal(); ankerl::unordered_dense
-    // calls operator() / equal(). Provide both shapes from the same type.
-    size_t operator()(Bytes const &a) const
-    {
-        return hash(a);
-    }
-
-    bool equal(Bytes const &a, Bytes const &b) const
-    {
-        return memcmp(a.bytes, b.bytes, sizeof(Bytes)) == 0;
-    }
+    // Materializes pages from slot deltas, writes per-page updates, and
+    // populates the inherited `proposal_post_state_` with page-keyed
+    // storage_page_t entries. Use `take_proposal_post_state()` after this to
+    // consume the result.
+    CommitBuilder &add_state_deltas(StateDeltas const &) override;
 };
 
 MONAD_NAMESPACE_END

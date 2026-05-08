@@ -16,10 +16,12 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/log.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/vm/vm.hpp>
 
@@ -69,7 +71,7 @@ public:
 
     bool try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, bytes32_t &result) const
+        bytes32_t const &key, byte_string &result) const
     {
         StateDeltas::const_accessor it{};
         if (!state_->find(it, address)) {
@@ -83,7 +85,7 @@ public:
         auto const &storage = it->second.storage;
         StorageDeltas::const_accessor it2{};
         if (storage.find(it2, key)) {
-            result = it2->second.second;
+            result = compact_storage_view(it2->second.second);
             return true;
         }
         return false;
@@ -135,7 +137,7 @@ public:
 
     TryReadResult try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, bytes32_t &result) const
+        bytes32_t const &key, byte_string &result) const
     {
         auto const fn =
             [&address, incarnation, &key, &result](ProposalState const &ps) {

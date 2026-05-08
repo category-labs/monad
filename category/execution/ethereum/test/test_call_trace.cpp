@@ -161,8 +161,17 @@ TYPED_TEST(TraitsTest, execute_success)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer,
+        noop_state_tracer,
+        tx_context,
+        buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -238,8 +247,17 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer,
+        noop_state_tracer,
+        tx_context,
+        buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -320,8 +338,17 @@ TYPED_TEST(TraitsTest, create_call_trace)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer,
+        noop_state_tracer,
+        tx_context,
+        buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -436,8 +463,17 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer,
+        noop_state_tracer,
+        tx_context,
+        buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -516,8 +552,17 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer,
+        noop_state_tracer,
+        tx_context,
+        buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -605,8 +650,17 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer, tx_context, buffer, s, tx, base_fee, 0, chain_ctx};
+        call_tracer,
+        noop_state_tracer,
+        tx_context,
+        buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -675,12 +729,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
+
+    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
 
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
+        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -783,12 +840,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
+
+    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
 
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
+        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -886,12 +946,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
+
+    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
 
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
+        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1028,12 +1091,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
+
+    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
 
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
+        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1242,12 +1308,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
+
+    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
 
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
+        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1405,12 +1474,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
         CallTracer call_tracer{tx, call_frames};
 
         uint256_t base_fee{0};
+
+        trace::StateTracer noop_state_tracer = std::monostate{};
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         constexpr std::span<std::optional<Address> const> authorities_empty{};
 
         EvmcHost<typename TestFixture::Trait> host{
             call_tracer,
+            noop_state_tracer,
             tx_context,
             buffer,
             s,

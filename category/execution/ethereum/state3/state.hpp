@@ -39,7 +39,6 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
-#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -112,6 +111,12 @@ public:
     void pop_accept();
 
     void pop_reject();
+
+    // Return addresses marked dirty (including touched/accessed accounts) in
+    // the currently pushed frame. Intended for observers that must inspect
+    // frame-local metadata immediately before pop_accept() or pop_reject();
+    // callers must not retain references beyond the frame pop.
+    Set<Address> const &current_frame_dirty_accounts() const;
 
     ////////////////////////////////////////
 

@@ -94,8 +94,10 @@ namespace
 
         ChainContext<Prague> chain_ctx{};
         uint256_t base_fee{0};
+        trace::StateTracer noop_state_tracer = std::monostate{};
         EvmcHost<Prague> host{
             call_tracer,
+            noop_state_tracer,
             tx_context,
             block_hash_buffer,
             state,
@@ -251,8 +253,17 @@ TEST_F(BlockHistoryFixture, read_from_block_hash_history_contract)
 
         ChainContext<Prague> chain_ctx{};
         uint256_t base_fee{0};
+        trace::StateTracer noop_state_tracer = std::monostate{};
         EvmcHost<Prague> host{
-            call_tracer, tx_context, buffer, state, tx, base_fee, 0, chain_ctx};
+            call_tracer,
+            noop_state_tracer,
+            tx_context,
+            buffer,
+            state,
+            tx,
+            base_fee,
+            0,
+            chain_ctx};
 
         bytes32_t const calldata = enc(block_number);
         auto msg_memory = state.vm().message_memory_ref();
@@ -319,8 +330,17 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
 
         ChainContext<Prague> chain_ctx{};
         uint256_t base_fee{0};
+        trace::StateTracer noop_state_tracer = std::monostate{};
         EvmcHost<Prague> host{
-            call_tracer, tx_context, buffer, state, tx, base_fee, 0, chain_ctx};
+            call_tracer,
+            noop_state_tracer,
+            tx_context,
+            buffer,
+            state,
+            tx,
+            base_fee,
+            0,
+            chain_ctx};
 
         auto msg_memory = state.vm().message_memory_ref();
         evmc_message const msg{
@@ -358,8 +378,17 @@ TEST_F(BlockHistoryFixture, read_write_block_hash_history_contract)
 
         ChainContext<Prague> chain_ctx{};
         uint256_t base_fee{0};
+        trace::StateTracer noop_state_tracer = std::monostate{};
         EvmcHost<Prague> host{
-            call_tracer, tx_context, buffer, state, tx, base_fee, 0, chain_ctx};
+            call_tracer,
+            noop_state_tracer,
+            tx_context,
+            buffer,
+            state,
+            tx,
+            base_fee,
+            0,
+            chain_ctx};
 
         bytes32_t const calldata = enc(block_number);
         auto msg_memory = state.vm().message_memory_ref();
@@ -448,8 +477,17 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
 
         ChainContext<Prague> chain_ctx{};
         uint256_t base_fee{0};
+        trace::StateTracer noop_state_tracer = std::monostate{};
         EvmcHost<Prague> host{
-            call_tracer, tx_context, buffer, state, tx, base_fee, 0, chain_ctx};
+            call_tracer,
+            noop_state_tracer,
+            tx_context,
+            buffer,
+            state,
+            tx,
+            base_fee,
+            0,
+            chain_ctx};
 
         auto msg_memory = state.vm().message_memory_ref();
         evmc_message const msg{
@@ -492,8 +530,17 @@ TEST_F(BlockHistoryFixture, unauthorized_set)
 
         ChainContext<Prague> chain_ctx{};
         uint256_t base_fee{0};
+        trace::StateTracer noop_state_tracer = std::monostate{};
         EvmcHost<Prague> host{
-            call_tracer, tx_context, buffer, state, tx, base_fee, 0, chain_ctx};
+            call_tracer,
+            noop_state_tracer,
+            tx_context,
+            buffer,
+            state,
+            tx,
+            base_fee,
+            0,
+            chain_ctx};
 
         bytes32_t const calldata = enc(block_number);
         auto msg_memory = state.vm().message_memory_ref();

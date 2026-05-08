@@ -391,7 +391,7 @@ constexpr size_t MAX_VALUE_LEN_OF_LEAF =
 
 Node::SharedPtr make_node(
     Node &from, NibblesView path, std::optional<byte_string_view> value,
-    int64_t version);
+    int64_t version, bool is_move = true);
 
 Node::SharedPtr make_node(
     uint16_t mask, std::span<ChildData>, NibblesView path,

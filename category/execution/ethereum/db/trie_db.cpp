@@ -121,9 +121,9 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 bytes32_t TrieDb::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
-    bytes32_t result{};
-    if (cache_ && cache_->try_read_storage(addr, incarnation, key, result)) {
-        return result;
+    byte_string cached;
+    if (cache_ && cache_->try_read_storage(addr, incarnation, key, cached)) {
+        return to_bytes(cached);
     }
     auto const res = db_.find(
         curr_root_,

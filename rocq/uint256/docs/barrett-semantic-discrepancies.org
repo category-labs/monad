@@ -172,7 +172,7 @@ Here =max_r_hat_bits = max_denominator_bits + 2 = 67= and
 =MAX_R_HAT_WORDS = 2=.  The full quotient estimate is
 =q_hat = x / d = 2^67=.
 
-The concrete Rocq check in =theories/BarrettExecutableChecks.v= shows that this
+The concrete Rocq check in =theories/BarrettReviewWitnesses.v= shows that this
 candidate is not a counterexample to the current model.  Since
 =RELEVANT_QUOTIENT_WORDS = min_words 67 = 2=, the remainder-only estimate keeps
 two whole words:
@@ -181,9 +181,10 @@ two whole words:
 - =estimate_q true rec x = [0; 8; 0; 0]=
 - both products modulo =MAX_R_HAT_WORDS= are =[0; 16]=
 
-Thus the two products are congruent in this instance.  The whole-word theorem
-=low_product_sufficient= remains a proof obligation, but this concrete example
-should no longer be cited as a semantic discrepancy.
+Thus the two products are congruent in this instance.  The general whole-word
+theorem =low_product_sufficient= has since been proved under the exported
+aliases' word-alignment assumptions, so this candidate is resolved and should
+no longer be cited as a semantic discrepancy.
 
 ** Signed division overflows on =INT_MIN / -1=
 

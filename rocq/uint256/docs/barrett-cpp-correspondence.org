@@ -101,13 +101,13 @@ zero-padded =get_word= and therefore represents the out-of-bounds case as
 
 | Rocq definition | C++ counterpart | Notes |
 |-----------------|-----------------|-------|
-| [[file:../theories/Barrett.v::226][truncating_mul]] | =truncating_mul<R>= | Delegates to the runtime multiplication model. |
-| [[file:../theories/Barrett.v::229][wide_mul]] | =wide_mul= | Full product by selecting =R = length xs + length ys=. |
-| [[file:../theories/Barrett.v::232][subb_words_aux]] | =subb_truncating<R>= loop | Models word-by-word subtraction with borrow. |
-| [[file:../theories/Barrett.v::244][subb_truncating]] | =subb_truncating<MAX_R_HAT_WORDS>= | Fixed-size truncating subtraction. |
-| [[file:../theories/Barrett.v::248][subb_zx]] | =subb_zx= | Zero-extended subtraction using max operand length. |
-| [[file:../theories/Barrett.v::252][addc_words_aux]] | =addc= loop | Models word-by-word addition with carry. |
-| [[file:../theories/Barrett.v::264][addc_words]] | =addc(q_hat, {1})= and =addc(q_hat, {2})= | Used in quotient correction branches. |
+| [[file:../theories/Barrett.v::226][truncating_mul]] | [[file:../../../category/core/runtime/uint256.hpp::1078][truncating_mul<R>]] | Delegates to the runtime multiplication model. |
+| [[file:../theories/Barrett.v::229][wide_mul]] | [[file:../../../category/core/runtime/uint256.hpp::1100][wide_mul]] | Full product by selecting =R = length xs + length ys=. |
+| [[file:../theories/Barrett.v::232][subb_words_aux]] | loop in [[file:../../../category/core/runtime/uint256.hpp::1396][subb_truncating<R>]] | Models word-by-word subtraction with borrow. |
+| [[file:../theories/Barrett.v::244][subb_truncating]] | [[file:../../../category/core/runtime/uint256.hpp::1396][subb_truncating<MAX_R_HAT_WORDS>]] | Fixed-size truncating subtraction. |
+| [[file:../theories/Barrett.v::248][subb_zx]] | [[file:../../../category/core/runtime/uint256.hpp::1364][subb_zx]] | Zero-extended subtraction using max operand length. |
+| [[file:../theories/Barrett.v::252][addc_words_aux]] | loop in [[file:../../../category/core/runtime/uint256.hpp::1419][addc]] | Models word-by-word addition with carry. |
+| [[file:../theories/Barrett.v::264][addc_words]] | [[file:../../../category/core/runtime/uint256.hpp::1419][addc(q_hat, {1})]] and =addc(q_hat, {2})= | Used in quotient correction branches. |
 | [[file:../theories/Barrett.v::269][copy_uint256_words]] | [[file:../../../category/core/runtime/uint256.hpp::2113][copy<R>]] | Rocq returns a four-word value rather than writing an output span. |
 | [[file:../theories/Barrett.v::272][quotient_output]] | zero-length quotient span when =need_quotient=false= | Rocq makes omitted quotient explicit as =[]=. |
 
@@ -211,6 +211,132 @@ These notes record review clarifications during a manual pass-through.
 - If the dormant =BIT_SHIFT != 0= multiplier numerator branch is retained, it
   needs the final carry word after the =shld= loop.  This matches
   =Div.shift_left_words=, which produces one more word than its input.
+- =BarrettStaticChecks.v= mirrors the C++ =static_assert= checks for
+  interval aliases, including =reciprocal_bits=, =max_denominator_bits=,
+  =pre_product_word_shift= where asserted by C++, and the addmod catch-all
+  =input_words= assertion.  =BarrettReviewWitnesses.v= is kept separate for
+  concrete executable review witnesses, including the resolved
+  remainder-only quotient truncation candidate and the unaligned
+  post-product-shift example.
+
+** Pre-Product Shift Alignment Issue
+
+The current no-multiplier =PRE_PRODUCT_SHIFT= calculation is designed to choose
+a shift =k= such that:
+
+- =k <= MIN_DENOMINATOR_BITS - 1=, preserving the quotient-error bound; and
+- =(SHIFT - k) mod 64 = 0=, so the post-product shift is word-aligned.
+
+The implemented adjustment subtracts =max_pre_product_shift_64 - BIT_SHIFT=
+only when =max_pre_product_shift_64 > BIT_SHIFT=.  This preserves the exported
+interval behavior, but it is not a fully generic computation of the largest
+aligned =k=.  When =max_pre_product_shift_64 < BIT_SHIFT=, there may be no
+positive =k <= MIN_DENOMINATOR_BITS - 1= with =k == SHIFT mod 64=.  The
+non-exported witness in
+[[file:../theories/BarrettReviewWitnesses.v::108][UnalignedPostProductShift]]
+has:
+
+- =INPUT_BITS = 34=, so =BIT_SHIFT = 34=;
+- =MIN_DENOMINATOR = 2=, so =MIN_DENOMINATOR_BITS - 1 = 1=;
+- =PRE_PRODUCT_SHIFT = 1=; and
+- =POST_PRODUCT_BIT_SHIFT = 33=.
+
+For that parameter choice, both =k = 0= and =k = 1= leave a non-word-aligned
+post-product shift.  This is outside the exported aliases, but it shows that
+the generic template does not itself guarantee the word-alignment precondition
+used by the current Rocq theorem =low_product_sufficient=.
+
+There are two plausible repair strategies if unaligned generic intervals ever
+matter.
+
+1. Support unaligned post-product shifts in the algorithm and model.
+
+   The remainder-only path currently sizes the pre-shift product using
+   =RELEVANT_QUOTIENT_BITS + POST_PRODUCT_SHIFT=.  For unaligned shifts this
+   can omit high bits that later shift down into the padding part of the final
+   retained quotient word.  The fix is to size the remainder-only product by
+   full quotient words:
+
+   #+BEGIN_SRC c++
+   constexpr size_t quotient_bits =
+       need_quotient ? MAX_QUOTIENT_BITS
+                     : 64 * RELEVANT_QUOTIENT_WORDS;
+   constexpr size_t prod_bits = quotient_bits + POST_PRODUCT_SHIFT;
+   #+END_SRC
+
+   The corresponding Rocq change would factor a helper like:
+
+   #+BEGIN_SRC coq
+   Definition quotient_product_bits params need_quotient :=
+     if need_quotient then
+       max_quotient_bits params
+     else
+       word_width * relevant_quotient_words params.
+   #+END_SRC
+
+   Then =estimate_q false= should be provable congruent to the full quotient
+   estimate modulo =2^(64 * relevant_quotient_words params)= without assuming
+   =post_product_bit_shift = 0=.
+
+2. Constrain the generic C++ template to the current proof surface.
+
+   If there is no intended use-case for unaligned post-product shifts, add a
+   C++ compile-time constraint mirroring the Rocq precondition.  The current
+   proof dependency is narrow: =reduce_correct_with_quotient=, and therefore
+   =udivrem= and =sdivrem=, do not require =post_product_bit_shift = 0=.  The
+   alignment premise enters through =low_product_sufficient=, which is used by
+   =reduce_correct_remainder_only= and therefore by =addmod=, =mulmod=, and
+   =mulmod_const=.
+
+   A broad =static_assert(POST_PRODUCT_BIT_SHIFT == 0)= on the generic
+   reciprocal type would be simple but would reject generic full-quotient
+   =udivrem= instantiations that the current Rocq proof does not need to
+   reject.  Prefer one of the following narrower additions.
+
+   The most direct option is to add the assertion inside
+   =reciprocal<Params>::reduce=, guarded by =need_quotient=:
+
+   #+BEGIN_SRC c++
+   template <bool need_quotient = false>
+   MONAD_NO_VECTORIZE [[gnu::always_inline]]
+   inline void reduce(
+       words_t<INPUT_WORDS> const &x,
+       std::span<uint64_t, need_quotient ? uint256_t::num_words : 0> quot,
+       std::span<uint64_t, uint256_t::num_words> rem) const noexcept
+   {
+       if constexpr (!need_quotient) {
+           static_assert(POST_PRODUCT_BIT_SHIFT == 0);
+       }
+
+       auto const q_hat = estimate_q<need_quotient>(x);
+       ...
+   }
+   #+END_SRC
+
+   This exactly matches the proof split: =reduce<true>= remains available for
+   full-quotient division, while =reduce<false>= is constrained to the cases
+   covered by =low_product_sufficient=.
+
+   A more local but less complete option is to assert the same fact in the
+   public remainder-only wrappers:
+
+   #+BEGIN_SRC c++
+   template <BarrettParams Params>
+   inline uint256_t addmod(..., barrett::reciprocal<Params> const &rec)
+       requires(Params.input_bits >= 257)
+   {
+       static_assert(decltype(rec)::POST_PRODUCT_BIT_SHIFT == 0);
+       ...
+       rec.reduce(sum, std::span<uint64_t, 0>{}, rem);
+   }
+   #+END_SRC
+
+   The same wrapper-level assertion would be added to =barrett::mulmod= and
+   =barrett::mulmod_const=.  This protects the current public wrapper surface,
+   but it would still allow other internal callers to instantiate
+   =reciprocal<Params>::reduce<false>= directly with unaligned parameters.
+   Therefore the guarded assertion inside =reduce= is the cleaner constraint if
+   the intention is to make all remainder-only uses match the Rocq precondition.
 
 * Review Checklist
 

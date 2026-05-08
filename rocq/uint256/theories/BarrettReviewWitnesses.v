@@ -4,10 +4,12 @@ From Uint256 Require Import UintZ Barrett.
 Import ListNotations.
 Open Scope Z_scope.
 
-(** Executable checks for candidate Barrett semantic discrepancies.
+(** Executable review witnesses for Barrett modeling and proof decisions.
 
     This file uses the executable [UintZ] stack rather than the abstract proof
-    functors, so [vm_compute] evaluates the actual model definitions. *)
+    functors, so [vm_compute] evaluates the actual model definitions.  The
+    witnesses are not static alias checks; they record concrete examples that
+    informed review decisions. *)
 
 Module Bar := Barrett.MakeLegacy
   (UintZ.ZUint64)

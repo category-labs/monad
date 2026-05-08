@@ -153,8 +153,12 @@ proof of =low_product_sufficient= follows the implementation control flow.
 
 The old generic =low_product_sufficient= theorem omitted the alignment
 hypothesis and was too broad.  The executable check in
-=theories/BarrettExecutableChecks.v::UnalignedPostProductShift= records a
-concrete non-exported parameter choice:
+=theories/BarrettReviewWitnesses.v::UnalignedPostProductShift= records a
+concrete non-exported parameter choice.  The C++ computation issue and the two
+possible repair strategies are consolidated in
+[[file:barrett-cpp-correspondence.org::*Pre-Product Shift Alignment Issue][Pre-Product Shift Alignment Issue]].
+
+The witness uses:
 
 - =min_denominator = 2=
 - =max_denominator = 3=

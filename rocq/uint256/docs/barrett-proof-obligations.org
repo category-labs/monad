@@ -39,6 +39,6 @@ proved and the project build passes.
 Only C++ mismatches against the intended mathematical operation are semantic
 blockers.  If a suspected blocker is encountered, first add a concrete Rocq
 check against the executable/model definitions, preferably in
-=theories/BarrettExecutableChecks.v=.  If the issue is only a Rocq-model
+=theories/BarrettReviewWitnesses.v=.  If the issue is only a Rocq-model
 mismatch with the C++ behavior, update the Rocq model to match the C++ and
 continue proof work.

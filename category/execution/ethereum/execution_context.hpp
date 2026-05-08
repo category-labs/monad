@@ -15,8 +15,10 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 
@@ -31,9 +33,11 @@ MONAD_NAMESPACE_BEGIN
 enum class ExecutionMode : uint8_t
 {
     Normal,
-    Simulation,
-    Tracing
+    CallTracing,
+    StateTracing,
 };
+
+class BlockExecutionContext;
 
 /// Per-transaction execution context.
 ///
@@ -43,10 +47,43 @@ enum class ExecutionMode : uint8_t
 /// instances that are not aliased by any other fiber.
 struct TxExecutionContext
 {
-    ExecutionMode mode;
-    CallTracerBase &call_tracer;
-    trace::StateTracer &state_tracer;
-    bool const trace_transfers;
+    TxExecutionContext() = delete;
+
+private:
+    friend class BlockExecutionContext;
+
+    TxExecutionContext(
+        uint64_t i, BlockExecutionContext const *block_ctx,
+        Transaction const &transaction, Address const &sender,
+        std::span<std::optional<Address> const> authorities)
+        : i{i}
+        , transaction{transaction}
+        , sender{sender}
+        , authorities{authorities}
+        , block_ctx_{block_ctx}
+    {
+        MONAD_ASSERT(
+            block_ctx,
+            "TxExecutionContext must be constructed with a non-null "
+            "BlockExecutionContext pointer");
+    }
+
+public:
+    CallTracerBase &get_call_tracer() const;
+
+    trace::StateTracer &get_state_tracer() const;
+
+    bool trace_transfers() const;
+
+    ExecutionMode mode() const;
+
+    uint64_t const i;
+    Transaction const &transaction;
+    Address const &sender;
+    std::span<std::optional<Address> const> const authorities;
+
+private:
+    BlockExecutionContext const *block_ctx_;
 };
 
 /// Tracks that each transaction index is sliced at most once.
@@ -96,30 +133,26 @@ public:
 class BlockExecutionContext
 {
 public:
+    BlockExecutionContext() = delete;
+
     /// Normal mode: zero per-tx allocations. Shared no-op tracers.
-    static BlockExecutionContext normal(size_t size);
+    static BlockExecutionContext normal(
+        Block const &, std::span<Address const> senders,
+        std::span<std::vector<std::optional<Address>> const> authorities);
 
     /// Call tracing mode: caller provides per-tx call tracers. State tracers
     /// are no-ops.
     static BlockExecutionContext call_tracing(
-        size_t size, std::span<std::unique_ptr<CallTracerBase>> call_tracers);
+        Block const &, std::span<Address const> senders,
+        std::span<std::vector<std::optional<Address>> const> authorities,
+        std::span<std::unique_ptr<CallTracerBase>> call_tracers);
 
     /// State tracing mode: caller provides per-tx state tracers. Call tracers
     /// are no-ops.
     static BlockExecutionContext state_tracing(
-        size_t size,
+        Block const &, std::span<Address const> senders,
+        std::span<std::vector<std::optional<Address>> const> authorities,
         std::span<std::unique_ptr<trace::StateTracer>> state_tracers);
-
-    /// Simulation mode: caller provides per-tx call and state tracer arrays.
-    static BlockExecutionContext simulation(
-        size_t size, std::span<std::unique_ptr<CallTracerBase>> call_tracers,
-        std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
-        bool enable_native_transfer_tracing = false);
-
-    ExecutionMode mode() const
-    {
-        return mode_;
-    }
 
     /// Returns a per-transaction context for fiber i.
     ///
@@ -131,17 +164,29 @@ public:
     TxExecutionContext operator[](uint64_t i) const;
 
 private:
+    friend struct TxExecutionContext;
     BlockExecutionContext(
-        ExecutionMode mode, size_t size,
+        ExecutionMode mode, Block const &, std::span<Address const> senders,
+        std::span<std::vector<std::optional<Address>> const> authorities,
         std::span<std::unique_ptr<CallTracerBase>> call_tracers,
         std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
         bool enable_native_transfer_tracing = false);
 
-    ExecutionMode mode_;
+    // Core execution artifacts
+public:
+    Block const &block;
+    std::span<Address const> const senders;
+    std::span<std::vector<std::optional<Address>> const> const authorities;
+    ExecutionMode const mode;
+
+private:
+    // Tracing and simulation artifacts.
     std::span<std::unique_ptr<CallTracerBase>> call_tracers_;
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers_;
     bool enable_native_transfer_tracing_ = false;
 
+    // No-op tracers for Normal mode (shared singletons, safe because they have
+    // no mutable state).
     mutable NoopCallTracer noop_call_tracer_;
     mutable trace::StateTracer noop_state_tracer_{std::monostate{}};
 

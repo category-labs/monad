@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -73,7 +74,9 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
+        proposal_post_state_.accounts[addr] = account;
         if (account.has_value()) {
+            auto const inc = account->incarnation;
             for (auto const &[key, delta] : delta.storage) {
                 if (delta.first != delta.second) {
                     storage_updates.push_front(
@@ -89,6 +92,8 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));
+                    proposal_post_state_.storage[StorageKey{addr, inc, key}] =
+                        storage_page_t{delta.second};
                 }
             }
             value = bytes_alloc_.emplace_back(

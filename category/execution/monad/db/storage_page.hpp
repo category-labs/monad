@@ -43,6 +43,12 @@ struct storage_page_t
 
     storage_page_t() noexcept = default;
 
+    // Single-slot page holding `value` at offset 0 (empty if value is zero).
+    explicit storage_page_t(bytes32_t const &value)
+    {
+        set(0, value);
+    }
+
     bool operator==(storage_page_t const &other) const = default;
 
     bytes32_t operator[](uint8_t const offset) const

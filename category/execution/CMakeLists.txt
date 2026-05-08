@@ -107,6 +107,7 @@ add_library(
   "ethereum/db/partial_trie_db.cpp"
   "ethereum/db/state_machine_init.cpp"
   "ethereum/db/state_machine_init.hpp"
+  "ethereum/db/storage_key.hpp"
   "ethereum/db/trie_db.cpp"
   "ethereum/db/trie_db.hpp"
   "ethereum/db/trie_rodb.hpp"
@@ -191,6 +192,7 @@ add_library(
   "ethereum/state2/block_state.cpp"
   "ethereum/state2/block_state.hpp"
   "ethereum/state2/fmt/state_deltas_fmt.hpp"
+  "ethereum/state2/proposal_post_state.hpp"
   "ethereum/state2/state_deltas.hpp"
   # ethereum/state3
   "ethereum/state3/account_state.cpp"
@@ -209,6 +211,8 @@ add_library(
 add_library(
   monad_execution_native OBJECT
   # monad/db
+  "monad/db/page_commit_builder.hpp"
+  "monad/db/page_commit_builder.cpp"
   "monad/db/storage_page.cpp"
   "monad/db/storage_page.hpp"
   # monad/chain

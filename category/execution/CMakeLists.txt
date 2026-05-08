@@ -353,6 +353,11 @@ monad_compile_options(monad_execution_native)
 monad_add_test_folder("ethereum")
 monad_add_test_folder("monad")
 
+# benchmark page_commit (ISMC over a 4096-byte storage page)
+add_executable(page_commit_bench "monad/db/page_commit_bench.cpp")
+monad_compile_options(page_commit_bench)
+target_link_libraries(page_commit_bench PUBLIC monad_execution)
+
 add_executable(
     monad_staking_contract_fuzzer
     "monad/staking/fuzzer/staking_contract_fuzzer.cpp")

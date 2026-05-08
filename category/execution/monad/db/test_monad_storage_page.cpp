@@ -22,7 +22,8 @@
 
 #include <test_resource_data.h>
 
-#include <cstring>
+#include <algorithm>
+#include <cstdint>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -108,9 +109,9 @@ TEST(MonadDb, page_commit_sensitive_to_distant_slots)
 TEST(MonadDb, page_commit_sparse_nonzero)
 {
     storage_page_t page{};
-    std::memset(&page[0], 0x11, sizeof(bytes32_t));
-    std::memset(&page[2], 0x22, sizeof(bytes32_t));
-    std::memset(&page[4], 0x33, sizeof(bytes32_t));
+    std::ranges::fill(page[0].bytes, static_cast<uint8_t>(0x11));
+    std::ranges::fill(page[2].bytes, static_cast<uint8_t>(0x22));
+    std::ranges::fill(page[4].bytes, static_cast<uint8_t>(0x33));
 
     storage_page_t zero_page{};
     EXPECT_NE(page_commit(page), page_commit(zero_page));
@@ -120,10 +121,14 @@ TEST(MonadDb, page_commit_sparse_nonzero)
 TEST(MonadDb, page_commit_uniform_fill_differs)
 {
     storage_page_t page_a{};
-    std::memset(&page_a, 0x11, sizeof(page_a));
+    for (auto &slot : page_a.slots) {
+        std::ranges::fill(slot.bytes, static_cast<uint8_t>(0x11));
+    }
 
     storage_page_t page_b{};
-    std::memset(&page_b, 0x22, sizeof(page_b));
+    for (auto &slot : page_b.slots) {
+        std::ranges::fill(slot.bytes, static_cast<uint8_t>(0x22));
+    }
 
     EXPECT_NE(page_commit(page_a), page_commit(page_b));
 }
@@ -155,6 +160,71 @@ TEST(MonadDb, page_commit_cross_check_with_reference)
         full_page[i] = bytes32_t{static_cast<uint64_t>(i + 1)};
     }
     EXPECT_EQ(page_commit(full_page), FULL_PAGE_COMMIT);
+}
+
+// Sweep across pair-population densities. For each k, fill the first k pairs
+// (left slot only). Verifies: (a) the algorithm runs without error at each
+// density, (b) commits are deterministic, (c) every density produces a
+// distinct hash. Catches regressions in the merge tree at densities that the
+// fixed-input cross-check above doesn't exercise.
+TEST(MonadDb, page_commit_density_sweep)
+{
+    constexpr size_t densities[] = {
+        1, 2, 4, 8, 16, 32, 40, 48, 56, 60, 63, 64};
+    constexpr size_t N = sizeof(densities) / sizeof(densities[0]);
+
+    bytes32_t hashes[N];
+
+    for (size_t i = 0; i < N; ++i) {
+        size_t const k = densities[i];
+        storage_page_t page{};
+        for (size_t j = 0; j < k; ++j) {
+            page[static_cast<uint8_t>(j * 2)] =
+                bytes32_t{static_cast<uint64_t>(j + 1)};
+        }
+
+        auto const c1 = page_commit(page);
+        auto const c2 = page_commit(page);
+        EXPECT_EQ(c1, c2) << "non-deterministic at k=" << k;
+        EXPECT_NE(c1, bytes32_t{}) << "all-zero commit at k=" << k;
+
+        hashes[i] = c1;
+    }
+
+    for (size_t i = 0; i < N; ++i) {
+        for (size_t j = i + 1; j < N; ++j) {
+            EXPECT_NE(hashes[i], hashes[j])
+                << "density " << densities[i] << " collides with density "
+                << densities[j];
+        }
+    }
+}
+
+// Within a single pair (slots 2k and 2k+1 form pair k), data placed in the
+// left slot vs the right slot must produce distinct commitments. The seal's
+// slot_bitmap differs (bit 2k vs bit 2k+1) and the leaf hash input differs
+// in byte order (data||zeros vs zeros||data). Tested on a non-trivial pair
+// index to exercise mid-page indexing.
+TEST(MonadDb, page_commit_asymmetric_pair)
+{
+    constexpr uint8_t pair_idx = 5;
+    constexpr uint8_t left_slot = pair_idx * 2;
+    constexpr uint8_t right_slot = pair_idx * 2 + 1;
+
+    storage_page_t left_only{};
+    std::ranges::fill(
+        left_only[left_slot].bytes, static_cast<uint8_t>(0xAA));
+
+    storage_page_t right_only{};
+    std::ranges::fill(
+        right_only[right_slot].bytes, static_cast<uint8_t>(0xAA));
+
+    auto const c_left = page_commit(left_only);
+    auto const c_right = page_commit(right_only);
+
+    EXPECT_NE(c_left, c_right);
+    EXPECT_NE(c_left, bytes32_t{});
+    EXPECT_NE(c_right, bytes32_t{});
 }
 
 // Slots on the same page are merged into a single page on commit.

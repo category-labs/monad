@@ -78,31 +78,44 @@ namespace
         return cached;
     }
 
-    // bit i of the result indicates page[i] is non-zero.
-    slot_bitmap_t compute_slot_bitmap(storage_page_t const &page)
+    struct page_bitmaps_t
     {
-        slot_bitmap_t bm = 0;
-        slot_bitmap_t mask = 1;
-        for (size_t i = 0; i < storage_page_t::SLOTS; ++i, mask <<= 1) {
-            if (page[static_cast<uint8_t>(i)] != bytes32_t{}) {
-                bm |= mask;
-            }
-        }
-        return bm;
-    }
+        slot_bitmap_t slot; // bit i = slot[i] is non-zero
+        uint64_t pair; // bit i = slot[2i] or slot[2i+1] is non-zero
+    };
 
-    // bit i of the result indicates either slot 2i or 2i+1 is non-zero.
-    uint64_t derive_pair_bitmap(slot_bitmap_t const slot_bitmap)
+    // Single-pass scan producing both bitmaps. Each 32-byte slot is
+    // OR-reduced to a single u64 non-zero indicator; the pair bit is the
+    // OR of its two slot indicators. Replaces the previous chain of
+    // compute_slot_bitmap (full-page scan) + derive_pair_bitmap (full-bitmap
+    // walk) with one walk over 64 pairs.
+    page_bitmaps_t compute_page_bitmaps(storage_page_t const &page)
     {
-        uint64_t pair = 0;
-        slot_bitmap_t mask = 0b11;
+        auto const slot_or = [](uint8_t const *const p) {
+            uint64_t limbs[4];
+            std::memcpy(limbs, p, sizeof(limbs));
+            return limbs[0] | limbs[1] | limbs[2] | limbs[3];
+        };
+
+        page_bitmaps_t out{0, 0};
+        slot_bitmap_t slot_mask = 1;
         uint64_t pair_mask = 1;
-        for (size_t i = 0; i < NUM_PAIRS; ++i, mask <<= 2, pair_mask <<= 1) {
-            if ((slot_bitmap & mask) != 0) {
-                pair |= pair_mask;
+        for (size_t i = 0; i < NUM_PAIRS; ++i, pair_mask <<= 1) {
+            uint64_t const lo = slot_or(page.slots[i * 2].bytes);
+            uint64_t const hi = slot_or(page.slots[i * 2 + 1].bytes);
+            if (lo != 0) {
+                out.slot |= slot_mask;
+            }
+            slot_mask <<= 1;
+            if (hi != 0) {
+                out.slot |= slot_mask;
+            }
+            slot_mask <<= 1;
+            if ((lo | hi) != 0) {
+                out.pair |= pair_mask;
             }
         }
-        return pair;
+        return out;
     }
 
     void store_bitmap_le(slot_bitmap_t const bm, uint8_t out[16])
@@ -117,39 +130,46 @@ namespace
     {
         // BLAKE3(slot_bitmap_le_16B || merge_root_32B), or just the bitmap
         // when there is no root (empty page).
-        uint8_t buf[48];
-        store_bitmap_le(slot_bitmap, buf);
-        size_t len = 16;
+        //
+        // The seal input is 16 or 48 bytes — a single sub-64-byte block, so
+        // the BLAKE3 hash is exactly one compression with flags
+        // CHUNK_START | CHUNK_END | ROOT (chunk is both first and last block,
+        // and this is the root output). The high-level hasher_init/update/
+        // finalize API would do the same thing under the hood plus a chunk
+        // state machine and output-expansion bookkeeping we don't need; this
+        // mirrors the get_leaf_iv() pattern above.
+        uint8_t block[BLAKE3_BLOCK_LEN] = {}; // zero-padded to 64 bytes
+        store_bitmap_le(slot_bitmap, block);
+        uint8_t block_len = 16;
         if (root_32 != nullptr) {
-            std::memcpy(buf + 16, root_32, BLAKE3_OUT_LEN);
-            len = 48;
+            std::memcpy(block + 16, root_32, BLAKE3_OUT_LEN);
+            block_len = 48;
         }
+        uint32_t cv[8];
+        std::memcpy(cv, IV, sizeof(cv));
+        blake3_compress_in_place(
+            cv, block, block_len, 0, CHUNK_START | CHUNK_END | ROOT);
         bytes32_t out;
-        blake3_hasher hasher;
-        blake3_hasher_init(&hasher);
-        blake3_hasher_update(&hasher, buf, len);
-        blake3_hasher_finalize(&hasher, out.bytes, BLAKE3_OUT_LEN);
+        std::memcpy(out.bytes, cv, BLAKE3_OUT_LEN);
         return out;
     }
 } // namespace
 
 bytes32_t page_commit(storage_page_t const &page)
 {
-    if (page.is_empty()) {
-        // Optimization for empty page
+    auto const [slot_bitmap, pair_bitmap] = compute_page_bitmaps(page);
+    if (pair_bitmap == 0) {
+        // Empty page: seal the zero bitmap.
         return blake3_seal(0, nullptr);
     }
-
-    slot_bitmap_t const slot_bitmap = compute_slot_bitmap(page);
-    uint64_t const pair_bitmap = derive_pair_bitmap(slot_bitmap);
 
     // Phase 1 — Leaf init: hash active pair-leaves with LEAF_IV.
     // scratch is pair-indexed (entry i is meaningful iff bit i is in
     // pair_bitmap).
     bytes32_t scratch[NUM_PAIRS];
     {
-        uint8_t const *inputs[NUM_PAIRS];
-        uint8_t indices[NUM_PAIRS];
+        uint8_t const *inputs[NUM_PAIRS]{};
+        uint8_t indices[NUM_PAIRS]{};
         size_t n = 0;
         uint64_t bits = pair_bitmap;
         while (bits != 0) {
@@ -190,22 +210,29 @@ bytes32_t page_commit(storage_page_t const &page)
     //
     // The popcount==1 case is handled by the loop condition without
     // entering the body.
+    // Per-level scratchpads, sized to NUM_PAIRS/2 because at most half of
+    // the surviving entries can pair into merges in any one level. Each
+    // merge hashes scratch[left] || scratch[right] and writes the result
+    // back to scratch[left]; scratch[right] is abandoned (its bit gets
+    // cleared from bm). Hoisted above the level loop so inputs[i] = blocks[i]
+    // is a one-time fixup, and the schedule + stitch passes inside each
+    // level can run as separate predictable loops.
+    uint8_t lefts[NUM_PAIRS / 2]; // index kept in bm; receives merged hash
+    uint8_t rights[NUM_PAIRS / 2]; // index cleared from bm; slot abandoned
+    uint8_t blocks[NUM_PAIRS / 2]
+                  [BLAKE3_BLOCK_LEN]; // (left || right) bytes to hash
+    uint8_t const *inputs[NUM_PAIRS / 2]; // pointers into blocks[]
+    bytes32_t flat_out[NUM_PAIRS / 2];
+    for (size_t j = 0; j < NUM_PAIRS / 2; ++j) {
+        inputs[j] = blocks[j];
+    }
+
     uint64_t bm = pair_bitmap;
     for (uint8_t bit = 0; bit < 6 && std::popcount(bm) > 1; ++bit) {
-        // Per-level scratchpads, sized to NUM_PAIRS/2 because at most
-        // half of the surviving entries can pair into merges this level.
-        // Each merge hashes scratch[left] || scratch[right] and writes
-        // the result back to scratch[left]; scratch[right] is abandoned
-        // (its bit gets cleared from bm).
-        uint8_t lefts[NUM_PAIRS / 2]; // index kept in bm; receives merged hash
-        uint8_t rights[NUM_PAIRS / 2]; // index cleared from bm; slot abandoned
-        uint8_t blocks[NUM_PAIRS / 2]
-                      [BLAKE3_BLOCK_LEN]; // (left || right) bytes to hash
-        uint8_t const *inputs[NUM_PAIRS / 2]; // pointers into blocks[]
+        // Pass 1 — schedule: walk surviving indices in ascending order and
+        // record sibling pairs. Pure bitmap arithmetic, no memory traffic
+        // into scratch[]. Branch predictor and prefetcher friendly.
         size_t merge_count = 0;
-
-        // Walk surviving indices in ascending order, pairing siblings and
-        // packing each merge block (left || right) in the same pass.
         uint64_t bits = bm;
         uint8_t prev = 0xFF;
         while (bits != 0) {
@@ -217,13 +244,6 @@ bytes32_t page_commit(storage_page_t const &page)
             if (sibling) {
                 lefts[merge_count] = prev;
                 rights[merge_count] = pos;
-                std::memcpy(
-                    blocks[merge_count], scratch[prev].bytes, BLAKE3_OUT_LEN);
-                std::memcpy(
-                    blocks[merge_count] + BLAKE3_OUT_LEN,
-                    scratch[pos].bytes,
-                    BLAKE3_OUT_LEN);
-                inputs[merge_count] = blocks[merge_count];
                 ++merge_count;
                 prev = 0xFF;
             }
@@ -236,7 +256,17 @@ bytes32_t page_commit(storage_page_t const &page)
             continue;
         }
 
-        bytes32_t flat_out[NUM_PAIRS / 2];
+        // Pass 2 — stitch: pack scratch[left] || scratch[right] into a
+        // 64-byte block per scheduled merge. Tight predictable loop.
+        for (size_t j = 0; j < merge_count; ++j) {
+            std::memcpy(
+                blocks[j], scratch[lefts[j]].bytes, BLAKE3_OUT_LEN);
+            std::memcpy(
+                blocks[j] + BLAKE3_OUT_LEN,
+                scratch[rights[j]].bytes,
+                BLAKE3_OUT_LEN);
+        }
+
         blake3_hash_many(
             inputs,
             merge_count,

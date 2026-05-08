@@ -150,7 +150,7 @@ impl ExecutedBlockBuilder {
                 None
             }
             ExecEvent::BlockReject(_) => {
-                let state = self.state.as_mut()?;
+                let _state = self.state.as_mut()?;
 
                 self.reset();
 
@@ -339,7 +339,7 @@ impl ExecutedBlockBuilder {
                 None
             }
             ExecEvent::TxnReject { .. } => {
-                let state = self.state.as_mut()?;
+                let _state = self.state.as_mut()?;
 
                 self.reset();
 
@@ -465,7 +465,7 @@ impl ExecutedBlockBuilder {
             }
             ExecEvent::TxnEnd => None,
             ExecEvent::EvmError(monad_exec_evm_error) => {
-                let state = self.state.as_mut()?;
+                let _state = self.state.as_mut()?;
 
                 unimplemented!("EvmError {monad_exec_evm_error:#?}");
             }

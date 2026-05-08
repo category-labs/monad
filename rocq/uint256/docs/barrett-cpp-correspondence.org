@@ -28,65 +28,65 @@ The relevant C++ code is in =monad::vm::runtime::barrett=:
 
 | Rocq definition | C++ counterpart | Notes |
 |-----------------+-----------------+-------|
-| [[file:../theories/Barrett.v::16][uint256_num_words]] | =uint256_t::num_words= | Fixed at four 64-bit words. |
-| [[file:../theories/Barrett.v::17][word_width]] | literal =64= and =U64.width= | Rocq keeps the width abstract through the uint interface. |
+| [[file:../theories/Barrett.v::16][uint256_num_words]] | [[file:../../../category/core/runtime/uint256.hpp::273][uint256_t::num_words]] | Fixed at four 64-bit words. |
+| [[file:../theories/Barrett.v::17][word_width]] | [[file:../../../category/core/runtime/uint256.hpp::270][uint256_t::word_num_bits]] and literal =64= | Rocq keeps the width abstract through the uint interface. |
 | [[file:../theories/Barrett.v::19][BarrettParams]] | [[file:../../../category/core/runtime/uint256.hpp::1742][BarrettParams]] | Same fields: min/max denominator, input bits, multiplier bits. |
 | [[file:../theories/Barrett.v::26][reciprocal]] | [[file:../../../category/core/runtime/uint256.hpp::1756][reciprocal<Params>]] object state | Rocq stores params explicitly; C++ gets params from the template. |
-| [[file:../theories/Barrett.v::33][words_with_carry]] | return shape of =subb_truncating=, =subb_zx=, =addc= | Models C++ pair-like return values with a record. |
-| [[file:../theories/Barrett.v::38][reduce_result]] | output spans passed to =reduce= | Rocq returns quotient/remainder instead of writing spans. |
-| [[file:../theories/Barrett.v::43][of_nat_word]] | numeric template constants converted to =uint256_t= | Helper for interval aliases. |
-| [[file:../theories/Barrett.v::49][uint256_of_nat]] | =uint256_t{1} << min_bits= operands | Builds small uint256 constants used by range constructors. |
+| [[file:../theories/Barrett.v::33][words_with_carry]] | return shape of [[file:../../../category/core/runtime/uint256.hpp::1396][subb_truncating]], [[file:../../../category/core/runtime/uint256.hpp::1364][subb_zx]], and [[file:../../../category/core/runtime/uint256.hpp::1419][addc]] | Models C++ pair-like return values with a record. |
+| [[file:../theories/Barrett.v::38][reduce_result]] | output spans passed to [[file:../../../category/core/runtime/uint256.hpp::2161][reduce]] | Rocq returns quotient/remainder instead of writing spans. |
+| [[file:../theories/Barrett.v::43][of_nat_word]] | numeric constants converted by [[file:../../../category/core/runtime/uint256.hpp::281][uint256_t constructors]] | Helper for interval aliases. |
+| [[file:../theories/Barrett.v::49][uint256_of_nat]] | [[file:../../../category/core/runtime/uint256.hpp::498][uint256_t::operator<<]] operands | Builds small uint256 constants used by range constructors. |
 
 * Derived Constants
 
 | Rocq definition | C++ counterpart | Notes |
 |-----------------|-----------------|-------|
 | [[file:../theories/Barrett.v::52][min_words]] | [[file:../../../category/core/runtime/uint256.hpp::1758][min_words]] | Same ceiling division by 64. |
-| [[file:../theories/Barrett.v::55][bit_width_word]] | =64 - std::countl_zero(word)= | Uses division model's =countl_zero=. |
-| [[file:../theories/Barrett.v::58][bit_width_words]] | loop computing =significant_bits= | Rocq factors this as a reusable word-list function. |
-| [[file:../theories/Barrett.v::65][bit_width_uint256]] | =bit_width(uint256_t)= | Applies =bit_width_words= to the four-word representation. |
-| [[file:../theories/Barrett.v::68][leb_uint256]] | less-or-equal comparison on =uint256_t= | Implemented by negating the existing less-than model. |
+| [[file:../theories/Barrett.v::55][bit_width_word]] | [[file:../../../category/core/runtime/uint256.hpp::1858][=64 - std::countl_zero(word)=]] | Uses division model's =countl_zero=. |
+| [[file:../theories/Barrett.v::58][bit_width_words]] | [[file:../../../category/core/runtime/uint256.hpp::1854][loop computing =significant_bits=]] | Rocq factors this as a reusable word-list function. |
+| [[file:../theories/Barrett.v::65][bit_width_uint256]] | [[file:../../../category/core/runtime/uint256.hpp::1658][bit_width(uint256_t)]] | Applies =bit_width_words= to the four-word representation. |
+| [[file:../theories/Barrett.v::68][leb_uint256]] | [[file:../../../category/core/runtime/uint256.hpp::435][operator<=]] on =uint256_t= | Implemented by negating the existing less-than model. |
 | [[file:../theories/Barrett.v::71][valid_denominator]] | [[file:../../../category/core/runtime/uint256.hpp::1870][valid_denominator]] | Same closed interval test. |
 | [[file:../theories/Barrett.v::75][params_well_formed]] | [[file:../../../category/core/runtime/uint256.hpp::1751][requires clause]] | Rocq Prop version of the template constraint. |
-| [[file:../theories/Barrett.v::80][min_denominator_bits]] | =MIN_DENOMINATOR_BITS= | Derived from =MIN_DENOMINATOR=. |
-| [[file:../theories/Barrett.v::83][max_denominator_bits]] | =MAX_DENOMINATOR_BITS= | Derived from =MAX_DENOMINATOR=. |
-| [[file:../theories/Barrett.v::86][max_denominator_words]] | =MAX_DENOMINATOR_WORDS= | Applies =min_words=. |
-| [[file:../theories/Barrett.v::89][input_words]] | =INPUT_WORDS= | Applies =min_words INPUT_BITS=. |
-| [[file:../theories/Barrett.v::92][multiplier_words]] | =MULTIPLIER_WORDS= | Applies =min_words MULTIPLIER_BITS=. |
-| [[file:../theories/Barrett.v::95][max_quotient_bits]] | =MAX_QUOTIENT_BITS= | Same formula. |
-| [[file:../theories/Barrett.v::98][max_quotient_words]] | =MAX_QUOTIENT_WORDS= | Applies =min_words=. |
-| [[file:../theories/Barrett.v::101][shift]] | =SHIFT= | Alias for =INPUT_BITS=. |
-| [[file:../theories/Barrett.v::104][word_shift]] | =WORD_SHIFT= | =SHIFT / 64=. |
-| [[file:../theories/Barrett.v::107][bit_shift]] | =BIT_SHIFT= | =SHIFT % 64=. |
+| [[file:../theories/Barrett.v::80][min_denominator_bits]] | [[file:../../../category/core/runtime/uint256.hpp::1766][MIN_DENOMINATOR_BITS]] | Derived from =MIN_DENOMINATOR=. |
+| [[file:../theories/Barrett.v::83][max_denominator_bits]] | [[file:../../../category/core/runtime/uint256.hpp::1768][MAX_DENOMINATOR_BITS]] | Derived from =MAX_DENOMINATOR=. |
+| [[file:../theories/Barrett.v::86][max_denominator_words]] | [[file:../../../category/core/runtime/uint256.hpp::1770][MAX_DENOMINATOR_WORDS]] | Applies =min_words=. |
+| [[file:../theories/Barrett.v::89][input_words]] | [[file:../../../category/core/runtime/uint256.hpp::1773][INPUT_WORDS]] | Applies =min_words INPUT_BITS=. |
+| [[file:../theories/Barrett.v::92][multiplier_words]] | [[file:../../../category/core/runtime/uint256.hpp::1775][MULTIPLIER_WORDS]] | Applies =min_words MULTIPLIER_BITS=. |
+| [[file:../theories/Barrett.v::95][max_quotient_bits]] | [[file:../../../category/core/runtime/uint256.hpp::1777][MAX_QUOTIENT_BITS]] | Same formula. |
+| [[file:../theories/Barrett.v::98][max_quotient_words]] | [[file:../../../category/core/runtime/uint256.hpp::1779][MAX_QUOTIENT_WORDS]] | Applies =min_words=. |
+| [[file:../theories/Barrett.v::101][shift]] | [[file:../../../category/core/runtime/uint256.hpp::1782][SHIFT]] | Alias for =INPUT_BITS=. |
+| [[file:../theories/Barrett.v::104][word_shift]] | [[file:../../../category/core/runtime/uint256.hpp::1783][WORD_SHIFT]] | =SHIFT / 64=. |
+| [[file:../theories/Barrett.v::107][bit_shift]] | [[file:../../../category/core/runtime/uint256.hpp::1784][BIT_SHIFT]] | =SHIFT % 64=. |
 | [[file:../theories/Barrett.v::110][numerator_words]] | [[file:../../../category/core/runtime/uint256.hpp::1786][NUMERATOR_WORDS]] | Same split on =MULTIPLIER_WORDS=. |
 | [[file:../theories/Barrett.v::115][quotient_words_for]] | return type of [[file:../../../category/core/runtime/uint256.hpp::2141][estimate_q]] | Rocq helper for selecting full or relevant quotient words. |
 | [[file:../theories/Barrett.v::122][max_r_hat_bits]] | [[file:../../../category/core/runtime/uint256.hpp::2088][MAX_R_HAT_BITS]] | Same =min(INPUT_BITS + MULTIPLIER_BITS, MAX_DENOMINATOR_BITS + 2)=. |
-| [[file:../theories/Barrett.v::126][max_r_hat_words]] | =MAX_R_HAT_WORDS= | Applies =min_words=. |
+| [[file:../theories/Barrett.v::126][max_r_hat_words]] | [[file:../../../category/core/runtime/uint256.hpp::2096][MAX_R_HAT_WORDS]] | Applies =min_words=. |
 | [[file:../theories/Barrett.v::129][relevant_quotient_bits]] | [[file:../../../category/core/runtime/uint256.hpp::2108][RELEVANT_QUOTIENT_BITS]] | Used when =need_quotient=false=. |
-| [[file:../theories/Barrett.v::132][relevant_quotient_words]] | =RELEVANT_QUOTIENT_WORDS= | Applies =min_words=. |
+| [[file:../theories/Barrett.v::132][relevant_quotient_words]] | [[file:../../../category/core/runtime/uint256.hpp::2110][RELEVANT_QUOTIENT_WORDS]] | Applies =min_words=. |
 
 * Precomputation Helpers
 
 | Rocq definition | C++ counterpart | Notes |
 |-----------------|-----------------|-------|
-| [[file:../theories/Barrett.v::135][all_ones_words]] | =max_mult= fill loop | Produces the largest possible multiplier for =RECIPROCAL_BITS=. |
-| [[file:../theories/Barrett.v::138][small_const_words]] | ={1}= and ={2}= arguments to =addc= | Rocq list representation of small word constants. |
-| [[file:../theories/Barrett.v::141][bounded_segment]] | zero-initialized numerator plus indexed writes | Used to place shifted multiplier words at =WORD_SHIFT=. |
+| [[file:../theories/Barrett.v::135][all_ones_words]] | [[file:../../../category/core/runtime/uint256.hpp::1840][=max_mult= fill loop]] | Produces the largest possible multiplier for =RECIPROCAL_BITS=. |
+| [[file:../theories/Barrett.v::138][small_const_words]] | [[file:../../../category/core/runtime/uint256.hpp::2227][={2}=]] and [[file:../../../category/core/runtime/uint256.hpp::2236][={1}=]] arguments to =addc= | Rocq list representation of small word constants. |
+| [[file:../theories/Barrett.v::141][bounded_segment]] | [[file:../../../category/core/runtime/uint256.hpp::1815][zero-initialized numerator plus indexed writes]] | Used to place shifted multiplier words at =WORD_SHIFT=. |
 | [[file:../theories/Barrett.v::144][numerator]] | [[file:../../../category/core/runtime/uint256.hpp::1800][numerator()]] | Models =1 << SHIFT=. |
 | [[file:../theories/Barrett.v::148][numerator_with_multiplier]] | [[file:../../../category/core/runtime/uint256.hpp::1809][numerator(y)]] | Models =y << SHIFT=; see caveats for dormant nonzero bit-shift branch. |
 | [[file:../theories/Barrett.v::157][reciprocal_bits]] | [[file:../../../category/core/runtime/uint256.hpp::1832][RECIPROCAL_BITS]] | Computes bit width of the maximum quotient produced by reciprocal construction. |
-| [[file:../theories/Barrett.v::177][reciprocal_words]] | =RECIPROCAL_WORDS= | Applies =min_words=. |
+| [[file:../theories/Barrett.v::177][reciprocal_words]] | [[file:../../../category/core/runtime/uint256.hpp::1867][RECIPROCAL_WORDS]] | Applies =min_words=. |
 
 * Shift Planning
 
 | Rocq definition | C++ counterpart | Notes |
 |-----------------|-----------------|-------|
 | [[file:../theories/Barrett.v::180][pre_product_shift]] | [[file:../../../category/core/runtime/uint256.hpp::1989][PRE_PRODUCT_SHIFT]] | Same optimization: disabled for multiplier families, otherwise aligned below =MIN_DENOMINATOR_BITS=. |
-| [[file:../theories/Barrett.v::191][pre_product_word_shift]] | =PRE_PRODUCT_WORD_SHIFT= | =PRE_PRODUCT_SHIFT / 64=. |
-| [[file:../theories/Barrett.v::194][pre_product_bit_shift]] | =PRE_PRODUCT_BIT_SHIFT= | =PRE_PRODUCT_SHIFT % 64=. |
-| [[file:../theories/Barrett.v::197][post_product_shift]] | =POST_PRODUCT_SHIFT= | =SHIFT - PRE_PRODUCT_SHIFT=. |
-| [[file:../theories/Barrett.v::200][post_product_word_shift]] | =POST_PRODUCT_WORD_SHIFT= | =POST_PRODUCT_SHIFT / 64=. |
-| [[file:../theories/Barrett.v::203][post_product_bit_shift]] | =POST_PRODUCT_BIT_SHIFT= | =POST_PRODUCT_SHIFT % 64=. |
+| [[file:../theories/Barrett.v::191][pre_product_word_shift]] | [[file:../../../category/core/runtime/uint256.hpp::2034][PRE_PRODUCT_WORD_SHIFT]] | =PRE_PRODUCT_SHIFT / 64=. |
+| [[file:../theories/Barrett.v::194][pre_product_bit_shift]] | [[file:../../../category/core/runtime/uint256.hpp::2036][PRE_PRODUCT_BIT_SHIFT]] | =PRE_PRODUCT_SHIFT % 64=. |
+| [[file:../theories/Barrett.v::197][post_product_shift]] | [[file:../../../category/core/runtime/uint256.hpp::2039][POST_PRODUCT_SHIFT]] | =SHIFT - PRE_PRODUCT_SHIFT=. |
+| [[file:../theories/Barrett.v::200][post_product_word_shift]] | [[file:../../../category/core/runtime/uint256.hpp::2041][POST_PRODUCT_WORD_SHIFT]] | =POST_PRODUCT_SHIFT / 64=. |
+| [[file:../theories/Barrett.v::203][post_product_bit_shift]] | [[file:../../../category/core/runtime/uint256.hpp::2043][POST_PRODUCT_BIT_SHIFT]] | =POST_PRODUCT_SHIFT % 64=. |
 | [[file:../theories/Barrett.v::206][rshift_aux]] | body of [[file:../../../category/core/runtime/uint256.hpp::2052][rshift]] | Recursive worker for producing each output word. |
 | [[file:../theories/Barrett.v::220][rshift]] | [[file:../../../category/core/runtime/uint256.hpp::2052][rshift<input_bits, shift>]] | Fits input to =min_words input_bits= and calls =rshift_aux=. |
 
@@ -109,7 +109,7 @@ zero-padded =get_word= and therefore represents the out-of-bounds case as
 | [[file:../theories/Barrett.v::252][addc_words_aux]] | loop in [[file:../../../category/core/runtime/uint256.hpp::1419][addc]] | Models word-by-word addition with carry. |
 | [[file:../theories/Barrett.v::264][addc_words]] | [[file:../../../category/core/runtime/uint256.hpp::1419][addc(q_hat, {1})]] and =addc(q_hat, {2})= | Used in quotient correction branches. |
 | [[file:../theories/Barrett.v::269][copy_uint256_words]] | [[file:../../../category/core/runtime/uint256.hpp::2113][copy<R>]] | Rocq returns a four-word value rather than writing an output span. |
-| [[file:../theories/Barrett.v::272][quotient_output]] | zero-length quotient span when =need_quotient=false= | Rocq makes omitted quotient explicit as =[]=. |
+| [[file:../theories/Barrett.v::272][quotient_output]] | [[file:../../../category/core/runtime/uint256.hpp::2163][zero-length quotient span]] when =need_quotient=false= | Rocq makes omitted quotient explicit as =[]=. |
 
 * Constructors and Online Numerator
 
@@ -138,34 +138,34 @@ control flow.
 
 | Rocq definition | C++ counterpart | Notes |
 |-----------------|-----------------|-------|
-| [[file:../theories/Barrett.v::373][reciprocal_for_range]] | alias aggregate initializers | Builds min denominator =2^min_bits= and max denominator =2^cutoff_bits - 1=. |
+| [[file:../theories/Barrett.v::373][reciprocal_for_range]] | [[file:../../../category/core/runtime/uint256.hpp::2258][alias aggregate initializers]] | Builds min denominator =2^min_bits= and max denominator =2^cutoff_bits - 1=. |
 | [[file:../theories/Barrett.v::385][reciprocal_interval_0]] | [[file:../../../category/core/runtime/uint256.hpp::2254][RECIPROCAL_INTERVAL_RANGES[0]]] | Value =65=. |
-| [[file:../theories/Barrett.v::386][reciprocal_interval_1]] | =RECIPROCAL_INTERVAL_RANGES[1]= | Value =129=. |
-| [[file:../theories/Barrett.v::387][reciprocal_interval_2]] | =RECIPROCAL_INTERVAL_RANGES[2]= | Value =193=. |
+| [[file:../theories/Barrett.v::386][reciprocal_interval_1]] | [[file:../../../category/core/runtime/uint256.hpp::2254][RECIPROCAL_INTERVAL_RANGES[1]]] | Value =129=. |
+| [[file:../theories/Barrett.v::387][reciprocal_interval_2]] | [[file:../../../category/core/runtime/uint256.hpp::2254][RECIPROCAL_INTERVAL_RANGES[2]]] | Value =193=. |
 | [[file:../theories/Barrett.v::389][udivrem_reciprocal_for_range]] | [[file:../../../category/core/runtime/uint256.hpp::2258][udivrem_reciprocal_for_range]] | =input_bits = 256=, =multiplier_bits = 0=. |
-| [[file:../theories/Barrett.v::393][udivrem_reciprocal_1_65]] | =udivrem_reciprocal_1_65= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::395][udivrem_reciprocal_65_129]] | =udivrem_reciprocal_65_129= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::397][udivrem_reciprocal_129_193]] | =udivrem_reciprocal_129_193= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::399][udivrem_reciprocal_193_256]] | =udivrem_reciprocal_193_256= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::401][udivrem_reciprocal]] | =udivrem_reciprocal= | Catch-all alias. |
+| [[file:../theories/Barrett.v::393][udivrem_reciprocal_1_65]] | [[file:../../../category/core/runtime/uint256.hpp::2263][udivrem_reciprocal_1_65]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::395][udivrem_reciprocal_65_129]] | [[file:../../../category/core/runtime/uint256.hpp::2268][udivrem_reciprocal_65_129]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::397][udivrem_reciprocal_129_193]] | [[file:../../../category/core/runtime/uint256.hpp::2273][udivrem_reciprocal_129_193]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::399][udivrem_reciprocal_193_256]] | [[file:../../../category/core/runtime/uint256.hpp::2278][udivrem_reciprocal_193_256]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::401][udivrem_reciprocal]] | [[file:../../../category/core/runtime/uint256.hpp::2285][udivrem_reciprocal]] | Catch-all alias. |
 | [[file:../theories/Barrett.v::404][addmod_reciprocal_for_range]] | [[file:../../../category/core/runtime/uint256.hpp::2292][addmod_reciprocal_for_range]] | =input_bits = 257=, =multiplier_bits = 0=. |
-| [[file:../theories/Barrett.v::408][addmod_reciprocal_1_65]] | =addmod_reciprocal_1_65= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::410][addmod_reciprocal_65_129]] | =addmod_reciprocal_65_129= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::412][addmod_reciprocal_129_193]] | =addmod_reciprocal_129_193= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::414][addmod_reciprocal_193_256]] | =addmod_reciprocal_193_256= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::416][addmod_reciprocal]] | =addmod_reciprocal= | Catch-all alias. |
+| [[file:../theories/Barrett.v::408][addmod_reciprocal_1_65]] | [[file:../../../category/core/runtime/uint256.hpp::2300][addmod_reciprocal_1_65]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::410][addmod_reciprocal_65_129]] | [[file:../../../category/core/runtime/uint256.hpp::2305][addmod_reciprocal_65_129]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::412][addmod_reciprocal_129_193]] | [[file:../../../category/core/runtime/uint256.hpp::2310][addmod_reciprocal_129_193]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::414][addmod_reciprocal_193_256]] | [[file:../../../category/core/runtime/uint256.hpp::2315][addmod_reciprocal_193_256]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::416][addmod_reciprocal]] | [[file:../../../category/core/runtime/uint256.hpp::2322][addmod_reciprocal]] | Catch-all alias. |
 | [[file:../theories/Barrett.v::419][mulmod_reciprocal_for_range]] | [[file:../../../category/core/runtime/uint256.hpp::2329][mulmod_reciprocal_for_range]] | =input_bits = 512=, =multiplier_bits = 0=. |
-| [[file:../theories/Barrett.v::423][mulmod_reciprocal_1_65]] | =mulmod_reciprocal_1_65= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::425][mulmod_reciprocal_65_129]] | =mulmod_reciprocal_65_129= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::427][mulmod_reciprocal_129_193]] | =mulmod_reciprocal_129_193= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::429][mulmod_reciprocal_193_256]] | =mulmod_reciprocal_193_256= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::431][mulmod_reciprocal]] | =mulmod_reciprocal= | Catch-all alias. |
+| [[file:../theories/Barrett.v::423][mulmod_reciprocal_1_65]] | [[file:../../../category/core/runtime/uint256.hpp::2334][mulmod_reciprocal_1_65]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::425][mulmod_reciprocal_65_129]] | [[file:../../../category/core/runtime/uint256.hpp::2338][mulmod_reciprocal_65_129]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::427][mulmod_reciprocal_129_193]] | [[file:../../../category/core/runtime/uint256.hpp::2342][mulmod_reciprocal_129_193]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::429][mulmod_reciprocal_193_256]] | [[file:../../../category/core/runtime/uint256.hpp::2346][mulmod_reciprocal_193_256]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::431][mulmod_reciprocal]] | [[file:../../../category/core/runtime/uint256.hpp::2352][mulmod_reciprocal]] | Catch-all alias. |
 | [[file:../theories/Barrett.v::434][mulmod_const_reciprocal_for_range]] | [[file:../../../category/core/runtime/uint256.hpp::2359][mulmod_const_reciprocal_for_range]] | =input_bits = 256=, =multiplier_bits = 256=. |
-| [[file:../theories/Barrett.v::438][mulmod_const_reciprocal_1_65]] | =mulmod_const_reciprocal_1_65= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::440][mulmod_const_reciprocal_65_129]] | =mulmod_const_reciprocal_65_129= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::442][mulmod_const_reciprocal_129_193]] | =mulmod_const_reciprocal_129_193= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::444][mulmod_const_reciprocal_193_256]] | =mulmod_const_reciprocal_193_256= | Specialized interval alias. |
-| [[file:../theories/Barrett.v::446][mulmod_const_reciprocal]] | =mulmod_const_reciprocal= | Catch-all alias. |
+| [[file:../theories/Barrett.v::438][mulmod_const_reciprocal_1_65]] | [[file:../../../category/core/runtime/uint256.hpp::2365][mulmod_const_reciprocal_1_65]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::440][mulmod_const_reciprocal_65_129]] | [[file:../../../category/core/runtime/uint256.hpp::2370][mulmod_const_reciprocal_65_129]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::442][mulmod_const_reciprocal_129_193]] | [[file:../../../category/core/runtime/uint256.hpp::2377][mulmod_const_reciprocal_129_193]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::444][mulmod_const_reciprocal_193_256]] | [[file:../../../category/core/runtime/uint256.hpp::2384][mulmod_const_reciprocal_193_256]] | Specialized interval alias. |
+| [[file:../theories/Barrett.v::446][mulmod_const_reciprocal]] | [[file:../../../category/core/runtime/uint256.hpp::2393][mulmod_const_reciprocal]] | Catch-all alias. |
 
 * Public Wrappers
 

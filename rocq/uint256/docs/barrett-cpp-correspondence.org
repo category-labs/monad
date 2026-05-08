@@ -1,0 +1,227 @@
+#+TITLE: Barrett Rocq/C++ Correspondence
+#+DATE: 2026-05-07
+
+* Purpose
+
+This note supports manual side-by-side review of
+=rocq/uint256/theories/Barrett.v= against the Barrett implementation in
+=category/core/runtime/uint256.hpp=.
+
+The correspondence is kept in a separate document rather than embedded as
+comments on every Rocq definition.  The Barrett model is proof source, so large
+line-by-line C++ comments would make the proof file harder to edit.  This
+document can also record cross-cutting caveats, such as total zero-padded word
+access, without overloading individual definitions.
+
+* C++ Region
+
+The relevant C++ code is in =monad::vm::runtime::barrett=:
+
+| C++ item | Location |
+|----------+----------|
+| =BarrettParams= | [[file:../../../category/core/runtime/uint256.hpp::1742][uint256.hpp:1742]] |
+| =reciprocal<Params>= | [[file:../../../category/core/runtime/uint256.hpp::1750][uint256.hpp:1750]] |
+| interval aliases | [[file:../../../category/core/runtime/uint256.hpp::2254][uint256.hpp:2254]] |
+| public wrappers | [[file:../../../category/core/runtime/uint256.hpp::2399][uint256.hpp:2399]] |
+
+* Structural Correspondence
+
+| Rocq definition | C++ counterpart | Notes |
+|-----------------+-----------------+-------|
+| [[file:../theories/Barrett.v::16][uint256_num_words]] | =uint256_t::num_words= | Fixed at four 64-bit words. |
+| [[file:../theories/Barrett.v::17][word_width]] | literal =64= and =U64.width= | Rocq keeps the width abstract through the uint interface. |
+| [[file:../theories/Barrett.v::19][BarrettParams]] | [[file:../../../category/core/runtime/uint256.hpp::1742][BarrettParams]] | Same fields: min/max denominator, input bits, multiplier bits. |
+| [[file:../theories/Barrett.v::26][reciprocal]] | [[file:../../../category/core/runtime/uint256.hpp::1756][reciprocal<Params>]] object state | Rocq stores params explicitly; C++ gets params from the template. |
+| [[file:../theories/Barrett.v::33][words_with_carry]] | return shape of =subb_truncating=, =subb_zx=, =addc= | Models C++ pair-like return values with a record. |
+| [[file:../theories/Barrett.v::38][reduce_result]] | output spans passed to =reduce= | Rocq returns quotient/remainder instead of writing spans. |
+| [[file:../theories/Barrett.v::43][of_nat_word]] | numeric template constants converted to =uint256_t= | Helper for interval aliases. |
+| [[file:../theories/Barrett.v::49][uint256_of_nat]] | =uint256_t{1} << min_bits= operands | Builds small uint256 constants used by range constructors. |
+
+* Derived Constants
+
+| Rocq definition | C++ counterpart | Notes |
+|-----------------|-----------------|-------|
+| [[file:../theories/Barrett.v::52][min_words]] | [[file:../../../category/core/runtime/uint256.hpp::1758][min_words]] | Same ceiling division by 64. |
+| [[file:../theories/Barrett.v::55][bit_width_word]] | =64 - std::countl_zero(word)= | Uses division model's =countl_zero=. |
+| [[file:../theories/Barrett.v::58][bit_width_words]] | loop computing =significant_bits= | Rocq factors this as a reusable word-list function. |
+| [[file:../theories/Barrett.v::65][bit_width_uint256]] | =bit_width(uint256_t)= | Applies =bit_width_words= to the four-word representation. |
+| [[file:../theories/Barrett.v::68][leb_uint256]] | less-or-equal comparison on =uint256_t= | Implemented by negating the existing less-than model. |
+| [[file:../theories/Barrett.v::71][valid_denominator]] | [[file:../../../category/core/runtime/uint256.hpp::1870][valid_denominator]] | Same closed interval test. |
+| [[file:../theories/Barrett.v::75][params_well_formed]] | [[file:../../../category/core/runtime/uint256.hpp::1751][requires clause]] | Rocq Prop version of the template constraint. |
+| [[file:../theories/Barrett.v::80][min_denominator_bits]] | =MIN_DENOMINATOR_BITS= | Derived from =MIN_DENOMINATOR=. |
+| [[file:../theories/Barrett.v::83][max_denominator_bits]] | =MAX_DENOMINATOR_BITS= | Derived from =MAX_DENOMINATOR=. |
+| [[file:../theories/Barrett.v::86][max_denominator_words]] | =MAX_DENOMINATOR_WORDS= | Applies =min_words=. |
+| [[file:../theories/Barrett.v::89][input_words]] | =INPUT_WORDS= | Applies =min_words INPUT_BITS=. |
+| [[file:../theories/Barrett.v::92][multiplier_words]] | =MULTIPLIER_WORDS= | Applies =min_words MULTIPLIER_BITS=. |
+| [[file:../theories/Barrett.v::95][max_quotient_bits]] | =MAX_QUOTIENT_BITS= | Same formula. |
+| [[file:../theories/Barrett.v::98][max_quotient_words]] | =MAX_QUOTIENT_WORDS= | Applies =min_words=. |
+| [[file:../theories/Barrett.v::101][shift]] | =SHIFT= | Alias for =INPUT_BITS=. |
+| [[file:../theories/Barrett.v::104][word_shift]] | =WORD_SHIFT= | =SHIFT / 64=. |
+| [[file:../theories/Barrett.v::107][bit_shift]] | =BIT_SHIFT= | =SHIFT % 64=. |
+| [[file:../theories/Barrett.v::110][numerator_words]] | [[file:../../../category/core/runtime/uint256.hpp::1786][NUMERATOR_WORDS]] | Same split on =MULTIPLIER_WORDS=. |
+| [[file:../theories/Barrett.v::115][quotient_words_for]] | return type of [[file:../../../category/core/runtime/uint256.hpp::2141][estimate_q]] | Rocq helper for selecting full or relevant quotient words. |
+| [[file:../theories/Barrett.v::122][max_r_hat_bits]] | [[file:../../../category/core/runtime/uint256.hpp::2088][MAX_R_HAT_BITS]] | Same =min(INPUT_BITS + MULTIPLIER_BITS, MAX_DENOMINATOR_BITS + 2)=. |
+| [[file:../theories/Barrett.v::126][max_r_hat_words]] | =MAX_R_HAT_WORDS= | Applies =min_words=. |
+| [[file:../theories/Barrett.v::129][relevant_quotient_bits]] | [[file:../../../category/core/runtime/uint256.hpp::2108][RELEVANT_QUOTIENT_BITS]] | Used when =need_quotient=false=. |
+| [[file:../theories/Barrett.v::132][relevant_quotient_words]] | =RELEVANT_QUOTIENT_WORDS= | Applies =min_words=. |
+
+* Precomputation Helpers
+
+| Rocq definition | C++ counterpart | Notes |
+|-----------------|-----------------|-------|
+| [[file:../theories/Barrett.v::135][all_ones_words]] | =max_mult= fill loop | Produces the largest possible multiplier for =RECIPROCAL_BITS=. |
+| [[file:../theories/Barrett.v::138][small_const_words]] | ={1}= and ={2}= arguments to =addc= | Rocq list representation of small word constants. |
+| [[file:../theories/Barrett.v::141][bounded_segment]] | zero-initialized numerator plus indexed writes | Used to place shifted multiplier words at =WORD_SHIFT=. |
+| [[file:../theories/Barrett.v::144][numerator]] | [[file:../../../category/core/runtime/uint256.hpp::1800][numerator()]] | Models =1 << SHIFT=. |
+| [[file:../theories/Barrett.v::148][numerator_with_multiplier]] | [[file:../../../category/core/runtime/uint256.hpp::1809][numerator(y)]] | Models =y << SHIFT=; see caveats for dormant nonzero bit-shift branch. |
+| [[file:../theories/Barrett.v::157][reciprocal_bits]] | [[file:../../../category/core/runtime/uint256.hpp::1832][RECIPROCAL_BITS]] | Computes bit width of the maximum quotient produced by reciprocal construction. |
+| [[file:../theories/Barrett.v::177][reciprocal_words]] | =RECIPROCAL_WORDS= | Applies =min_words=. |
+
+* Shift Planning
+
+| Rocq definition | C++ counterpart | Notes |
+|-----------------|-----------------|-------|
+| [[file:../theories/Barrett.v::180][pre_product_shift]] | [[file:../../../category/core/runtime/uint256.hpp::1989][PRE_PRODUCT_SHIFT]] | Same optimization: disabled for multiplier families, otherwise aligned below =MIN_DENOMINATOR_BITS=. |
+| [[file:../theories/Barrett.v::191][pre_product_word_shift]] | =PRE_PRODUCT_WORD_SHIFT= | =PRE_PRODUCT_SHIFT / 64=. |
+| [[file:../theories/Barrett.v::194][pre_product_bit_shift]] | =PRE_PRODUCT_BIT_SHIFT= | =PRE_PRODUCT_SHIFT % 64=. |
+| [[file:../theories/Barrett.v::197][post_product_shift]] | =POST_PRODUCT_SHIFT= | =SHIFT - PRE_PRODUCT_SHIFT=. |
+| [[file:../theories/Barrett.v::200][post_product_word_shift]] | =POST_PRODUCT_WORD_SHIFT= | =POST_PRODUCT_SHIFT / 64=. |
+| [[file:../theories/Barrett.v::203][post_product_bit_shift]] | =POST_PRODUCT_BIT_SHIFT= | =POST_PRODUCT_SHIFT % 64=. |
+| [[file:../theories/Barrett.v::206][rshift_aux]] | body of [[file:../../../category/core/runtime/uint256.hpp::2052][rshift]] | Recursive worker for producing each output word. |
+| [[file:../theories/Barrett.v::220][rshift]] | [[file:../../../category/core/runtime/uint256.hpp::2052][rshift<input_bits, shift>]] | Fits input to =min_words input_bits= and calls =rshift_aux=. |
+
+The main non-literal detail here is the final-word branch of =rshift=.  The C++
+chooses between =shrd(high, low, bit_shift)= and =low >> bit_shift= depending
+on whether the high input word is in bounds.  The current Rocq model uses total
+zero-padded =get_word= and therefore represents the out-of-bounds case as
+=shrd64 zero low bit_shift=.  This is documented in
+[[file:barrett-modeling-deviations.org::*=rshift= final-word branch is compressed by total zero-padded word access][barrett-modeling-deviations.org]].
+
+* Core Arithmetic
+
+| Rocq definition | C++ counterpart | Notes |
+|-----------------|-----------------|-------|
+| [[file:../theories/Barrett.v::226][truncating_mul]] | =truncating_mul<R>= | Delegates to the runtime multiplication model. |
+| [[file:../theories/Barrett.v::229][wide_mul]] | =wide_mul= | Full product by selecting =R = length xs + length ys=. |
+| [[file:../theories/Barrett.v::232][subb_words_aux]] | =subb_truncating<R>= loop | Models word-by-word subtraction with borrow. |
+| [[file:../theories/Barrett.v::244][subb_truncating]] | =subb_truncating<MAX_R_HAT_WORDS>= | Fixed-size truncating subtraction. |
+| [[file:../theories/Barrett.v::248][subb_zx]] | =subb_zx= | Zero-extended subtraction using max operand length. |
+| [[file:../theories/Barrett.v::252][addc_words_aux]] | =addc= loop | Models word-by-word addition with carry. |
+| [[file:../theories/Barrett.v::264][addc_words]] | =addc(q_hat, {1})= and =addc(q_hat, {2})= | Used in quotient correction branches. |
+| [[file:../theories/Barrett.v::269][copy_uint256_words]] | [[file:../../../category/core/runtime/uint256.hpp::2113][copy<R>]] | Rocq returns a four-word value rather than writing an output span. |
+| [[file:../theories/Barrett.v::272][quotient_output]] | zero-length quotient span when =need_quotient=false= | Rocq makes omitted quotient explicit as =[]=. |
+
+* Constructors and Online Numerator
+
+| Rocq definition | C++ counterpart | Notes |
+|-----------------|-----------------|-------|
+| [[file:../theories/Barrett.v::275][reciprocal_of_denominator]] | [[file:../../../category/core/runtime/uint256.hpp::1908][reciprocal(d)]] | Computes =floor(2^SHIFT / d)=, stores reciprocal and denominator, clears multiplier. |
+| [[file:../theories/Barrett.v::289][reciprocal_of_multiplier]] | [[file:../../../category/core/runtime/uint256.hpp::1962][reciprocal(y,d)]] | Computes =floor(y * 2^SHIFT / d)= and stores multiplier. |
+| [[file:../theories/Barrett.v::304][online_numerator]] | input interpretation in [[file:../../../category/core/runtime/uint256.hpp::2161][reduce]] | The C++ branch appears inside =reduce= when computing =r_hat=. |
+
+The constructors are pure Rocq functions.  C++ debug assertions are not
+executed as side effects; they are represented by validity and admissibility
+hypotheses in the proof layer.
+
+* Quotient Estimation and Reduction
+
+| Rocq definition | C++ counterpart | Notes |
+|-----------------|-----------------|-------|
+| [[file:../theories/Barrett.v::311][estimate_q]] | [[file:../../../category/core/runtime/uint256.hpp::2141][estimate_q<need_quotient>]] | Same pre-shift, truncated product, and post-shift structure. |
+| [[file:../theories/Barrett.v::325][reduce]] | [[file:../../../category/core/runtime/uint256.hpp::2159][reduce<need_quotient>]] | Same q-hat product, provisional remainder, one/two correction branches. |
+
+The Rocq =reduce= returns =reduce_result= instead of writing into spans.  This
+is a representational deviation only; the branch structure mirrors the C++
+control flow.
+
+* Interval Aliases
+
+| Rocq definition | C++ counterpart | Notes |
+|-----------------|-----------------|-------|
+| [[file:../theories/Barrett.v::373][reciprocal_for_range]] | alias aggregate initializers | Builds min denominator =2^min_bits= and max denominator =2^cutoff_bits - 1=. |
+| [[file:../theories/Barrett.v::385][reciprocal_interval_0]] | [[file:../../../category/core/runtime/uint256.hpp::2254][RECIPROCAL_INTERVAL_RANGES[0]]] | Value =65=. |
+| [[file:../theories/Barrett.v::386][reciprocal_interval_1]] | =RECIPROCAL_INTERVAL_RANGES[1]= | Value =129=. |
+| [[file:../theories/Barrett.v::387][reciprocal_interval_2]] | =RECIPROCAL_INTERVAL_RANGES[2]= | Value =193=. |
+| [[file:../theories/Barrett.v::389][udivrem_reciprocal_for_range]] | [[file:../../../category/core/runtime/uint256.hpp::2258][udivrem_reciprocal_for_range]] | =input_bits = 256=, =multiplier_bits = 0=. |
+| [[file:../theories/Barrett.v::393][udivrem_reciprocal_1_65]] | =udivrem_reciprocal_1_65= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::395][udivrem_reciprocal_65_129]] | =udivrem_reciprocal_65_129= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::397][udivrem_reciprocal_129_193]] | =udivrem_reciprocal_129_193= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::399][udivrem_reciprocal_193_256]] | =udivrem_reciprocal_193_256= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::401][udivrem_reciprocal]] | =udivrem_reciprocal= | Catch-all alias. |
+| [[file:../theories/Barrett.v::404][addmod_reciprocal_for_range]] | [[file:../../../category/core/runtime/uint256.hpp::2292][addmod_reciprocal_for_range]] | =input_bits = 257=, =multiplier_bits = 0=. |
+| [[file:../theories/Barrett.v::408][addmod_reciprocal_1_65]] | =addmod_reciprocal_1_65= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::410][addmod_reciprocal_65_129]] | =addmod_reciprocal_65_129= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::412][addmod_reciprocal_129_193]] | =addmod_reciprocal_129_193= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::414][addmod_reciprocal_193_256]] | =addmod_reciprocal_193_256= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::416][addmod_reciprocal]] | =addmod_reciprocal= | Catch-all alias. |
+| [[file:../theories/Barrett.v::419][mulmod_reciprocal_for_range]] | [[file:../../../category/core/runtime/uint256.hpp::2329][mulmod_reciprocal_for_range]] | =input_bits = 512=, =multiplier_bits = 0=. |
+| [[file:../theories/Barrett.v::423][mulmod_reciprocal_1_65]] | =mulmod_reciprocal_1_65= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::425][mulmod_reciprocal_65_129]] | =mulmod_reciprocal_65_129= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::427][mulmod_reciprocal_129_193]] | =mulmod_reciprocal_129_193= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::429][mulmod_reciprocal_193_256]] | =mulmod_reciprocal_193_256= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::431][mulmod_reciprocal]] | =mulmod_reciprocal= | Catch-all alias. |
+| [[file:../theories/Barrett.v::434][mulmod_const_reciprocal_for_range]] | [[file:../../../category/core/runtime/uint256.hpp::2359][mulmod_const_reciprocal_for_range]] | =input_bits = 256=, =multiplier_bits = 256=. |
+| [[file:../theories/Barrett.v::438][mulmod_const_reciprocal_1_65]] | =mulmod_const_reciprocal_1_65= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::440][mulmod_const_reciprocal_65_129]] | =mulmod_const_reciprocal_65_129= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::442][mulmod_const_reciprocal_129_193]] | =mulmod_const_reciprocal_129_193= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::444][mulmod_const_reciprocal_193_256]] | =mulmod_const_reciprocal_193_256= | Specialized interval alias. |
+| [[file:../theories/Barrett.v::446][mulmod_const_reciprocal]] | =mulmod_const_reciprocal= | Catch-all alias. |
+
+* Public Wrappers
+
+| Rocq definition | C++ counterpart | Notes |
+|-----------------|-----------------|-------|
+| [[file:../theories/Barrett.v::449][udivrem]] | [[file:../../../category/core/runtime/uint256.hpp::2399][barrett::udivrem]] | Calls =reduce true= and returns quotient plus remainder. |
+| [[file:../theories/Barrett.v::455][sdivrem]] | [[file:../../../category/core/runtime/uint256.hpp::2415][barrett::sdivrem]] | Computes absolute value, unsigned division, then restores signs. |
+| [[file:../theories/Barrett.v::467][addmod]] | [[file:../../../category/core/runtime/uint256.hpp::2436][barrett::addmod]] | Forms exact five-word sum with carry and calls =reduce false=. |
+| [[file:../theories/Barrett.v::475][mulmod]] | [[file:../../../category/core/runtime/uint256.hpp::2458][barrett::mulmod]] | Forms exact wide product and calls =reduce false=. |
+| [[file:../theories/Barrett.v::479][mulmod_const]] | [[file:../../../category/core/runtime/uint256.hpp::2473][barrett::mulmod_const]] | Online input is just =x=; multiplier is stored in =rec=. |
+
+* Module Plumbing
+
+The following Rocq items have no C++ analogue.  They are functor/module
+infrastructure used to instantiate the model over the existing uint256
+interfaces.
+
+| Rocq item | Purpose |
+|-----------+---------|
+| =Module Make= | Parameterizes the model by the uint, division, multiplication, and arithmetic interfaces. |
+| =BarrettSig= | Module type exposing the model signature. |
+| =MakeLegacy= | Legacy concrete instantiation helper. |
+
+* In-Progress C++ Review Notes
+
+These notes record review clarifications during a manual pass-through.
+
+- The reciprocal constructor proof comments are best read as informal
+  instances of =barrett_floor_no_preshift_bound=.  The no-multiplier
+  constructor uses scale =k = 1=; the constant-multiplier constructor uses
+  =k = y=.
+- In those comments, the proof inequalities use =x/d= and =xy/d= as exact
+  mathematical quotients, but the algorithmic variable =q= should denote the
+  integer floor quotient: =floor(x/d)= or =floor(x*y/d)=.
+- The final form =q_hat <= q < q_hat + 2= is equivalent over integers to the
+  no-pre-shift theorem statement =q - 1 <= q_hat <= q=.  It should not be
+  confused with the pre-product-shift case, which has the weaker bound
+  =q - 2 <= q_hat <= q= and is handled by =estimate_q= / =PRE_PRODUCT_SHIFT=.
+- The Rocq proof =barrett_floor_no_preshift_bound= follows the same argument
+  as the C++ sketch, but it encodes floor facts using integer-division
+  inequalities such as =d * r <= k * 2^S= and
+  =k * 2^S < d * (r + 1)= instead of rational subtraction forms.
+- If the dormant =BIT_SHIFT != 0= multiplier numerator branch is retained, it
+  needs the final carry word after the =shld= loop.  This matches
+  =Div.shift_left_words=, which produces one more word than its input.
+
+* Review Checklist
+
+Use this list when comparing the files side by side:
+
+- Check that derived constants in =Barrett.v= match the corresponding
+  =static constexpr= formulas.
+- Check that =numerator= and =numerator_with_multiplier= match the reachable
+  C++ constructor behavior.
+- Check =rshift= using the deviation note for the final-word branch.
+- Check that =estimate_q= preserves the two-shift/product structure exactly.
+- Check that =reduce= preserves the correction ordering and quotient updates.
+- Check wrapper inputs: 256-bit =udivrem=, 257-bit =addmod=, 512-bit
+  =mulmod=, and 256-bit online input for =mulmod_const=.

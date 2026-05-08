@@ -84,6 +84,41 @@ This is deliberate because:
 So the Rocq file preserves the reachable public behavior while avoiding a false
 claim that the dormant generic branch has already been modeled literally.
 
+* Findings from manual human review
+:PROPERTIES:
+:CREATED_ON: [2026-05-05 Tue 14:25]
+:CUSTOM_ID: 69f9-efaf-51730-10d88
+:END:
+
+** =rshift= final-word branch is compressed by total zero-padded word access
+
+Manual side-by-side review of the C++ =rshift<input_bits, shift>= template
+identified a control-flow distinction that is not explicit in the Rocq model.
+For non-word-aligned shifts, the C++ handles the final output word with:
+
+- =shrd(input[R + word_shift], input[R - 1 + word_shift], bit_shift)= when
+  =R + word_shift < min_words(input_bits)=;
+- =input[R - 1 + word_shift] >> bit_shift= otherwise.
+
+The current Rocq model uses =get_word= for both the low and high source words
+inside =rshift_aux=.  Since =get_word= is total and returns zero out of bounds,
+the false branch is represented as =shrd64 zero low bit_shift=, which is
+semantically equivalent to =shr low bit_shift= at the =to_Z= level.
+
+This preserves the arithmetic behavior, but it is not a literal transcription
+of the C++ guard.  The condition is not always false: for example,
+=input_bits = 257= and =shift = 1= make the true branch reachable because the
+top carry word is a valid high source word.
+
+The recommended modeling refinement is not to make =get_word= partial
+globally.  The total zero-padded accessor is used throughout the development
+to model zero extension in addition, subtraction, multiplication, division, and
+their proof infrastructure.  Instead, introduce a separate partial accessor,
+such as an =nth_error=-based helper, for sites where the C++ control flow
+explicitly distinguishes in-bounds from out-of-bounds access.  Then =rshift=
+can expose the final-word branch directly while preserving the existing
+zero-extension abstraction elsewhere.
+
 * Non-deviations worth noting
 
 The following aspects were kept deliberately close to the C++ structure:

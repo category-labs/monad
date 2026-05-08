@@ -734,6 +734,20 @@ namespace monad::vm::runtime
         return 0;
     }
 
+    template <size_t N>
+    [[gnu::always_inline]]
+    inline constexpr size_t bit_width(std::array<uint64_t, N> const &x) noexcept
+    {
+        auto const significant_words = count_significant_words(x);
+        if (significant_words == 0) {
+            return 0;
+        }
+
+        auto const leading_word = x[significant_words - 1];
+        return 64 * static_cast<size_t>(significant_words - 1) +
+               static_cast<size_t>(64 - std::countl_zero(leading_word));
+    }
+
     [[gnu::always_inline]]
     inline constexpr uint32_t
     count_significant_bytes(uint256_t const &x) noexcept
@@ -1725,14 +1739,14 @@ namespace monad::vm::runtime
 
             static constexpr size_t NUMERATOR_WORDS = []() -> size_t {
                 if constexpr (MULTIPLIER_WORDS) {
-                    // Numerator will be y * (1 ^ INPUT_BITS)
+                    // Numerator will represent y << SHIFT
                     size_t const multiplier_bits = 64 * MULTIPLIER_WORDS;
                     size_t const shifted_multiplier_bits =
-                        multiplier_bits + INPUT_BITS;
+                        multiplier_bits + SHIFT;
                     return min_words(shifted_multiplier_bits);
                 }
                 else {
-                    // Numerator is 1 ^ INPUT_BITS
+                    // Numerator will represent 1 << SHIFT
                     return 1 + WORD_SHIFT;
                 }
             }();
@@ -1742,7 +1756,7 @@ namespace monad::vm::runtime
                 requires(MULTIPLIER_WORDS == 0)
             {
                 words_t<NUMERATOR_WORDS> num{0};
-                num[WORD_SHIFT] = 1 << BIT_SHIFT;
+                num[WORD_SHIFT] = uint64_t{1} << BIT_SHIFT;
                 return num;
             }
 
@@ -1761,10 +1775,11 @@ namespace monad::vm::runtime
                 else {
                     // Currently unused, provided here for completeness
                     num[WORD_SHIFT] = y[0] << BIT_SHIFT;
-                    for (size_t i = 0; i < MULTIPLIER_WORDS; i++) {
-                        num[i + 1 + WORD_SHIFT] =
-                            shld(y[i + 1], y[i], BIT_SHIFT);
+                    for (size_t i = 1; i < MULTIPLIER_WORDS; i++) {
+                        num[i + WORD_SHIFT] = shld(y[i], y[i - 1], BIT_SHIFT);
                     }
+                    num[MULTIPLIER_WORDS + WORD_SHIFT] =
+                        y[MULTIPLIER_WORDS - 1] >> 1 >> (63 - BIT_SHIFT);
                 }
                 return num;
             }
@@ -1791,17 +1806,7 @@ namespace monad::vm::runtime
                     max_q =
                         udivrem(numerator(), MIN_DENOMINATOR.as_words()).quot;
                 }
-                size_t significant_bits = 0;
-                for (size_t i = 0; i < NUMERATOR_WORDS; i++) {
-                    size_t const ix = NUMERATOR_WORDS - 1 - i;
-                    size_t const bits =
-                        static_cast<size_t>(64 - std::countl_zero(max_q[ix]));
-                    if (bits) {
-                        significant_bits = 64 * ix + bits;
-                        break;
-                    }
-                }
-                return significant_bits;
+                return bit_width(max_q);
             }();
 
             static constexpr size_t RECIPROCAL_WORDS =
@@ -1822,7 +1827,7 @@ namespace monad::vm::runtime
              *
              * Soundness property:
              *     For all inputs x such that 0 <= x < 2^input_bits,
-             *         let q = x / denominator_
+             *         let q = floor(x / denominator_)
              *         let q_hat = floor((x * reciprocal_) / 2^SHIFT)
              *         then q - 1 <= q_hat <= q
              * Auxiliary definitions:
@@ -1839,7 +1844,7 @@ namespace monad::vm::runtime
              *   3. (x/d) - (x/2^S) < r*x/2^S <= x/d (dividing by 2^S)
              * But x has at most S bits, therefore x/2^S < 1, hence:
              *   4. x/d - 1 < r*x/2^S <= x/d
-             * Let q = x/d, q_hat = floor(r*x/2^S). Then:
+             * Let q = floor(x/d), q_hat = floor(r*x/2^S). Then:
              *   5. q_hat <= r*x/2^S < q_hat + 1 (by def. of floor)
              *   6. q - 1 < q_hat + 1 (by 4 and 5)
              *   7. q_hat <= q        (by 4 and 5)
@@ -1852,10 +1857,7 @@ namespace monad::vm::runtime
                 , multiplier_{}
             {
                 MONAD_VM_DEBUG_ASSERT(valid_denominator(d));
-                // numerator = 1 << floor(log2(d)) + 1
-                words_t<NUMERATOR_WORDS> numerator{0};
-                numerator[WORD_SHIFT] = 1 << BIT_SHIFT;
-                auto quot = udivrem(numerator, d.as_words()).quot;
+                auto quot = udivrem(numerator(), d.as_words()).quot;
                 std::memcpy(&reciprocal_, &quot, sizeof(reciprocal_));
                 for (size_t i = RECIPROCAL_WORDS;
                      i < std::tuple_size_v<decltype(quot)>;
@@ -1876,7 +1878,7 @@ namespace monad::vm::runtime
              *
              * Soundness property:
              *     For all inputs x such that 0 <= x < 2^input_bits,
-             *         let q = x * y / denominator_
+             *         let q = floor(x * y / denominator_)
              *         let q_hat = floor((x * reciprocal_) / 2^SHIFT)
              *         then q - 1 <= q_hat <= q
              * Auxiliary definitions:
@@ -1893,7 +1895,7 @@ namespace monad::vm::runtime
              *   3. (xy/d) - (x/2^S) < r*x/2^S <= xy/d (dividing by 2^S)
              * But x has at most S bits, therefore x/2^S < 1, hence:
              *   4. xy/d - 1 < r*x/2^S <= xy/d
-             * Let q = xy/d, q_hat = floor(r*x/2^S). Then:
+             * Let q = floor(xy/d), q_hat = floor(r*x/2^S). Then:
              *   5. q_hat <= r*x/2^S < q_hat + 1 (by def. of floor)
              *   6. q - 1 < q_hat + 1 (by 4 and 5)
              *   7. q_hat <= q        (by 4 and 5)

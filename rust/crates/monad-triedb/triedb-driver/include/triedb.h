@@ -26,15 +26,16 @@ extern "C"
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct triedb triedb;
+typedef struct TriedbRoInner TriedbRoInner;
 
-int triedb_open(char const *dbdirpath, triedb **, uint64_t node_lru_max_mem);
-int triedb_close(triedb *);
+int triedb_open(
+    char const *dbdirpath, TriedbRoInner **, uint64_t node_lru_max_mem);
+int triedb_close(TriedbRoInner *);
 
 // returns -1 if key not found
 // if >= 0, returns length of value
 int triedb_read(
-    triedb *, uint8_t const *key, uint8_t key_len_nibbles,
+    TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
     uint8_t const **value, uint64_t block_id);
 
 typedef void (*triedb_async_read_callback_fn)(
@@ -45,8 +46,8 @@ typedef void (*triedb_async_read_callback_fn)(
 // value. Call triedb_finalize when
 // done with the value.
 void triedb_async_read(
-    triedb *, uint8_t const *key, uint8_t key_len_nibbles, uint64_t block_id,
-    triedb_async_read_callback_fn callback, void *user);
+    TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
+    uint64_t block_id, triedb_async_read_callback_fn callback, void *user);
 
 // traverse the trie.
 enum triedb_async_traverse_callback
@@ -61,37 +62,41 @@ typedef void (*triedb_async_traverse_callback_fn)(
     uint8_t const *path, size_t path_len, uint8_t const *value,
     size_t value_len);
 bool triedb_traverse(
-    triedb *, uint8_t const *key, uint8_t key_len_nibbles, uint64_t block_id,
-    void *context, triedb_async_traverse_callback_fn callback);
+    TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
+    uint64_t block_id, void *context,
+    triedb_async_traverse_callback_fn callback);
 void triedb_async_traverse(
-    triedb *, uint8_t const *key, uint8_t key_len_nibbles, uint64_t block_id,
-    void *context, triedb_async_traverse_callback_fn callback);
+    TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
+    uint64_t block_id, void *context,
+    triedb_async_traverse_callback_fn callback);
 void triedb_async_ranged_get(
-    triedb *, uint8_t const *prefix_key, uint8_t prefix_len_nibbles,
+    TriedbRoInner *, uint8_t const *prefix_key, uint8_t prefix_len_nibbles,
     uint8_t const *min_key, uint8_t min_len_nibbles, uint8_t const *max_key,
     uint8_t max_len_nibbles, uint64_t block_id, void *context,
     triedb_async_traverse_callback_fn callback);
 // pumps async reads, processing no
 // more than count maximum, returning
 // how many were processed.
-size_t triedb_poll(triedb *, bool blocking, size_t count);
+size_t triedb_poll(TriedbRoInner *, bool blocking, size_t count);
 int triedb_finalize(uint8_t const *value);
 
 // returns MAX if doesn't exist
-uint64_t triedb_latest_proposed_block(triedb *);
+uint64_t triedb_latest_proposed_version(TriedbRoInner *);
 // returns all-zeros if doesn't exist
-monad_c_bytes32 triedb_latest_proposed_block_id(triedb *);
+monad_c_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *);
 // returns MAX if doesn't exist
-uint64_t triedb_latest_voted_block(triedb *);
+uint64_t triedb_latest_voted_version(TriedbRoInner *);
 // returns all-zeros if doesn't exist
-monad_c_bytes32 triedb_latest_voted_block_id(triedb *);
+monad_c_bytes32 triedb_latest_voted_block_id(TriedbRoInner *);
 // returns MAX if doesn't exist
-uint64_t triedb_latest_finalized_block(triedb *);
+uint64_t triedb_latest_finalized_version(TriedbRoInner *);
 // returns MAX if doesn't exist
-uint64_t triedb_latest_verified_block(triedb *);
+uint64_t triedb_latest_verified_version(TriedbRoInner *);
 
 // returns MAX if doesn't exist
-uint64_t triedb_earliest_finalized_block(triedb *);
+uint64_t triedb_earliest_version(TriedbRoInner *);
+// returns MAX if doesn't exist
+uint64_t triedb_latest_version(TriedbRoInner *);
 
 #pragma pack(push, 1)
 
@@ -114,7 +119,7 @@ typedef struct validator_set
 void triedb_free_valset(validator_set *);
 
 validator_set *
-triedb_read_valset(triedb *, size_t block_num, uint64_t requested_epoch);
+triedb_read_valset(TriedbRoInner *, size_t block_num, uint64_t requested_epoch);
 
 #ifdef __cplusplus
 }

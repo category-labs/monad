@@ -37,7 +37,7 @@ mod traverse;
 
 #[derive(Debug)]
 pub struct TriedbHandle {
-    db_ptr: *mut ffi::triedb,
+    db_ptr: *mut ffi::TriedbRoInner,
 }
 
 struct SenderContext {
@@ -400,7 +400,7 @@ impl TriedbHandle {
     }
 
     pub fn latest_proposed_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_latest_proposed_block(self.db_ptr) })
+        parse_triedb_block_num(unsafe { ffi::triedb_latest_proposed_version(self.db_ptr) })
     }
 
     /// Note that this *can* return an inconsistent blockid if concurrently written to
@@ -409,7 +409,7 @@ impl TriedbHandle {
     }
 
     pub fn latest_voted_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_latest_voted_block(self.db_ptr) })
+        parse_triedb_block_num(unsafe { ffi::triedb_latest_voted_version(self.db_ptr) })
     }
 
     /// Note that this *can* return an inconsistent blockid if concurrently written to
@@ -418,15 +418,15 @@ impl TriedbHandle {
     }
 
     pub fn latest_finalized_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_latest_finalized_block(self.db_ptr) })
+        parse_triedb_block_num(unsafe { ffi::triedb_latest_finalized_version(self.db_ptr) })
     }
 
     pub fn latest_verified_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_latest_verified_block(self.db_ptr) })
+        parse_triedb_block_num(unsafe { ffi::triedb_latest_verified_version(self.db_ptr) })
     }
 
     pub fn earliest_finalized_block(&self) -> Option<u64> {
-        parse_triedb_block_num(unsafe { ffi::triedb_earliest_finalized_block(self.db_ptr) })
+        parse_triedb_block_num(unsafe { ffi::triedb_earliest_version(self.db_ptr) })
     }
 
     pub fn validator_set_at_block(

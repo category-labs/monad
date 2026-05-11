@@ -16,6 +16,12 @@ Module Bar := Barrett.MakeLegacy
   (UintZ.ZUint128)
   (UintZ.ZBridge).
 
+Fixpoint words_value (ws : Bar.words) : Z :=
+  match ws with
+  | [] => 0
+  | w :: rest => UintZ.ZUint64.to_Z w + 2 ^ 64 * words_value rest
+  end.
+
 Module RemainderOnlyQuotientTruncationAttempt.
 
 Definition wzero := UintZ.ZUint64.zero.
@@ -115,8 +121,13 @@ Definition word_2_34 := UintZ.ZUint64.shl wone 34.
 Definition word_2_34_minus_1 := UintZ.ZUint64.sub word_2_34 wone.
 
 (** A deliberately generic, non-exported parameter choice with
-    [post_product_bit_shift <> 0].  It demonstrates why the generic theorem
-    [low_product_sufficient] carries the word-alignment hypothesis. *)
+    [post_product_bit_shift <> 0].  It first demonstrates why the generic
+    theorem [low_product_sufficient] carries the word-alignment hypothesis:
+    the low products from [estimate_q false] and [estimate_q true] differ.
+
+    The later [reduce] examples show the stronger implementation issue: this
+    unaligned [reduce false] instance returns a wrong remainder, because the
+    quotient estimate is too small for the two correction branches to repair. *)
 Definition params : Bar.BarrettParams :=
   Bar.mk_BarrettParams
     (Bar.mk_uint256 wtwo wzero wzero wzero)
@@ -154,4 +165,102 @@ Proof.
   vm_compute. discriminate.
 Qed.
 
+Example unaligned_reduce_false_wrong_remainder :
+  Bar.reduce_rem (Bar.reduce false rec x) = [12884901885; wzero; wzero; wzero].
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+Example unaligned_reduce_true_remainder :
+  Bar.reduce_rem (Bar.reduce true rec x) = [wone; wzero; wzero; wzero].
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+Example unaligned_reduce_false_not_true_remainder :
+  Bar.reduce_rem (Bar.reduce false rec x) <>
+  Bar.reduce_rem (Bar.reduce true rec x).
+Proof.
+  vm_compute. discriminate.
+Qed.
+
 End UnalignedPostProductShift.
+
+Module MultiplierBitBound.
+
+Definition wzero := UintZ.ZUint64.zero.
+Definition wone := UintZ.ZUint64.one.
+Definition wall := UintZ.ZUint64.sub wzero wone.
+Definition wtwo := UintZ.ZUint64.add wone wone.
+Definition wthree := UintZ.ZUint64.add wtwo wone.
+
+(** A deliberately generic, non-exported parameter choice where the
+    multiplier fits in [MULTIPLIER_WORDS] but exceeds the intended
+    [MULTIPLIER_BITS] bound used by the quotient-width formulas. *)
+Definition params : Bar.BarrettParams :=
+  Bar.mk_BarrettParams
+    (Bar.mk_uint256 wtwo wzero wzero wzero)
+    (Bar.mk_uint256 wtwo wzero wzero wzero)
+    64
+    1.
+
+Definition d : Bar.uint256 :=
+  Bar.mk_uint256 wtwo wzero wzero wzero.
+
+Definition y : Bar.uint256 :=
+  Bar.mk_uint256 wall wzero wzero wzero.
+
+Definition x : Bar.words :=
+  [wthree].
+
+Definition rec : Bar.reciprocal :=
+  Bar.reciprocal_of_multiplier params y d.
+
+Definition result : Bar.reduce_result :=
+  Bar.reduce true rec x.
+
+Example multiplier_words_is_one :
+  Bar.multiplier_words params = 1%nat.
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+Example post_product_shift_is_word_aligned :
+  Bar.post_product_bit_shift params = 0%nat.
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+Example stored_multiplier_exceeds_multiplier_bits :
+  2 ^ Z.of_nat (Bar.multiplier_bits params) <
+  words_value (Bar.multiplier_ rec).
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+Example reduce_true_returns_truncated_quotient :
+  words_value (Bar.reduce_quot result) = 2 ^ 63 - 2.
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+Example exact_quotient_needs_sixty_five_bits :
+  Z.div (3 * (2 ^ 64 - 1)) 2 = 3 * 2 ^ 63 - 2.
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+Example reduce_true_quotient_is_wrong :
+  words_value (Bar.reduce_quot result) <>
+  Z.div (3 * (2 ^ 64 - 1)) 2.
+Proof.
+  vm_compute. discriminate.
+Qed.
+
+Example reduce_true_remainder_happens_to_be_correct :
+  words_value (Bar.reduce_rem result) = 1.
+Proof.
+  vm_compute. reflexivity.
+Qed.
+
+End MultiplierBitBound.

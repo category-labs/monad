@@ -32,10 +32,16 @@ The main rule for the development is:
 The current Barrett model is in [[file:../theories/Barrett.v][Barrett.v]].
 The current proofs are in [[file:../theories/BarrettProofs.v][BarrettProofs.v]].
 
-The current proof surface covers both reducer stacks:
+The current proof surface fully covers the quotient-returning reducer for
+admissible reciprocals:
 
 - =reduce_correct_with_quotient=, used by =udivrem_correct= and
-  =signed_wrapper_correct=;
+  =signed_wrapper_correct=.
+
+The remainder-only reducer is proved only for the word-aligned
+post-product-shift surface, which includes all currently exported alias
+families:
+
 - =low_product_sufficient=
 - =reduce_correct_remainder_only=
 
@@ -62,9 +68,34 @@ Additional review-support files are:
 The most important current caveat is that the generic no-multiplier
 remainder-only proof surface assumes a word-aligned post-product shift.  The
 exported aliases satisfy this condition.  A non-exported generic parameter
-witness shows that the template is not fully generic for unaligned
-post-product shifts without either a C++ constraint or a wider
-remainder-only product computation.
+witness shows that generic =reduce<false>= can return the wrong remainder
+when the post-product shift is not word-aligned.  The generic C++ surface
+therefore needs either a C++ constraint or a wider remainder-only product
+computation if unaligned intervals are intended to be supported.  The cleanup
+branch currently addresses this by constraining =reduce<false>= to
+word-aligned post-product shifts.
+
+* Branch Status
+
+The Rocq model, proofs, and this guide live on =cmcl/barrett-rocq-model=.
+That branch still contains the Barrett C++ snapshot used to start the
+formalization.
+
+The separate cleanup branch =cmcl/uint256-barrett-review= contains later C++
+review cleanups, including:
+
+- comment repairs for the pre-product shift and reduce soundness discussion;
+- a refactor of reciprocal bit-width computation;
+- a repair of the dormant nonzero-=BIT_SHIFT= multiplier numerator path;
+- constructor and object-layout checks that close the generic
+  constant-multiplier surface by bounding =MULTIPLIER_BITS= and requiring the
+  supplied multiplier to fit below =2^MULTIPLIER_BITS=;
+- a generic =reduce<false>= constraint requiring a word-aligned
+  post-product shift.
+
+Until those C++ cleanup changes are merged back into this branch, reviewers
+should distinguish between the formal model/proof branch and the intended
+review target for cleaned-up C++.
 
 * Source and Review Surface
 
@@ -334,15 +365,22 @@ rather than arbitrary-precision mathematical shift semantics.
 
 * Current Caveats and Resolved Candidates
 
-** Unused generic multiplier branch with nonzero bit shift
+** Historical dormant multiplier branch with nonzero bit shift
 
-In =reciprocal::numerator(y)=, the generic =MULTIPLIER_WORDS > 0= and
-=BIT_SHIFT <> 0= branch appears to read =y[i+1]= up to
+In the C++ snapshot on =cmcl/barrett-rocq-model=,
+=reciprocal::numerator(y)= has a generic =MULTIPLIER_WORDS > 0= and
+=BIT_SHIFT <> 0= branch that appears to read =y[i+1]= up to
 =i = MULTIPLIER_WORDS - 1=.  That is one word past the end of =y=.
 
 This branch is unreachable for exported multiplier aliases because they use
-=INPUT_BITS = 256= and hence =BIT_SHIFT = 0=.  It is logged as outside the
-verified public surface.
+=INPUT_BITS = 256= and hence =BIT_SHIFT = 0=.  The Rocq model uses the
+intended shifted-word semantics for this dormant path rather than modeling the
+old out-of-bounds read.
+
+The cleanup branch =cmcl/uint256-barrett-review= repairs this path by forming
+the middle words from adjacent in-bounds source words and writing the final
+carried word explicitly.  Treat this as a historical discrepancy in the model
+branch, not as a live issue in the cleanup branch.
 
 ** Generic multiplier bit bound
 
@@ -352,9 +390,57 @@ The generic constant-multiplier constructor stores =y= in
 template can admit multipliers too large for the quotient/product widths used
 by =estimate_q=.
 
+In the C++ snapshot on =cmcl/barrett-rocq-model=, the constructor/object
+layout enforces only that the multiplier fits in =MULTIPLIER_WORDS= words.
+The generic proofs require the stronger mathematical bound
+=multiplier < 2^MULTIPLIER_BITS= through =reciprocal_admissible=.  That is a
+proof-only semantic precondition for this snapshot.
+
+The cleanup branch =cmcl/uint256-barrett-review= addresses this by adding
+constructor checks: multiplier reciprocals are restricted to the =uint256_t=
+input width, and the supplied multiplier is checked against
+=MULTIPLIER_BITS=.  Treat the witness below as documenting the pre-cleanup
+generic surface, not a live issue on the cleanup branch.
+
+This mismatch can break =reduce<true>= even when the post-product shift is
+word-aligned.  =BarrettReviewWitnesses.v::MultiplierBitBound= records a
+non-exported example with =input_bits = 64=, =multiplier_bits = 1=,
+=d = 2=, =y = 2^64 - 1=, and =x = 3=.  The constructor stores the one-word
+multiplier, but the quotient width is computed as if the multiplier had only
+one bit, so the returned quotient is truncated.
+
 The exported =mulmod_const= aliases use =MULTIPLIER_BITS = 256=, so every
 =uint256_t= multiplier satisfies the required bit bound there.  Generic
 theorems record the required bound in =reciprocal_admissible=.
+
+** Unaligned generic remainder-only reduction
+
+For non-exported no-multiplier parameters with an unaligned
+=POST_PRODUCT_BIT_SHIFT=, the generic =reduce<false>= path can compute the
+wrong remainder.  This is an implementation-level generic bug, not only a
+proof gap.
+
+=BarrettReviewWitnesses.v::UnalignedPostProductShift= records the concrete
+case:
+
+- =min_denominator = 2=
+- =max_denominator = 3=
+- =input_bits = 34=
+- =multiplier_bits = 0=
+- =d = 2=
+- =x = 2^34 - 1=
+
+The full quotient path returns remainder =1=.  The remainder-only path returns
+=12884901885= because the one-word pre-shift product loses bits that would
+shift down into the retained quotient word.  The exported alias families avoid
+this case because their remainder-only instantiations have
+=post_product_bit_shift = 0=.
+
+The cleanup branch =cmcl/uint256-barrett-review= closes this generic C++
+surface by adding a guarded =static_assert(POST_PRODUCT_BIT_SHIFT == 0)= in
+=reduce= when =need_quotient= is false.  Treat this witness as documenting the
+pre-cleanup generic surface and as justification for the static assertion, not
+as a live issue on the cleanup branch.
 
 ** Remainder-only quotient truncation candidate
 
@@ -407,9 +493,20 @@ flow.
 ** Reciprocal admissibility
 
 Generic theorems over arbitrary Rocq =reciprocal= records require
-=reciprocal_admissible=.  This captures facts that the C++ object layout and
-constructors enforce implicitly: denominator range, stored array lengths,
-multiplier fit, and reciprocal scale bounds.
+=reciprocal_admissible=.  Some parts of this predicate correspond directly to
+C++ object layout or constructor checks: denominator range, stored array
+lengths, and fit in =MULTIPLIER_WORDS= words.
+
+The multiplier scale bound is stronger: the proof requires the stored
+multiplier to be below =2^MULTIPLIER_BITS=.  The C++ snapshot on
+=cmcl/barrett-rocq-model= does not enforce this when =MULTIPLIER_BITS= is not
+a multiple of 64.  The exported =mulmod_const= aliases satisfy it because
+they set =MULTIPLIER_BITS = 256=.
+
+The cleanup branch adds the corresponding constructor checks, so this is no
+longer an open constructor/object-layout issue there.  It remains a theorem
+precondition in the Rocq development because the model records the generic
+mathematical invariant explicitly.
 
 ** Proof-module dependencies
 
@@ -446,10 +543,14 @@ has:
 
 Both =k = 0= and =k = 1= leave a non-word-aligned post-product shift.  This is
 outside the exported aliases, but it shows that the generic template does not
-itself guarantee the current Rocq precondition.
+itself guarantee the current Rocq precondition.  In this case the current
+generic =reduce<false>= computation returns the wrong remainder, so the issue
+is a generic implementation bug in the pre-cleanup snapshot.
 
-There are two plausible repair strategies if unaligned generic intervals ever
-matter.
+There are two plausible repair strategies.  The cleanup branch implements the
+second strategy by constraining the generic remainder-only path.  The first
+strategy remains the plan if unaligned generic intervals ever need direct
+support.
 
 1. Support unaligned post-product shifts.
 
@@ -503,20 +604,31 @@ matter.
    still permit direct internal calls to =reduce<false>= with unaligned
    parameters.
 
+   This is the strategy implemented on =cmcl/uint256-barrett-review=.
+
 * Static Checks and Executable Witnesses
 
 [[file:../theories/BarrettStaticChecks.v][BarrettStaticChecks.v]] is the place
 for Rocq equivalents of C++ =static_assert= facts over concrete aliases.  It
 currently covers reciprocal bit widths, maximum denominator bit widths,
-selected pre-product word shifts, and the addmod catch-all =input_words=
-assertion.
+selected pre-product word shifts, the addmod catch-all =input_words=
+assertion, and the proof-facing alias invariants used by the remainder-only
+wrapper proofs:
+
+- =post_product_bit_shift = 0= for the exported =addmod= and =mulmod= alias
+  surface;
+- =bit_shift = 0= and =post_product_bit_shift = 0= for the exported
+  =mulmod_const= alias surface.
 
 [[file:../theories/BarrettReviewWitnesses.v][BarrettReviewWitnesses.v]] is the
-place for executable review witnesses.  It is not a file of counterexamples
-to C++ correctness.  Current witnesses include:
+place for executable review witnesses.  It contains both resolved review
+candidates and concrete non-exported generic counterexamples when a suspected
+C++ semantic issue is confirmed.  Current witnesses include:
 
 - the resolved remainder-only quotient-truncation candidate;
-- the non-exported unaligned post-product-shift example.
+- the non-exported unaligned post-product-shift wrong-remainder example;
+- the non-exported multiplier-bit-bound example where generic
+  quotient-returning reduction is truncated despite word alignment.
 
 If a future semantic blocker is suspected, first decide whether it is a C++
 incorrectness issue or only a Rocq/C++ mismatch.  Only C++ incorrectness is a

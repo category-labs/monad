@@ -37,6 +37,15 @@ PageCommitBuilder::PageCommitBuilder(uint64_t const block_number, monad::Db &db)
 {
 }
 
+std::unique_ptr<CommitBuilder>
+make_commit_builder(uint64_t const block_number, monad::Db &db)
+{
+    if (db.is_page_encoded()) {
+        return std::make_unique<PageCommitBuilder>(block_number, db);
+    }
+    return std::make_unique<CommitBuilder>(block_number);
+}
+
 CommitBuilder &
 PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {

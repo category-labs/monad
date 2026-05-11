@@ -195,18 +195,6 @@ void EvmcHostBase::emit_log(
     stack_unwind();
 }
 
-evmc_access_status EvmcHostBase::access_storage(
-    evmc::address const &address, evmc::bytes32 const &key) noexcept
-{
-    try {
-        return state_.access_storage(address, key);
-    }
-    catch (...) {
-        capture_current_exception();
-    }
-    stack_unwind();
-}
-
 evmc::bytes32 EvmcHostBase::get_transient_storage(
     evmc::address const &address, evmc::bytes32 const &key) const noexcept
 {
@@ -225,6 +213,19 @@ void EvmcHostBase::set_transient_storage(
 {
     try {
         return state_.set_transient_storage(address, key, value);
+    }
+    catch (...) {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+
+EvmcHostBase::PageStorageStatus EvmcHostBase::update_page(
+    evmc::address const &address, evmc::bytes32 const &page_key,
+    evmc_storage_status const status) noexcept
+{
+    try {
+        return state_.update_page(address, page_key, status);
     }
     catch (...) {
         capture_current_exception();

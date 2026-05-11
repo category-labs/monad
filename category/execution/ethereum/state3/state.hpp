@@ -77,7 +77,7 @@ class State
         requires is_monad_trait_v<traits>
     friend void init_reserve_balance_context(
         State &, Address const &, Transaction const &,
-        std::optional<uint256_t> const &, uint64_t,
+        std::optional<uint256_t> const &, uint64_t, trace::StateTracer &,
         ChainContext<traits> const &);
 
 public:
@@ -189,6 +189,20 @@ public:
     vm::SharedVarcode get_code(Address const &);
 
     size_t get_code_size(Address const &);
+
+    [[gnu::always_inline]]
+    static inline size_t copy_code(
+        vm::SharedIntercode const icode, size_t const offset,
+        uint8_t *const buffer, size_t const buffer_size)
+    {
+        auto const code_size = icode->size();
+        if (offset > code_size) {
+            return 0;
+        }
+        auto const n = std::min(code_size - offset, buffer_size);
+        std::copy_n(icode->code() + offset, n, buffer);
+        return n;
+    }
 
     size_t copy_code(
         Address const &, size_t offset, uint8_t *buffer, size_t buffer_size);

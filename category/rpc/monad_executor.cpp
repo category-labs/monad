@@ -235,7 +235,7 @@ namespace
             // be EOA for validation
             state.set_code(sender, {});
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state));
+                enriched_txn, sender, state, state_tracer));
         }
 
         auto const senders = std::vector{sender};
@@ -368,7 +368,6 @@ namespace
         execute_block_header<traits>(block_state, header);
         BlockMetrics metrics{};
 
-        // Prepare state tracers and auxiliary noop call tracers.
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
         state_tracers.reserve(transactions_size);
 

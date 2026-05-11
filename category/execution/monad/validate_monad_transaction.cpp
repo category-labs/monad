@@ -33,9 +33,11 @@ template <Traits traits>
 Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
-    std::span<std::optional<Address> const> const authorities)
+    std::span<std::optional<Address> const> const authorities,
+    trace::StateTracer &state_tracer)
 {
-    auto res = validate_ethereum_transaction<traits>(tx, sender, state);
+    auto res =
+        validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {

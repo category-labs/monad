@@ -57,9 +57,11 @@ protected:
     bool const log_native_transfers_;
 
 public:
+    trace::StateTracer &state_tracer_;
+
     EvmcHostBase(
-        CallTracerBase &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &, bool log_native_transfers) noexcept;
+        CallTracerBase &, trace::StateTracer &, evmc_tx_context const &,
+        BlockHashBuffer const &, State &, bool log_native_transfers) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -103,7 +105,7 @@ public:
         evmc::bytes32 const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 64);
+static_assert(sizeof(EvmcHostBase) == 72);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -113,7 +115,6 @@ struct EvmcHost final : public EvmcHostBase
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
-    trace::StateTracer &state_tracer_;
 
     EvmcHost(
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
@@ -122,12 +123,11 @@ struct EvmcHost final : public EvmcHostBase
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
         bool const log_native_transfers = false) noexcept
-        : EvmcHostBase{call_tracer, tx_context, block_hash_buffer, state, log_native_transfers}
+        : EvmcHostBase{call_tracer, state_tracer, tx_context, block_hash_buffer, state, log_native_transfers}
         , tx_{tx}
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
         , chain_ctx_{chain_ctx}
-        , state_tracer_{state_tracer}
     {
     }
 

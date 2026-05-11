@@ -228,8 +228,9 @@ Result<BlockExecOutput> propose_block(
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{
-        block.transactions.size()};
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
+        block.transactions.size());
+    trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         call_tracers[i] =
             enable_tracing
@@ -237,8 +238,8 @@ Result<BlockExecOutput> propose_block(
                       block.transactions[i], call_frames[i])}
                 : std::unique_ptr<CallTracerBase>{
                       std::make_unique<NoopCallTracer>()};
-        state_tracers[i] = std::unique_ptr<trace::StateTracer>{
-            std::make_unique<trace::StateTracer>(std::monostate{})};
+        state_tracers[i] =
+            std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
     auto const
@@ -299,6 +300,7 @@ Result<BlockExecOutput> propose_block(
             block_metrics,
             call_tracers,
             state_tracers,
+            system_call_state_tracer,
             chain_context));
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 

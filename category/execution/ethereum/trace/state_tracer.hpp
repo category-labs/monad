@@ -25,6 +25,7 @@
 #include <immer/map.hpp>
 #include <nlohmann/json.hpp>
 
+#include <memory>
 #include <span>
 #include <variant>
 
@@ -121,8 +122,31 @@ namespace trace
         bool should_exclude_address(Address const &) const;
     };
 
+    /// Records every code preimage read during execution, keyed by
+    /// code_hash. Used by witness generation to assemble the codes section
+    /// of the post-block witness. Insertions happen from the EVM host's
+    /// code-read entry points; production execution uses `std::monostate`
+    /// instead, so the recording path has zero cost. The map is held by
+    /// `unique_ptr` so it does not bloat `sizeof(StateTracer)` when the
+    /// variant is in the `std::monostate` alternative.
+    struct CodeTracer
+    {
+        std::unique_ptr<Code> codes{std::make_unique<Code>()};
+    };
+
     using StateTracer = std::variant<
-        std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer>;
+        std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer,
+        CodeTracer>;
+
+    inline void on_read_code(
+        StateTracer &tracer, bytes32_t const &code_hash,
+        vm::SharedIntercode const &intercode)
+    {
+        if (auto *t = std::get_if<CodeTracer>(&tracer);
+            t && code_hash != NULL_HASH) {
+            t->codes->emplace(code_hash, intercode);
+        }
+    }
 
     // State-tracer lifecycle hook for a failed frame. Call immediately before
     // State::pop_reject(), while rejected-frame access metadata is still

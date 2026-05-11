@@ -229,6 +229,15 @@ void BlockState::merge(State const &state)
             }
         }
         else {
+            if (it->second.account.first.has_value()) {
+                auto const [iter, inserted] =
+                    self_destruct_storage_reads_.try_emplace(address);
+                if (inserted) {
+                    for (auto const &kv : it->second.storage) {
+                        iter->second.insert(kv.first);
+                    }
+                }
+            }
             it->second.storage.clear();
         }
     }
@@ -236,7 +245,10 @@ void BlockState::merge(State const &state)
 
 BlockState::ReleasedState BlockState::release() &&
 {
-    return {std::move(state_), std::move(code_)};
+    return {
+        std::move(state_),
+        std::move(code_),
+        std::move(self_destruct_storage_reads_)};
 }
 
 void BlockState::log_debug()

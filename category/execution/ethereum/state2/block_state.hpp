@@ -26,6 +26,8 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/vm.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <memory>
 #include <vector>
 
@@ -33,12 +35,26 @@ MONAD_NAMESPACE_BEGIN
 
 class State;
 
+using SelfDestructStorageReads = ankerl::unordered_dense::segmented_map<
+    Address, ankerl::unordered_dense::segmented_set<bytes32_t>>;
+
 class BlockState final
 {
     Db &db_;
     vm::VM &vm_;
     std::unique_ptr<StateDeltas> state_;
     Code code_;
+    /// Storage slot reads done against a pre-state account before it got
+    /// SELFDESTRUCTed in the same block. `merge()` clears
+    /// `state_deltas[addr].storage` for destroyed accounts, which would
+    /// erase these entries from the witness access set.
+    ///
+    /// Populated at most once per address — on the *first* SELFDESTRUCT
+    /// — and only when the address had an account in pre-state. Later
+    /// destructs in the same block can only target a within-block
+    /// incarnation (which, by definition, has no pre-state storage), so
+    /// the slots they wipe are not pre-state reads and must not be added.
+    SelfDestructStorageReads self_destruct_storage_reads_;
 
 public:
     BlockState(Db &, vm::VM &);
@@ -62,6 +78,7 @@ public:
     {
         std::unique_ptr<StateDeltas> state;
         Code code;
+        SelfDestructStorageReads self_destruct_storage_reads;
     };
 
     ReleasedState release() &&;

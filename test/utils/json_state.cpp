@@ -40,7 +40,7 @@ TestStateRef JsonState::make_test_state() const
     State state{bs, Incarnation{0, 0}};
     init_state.value().at("pre").get_to(state);
     bs.merge(state);
-    auto [released_state, released_code] = std::move(bs).release();
+    auto [released_state, released_code, _] = std::move(bs).release();
     commit_simple(
         test_state->trie_db,
         std::move(released_state),

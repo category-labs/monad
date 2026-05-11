@@ -302,7 +302,7 @@ Result<BlockExecOutput> execute(
             chain_context));
 
     block_state.log_debug();
-    auto [state, code] = std::move(block_state).release();
+    auto [state, code, _] = std::move(block_state).release();
 
     CommitBuilder builder(block.header.number);
     builder.add_state_deltas(*state)

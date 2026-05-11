@@ -591,7 +591,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code] = std::move(bs).release();
+        auto [released_state, released_code, _] = std::move(bs).release();
         commit_simple(
             this->tdb,
             std::move(released_state),
@@ -646,7 +646,7 @@ TYPED_TEST(
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code] = std::move(bs).release();
+        auto [released_state, released_code, _] = std::move(bs).release();
         commit_simple(
             this->tdb,
             std::move(released_state),
@@ -706,7 +706,7 @@ TYPED_TEST(
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code] = std::move(bs).release();
+        auto [released_state, released_code, _] = std::move(bs).release();
         commit_simple(
             this->tdb,
             std::move(released_state),
@@ -725,6 +725,173 @@ TYPED_TEST(
             this->tdb.read_storage(a, Incarnation{1, 2}, key1), bytes32_t{});
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value3);
     }
+}
+
+// First SELFDESTRUCT of a pre-state account: the slots that were observed
+// during the block (before the destruct cleared them from the BlockState's
+// storage cache) must end up in self_destruct_storage_reads_[addr].
+TYPED_TEST(
+    InMemoryStateTraitsTest, self_destruct_storage_reads_capture_first_destruct)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+
+    {
+        State s1{bs, Incarnation{1, 1}};
+        // Cold-read key1 to populate BlockState's storage cache for the
+        // pre-state incarnation. create_contract then bumps the
+        // incarnation so destruct_suicides actually resets the account
+        // under EIP-6780.
+        s1.access_account(a);
+        EXPECT_EQ(s1.get_storage(a, key1), value1);
+        s1.create_contract(a);
+        s1.selfdestruct<typename TestFixture::Trait>(a, b);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+
+    auto [_state, _code, self_destruct_reads] = std::move(bs).release();
+
+    ASSERT_TRUE(self_destruct_reads.contains(a));
+    auto const &slots = self_destruct_reads.at(a);
+    EXPECT_EQ(slots.size(), 1u);
+    EXPECT_TRUE(slots.contains(key1));
+}
+
+// Destroy -> Create -> Destroy in the same block: the second SELFDESTRUCT
+// must not overwrite the slot set captured on the first destruct.
+TYPED_TEST(
+    InMemoryStateTraitsTest,
+    self_destruct_storage_reads_locked_after_first_destruct)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+
+    {
+        State s1{bs, Incarnation{1, 1}};
+        s1.access_account(a);
+        EXPECT_EQ(s1.get_storage(a, key1), value1);
+        s1.create_contract(a);
+        s1.selfdestruct<typename TestFixture::Trait>(a, b);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        State s2{bs, Incarnation{1, 2}};
+        s2.create_contract(a);
+        s2.set_storage(a, key2, value2);
+        EXPECT_TRUE(bs.can_merge(s2));
+        bs.merge(s2);
+    }
+    {
+        State s3{bs, Incarnation{1, 3}};
+        s3.create_contract(a);
+        s3.set_storage(a, key3, value3);
+        s3.selfdestruct<typename TestFixture::Trait>(a, b);
+        s3.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s3));
+        bs.merge(s3);
+    }
+
+    auto [_state, _code, self_destruct_reads] = std::move(bs).release();
+
+    ASSERT_TRUE(self_destruct_reads.contains(a));
+    auto const &slots = self_destruct_reads.at(a);
+    EXPECT_EQ(slots.size(), 1u);
+    EXPECT_TRUE(slots.contains(key1));
+    EXPECT_FALSE(slots.contains(key2));
+    EXPECT_FALSE(slots.contains(key3));
+}
+
+// Same Destroy -> Create -> Destroy pattern as above, but with no slots
+// observed before the first destruct. The first destruct must still
+// create an empty sentinel entry; otherwise the second destruct would
+// see no entry and pollute the set with the re-created incarnation's
+// slots.
+TYPED_TEST(
+    InMemoryStateTraitsTest,
+    self_destruct_storage_reads_empty_first_destruct_locks_address)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        sd(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+
+    {
+        State s1{bs, Incarnation{1, 1}};
+        s1.create_contract(a);
+        s1.selfdestruct<typename TestFixture::Trait>(a, b);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        State s2{bs, Incarnation{1, 2}};
+        s2.create_contract(a);
+        s2.set_storage(a, key2, value2);
+        EXPECT_TRUE(bs.can_merge(s2));
+        bs.merge(s2);
+    }
+    {
+        State s3{bs, Incarnation{1, 3}};
+        s3.create_contract(a);
+        s3.selfdestruct<typename TestFixture::Trait>(a, b);
+        s3.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s3));
+        bs.merge(s3);
+    }
+
+    auto [_state, _code, self_destruct_reads] = std::move(bs).release();
+
+    ASSERT_TRUE(self_destruct_reads.contains(a));
+    EXPECT_TRUE(self_destruct_reads.at(a).empty());
+}
+
+// Account does not exist in pre-state: a within-block create+destroy
+// must NOT add it to self_destruct_storage_reads_.
+TYPED_TEST(
+    InMemoryStateTraitsTest,
+    self_destruct_storage_reads_skip_within_block_only_account)
+{
+    BlockState bs{this->tdb, this->vm};
+
+    {
+        State s1{bs, Incarnation{1, 1}};
+        s1.create_contract(a);
+        s1.set_storage(a, key1, value1);
+        s1.selfdestruct<typename TestFixture::Trait>(a, b);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+
+    auto [_state, _code, self_destruct_reads] = std::move(bs).release();
+
+    EXPECT_FALSE(self_destruct_reads.contains(a));
 }
 
 TEST_F(InMemoryStateTest, create_conflict_address_incarnation)
@@ -1271,7 +1438,7 @@ TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
     as.set_storage(a, key1, value1);
 
     bs.merge(as);
-    auto [released_state, released_code] = std::move(bs).release();
+    auto [released_state, released_code, _] = std::move(bs).release();
     commit_simple(
         this->tdb,
         std::move(released_state),
@@ -1301,7 +1468,7 @@ TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
     bs.merge(as);
-    auto [released_state, released_code] = std::move(bs).release();
+    auto [released_state, released_code, _] = std::move(bs).release();
     commit_simple(
         this->tdb,
         std::move(released_state),
@@ -1360,7 +1527,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
-        auto [released_state, released_code] = std::move(bs).release();
+        auto [released_state, released_code, _] = std::move(bs).release();
         commit_simple(
             this->tdb,
             std::move(released_state),
@@ -1387,7 +1554,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         cs.destruct_suicides<typename TestFixture::Trait>();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
-        auto [released_state, released_code] = std::move(bs).release();
+        auto [released_state, released_code, _] = std::move(bs).release();
         commit_simple(
             this->tdb,
             std::move(released_state),
@@ -1468,7 +1635,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 8 on top of block 10 round 5
-        auto [released_state, released_code] = std::move(bs).release();
+        auto [released_state, released_code, _] = std::move(bs).release();
         commit_simple(
             this->tdb,
             std::move(released_state),
@@ -1496,7 +1663,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 6 on top of block 10 round 5
-        auto [released_state, released_code] = std::move(bs).release();
+        auto [released_state, released_code, _] = std::move(bs).release();
         commit_simple(
             this->tdb,
             std::move(released_state),
@@ -1526,7 +1693,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 7 on top of block 10 round 5
-        auto [released_state, released_code] = std::move(bs).release();
+        auto [released_state, released_code, _] = std::move(bs).release();
         commit_simple(
             this->tdb,
             std::move(released_state),
@@ -1571,7 +1738,10 @@ TEST_F(OnDiskStateTestCached, proposal_basics)
     db.set_block_and_prefix(10, bytes32_t{10});
     BlockState bs1(db, this->vm);
     EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
-    auto [released_state1, released_code1] = std::move(bs1).release();
+    auto
+        [released_state1,
+         released_code1,
+         _released_self_destruct_storage_reads1] = std::move(bs1).release();
     commit_simple(
         db,
         std::move(released_state1),
@@ -1588,7 +1758,10 @@ TEST_F(OnDiskStateTestCached, proposal_basics)
     EXPECT_TRUE(bs2.can_merge(as));
     bs2.merge(as);
     EXPECT_EQ(db.read_account(a).value().balance, 30'000);
-    auto [released_state2, released_code2] = std::move(bs2).release();
+    auto
+        [released_state2,
+         released_code2,
+         _released_self_destruct_storage_reads2] = std::move(bs2).release();
     commit_simple(
         db,
         std::move(released_state2),
@@ -1665,7 +1838,11 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
         EXPECT_TRUE(bs_111.can_merge(as));
         bs_111.merge(as);
     }
-    auto [released_state_111, released_code_111] = std::move(bs_111).release();
+    auto
+        [released_state_111,
+         released_code_111,
+         _released_self_destruct_storage_reads_111] =
+            std::move(bs_111).release();
     commit_simple(
         db,
         std::move(released_state_111),
@@ -1696,7 +1873,11 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
         EXPECT_TRUE(bs_121.can_merge(as));
         bs_121.merge(as);
     }
-    auto [released_state_121, released_code_121] = std::move(bs_121).release();
+    auto
+        [released_state_121,
+         released_code_121,
+         _released_self_destruct_storage_reads_121] =
+            std::move(bs_121).release();
     commit_simple(
         db,
         std::move(released_state_121),
@@ -1727,7 +1908,11 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
         EXPECT_TRUE(bs_112.can_merge(as));
         bs_112.merge(as);
     }
-    auto [released_state_112, released_code_112] = std::move(bs_112).release();
+    auto
+        [released_state_112,
+         released_code_112,
+         _released_self_destruct_storage_reads_112] =
+            std::move(bs_112).release();
     commit_simple(
         db,
         std::move(released_state_112),
@@ -1746,7 +1931,11 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
         EXPECT_TRUE(bs_122.can_merge(as));
         bs_122.merge(as);
     }
-    auto [released_state_122, released_code_122] = std::move(bs_122).release();
+    auto
+        [released_state_122,
+         released_code_122,
+         _released_self_destruct_storage_reads_122] =
+            std::move(bs_122).release();
     commit_simple(
         db,
         std::move(released_state_122),
@@ -1768,7 +1957,11 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
         EXPECT_TRUE(bs_131.can_merge(as));
         bs_131.merge(as);
     }
-    auto [released_state_131, released_code_131] = std::move(bs_131).release();
+    auto
+        [released_state_131,
+         released_code_131,
+         _released_self_destruct_storage_reads_131] =
+            std::move(bs_131).release();
     commit_simple(
         db,
         std::move(released_state_131),
@@ -1788,7 +1981,11 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
         EXPECT_TRUE(bs_132.can_merge(as));
         bs_132.merge(as);
     }
-    auto [released_state_132, released_code_132] = std::move(bs_132).release();
+    auto
+        [released_state_132,
+         released_code_132,
+         _released_self_destruct_storage_reads_132] =
+            std::move(bs_132).release();
     commit_simple(
         db,
         std::move(released_state_132),
@@ -2077,7 +2274,7 @@ namespace
             bs1.merge(st1);
             bs2.merge(st2);
             {
-                auto [state1, code1] = std::move(bs1).release();
+                auto [state1, code1, _] = std::move(bs1).release();
                 commit_simple(
                     db1_,
                     std::move(state1),
@@ -2086,7 +2283,7 @@ namespace
                     BlockHeader{.number = block});
             }
             {
-                auto [state2, code2] = std::move(bs2).release();
+                auto [state2, code2, _] = std::move(bs2).release();
                 commit_simple(
                     db2_,
                     std::move(state2),

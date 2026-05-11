@@ -172,7 +172,7 @@ Result<void> process_ethereum_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code] = std::move(block_state).release();
+    auto [state, code, _] = std::move(block_state).release();
 
     CommitBuilder builder(block.header.number);
     builder.add_state_deltas(*state)

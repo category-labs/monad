@@ -119,7 +119,7 @@ protected:
 
             MONAD_ASSERT(bs.can_merge(state));
             bs.merge(state);
-            auto [state_deltas, code] = std::move(bs).release();
+            auto [state_deltas, code, _] = std::move(bs).release();
             test::commit_simple(
                 tdb,
                 std::move(state_deltas),

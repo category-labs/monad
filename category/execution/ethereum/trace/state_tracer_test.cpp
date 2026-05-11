@@ -116,7 +116,10 @@ TEST(PrestateTracer, pre_state_to_json)
     vm::VM vm;
 
     commit_sequential(
-        tdb, sd({}), Code{{A_CODE_HASH, A_ICODE}}, BlockHeader{.number = 0});
+        tdb,
+        StateDeltas({}),
+        Code{{A_CODE_HASH, A_ICODE}},
+        BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -154,7 +157,7 @@ TEST(PrestateTracer, zero_nonce)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -191,7 +194,7 @@ TEST(PrestateTracer, state_deltas_to_json)
 
     commit_sequential(
         tdb,
-        sd(state_deltas),
+        StateDeltas(state_deltas),
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
@@ -231,7 +234,7 @@ TEST(PrestateTracer, statediff_account_creation)
 
     commit_sequential(
         tdb,
-        sd(state_deltas),
+        StateDeltas(state_deltas),
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
@@ -270,7 +273,7 @@ TEST(PrestateTracer, statediff_balance_nonce_update)
 
     commit_sequential(
         tdb,
-        sd(state_deltas),
+        StateDeltas(state_deltas),
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
@@ -321,11 +324,12 @@ TEST(PrestateTracer, statediff_delete_storage)
 
     commit_sequential(
         tdb,
-        sd(state_deltas1),
+        StateDeltas(state_deltas1),
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
-    commit_sequential(tdb, sd(state_deltas2), Code{}, BlockHeader{.number = 1});
+    commit_sequential(
+        tdb, StateDeltas(state_deltas2), Code{}, BlockHeader{.number = 1});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -377,7 +381,7 @@ TEST(PrestateTracer, statediff_multiple_fields_update)
 
     commit_sequential(
         tdb,
-        sd(state_deltas),
+        StateDeltas(state_deltas),
         Code{{A_CODE_HASH, A_ICODE}, {B_CODE_HASH, B_ICODE}},
         BlockHeader{.number = 0});
 
@@ -426,13 +430,15 @@ TEST(PrestateTracer, statediff_account_deletion)
         {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}},
     };
 
-    commit_sequential(tdb, sd(state_deltas1), Code{}, BlockHeader{.number = 0});
+    commit_sequential(
+        tdb, StateDeltas(state_deltas1), Code{}, BlockHeader{.number = 0});
 
     StateDeltas state_deltas2{
         {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}},
     };
 
-    commit_sequential(tdb, sd(state_deltas2), Code{}, BlockHeader{.number = 1});
+    commit_sequential(
+        tdb, StateDeltas(state_deltas2), Code{}, BlockHeader{.number = 1});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -489,7 +495,10 @@ TEST(PrestateTracer, geth_example_prestate)
     vm::VM vm;
 
     commit_sequential(
-        tdb, sd({}), Code{{A_CODE_HASH, A_ICODE}}, BlockHeader{.number = 0});
+        tdb,
+        StateDeltas({}),
+        Code{{A_CODE_HASH, A_ICODE}},
+        BlockHeader{.number = 0});
 
     BlockState bs0(tdb, vm);
     State s(bs0, Incarnation{0, 0});
@@ -540,7 +549,8 @@ TEST(PrestateTracer, geth_example_statediff)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd(state_deltas), Code{}, BlockHeader{.number = 0});
+    commit_sequential(
+        tdb, StateDeltas(state_deltas), Code{}, BlockHeader{.number = 0});
 
     BlockState bs0(tdb, vm);
     State s(bs0, Incarnation{0, 0});
@@ -573,7 +583,7 @@ TEST(PrestateTracer, prestate_empty)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -593,7 +603,8 @@ TEST(PrestateTracer, statediff_empty)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd(state_deltas), Code{}, BlockHeader{.number = 0});
+    commit_sequential(
+        tdb, StateDeltas(state_deltas), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -618,7 +629,8 @@ TYPED_TEST(TraitsTest, access_list_empty)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd(state_deltas), Code{}, BlockHeader{.number = 0});
+    commit_sequential(
+        tdb, StateDeltas(state_deltas), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -637,7 +649,7 @@ TYPED_TEST(TraitsTest, access_list_state_view_excludes_rejected_frame)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -662,7 +674,7 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_storage)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -699,7 +711,7 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_regular_account)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -736,7 +748,8 @@ TYPED_TEST(TraitsTest, access_list_write)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd(state_deltas), Code{}, BlockHeader{.number = 0});
+    commit_sequential(
+        tdb, StateDeltas(state_deltas), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -782,7 +795,7 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
 
@@ -851,7 +864,7 @@ TYPED_TEST(TraitsTest, access_list_sender)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
 
@@ -909,7 +922,7 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
 
@@ -967,7 +980,7 @@ TYPED_TEST(TraitsTest, access_list_recipient)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
 
@@ -1025,7 +1038,7 @@ TYPED_TEST(TraitsTest, access_list_authorities)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
 
@@ -1096,7 +1109,7 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
     TrieDb tdb{db};
     vm::VM vm;
 
-    commit_sequential(tdb, sd({}), Code{}, BlockHeader{.number = 0});
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
 
     BlockState bs(tdb, vm);
 
@@ -1153,7 +1166,7 @@ TEST(PrestateTracer, prestate_access_storage)
     // Block 0
     commit_sequential(
         tdb,
-        sd(
+        StateDeltas(
             {{ADDR_A,
               StateDelta{
                   .account = {std::nullopt, a},
@@ -1224,7 +1237,9 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
     // Block 0
     commit_sequential(
         tdb,
-        sd({{ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
         {},
         BlockHeader{.number = 0});
 
@@ -1292,7 +1307,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
     // Block 0
     commit_sequential(
         tdb,
-        sd(
+        StateDeltas(
             {{ADDR_A,
               StateDelta{
                   .account = {std::nullopt, a},
@@ -1369,7 +1384,9 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
     // Block 0
     commit_sequential(
         tdb,
-        sd({{ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
         {},
         BlockHeader{.number = 0});
 
@@ -1439,7 +1456,9 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
     // Block 0
     commit_sequential(
         tdb,
-        sd({{ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
         {},
         BlockHeader{.number = 0});
 
@@ -1505,7 +1524,9 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
     // Block 0
     commit_sequential(
         tdb,
-        sd({{ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
@@ -1574,7 +1595,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     // Block 0
     commit_sequential(
         tdb,
-        sd(
+        StateDeltas(
             {{ADDR_A,
               StateDelta{
                   .account = {std::nullopt, a},
@@ -1645,7 +1666,9 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
     // Block 0
     commit_sequential(
         tdb,
-        sd({{ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
         {},
         BlockHeader{.number = 0});
 
@@ -1697,7 +1720,7 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     Block const block{header, {}, {}};
 
     // Block 0
-    commit_sequential(tdb, sd({}), {}, header);
+    commit_sequential(tdb, StateDeltas({}), {}, header);
 
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
@@ -1776,11 +1799,11 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
 
     commit_sequential(
         tdb,
-        sd(
-            {{ADDR_A,
-              StateDelta{
-                  .account =
-                      {std::nullopt, Account{.code_hash = A_CODE_HASH}}}}}),
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.code_hash = A_CODE_HASH}}}}},
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
@@ -1825,11 +1848,11 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
 
     commit_sequential(
         tdb,
-        sd(
-            {{ADDR_A,
-              StateDelta{
-                  .account =
-                      {std::nullopt, Account{.code_hash = A_CODE_HASH}}}}}),
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.code_hash = A_CODE_HASH}}}}},
         Code{{A_CODE_HASH, A_ICODE}},
         BlockHeader{.number = 0});
 
@@ -1880,14 +1903,15 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
 
     commit_sequential(
         tdb,
-        sd({{ADDR_A,
+        StateDeltas{
+            {ADDR_A,
              StateDelta{
                  .account =
                      {std::nullopt, Account{.balance = 10'000'000'000}}}},
             {ADDR_B,
              StateDelta{
                  .account =
-                     {std::nullopt, Account{.code_hash = B_CODE_HASH}}}}}),
+                     {std::nullopt, Account{.code_hash = B_CODE_HASH}}}}},
         Code{{B_CODE_HASH, B_ICODE}},
         BlockHeader{.number = 0});
 
@@ -1951,7 +1975,8 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
 
         commit_sequential(
             tdb,
-            sd({{WITHDRAWAL_REQUEST_ADDRESS,
+            StateDeltas{
+                {WITHDRAWAL_REQUEST_ADDRESS,
                  StateDelta{
                      .account =
                          {std::nullopt,
@@ -1960,7 +1985,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
                  StateDelta{
                      .account =
                          {std::nullopt,
-                          Account{.code_hash = SYSTEM_STUB_CODE_HASH}}}}}),
+                          Account{.code_hash = SYSTEM_STUB_CODE_HASH}}}}},
             Code{{SYSTEM_STUB_CODE_HASH, SYSTEM_STUB_ICODE}},
             BlockHeader{.number = 0});
 
@@ -2011,14 +2036,14 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
         // but the read site still records --- which is the property under test.
         commit_sequential(
             tdb,
-            sd(
-                {{ADDR_A,
-                  StateDelta{
-                      .account =
-                          {std::nullopt,
-                           Account{
-                               .balance = 100'000'000'000'000'000,
-                               .code_hash = C_CODE_HASH}}}}}),
+            StateDeltas{
+                {ADDR_A,
+                 StateDelta{
+                     .account =
+                         {std::nullopt,
+                          Account{
+                              .balance = 100'000'000'000'000'000,
+                              .code_hash = C_CODE_HASH}}}}},
             Code{{C_CODE_HASH, C_ICODE}},
             BlockHeader{.number = 0});
 
@@ -2064,7 +2089,8 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
 
         commit_sequential(
             tdb,
-            sd({{ADDR_A,
+            StateDeltas{
+                {ADDR_A,
                  StateDelta{
                      .account =
                          {std::nullopt,
@@ -2074,7 +2100,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
                 {ADDR_B,
                  StateDelta{
                      .account =
-                         {std::nullopt, Account{.code_hash = B_CODE_HASH}}}}}),
+                         {std::nullopt, Account{.code_hash = B_CODE_HASH}}}}},
             Code{{B_CODE_HASH, B_ICODE}},
             BlockHeader{.number = 0});
 
@@ -2157,7 +2183,8 @@ TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
 
     commit_sequential(
         tdb,
-        sd({{SENDER,
+        StateDeltas{
+            {SENDER,
              StateDelta{
                  .account =
                      {std::nullopt,
@@ -2168,8 +2195,7 @@ TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = 100'000, .code_hash = B_CODE_HASH}}}}}),
+                      Account{.balance = 100'000, .code_hash = B_CODE_HASH}}}}},
         Code{{A_CODE_HASH, A_ICODE}, {B_CODE_HASH, B_ICODE}},
         BlockHeader{.number = 0});
 

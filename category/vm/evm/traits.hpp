@@ -58,6 +58,7 @@ namespace monad
         { T::eip_7883_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::mip_3_active() } -> std::same_as<bool>;
+        { T::mip_8_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
 
         // Constants
@@ -122,6 +123,11 @@ namespace monad
         static consteval bool eip_7951_active() noexcept
         {
             return Rev >= MONAD_ETH_OSAKA;
+        }
+
+        static consteval bool mip_8_active() noexcept
+        {
+            return false;
         }
 
         static consteval bool mip_3_active() noexcept
@@ -252,6 +258,11 @@ namespace monad
             return false;
         }
 
+        static consteval bool mip_8_active() noexcept
+        {
+            return Rev >= MONAD_NEXT;
+        }
+
         // Pricing version 1 activates the changes in:
         // Monad specification §4: Opcode Gas Costs and Gas Refunds
         static consteval uint8_t monad_pricing_version() noexcept
@@ -261,6 +272,26 @@ namespace monad
             }
 
             return 0;
+        }
+
+        static consteval int64_t base_sload_cost() noexcept
+        {
+            return 100;
+        }
+
+        static consteval int64_t base_sstore_cost() noexcept
+        {
+            return 100;
+        }
+
+        static consteval int64_t page_write_cost() noexcept
+        {
+            return 2800;
+        }
+
+        static consteval int64_t page_growth_cost() noexcept
+        {
+            return 17000;
         }
 
         static consteval size_t max_code_size() noexcept

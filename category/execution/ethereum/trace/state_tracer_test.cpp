@@ -655,7 +655,7 @@ TYPED_TEST(TraitsTest, access_list_state_view_excludes_rejected_frame)
     State s(bs, Incarnation{0, 0});
 
     s.push();
-    s.access_storage(addr4, key4);
+    s.access_storage<typename TestFixture::Trait>(addr4, key4);
     s.pop_reject();
 
     nlohmann::json storage;
@@ -685,7 +685,7 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_storage)
         AccessListTracer{storage, addr1, addr2, std::nullopt, authorities};
 
     s.push();
-    s.access_storage(addr4, key4);
+    s.access_storage<typename TestFixture::Trait>(addr4, key4);
     on_frame_reject(tracer, s);
     s.pop_reject();
 
@@ -758,9 +758,9 @@ TYPED_TEST(TraitsTest, access_list_write)
     s.create_account_no_rollback(addr2);
     s.create_account_no_rollback(addr3);
 
-    s.access_storage(addr2, key1);
-    s.access_storage(addr2, key2);
-    s.access_storage(addr3, key3);
+    s.access_storage<typename TestFixture::Trait>(addr2, key1);
+    s.access_storage<typename TestFixture::Trait>(addr2, key2);
+    s.access_storage<typename TestFixture::Trait>(addr3, key3);
 
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
@@ -835,7 +835,7 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
         s.create_account_no_rollback(addr3);
         s.create_account_no_rollback(addr4);
 
-        s.access_storage(addr4, key1);
+        s.access_storage<typename TestFixture::Trait>(addr4, key1);
 
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
@@ -893,7 +893,7 @@ TYPED_TEST(TraitsTest, access_list_sender)
         s.create_account_no_rollback(addr2);
         s.create_account_no_rollback(addr3);
 
-        s.access_storage(addr1, key1);
+        s.access_storage<typename TestFixture::Trait>(addr1, key1);
 
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
@@ -951,7 +951,7 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
         s.create_account_no_rollback(addr2);
         s.create_account_no_rollback(addr3);
 
-        s.access_storage(addr2, key1);
+        s.access_storage<typename TestFixture::Trait>(addr2, key1);
 
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
@@ -1009,7 +1009,7 @@ TYPED_TEST(TraitsTest, access_list_recipient)
         s.create_account_no_rollback(addr2);
         s.create_account_no_rollback(addr3);
 
-        s.access_storage(addr3, key1);
+        s.access_storage<typename TestFixture::Trait>(addr3, key1);
 
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
@@ -1072,8 +1072,8 @@ TYPED_TEST(TraitsTest, access_list_authorities)
         s.create_account_no_rollback(addr4);
         s.create_account_no_rollback(addr5);
 
-        s.access_storage(addr4, key1);
-        s.access_storage(addr5, key2);
+        s.access_storage<typename TestFixture::Trait>(addr4, key1);
+        s.access_storage<typename TestFixture::Trait>(addr5, key2);
 
         nlohmann::json storage;
         auto const authorities =

@@ -42,10 +42,10 @@ namespace monad::vm::compiler::test
 {
     namespace
     {
-        evmc::MockedHost init_host(std::array<evmc_bytes32, 2> &blob_hashes_)
+        void init_host(
+            monad::vm::test::MockedHost &host,
+            std::array<evmc_bytes32, 2> &blob_hashes_)
         {
-            auto host = evmc::MockedHost{};
-
             host.tx_context = evmc_tx_context{
                 .tx_gas_price = store_be_as<bytes32_t>(uint256_t{56762}),
                 .tx_origin = 0x000000000000000000000000000000005CA1AB1E_address,
@@ -66,14 +66,12 @@ namespace monad::vm::compiler::test
 
             host.block_hash = store_be_as<bytes32_t>(
                 0x105DF6064F84551C4100A368056B8AF0E491077245DAB1536D2CFA6AB78421CE_u256);
-
-            return host;
         }
     }
 
     RuntimeTestBase::RuntimeTestBase()
         : blob_hashes_{store_be_as<bytes32_t>(uint256_t{1}), store_be_as<bytes32_t>(uint256_t{2})}
-        , host_{init_host(blob_hashes_)}
+        , host_{}
         , test_ctx_{[&](auto &x) {
             x.host = &host_.get_interface(), x.context = host_.to_context(),
             x.gas_remaining = std::numeric_limits<std::int64_t>::max(),
@@ -96,6 +94,7 @@ namespace monad::vm::compiler::test
         }}
         , ctx_{*test_ctx_}
     {
+        init_host(host_, blob_hashes_);
         std::iota(code_.rbegin(), code_.rend(), 0);
         std::iota(call_data_.begin(), call_data_.end(), 0);
         std::iota(call_return_data_.begin(), call_return_data_.end(), 0);

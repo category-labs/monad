@@ -110,6 +110,29 @@ namespace
         }
     };
 
+    struct PageEncodedOnDiskStateTest : public ::testing::Test
+    {
+        mpt::Db db{/* use the page encoded state machine*/
+                   std::make_unique<MonadOnDiskMachine>(),
+                   mpt::OnDiskDbConfig{}};
+        TrieDb tdb{db};
+        vm::VM vm;
+
+        explicit PageEncodedOnDiskStateTest(bool const cache = false)
+            : tdb{db, cache}
+        {
+        }
+    };
+
+    template <typename T>
+    struct OnDiskTestSuite : public T
+    {
+    };
+
+    using OnDiskTestTypes =
+        ::testing::Types<OnDiskStateTest, PageEncodedOnDiskStateTest>;
+    TYPED_TEST_SUITE(OnDiskTestSuite, OnDiskTestTypes);
+
     struct OnDiskStateTestCached : public OnDiskStateTest
     {
         OnDiskStateTestCached()
@@ -118,6 +141,23 @@ namespace
         }
     };
 
+    struct PageEncodedOnDiskStateTestCached : public PageEncodedOnDiskStateTest
+    {
+        PageEncodedOnDiskStateTestCached()
+            : PageEncodedOnDiskStateTest(/*cache=*/true)
+        {
+        }
+    };
+
+    template <typename T>
+    struct OnDiskCachedTestSuite : public T
+    {
+    };
+
+    using OnDiskCachedTestTypes = ::testing::Types<
+        OnDiskStateTestCached, PageEncodedOnDiskStateTestCached>;
+    TYPED_TEST_SUITE(OnDiskCachedTestSuite, OnDiskCachedTestTypes);
+
     struct InMemoryStateTest
         : public InMemoryStateTestBase
         , public ::testing::Test
@@ -125,10 +165,21 @@ namespace
     };
 
     template <typename T>
-    struct InMemoryStateTraitsTest
-        : public InMemoryStateTestBase
-        , public TraitsTest<T>
+    struct InMemoryStateTraitsTest : public TraitsTest<T>
     {
+        static std::unique_ptr<mpt::StateMachine> make_machine()
+        {
+            if constexpr (TraitsTest<T>::Trait::mip_8_active()) {
+                return std::make_unique<MonadInMemoryMachine>();
+            }
+            else {
+                return std::make_unique<InMemoryMachine>();
+            }
+        }
+
+        mpt::Db db{make_machine()};
+        TrieDb tdb{db};
+        vm::VM vm;
     };
 
     struct TwoOnDisk : public ::testing::Test
@@ -667,9 +718,17 @@ TYPED_TEST(
             EXPECT_EQ(
                 this->tdb.read_storage(a, Incarnation{1, 2}, key3), value3);
 
-            EXPECT_EQ(
-                this->tdb.state_root(),
-                0x425AE06EDEDEC27A17412E8A2BC2F148A4AF94EE510FFB7AEA81E1ABF5450768_bytes32);
+            if constexpr (TestFixture::Trait::mip_8_active()) {
+                // Page-encoded storage produces a different state root.
+                EXPECT_EQ(
+                    this->tdb.state_root(),
+                    0x8249283C79A69C21B7EFAD8F4AB8904CA55FE2F5016110096F7C7624378CDBA7_bytes32);
+            }
+            else {
+                EXPECT_EQ(
+                    this->tdb.state_root(),
+                    0x425AE06EDEDEC27A17412E8A2BC2F148A4AF94EE510FFB7AEA81E1ABF5450768_bytes32);
+            }
         }
         else {
             EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key3), null);
@@ -1594,7 +1653,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
     }
 }
 
-TEST_F(OnDiskStateTest, commit_multiple_proposals)
+TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
 {
     load_header({}, this->db, BlockHeader{.number = 9});
 
@@ -1720,7 +1779,7 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
     EXPECT_EQ(state_root_round8, this->tdb.state_root());
 }
 
-TEST_F(OnDiskStateTestCached, proposal_basics)
+TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
 {
     this->tdb.reset_root(
         load_header({}, this->db, BlockHeader{.number = 9}), 9);
@@ -1778,7 +1837,7 @@ TEST_F(OnDiskStateTestCached, proposal_basics)
     EXPECT_EQ(db.read_account(a).value().balance, 30'000);
 }
 
-TEST_F(OnDiskStateTestCached, undecided_proposals)
+TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
 {
     load_header({}, this->db, BlockHeader{.number = 9});
     Db &db = this->tdb;

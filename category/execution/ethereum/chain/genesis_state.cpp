@@ -89,14 +89,8 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         deltas.emplace(addr, state_delta);
     }
 
-    std::unique_ptr<CommitBuilder> builder;
-    if (db.is_page_encoded()) {
-        builder =
-            std::make_unique<PageCommitBuilder>(genesis.header.number, db);
-    }
-    else {
-        builder = std::make_unique<CommitBuilder>(genesis.header.number);
-    }
+    std::unique_ptr<CommitBuilder> builder =
+        make_commit_builder(genesis.header.number, db);
     builder->add_state_deltas(deltas)
         .add_code(code_map)
         .add_receipts(std::vector<Receipt>{})

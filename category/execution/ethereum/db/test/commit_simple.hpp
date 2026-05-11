@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 
 #include <memory>
 #include <optional>
@@ -45,18 +46,19 @@ namespace test
         std::optional<std::vector<Withdrawal>> const &withdrawals =
             std::nullopt)
     {
-        CommitBuilder builder(header.number);
-        builder.add_state_deltas(*deltas)
+        std::unique_ptr<CommitBuilder> builder =
+            make_commit_builder(header.number, db);
+        builder->add_state_deltas(*deltas)
             .add_code(code)
             .add_receipts(receipts)
             .add_transactions(txns, senders)
             .add_call_frames(call_frames)
             .add_ommers(ommers);
         if (withdrawals.has_value()) {
-            builder.add_withdrawals(withdrawals.value());
+            builder->add_withdrawals(withdrawals.value());
         }
         db.commit(
-            block_id, builder, header, std::move(deltas), [&](BlockHeader &h) {
+            block_id, *builder, header, std::move(deltas), [&](BlockHeader &h) {
                 h.receipts_root = db.receipts_root();
                 h.state_root = db.state_root();
                 h.withdrawals_root = db.withdrawals_root();

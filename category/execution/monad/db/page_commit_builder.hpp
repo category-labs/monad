@@ -37,4 +37,9 @@ public:
     CommitBuilder &add_state_deltas(StateDeltas const &) override;
 };
 
+// Selects the builder matching the db encoding: PageCommitBuilder for a
+// page-encoded db, plain CommitBuilder otherwise.
+std::unique_ptr<CommitBuilder>
+make_commit_builder(uint64_t block_number, Db &db);
+
 MONAD_NAMESPACE_END

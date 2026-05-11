@@ -262,7 +262,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     for (auto const &ae : tx_.access_list) {
         state.access_account(ae.a);
         for (auto const &keys : ae.keys) {
-            state.access_storage(ae.a, keys);
+            state.access_storage<traits>(ae.a, keys);
         }
     }
     if (MONAD_LIKELY(tx_.to)) {

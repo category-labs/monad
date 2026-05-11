@@ -807,14 +807,15 @@ TEST_F(InMemoryStateTest, access_storage)
     BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
-    EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(a, key2), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(a, key2), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_WARM);
+    using T = EvmTraits<EVMC_LATEST_STABLE_REVISION>;
+    EXPECT_EQ(s.access_storage<T>(a, key1), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage<T>(a, key1), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage<T>(b, key1), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage<T>(b, key1), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage<T>(a, key2), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage<T>(a, key2), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage<T>(b, key2), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage<T>(b, key2), EVMC_ACCESS_WARM);
 }
 
 TEST_F(InMemoryStateTest, get_storage)

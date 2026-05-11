@@ -97,7 +97,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
 
     commit_sequential(
         tdb,
-        sd(
+        StateDeltas(
             {{from,
               StateDelta{
                   .account =
@@ -157,7 +157,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
 
     commit_sequential(
         tdb,
-        sd(
+        StateDeltas(
             {{from,
               StateDelta{
                   .account =
@@ -240,7 +240,7 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
 
     commit_sequential(
         tdb,
-        sd(
+        StateDeltas(
             {{from,
               StateDelta{
                   .account =
@@ -327,14 +327,16 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
 
     commit_sequential(
         tdb,
-        sd({{from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 10'000'000'000, .nonce = 7}}}},
-            {to,
-             StateDelta{
-                 .account = {std::nullopt, Account{.code_hash = code_hash}}}}}),
+        StateDeltas(
+            {{from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{.balance = 10'000'000'000, .nonce = 7}}}},
+             {to,
+              StateDelta{
+                  .account =
+                      {std::nullopt, Account{.code_hash = code_hash}}}}}),
         Code{},
         BlockHeader{});
 
@@ -406,7 +408,7 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
 
     commit_sequential(
         tdb,
-        sd(
+        StateDeltas(
             {{from,
               StateDelta{
                   .account =
@@ -470,11 +472,12 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
 
     commit_sequential(
         tdb,
-        sd({{code_address,
-             StateDelta{.account = {std::nullopt, Account{.nonce = 4}}}},
-            {from,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 15'000}}}}}),
+        StateDeltas(
+            {{code_address,
+              StateDelta{.account = {std::nullopt, Account{.nonce = 4}}}},
+             {from,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 15'000}}}}}),
         Code{},
         BlockHeader{});
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{from});
@@ -539,11 +542,12 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
 
     commit_sequential(
         tdb,
-        sd({{code_address,
-             StateDelta{.account = {std::nullopt, Account{.nonce = 6}}}},
-            {from,
-             StateDelta{
-                 .account = {std::nullopt, Account{.balance = 15'000}}}}}),
+        StateDeltas(
+            {{code_address,
+              StateDelta{.account = {std::nullopt, Account{.nonce = 6}}}},
+             {from,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 15'000}}}}}),
         Code{},
         BlockHeader{});
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{from});
@@ -602,7 +606,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
 
     commit_sequential(
         tdb,
-        sd({
+        StateDeltas({
             {good_code_address,
              StateDelta{
                  .account =
@@ -726,7 +730,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
 
     commit_sequential(
         tdb,
-        sd({
+        StateDeltas({
             {good_code_address,
              StateDelta{
                  .account =
@@ -826,7 +830,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
     vm::VM vm;
     commit_sequential(
         tdb,
-        sd({{a, StateDelta{.account = {std::nullopt, Account{}}}}}),
+        StateDeltas({{a, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
     BlockState bs{tdb, vm};
@@ -871,7 +875,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
     vm::VM vm;
     commit_sequential(
         tdb,
-        sd({{a, StateDelta{.account = {std::nullopt, Account{}}}}}),
+        StateDeltas({{a, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
     BlockState bs{tdb, vm};
@@ -904,7 +908,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
     vm::VM vm;
     commit_sequential(
         tdb,
-        sd({{a, StateDelta{.account = {std::nullopt, Account{}}}}}),
+        StateDeltas({{a, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
     BlockState bs{tdb, vm};
@@ -959,29 +963,30 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
 
     commit_sequential(
         tdb,
-        sd({{eoa,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = eoa_code_hash,
-                      }}}},
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                      }}}},
-            {delegated,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = delegated_code_hash,
-                      }}}}}),
+        StateDeltas(
+            {{eoa,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = eoa_code_hash,
+                       }}}},
+             {from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                       }}}},
+             {delegated,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = delegated_code_hash,
+                       }}}}}),
         Code{
             {eoa_code_hash, eoa_icode},
             {delegated_code_hash, delegated_icode},
@@ -1080,37 +1085,38 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
 
     commit_sequential(
         tdb,
-        sd({{eoa,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = eoa_code_hash,
-                      }}}},
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                      }}}},
-            {delegated,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = delegated_code_hash,
-                      }}}},
-            {creator,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = creator_code_hash,
-                      }}}}}),
+        StateDeltas(
+            {{eoa,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = eoa_code_hash,
+                       }}}},
+             {from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                       }}}},
+             {delegated,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = delegated_code_hash,
+                       }}}},
+             {creator,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = creator_code_hash,
+                       }}}}}),
         Code{
             {eoa_code_hash, eoa_icode},
             {delegated_code_hash, delegated_icode},
@@ -1203,29 +1209,30 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 
     commit_sequential(
         tdb,
-        sd({{eoa,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = eoa_code_hash,
-                      }}}},
-            {from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                      }}}},
-            {contract,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = contract_code_hash,
-                      }}}}}),
+        StateDeltas(
+            {{eoa,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = eoa_code_hash,
+                       }}}},
+             {from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                       }}}},
+             {contract,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = contract_code_hash,
+                       }}}}}),
         Code{
             {eoa_code_hash, eoa_icode},
             {contract_code_hash, contract_icode},
@@ -1295,20 +1302,21 @@ TYPED_TEST(TraitsTest, cold_account_access)
 
     commit_sequential(
         tdb,
-        sd({{from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                      }}}},
-            {contract,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .code_hash = code_hash,
-                      }}}}}),
+        StateDeltas(
+            {{from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                       }}}},
+             {contract,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .code_hash = code_hash,
+                       }}}}}),
         Code{
             {code_hash, icode},
         },
@@ -1418,38 +1426,39 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
 
     commit_sequential(
         tdb,
-        sd({{falsely_delegated_1,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = short_code_hash,
-                      }}}},
-            {falsely_delegated_2,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = bad_code_hash2,
-                      }}}},
-            {falsely_delegated_3,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = bad_code_hash,
-                      }}}},
-            {correctly_delegated,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 10'000'000'000,
-                          .code_hash = good_code_hash,
-                      }}}}}),
+        StateDeltas(
+            {{falsely_delegated_1,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = short_code_hash,
+                       }}}},
+             {falsely_delegated_2,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = bad_code_hash2,
+                       }}}},
+             {falsely_delegated_3,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = bad_code_hash,
+                       }}}},
+             {correctly_delegated,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10'000'000'000,
+                           .code_hash = good_code_hash,
+                       }}}}}),
         Code{
             {bad_code_hash, bad_icode},
             {bad_code_hash2, bad_icode2},

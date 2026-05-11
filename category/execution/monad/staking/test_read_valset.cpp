@@ -122,7 +122,7 @@ protected:
             auto [state_deltas, code] = std::move(bs).release();
             test::commit_simple(
                 tdb,
-                std::move(state_deltas),
+                *state_deltas,
                 code,
                 NULL_HASH_BLAKE3,
                 BlockHeader{.number = TEST_BLOCK_NUM});

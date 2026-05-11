@@ -232,12 +232,11 @@ TrieDbImpl<page_encoded>::read_code(bytes32_t const &code_hash)
 template <bool page_encoded>
 void TrieDbImpl<page_encoded>::commit(
     bytes32_t const &block_id, CommitBuilder &builder,
-    BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
+    BlockHeader const &header, StateDeltas const & /*state_deltas*/,
     std::function<void(BlockHeader &)> const populate_header_fn)
 {
     auto const block_number = header.number;
     MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
-    MONAD_ASSERT(state_deltas);
 
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk() && block_id != proposal_block_id_) {

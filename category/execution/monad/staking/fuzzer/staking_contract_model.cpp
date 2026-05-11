@@ -49,7 +49,7 @@ namespace monad::staking::test
     {
         commit_simple(
             trie_db_,
-            sd(
+            StateDeltas(
                 {{STAKING_CA,
                   StateDelta{
                       .account =

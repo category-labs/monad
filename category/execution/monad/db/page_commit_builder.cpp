@@ -67,7 +67,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                     if (inserted) {
                         it->second = db_.read_storage_page(addr, inc, pg_key);
                     }
-                    it->second[slot_off] = slot_delta.second;
+                    it->second.set(slot_off, slot_delta.second);
                 }
             }
 

@@ -135,6 +135,7 @@ try {
     fs::path dump_snapshot;
     std::string statesync;
     fs::path chain_rlp_path;
+    bool dual_db_migration_mode = false;
     auto log_level = quill::LogLevel::Info;
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
@@ -165,12 +166,20 @@ try {
         ro_sq_thread_cpu,
         "sq_thread_cpu for the read only db (optional, disables SQPOLL if not "
         "specified)");
-    cli.add_option(
+    auto *const db_option = cli.add_option(
         "--db",
         dbname_paths,
         "A comma-separated list of previously created database paths. You can "
         "configure the storage pool with one or more files/devices. If no "
         "value is passed, the replay will run with an in-memory triedb");
+    cli.add_flag(
+           "--dual-db-migration-mode",
+           dual_db_migration_mode,
+           "enable dual db migration mode for MIP-8, which opens two databases "
+           "(one with the slot based storage format and one with page based "
+           "format) on the same disk and cross-checks them for consistency on "
+           "every storage read")
+        ->needs(db_option);
     cli.add_option(
         "--dump-snapshot,--dump_snapshot",
         dump_snapshot,
@@ -407,6 +416,20 @@ try {
 
     Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
                          : static_cast<Db &>(triedb);
+
+    // Optional secondary db for migration: commits go through both the
+    // primary (slot storage, DbCache) and the secondary (page storage, raw).
+    std::optional<mpt::Db> secondary_db;
+    std::optional<PagedTrieDb> secondary_triedb;
+    if (dual_db_migration_mode) {
+        MONAD_ASSERT(
+            raw_db.timeline_active(monad::mpt::timeline_id::secondary) == true);
+        secondary_db = raw_db.open_secondary_timeline(
+            std::make_unique<MonadOnDiskMachine>());
+        MONAD_ASSERT(secondary_db.has_value());
+        secondary_triedb.emplace(*secondary_db);
+    }
+
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -452,6 +475,9 @@ try {
                     block_db_timeout);
             }
             else {
+                // Live monad must be running in dual db migration mode, which
+                // provides the secondary_triedb.
+                MONAD_ASSERT(secondary_triedb.has_value());
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
@@ -463,7 +489,9 @@ try {
                     block_num,
                     end_block_num,
                     stop,
-                    trace_calls);
+                    trace_calls,
+                        secondary_triedb.has_value() ? &*secondary_triedb
+                                                     : nullptr);
             }
         }
         MONAD_ABORT_PRINTF("Unsupported chain");

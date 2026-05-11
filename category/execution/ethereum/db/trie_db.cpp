@@ -311,13 +311,15 @@ void TrieDbImpl<page_encoded>::finalize(
     uint64_t const block_number, bytes32_t const &block_id)
 {
     // no re-finalization
-    auto const latest_finalized = db_.get_latest_finalized_version();
-    MONAD_ASSERT_PRINTF(
-        latest_finalized == INVALID_BLOCK_NUM ||
-            block_number == latest_finalized + 1,
-        "block_number %lu is not the next finalized block after %lu",
-        block_number,
-        latest_finalized);
+    if constexpr (!page_encoded) {
+        auto const latest_finalized = db_.get_latest_finalized_version();
+        MONAD_ASSERT_PRINTF(
+            latest_finalized == INVALID_BLOCK_NUM ||
+                block_number == latest_finalized + 1,
+            "block_number %lu is not the next finalized block after %lu",
+            block_number,
+            latest_finalized);
+    }
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk()) {
         auto const src_prefix = proposal_prefix(block_id);
@@ -341,12 +343,15 @@ void TrieDbImpl<page_encoded>::update_verified_block(
     uint64_t const block_number)
 {
     // no re-verification
-    auto const latest_verified = db_.get_latest_verified_version();
-    MONAD_ASSERT_PRINTF(
-        latest_verified == INVALID_BLOCK_NUM || block_number > latest_verified,
-        "block_number %lu must be greater than last_verified %lu",
-        block_number,
-        latest_verified);
+    if constexpr (!page_encoded) {
+        auto const latest_verified = db_.get_latest_verified_version();
+        MONAD_ASSERT_PRINTF(
+            latest_verified == INVALID_BLOCK_NUM ||
+                block_number > latest_verified,
+            "block_number %lu must be greater than last_verified %lu",
+            block_number,
+            latest_verified);
+    }
     db_.update_verified_version(block_number);
 }
 

@@ -36,12 +36,20 @@ class State;
 class BlockState final
 {
     Db &db_;
+    // Optional cross-check db: when non-null, every storage read is also
+    // performed against this db and the result asserted to match. Used by
+    // the dual-db migration path to detect divergence between the slot-
+    // encoded primary and the page-encoded secondary. Stored as a Db*
+    // (rather than PagedTrieDb*) so the cross-check semantics generalize
+    // and BlockState doesn't carry an unnecessary dependency on the
+    // page-encoded TrieDb alias.
+    Db *secondary_db_;
     vm::VM &vm_;
     std::unique_ptr<StateDeltas> state_;
     Code code_;
 
 public:
-    BlockState(Db &, vm::VM &);
+    BlockState(Db &, vm::VM &, Db *secondary_db = nullptr);
 
     vm::VM &vm()
     {

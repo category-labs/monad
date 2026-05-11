@@ -1493,6 +1493,14 @@ namespace barrett
             return MIN_DENOMINATOR <= d && d <= MAX_DENOMINATOR;
         }
 
+        [[gnu::always_inline]]
+        static inline constexpr bool
+        valid_multiplier(uint256_t const &y) noexcept
+            requires(MULTIPLIER_WORDS > 0)
+        {
+            return bit_width(y.as_words()) <= MULTIPLIER_BITS;
+        }
+
         /**
          * Compute an underapproximation of the reciprocal for use in
          * Barrett reduction for udivrem, addmod and mulmod when all
@@ -1583,6 +1591,11 @@ namespace barrett
             , multiplier_{}
         {
             MONAD_DEBUG_ASSERT(valid_denominator(d));
+            static_assert(
+                MULTIPLIER_BITS <= uint256_t::num_bits,
+                "Barrett multiplier reciprocals accept only uint256_t "
+                "multipliers");
+            MONAD_ASSERT(valid_multiplier(y));
             auto quot = udivrem(numerator(y.as_words()), d.as_words()).quot;
             std::memcpy(&reciprocal_, &quot, sizeof(reciprocal_));
             for (size_t i = RECIPROCAL_WORDS;
@@ -1778,6 +1791,13 @@ namespace barrett
             std::span<uint64_t, need_quotient ? uint256_t::num_words : 0> quot,
             std::span<uint64_t, uint256_t::num_words> rem) const noexcept
         {
+            if constexpr (!need_quotient) {
+                static_assert(
+                    POST_PRODUCT_BIT_SHIFT == 0,
+                    "Barrett reduce<false> requires a word-aligned "
+                    "post-product shift");
+            }
+
             // Let S = SHIFT = INPUT_BITS, B = PRE_PRODUCT_SHIFT, and
             // d = denominator_.
             //

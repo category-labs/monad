@@ -36,10 +36,10 @@ namespace
     {
         vm::test::TestMemory init_memory_;
         Context *prev_rt_ctx_;
-        evmc::MockedHost &host_;
+        monad::vm::test::MockedHost &host_;
 
     public:
-        MemoryTestMachine(evmc::MockedHost &host)
+        MemoryTestMachine(monad::vm::test::MockedHost &host)
             : prev_rt_ctx_{}
             , host_{host}
         {
@@ -175,7 +175,7 @@ namespace
 
     template <Traits traits>
     void run_memory_test_machine(
-        evmc::MockedHost &host, MemoryTestMachineConfig config)
+        monad::vm::test::MockedHost &host, MemoryTestMachineConfig config)
     {
         MemoryTestMachine<traits> machine{host};
         machine.call([&](auto &ctx) {

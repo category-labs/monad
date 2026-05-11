@@ -132,6 +132,9 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
     };
 
     if constexpr (is_monad_trait_v<traits>) {
+        if constexpr (traits::mip_8_active()) {
+            return do_test(27800, 0);
+        }
         if constexpr (traits::monad_rev() >= MONAD_SEVEN) {
             return do_test(28000, 19900);
         }
@@ -182,7 +185,10 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
         store(key, 0);
         ASSERT_EQ(ctx_.result.status, StatusCode::Success);
         ASSERT_EQ(ctx_.gas_remaining, 2301);
-        if constexpr (traits::evm_rev() <= MONAD_ETH_BERLIN) {
+        if constexpr (traits::mip_8_active()) {
+            ASSERT_EQ(ctx_.gas_refund, 0);
+        }
+        else if constexpr (traits::evm_rev() <= MONAD_ETH_BERLIN) {
             ASSERT_EQ(ctx_.gas_refund, 15000);
         }
         else {
@@ -193,6 +199,9 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
     };
 
     if constexpr (is_monad_trait_v<traits>) {
+        if constexpr (traits::mip_8_active()) {
+            return do_test(100, 2800);
+        }
         if constexpr (traits::monad_rev() >= MONAD_SEVEN) {
             return do_test(0, 2800);
         }
@@ -202,5 +211,43 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
     }
     else {
         do_test(6000, 2800);
+    }
+}
+
+TYPED_TEST(RuntimeTraitsTest, StorageLoadDifferentSlotsSamePage)
+{
+    using traits = TestFixture::Trait;
+    if constexpr (!traits::mip_8_active()) {
+        GTEST_SKIP();
+    }
+    else {
+        auto load = TestFixture::wrap(sload<traits>);
+
+        this->ctx_.gas_remaining = traits::cold_storage_cost();
+        ASSERT_EQ(load(0), 0);
+        ASSERT_EQ(this->ctx_.gas_remaining, 0);
+
+        this->ctx_.gas_remaining = 0;
+        ASSERT_EQ(load(1), 0);
+        ASSERT_EQ(this->ctx_.gas_remaining, 0);
+    }
+}
+
+TYPED_TEST(RuntimeTraitsTest, StorageColdAddChargesSpecTotal)
+{
+    using traits = TestFixture::Trait;
+    if constexpr (!traits::mip_8_active()) {
+        GTEST_SKIP();
+    }
+    else {
+        auto store = TestFixture::wrap(sstore<traits>);
+
+        this->ctx_.gas_remaining = 27800;
+        store(key, val);
+        ASSERT_EQ(this->ctx_.gas_remaining, 0);
+        static_assert(
+            traits::cold_storage_cost() + traits::page_write_cost() +
+                traits::page_growth_cost() ==
+            27800);
     }
 }

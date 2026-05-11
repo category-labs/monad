@@ -188,6 +188,7 @@ add_library(
   "ethereum/state3/account_state.cpp"
   "ethereum/state3/account_state.hpp"
   "ethereum/state3/account_substate.hpp"
+  "ethereum/state3/page_tracker.hpp"
   "ethereum/state3/state.cpp"
   "ethereum/state3/state.hpp"
   "ethereum/state3/version_stack.hpp"

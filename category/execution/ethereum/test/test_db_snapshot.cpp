@@ -151,7 +151,7 @@ TEST(DbBinarySnapshot, Basic)
         ASSERT_EQ(tdb.get_block_number(), db.get_latest_version());
         monad::test::commit_simple(
             tdb,
-            monad::test::sd(std::move(deltas)),
+            StateDeltas(std::move(deltas)),
             code_delta,
             bytes32_t{100},
             BlockHeader{.number = 100});
@@ -272,7 +272,7 @@ TEST(DbBinarySnapshot, MultipleShards)
         ASSERT_EQ(tdb.get_block_number(), db.get_latest_version());
         monad::test::commit_simple(
             tdb,
-            monad::test::sd(std::move(deltas)),
+            StateDeltas(std::move(deltas)),
             code_delta,
             bytes32_t{100},
             BlockHeader{.number = 100});

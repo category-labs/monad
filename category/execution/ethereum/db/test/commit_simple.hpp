@@ -20,7 +20,6 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
-#include <memory>
 #include <optional>
 #include <vector>
 
@@ -29,13 +28,8 @@ MONAD_NAMESPACE_BEGIN
 namespace test
 {
 
-    inline auto sd(StateDeltas v = {})
-    {
-        return std::make_unique<StateDeltas>(std::move(v));
-    }
-
     inline void commit_simple(
-        ::monad::Db &db, std::unique_ptr<StateDeltas> deltas, Code const &code,
+        ::monad::Db &db, StateDeltas const &deltas, Code const &code,
         bytes32_t const &block_id, BlockHeader const &header,
         std::vector<Receipt> const &receipts = {},
         std::vector<std::vector<CallFrame>> const &call_frames = {},
@@ -46,7 +40,7 @@ namespace test
             std::nullopt)
     {
         CommitBuilder builder(header.number);
-        builder.add_state_deltas(*deltas)
+        builder.add_state_deltas(deltas)
             .add_code(code)
             .add_receipts(receipts)
             .add_transactions(txns, senders)
@@ -55,16 +49,15 @@ namespace test
         if (withdrawals.has_value()) {
             builder.add_withdrawals(withdrawals.value());
         }
-        db.commit(
-            block_id, builder, header, std::move(deltas), [&](BlockHeader &h) {
-                h.receipts_root = db.receipts_root();
-                h.state_root = db.state_root();
-                h.withdrawals_root = db.withdrawals_root();
-                h.transactions_root = db.transactions_root();
-                h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
-                h.logs_bloom = compute_bloom(receipts);
-                h.ommers_hash = compute_ommers_hash(ommers);
-            });
+        db.commit(block_id, builder, header, deltas, [&](BlockHeader &h) {
+            h.receipts_root = db.receipts_root();
+            h.state_root = db.state_root();
+            h.withdrawals_root = db.withdrawals_root();
+            h.transactions_root = db.transactions_root();
+            h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
+            h.logs_bloom = compute_bloom(receipts);
+            h.ommers_hash = compute_ommers_hash(ommers);
+        });
     }
 
 } // namespace test

@@ -177,39 +177,40 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
 
     commit_sequential(
         tdb,
-        sd({{from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0xffffffffffffffffffffffffffffffff_u256,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
-            {to,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x0fffffffffffff,
-                          .code_hash = STRESS_TEST_CODE_HASH}}}},
-            {ca,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}},
-            {WITHDRAWAL_REQUEST_ADDRESS,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}},
-            {CONSOLIDATION_REQUEST_ADDRESS,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0,
-                          .code_hash = SYSTEM_STUB_CODE_HASH}}}}}),
+        StateDeltas(
+            {{from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0xffffffffffffffffffffffffffffffff_u256,
+                           .code_hash = NULL_HASH,
+                           .nonce = 0x0}}}},
+             {to,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0x0fffffffffffff,
+                           .code_hash = STRESS_TEST_CODE_HASH}}}},
+             {ca,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{.balance = 0x1b58, .code_hash = NULL_HASH}}}},
+             {WITHDRAWAL_REQUEST_ADDRESS,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}},
+             {CONSOLIDATION_REQUEST_ADDRESS,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0,
+                           .code_hash = SYSTEM_STUB_CODE_HASH}}}}}),
         Code{
             {STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE},
             {SYSTEM_STUB_CODE_HASH, SYSTEM_STUB_ICODE}},
@@ -312,7 +313,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     auto [state, code, _] = std::move(bs).release();
     commit_simple(
         tdb,
-        std::move(state),
+        *state,
         code,
         block_id,
         header,
@@ -346,34 +347,35 @@ TYPED_TEST(TraitsTest, assertion_exception)
 
     commit_sequential(
         tdb,
-        sd({{from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
-            {to,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max(),
-                          .code_hash = STRESS_TEST_CODE_HASH}}}},
-            {WITHDRAWAL_REQUEST_ADDRESS,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}},
-            {CONSOLIDATION_REQUEST_ADDRESS,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0,
-                          .code_hash = SYSTEM_STUB_CODE_HASH}}}}}),
+        StateDeltas(
+            {{from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = std::numeric_limits<uint256_t>::max(),
+                           .code_hash = NULL_HASH,
+                           .nonce = 0x0}}}},
+             {to,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = std::numeric_limits<uint256_t>::max(),
+                           .code_hash = STRESS_TEST_CODE_HASH}}}},
+             {WITHDRAWAL_REQUEST_ADDRESS,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}},
+             {CONSOLIDATION_REQUEST_ADDRESS,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0,
+                           .code_hash = SYSTEM_STUB_CODE_HASH}}}}}),
         Code{
             {STRESS_TEST_CODE_HASH, STRESS_TEST_ICODE},
             {SYSTEM_STUB_CODE_HASH, SYSTEM_STUB_ICODE}},
@@ -486,48 +488,49 @@ TYPED_TEST(TraitsTest, call_frames_refund)
 
     commit_sequential(
         tdb,
-        sd({{from,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x989680,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x0}}}},
-            {to,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x0,
-                          .code_hash = NULL_HASH,
-                          .nonce = 0x01}}}},
-            {ca,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0x1b58,
-                          .code_hash = REFUND_TEST_CODE_HASH}},
-                 .storage =
-                     {{bytes32_t{0x01}, {bytes32_t{}, bytes32_t{0x01}}},
-                      {bytes32_t{0x02}, {bytes32_t{}, bytes32_t{0x01}}},
-                      {bytes32_t{0x03}, {bytes32_t{}, bytes32_t{0x01}}},
-                      {bytes32_t{0x04}, {bytes32_t{}, bytes32_t{0x01}}},
-                      {bytes32_t{0x05}, {bytes32_t{}, bytes32_t{0x01}}}}}},
-            {WITHDRAWAL_REQUEST_ADDRESS,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}},
-            {CONSOLIDATION_REQUEST_ADDRESS,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = 0,
-                          .code_hash = SYSTEM_STUB_CODE_HASH}}}}}),
+        StateDeltas(
+            {{from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0x989680,
+                           .code_hash = NULL_HASH,
+                           .nonce = 0x0}}}},
+             {to,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0x0,
+                           .code_hash = NULL_HASH,
+                           .nonce = 0x01}}}},
+             {ca,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0x1b58,
+                           .code_hash = REFUND_TEST_CODE_HASH}},
+                  .storage =
+                      {{bytes32_t{0x01}, {bytes32_t{}, bytes32_t{0x01}}},
+                       {bytes32_t{0x02}, {bytes32_t{}, bytes32_t{0x01}}},
+                       {bytes32_t{0x03}, {bytes32_t{}, bytes32_t{0x01}}},
+                       {bytes32_t{0x04}, {bytes32_t{}, bytes32_t{0x01}}},
+                       {bytes32_t{0x05}, {bytes32_t{}, bytes32_t{0x01}}}}}},
+             {WITHDRAWAL_REQUEST_ADDRESS,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0, .code_hash = SYSTEM_STUB_CODE_HASH}}}},
+             {CONSOLIDATION_REQUEST_ADDRESS,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0,
+                           .code_hash = SYSTEM_STUB_CODE_HASH}}}}}),
         Code{
             {REFUND_TEST_CODE_HASH, REFUND_TEST_ICODE},
             {SYSTEM_STUB_CODE_HASH, SYSTEM_STUB_ICODE}},
@@ -630,7 +633,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     auto [state, code, _] = std::move(bs).release();
     commit_simple(
         tdb,
-        std::move(state),
+        *state,
         code,
         block_id,
         header,

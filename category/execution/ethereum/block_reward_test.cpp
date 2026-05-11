@@ -51,7 +51,7 @@ TYPED_TEST(TraitsTest, apply_block_reward)
     vm::VM vm;
     commit_sequential(
         tdb,
-        sd({{a, StateDelta{.account = {std::nullopt, Account{}}}}}),
+        StateDeltas({{a, StateDelta{.account = {std::nullopt, Account{}}}}}),
         Code{},
         BlockHeader{});
 

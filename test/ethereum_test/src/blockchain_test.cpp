@@ -321,7 +321,7 @@ Result<BlockExecOutput> execute(
         bytes32_t{block.header.number},
         builder,
         block.header,
-        std::move(state),
+        *state,
         [&](BlockHeader &h) {
             h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();

@@ -54,7 +54,7 @@ struct Storage : public ::testing::Test
     {
         commit_sequential(
             tdb,
-            sd(
+            StateDeltas(
                 {{ADDRESS,
                   StateDelta{
                       .account =

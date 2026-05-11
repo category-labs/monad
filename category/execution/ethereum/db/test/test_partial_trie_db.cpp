@@ -111,12 +111,7 @@ namespace
         std::function<void(BlockHeader &)> populate = [](BlockHeader &) {})
     {
         CommitBuilder builder(header.number);
-        db.commit(
-            bytes32_t{},
-            builder,
-            header,
-            std::make_unique<StateDeltas>(std::move(deltas)),
-            std::move(populate));
+        db.commit(bytes32_t{}, builder, header, deltas, std::move(populate));
     }
 
     /// Build a witness whose only node is a leaf for `addr` with the given

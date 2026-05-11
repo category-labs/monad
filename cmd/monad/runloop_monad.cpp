@@ -320,17 +320,16 @@ Result<BlockExecOutput> propose_block(
     if (block.withdrawals.has_value()) {
         builder.add_withdrawals(block.withdrawals.value());
     }
-    db.commit(
-        block_id, builder, block.header, std::move(state), [&](BlockHeader &h) {
-            // second stage: populate block header
-            h.receipts_root = db.receipts_root();
-            h.state_root = db.state_root();
-            h.withdrawals_root = db.withdrawals_root();
-            h.transactions_root = db.transactions_root();
-            h.gas_used = results.empty() ? 0 : results.back().gas_used;
-            h.logs_bloom = compute_bloom(results);
-            h.ommers_hash = compute_ommers_hash(block.ommers);
-        });
+    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
+        // second stage: populate block header
+        h.receipts_root = db.receipts_root();
+        h.state_root = db.state_root();
+        h.withdrawals_root = db.withdrawals_root();
+        h.transactions_root = db.transactions_root();
+        h.gas_used = results.empty() ? 0 : results.back().gas_used;
+        h.logs_bloom = compute_bloom(results);
+        h.ommers_hash = compute_ommers_hash(block.ommers);
+    });
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);

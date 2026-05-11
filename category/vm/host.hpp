@@ -30,6 +30,16 @@ namespace monad::vm
         friend class VM;
 
     public:
+        struct PageStorageStatus
+        {
+            bool first_page_write;
+            bool grew_state;
+        };
+
+        virtual PageStorageStatus update_page(
+            evmc::address const &, evmc::bytes32 const &,
+            evmc_storage_status) noexcept = 0;
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept

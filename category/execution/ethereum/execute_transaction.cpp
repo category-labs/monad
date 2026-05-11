@@ -142,7 +142,9 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         state.access_account(*authority);
 
         // 5. Verify the code of authority is empty or already delegated.
-        auto const icode = state.get_code(*authority)->intercode();
+        auto const code_hash = state.get_code_hash(*authority);
+        auto const icode = state.read_code(code_hash)->intercode();
+        trace::on_read_code(host.state_tracer_, code_hash, icode);
         auto const code = std::span{icode->code(), *icode->code_size()};
         if (!(code.empty() || vm::evm::is_delegated(code))) {
             continue;
@@ -235,6 +237,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
             tx_,
             header_.base_fee_per_gas,
             host.i_,
+            host.state_tracer_,
             host.chain_ctx_);
     }
 
@@ -327,7 +330,8 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
             sender_,
             state,
             header_.base_fee_per_gas.value_or(0),
-            authorities_);
+            authorities_,
+            state_tracer_);
         if (!result) {
             // RELAXED MERGE
             // if `validate_transaction` fails using current values, require

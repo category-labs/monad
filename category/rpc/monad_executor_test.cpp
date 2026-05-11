@@ -92,6 +92,7 @@
 #include <stdlib.h>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <unistd.h>
@@ -2493,8 +2494,15 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
         BlockState block_state{tdb, vm};
         State state{
             block_state, Incarnation{header.number - 1, Incarnation::LAST_TX}};
+        trace::StateTracer noop_state_tracer = std::monostate{};
         init_reserve_balance_context<monad::MonadTraits<MONAD_NEXT>>(
-            state, sender, tx, header.base_fee_per_gas, 0, chain_context);
+            state,
+            sender,
+            tx,
+            header.base_fee_per_gas,
+            0,
+            noop_state_tracer,
+            chain_context);
         state.subtract_from_balance(sender, gas_fee);
         state.subtract_from_balance(sender, value);
         EXPECT_TRUE(block_state.can_merge(state));
@@ -2505,6 +2513,7 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
                 BASE_FEE_PER_GAS,
                 0, // transaction index
                 state,
+                noop_state_tracer,
                 chain_context);
         EXPECT_TRUE(should_revert);
     }

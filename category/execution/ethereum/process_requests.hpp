@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <cstdint>
@@ -47,6 +48,7 @@ Result<byte_string> extract_deposit_requests(std::span<Receipt const> receipts);
 template <Traits traits>
 Result<bytes32_t> process_requests(
     Chain const &, State &, BlockHashBuffer const &, BlockHeader const &,
-    ChainContext<traits> const &, std::span<Receipt const>);
+    trace::StateTracer &, ChainContext<traits> const &,
+    std::span<Receipt const>);
 
 MONAD_NAMESPACE_END

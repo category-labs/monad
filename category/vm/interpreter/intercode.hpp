@@ -17,6 +17,7 @@
 
 #include <category/vm/runtime/bin.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -73,6 +74,20 @@ namespace monad::vm::interpreter
         bool is_jumpdest(size_t const pc) const noexcept
         {
             return pc < *code_size_ && jumpdest_map_[pc];
+        }
+
+        [[gnu::always_inline]]
+        size_t copy_code(
+            size_t const offset, uint8_t *const buffer,
+            size_t const buffer_size) const
+        {
+            auto const code_size = size();
+            if (offset > code_size) {
+                return 0;
+            }
+            auto const n = std::min(code_size - offset, buffer_size);
+            std::copy_n(code() + offset, n, buffer);
+            return n;
         }
 
     private:

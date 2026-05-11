@@ -53,7 +53,7 @@ template <Traits traits>
 Result<byte_string> system_call(
     Chain const &chain, State &state, BlockHashBuffer const &block_hash_buffer,
     BlockHeader const &header, Address const &contract_address,
-    ChainContext<traits> const &chain_ctx)
+    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
 {
     constexpr auto SYSTEM_ADDRESS =
         0xfffffffffffffffffffffffffffffffffffffffe_address;
@@ -65,6 +65,7 @@ Result<byte_string> system_call(
         return BlockError::SystemCallMissingCode;
     }
     auto const code = state.read_code(hash);
+    trace::on_read_code(state_tracer, hash, code->intercode());
 
     evmc_tx_context const tx_context = {
         .tx_gas_price = {},
@@ -109,11 +110,10 @@ Result<byte_string> system_call(
     state.access_account(contract_address);
 
     NoopCallTracer noop_tracer;
-    trace::StateTracer noop_state_tracer = std::monostate{};
     Transaction const empty_tx{};
     EvmcHost<traits> host{
         noop_tracer,
-        noop_state_tracer,
+        state_tracer,
         tx_context,
         block_hash_buffer,
         state,
@@ -253,7 +253,8 @@ bytes32_t compute_requests_hash(std::span<BlockRequest const> const requests)
 template <Traits traits>
 Result<bytes32_t> process_requests(
     Chain const &chain, State &state, BlockHashBuffer const &block_hash_buffer,
-    BlockHeader const &header, ChainContext<traits> const &chain_ctx,
+    BlockHeader const &header, trace::StateTracer &state_tracer,
+    ChainContext<traits> const &chain_ctx,
     std::span<Receipt const> const receipts)
 {
     BOOST_OUTCOME_TRY(auto deposit_output, extract_deposit_requests(receipts));
@@ -269,6 +270,7 @@ Result<bytes32_t> process_requests(
             block_hash_buffer,
             header,
             WITHDRAWAL_REQUEST_ADDRESS,
+            state_tracer,
             chain_ctx));
 
     // EIP-7251
@@ -282,6 +284,7 @@ Result<bytes32_t> process_requests(
             block_hash_buffer,
             header,
             CONSOLIDATION_REQUEST_ADDRESS,
+            state_tracer,
             chain_ctx));
 
     return compute_requests_hash(std::array<BlockRequest, 3>{{

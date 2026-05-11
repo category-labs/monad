@@ -22,7 +22,7 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 bool revert_transaction(
     Address const &, Transaction const &, uint256_t const &, uint64_t const,
-    State &, ChainContext<traits> const &)
+    State &, trace::StateTracer &, ChainContext<traits> const &)
 {
     return false;
 }

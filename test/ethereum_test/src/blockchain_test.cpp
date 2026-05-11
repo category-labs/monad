@@ -252,8 +252,9 @@ Result<BlockExecOutput> execute(
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
     call_frames.resize(block.transactions.size());
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{
-        block.transactions.size()};
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
+        block.transactions.size());
+    trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         call_tracers[i] =
             enable_tracing
@@ -261,8 +262,8 @@ Result<BlockExecOutput> execute(
                       block.transactions[i], call_frames[i])}
                 : std::unique_ptr<CallTracerBase>{
                       std::make_unique<NoopCallTracer>()};
-        state_tracers[i] = std::unique_ptr<trace::StateTracer>{
-            std::make_unique<trace::StateTracer>(std::monostate{})};
+        state_tracers[i] =
+            std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
     senders_and_authorities_map[block.header.number] =
@@ -301,6 +302,7 @@ Result<BlockExecOutput> execute(
             metrics,
             call_tracers,
             state_tracers,
+            system_call_state_tracer,
             chain_context));
 
     block_state.log_debug();

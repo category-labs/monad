@@ -250,6 +250,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
+    trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_tracers.emplace_back(std::make_unique<CallTracer>(
             block.value().transactions[i], call_frames[i]));
@@ -291,6 +292,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             metrics,
             call_tracers,
             state_tracers,
+            system_call_state_tracer,
             chain_ctx);
     };
 
@@ -414,6 +416,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
+    trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_tracers.emplace_back(std::make_unique<CallTracer>(
             block.value().transactions[i], call_frames[i]));
@@ -455,6 +458,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
             metrics,
             call_tracers,
             state_tracers,
+            system_call_state_tracer,
             chain_ctx);
     };
 
@@ -568,6 +572,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
+    trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_tracers.emplace_back(std::make_unique<CallTracer>(
             block.value().transactions[i], call_frames[i]));
@@ -609,6 +614,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             metrics,
             call_tracers,
             state_tracers,
+            system_call_state_tracer,
             chain_ctx);
     };
 

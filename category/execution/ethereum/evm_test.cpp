@@ -79,6 +79,7 @@ namespace
                 host.tx_,
                 host.base_fee_per_gas_,
                 host.i_,
+                host.state_tracer_,
                 host.chain_ctx_);
         }
     }

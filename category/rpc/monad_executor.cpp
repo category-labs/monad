@@ -244,7 +244,7 @@ namespace
             // be EOA for validation
             state.set_code(sender, {});
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state));
+                enriched_txn, sender, state, state_tracer));
         }
 
         auto const senders = std::vector{sender};
@@ -377,7 +377,6 @@ namespace
         execute_block_header<traits>(block_state, header);
         BlockMetrics metrics{};
 
-        // Prepare state tracers and auxiliary noop call tracers.
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
         state_tracers.reserve(transactions_size);
 
@@ -840,6 +839,7 @@ namespace
                     std::vector<std::unique_ptr<CallTracerBase>>{};
                 auto state_tracers =
                     std::vector<std::unique_ptr<trace::StateTracer>>{};
+                trace::StateTracer system_call_state_tracer{std::monostate{}};
 
                 static std::vector<Address> empty_senders{};
                 static std::vector<std::vector<std::optional<Address>>>
@@ -861,6 +861,7 @@ namespace
                         block_metrics,
                         call_tracers,
                         state_tracers,
+                        system_call_state_tracer,
                         chain_context,
                         emit_native_transfer_logs));
 
@@ -947,6 +948,7 @@ namespace
             auto state_tracers =
                 std::vector<std::unique_ptr<trace::StateTracer>>{};
             state_tracers.reserve(calls[block_idx].size());
+            trace::StateTracer system_call_state_tracer{std::monostate{}};
 
             for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
@@ -979,6 +981,7 @@ namespace
                     block_metrics,
                     call_tracers,
                     state_tracers,
+                    system_call_state_tracer,
                     chain_context,
                     emit_native_transfer_logs));
 

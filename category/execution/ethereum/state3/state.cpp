@@ -544,26 +544,9 @@ size_t State::copy_code(
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    bytes32_t const &code_hash = account.value().code_hash;
-    vm::SharedVarcode vcode{};
-    {
-        auto const it = code_.find(code_hash);
-        if (it != code_.end()) {
-            vcode = it->second;
-        }
-        else {
-            vcode = block_state_.read_code(code_hash);
-        }
-    }
+    vm::SharedVarcode const vcode = read_code(account.value().code_hash);
     MONAD_ASSERT(vcode);
-    auto const &icode = vcode->intercode();
-    auto const code_size = icode->size();
-    if (offset > code_size) {
-        return 0;
-    }
-    auto const n = std::min(code_size - offset, buffer_size);
-    std::copy_n(icode->code() + offset, n, buffer);
-    return n;
+    return vcode->intercode()->copy_code(offset, buffer, buffer_size);
 }
 
 void State::set_code(Address const &address, byte_string_view const code)

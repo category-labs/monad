@@ -200,10 +200,12 @@ template <Traits traits>
 Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const & /*base_fee_per_gas*/,
-    std::span<std::optional<Address> const> const /*authorities*/)
+    std::span<std::optional<Address> const> const /*authorities*/,
+    trace::StateTracer &state_tracer)
 {
     static_assert(is_evm_trait_v<traits>);
-    return validate_ethereum_transaction<traits>(tx, sender, state);
+    return validate_ethereum_transaction<traits>(
+        tx, sender, state, state_tracer);
 }
 
 EXPLICIT_EVM_TRAITS(validate_transaction);

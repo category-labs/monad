@@ -309,6 +309,7 @@ Result<std::vector<Receipt>> execute_block(
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
+    trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx, bool const trace_transfers)
 {
     static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
@@ -353,6 +354,7 @@ Result<std::vector<Receipt>> execute_block(
                 state,
                 block_hash_buffer,
                 block.header,
+                system_call_state_tracer,
                 chain_ctx,
                 retvals));
         MONAD_ASSERT(block.header.requests_hash.has_value());

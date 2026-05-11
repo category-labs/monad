@@ -20,6 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 
@@ -45,6 +46,10 @@ class ReserveBalance
         Address, std::optional<uint256_t>>;
 
     State *state_;
+    // Tracer for code reads triggered by reserve-balance checks. Always
+    // non-null after `init_from_tx` returns (callers thread a noop monostate
+    // when not recording).
+    trace::StateTracer *state_tracer_{nullptr};
     bool tracking_enabled_{false};
     bool use_recent_code_hash_{false};
     bool allow_init_selfdestruct_exemption_{false};
@@ -79,7 +84,7 @@ public:
     void init_from_tx(
         Address const &sender, Transaction const &tx,
         std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
-        ChainContext<traits> const &ctx);
+        trace::StateTracer &state_tracer, ChainContext<traits> const &ctx);
 };
 
 template <Traits traits>

@@ -239,8 +239,15 @@ void run_revert_transaction_test(
 
     {
         State state{bs, Incarnation{1, 1}};
+        trace::StateTracer noop_state_tracer = std::monostate{};
         init_reserve_balance_context<traits>(
-            state, SENDER, tx, BASE_FEE_PER_GAS, 1, chain_context);
+            state,
+            SENDER,
+            tx,
+            BASE_FEE_PER_GAS,
+            1,
+            noop_state_tracer,
+            chain_context);
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
         state.subtract_from_balance(SENDER, value);
@@ -250,6 +257,7 @@ void run_revert_transaction_test(
             BASE_FEE_PER_GAS,
             1, // transaction index
             state,
+            noop_state_tracer,
             chain_context);
         bool should_revert_cached = revert_transaction_cached<traits>(state);
 
@@ -402,12 +410,13 @@ TYPED_TEST(
     };
 
     State state{bs, Incarnation{1, 1}};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     init_reserve_balance_context<traits>(
-        state, SENDER, tx, BASE_FEE_PER_GAS, 0, context);
+        state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
     state.subtract_from_balance(SENDER, sender_gas_fee);
 
     EXPECT_TRUE(revert_transaction<traits>(
-        SENDER, tx, BASE_FEE_PER_GAS, 0, state, context));
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context));
     EXPECT_TRUE(revert_transaction_cached<traits>(state));
 
     uint256_t const sender_balance = state.get_balance(SENDER);
@@ -415,7 +424,7 @@ TYPED_TEST(
         SENDER, std::numeric_limits<uint256_t>::max() - sender_balance);
 
     EXPECT_TRUE(revert_transaction<traits>(
-        SENDER, tx, BASE_FEE_PER_GAS, 0, state, context));
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context));
     EXPECT_TRUE(revert_transaction_cached<traits>(state));
 }
 
@@ -468,13 +477,26 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
     };
 
     State state{bs, Incarnation{1, 1}};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     init_reserve_balance_context<traits>(
-        state, sender, tx, base_fee_per_gas, 0, chain_context);
+        state,
+        sender,
+        tx,
+        base_fee_per_gas,
+        0,
+        noop_state_tracer,
+        chain_context);
     state.subtract_from_balance(sender, sender_gas_fee);
     state.subtract_from_balance(staking::STAKING_CA, to_wei(1));
 
     EXPECT_FALSE(revert_transaction<traits>(
-        sender, tx, base_fee_per_gas, 0, state, chain_context));
+        sender,
+        tx,
+        base_fee_per_gas,
+        0,
+        state,
+        noop_state_tracer,
+        chain_context));
     EXPECT_FALSE(revert_transaction_cached<traits>(state));
 }
 
@@ -596,9 +618,10 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         .senders = senders,
         .authorities = authorities};
 
+    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const prepare_state = [&](State &state) {
         init_reserve_balance_context<traits>(
-            state, SENDER, tx, BASE_FEE_PER_GAS, 0, context);
+            state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
         state.subtract_from_balance(SENDER, gas_cost);
         state.subtract_from_balance(NEW_CONTRACT, to_wei(3));
         byte_string const contract_code{0x60, 0x00};
@@ -609,7 +632,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     prepare_state(state);
 
     bool const should_revert = revert_transaction<traits>(
-        SENDER, tx, BASE_FEE_PER_GAS, 0, state, context);
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);
     bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
     if constexpr (traits::monad_rev() < MONAD_FOUR) {
@@ -675,14 +698,15 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
         .authorities = authorities};
 
     State state{bs, Incarnation{1, 1}};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     init_reserve_balance_context<traits>(
-        state, SENDER, tx, BASE_FEE_PER_GAS, 0, context);
+        state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
     state.subtract_from_balance(SENDER, gas_cost);
     state.subtract_from_balance(NEW_CONTRACT, to_wei(3));
     state.set_code(NEW_CONTRACT, {});
 
     bool const should_revert = revert_transaction<traits>(
-        SENDER, tx, BASE_FEE_PER_GAS, 0, state, context);
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);
     bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
     if constexpr (traits::monad_rev() < MONAD_FOUR) {
@@ -745,8 +769,9 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
         .authorities = authorities};
 
     State state{bs, Incarnation{1, 1}};
+    trace::StateTracer noop_state_tracer = std::monostate{};
     init_reserve_balance_context<traits>(
-        state, SENDER, tx, BASE_FEE_PER_GAS, 0, context);
+        state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
     state.subtract_from_balance(SENDER, gas_cost);
 
     // Model constructor-time SELFDESTRUCT at a pre-funded address:
@@ -761,7 +786,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
     EXPECT_EQ(state.get_balance(BENEFICIARY), to_wei(3));
 
     bool const should_revert = revert_transaction<traits>(
-        SENDER, tx, BASE_FEE_PER_GAS, 0, state, context);
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);
     bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
     if constexpr (traits::monad_rev() < MONAD_FOUR) {
@@ -787,8 +812,9 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
     State state{bs, Incarnation{0, 0}};
     std::vector<std::optional<Address>> const authorities = {SYSTEM_SENDER};
 
+    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const res = validate_transaction<typename TestFixture::Trait>(
-        {}, {}, state, 0, authorities);
+        {}, {}, state, 0, authorities, noop_state_tracer);
     if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
         EXPECT_TRUE(res.has_value());
     }

@@ -277,6 +277,7 @@ evmc::Result execute_create_message(
                 host->base_fee_per_gas_.value_or(0),
                 host->i_,
                 state,
+                host->state_tracer_,
                 host->chain_ctx_)) {
             result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
         }
@@ -325,6 +326,7 @@ evmc::Result execute_call_message(
     else {
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
+        trace::on_read_code(host->state_tracer_, hash, code->intercode());
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }
 
@@ -335,6 +337,7 @@ evmc::Result execute_call_message(
                 host->base_fee_per_gas_.value_or(0),
                 host->i_,
                 state,
+                host->state_tracer_,
                 host->chain_ctx_)) {
             result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
             result.gas_refund = 0;

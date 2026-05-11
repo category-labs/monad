@@ -66,6 +66,7 @@ Result<std::vector<Receipt>> execute_block(
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     std::span<std::unique_ptr<CallTracerBase>>,
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
+    trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx, bool trace_transfers = false);
 
 std::vector<std::optional<Address>>

@@ -16,8 +16,10 @@
 use std::{env, path::PathBuf};
 
 fn main() {
-    println!("cargo:rerun-if-changed=triedb-driver");
-    println!("cargo:rerun-if-changed=../../category");
+    println!("cargo:rerun-if-changed=CMakeLists.txt");
+    println!("cargo:rerun-if-changed=include/ffi.h");
+    println!("cargo:rerun-if-changed=src/ffi.cpp");
+    println!("cargo:rerun-if-changed=../../../category");
     println!("cargo:rerun-if-env-changed=TRIEDB_TARGET");
     let build_execution_lib =
         env::var("TRIEDB_TARGET").is_ok_and(|target| target == "triedb_driver");
@@ -27,7 +29,7 @@ fn main() {
 
         let target = "triedb_driver";
 
-        let dst = cmake::Config::new("triedb-driver")
+        let dst = cmake::Config::new(".")
             .define("BUILD_SHARED_LIBS", "ON")
             .define("MONAD_EXECUTION_DIR", monad_execution_dir)
             .build_target(target)
@@ -39,7 +41,7 @@ fn main() {
     }
 
     let bindings = bindgen::Builder::default()
-        .header("triedb-driver/include/triedb.h")
+        .header("include/ffi.h")
         .clang_arg("-I../../../")
         // invalidate on header change
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))

@@ -68,6 +68,7 @@
 #include <optional>
 #include <thread>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1855,14 +1856,22 @@ TEST(DbTest, auto_expire_large_set)
     constexpr uint64_t blocks = 1000;
     keys.reserve(blocks * keys_per_block);
 
-    // randomize keys
+    // randomize keys; reject duplicates so an expired key cannot reappear in a
+    // later block and spuriously pass a lookup that should fail
     auto const seed = static_cast<uint32_t>(time(nullptr));
     std::cout << "seed to reproduce: " << seed << std::endl;
     monad::small_prng rand(seed);
+    std::unordered_set<uint64_t> seen;
+    seen.reserve(blocks * keys_per_block);
     for (uint64_t block_id = 0; block_id < blocks; ++block_id) {
         for (unsigned i = 0; i < keys_per_block; ++i) {
             auto &key = keys.emplace_back(32, 0);
-            uint64_t raw = rand();
+            uint64_t raw;
+            do {
+                raw = (static_cast<uint64_t>(rand()) << 32) |
+                      static_cast<uint64_t>(rand());
+            }
+            while (!seen.insert(raw).second);
             keccak256((unsigned char const *)&raw, 8, key.data());
         }
         uint64_t const index = keys_per_block * block_id;

@@ -74,6 +74,8 @@ impl ExecutedBlock {
             excess_blob_gas: Some(0),
             parent_beacon_block_root: Some(alloy_primitives::B256::ZERO),
             requests_hash: Some(alloy_primitives::B256::ZERO),
+            block_access_list_hash: None,
+            slot_number: None,
         }
     }
 
@@ -110,6 +112,7 @@ impl ExecutedBlock {
                     inner: Recovered::new_unchecked(inner, sender),
                     block_hash: Some(header.hash),
                     block_number: Some(header.number),
+                    block_timestamp: Some(header.timestamp),
                     transaction_index: Some(tx_idx as u64),
                     effective_gas_price: Some(effective_gas_price),
                 }
@@ -135,6 +138,7 @@ impl ExecutedBlock {
     pub fn iter_alloy_rpc_txs(&self) -> impl Iterator<Item = alloy_rpc_types::Transaction> + '_ {
         let block_hash = alloy_primitives::FixedBytes::from(self.end.eth_block_hash.bytes);
         let block_number = self.start.eth_block_input.number;
+        let block_timestamp = self.start.eth_block_input.timestamp;
 
         let base_fee = Some(
             TryInto::<u64>::try_into(alloy_primitives::U256::from_limbs(
@@ -155,6 +159,7 @@ impl ExecutedBlock {
                 inner: tx,
                 block_hash: Some(block_hash),
                 block_number: Some(block_number),
+                block_timestamp: Some(block_timestamp),
                 transaction_index,
                 effective_gas_price: Some(effective_gas_price),
             }

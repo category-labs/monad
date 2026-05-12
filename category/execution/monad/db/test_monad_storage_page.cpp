@@ -157,6 +157,68 @@ TEST(MonadDb, page_commit_cross_check_with_reference)
     EXPECT_EQ(page_commit(full_page), FULL_PAGE_COMMIT);
 }
 
+// Sweep across pair-population densities. For each k, fill the first k pairs
+// (left slot only). Verifies: (a) the algorithm runs without error at each
+// density, (b) commits are deterministic, (c) every density produces a
+// distinct hash. Catches regressions in the merge tree at densities that the
+// fixed-input cross-check above doesn't exercise.
+TEST(MonadDb, page_commit_density_sweep)
+{
+    constexpr size_t densities[] = {1, 2, 4, 8, 16, 32, 40, 48, 56, 60, 63, 64};
+    constexpr size_t N = sizeof(densities) / sizeof(densities[0]);
+
+    bytes32_t hashes[N];
+
+    for (size_t i = 0; i < N; ++i) {
+        size_t const k = densities[i];
+        storage_page_t page{};
+        for (size_t j = 0; j < k; ++j) {
+            page[static_cast<uint8_t>(j * 2)] =
+                bytes32_t{static_cast<uint64_t>(j + 1)};
+        }
+
+        auto const c1 = page_commit(page);
+        auto const c2 = page_commit(page);
+        EXPECT_EQ(c1, c2) << "non-deterministic at k=" << k;
+        EXPECT_NE(c1, bytes32_t{}) << "all-zero commit at k=" << k;
+
+        hashes[i] = c1;
+    }
+
+    for (size_t i = 0; i < N; ++i) {
+        for (size_t j = i + 1; j < N; ++j) {
+            EXPECT_NE(hashes[i], hashes[j])
+                << "density " << densities[i] << " collides with density "
+                << densities[j];
+        }
+    }
+}
+
+// Within a single pair (slots 2k and 2k+1 form pair k), data placed in the
+// left slot vs the right slot must produce distinct commitments. The seal's
+// slot_bitmap differs (bit 2k vs bit 2k+1) and the leaf hash input differs
+// in byte order (data||zeros vs zeros||data). Tested on a non-trivial pair
+// index to exercise mid-page indexing.
+TEST(MonadDb, page_commit_asymmetric_pair)
+{
+    constexpr uint8_t pair_idx = 5;
+    constexpr uint8_t left_slot = pair_idx * 2;
+    constexpr uint8_t right_slot = pair_idx * 2 + 1;
+
+    storage_page_t left_only{};
+    std::ranges::fill(left_only[left_slot].bytes, static_cast<uint8_t>(0xAA));
+
+    storage_page_t right_only{};
+    std::ranges::fill(right_only[right_slot].bytes, static_cast<uint8_t>(0xAA));
+
+    auto const c_left = page_commit(left_only);
+    auto const c_right = page_commit(right_only);
+
+    EXPECT_NE(c_left, c_right);
+    EXPECT_NE(c_left, bytes32_t{});
+    EXPECT_NE(c_right, bytes32_t{});
+}
+
 // Slots on the same page are merged into a single page on commit.
 // Block 0 writes slots 0 and 1. Block 1 updates slot 0 only.
 // After block 1 commit, both the updated slot 0 and the untouched slot 1

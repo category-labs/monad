@@ -105,30 +105,25 @@ namespace
         return pair;
     }
 
-    void store_bitmap_le(slot_bitmap_t const bm, uint8_t out[16])
-    {
-        for (size_t i = 0; i < 16; ++i) {
-            out[i] = static_cast<uint8_t>(bm >> (i * 8));
-        }
-    }
-
     bytes32_t
     blake3_seal(slot_bitmap_t const slot_bitmap, uint8_t const *root_32)
     {
-        // BLAKE3(slot_bitmap_le_16B || merge_root_32B), or just the bitmap
-        // when there is no root (empty page).
-        uint8_t buf[48];
-        store_bitmap_le(slot_bitmap, buf);
-        size_t len = 16;
+        // blake3_compress(slot_bitmap_le_16B || merge_root_32B), or just the
+        // bitmap when there is no root (empty page).
+        uint8_t block[BLAKE3_BLOCK_LEN] = {}; // zero-padded to 64 bytes
+        static_assert(std::endian::native == std::endian::little);
+        std::memcpy(block, &slot_bitmap, sizeof(slot_bitmap)); // little endian
+        uint8_t len = sizeof(slot_bitmap);
         if (root_32 != nullptr) {
-            std::memcpy(buf + 16, root_32, BLAKE3_OUT_LEN);
-            len = 48;
+            std::memcpy(block + sizeof(slot_bitmap), root_32, BLAKE3_OUT_LEN);
+            len += BLAKE3_OUT_LEN; // 16 + 32 = 48
         }
+        uint32_t cv[8];
+        std::memcpy(cv, IV, sizeof(cv));
+        blake3_compress_in_place(
+            cv, block, len, 0, CHUNK_START | CHUNK_END | ROOT);
         bytes32_t out;
-        blake3_hasher hasher;
-        blake3_hasher_init(&hasher);
-        blake3_hasher_update(&hasher, buf, len);
-        blake3_hasher_finalize(&hasher, out.bytes, BLAKE3_OUT_LEN);
+        std::memcpy(out.bytes, cv, BLAKE3_OUT_LEN);
         return out;
     }
 } // namespace
@@ -152,12 +147,14 @@ bytes32_t page_commit(storage_page_t const &page)
         uint8_t indices[NUM_PAIRS];
         size_t n = 0;
         uint64_t bits = pair_bitmap;
+        auto const *const slot_array_bytes =
+            reinterpret_cast<uint8_t const *>(&page.slots);
         while (bits != 0) {
             auto const idx = static_cast<uint8_t>(std::countr_zero(bits));
             indices[n] = idx;
             // slots are contiguous in memory: this points to the 64-byte
             // pair (slot[idx*2] || slot[idx*2 + 1]) that BLAKE3 will read.
-            inputs[n] = page.slots[idx * 2].bytes;
+            inputs[n] = slot_array_bytes + idx * 2 * storage_page_t::SLOT_SIZE;
             ++n;
             bits &= bits - 1; // clear the lowest set bit
         }

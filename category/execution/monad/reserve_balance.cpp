@@ -61,7 +61,7 @@ bool dipped_into_reserve(
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
 
-    static constexpr bool allow_init_selfdestruct_exemption =
+    static constexpr bool allow_initcode_exemption =
         traits::monad_rev() >= MONAD_NINE;
 
     uint256_t const gas_fees =
@@ -94,8 +94,7 @@ bool dipped_into_reserve(
             }
         }
         else if (
-            allow_init_selfdestruct_exemption && state.is_destructed(addr) &&
-            state.is_current_incarnation(addr)) {
+            allow_initcode_exemption && state.has_executed_initcode(addr)) {
             continue;
         }
 
@@ -216,14 +215,11 @@ void ReserveBalance::update_violation_status(Address const &address)
     }
 
     auto &violation_threshold = violation_thresholds_[address];
-    if (allow_init_selfdestruct_exemption_ && state_->is_destructed(address) &&
-        state_->is_current_incarnation(address)) {
-        // Contracts that selfdestruct during init never get a code hash.
+    if (has_executed_initcode(address)) {
         violation_threshold = uint256_t{0};
         failed_.erase(address);
         return;
     }
-
     if (!violation_threshold.has_value()) {
         if (!subject_account(address)) {
             violation_threshold = uint256_t{0};
@@ -316,6 +312,21 @@ void ReserveBalance::on_set_code(
     update_violation_status(address);
 }
 
+void ReserveBalance::on_initcode_execution(Address const &address)
+{
+    if (!allow_initcode_exemption_) {
+        return;
+    }
+    initcode_exec_accounts_.insert(address);
+    update_violation_status(address);
+}
+
+bool ReserveBalance::has_executed_initcode(Address const &address) const
+{
+    return allow_initcode_exemption_ &&
+           initcode_exec_accounts_.contains(address);
+}
+
 template <Traits traits>
 void ReserveBalance::init_from_tx(
     Address const &sender, Transaction const &tx,
@@ -334,12 +345,14 @@ void ReserveBalance::init_from_tx(
     if constexpr (tracking_disabled) {
         tracking_enabled_ = false;
         use_recent_code_hash_ = false;
-        allow_init_selfdestruct_exemption_ = false;
+        allow_initcode_exemption_ = false;
         sender_ = {};
         sender_gas_fees_ = 0;
         sender_can_dip_ = false;
         get_max_reserve_ = {};
         failed_.clear();
+        initcode_exec_accounts_.clear();
+        violation_thresholds_.clear();
         return;
     }
 
@@ -347,7 +360,7 @@ void ReserveBalance::init_from_tx(
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
     use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
-    allow_init_selfdestruct_exemption_ = traits::monad_rev() >= MONAD_NINE;
+    allow_initcode_exemption_ = traits::monad_rev() >= MONAD_NINE;
     bytes32_t const sender_code_hash =
         use_recent_code_hash_
             ? state_->get_code_hash(sender)
@@ -363,6 +376,7 @@ void ReserveBalance::init_from_tx(
         return get_max_reserve<traits>(addr);
     };
     failed_.clear();
+    initcode_exec_accounts_.clear();
     violation_thresholds_.clear();
 }
 

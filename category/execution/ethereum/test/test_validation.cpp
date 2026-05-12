@@ -17,21 +17,15 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
-#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/state2/block_state.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/test/test_traits_state.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/mpt/db.hpp>
-#include <category/vm/evm/traits.hpp>
-#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
@@ -39,18 +33,17 @@
 
 #include <gtest/gtest.h>
 
-#include <intx/intx.hpp>
-
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <type_traits>
 
 using namespace monad;
 
 namespace
 {
     using namespace ::monad::literals;
-    using intx::operator""_u256;
 
     static constexpr auto r{
         0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256};

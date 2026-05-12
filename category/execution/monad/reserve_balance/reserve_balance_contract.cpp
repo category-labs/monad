@@ -13,16 +13,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/address.hpp>
-#include <category/execution/ethereum/core/contract/abi_decode.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
+#include <category/core/int.hpp>
+#include <category/core/likely.h>
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
-#include <category/execution/ethereum/core/contract/events.hpp>
-#include <category/execution/ethereum/core/contract/storage_variable.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+
+#include <category/vm/evm/traits.hpp>
+#include <evmc/evmc.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <utility>
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
@@ -86,8 +95,7 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
         return {&ReserveBalanceContract::precompile_fallback, FALLBACK_COST};
     }
 
-    auto const signature =
-        intx::be::unsafe::load<uint32_t>(input.substr(0, 4).data());
+    auto const signature = load_be_unsafe<uint32_t>(input.substr(0, 4).data());
     input.remove_prefix(4);
 
     switch (signature) {

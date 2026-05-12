@@ -15,6 +15,8 @@
 
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
@@ -23,15 +25,20 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/mpt/db.hpp>
 #include <category/vm/vm.hpp>
 
 #include <test_resource_data.h>
 
+#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
+
+#include <cstdint>
+#include <optional>
+#include <ostream>
 
 using namespace monad;
 using namespace monad::test;
-using namespace intx::literals;
 
 struct Storage : public ::testing::Test
 {

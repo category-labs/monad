@@ -15,6 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 
@@ -28,8 +29,6 @@
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-
-#include <intx/intx.hpp>
 
 #include <benchmark/benchmark.h>
 
@@ -78,7 +77,7 @@ struct benchmark_case
 {
     std::string name;
     msg_ptr msg;
-    std::vector<std::uint8_t> code;
+    std::vector<uint8_t> code;
 };
 
 namespace
@@ -89,11 +88,11 @@ namespace
 
     auto make_benchmark(
         TestMemory &test_memory, std::string const &name,
-        std::span<std::uint8_t const> code, std::span<std::uint8_t const> input)
+        std::span<uint8_t const> code, std::span<uint8_t const> input)
     {
-        std::vector<std::uint8_t> code_buffer(code.begin(), code.end());
+        std::vector<uint8_t> code_buffer(code.begin(), code.end());
 
-        auto *input_buffer = new std::uint8_t[input.size()];
+        auto *input_buffer = new uint8_t[input.size()];
         std::copy(input.begin(), input.end(), input_buffer);
 
         auto msg = msg_ptr(new evmc_message{
@@ -116,7 +115,7 @@ namespace
         return benchmark_case{name, std::move(msg), std::move(code_buffer)};
     }
 
-    std::vector<std::uint8_t> read_file(fs::path const &path)
+    std::vector<uint8_t> read_file(fs::path const &path)
     {
         auto in = std::ifstream(path, std::ios::binary);
         return {
@@ -170,7 +169,7 @@ namespace
     void run_benchmark(
         benchmark::State &bench_state,
         BlockchainTestVM::Implementation const impl, evmc_message const msg,
-        std::vector<std::uint8_t> const &code)
+        std::vector<uint8_t> const &code)
     {
         auto vm = evmc::VM(new BlockchainTestVM(impl));
 
@@ -297,7 +296,7 @@ namespace
 
     void register_benchmark(
         std::string_view const name, evmc_message const msg,
-        std::vector<std::uint8_t> const &code)
+        std::vector<uint8_t> const &code)
     {
         for (auto const impl : all_impls) {
             benchmark::RegisterBenchmark(
@@ -358,7 +357,7 @@ namespace
                         .sender = sender,
                         .input_data = tx.data.data(),
                         .input_size = tx.data.size(),
-                        .value = intx::be::store<evmc::uint256be>(tx.value),
+                        .value = store_be_as<evmc::uint256be>(tx.value),
                         .create2_salt = {},
                         .code_address = recipient,
                         .memory_handle = test_memory.data,

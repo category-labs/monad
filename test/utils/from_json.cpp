@@ -24,7 +24,7 @@
 
 #include <evmc/evmc.h>
 
-#include <intx/intx.hpp>
+#include <category/core/int.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -39,8 +39,8 @@ monad::BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
 
     BlockHeader block_header{};
 
-    block_header.difficulty = intx::from_string<uint256_t>(
-        genesis_json["difficulty"].get<std::string>());
+    block_header.difficulty =
+        from_string<uint256_t>(genesis_json["difficulty"].get<std::string>());
 
     auto const extra_data =
         from_hex(genesis_json["extraData"].get<std::string>());
@@ -60,7 +60,7 @@ monad::BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
 
     uint64_t const nonce{
         std::stoull(genesis_json["nonce"].get<std::string>(), nullptr, 0)};
-    intx::be::unsafe::store<uint64_t>(block_header.nonce.data(), nonce);
+    store_be(block_header.nonce.data(), nonce);
 
     auto const parent_hash_byte_string =
         from_hex(genesis_json["parentHash"].get<std::string>());
@@ -85,7 +85,7 @@ monad::BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
 
     // London fork
     if (genesis_json.contains("baseFeePerGas")) {
-        block_header.base_fee_per_gas = intx::from_string<uint256_t>(
+        block_header.base_fee_per_gas = from_string<uint256_t>(
             genesis_json["baseFeePerGas"].get<std::string>());
     }
 
@@ -150,7 +150,7 @@ namespace nlohmann
             }
 
             state.add_to_balance(
-                account_address, j_acc.at("balance").get<intx::uint256>());
+                account_address, j_acc.at("balance").get<monad::uint256_t>());
             // we cannot use the nlohmann::json from_json<uint64_t> because
             // it does not use the strtoull implementation, whereas we need
             // it so we can turn a hex string into a uint64_t

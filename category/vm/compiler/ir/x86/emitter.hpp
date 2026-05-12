@@ -89,14 +89,14 @@ namespace monad::vm::compiler::native
 
             asmjit::Label const &label() const;
 
-            std::vector<runtime::uint256_t> const &data() const;
+            std::vector<uint256_t> const &data() const;
 
             asmjit::x86::Mem add_literal(Literal const &);
 
             template <typename F>
             asmjit::x86::Mem add_external_function(F);
 
-            asmjit::x86::Mem add32(runtime::uint256_t const &);
+            asmjit::x86::Mem add32(uint256_t const &);
             asmjit::x86::Mem add16(uint64_t, uint64_t);
             asmjit::x86::Mem add8(uint64_t);
             asmjit::x86::Mem add4(uint32_t);
@@ -110,7 +110,7 @@ namespace monad::vm::compiler::native
             asmjit::Label label_;
             int32_t partial_index_{};
             int32_t partial_sub_index_{32};
-            std::vector<runtime::uint256_t> data_;
+            std::vector<uint256_t> data_;
             RoSubdata<32> sub32_;
             RoSubdata<16> sub16_;
             RoSubdata<8> sub8_;

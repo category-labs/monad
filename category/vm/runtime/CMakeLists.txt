@@ -61,7 +61,6 @@ target_include_directories(monad-vm-runtime
 target_link_libraries(monad-vm-runtime
     PUBLIC evmc::evmc
     PUBLIC ethash::keccak
-    PUBLIC intx::intx
     PUBLIC monad_core
     PUBLIC monad-vm::monad-vm-evm
 )

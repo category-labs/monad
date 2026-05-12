@@ -17,7 +17,6 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 
 #include <blst.h>
-#include <intx/intx.hpp>
 #include <secp256k1.h>
 
 namespace monad::staking::test

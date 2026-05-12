@@ -179,7 +179,7 @@ namespace monad::vm::utils::evm_as
     {
         auto const label_offsets = resolve_labels<traits>(eb);
         for (auto const &ins : eb) {
-            std::array<uint8_t, sizeof(runtime::uint256_t)> imm_bytes{};
+            std::array<uint8_t, sizeof(uint256_t)> imm_bytes{};
             if (Instruction::is_comment(ins)) {
                 continue;
             }

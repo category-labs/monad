@@ -25,16 +25,14 @@
 // It is assumed that if the `result` pointer overlaps with `left` and/or
 // `right`, then `result` pointer is equal to `left` and/or `right`.
 extern "C" void monad_vm_runtime_mul(
-    monad::vm::runtime::uint256_t *result,
-    monad::vm::runtime::uint256_t const *left,
-    monad::vm::runtime::uint256_t const *right) noexcept;
+    monad::uint256_t *result, monad::uint256_t const *left,
+    monad::uint256_t const *right) noexcept;
 
 // It is assumed that if the `result` pointer overlaps with `left` and/or
 // `right`, then `result` pointer is equal to `left` and/or `right`.
 extern "C" void monad_vm_runtime_mul_192(
-    monad::vm::runtime::uint256_t *result,
-    monad::vm::runtime::uint256_t const *left,
-    monad::vm::runtime::uint256_t const *right) noexcept;
+    monad::uint256_t *result, monad::uint256_t const *left,
+    monad::uint256_t const *right) noexcept;
 
 namespace monad::vm::runtime
 {

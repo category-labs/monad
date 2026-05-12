@@ -33,7 +33,6 @@
 #include <category/mpt/traverse_util.hpp>
 
 #include <ethash/keccak.hpp>
-#include <intx/intx.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <gmock/gmock.h>
@@ -55,6 +54,7 @@
 
 using namespace monad;
 using namespace monad::test;
+using namespace monad::literals;
 
 namespace
 {
@@ -472,8 +472,6 @@ TYPED_TEST(DBTest, storage_deletion)
 
 TYPED_TEST(DBTest, commit_receipts_transactions)
 {
-    using namespace intx;
-    using namespace monad::literals;
 
     TrieDb tdb{this->db};
     // empty receipts
@@ -652,8 +650,6 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
 
 TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
 {
-    using namespace intx;
-    using namespace monad::literals;
 
     TrieDb tdb{this->db};
 

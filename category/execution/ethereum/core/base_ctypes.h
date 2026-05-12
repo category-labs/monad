@@ -21,9 +21,9 @@
  * Primitive Ethereum vocabulary types that cross C ABI boundaries. These types
  * have a well-defined C layout for the sake of cross-language interoperability,
  * but when hosted in a C++ program behave as type aliases to layout-compatible
- * types with richer interfaces, e.g., intx::uint256. The latter occurs only if
- * the headers are available, otherwise we'll get C structures with appropriate
- * size and alignment.
+ * types with richer interfaces, e.g., monad::uint256_t. The latter occurs only
+ * if the headers are available, otherwise we'll get C structures with
+ * appropriate size and alignment.
  */
 
 // clang-format off
@@ -50,9 +50,9 @@
     using monad_c_bytes32 = std::array<std::uint8_t, 32>;
 #endif
 
-#if MONAD_CXX_CTYPES_USE_INTX
-    #include <intx/intx.hpp>
-    using monad_c_uint256_ne = intx::uint256;
+#if MONAD_CXX_CTYPES_USE_MONAD_INTS
+    #include <category/core/int.hpp>
+    using monad_c_uint256_ne = monad::uint256_t;
 #else
     // See comment in the C version of this below
     struct monad_c_uint256_ne

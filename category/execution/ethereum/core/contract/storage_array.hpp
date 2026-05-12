@@ -15,9 +15,17 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
+#include <category/core/int.hpp>
+#include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 
-#include <intx/intx.hpp>
+#include <cstddef>
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -39,7 +47,7 @@ public:
         : state_{state}
         , address_{address}
         , length_{StorageVariable<u64_be>(state, address, slot)}
-        , start_index_{intx::be::load<uint256_t>(slot) + 1}
+        , start_index_{uint256_t::load_be(slot.bytes) + 1}
     {
     }
 
@@ -57,7 +65,7 @@ public:
     {
         uint256_t const offset = start_index_ + index * SLOT_PER_ELEM;
         return StorageVariable<T>{
-            state_, address_, intx::be::store<bytes32_t>(offset)};
+            state_, address_, store_be_as<bytes32_t>(offset)};
     }
 
     void push(T const &value) noexcept
@@ -65,7 +73,7 @@ public:
         auto const len = length();
         uint256_t const offset = start_index_ + len * SLOT_PER_ELEM;
         StorageVariable<T> var{
-            state_, address_, intx::be::store<bytes32_t>(offset)};
+            state_, address_, store_be_as<bytes32_t>(offset)};
         var.store(value);
         length_.store(len + 1);
     }

@@ -15,27 +15,28 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/basic_formatter.hpp>
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
-#include <category/core/likely.h>
-#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
+#include <category/core/keccak.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 
+#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <intx/intx.hpp>
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
-#include <fstream>
-#include <iomanip>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
-#include <sstream>
-#include <string>
-#include <string_view>
+#include <stack>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -138,7 +139,7 @@ void CallTracer::on_enter(evmc_message const &msg)
         .flags = msg.flags,
         .from = from,
         .to = to,
-        .value = intx::be::load<uint256_t>(msg.value),
+        .value = uint256_t::load_be(msg.value.bytes),
         .gas = depth == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
         .gas_used = 0,
         .input = msg.input_data == nullptr

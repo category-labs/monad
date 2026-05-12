@@ -15,7 +15,8 @@
 
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
-#include <category/core/int.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
@@ -23,12 +24,9 @@
 
 #include <limits>
 
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
-#include <intx/intx.hpp>
 
 using namespace monad;
-using namespace intx::literals;
 
 template <typename T>
 class UintDecodeTest : public ::testing::Test

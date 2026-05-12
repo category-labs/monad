@@ -14,21 +14,22 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 
-#include <intx/intx.hpp>
-
+#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
 
+#include <cstdint>
 #include <optional>
 
 using namespace monad;
-using namespace intx;
 using namespace monad::literals;
 
 TEST(Rlp_Block, DecodeEncodeBlock46402)
@@ -1050,7 +1051,6 @@ TEST(Rlp_Block, DecodeEncodeCancun)
 
 TEST(Rlp_block, IntTypeMismatchRegression)
 {
-    using intx::operator""_u256;
 
     auto const block_header = BlockHeader{
         .base_fee_per_gas = 0xFFFFFFFFFFFFFFFFFF_u256,

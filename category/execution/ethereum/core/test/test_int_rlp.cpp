@@ -24,8 +24,6 @@
 
 #include <evmc/evmc.hpp>
 
-#include <intx/intx.hpp>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -173,7 +171,6 @@ TEST(Rlp_Number, DecodeEncodeUnsigned)
 
 TEST(Rlp_Number, DecodeEncodeBigNumers)
 {
-    using namespace intx;
 
     // uint128_t
     {

@@ -25,8 +25,6 @@
 
 #include <evmc/evmc.h>
 
-#include <intx/intx.hpp>
-
 // TODO immer known to trigger incorrect warning
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"

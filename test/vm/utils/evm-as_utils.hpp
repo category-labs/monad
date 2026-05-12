@@ -82,8 +82,7 @@ namespace monad::vm::test
             for (size_t j = 0; j < max_stack_values; j += n) {
                 for (size_t k = 0; k < n; ++k) {
                     size_t const c = i + 32 * (max_stack_values - j - n + k);
-                    runtime::uint256_t::load_be_unsafe(
-                        &base_calldata[count * 32])
+                    uint256_t::load_be_unsafe(&base_calldata[count * 32])
                         .store_be(&ret[c]);
                     ++count;
                 }
@@ -122,8 +121,8 @@ namespace monad::vm::test
                    KB::get_sequence_repetition_count(
                        args_size, throughput_calldata.size());
         MONAD_ASSERT(ctx->result.status == runtime::StatusCode::Success);
-        MONAD_ASSERT(runtime::uint256_t::load_le(ctx->result.size) == n);
-        MONAD_ASSERT(runtime::uint256_t::load_le(ctx->result.offset) == 0);
+        MONAD_ASSERT(uint256_t::load_le(ctx->result.size) == n);
+        MONAD_ASSERT(uint256_t::load_le(ctx->result.offset) == 0);
 
         KernelCalldata ret{throughput_calldata.size()};
         std::memcpy(ret.data(), ctx->memory.data, n);

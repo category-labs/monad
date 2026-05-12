@@ -29,7 +29,7 @@ using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;
 
-constexpr vm::runtime::uint256_t prog = 0x63FFFFFFFF6000526004601CF3_u256;
+constexpr uint256_t prog = 0x63FFFFFFFF6000526004601CF3_u256;
 constexpr Address result_addr = Address{uint8_t{0x42}};
 
 TYPED_TEST(RuntimeTraitsTest, Create)
@@ -45,7 +45,7 @@ TYPED_TEST(RuntimeTraitsTest, Create)
 
     auto do_create = TestFixture::wrap(create<typename TestFixture::Trait>);
 
-    vm::runtime::uint256_t const addr = do_create(0, 19, 13);
+    uint256_t const addr = do_create(0, 19, 13);
 
     ASSERT_EQ(addr, uint256_from_address(result_addr));
     ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
@@ -70,7 +70,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateSizeIsZero)
 
     auto do_create = TestFixture::wrap(create<typename TestFixture::Trait>);
 
-    vm::runtime::uint256_t const addr = do_create(0, 0, 0);
+    uint256_t const addr = do_create(0, 0, 0);
 
     ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
     ASSERT_EQ(addr, uint256_from_address(result_addr));
@@ -83,7 +83,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateFailure)
 
     auto do_create = TestFixture::wrap(create<typename TestFixture::Trait>);
 
-    vm::runtime::uint256_t const addr = do_create(0, 0, 0);
+    uint256_t const addr = do_create(0, 0, 0);
 
     ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
     ASSERT_EQ(addr, 0);
@@ -102,7 +102,7 @@ TYPED_TEST(RuntimeTraitsTest, Create2)
         auto do_create2 =
             TestFixture::wrap(create2<typename TestFixture::Trait>);
 
-        vm::runtime::uint256_t const addr = do_create2(0, 19, 13, 0x99);
+        uint256_t const addr = do_create2(0, 19, 13, 0x99);
 
         ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
         ASSERT_EQ(addr, uint256_from_address(result_addr));
@@ -159,8 +159,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateAboveMaxCodeSize)
         ASSERT_EQ(this->ctx_.result.status, StatusCode::OutOfGas);
         ASSERT_EQ(addr, 0);
 
-        std::free(
-            const_cast<std::uint8_t *>(this->host_.call_result.output_data));
+        std::free(const_cast<uint8_t *>(this->host_.call_result.output_data));
     }
 }
 
@@ -209,7 +208,6 @@ TYPED_TEST(RuntimeTraitsTest, Create2AboveMaxCodeSize)
         ASSERT_EQ(this->ctx_.result.status, StatusCode::OutOfGas);
         ASSERT_EQ(addr, 0);
 
-        std::free(
-            const_cast<std::uint8_t *>(this->host_.call_result.output_data));
+        std::free(const_cast<uint8_t *>(this->host_.call_result.output_data));
     }
 }

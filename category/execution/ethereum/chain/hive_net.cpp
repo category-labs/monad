@@ -15,6 +15,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/hive_net.hpp>
 #include <category/execution/ethereum/chain/hive_net_alloc.hpp>
 
@@ -72,7 +73,7 @@ GenesisState HiveNet::get_genesis_state() const
     BlockHeader header;
     header.difficulty = 0x20000;
     header.gas_limit = 0x23f3e20;
-    intx::be::unsafe::store<uint64_t>(header.nonce.data(), 0x0);
+    store_be(header.nonce.data(), uint64_t{0x0});
     header.extra_data = from_hex("0x68697665636861696e").value();
     return {header, HIVE_NET_ALLOC};
 }

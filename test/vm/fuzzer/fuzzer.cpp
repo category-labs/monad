@@ -37,12 +37,13 @@
 
 #include <evmone/constants.hpp>
 #include <evmone/evmone.h>
+#include <intx/intx.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <CLI/CLI.hpp>
-#include <intx/intx.hpp>
+#include <category/core/int.hpp>
 
 #include <algorithm>
 #include <array>
@@ -149,7 +150,7 @@ static Transaction tx_from(State &state, Address const &addr) noexcept
 // send arbitrary messages to update the state.
 static evmc::Result transition(
     State &state, evmc_message const &msg, evmc_revision const rev,
-    evmc::VM &vm, std::int64_t const block_gas_left)
+    evmc::VM &vm, int64_t const block_gas_left)
 {
     // Pre-transaction clean-up.
     // - Clear transient storage.
@@ -223,8 +224,7 @@ static evmc::Result transition(
 }
 
 static Address deploy_contract(
-    State &state, Address const &from,
-    std::span<std::uint8_t const> const code_)
+    State &state, Address const &from, std::span<uint8_t const> const code_)
 {
     auto code = bytes{code_.data(), code_.size()};
 
@@ -313,7 +313,7 @@ namespace
         static constexpr seed_t default_seed =
             std::numeric_limits<seed_t>::max();
 
-        std::int64_t iterations_per_run = 100;
+        int64_t iterations_per_run = 100;
         std::size_t messages = 4;
         seed_t seed = default_seed;
         std::size_t runs = std::numeric_limits<std::size_t>::max();

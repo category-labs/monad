@@ -14,11 +14,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-
-#include <intx/intx.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -178,8 +177,6 @@ constexpr uint64_t expmod_min_gas()
     }
 }
 
-// TODO(LH): Replace calls to this function with uint256_t::load_be_unsafe when
-// migrating off intx.
 static uint256_t
 uint256_load_partial_be(byte_string_view const input, size_t const len)
 {
@@ -187,13 +184,7 @@ uint256_load_partial_be(byte_string_view const input, size_t const len)
         return 0;
     }
 
-    uint256_t result{};
-    MONAD_ASSERT(32 >= len);
-    std::memcpy(
-        intx::as_bytes(result) + (32 - len),
-        input.data(),
-        std::min(len, input.size()));
-    return intx::to_big_endian(result);
+    return from_bytes(len, input.size(), input.data());
 }
 
 template <Traits traits>
@@ -242,7 +233,7 @@ std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
         exp_head = uint256_load_partial_be(
             input.substr(exp_index), std::min(32ul, exp_len64));
     }
-    size_t const bit_len{256 - clz(exp_head)};
+    size_t const bit_len{256 - countl_zero(exp_head)};
 
     uint256_t const iteration_count{
         expmod_iteration_count<traits>(exp_len256, bit_len)};
@@ -251,7 +242,7 @@ std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
     uint256_t const gas = mult_complexity<traits>(max_length) *
                           iteration_count / expmod_gas_denominator<traits>();
 
-    if (intx::count_significant_words(gas) > 1) {
+    if (gas > std::numeric_limits<uint64_t>::max()) {
         return std::numeric_limits<uint64_t>::max();
     }
     else {

@@ -16,33 +16,39 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/likely.h>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 
 #include <cryptopp/eccrypto.h>
 #include <cryptopp/ecp.h>
 #include <cryptopp/integer.h>
-#include <cryptopp/nbtheory.h>
 #include <cryptopp/oids.h>
-
-#include <blst.h>
 
 #include <c-kzg-4844/trusted_setup.hpp>
 
 #include <eip4844/eip4844.h>
 
-#include <evmc/evmc.h>
+#include <common/bytes.h>
+#include <common/ret.h>
 
-#include <intx/intx.hpp>
+#include <evmc/evmc.h>
 
 #include <setup/settings.h>
 #include <setup/setup.h>
 
+#include <stdio.h>
+
 #include <silkpre/precompile.h>
 #include <silkpre/sha256.h>
 
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <optional>
+#include <string_view>
 
 namespace
 {
@@ -52,6 +58,7 @@ namespace
     {
         constexpr uint8_t VERSION_HASH_VERSION_KZG = 1;
         monad::bytes32_t h;
+        // TODO: remove silkpre
         silkpre_sha256(
             h.bytes,
             commitment.bytes,
@@ -95,6 +102,7 @@ bool init_trusted_setup()
     return g_trustedSetup.has_value();
 }
 
+// TODO: remove silkpre
 template <SilkpreRunFunction Func>
 static inline PrecompileResult silkpre_execute(byte_string_view const input)
 {

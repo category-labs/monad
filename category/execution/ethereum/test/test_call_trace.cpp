@@ -15,35 +15,47 @@
 
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/vm/code.hpp>
 #include <category/vm/utils/evm-as.hpp>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <gtest/gtest.h>
-
-#include <intx/intx.hpp>
-
 #include <nlohmann/json.hpp>
+
+#include <gtest/gtest.h>
 
 #include <test_resource_data.h>
 
+#include <cstdint>
+#include <limits>
 #include <optional>
+#include <span>
+#include <utility>
+#include <vector>
 
 using namespace monad;
 using namespace monad::literals;
@@ -766,8 +778,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{{
             {
-                .data = byte_string{intx::be::store<bytes32_t, uint256_t>(
-                    1'000'000)},
+                .data =
+                    byte_string{store_be_as<bytes32_t, uint256_t>(1'000'000)},
                 .topics =
                     std::vector{
                         0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
@@ -873,7 +885,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
 
     CallFrame::Log const expected_log{
         {
-            .data = byte_string{intx::be::store<bytes32_t, uint256_t>(1000)},
+            .data = byte_string{store_be_as<bytes32_t, uint256_t>(1000)},
             .topics =
                 std::vector{
                     0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
@@ -1237,7 +1249,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
                   0,
                   // non-zero value such that subsequent calls
                   // go-to the selfdestruct branch
-                  std::numeric_limits<monad::vm::runtime::uint256_t>::max())
+                  std::numeric_limits<uint256_t>::max())
                 .push(0)
                 .calldataload()
                 .iszero()
@@ -1248,12 +1260,12 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
                 .call(
                     {.gas = 1'000'000,
                      .address = SELFDESTRUCT_CONTRACT_ADDR,
-                     .args_size = sizeof(monad::vm::runtime::uint256_t)})
+                     .args_size = sizeof(uint256_t)})
                 .pop()
                 .call(
                     {.gas = 1'000'000,
                      .address = SELFDESTRUCT_CONTRACT_ADDR,
-                     .args_size = sizeof(monad::vm::runtime::uint256_t)})
+                     .args_size = sizeof(uint256_t)})
                 .pop()
                 .stop(),
             bytecode);

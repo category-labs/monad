@@ -14,12 +14,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/contract/checked_math.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -30,13 +31,13 @@
 
 #include <evmc/evmc.h>
 
-#include <intx/intx.hpp>
-
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
 
+#include <intx/intx.hpp>
 #include <silkpre/secp256k1n.hpp>
 
+#include <bit>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
@@ -164,15 +165,38 @@ Result<void> static_validate_transaction(
         return TransactionError::NonceExceedsMax;
     }
 
-    // EIP-1559
+    // EIP-1559: check gas_limit * max_fee_per_gas doesn't overflow uint256
     if (MONAD_UNLIKELY(
-            max_gas_cost(tx.gas_limit, tx.max_fee_per_gas) >
-            std::numeric_limits<uint256_t>::max())) {
+            !checked_mul(uint256_t{tx.gas_limit}, tx.max_fee_per_gas))) {
         return TransactionError::GasLimitOverflow;
     }
 
+    // silkpre expects intx::uint256; verify layout matches monad::uint256_t
+    static_assert(sizeof(uint256_t) == sizeof(intx::uint256));
+    static_assert(alignof(uint256_t) == alignof(intx::uint256));
+    static_assert(std::is_trivially_copyable_v<uint256_t>);
+    static_assert(std::is_trivially_copyable_v<intx::uint256>);
+    static_assert(
+        std::has_unique_object_representations_v<uint256_t>,
+        "uint256_t must have no padding to round-trip via bit_cast");
+    static_assert(
+        std::has_unique_object_representations_v<intx::uint256>,
+        "intx::uint256 must have no padding to round-trip via bit_cast");
+    static_assert(
+        [] {
+            // Verify that word[i] in monad::uint256_t maps to word[i] in
+            // intx::uint256 (both little-endian word order).
+            uint256_t const src{1, 2, 3, 4};
+            auto const dst = std::bit_cast<intx::uint256>(src);
+            return dst[0] == 1 && dst[1] == 2 && dst[2] == 3 && dst[3] == 4;
+        }(),
+        "monad::uint256_t and intx::uint256 word layout must match");
+    // TODO: remove silkpre
     // EIP-2
-    if (MONAD_UNLIKELY(!silkpre::is_valid_signature(tx.sc.r, tx.sc.s, true))) {
+    if (MONAD_UNLIKELY(!silkpre::is_valid_signature(
+            std::bit_cast<intx::uint256>(tx.sc.r),
+            std::bit_cast<intx::uint256>(tx.sc.s),
+            true))) {
         return TransactionError::InvalidSignature;
     }
 

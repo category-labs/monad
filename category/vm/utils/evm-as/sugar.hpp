@@ -29,42 +29,42 @@ namespace monad::vm::utils::evm_as::sugar
     struct CallArgs
     {
         uint64_t const gas{0};
-        Address const address{0};
-        runtime::uint256_t const value{0};
-        runtime::uint256_t const args_offset{0};
-        runtime::uint256_t const args_size{0};
-        runtime::uint256_t const ret_offset{0};
-        runtime::uint256_t const ret_size{0};
+        Address const address{};
+        uint256_t const value{0};
+        uint256_t const args_offset{0};
+        uint256_t const args_size{0};
+        uint256_t const ret_offset{0};
+        uint256_t const ret_size{0};
     };
 
     struct CallCodeArgs
     {
         uint64_t const gas{0};
-        Address const address{0};
-        runtime::uint256_t const value{0};
-        runtime::uint256_t const args_offset{0};
-        runtime::uint256_t const args_size{0};
-        runtime::uint256_t const ret_offset{0};
-        runtime::uint256_t const ret_size{0};
+        Address const address{};
+        uint256_t const value{0};
+        uint256_t const args_offset{0};
+        uint256_t const args_size{0};
+        uint256_t const ret_offset{0};
+        uint256_t const ret_size{0};
     };
 
     struct DelegateCallArgs
     {
         uint64_t const gas{0};
-        Address const address{0};
-        runtime::uint256_t const args_offset{0};
-        runtime::uint256_t const args_size{0};
-        runtime::uint256_t const ret_offset{0};
-        runtime::uint256_t const ret_size{0};
+        Address const address{};
+        uint256_t const args_offset{0};
+        uint256_t const args_size{0};
+        uint256_t const ret_offset{0};
+        uint256_t const ret_size{0};
     };
 
     struct StaticCallArgs
     {
         uint64_t const gas{0};
-        Address const address{0};
-        runtime::uint256_t const args_offset{0};
-        runtime::uint256_t const args_size{0};
-        runtime::uint256_t const ret_offset{0};
-        runtime::uint256_t const ret_size{0};
+        Address const address{};
+        uint256_t const args_offset{0};
+        uint256_t const args_size{0};
+        uint256_t const ret_offset{0};
+        uint256_t const ret_size{0};
     };
 }

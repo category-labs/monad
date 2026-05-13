@@ -16,20 +16,24 @@
 #include "from_json.hpp"
 
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 
 #include <category/vm/vm.hpp>
 
+#include <memory>
+
 #include <test_resource_data.h>
 
 MONAD_TEST_NAMESPACE_BEGIN
 
-TestStateRef JsonState::make_test_state() const
+template <bool page_encoded>
+TestStateRef<page_encoded> JsonState::make_test_state() const
 {
     using namespace ::monad;
 
-    auto test_state = std::make_shared<TestState>();
+    auto test_state = std::make_shared<TestState<page_encoded>>();
 
     if (!init_state.has_value()) {
         return test_state;
@@ -60,6 +64,9 @@ TestStateRef JsonState::make_test_state() const
 
     return test_state;
 }
+
+template TestStateRef<false> JsonState::make_test_state<false>() const;
+template TestStateRef<true> JsonState::make_test_state<true>() const;
 
 std::vector<monad::Address> JsonState::initial_accounts() const
 {

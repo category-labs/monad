@@ -26,7 +26,8 @@ struct JsonState
     std::optional<nlohmann::json> init_state;
     std::optional<monad::bytes32_t> init_state_hash;
 
-    TestStateRef make_test_state() const;
+    template <bool page_encoded = false>
+    TestStateRef<page_encoded> make_test_state() const;
     std::vector<monad::Address> initial_accounts() const;
 };
 

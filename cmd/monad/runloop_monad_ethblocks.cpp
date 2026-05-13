@@ -41,6 +41,7 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -233,26 +234,16 @@ Result<void> process_monad_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code, _] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
-    builder.add_state_deltas(*state)
-        .add_code(code)
-        .add_receipts(receipts)
-        .add_transactions(block.transactions, senders)
-        .add_call_frames(call_frames)
-        .add_ommers(block.ommers);
-    if (block.withdrawals.has_value()) {
-        builder.add_withdrawals(block.withdrawals.value());
-    }
-    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
-        // second stage: populate block header
-        h.receipts_root = db.receipts_root();
-        h.state_root = db.state_root();
-        h.withdrawals_root = db.withdrawals_root();
-        h.transactions_root = db.transactions_root();
-        h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
-        h.logs_bloom = compute_bloom(receipts);
-        h.ommers_hash = compute_ommers_hash(block.ommers);
-    });
+    BlockCommitAncillaries const anc{
+        .code = code,
+        .receipts = receipts,
+        .transactions = block.transactions,
+        .senders = senders,
+        .call_frames = call_frames,
+        .ommers = block.ommers,
+        .withdrawals = block.withdrawals};
+    commit_block<traits>(db, nullptr, block_id, block.header, *state, anc);
+
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
@@ -412,6 +403,19 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         bytes32_t const block_id = bytes32_t{block.header.number};
         monad_revision const rev =
             chain.get_monad_revision(block.header.timestamp);
+
+        // Storage encoding is fixed for the lifetime of the runloop (it
+        // matches the TrieDbImpl<page_encoded> backing `db`). If the
+        // replay crosses the mip-8 cutoff in either direction, the
+        // encoding the caller picked at startup no longer matches what
+        // this block's revision expects.
+        MONAD_ASSERT_PRINTF(
+            mip_8_active(rev) == db.is_page_encoded(),
+            "monad revision %d at block %lu crosses mip-8 cutoff "
+            "but db was opened with page_encoded=%d",
+            rev,
+            block.header.number,
+            db.is_page_encoded());
 
         ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
         BOOST_OUTCOME_TRY([&] {

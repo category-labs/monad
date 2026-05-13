@@ -299,6 +299,16 @@ void TrieDb::set_block_and_prefix(
 // also changes internal state to the finalized state
 void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
 {
+    auto const latest_finalized = db_.get_latest_finalized_version();
+    MONAD_ASSERT_PRINTF(
+        latest_finalized == INVALID_BLOCK_NUM ||
+            block_number == latest_finalized ||
+            block_number == latest_finalized + 1,
+        "Finalized version must advance by at most one block. block to "
+        "finalize %lu must equal latest_finalized %lu or latest_finalized + 1",
+        block_number,
+        latest_finalized);
+
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk()) {
         auto const src_prefix = proposal_prefix(block_id);
@@ -319,6 +329,12 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
 
 void TrieDb::update_verified_block(uint64_t const block_number)
 {
+    auto const latest_verified = db_.get_latest_verified_version();
+    MONAD_ASSERT_PRINTF(
+        latest_verified == INVALID_BLOCK_NUM || block_number >= latest_verified,
+        "block_number %lu must be gte last_verified %lu",
+        block_number,
+        latest_verified);
     db_.update_verified_version(block_number);
 }
 

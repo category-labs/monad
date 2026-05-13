@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -311,177 +312,180 @@ try {
         MONAD_ASSERT(false);
     }();
 
-    TrieDb triedb{
-        raw_db,
-        /*enable_multiblock_cache=*/true}; // init block number to latest
-                                           // finalized block
-    // Note: in memory db block number is always zero
-    uint64_t const init_block_num = [&] {
-        if (!snapshot.empty()) {
-            if (triedb.get_root() != nullptr) {
-                throw std::runtime_error(
-                    "can not load checkpoint into non-empty database");
-            }
-            LOG_INFO("Loading from binary checkpoint in {}", snapshot);
-            std::ifstream accounts(snapshot / "accounts");
-            std::ifstream code(snapshot / "code");
-            auto const n = std::stoul(snapshot.stem());
-            auto root = load_from_binary(raw_db, accounts, code, n);
-            // load the eth header for snapshot
-            BlockDb block_db{block_db_path};
-            Block block;
-            MONAD_ASSERT_PRINTF(
-                block_db.get(n, block), "FATAL: Could not load block %lu", n);
-            root = load_header(std::move(root), raw_db, block.header);
-            triedb.reset_root(std::move(root), n);
-        }
-        else if (triedb.get_root() == nullptr) {
-            MONAD_ASSERT(statesync.empty());
-            LOG_INFO("loading from genesis");
+    // Detect the on-disk storage encoding for the primary db.
+    //  * For an existing db, the encoding comes from the page-encoded marker
+    //    stamped on the value of the finalized state subtrie's root entry.
+    //  * For a fresh / in-memory db, the encoding is inferred from the chain's
+    //    genesis revision: MONAD_NEXT or later means page-encoded from block 0.
+    //    Ethereum / hive chains are always slot-encoded.
+    bool const page_encoded = [&] {
+        auto const latest_finalized = raw_db.get_latest_finalized_version();
+        if (db_in_memory || latest_finalized == mpt::INVALID_BLOCK_NUM) {
+            auto const *const monad_chain =
+                dynamic_cast<MonadChain const *>(chain.get());
             GenesisState const genesis_state = chain->get_genesis_state();
-            load_genesis_state(genesis_state, triedb);
+            return monad_chain != nullptr &&
+                   monad_chain->get_monad_revision(
+                       genesis_state.header.timestamp) >= MONAD_NEXT;
         }
-        return triedb.get_block_number();
+        auto const res = raw_db.find(
+            mpt::concat(FINALIZED_NIBBLE, STATE_NIBBLE), latest_finalized);
+        MONAD_ASSERT(res.has_value(), "finalized root entry not found in db");
+        return res.value().node->value() ==
+               monad::byte_string_view{page_encoding_marker};
     }();
-
-    std::unique_ptr<monad::StateSyncServer> sync_server;
-    if (!statesync.empty()) {
-        sync_server = monad::make_statesync_server(monad::StateSyncServerConfig{
-            .triedb = &triedb,
-            .network = &net.value(),
-            .ro_sq_thread_cpu = ro_sq_thread_cpu,
-            .dbname_paths = dbname_paths});
+    if (page_encoded) {
+        if (db_in_memory) {
+            raw_db.reset_state_machine(
+                std::make_unique<MonadInMemoryMachine>());
+        }
+        else {
+            raw_db.reset_state_machine(std::make_unique<MonadOnDiskMachine>());
+        }
     }
-
     LOG_INFO(
-        "Finished initializing db at block = {}, last finalized block = {}, "
-        "last verified block = {}, state root = {}, time elapsed "
-        "= {}",
-        init_block_num,
-        raw_db.get_latest_finalized_version(),
-        raw_db.get_latest_verified_version(),
-        triedb.state_root(),
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - load_start_time));
+        "Detected primary db encoding: {}. Reset mpt db state machine",
+        page_encoded ? "page" : "slot");
 
-    uint64_t const start_block_num = init_block_num + 1;
-
-    LOG_INFO(
-        "Running with block_db = {}, start block number = {}, "
-        "number blocks = {}",
-        block_db_path,
-        start_block_num,
-        nblocks);
-
-    fiber::PriorityPool priority_pool{nthreads, nfibers};
-
-    auto const start_time = std::chrono::steady_clock::now();
-
-    BlockHashBufferFinalized block_hash_buffer;
-    bool initialized_headers_from_triedb = false;
-
-    if (!db_in_memory) {
-        mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
-            .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
-        mpt::Db rodb{io_ctx};
-        initialized_headers_from_triedb = init_block_hash_buffer_from_triedb(
-            rodb, start_block_num, block_hash_buffer);
-    }
-    if (!initialized_headers_from_triedb) {
-        BlockDb block_db{block_db_path};
-        MONAD_ASSERT(
-            chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
-            chain_config == CHAIN_CONFIG_HIVE_NET);
-        MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
-            block_db, start_block_num, block_hash_buffer));
-    }
-
-    if (isatty(STDIN_FILENO)) {
-        // When stdin is connected to a terminal, we're running interactively
-        signal(SIGINT, signal_handler);
-    }
-    signal(SIGTERM, signal_handler);
-    stop = 0;
-
-    uint64_t block_num = start_block_num;
-    uint64_t const end_block_num =
-        (std::numeric_limits<uint64_t>::max() - block_num + 1) <= nblocks
-            ? std::numeric_limits<uint64_t>::max()
-            : block_num + nblocks - 1;
-
-    // If call tracing is enabled, we need to correspondingly disable native
-    // compilation: the compiler does not expose the full fidelity of error exit
-    // codes that are required to serve RPC responses that include call traces.
-    vm::VM vm{trace_calls ? vm::VM::InterpreterOnly : vm::VM::Dual};
-
-    Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
-                         : static_cast<Db &>(triedb);
-
-    // Optional secondary db for migration: commits go through both the
-    // primary (slot storage, DbCache) and the secondary (page storage, raw).
-    std::optional<mpt::Db> secondary_db;
-    std::optional<PagedTrieDb> secondary_triedb;
-    if (dual_db_migration_mode) {
-        MONAD_ASSERT(
-            raw_db.timeline_active(monad::mpt::timeline_id::secondary) == true);
-        secondary_db = raw_db.open_secondary_timeline(
-            std::make_unique<MonadOnDiskMachine>());
-        MONAD_ASSERT(secondary_db.has_value());
-        secondary_triedb.emplace(*secondary_db);
-    }
-
-    auto const result = [&] {
-        switch (chain_config) {
-        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return runloop_ethereum(
-                *chain,
-                block_db_path,
-                db,
-                vm,
-                block_hash_buffer,
-                priority_pool,
-                block_num,
-                end_block_num,
-                stop,
-                trace_calls);
-        case CHAIN_CONFIG_HIVE_NET:
-            return runloop_ethereum(
-                *chain,
-                block_db_path,
-                db,
-                vm,
-                block_hash_buffer,
-                priority_pool,
-                block_num,
-                end_block_num,
-                stop,
-                trace_calls,
-                chain_rlp_path);
-        case CHAIN_CONFIG_MONAD_DEVNET:
-        case CHAIN_CONFIG_MONAD_TESTNET:
-        case CHAIN_CONFIG_MONAD_MAINNET:
-            if (as_eth_blocks) {
-                return runloop_monad_ethblocks(
-                    dynamic_cast<MonadChain const &>(*chain),
-                    block_db_path,
-                    db,
-                    vm,
-                    block_hash_buffer,
-                    priority_pool,
-                    block_num,
-                    end_block_num,
-                    stop,
-                    trace_calls,
-                    block_db_timeout);
+    auto run = [&]<bool page_encoded_primary>() -> int {
+        TrieDbImpl<page_encoded_primary> triedb{
+            raw_db,
+            /*enable_multiblock_cache=*/true}; // init block number to latest
+                                               // finalized block
+        // Note: in memory db block number is always zero
+        uint64_t const init_block_num = [&] {
+            if (!snapshot.empty()) {
+                if (triedb.get_root() != nullptr) {
+                    throw std::runtime_error(
+                        "can not load checkpoint into non-empty database");
+                }
+                LOG_INFO("Loading from binary checkpoint in {}", snapshot);
+                std::ifstream accounts(snapshot / "accounts");
+                std::ifstream code(snapshot / "code");
+                auto const n = std::stoul(snapshot.stem());
+                auto root = load_from_binary(raw_db, accounts, code, n);
+                // load the eth header for snapshot
+                BlockDb block_db{block_db_path};
+                Block block;
+                MONAD_ASSERT_PRINTF(
+                    block_db.get(n, block),
+                    "FATAL: Could not load block %lu",
+                    n);
+                root = load_header(std::move(root), raw_db, block.header);
+                triedb.reset_root(std::move(root), n);
             }
-            else {
-                // Live monad must be running in dual db migration mode, which
-                // provides the secondary_triedb.
-                MONAD_ASSERT(secondary_triedb.has_value());
-                return runloop_monad(
-                    dynamic_cast<MonadChain const &>(*chain),
+            else if (triedb.get_root() == nullptr) {
+                MONAD_ASSERT(statesync.empty());
+                LOG_INFO("loading from genesis");
+                GenesisState const genesis_state = chain->get_genesis_state();
+                load_genesis_state(genesis_state, triedb);
+            }
+            return triedb.get_block_number();
+        }();
+
+        std::unique_ptr<monad::StateSyncServer> sync_server;
+        if constexpr (!page_encoded_primary) {
+            if (!statesync.empty()) {
+                sync_server =
+                    monad::make_statesync_server(monad::StateSyncServerConfig{
+                        .triedb = &triedb,
+                        .network = &net.value(),
+                        .ro_sq_thread_cpu = ro_sq_thread_cpu,
+                        .dbname_paths = dbname_paths});
+            }
+        }
+        else {
+            MONAD_ASSERT_PRINTF(
+                statesync.empty(),
+                "statesync server not yet supported with page-encoded primary");
+        }
+
+        LOG_INFO(
+            "Finished initializing db at block = {}, last finalized block = "
+            "{}, last verified block = {}, state root = {}, time elapsed "
+            "= {}",
+            init_block_num,
+            raw_db.get_latest_finalized_version(),
+            raw_db.get_latest_verified_version(),
+            triedb.state_root(),
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - load_start_time));
+
+        uint64_t const start_block_num = init_block_num + 1;
+
+        LOG_INFO(
+            "Running with block_db = {}, start block number = {}, "
+            "number blocks = {}",
+            block_db_path,
+            start_block_num,
+            nblocks);
+
+        fiber::PriorityPool priority_pool{nthreads, nfibers};
+
+        auto const start_time = std::chrono::steady_clock::now();
+
+        BlockHashBufferFinalized block_hash_buffer;
+        bool initialized_headers_from_triedb = false;
+
+        if (!db_in_memory) {
+            mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
+                .sq_thread_cpu = ro_sq_thread_cpu,
+                .dbname_paths = dbname_paths}};
+            mpt::Db rodb{io_ctx};
+            initialized_headers_from_triedb =
+                init_block_hash_buffer_from_triedb(
+                    rodb, start_block_num, block_hash_buffer);
+        }
+        if (!initialized_headers_from_triedb) {
+            BlockDb block_db{block_db_path};
+            MONAD_ASSERT(
+                chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
+                chain_config == CHAIN_CONFIG_HIVE_NET);
+            MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
+                block_db, start_block_num, block_hash_buffer));
+        }
+
+        if (isatty(STDIN_FILENO)) {
+            // When stdin is connected to a terminal, we're running
+            // interactively
+            signal(SIGINT, signal_handler);
+        }
+        signal(SIGTERM, signal_handler);
+        stop = 0;
+
+        uint64_t block_num = start_block_num;
+        uint64_t const end_block_num =
+            (std::numeric_limits<uint64_t>::max() - block_num + 1) <= nblocks
+                ? std::numeric_limits<uint64_t>::max()
+                : block_num + nblocks - 1;
+
+        // If call tracing is enabled, we need to correspondingly disable native
+        // compilation: the compiler does not expose the full fidelity of error
+        // exit codes that are required to serve RPC responses that include call
+        // traces.
+        vm::VM vm{trace_calls ? vm::VM::InterpreterOnly : vm::VM::Dual};
+
+        Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
+                             : static_cast<Db &>(triedb);
+
+        auto const result = [&] {
+            switch (chain_config) {
+            case CHAIN_CONFIG_ETHEREUM_MAINNET:
+                return runloop_ethereum(
+                    *chain,
                     block_db_path,
-                    raw_db,
+                    db,
+                    vm,
+                    block_hash_buffer,
+                    priority_pool,
+                    block_num,
+                    end_block_num,
+                    stop,
+                    trace_calls);
+            case CHAIN_CONFIG_HIVE_NET:
+                return runloop_ethereum(
+                    *chain,
+                    block_db_path,
                     db,
                     vm,
                     block_hash_buffer,
@@ -490,55 +494,121 @@ try {
                     end_block_num,
                     stop,
                     trace_calls,
+                    chain_rlp_path);
+            case CHAIN_CONFIG_MONAD_DEVNET:
+            case CHAIN_CONFIG_MONAD_TESTNET:
+            case CHAIN_CONFIG_MONAD_MAINNET:
+                if (as_eth_blocks) {
+                    return runloop_monad_ethblocks(
+                        dynamic_cast<MonadChain const &>(*chain),
+                        block_db_path,
+                        db,
+                        vm,
+                        block_hash_buffer,
+                        priority_pool,
+                        block_num,
+                        end_block_num,
+                        stop,
+                        trace_calls,
+                        block_db_timeout,
+                        page_encoded_primary);
+                }
+                else {
+                    // Live monad. Two valid configurations:
+                    //   * dual_db_migration_mode + slot-encoded primary:
+                    //     dual-write to a page-encoded secondary so state
+                    //     gets migrated across the MONAD_NEXT fork.
+                    //   * page-encoded primary + no secondary: single-db
+                    //     mode for a chain that's already past the fork.
+                    if (chain_config == CHAIN_CONFIG_MONAD_TESTNET ||
+                        chain_config == CHAIN_CONFIG_MONAD_MAINNET) {
+                        MONAD_ASSERT_PRINTF(
+                            dual_db_migration_mode,
+                            "live monad %s requires a page-encoded "
+                            "secondary; pass --dual-db-migration-mode",
+                            chain_config == CHAIN_CONFIG_MONAD_TESTNET
+                                ? "monad_testnet"
+                                : "monad_mainnet"); // can remove at release2
+                    }
+                    std::optional<mpt::Db> secondary_db;
+                    std::optional<PagedTrieDb> secondary_triedb;
+                    if constexpr (page_encoded_primary) {
+                        MONAD_ASSERT(
+                            !dual_db_migration_mode,
+                            "dual db migration mode does not work with "
+                            "page-encoded primary db");
+                    }
+                    else {
+                        MONAD_ASSERT(raw_db.timeline_active(
+                            monad::mpt::timeline_id::secondary));
+                        secondary_db = raw_db.open_secondary_timeline(
+                            std::make_unique<MonadOnDiskMachine>());
+                        MONAD_ASSERT(secondary_db.has_value());
+                        secondary_triedb.emplace(*secondary_db);
+                    }
+                    return runloop_monad(
+                        dynamic_cast<MonadChain const &>(*chain),
+                        block_db_path,
+                        raw_db,
+                        db,
+                        vm,
+                        block_hash_buffer,
+                        priority_pool,
+                        block_num,
+                        end_block_num,
+                        stop,
+                        trace_calls,
                         secondary_triedb.has_value() ? &*secondary_triedb
                                                      : nullptr);
+                }
             }
+            MONAD_ABORT_PRINTF("Unsupported chain");
+        }();
+
+        if (MONAD_UNLIKELY(result.has_error())) {
+            LOG_ERROR(
+                "block {} failed with: {}",
+                block_num,
+                result.assume_error().message().c_str());
         }
-        MONAD_ABORT_PRINTF("Unsupported chain");
-    }();
+        else {
+            [[maybe_unused]] auto const elapsed =
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - start_time);
+            LOG_INFO(
+                "Finish running, finish(stopped) block number = {}, "
+                "number of blocks run = {}, time_elapsed = {}, num "
+                "transactions = {}, tps = {}, gps = {} M{}{}",
+                block_num,
+                nblocks,
+                elapsed,
+                result.assume_value().first,
+                result.assume_value().first /
+                    std::max(1UL, static_cast<uint64_t>(elapsed.count())),
+                result.assume_value().second /
+                    (1'000'000 *
+                     std::max(1UL, static_cast<uint64_t>(elapsed.count()))),
+                vm.print_compiler_stats(),
+                vm.print_total_counts());
+        }
 
-    if (MONAD_UNLIKELY(result.has_error())) {
-        LOG_ERROR(
-            "block {} failed with: {}",
-            block_num,
-            result.assume_error().message().c_str());
-    }
-    else {
-        [[maybe_unused]] auto const elapsed =
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - start_time);
-        LOG_INFO(
-            "Finish running, finish(stopped) block number = {}, "
-            "number of blocks run = {}, time_elapsed = {}, num transactions = "
-            "{}, "
-            "tps = {}, gps = {} M"
-            "{}{}",
-            block_num,
-            nblocks,
-            elapsed,
-            result.assume_value().first,
-            result.assume_value().first /
-                std::max(1UL, static_cast<uint64_t>(elapsed.count())),
-            result.assume_value().second /
-                (1'000'000 *
-                 std::max(1UL, static_cast<uint64_t>(elapsed.count()))),
-            vm.print_compiler_stats(),
-            vm.print_total_counts());
-    }
+        sync_server.reset();
 
-    sync_server.reset();
+        if (!dump_snapshot.empty()) {
+            LOG_INFO("Dump db of block: {}", block_num);
+            mpt::AsyncIOContext io_ctx(mpt::ReadOnlyOnDiskDbConfig{
+                .sq_thread_cpu = ro_sq_thread_cpu,
+                .dbname_paths = dbname_paths,
+                .concurrent_read_io_limit = 128});
+            mpt::Db db{io_ctx};
+            TrieDbImpl<page_encoded_primary> ro_db{db};
+            write_to_file(ro_db.to_json(), dump_snapshot, block_num);
+        }
+        return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;
+    };
 
-    if (!dump_snapshot.empty()) {
-        LOG_INFO("Dump db of block: {}", block_num);
-        mpt::AsyncIOContext io_ctx(mpt::ReadOnlyOnDiskDbConfig{
-            .sq_thread_cpu = ro_sq_thread_cpu,
-            .dbname_paths = dbname_paths,
-            .concurrent_read_io_limit = 128});
-        mpt::Db db{io_ctx};
-        TrieDb ro_db{db};
-        write_to_file(ro_db.to_json(), dump_snapshot, block_num);
-    }
-    return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;
+    return page_encoded ? run.template operator()<true>()
+                        : run.template operator()<false>();
 }
 catch (monad::MonadException const &e) {
     LOG_ERROR("MonadException: {}", e.message());

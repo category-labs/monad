@@ -313,7 +313,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing, std::chrono::seconds const block_db_timeout)
+    bool const enable_tracing, std::chrono::seconds const block_db_timeout,
+    bool const page_encoded)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -401,6 +402,19 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         bytes32_t const block_id = bytes32_t{block.header.number};
         monad_revision const rev =
             chain.get_monad_revision(block.header.timestamp);
+
+        // Storage encoding is fixed for the lifetime of the runloop (it
+        // matches the TrieDbImpl<page_encoded> backing `db`). If the
+        // replay crosses the MONAD_NEXT cutoff in either direction, the
+        // encoding the caller picked at startup no longer matches what
+        // this block's revision expects.
+        MONAD_ASSERT_PRINTF(
+            (rev >= MONAD_NEXT) == page_encoded,
+            "monad revision %d at block %lu crosses MONAD_NEXT cutoff "
+            "but db was opened with page_encoded=%d",
+            rev,
+            block.header.number,
+            page_encoded);
 
         ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
         BOOST_OUTCOME_TRY([&] {

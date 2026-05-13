@@ -30,7 +30,7 @@ MONAD_NAMESPACE_BEGIN
 
 struct StateSyncServerConfig
 {
-    monad::TrieDb *triedb;
+    monad::Db *triedb;
     monad_statesync_server_network *network;
     std::optional<int> ro_sq_thread_cpu;
     std::vector<std::filesystem::path> dbname_paths;

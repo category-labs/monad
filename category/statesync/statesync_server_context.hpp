@@ -85,20 +85,20 @@ static_assert(sizeof(ProposedDeletions) == 64);
 static_assert(alignof(ProposedDeletions) == 8);
 
 struct CallFrame;
-template <bool page_encoded>
-class TrieDbImpl;
-using TrieDb = TrieDbImpl<false>;
 
 MONAD_NAMESPACE_END
 
 struct monad_statesync_server_context final : public monad::Db
 {
-    monad::TrieDb &rw;
+    // Polymorphic handle to the underlying TrieDb (slot or page encoded).
+    // All Db operations on this context delegate to `rw` and dispatch via
+    // its vtable, so no encoding-specific code lives in this class.
+    monad::Db &rw;
     monad::mpt::Db *ro;
     std::deque<monad::ProposedDeletions> proposals;
     monad::FinalizedDeletions deletions;
 
-    explicit monad_statesync_server_context(monad::TrieDb &rw);
+    explicit monad_statesync_server_context(monad::Db &rw);
 
     virtual std::optional<monad::Account>
     read_account(monad::Address const &addr) override;

@@ -213,7 +213,7 @@ void FinalizedDeletions::write(
 
 MONAD_NAMESPACE_END
 
-monad_statesync_server_context::monad_statesync_server_context(TrieDb &rw)
+monad_statesync_server_context::monad_statesync_server_context(Db &rw)
     : rw{rw}
     , ro{nullptr}
 {

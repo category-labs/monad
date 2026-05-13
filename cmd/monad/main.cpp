@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -279,25 +280,6 @@ try {
     if (!statesync.empty()) {
         net.emplace(statesync.c_str());
     }
-    // The on-disk Db ctor reads the persisted state_machine_kind from
-    // db_metadata and constructs the StateMachine via the registry. The
-    // in-memory path has no metadata to read from and constructs the SM
-    // inline.
-    register_ethereum_state_machines();
-    mpt::Db raw_db = [&] {
-        if (!db_in_memory) {
-            return mpt::Db{mpt::OnDiskDbConfig{
-                .append = true,
-                .compaction = !no_compaction,
-                .rewind_to_latest_finalized = true,
-                .rd_buffers = 8192,
-                .wr_buffers = 32,
-                .uring_entries = 128,
-                .sq_thread_cpu = sq_thread_cpu,
-                .dbname_paths = dbname_paths}};
-        }
-        return mpt::Db{std::make_unique<InMemoryMachine>()};
-    }();
 
     auto chain = [chain_config] -> std::unique_ptr<Chain> {
         switch (chain_config) {
@@ -315,10 +297,39 @@ try {
         MONAD_ASSERT(false);
     }();
 
+    // The on-disk Db ctor reads the persisted state_machine_kind from
+    // db_metadata and constructs the StateMachine via the registry. The
+    // in-memory path has no metadata to read from and constructs the SM
+    // inline.
+    register_ethereum_state_machines();
+    mpt::Db raw_db = [&] {
+        if (!db_in_memory) {
+            return mpt::Db{mpt::OnDiskDbConfig{
+                .append = true,
+                .compaction = !no_compaction,
+                .rewind_to_latest_finalized = true,
+                .rd_buffers = 8192,
+                .wr_buffers = 32,
+                .uring_entries = 128,
+                .sq_thread_cpu = sq_thread_cpu,
+                .dbname_paths = dbname_paths}};
+        }
+        auto const *const monad_chain =
+            dynamic_cast<MonadChain const *>(chain.get());
+        GenesisState const genesis_state = chain->get_genesis_state();
+        if (monad_chain != nullptr &&
+            monad_chain->get_monad_revision(genesis_state.header.timestamp) >=
+                MONAD_NEXT) {
+            return mpt::Db{std::make_unique<MonadInMemoryMachine>()};
+        }
+        else {
+            return mpt::Db{std::make_unique<InMemoryMachine>()};
+        }
+    }();
+
     TrieDb triedb{
         raw_db,
-        /*enable_multiblock_cache=*/true}; // init block number to latest
-                                           // finalized block
+        /*enable_multiblock_cache=*/true};
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
@@ -424,19 +435,6 @@ try {
     Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
                          : static_cast<Db &>(triedb);
 
-    // Optional secondary db for migration: commits go through both the
-    // primary (slot storage, DbCache) and the secondary (page storage, raw).
-    std::optional<mpt::Db> secondary_db;
-    std::optional<TrieDb> secondary_triedb;
-    if (dual_db_migration_mode) {
-        MONAD_ASSERT(
-            raw_db.timeline_active(monad::mpt::timeline_id::secondary) == true);
-        secondary_db = raw_db.open_secondary_timeline();
-        MONAD_ASSERT(secondary_db.has_value());
-        secondary_triedb.emplace(*secondary_db);
-        MONAD_ASSERT(secondary_triedb->is_page_encoded());
-    }
-
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -483,9 +481,38 @@ try {
                     block_db_timeout);
             }
             else {
-                // Live monad must be running in dual db migration mode, which
-                // provides the secondary_triedb.
-                MONAD_ASSERT(secondary_triedb.has_value());
+                // Live monad. Two valid configurations:
+                //   * dual_db_migration_mode + slot-encoded primary:
+                //     dual-write to a page-encoded secondary so state
+                //     gets migrated across the MONAD_NEXT fork.
+                //   * page-encoded primary + no secondary: single-db
+                //     mode for a chain that's already past the fork.
+                if (chain_config == CHAIN_CONFIG_MONAD_TESTNET ||
+                    chain_config == CHAIN_CONFIG_MONAD_MAINNET) {
+                    MONAD_ASSERT_PRINTF(
+                        dual_db_migration_mode,
+                        "live monad %s requires a page-encoded "
+                        "secondary; pass --dual-db-migration-mode",
+                        chain_config == CHAIN_CONFIG_MONAD_TESTNET
+                            ? "monad_testnet"
+                            : "monad_mainnet"); // can remove at release2
+                }
+                std::optional<mpt::Db> secondary_db;
+                std::optional<TrieDb> secondary_triedb;
+                if (db.is_page_encoded()) {
+                    MONAD_ASSERT(
+                        !dual_db_migration_mode,
+                        "dual db migration mode does not work with "
+                        "page-encoded primary db");
+                }
+                else {
+                    MONAD_ASSERT(raw_db.timeline_active(
+                        monad::mpt::timeline_id::secondary));
+                    secondary_db = raw_db.open_secondary_timeline();
+                    MONAD_ASSERT(secondary_db.has_value());
+                    secondary_triedb.emplace(*secondary_db);
+                    MONAD_ASSERT(secondary_triedb->is_page_encoded());
+                }
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
@@ -543,7 +570,7 @@ try {
             .dbname_paths = dbname_paths,
             .concurrent_read_io_limit = 128});
         mpt::Db db{io_ctx};
-        TrieDb ro_db{db};
+        TrieDb ro_db{db, false};
         write_to_file(ro_db.to_json(), dump_snapshot, block_num);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;

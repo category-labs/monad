@@ -402,6 +402,19 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         monad_revision const rev =
             chain.get_monad_revision(block.header.timestamp);
 
+        // Storage encoding is fixed for the lifetime of the runloop (it
+        // matches the TrieDbImpl<page_encoded> backing `db`). If the
+        // replay crosses the MONAD_NEXT cutoff in either direction, the
+        // encoding the caller picked at startup no longer matches what
+        // this block's revision expects.
+        MONAD_ASSERT_PRINTF(
+            (rev >= MONAD_NEXT) == db.is_page_encoded(),
+            "monad revision %d at block %lu crosses MONAD_NEXT cutoff "
+            "but db was opened with page_encoded=%d",
+            rev,
+            block.header.number,
+            db.is_page_encoded());
+
         ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
         BOOST_OUTCOME_TRY([&] {
             SWITCH_MONAD_TRAITS(

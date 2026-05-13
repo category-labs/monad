@@ -211,4 +211,18 @@ TEST(Rlp, ParseMetadata)
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.error(), DecodeError::TypeUnexpected);
     }
+
+    // parse_list_metadata_raw returns the full list encoding, header
+    // included (unlike parse_list_metadata which strips it).
+    {
+        auto encoding = encode_list2(
+            encode_string2(to_byte_string_view("cat")),
+            encode_string2(to_byte_string_view("dog")));
+        byte_string_view enc{encoding};
+
+        auto const result = parse_list_metadata_raw(enc);
+        ASSERT_FALSE(result.has_error());
+        EXPECT_EQ(result.value(), byte_string_view{encoding});
+        EXPECT_EQ(enc.size(), 0);
+    }
 }

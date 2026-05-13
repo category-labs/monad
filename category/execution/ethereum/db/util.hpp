@@ -149,6 +149,16 @@ decode_storage_db_raw(byte_string_view &);
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
 Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &);
 
+struct AccountLeafProcessor
+{
+    static byte_string process(mpt::Node const &node);
+};
+
+struct StorageLeafProcessor
+{
+    static byte_string process(mpt::Node const &node);
+};
+
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);
 Result<std::pair<Transaction, Address>>
 decode_transaction_db(byte_string_view &);

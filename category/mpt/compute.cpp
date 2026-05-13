@@ -21,7 +21,6 @@
 #include <category/core/rlp/encode.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
-#include <category/mpt/merkle/node_reference.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 
@@ -31,9 +30,8 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-unsigned encode_two_pieces(
-    unsigned char *const dest, NibblesView const path,
-    byte_string_view const second, bool const has_value)
+byte_string encode_two_pieces(
+    NibblesView const path, byte_string_view const second, bool const has_value)
 {
     constexpr size_t max_compact_encode_size = KECCAK256_SIZE + 1;
 
@@ -60,9 +58,7 @@ unsigned encode_two_pieces(
 
     byte_string rlp(rlp::list_length(concat_len), 0);
     rlp::encode_list(rlp, {concat_rlp.data(), concat_rlp.size()});
-    auto const ret = to_node_reference({rlp.data(), rlp.size()}, dest);
-    // free any long array allocated on heap
-    return ret;
+    return rlp;
 }
 
 std::span<unsigned char>

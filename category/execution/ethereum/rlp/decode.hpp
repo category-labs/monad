@@ -70,11 +70,16 @@ namespace detail
     enum class ParseMetadataOptions
     {
         ReturnRlpType,
+        KeepRlpHeader,
     };
 
     template <ParseMetadataOptions... Options>
     inline constexpr bool should_return_rlp_type =
         ((Options == ParseMetadataOptions::ReturnRlpType) || ...);
+
+    template <ParseMetadataOptions... Options>
+    inline constexpr bool should_keep_rlp_header =
+        ((Options == ParseMetadataOptions::KeepRlpHeader) || ...);
 
     // We want two return versions of the functions below. One which simply
     // returns a byte_string_view when we are parsing/expecting a specific type,
@@ -99,7 +104,14 @@ namespace detail
             return DecodeError::InputTooShort;
         }
 
-        auto const payload = enc.substr(i, length);
+        auto const payload = [&] {
+            if constexpr (should_keep_rlp_header<Options...>) {
+                return enc.substr(0, end);
+            }
+            else {
+                return enc.substr(i, length);
+            }
+        }();
         enc = enc.substr(end);
 
         if constexpr (should_return_rlp_type<Options...>) {
@@ -226,6 +238,24 @@ inline Result<byte_string_view> parse_list_metadata(byte_string_view &enc)
     }
 
     return detail::parse_list_metadata(enc);
+}
+
+// Like parse_list_metadata, but the returned view spans the full list
+// encoding including the RLP list header — i.e. the header byte(s) plus the
+// payload — rather than just the payload. `enc` is still advanced past the
+// end of the list. Useful when the caller needs to re-emit or hash the list
+// in its original wire form.
+inline Result<byte_string_view> parse_list_metadata_raw(byte_string_view &enc)
+{
+    if (MONAD_UNLIKELY(enc.empty())) {
+        return DecodeError::InputTooShort;
+    }
+    if (MONAD_UNLIKELY(enc[0] < 0xc0)) {
+        return DecodeError::TypeUnexpected;
+    }
+
+    return detail::parse_list_metadata<
+        detail::ParseMetadataOptions::KeepRlpHeader>(enc);
 }
 
 inline Result<byte_string_view> decode_string(byte_string_view &enc)

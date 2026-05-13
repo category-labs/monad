@@ -47,6 +47,13 @@ namespace detail
             }
         }
     };
+
+    constexpr unsigned calc_branch_rlp_max_size(unsigned const leaf_data_size)
+    {
+        return static_cast<unsigned>(rlp::list_length(
+            rlp::list_length(KECCAK256_SIZE) * 16 +
+            rlp::list_length(leaf_data_size)));
+    }
 }
 
 std::span<unsigned char> encode_empty_string(std::span<unsigned char> result);
@@ -57,9 +64,16 @@ encode_16_children(std::span<ChildData>, std::span<unsigned char> result);
 std::span<unsigned char>
 encode_16_children(Node const &, std::span<unsigned char> result);
 
-unsigned encode_two_pieces(
-    unsigned char *dest, NibblesView path, byte_string_view second,
-    bool has_value = false);
+byte_string encode_two_pieces(
+    NibblesView path, byte_string_view second, bool has_value = false);
+
+[[gnu::always_inline]] inline unsigned encode_two_pieces_reference(
+    unsigned char *const dest, NibblesView const path,
+    byte_string_view const second, bool const has_value = false)
+{
+    auto const rlp = encode_two_pieces(path, second, has_value);
+    return to_node_reference({rlp.data(), rlp.size()}, dest);
+}
 
 struct Compute
 {
@@ -183,7 +197,7 @@ struct MerkleComputeBase : Compute
     compute(unsigned char *const buffer, Node const &node) override
     {
         if (node.has_value()) {
-            return encode_two_pieces(
+            return encode_two_pieces_reference(
                 buffer,
                 node.path_nibble_view(),
                 LeafValueProcessor::process(node), // processed leaf data
@@ -193,7 +207,7 @@ struct MerkleComputeBase : Compute
         if (node.has_path()) {
             unsigned char reference[KECCAK256_SIZE];
             unsigned const len = compute_branch_reference_(reference, node);
-            return encode_two_pieces(
+            return encode_two_pieces_reference(
                 buffer, node.path_nibble_view(), {reference, len}, false);
         }
         return compute_branch_reference_(buffer, node);
@@ -207,7 +221,7 @@ private:
         Node *const node = single_child.ptr.get();
         MONAD_ASSERT(node);
 
-        return state.len = encode_two_pieces(
+        return state.len = encode_two_pieces_reference(
                 state.buffer,
                 concat(single_child.branch, node->path_nibble_view()),
                 (node->has_value()
@@ -260,15 +274,25 @@ struct NoopProcessor
 };
 
 template <leaf_processor LeafValueProcessor = NoopProcessor>
+byte_string encode_branch(Node const &node)
+{
+    MONAD_ASSERT(node.number_of_children());
+    byte_string branch_str_rlp(
+        detail::calc_branch_rlp_max_size(node.value_len), 0);
+    auto result = encode_16_children(node, branch_str_rlp);
+    result = (node.has_value() && node.value_len)
+                 ? rlp::encode_string(result, LeafValueProcessor::process(node))
+                 : encode_empty_string(result);
+    auto const concat_len =
+        static_cast<size_t>(result.data() - branch_str_rlp.data());
+    byte_string branch_rlp(rlp::list_length(concat_len), 0);
+    rlp::encode_list(branch_rlp, {branch_str_rlp.data(), concat_len});
+    return branch_rlp;
+}
+
+template <leaf_processor LeafValueProcessor = NoopProcessor>
 struct VarLenMerkleCompute : Compute
 {
-    static constexpr auto calc_rlp_max_size =
-        [](unsigned const leaf_data_size) -> unsigned {
-        return static_cast<unsigned>(rlp::list_length(
-            rlp::list_length(KECCAK256_SIZE) * 16 +
-            rlp::list_length(leaf_data_size)));
-    };
-
     // Compute the intermediate branch data to the internal state.
     // For variable length merkle trie, we store branch node data inline in
     // nodes that have at least one child and non-empty path.
@@ -308,7 +332,7 @@ struct VarLenMerkleCompute : Compute
         // Ethereum leaf: leaf node hash without child
         if (node.number_of_children() == 0) {
             MONAD_ASSERT(node.has_value());
-            return encode_two_pieces(
+            return encode_two_pieces_reference(
                 buffer,
                 node.path_nibble_view(),
                 LeafValueProcessor::process(node),
@@ -318,7 +342,7 @@ struct VarLenMerkleCompute : Compute
         // rlp(encoded path, inline branch hash)
         if (node.has_path()) { // extension node, rlp encode with path too
             MONAD_ASSERT(node.bitpacked.data_len);
-            return encode_two_pieces(
+            return encode_two_pieces_reference(
                 buffer, node.path_nibble_view(), node.data(), node.has_value());
         }
         // Ethereum branch
@@ -333,7 +357,7 @@ protected:
         std::optional<byte_string_view> const value)
     {
         // compute branch node data to internal state
-        unsigned const branch_str_max_len = calc_rlp_max_size(
+        unsigned const branch_str_max_len = detail::calc_branch_rlp_max_size(
             (unsigned)value.transform(&byte_string_view::size).value_or(0));
 
         byte_string branch_str_rlp(branch_str_max_len, 0);
@@ -356,21 +380,8 @@ protected:
     unsigned
     compute_branch_reference_(unsigned char *const buffer, Node const &node)
     {
-        MONAD_ASSERT(node.number_of_children());
-        // compute branch node hash
-        byte_string branch_str_rlp(calc_rlp_max_size(node.value_len), 0);
-        auto result = encode_16_children(node, branch_str_rlp);
-        // encode vt
-        result =
-            (node.has_value() && node.value_len)
-                ? rlp::encode_string(result, LeafValueProcessor::process(node))
-                : encode_empty_string(result);
-        auto const concat_len =
-            static_cast<size_t>(result.data() - branch_str_rlp.data());
-        byte_string branch_rlp(rlp::list_length(concat_len), 0);
-        rlp::encode_list(branch_rlp, {branch_str_rlp.data(), concat_len});
-        return to_node_reference(
-            {branch_rlp.data(), branch_rlp.size()}, buffer);
+        auto const rlp = encode_branch<LeafValueProcessor>(node);
+        return to_node_reference({rlp.data(), rlp.size()}, buffer);
     }
 };
 
@@ -419,7 +430,7 @@ private:
         Node *const node = single_child.ptr.get();
         MONAD_ASSERT(node != nullptr);
 
-        return state.len = encode_two_pieces(
+        return state.len = encode_two_pieces_reference(
                    state.buffer,
                    concat(single_child.branch, node->path_nibble_view()),
                    /* second: branch hash or leaf value */

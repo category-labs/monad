@@ -340,43 +340,6 @@ namespace
         }
     };
 
-    struct AccountLeafProcessor
-    {
-        static byte_string process(mpt::Node const &node)
-        {
-            MONAD_ASSERT(node.has_value());
-
-            // this is the block number leaf
-            if (MONAD_UNLIKELY(node.value().empty())) {
-                return {};
-            }
-
-            auto encoded_account = node.value();
-            auto const acct = decode_account_db_ignore_address(encoded_account);
-            MONAD_ASSERT(!acct.has_error());
-            MONAD_ASSERT(encoded_account.empty());
-            bytes32_t storage_root = NULL_ROOT;
-            if (node.number_of_children()) {
-                MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
-                std::copy_n(
-                    node.data().data(), sizeof(bytes32_t), storage_root.bytes);
-            }
-            return rlp::encode_account(acct.value(), storage_root);
-        }
-    };
-
-    struct StorageLeafProcessor
-    {
-        static byte_string process(mpt::Node const &node)
-        {
-            MONAD_ASSERT(node.has_value());
-            auto encoded_storage = node.value();
-            auto const storage = decode_storage_db_ignore_slot(encoded_storage);
-            MONAD_ASSERT(!storage.has_error());
-            return rlp::encode_string2(storage.value());
-        }
-    };
-
     Result<byte_string_view>
     parse_encoded_receipt_ignore_log_index(byte_string_view &enc)
     {
@@ -424,7 +387,7 @@ namespace
         compute(unsigned char *const buffer, Node const &node) override
         {
             MONAD_ASSERT(node.has_value());
-            return encode_two_pieces(
+            return encode_two_pieces_reference(
                 buffer,
                 node.path_nibble_view(),
                 AccountLeafProcessor::process(node),
@@ -700,6 +663,36 @@ Result<byte_string_view> decode_storage_db_ignore_slot(byte_string_view &enc)
     }
     return res.second;
 };
+
+byte_string AccountLeafProcessor::process(mpt::Node const &node)
+{
+    MONAD_ASSERT(node.has_value());
+
+    // this is the block number leaf
+    if (MONAD_UNLIKELY(node.value().empty())) {
+        return {};
+    }
+
+    auto encoded_account = node.value();
+    auto const acct = decode_account_db_ignore_address(encoded_account);
+    MONAD_ASSERT(!acct.has_error());
+    MONAD_ASSERT(encoded_account.empty());
+    bytes32_t storage_root = NULL_ROOT;
+    if (node.number_of_children()) {
+        MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
+        std::copy_n(node.data().data(), sizeof(bytes32_t), storage_root.bytes);
+    }
+    return rlp::encode_account(acct.value(), storage_root);
+}
+
+byte_string StorageLeafProcessor::process(mpt::Node const &node)
+{
+    MONAD_ASSERT(node.has_value());
+    auto encoded_storage = node.value();
+    auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+    MONAD_ASSERT(!storage.has_error());
+    return rlp::encode_string2(storage.value());
+}
 
 void write_to_file(
     nlohmann::json const &j, std::filesystem::path const &root_path,

@@ -35,6 +35,15 @@ struct BlockHeader;
 struct Receipt;
 struct Transaction;
 
+// Blob schedule (target/max blobs per block, base-fee update fraction),
+// determined per fork or per EIP-7892 Blob Parameter Only (BPO) sub-fork.
+struct BlobSchedule
+{
+    uint64_t target_blobs;
+    uint64_t max_blobs;
+    uint64_t base_fee_update_fraction;
+};
+
 struct Chain
 {
     virtual ~Chain() = default;
@@ -43,6 +52,9 @@ struct Chain
 
     virtual monad_eth_revision
     get_revision(uint64_t block_number, uint64_t timestamp) const = 0;
+
+    virtual BlobSchedule
+    get_blob_schedule(uint64_t block_number, uint64_t timestamp) const = 0;
 
     virtual GenesisState get_genesis_state() const = 0;
 };

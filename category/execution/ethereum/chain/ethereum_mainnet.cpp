@@ -43,10 +43,48 @@ uint256_t EthereumMainnet::get_chain_id() const
     return 1;
 };
 
+BlobSchedule EthereumMainnet::get_blob_schedule(
+    uint64_t const /*block_number*/, uint64_t const timestamp) const
+{
+    // BPO2 (EIP-7892): target=14, max=21, fraction=11684671
+    //   1767747671 = 2026-01-07 UTC
+    if (timestamp >= 1767747671) {
+        return {14, 21, 11'684'671};
+    }
+    // BPO1 (EIP-7892): target=10, max=15, fraction=8346193
+    //   1765290071 = 2025-12-09 UTC
+    if (timestamp >= 1765290071) {
+        return {10, 15, 8'346'193};
+    }
+    // Osaka (Fusaka): target=6, max=9, fraction=5007716
+    //   1764798551 = 2025-12-03 UTC (block 23935694)
+    if (timestamp >= 1764798551) {
+        return {6, 9, 5'007'716};
+    }
+    // Prague (EIP-7691): target=6, max=9, fraction=5007716
+    //   1746612311 = 2025-05-07 UTC (block 22431084)
+    if (timestamp >= 1746612311) {
+        return {6, 9, 5'007'716};
+    }
+    // Cancun (EIP-4844): target=3, max=6, fraction=3338477
+    //   1710338135 = 2024-03-13 UTC (block 19426587)
+    if (timestamp >= 1710338135) {
+        return {3, 6, 3'338'477};
+    }
+    return {0, 0, 1};
+}
+
 monad_eth_revision EthereumMainnet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
-    if (MONAD_LIKELY(timestamp >= 1746612311)) {
+    // Osaka (Fusaka) activation timestamp on mainnet:
+    //   1764798551 = 2025-12-03 21:49:11 UTC (block 23935694)
+    if (timestamp >= 1764798551) {
+        return MONAD_ETH_OSAKA;
+    }
+    // Prague (Pectra) activation timestamp on mainnet:
+    //   1746612311 = 2025-05-07 10:05:11 UTC (block 22431084)
+    else if (MONAD_LIKELY(timestamp >= 1746612311)) {
         return MONAD_ETH_PRAGUE;
     }
     else if (timestamp >= 1710338135) {

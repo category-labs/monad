@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -48,6 +49,7 @@ inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
 template <Traits traits>
 evmc_tx_context get_tx_context(
     Transaction const &, Address const &sender, BlockHeader const &,
-    uint256_t const &chain_id);
+    uint256_t const &chain_id,
+    uint64_t base_fee_update_fraction = blob_base_fee_update_fraction<traits>());
 
 MONAD_NAMESPACE_END

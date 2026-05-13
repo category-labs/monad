@@ -62,6 +62,9 @@ struct MonadChain : Chain
     virtual monad_eth_revision
     get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
+    virtual BlobSchedule
+    get_blob_schedule(uint64_t block_number, uint64_t timestamp) const override;
+
     virtual monad_revision get_monad_revision(uint64_t timestamp) const = 0;
 };
 

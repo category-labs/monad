@@ -203,7 +203,8 @@ static_validate_ommers(Chain const &chain, Block const &block)
 }
 
 template <Traits traits>
-constexpr Result<void> static_validate_4844(Block const &block)
+constexpr Result<void>
+static_validate_4844(Chain const &chain, Block const &block)
 {
     if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         uint64_t blob_gas_used = 0;
@@ -212,7 +213,12 @@ constexpr Result<void> static_validate_4844(Block const &block)
                 blob_gas_used += get_total_blob_gas(tx);
             }
         }
-        if (MONAD_UNLIKELY(blob_gas_used > max_blob_gas_per_block<traits>())) {
+        // The blob schedule (EIP-7691 at Prague; EIP-7892 BPO sub-forks at
+        // Fusaka onwards) sets the max blobs per block; the cap on blob gas is
+        // GAS_PER_BLOB * max.
+        auto const schedule =
+            chain.get_blob_schedule(block.header.number, block.header.timestamp);
+        if (MONAD_UNLIKELY(blob_gas_used > schedule.max_blobs * GAS_PER_BLOB)) {
             return BlockError::GasAboveLimit;
         }
         if (MONAD_UNLIKELY(
@@ -240,7 +246,7 @@ static_validate_body(Chain const &chain, Block const &block)
     }
 
     BOOST_OUTCOME_TRY(static_validate_ommers<traits>(chain, block));
-    BOOST_OUTCOME_TRY(static_validate_4844<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_4844<traits>(chain, block));
 
     return success();
 }

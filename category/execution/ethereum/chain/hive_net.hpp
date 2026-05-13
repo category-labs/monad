@@ -26,6 +26,9 @@ struct HiveNet : Chain
     virtual monad_eth_revision
     get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
+    virtual BlobSchedule
+    get_blob_schedule(uint64_t block_number, uint64_t timestamp) const override;
+
     virtual GenesisState get_genesis_state() const override;
 };
 

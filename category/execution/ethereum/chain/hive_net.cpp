@@ -59,6 +59,18 @@ monad_eth_revision HiveNet::get_revision(
     MONAD_ASSERT(false, "unsupported fork");
 }
 
+BlobSchedule HiveNet::get_blob_schedule(
+    uint64_t const block_number, uint64_t const timestamp) const
+{
+    if (block_number >= 36 && timestamp >= 450) {
+        return {6, 9, 5'007'716}; // Prague
+    }
+    if (block_number >= 36 && timestamp >= 420) {
+        return {3, 6, 3'338'477}; // Cancun
+    }
+    return {0, 0, 1};
+}
+
 GenesisState HiveNet::get_genesis_state() const
 {
     BlockHeader header;

@@ -16,6 +16,7 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -58,6 +59,14 @@ monad_eth_revision MonadChain::get_revision(
     }
 
     return MONAD_ETH_CANCUN;
+}
+
+BlobSchedule MonadChain::get_blob_schedule(
+    uint64_t /*block_number*/, uint64_t /*timestamp*/) const
+{
+    // Monad disables EIP-4844 blob gas (see MonadTraits::eip_4844_active).
+    // Return a zero schedule; callers should not invoke blob fee math.
+    return {0, 0, 1};
 }
 
 template <typename T>

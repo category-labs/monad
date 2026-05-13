@@ -93,11 +93,16 @@ inline constexpr uint64_t blob_base_fee_update_fraction() noexcept
     }
 }
 
-template <Traits traits>
-uint256_t calc_blob_fee(Transaction const &, uint64_t) noexcept;
+// Blob fee math takes the base-fee update fraction as a runtime parameter so
+// that EIP-7892 BPO sub-forks (which change the fraction without a new EVM
+// revision) are handled via Chain::get_blob_schedule rather than a
+// compile-time constant.
+uint256_t get_base_fee_per_blob_gas(
+    uint64_t excess_blob_gas, uint64_t base_fee_update_fraction) noexcept;
 
-template <Traits traits>
-uint256_t get_base_fee_per_blob_gas(uint64_t) noexcept;
+uint256_t calc_blob_fee(
+    Transaction const &, uint64_t excess_blob_gas,
+    uint64_t base_fee_update_fraction) noexcept;
 
 uint64_t get_total_blob_gas(Transaction const &) noexcept;
 

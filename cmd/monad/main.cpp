@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -141,7 +142,6 @@ try {
     fs::path dump_snapshot;
     std::string statesync;
     fs::path chain_rlp_path;
-    bool dual_db_migration_mode = false;
     auto log_level = quill::LogLevel::Info;
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
@@ -172,20 +172,12 @@ try {
         ro_sq_thread_cpu,
         "sq_thread_cpu for the read only db (optional, disables SQPOLL if not "
         "specified)");
-    auto *const db_option = cli.add_option(
+    cli.add_option(
         "--db",
         dbname_paths,
         "A comma-separated list of previously created database paths. You can "
         "configure the storage pool with one or more files/devices. If no "
         "value is passed, the replay will run with an in-memory triedb");
-    cli.add_flag(
-           "--dual-db-migration-mode",
-           dual_db_migration_mode,
-           "enable dual db migration mode for MIP-8, which opens two databases "
-           "(one with the slot based storage format and one with page based "
-           "format) on the same disk and cross-checks them for consistency on "
-           "every storage read")
-        ->needs(db_option);
     cli.add_option(
         "--dump-snapshot,--dump_snapshot",
         dump_snapshot,
@@ -281,6 +273,23 @@ try {
     if (!statesync.empty()) {
         net.emplace(statesync.c_str());
     }
+
+    auto chain = [chain_config] -> std::unique_ptr<Chain> {
+        switch (chain_config) {
+        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+            return std::make_unique<EthereumMainnet>();
+        case CHAIN_CONFIG_MONAD_DEVNET:
+            return std::make_unique<MonadDevnet>();
+        case CHAIN_CONFIG_MONAD_TESTNET:
+            return std::make_unique<MonadTestnet>();
+        case CHAIN_CONFIG_MONAD_MAINNET:
+            return std::make_unique<MonadMainnet>();
+        case CHAIN_CONFIG_HIVE_NET:
+            return std::make_unique<HiveNet>();
+        }
+        MONAD_ASSERT(false);
+    }();
+
     // The on-disk Db ctor reads the persisted state_machine_kind from
     // db_metadata and constructs the StateMachine via the registry. The
     // in-memory path has no metadata to read from and constructs the SM
@@ -300,29 +309,23 @@ try {
                 .sq_thread_cpu = sq_thread_cpu,
                 .dbname_paths = dbname_paths}};
         }
-        return mpt::Db{std::make_unique<InMemoryMachine>()};
-    }();
-
-    auto chain = [chain_config] -> std::unique_ptr<Chain> {
-        switch (chain_config) {
-        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return std::make_unique<EthereumMainnet>();
-        case CHAIN_CONFIG_MONAD_DEVNET:
-            return std::make_unique<MonadDevnet>();
-        case CHAIN_CONFIG_MONAD_TESTNET:
-            return std::make_unique<MonadTestnet>();
-        case CHAIN_CONFIG_MONAD_MAINNET:
-            return std::make_unique<MonadMainnet>();
-        case CHAIN_CONFIG_HIVE_NET:
-            return std::make_unique<HiveNet>();
+        // In memory db: initialize state machine based on chain revision
+        auto const *const monad_chain =
+            dynamic_cast<MonadChain const *>(chain.get());
+        GenesisState const genesis_state = chain->get_genesis_state();
+        if (monad_chain != nullptr &&
+            monad_chain->get_monad_revision(genesis_state.header.timestamp) >=
+                MONAD_NEXT) {
+            return mpt::Db{std::make_unique<MonadInMemoryMachine>()};
         }
-        MONAD_ASSERT(false);
+        else {
+            return mpt::Db{std::make_unique<InMemoryMachine>()};
+        }
     }();
 
     TrieDb triedb{
         raw_db,
-        /*enable_multiblock_cache=*/true}; // init block number to latest
-                                           // finalized block
+        /*enable_multiblock_cache=*/true};
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
@@ -428,19 +431,6 @@ try {
     Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
                          : static_cast<Db &>(triedb);
 
-    // Optional secondary db for migration: commits go through both the
-    // primary (slot storage, DbCache) and the secondary (page storage, raw).
-    std::optional<mpt::Db> secondary_db;
-    std::optional<TrieDb> secondary_triedb;
-    if (dual_db_migration_mode) {
-        MONAD_ASSERT(
-            raw_db.timeline_active(monad::mpt::timeline_id::secondary) == true);
-        secondary_db = raw_db.open_secondary_timeline();
-        MONAD_ASSERT(secondary_db.has_value());
-        secondary_triedb.emplace(*secondary_db);
-        MONAD_ASSERT(secondary_triedb->is_page_encoded());
-    }
-
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -486,9 +476,36 @@ try {
                     block_db_timeout);
             }
             else {
-                // Live monad must be running in dual db migration mode, which
-                // provides the secondary_triedb.
-                MONAD_ASSERT(secondary_triedb.has_value());
+                // Live monad must be
+                // * slot-encoded primary + page-encoded secondary: dual-db mode
+                //
+                // TODO: after the migration release, we will promote the
+                // page-encoded secondary to be the primary and deprecate the
+                // slot-encoded db, at which point we can remove all dual-db
+                // logic and require a page-encoded single db for live monad.
+                if (chain_config == CHAIN_CONFIG_MONAD_TESTNET ||
+                    chain_config == CHAIN_CONFIG_MONAD_MAINNET) {
+                    MONAD_ASSERT_PRINTF(
+                        raw_db.timeline_active(
+                            monad::mpt::timeline_id::secondary),
+                        "live monad requires a page-encoded secondary during "
+                        "the migration release, but secondary timeline is not "
+                        "active on %s",
+                        chain_config == CHAIN_CONFIG_MONAD_TESTNET
+                            ? "monad_testnet"
+                            : "monad_mainnet"); // TODO: remove at release2
+                }
+                std::optional<mpt::Db> secondary_db;
+                std::optional<TrieDb> secondary_triedb;
+                if (raw_db.timeline_active(
+                        monad::mpt::timeline_id::secondary)) {
+                    secondary_db = raw_db.open_secondary_timeline();
+                    MONAD_ASSERT(secondary_db.has_value());
+                    secondary_triedb.emplace(*secondary_db);
+                    MONAD_ASSERT(
+                        secondary_triedb->is_page_encoded(),
+                        "secondary timeline must be page-encoded");
+                }
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
@@ -546,7 +563,7 @@ try {
             .dbname_paths = dbname_paths,
             .concurrent_read_io_limit = 128});
         mpt::Db db{io_ctx};
-        TrieDb ro_db{db};
+        TrieDb ro_db{db, false};
         write_to_file(ro_db.to_json(), dump_snapshot, block_num);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;

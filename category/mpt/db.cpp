@@ -1208,6 +1208,12 @@ UpdateAux const &Db::aux() const
     return impl_->aux();
 }
 
+UpdateAux &Db::aux()
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux();
+}
+
 uint64_t Db::get_history_length() const
 {
     return is_on_disk() ? impl_->aux().metadata_ctx().version_history_length()

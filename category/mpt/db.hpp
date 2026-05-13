@@ -151,6 +151,21 @@ public:
     // Blocking traverse never wait on a fiber future.
     bool
     traverse_blocking(NodeCursor const &, TraverseMachine &, uint64_t block_id);
+
+    // Variant that lets the caller supply a `children_of(mask) -> range`
+    // factory controlling the order in which a node's children are visited.
+    // The factory is invoked once per node; its returned range must own its
+    // storage so the recursive descent below cannot clobber it.
+    template <class ChildrenVisitRange>
+    bool traverse_blocking(
+        NodeCursor const &cursor, TraverseMachine &machine,
+        uint64_t const block_id, ChildrenVisitRange children_of)
+    {
+        MONAD_ASSERT(cursor.is_valid());
+        return preorder_traverse_blocking(
+            aux(), *cursor.node, machine, block_id, std::move(children_of));
+    }
+
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
     uint64_t get_history_length() const;
@@ -170,6 +185,7 @@ public:
 private:
     friend struct test::DbAccessor;
     UpdateAux const &aux() const;
+    UpdateAux &aux();
 };
 
 // The following are not threadsafe. Please use async get from the RODb owning

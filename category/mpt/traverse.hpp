@@ -64,22 +64,38 @@ namespace detail
         async::erased_connected_operation *traverse_state, Node const &node,
         TraverseMachine &machine, unsigned char branch);
 
+    struct DefaultChildrenVisitRange
+    {
+        auto operator()(uint16_t const mask) const
+        {
+            return NodeChildrenRange(mask);
+        }
+    };
+
     // current implementation does not contaminate triedb node caching
+    template <class ChildrenVisitRange>
     inline bool preorder_traverse_blocking_impl(
         UpdateAux &aux, unsigned char const branch, Node const &node,
-        TraverseMachine &traverse, uint64_t const version)
+        TraverseMachine &traverse, uint64_t const version,
+        ChildrenVisitRange &children_of)
     {
         ++traverse.level;
         if (!traverse.down(branch, node)) {
             --traverse.level;
             return true;
         }
-        for (auto const [idx, next_branch] : NodeChildrenRange(node.mask)) {
+        auto const range = children_of(node.mask);
+        for (auto const &[idx, next_branch] : range) {
             if (traverse.should_visit(node, next_branch)) {
                 if (Node::SharedPtr const &next = node.next(idx);
                     next != nullptr) {
                     if (!preorder_traverse_blocking_impl(
-                            aux, next_branch, *next, traverse, version)) {
+                            aux,
+                            next_branch,
+                            *next,
+                            traverse,
+                            version,
+                            children_of)) {
                         --traverse.level;
                         traverse.up(branch, node);
                         return false;
@@ -94,7 +110,8 @@ namespace detail
                                              next_branch,
                                              *next_node_ondisk,
                                              traverse,
-                                             version)) {
+                                             version,
+                                             children_of)) {
                     --traverse.level;
                     traverse.up(branch, node);
                     return false;
@@ -374,12 +391,13 @@ namespace detail
 }
 
 // return value indicates if we have done the full traversal or not
+template <class ChildrenVisitRange = detail::DefaultChildrenVisitRange>
 inline bool preorder_traverse_blocking(
     UpdateAux &aux, Node const &node, TraverseMachine &traverse,
-    uint64_t const version)
+    uint64_t const version, ChildrenVisitRange children_of = {})
 {
     auto const ret = detail::preorder_traverse_blocking_impl(
-        aux, INVALID_BRANCH, node, traverse, version);
+        aux, INVALID_BRANCH, node, traverse, version, children_of);
     MONAD_ASSERT(traverse.level == 0);
     return ret;
 }

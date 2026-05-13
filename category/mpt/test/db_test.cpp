@@ -1671,6 +1671,90 @@ TYPED_TEST(DbTraverseTest, trimmed_traverse)
     }
 }
 
+TYPED_TEST(DbTraverseTest, traverse_blocking_custom_children_iterator)
+{
+    // Recording machine: collects the sequence of branches passed to down().
+    struct RecordingTraverse : public TraverseMachine
+    {
+        std::vector<unsigned char> &branches;
+
+        explicit RecordingTraverse(std::vector<unsigned char> &branches)
+            : branches(branches)
+        {
+        }
+
+        virtual bool down(unsigned char const branch, Node const &) override
+        {
+            if (branch != INVALID_BRANCH) {
+                branches.push_back(branch);
+            }
+            return true;
+        }
+
+        virtual void up(unsigned char const, Node const &) override {}
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<RecordingTraverse>(*this);
+        }
+    };
+
+    // Custom factory: returns the node's children in descending branch order,
+    // i.e. the reverse of the default NodeChildrenRange traversal.
+    struct ReverseChildrenRange
+    {
+        std::vector<std::pair<uint8_t, unsigned char>>
+        operator()(uint16_t const mask) const
+        {
+            std::vector<std::pair<uint8_t, unsigned char>> children;
+            for (auto const &p : NodeChildrenRange(mask)) {
+                children.push_back(p);
+            }
+            std::reverse(children.begin(), children.end());
+            return children;
+        }
+    };
+
+    /*
+        Fixture tree (see DbTraverseFixture):
+
+                root (branch 0)
+                 |
+                 12  (branch 1)
+               /    \
+             34      445678  (branches 3, 4)
+            / \
+         5678  6678          (branches 5, 6)
+
+        Default child iteration visits branches in ascending order, so the
+        sequence reaching down() is {0, 1, 3, 5, 6, 4}. With the reverse
+        iterator, sibling pairs (3,4) and (5,6) flip, giving
+        {0, 1, 4, 3, 6, 5}.
+    */
+
+    // Default iterator: ascending branch order.
+    {
+        std::vector<unsigned char> branches;
+        RecordingTraverse traverse{branches};
+        ASSERT_TRUE(
+            this->db.traverse_blocking(this->root, traverse, this->block_id));
+
+        std::vector<unsigned char> const expected{0, 1, 3, 5, 6, 4};
+        EXPECT_EQ(branches, expected);
+    }
+
+    // Custom iterator: descending branch order.
+    {
+        std::vector<unsigned char> branches;
+        RecordingTraverse traverse{branches};
+        ASSERT_TRUE(this->db.traverse_blocking(
+            this->root, traverse, this->block_id, ReverseChildrenRange{}));
+
+        std::vector<unsigned char> const expected{0, 1, 4, 3, 6, 5};
+        EXPECT_EQ(branches, expected);
+    }
+}
+
 TEST(RangedGetTest, path_exceeds_min_prefix)
 {
     Db db{std::make_unique<StateMachineAlwaysVarLen>()};

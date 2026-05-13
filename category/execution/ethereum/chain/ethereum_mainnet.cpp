@@ -41,6 +41,8 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 // Mainnet BPO activation times and blob parameters are canonicalized in
 // EIP-8134 and EIP-8135. BPO scheduling itself is defined by EIP-7892.
 constexpr uint64_t PRAGUE_ACTIVATION_TIMESTAMP = 1746612311;
+// Osaka (Fusaka) mainnet activation: 2025-12-03 21:49:11 UTC, block 23935694.
+constexpr uint64_t OSAKA_ACTIVATION_TIMESTAMP = 1764798551;
 constexpr uint64_t BPO1_ACTIVATION_TIMESTAMP = 1765290071;
 constexpr uint64_t BPO2_ACTIVATION_TIMESTAMP = 1767747671;
 
@@ -56,7 +58,10 @@ uint256_t EthereumMainnet::get_chain_id() const
 monad_eth_revision EthereumMainnet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
-    if (MONAD_LIKELY(timestamp >= PRAGUE_ACTIVATION_TIMESTAMP)) {
+    if (timestamp >= OSAKA_ACTIVATION_TIMESTAMP) {
+        return MONAD_ETH_OSAKA;
+    }
+    else if (MONAD_LIKELY(timestamp >= PRAGUE_ACTIVATION_TIMESTAMP)) {
         return MONAD_ETH_PRAGUE;
     }
     else if (timestamp >= 1710338135) {

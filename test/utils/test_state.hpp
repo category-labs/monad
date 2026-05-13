@@ -23,18 +23,22 @@
 
 MONAD_TEST_NAMESPACE_BEGIN
 
+template <bool page_encoded = false>
 struct TestState
 {
     monad::mpt::Db db;
     monad::TrieDb trie_db;
 
     TestState()
-        : db{std::make_unique<monad::InMemoryMachine>()}
+        : db{page_encoded ? std::make_unique<monad::MonadInMemoryMachine>()
+                          : std::make_unique<monad::InMemoryMachine>()}
         , trie_db{db}
     {
+        MONAD_ASSERT(page_encoded == trie_db.is_page_encoded());
     }
 };
 
-using TestStateRef = std::shared_ptr<TestState>;
+template <bool page_encoded = false>
+using TestStateRef = std::shared_ptr<TestState<page_encoded>>;
 
 MONAD_TEST_NAMESPACE_END

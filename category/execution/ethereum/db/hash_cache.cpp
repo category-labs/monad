@@ -17,6 +17,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/cases.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/account.hpp>
@@ -65,6 +66,20 @@ namespace
     /// account leaf: decode the value to recover the Account, take the
     /// canonical storage_root from node.data(), and wrap as a Leaf whose
     /// AccountLeafValue.storage is a HashStub.
+    ///
+    /// KNOWN LIMITATION: monad's flat trie can contain a "Branch with empty
+    /// bookkeeping value + a single child" at internal levels (e.g. the
+    /// state-subtree root when only one account exists). Canonical Ethereum
+    /// MPT collapses single-child branches into Extension/Leaf nodes by
+    /// merging the implicit branch nibble into the child path. This
+    /// translator does NOT yet perform that collapse, so the produced
+    /// state_root will diverge from `TrieDb::state_root()` whenever the
+    /// trie contains any single-child interior monad node above the
+    /// boundary. Symptom: a state with only a small number of accounts (or
+    /// with deep single-child interior chains) will round-trip incorrectly.
+    /// Real production tries with many accounts are typically multi-child
+    /// at the top, so this works for the common case — but the collapse
+    /// has to land before HashCache can be wired into execute_block.
     ChildRef<AccountLeafValue> translate_account_node(
         mpt::Node const &n, unsigned const start_depth,
         unsigned const next_nibble_on_path)
@@ -200,6 +215,308 @@ namespace
             after_path_depth + 1,
             target_remaining.substr(path_len + 1));
     }
+
+    /// Find the AccountLeafValue at the given target nibble path in HashCache's
+    /// sparse account trie. Returns nullptr if the path isn't fully resolved
+    /// (the walk hit a HashStub or null), the path diverges from cached
+    /// structure, or the account isn't present.
+    AccountLeafValue *
+    find_account_leaf_mut(AccountTrie &root, mpt::NibblesView remaining)
+    {
+        PartialNode<AccountLeafValue> *node = root.get();
+        while (node != nullptr) {
+            if (auto *leaf =
+                    std::get_if<LeafData<AccountLeafValue>>(&node->v)) {
+                return (mpt::NibblesView{leaf->path} == remaining)
+                           ? &leaf->value
+                           : nullptr;
+            }
+            if (auto *ext =
+                    std::get_if<ExtensionData<AccountLeafValue>>(&node->v)) {
+                mpt::NibblesView const ext_path{ext->path};
+                if (!remaining.starts_with(ext_path)) {
+                    return nullptr;
+                }
+                remaining = remaining.substr(ext_path.nibble_size());
+                node = ext->child.get();
+            }
+            else if (
+                auto *branch =
+                    std::get_if<BranchData<AccountLeafValue>>(&node->v)) {
+                if (remaining.empty()) {
+                    return branch->value ? &*branch->value : nullptr;
+                }
+                unsigned const nibble = remaining.get(0);
+                remaining = remaining.substr(1);
+                node = branch->children[nibble].get();
+            }
+            else {
+                // HashStub: account-path not yet fully translated.
+                return nullptr;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Translate a storage-trie mpt::Node at canonical storage-depth
+    /// `start_depth` into PartialNode<StorageLeafValue>. Mirrors
+    /// translate_account_node but for storage: the leaf boundary is at
+    /// storage-depth 64 (= flat depth 128), and the leaf value is the
+    /// bytes32_t storage value decoded from monad's encode_storage_db format.
+    ChildRef<StorageLeafValue> translate_storage_node(
+        mpt::Node const &n, unsigned const start_depth,
+        unsigned const next_nibble_on_path)
+    {
+        constexpr unsigned STORAGE_LEAF_DEPTH = 64;
+        mpt::NibblesView const path = n.path_nibble_view();
+        unsigned const end_depth = start_depth + path.nibble_size();
+
+        if (end_depth == STORAGE_LEAF_DEPTH && n.has_value()) {
+            byte_string_view enc = n.value();
+            auto pair_res = decode_storage_db(enc);
+            MONAD_ASSERT(!pair_res.has_error());
+            bytes32_t const value = pair_res.value().second;
+            return std::make_unique<PartialNode<StorageLeafValue>>(
+                LeafData<StorageLeafValue>{
+                    mpt::Nibbles{path}, StorageLeafValue{value}});
+        }
+
+        BranchData<StorageLeafValue> branch{};
+        for (unsigned nibble = 0; nibble < 16; ++nibble) {
+            if (!(n.mask & (1U << nibble))) {
+                continue;
+            }
+            if (nibble == next_nibble_on_path) {
+                continue;
+            }
+            unsigned const idx = n.to_child_index(nibble);
+            branch.children[nibble] =
+                make_hash_stub<StorageLeafValue>(n.child_data_view(idx));
+        }
+
+        auto branch_node =
+            std::make_unique<PartialNode<StorageLeafValue>>(std::move(branch));
+        if (path.nibble_size() > 0) {
+            return std::make_unique<PartialNode<StorageLeafValue>>(
+                ExtensionData<StorageLeafValue>{
+                    mpt::Nibbles{path}, std::move(branch_node)});
+        }
+        return branch_node;
+    }
+
+    /// Walk a storage-trie path with the canonical storage trie root already
+    /// in place (i.e. not a HashStub at the top). Same shape as
+    /// walk_account_path but in the storage subtree.
+    void walk_storage_inner(
+        ChildRef<StorageLeafValue> &partial_ref,
+        mpt::Node::SharedPtr const &mpt_node, unsigned const start_depth,
+        mpt::NibblesView const target_remaining)
+    {
+        constexpr unsigned STORAGE_LEAF_DEPTH = 64;
+        if (!mpt_node) {
+            return;
+        }
+        unsigned const path_len = mpt_node->path_nibble_view().nibble_size();
+        unsigned const after_path_depth = start_depth + path_len;
+        unsigned const next_nibble = (after_path_depth < STORAGE_LEAF_DEPTH &&
+                                      target_remaining.nibble_size() > path_len)
+                                         ? target_remaining.get(path_len)
+                                         : 16U;
+
+        if (!partial_ref || std::holds_alternative<HashStub>(partial_ref->v)) {
+            partial_ref =
+                translate_storage_node(*mpt_node, start_depth, next_nibble);
+        }
+
+        if (next_nibble == 16U) {
+            return;
+        }
+        if (std::holds_alternative<LeafData<StorageLeafValue>>(
+                partial_ref->v)) {
+            return;
+        }
+
+        BranchData<StorageLeafValue> *branch = nullptr;
+        if (auto *ext =
+                std::get_if<ExtensionData<StorageLeafValue>>(&partial_ref->v)) {
+            MONAD_ASSERT(ext->child);
+            branch = std::get_if<BranchData<StorageLeafValue>>(&ext->child->v);
+        }
+        else {
+            branch = std::get_if<BranchData<StorageLeafValue>>(&partial_ref->v);
+        }
+        MONAD_ASSERT(branch);
+
+        unsigned const mpt_child_idx = mpt_node->to_child_index(next_nibble);
+        mpt::Node::SharedPtr const &next_mpt = mpt_node->next(mpt_child_idx);
+
+        walk_storage_inner(
+            branch->children[next_nibble],
+            next_mpt,
+            after_path_depth + 1,
+            target_remaining.substr(path_len + 1));
+    }
+
+    /// Prepend a single nibble `x` to whatever path-bearing node sits at the
+    /// top of `node`, returning a new ChildRef with the collapsed path. Used
+    /// to merge the implicit boundary-branch nibble into the canonical
+    /// single-child storage subtree root.
+    ChildRef<StorageLeafValue> prepend_nibble_to_storage_node(
+        unsigned char const x, ChildRef<StorageLeafValue> node)
+    {
+        if (!node) {
+            return nullptr;
+        }
+        return std::visit(
+            Cases{
+                [&](LeafData<StorageLeafValue> &leaf)
+                    -> ChildRef<StorageLeafValue> {
+                    mpt::Nibbles new_path =
+                        mpt::concat(x, mpt::NibblesView{leaf.path});
+                    return std::make_unique<PartialNode<StorageLeafValue>>(
+                        LeafData<StorageLeafValue>{
+                            std::move(new_path), std::move(leaf.value)});
+                },
+                [&](ExtensionData<StorageLeafValue> &ext)
+                    -> ChildRef<StorageLeafValue> {
+                    mpt::Nibbles new_path =
+                        mpt::concat(x, mpt::NibblesView{ext.path});
+                    return std::make_unique<PartialNode<StorageLeafValue>>(
+                        ExtensionData<StorageLeafValue>{
+                            std::move(new_path), std::move(ext.child)});
+                },
+                [&](BranchData<StorageLeafValue> &branch)
+                    -> ChildRef<StorageLeafValue> {
+                    mpt::Nibbles new_path{1};
+                    new_path.set(0, x);
+                    return std::make_unique<PartialNode<StorageLeafValue>>(
+                        ExtensionData<StorageLeafValue>{
+                            std::move(new_path),
+                            std::make_unique<PartialNode<StorageLeafValue>>(
+                                std::move(branch))});
+                },
+                [&](HashStub &stub) -> ChildRef<StorageLeafValue> {
+                    mpt::Nibbles new_path{1};
+                    new_path.set(0, x);
+                    return std::make_unique<PartialNode<StorageLeafValue>>(
+                        ExtensionData<StorageLeafValue>{
+                            std::move(new_path),
+                            std::make_unique<PartialNode<StorageLeafValue>>(
+                                stub)});
+                },
+            },
+            node->v);
+    }
+
+    /// Drive storage-trie prefetch from the boundary account mpt::Node down to
+    /// the target slot. Handles three boundary shapes:
+    ///   - 0 children: account has no storage; nothing to do (storage_ref
+    ///     stays as HashStub{NULL_ROOT-or-actual} or null).
+    ///   - exactly 1 child at nibble X: canonical storage-trie root is the
+    ///     translated child with X collapsed into its top path. If
+    ///     target's first nibble == X, the descent into the child carries the
+    ///     remaining target path; otherwise the slot doesn't exist.
+    ///   - 2+ children: canonical storage-trie root is a Branch with each
+    ///     boundary-child slot populated. The target slot is descended into
+    ///     via walk_storage_inner.
+    ///
+    /// On a re-prefetch (storage_ref already structured), the existing root is
+    /// reused: for a multi-child Branch root, the target slot is descended via
+    /// walk_storage_inner; for a single-child collapsed root, any subsequent
+    /// target either follows the same X-prefix (already fully resolved) or
+    /// doesn't exist — so no further work is needed.
+    void walk_storage_from_boundary(
+        StorageTrie &storage_ref, mpt::Node::SharedPtr const &boundary_node,
+        mpt::NibblesView const target_slot_path)
+    {
+        if (!boundary_node || target_slot_path.nibble_size() == 0) {
+            return;
+        }
+        unsigned const child_count = boundary_node->number_of_children();
+        if (child_count == 0) {
+            return;
+        }
+        unsigned const target_first = target_slot_path.get(0);
+        bool const target_in_trie =
+            (boundary_node->mask & (1U << target_first)) != 0;
+
+        bool const fresh =
+            !storage_ref || std::holds_alternative<HashStub>(storage_ref->v);
+
+        if (fresh) {
+            if (child_count >= 2) {
+                // Multi-child: build canonical Branch root with siblings as
+                // HashStubs; leave target slot null for descent below.
+                BranchData<StorageLeafValue> branch{};
+                for (unsigned nibble = 0; nibble < 16; ++nibble) {
+                    if (!(boundary_node->mask & (1U << nibble))) {
+                        continue;
+                    }
+                    if (nibble == target_first && target_in_trie) {
+                        continue;
+                    }
+                    unsigned const idx = boundary_node->to_child_index(nibble);
+                    branch.children[nibble] = make_hash_stub<StorageLeafValue>(
+                        boundary_node->child_data_view(idx));
+                }
+                storage_ref = std::make_unique<PartialNode<StorageLeafValue>>(
+                    std::move(branch));
+                // fall through to descent
+            }
+            else {
+                // child_count == 1: translate the single child subtree, then
+                // collapse the boundary's nibble into its top path. Recursion
+                // descent is folded into the translation: if target matches X,
+                // pass the remaining slot path; otherwise pass empty.
+                unsigned single_nibble = 0;
+                for (unsigned i = 0; i < 16; ++i) {
+                    if (boundary_node->mask & (1U << i)) {
+                        single_nibble = i;
+                        break;
+                    }
+                }
+                unsigned const idx =
+                    boundary_node->to_child_index(single_nibble);
+                mpt::Node::SharedPtr const &child_mpt =
+                    boundary_node->next(idx);
+
+                ChildRef<StorageLeafValue> child_translated;
+                mpt::NibblesView const remaining =
+                    (single_nibble == target_first) ? target_slot_path.substr(1)
+                                                    : mpt::NibblesView{};
+                walk_storage_inner(
+                    child_translated,
+                    child_mpt,
+                    /*start_depth=*/1,
+                    remaining);
+                storage_ref = prepend_nibble_to_storage_node(
+                    static_cast<unsigned char>(single_nibble),
+                    std::move(child_translated));
+                return; // single-child path complete
+            }
+        }
+
+        // Descent: only valid when the storage trie root is a multi-child
+        // Branch and the target nibble has an entry. (Single-child collapsed
+        // roots are fully resolved along their one path during fresh build;
+        // any re-prefetch on a different first nibble is a non-existent slot.)
+        if (!target_in_trie) {
+            return;
+        }
+        auto *branch =
+            std::get_if<BranchData<StorageLeafValue>>(&storage_ref->v);
+        if (branch == nullptr) {
+            return;
+        }
+        unsigned const target_idx = boundary_node->to_child_index(target_first);
+        mpt::Node::SharedPtr const &target_child_mpt =
+            boundary_node->next(target_idx);
+        walk_storage_inner(
+            branch->children[target_first],
+            target_child_mpt,
+            /*start_depth=*/1,
+            target_slot_path.substr(1));
+    }
 }
 
 HashCache::HashCache() = default;
@@ -250,21 +567,48 @@ void HashCache::prefetch_storage(
     mpt::NibblesView const state_prefix, uint64_t const block_number,
     Address const &addr, bytes32_t const &slot)
 {
-    // TODO: walk into the per-account storage subtree of `addr` in root_,
-    // translating and splicing storage nodes (PartialNode<StorageLeafValue>)
-    // along the keccak256(slot) path. For now this only warms the on-disk
-    // NodeCache via find(), and leaves the storage subtree as a HashStub
-    // (which still produces the correct state_root if the storage subtree
-    // isn't modified by the block).
     auto const acct_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
     auto const slot_hash = keccak256({slot.bytes, sizeof(slot.bytes)});
+    mpt::NibblesView const target_acct{acct_hash};
+    mpt::NibblesView const target_slot{slot_hash};
+
+    // Ensure the on-disk path is fully warmed before we walk in-memory.
     (void)db.find(
         on_disk_root,
-        mpt::concat(
-            state_prefix,
-            mpt::NibblesView{acct_hash},
-            mpt::NibblesView{slot_hash}),
+        mpt::concat(state_prefix, target_acct, target_slot),
         block_number);
+
+    // Ensure the account leaf is resolved in our sparse trie. Idempotent
+    // when already resolved.
+    prefetch_account(db, on_disk_root, state_prefix, block_number, addr);
+
+    // Look up the boundary mpt::Node (depth 64 of monad's state subtree).
+    auto const state_root_cursor =
+        db.find(on_disk_root, state_prefix, block_number);
+    if (!state_root_cursor.has_value()) {
+        return;
+    }
+    mpt::Node::SharedPtr const state_root_node = state_root_cursor.value().node;
+    auto const boundary_cursor =
+        db.find(state_root_node, target_acct, block_number);
+    if (!boundary_cursor.has_value()) {
+        // Account doesn't exist on-disk; nothing to prefetch.
+        return;
+    }
+    mpt::Node::SharedPtr const boundary_node = boundary_cursor.value().node;
+
+    std::lock_guard<std::mutex> const lk{mu_};
+
+    // Walk into our trie to locate the AccountLeafValue for this address.
+    AccountLeafValue *const acct_leaf =
+        find_account_leaf_mut(root_, target_acct);
+    if (acct_leaf == nullptr) {
+        // Account-trie path didn't resolve to a leaf (e.g. account doesn't
+        // exist in the trie). Nothing to do for storage.
+        return;
+    }
+
+    walk_storage_from_boundary(acct_leaf->storage, boundary_node, target_slot);
 }
 
 bytes32_t HashCache::compute_state_root(StateDeltas const &deltas)

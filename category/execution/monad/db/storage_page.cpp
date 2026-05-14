@@ -78,19 +78,6 @@ namespace
         return cached;
     }
 
-    // bit i of the result indicates page[i] is non-zero.
-    slot_bitmap_t compute_slot_bitmap(storage_page_t const &page)
-    {
-        slot_bitmap_t bm = 0;
-        slot_bitmap_t mask = 1;
-        for (size_t i = 0; i < storage_page_t::SLOTS; ++i, mask <<= 1) {
-            if (page[static_cast<uint8_t>(i)] != bytes32_t{}) {
-                bm |= mask;
-            }
-        }
-        return bm;
-    }
-
     // bit i of the result indicates either slot 2i or 2i+1 is non-zero.
     uint64_t derive_pair_bitmap(slot_bitmap_t const slot_bitmap)
     {
@@ -135,7 +122,7 @@ bytes32_t page_commit(storage_page_t const &page)
         return blake3_seal(0, nullptr);
     }
 
-    slot_bitmap_t const slot_bitmap = compute_slot_bitmap(page);
+    slot_bitmap_t const slot_bitmap = page.bitmap();
     uint64_t const pair_bitmap = derive_pair_bitmap(slot_bitmap);
 
     // Phase 1 — Leaf init: hash active pair-leaves with LEAF_IV.
@@ -148,8 +135,7 @@ bytes32_t page_commit(storage_page_t const &page)
         size_t n = 0;
         uint64_t bits = pair_bitmap;
         MONAD_ASSERT(bits != 0); // empty page case handled above
-        auto const *const slot_array_bytes =
-            reinterpret_cast<uint8_t const *>(&page.slots);
+        auto const *const slot_array_bytes = page.slot_bytes();
         while (bits != 0) {
             auto const idx = static_cast<uint8_t>(std::countr_zero(bits));
             indices[n] = idx;
@@ -346,8 +332,8 @@ Result<storage_page_t> decode_storage_page(byte_string_view enc)
             }
             for (size_t j = 0; j < count; ++j) {
                 BOOST_OUTCOME_TRY(
-                    page[static_cast<uint8_t>(i + j)],
-                    rlp::decode_bytes32_compact(enc));
+                    auto const value, rlp::decode_bytes32_compact(enc));
+                page.set(static_cast<uint8_t>(i + j), value);
             }
             i += count;
         }

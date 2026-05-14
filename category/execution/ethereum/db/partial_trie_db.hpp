@@ -26,85 +26,19 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/partial_node.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/mpt/nibbles_view.hpp>
 #include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
 
-#include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
-#include <span>
-#include <variant>
-#include <vector>
 
 MONAD_NAMESPACE_BEGIN
-
-/// An unresolved subtree whose contents are absent from the witness.
-struct HashStub
-{
-    bytes32_t hash;
-};
-
-using NodeIndex = ankerl::unordered_dense::map<bytes32_t, byte_string>;
-
-template <typename T>
-concept LeafValue =
-    requires(byte_string_view &enc, NodeIndex const &nodes, T const &v) {
-        { T::decode(enc, nodes) } -> std::same_as<Result<T>>;
-        { T::encode(v) } -> std::same_as<byte_string>;
-    };
-
-template <LeafValue V>
-struct PartialNode;
-
-/// Owning pointer to a child node. A null pointer represents an empty branch
-/// slot (analogous to an absent nibble in a standard Ethereum branch node).
-template <LeafValue V>
-using ChildRef = std::unique_ptr<PartialNode<V>>;
-
-template <LeafValue V>
-struct BranchData
-{
-    std::array<ChildRef<V>, 16> children;
-    std::optional<V> value;
-};
-
-template <LeafValue V>
-struct ExtensionData
-{
-    mpt::Nibbles path;
-    ChildRef<V> child;
-};
-
-template <LeafValue V>
-struct LeafData
-{
-    mpt::Nibbles path;
-    V value;
-};
-
-/// Four-way variant: branch, extension, leaf, or opaque hash stub.
-template <LeafValue V>
-struct PartialNode
-{
-    using Variant =
-        std::variant<BranchData<V>, ExtensionData<V>, LeafData<V>, HashStub>;
-
-    Variant v;
-
-    PartialNode() = default;
-
-    template <class T>
-        requires std::constructible_from<Variant, T>
-    explicit PartialNode(T &&x)
-        : v(std::forward<T>(x))
-    {
-    }
-};
 
 struct StorageLeafValue
 {
@@ -133,6 +67,27 @@ struct AccountLeafValue
 using AccountTrie = ChildRef<AccountLeafValue>;
 
 using CodeIndex = ankerl::unordered_dense::map<bytes32_t, vm::SharedIntercode>;
+
+// ---------------------------------------------------------------------------
+// Public operations over an AccountTrie.
+//
+// These wrap the template-heavy trie machinery (currently kept in the .cpp's
+// anonymous namespace) so consumers — PartialTrieDb itself, and HashCache —
+// can apply block deltas and re-hash an in-memory sparse account trie without
+// each consumer reimplementing the trie ops.
+// ---------------------------------------------------------------------------
+
+/// Apply block-wide state deltas to the in-place account trie:
+/// account upserts and deletes; per-account storage upserts and deletes;
+/// reset the per-account storage trie on an incarnation bump.
+/// Requires all paths the deltas touch to be resolved (no HashStub on path).
+void apply_state_deltas_to_trie(AccountTrie &root, StateDeltas const &deltas);
+
+/// Compute the Ethereum-canonical state root of the (sparse) account trie
+/// by walking it, RLP-encoding each node, and keccak-hashing. No disk I/O.
+/// If `root` is null, returns NULL_ROOT. Aborts if the walk hits a HashStub
+/// (the caller is responsible for resolving any path that might be hashed).
+bytes32_t compute_account_state_root(AccountTrie const &root);
 
 // ---------------------------------------------------------------------------
 // PartialTrieDb

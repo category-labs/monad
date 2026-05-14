@@ -689,6 +689,84 @@ byte_string StorageLeafValue::encode(StorageLeafValue const &v)
     return rlp::encode_bytes32_compact(v.value);
 }
 
+// ---------------------------------------------------------------------------
+// Public free functions over an AccountTrie. Wrap the anonymous-namespace
+// template helpers so they can be reused by HashCache without duplicating
+// the trie machinery in a header (where it would lose internal linkage and
+// trip a GCC15 -Wmaybe-uninitialized false-positive in the variant
+// destructor's inlined instantiations).
+// ---------------------------------------------------------------------------
+
+void apply_state_deltas_to_trie(AccountTrie &root, StateDeltas const &deltas)
+{
+    // Pass 1: inserts and updates (accounts that exist in post-state)
+    for (auto const &[addr, delta] : deltas) {
+        auto const &new_account = delta.account.second;
+        if (!new_account) {
+            continue;
+        }
+
+        auto const acct_key = keccak256(addr.bytes);
+
+        auto &existing = trie_get_or_upsert<false>(
+            root, mpt::NibblesView{acct_key}, AccountLeafValue{});
+
+        // Incarnation bump: the account was destroyed and recreated in
+        // this block (CREATE2/SELFDESTRUCT/CREATE2 patterns). The old
+        // storage trie must be wiped before the new slot deltas apply
+        if (delta.account.first.has_value() &&
+            delta.account.first->incarnation != new_account->incarnation) {
+            existing.storage.reset();
+        }
+
+        existing.account = *new_account;
+
+        auto &storage = existing.storage;
+
+        // Apply storage deltas: upserts first, then deletions
+        for (auto const &[slot, sdelta] : delta.storage) {
+            if (sdelta.second != bytes32_t{}) {
+                auto const slot_key = keccak256(slot.bytes);
+                trie_get_or_upsert(
+                    storage,
+                    mpt::NibblesView{slot_key},
+                    StorageLeafValue{sdelta.second});
+            }
+        }
+        for (auto const &[slot, sdelta] : delta.storage) {
+            if (sdelta.second == bytes32_t{} && sdelta.first != bytes32_t{}) {
+                auto const slot_key = keccak256(slot.bytes);
+                trie_delete(storage, mpt::NibblesView{slot_key});
+            }
+        }
+    }
+
+    // Pass 2: deletions (accounts removed in post-state)
+    for (auto const &[addr, delta] : deltas) {
+        if (delta.account.second) {
+            continue;
+        }
+        if (!delta.account.first) {
+            continue;
+        }
+        auto const acct_key = keccak256(addr.bytes);
+        trie_delete(root, mpt::NibblesView{acct_key});
+    }
+}
+
+bytes32_t compute_account_state_root(AccountTrie const &root)
+{
+    if (!root) {
+        return NULL_ROOT;
+    }
+    if (auto const *stub = std::get_if<HashStub>(&root->v)) {
+        return stub->hash;
+    }
+    byte_string rlp_bytes = encode_partial_node(*root);
+    return to_bytes(
+        keccak256(byte_string_view{rlp_bytes.data(), rlp_bytes.size()}));
+}
+
 Result<PartialTrieDb> PartialTrieDb::from_witness(
     bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
     byte_string_view encoded_codes)
@@ -775,15 +853,7 @@ BlockHeader PartialTrieDb::read_eth_header()
 
 bytes32_t PartialTrieDb::state_root()
 {
-    if (!root_) {
-        return NULL_ROOT;
-    }
-    if (auto const *stub = std::get_if<HashStub>(&root_->v)) {
-        return stub->hash;
-    }
-    byte_string rlp_bytes = encode_partial_node(*root_);
-    return to_bytes(
-        keccak256(byte_string_view{rlp_bytes.data(), rlp_bytes.size()}));
+    return compute_account_state_root(root_);
 }
 
 bytes32_t PartialTrieDb::receipts_root()
@@ -821,59 +891,7 @@ void PartialTrieDb::commit(
 
     block_number_ = header.number;
 
-    // Pass 1: inserts and updates (accounts that exist in post-state)
-    for (auto const &[addr, delta] : *deltas) {
-        auto const &new_account = delta.account.second;
-        if (!new_account) {
-            continue;
-        }
-
-        auto const acct_key = keccak256(addr.bytes);
-
-        auto &existing = trie_get_or_upsert<false>(
-            root_, mpt::NibblesView{acct_key}, AccountLeafValue{});
-
-        // Incarnation bump: the account was destroyed and recreated in
-        // this block (CREATE2/SELFDESTRUCT/CREATE2 patterns). The old
-        // storage trie must be wiped before the new slot deltas apply
-        if (delta.account.first.has_value() &&
-            delta.account.first->incarnation != new_account->incarnation) {
-            existing.storage.reset();
-        }
-
-        existing.account = *new_account;
-
-        auto &storage = existing.storage;
-
-        // Apply storage deltas: upserts first, then deletions
-        for (auto const &[slot, sdelta] : delta.storage) {
-            if (sdelta.second != bytes32_t{}) {
-                auto const slot_key = keccak256(slot.bytes);
-                trie_get_or_upsert(
-                    storage,
-                    mpt::NibblesView{slot_key},
-                    StorageLeafValue{sdelta.second});
-            }
-        }
-        for (auto const &[slot, sdelta] : delta.storage) {
-            if (sdelta.second == bytes32_t{} && sdelta.first != bytes32_t{}) {
-                auto const slot_key = keccak256(slot.bytes);
-                trie_delete(storage, mpt::NibblesView{slot_key});
-            }
-        }
-    }
-
-    // Pass 2: deletions (accounts removed in post-state)
-    for (auto const &[addr, delta] : *deltas) {
-        if (delta.account.second) {
-            continue;
-        }
-        if (!delta.account.first) {
-            continue;
-        }
-        auto const acct_key = keccak256(addr.bytes);
-        trie_delete(root_, mpt::NibblesView{acct_key});
-    }
+    apply_state_deltas_to_trie(root_, *deltas);
 
     last_committed_header_ = header;
     MONAD_ASSERT(populate_header_fn);

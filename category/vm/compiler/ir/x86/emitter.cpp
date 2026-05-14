@@ -7187,6 +7187,153 @@ namespace monad::vm::compiler::native
         return dst;
     }
 
+    // Inline unsigned 256-bit-by-64-bit long division.
+    //
+    // Emits the same 4-iteration long division algorithm as
+    // `runtime::udiv` -> `udivrem` -> `long_div` (uint256.hpp), but inline
+    // in the JIT'd contract code, avoiding the runtime function call and its
+    // surrounding caller-save spills.
+    //
+    // Preconditions (enforced by debug asserts; caller is responsible):
+    //   - `divisor > 1` (caller handles `0` and powers of two separately).
+    //   - `dividend` is not a literal (literal/literal is folded at the top
+    //     of `div_optimized` / `mod_optimized`).
+    //
+    // If `is_mod` is true, returns a fresh `StackElemRef` holding the
+    // remainder `dividend % divisor` (limb 0 = remainder, limbs 1-3 = 0).
+    // Otherwise returns the quotient `dividend / divisor`.
+    //
+    // Discharge: discharges deferred comparison.
+    StackElemRef Emitter::udiv_by_uint64(
+        StackElemRef dividend, uint64_t const divisor, bool const is_mod)
+    {
+        MONAD_DEBUG_ASSERT(divisor > 1);
+        MONAD_DEBUG_ASSERT(!dividend->literal().has_value());
+
+        {
+            RegReserv const dividend_reserv{dividend};
+            discharge_deferred_comparison();
+        }
+
+        // Allocate the destination Gpq256. `alloc_general_reg` prefers the
+        // lowest-numbered free slot (callee-save slot 0 first), so we usually
+        // land in slot 0 or 1, where `rdx` is not part of the Gpq256. If both
+        // lower slots are occupied by live elements we fall back to the
+        // volatile slot (slot 2), whose third register is `rdx` itself. To
+        // make the algorithm work in that case we follow the precedent set by
+        // `mul_with_bit_size` (see emitter.cpp around line 6811): remap that
+        // position to `reg_context` (rbx) for the duration of the divs, with
+        // a push/pop pair to preserve rbx.
+        auto [dst, dst_reserv] = alloc_general_reg();
+        auto &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+        auto const rdx_index = volatile_gpq_index<x86::rdx>();
+        bool const dst_aliases_rdx = dst_gpq[rdx_index] == x86::rdx;
+
+        // Track how far the `push` instructions below have shifted `rsp` so
+        // that the scratch-slot offset (which is rsp-relative) stays valid.
+        int32_t rsp_delta = 0;
+
+        if (dst_aliases_rdx) {
+            MONAD_DEBUG_ASSERT(*dst->general_reg() == rdx_general_reg);
+            as_.push(reg_context);
+            rsp_delta += 8;
+            dst_gpq[rdx_index] = reg_context;
+        }
+
+        // Move the dividend into the (possibly remapped) destination Gpq256.
+        // `mov_stack_elem_to_gpq256<true>` only uses rbp-relative addressing
+        // (the EVM stack memory area), never rsp-relative, so the push above
+        // does not affect it.
+        mov_stack_elem_to_gpq256<true>(dividend, dst_gpq);
+        // Release the dividend's ref-count so its own register locations are
+        // freed for use by our algorithm. In particular, if the dividend was
+        // residing in the volatile slot (slot 2) and we ourselves are in a
+        // non-volatile slot, this drops the dividend's claim on `rdx`.
+        dividend.reset();
+
+        // If after releasing the dividend `rdx` is still owned by some
+        // unrelated live stack element, preserve it across the div sequence.
+        // This case cannot co-occur with `dst_aliases_rdx`: when our `dst`
+        // occupies slot 2, no other element can be there.
+        bool preserve_stack_rdx = false;
+        if (!dst_aliases_rdx &&
+            stack_.general_reg_stack_elem(rdx_general_reg) != nullptr) {
+            as_.push(x86::rdx);
+            rsp_delta += 8;
+            preserve_stack_rdx = true;
+        }
+
+        // Store the divisor into a scratch stack slot and use it as a memory
+        // operand for `div`. This avoids the complexity of finding a spare
+        // scratch GPR; the cost is one extra L1 load per `div`, which is
+        // dwarfed by `div`'s own latency. The offset is corrected for any
+        // `push` instructions that shifted `rsp` above.
+        auto const divisor_mem =
+            x86::qword_ptr(x86::rsp, sp_offset_temp_word1 + rsp_delta);
+        if (divisor <=
+            static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+            as_.mov(divisor_mem, static_cast<int32_t>(divisor));
+        }
+        else {
+            as_.mov(x86::rax, divisor);
+            as_.mov(divisor_mem, x86::rax);
+        }
+
+        // Long division, high limb to low. After each `div r/m64`, `rax`
+        // holds the quotient digit and `rdx` holds the remainder, which is
+        // implicitly carried into the next iteration as the high half of the
+        // 128-bit dividend.
+        as_.xor_(x86::edx, x86::edx);
+        for (int i = 3; i >= 0; --i) {
+            auto const idx = static_cast<size_t>(i);
+            as_.mov(x86::rax, dst_gpq[idx]);
+            as_.div(divisor_mem);
+            as_.mov(dst_gpq[idx], x86::rax);
+        }
+        // dst_gpq[0..3] now holds the quotient and `rdx` holds the remainder.
+
+        if (is_mod) {
+            // Replace the contents of `dst_gpq` with {remainder, 0, 0, 0}.
+            // The remainder fits in 64 bits because the divisor does.
+            if (dst_aliases_rdx) {
+                // dst_gpq is currently {rcx, rsi, rbx, rdi}. Copy the
+                // remainder into the canonical limb-0 position (rcx) and
+                // zero out `rdx` so that, after we restore the canonical
+                // mapping below, `dst_gpq[rdx_index] = rdx` holds zero.
+                // dst_gpq[rdx_index] (currently rbx) is left untouched here;
+                // it will be reset by the `pop reg_context` and the mapping
+                // restoration that follow.
+                as_.mov(dst_gpq[0], x86::rdx);
+                as_.xor_(x86::edx, x86::edx);
+                as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
+                as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
+            }
+            else {
+                as_.mov(dst_gpq[0], x86::rdx);
+                as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
+                as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
+                as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
+            }
+        }
+        else if (dst_aliases_rdx) {
+            // UDIV slot-2: the quotient digit for the rdx-index position is
+            // currently in `reg_context` (rbx). Move it into `rdx` so that
+            // the canonical Gpq256 mapping (restored below) holds it.
+            as_.mov(x86::rdx, dst_gpq[rdx_index]);
+        }
+
+        if (preserve_stack_rdx) {
+            as_.pop(x86::rdx);
+        }
+
+        if (dst_aliases_rdx) {
+            as_.pop(reg_context);
+            dst_gpq[rdx_index] = x86::rdx;
+        }
+
+        return dst;
+    }
+
     template <bool is_sdiv>
     bool Emitter::div_optimized()
     {
@@ -7258,6 +7405,21 @@ namespace monad::vm::compiler::native
                 stack_.push(std::move(dst));
             }
             return true;
+        }
+
+        // Divisor fits in a single 64-bit limb: emit inline `long_div` (4
+        // hardware `div r/m64` instructions) instead of calling the runtime.
+        // This is gated on the unsigned case; signed UDIV by a 64-bit literal
+        // would additionally require conditional dividend negation and is
+        // left to a future change.
+        if constexpr (!is_sdiv) {
+            MONAD_DEBUG_ASSERT(!needs_negation);
+            if (count_significant_words(b.as_words()) == 1) {
+                stack_.pop();
+                stack_.pop();
+                stack_.push(udiv_by_uint64(std::move(a_elem), b[0], false));
+                return true;
+            }
         }
 
         return false;
@@ -7382,6 +7544,22 @@ namespace monad::vm::compiler::native
                 return true;
             }
             return true;
+        }
+
+        // Divisor fits in a single 64-bit limb: emit inline `long_div` (4
+        // hardware `div r/m64` instructions) instead of calling the runtime.
+        // The remainder of the final `div` is the UMOD result; the quotient
+        // is discarded. Signed SMOD by a 64-bit literal would additionally
+        // require conditional dividend negation (and re-negation of the
+        // remainder to inherit the dividend's sign) and is left to a future
+        // change.
+        if constexpr (!is_smod) {
+            if (count_significant_words(b.as_words()) == 1) {
+                stack_.pop();
+                stack_.pop();
+                stack_.push(udiv_by_uint64(std::move(a_elem), b[0], true));
+                return true;
+            }
         }
 
         return false;

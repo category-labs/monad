@@ -2015,6 +2015,125 @@ TEST(Emitter, umod)
     }
 }
 
+// Exercises the inline `long_div` fast path in `div_optimized<false>` for
+// UDIV by a literal divisor that fits in a single 64-bit limb but is not a
+// power of two. When `pure_bin_instr_test` places the divisor in the Literal
+// location (one of the four position permutations it sweeps), this branch is
+// the one being executed; the other permutations exercise the runtime
+// fallback that was already covered by `TEST(Emitter, udiv)`.
+TEST(Emitter, udiv_by_uint64_literal)
+{
+    uint256_t const max256 = std::numeric_limits<uint256_t>::max();
+    uint256_t const bit64{static_cast<uint64_t>(1) << 63};
+    uint256_t const bit128{0, 1, 0, 0};
+    uint256_t const bit192{0, 0, 1, 0};
+    uint256_t const bit255{0, 0, 0, static_cast<uint64_t>(1) << 63};
+    // Divisors are non-power-of-two and fit in 64 bits. The branch also
+    // requires the divisor to be at least 2 (the existing pow2 branch covers
+    // 1 and 2^k). 10, 100, 1000 and 10^18 are the most common decimal scaling
+    // factors that appear in real contracts (basis points, token decimals).
+    std::vector<uint64_t> const divisors{
+        3,
+        10,
+        100,
+        1000,
+        9970,             // Uniswap V2 fee numerator
+        10000,            // basis-points denominator
+        1'000'000,        // USDC decimals
+        1'000'000'000,    // gwei
+        1'000'000'000'000'000'000ULL, // 1e18 (wei)
+        std::numeric_limits<uint64_t>::max() - 1,
+        std::numeric_limits<uint64_t>::max(),
+    };
+    std::vector<uint256_t> const dividends{
+        0,
+        1,
+        42,
+        bit64,
+        bit64 + 1,
+        bit128,
+        bit128 + 1,
+        bit192,
+        bit192 + 1,
+        bit255,
+        bit255 + 1,
+        max256,
+        max256 - 1,
+    };
+    asmjit::JitRuntime rt;
+    for (auto const a : dividends) {
+        for (auto const d : divisors) {
+            uint256_t const b{d};
+            auto const expected = a / b;
+            pure_bin_instr_test(
+                rt,
+                PUSH0,
+                [&](Emitter &em) {
+                    em.udiv(std::numeric_limits<int32_t>::max());
+                },
+                a,
+                b,
+                expected);
+        }
+    }
+}
+
+// Same coverage as `udiv_by_uint64_literal` but for UMOD: the new branch
+// extracts the final `rdx` as the result and zero-fills the upper three
+// limbs.
+TEST(Emitter, umod_by_uint64_literal)
+{
+    uint256_t const max256 = std::numeric_limits<uint256_t>::max();
+    uint256_t const bit64{static_cast<uint64_t>(1) << 63};
+    uint256_t const bit128{0, 1, 0, 0};
+    uint256_t const bit192{0, 0, 1, 0};
+    uint256_t const bit255{0, 0, 0, static_cast<uint64_t>(1) << 63};
+    std::vector<uint64_t> const divisors{
+        3,
+        10,
+        100,
+        1000,
+        9970,
+        10000,
+        1'000'000,
+        1'000'000'000,
+        1'000'000'000'000'000'000ULL,
+        std::numeric_limits<uint64_t>::max() - 1,
+        std::numeric_limits<uint64_t>::max(),
+    };
+    std::vector<uint256_t> const dividends{
+        0,
+        1,
+        42,
+        bit64,
+        bit64 + 1,
+        bit128,
+        bit128 + 1,
+        bit192,
+        bit192 + 1,
+        bit255,
+        bit255 + 1,
+        max256,
+        max256 - 1,
+    };
+    asmjit::JitRuntime rt;
+    for (auto const a : dividends) {
+        for (auto const d : divisors) {
+            uint256_t const b{d};
+            auto const expected = a % b;
+            pure_bin_instr_test(
+                rt,
+                PUSH0,
+                [&](Emitter &em) {
+                    em.umod(std::numeric_limits<int32_t>::max());
+                },
+                a,
+                b,
+                expected);
+        }
+    }
+}
+
 TEST(Emitter, smod)
 {
     uint256_t bit256{0, 0, 0, static_cast<uint64_t>(1) << 63};

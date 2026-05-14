@@ -836,6 +836,8 @@ namespace monad::vm::compiler::native
         StackElemRef sdiv_by_sar(
             StackElemRef, uint256_t const &shift,
             std::tuple<LiveSet...> const &);
+        StackElemRef
+        udiv_by_uint64(StackElemRef dividend, uint64_t divisor, bool is_mod);
         template <bool is_sdiv>
         bool div_optimized();
 

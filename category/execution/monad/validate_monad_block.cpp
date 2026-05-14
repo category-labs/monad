@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -86,7 +87,14 @@ Result<void> static_validate_monad_body(
 
     auto const end_system_txn =
         txns.begin() + std::distance(senders.begin(), first_user_sender);
-    auto const is_reward = [](Transaction const &tx) { return tx.value > 0; };
+    auto const is_reward = [](Transaction const &tx) -> bool {
+        if (MONAD_UNLIKELY(tx.data.size() < 4)) {
+            return false;
+        }
+        auto const selector =
+            load_be_unsafe<uint32_t>(tx.data.substr(0, 4).data());
+        return (selector == staking::selector::REWARD);
+    };
 
     // Find first reward txn.
     auto const first_reward_txn =

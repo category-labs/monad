@@ -23,7 +23,11 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/db_metadata_context.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/state_machine_kind.hpp>
+#include <category/mpt/trie.hpp>
 
 #include <test_resource_data.h>
 
@@ -31,6 +35,21 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+
+namespace monad::mpt::test
+{
+    // Friend-of-Db accessor (db.hpp friends monad::mpt::test::DbAccessor).
+    // Lets tests stamp the persisted state_machine_kind on a freshly-
+    // truncated pool before the snapshot loader (which uses the
+    // metadata-driven Db ctor internally) reads from it.
+    struct DbAccessor
+    {
+        static UpdateAux &aux(Db &db)
+        {
+            return const_cast<UpdateAux &>(db.aux());
+        }
+    };
+}
 
 namespace
 {
@@ -163,6 +182,13 @@ TEST(DbBinarySnapshot, Basic)
             mpt::Db dest_init{
                 std::make_unique<OnDiskMachine>(),
                 OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+            // Stamp the kind so the snapshot loader's metadata-driven
+            // Db ctor (via monad_db_snapshot_loader_create) can resolve
+            // it.
+            monad::mpt::test::DbAccessor::aux(dest_init)
+                .metadata_ctx()
+                .set_state_machine_kind(
+                    timeline_id::primary, state_machine_kind::ethereum);
         }
         char const *dbname_paths_new[] = {dest_db.path.c_str()};
         monad_db_snapshot_load_filesystem(
@@ -315,6 +341,13 @@ TEST(DbBinarySnapshot, MultipleShards)
             mpt::Db dest_init{
                 std::make_unique<OnDiskMachine>(),
                 OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+            // Stamp the kind so the snapshot loader's metadata-driven
+            // Db ctor (via monad_db_snapshot_loader_create) can resolve
+            // it.
+            monad::mpt::test::DbAccessor::aux(dest_init)
+                .metadata_ctx()
+                .set_state_machine_kind(
+                    timeline_id::primary, state_machine_kind::ethereum);
         }
         char const *dbname_paths_new[] = {dest_db.path.c_str()};
         monad_db_snapshot_load_filesystem(

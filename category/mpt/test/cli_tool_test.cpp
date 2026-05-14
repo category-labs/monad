@@ -24,11 +24,14 @@
 #include <category/core/io/ring.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/cli_tool_impl.hpp>
+#include <category/mpt/db.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
+#include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
 
 #include <algorithm>
@@ -164,6 +167,247 @@ TEST(cli_tool, state_machine_unknown_kind_rejected)
         "nonsense"};
     int const retcode = main_impl(cout, cerr, args);
     EXPECT_NE(retcode, 0);
+}
+
+namespace
+{
+    // Helper: open the pool RO and read back the persisted kind via
+    // UpdateAux + DbMetadataContext public API. Lets CLI tests verify that
+    // the bytes actually landed, not just that monad-mpt printed a success
+    // line.
+    monad::mpt::state_machine_kind
+    read_kind(char const *const path, monad::mpt::timeline_id const tid)
+    {
+        monad::mpt::AsyncIOContext io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
+            .dbname_paths = {std::filesystem::path{path}}}};
+        monad::mpt::UpdateAux const aux(io_ctx.io);
+        return aux.metadata_ctx().get_state_machine_kind(tid);
+    }
+
+    bool read_secondary_active(char const *const path)
+    {
+        monad::mpt::AsyncIOContext io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
+            .dbname_paths = {std::filesystem::path{path}}}};
+        monad::mpt::UpdateAux const aux(io_ctx.io);
+        return aux.metadata_ctx().timeline_active(
+            monad::mpt::timeline_id::secondary);
+    }
+
+    uint8_t read_primary_ring_idx(char const *const path)
+    {
+        monad::mpt::AsyncIOContext io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
+            .dbname_paths = {std::filesystem::path{path}}}};
+        monad::mpt::UpdateAux const aux(io_ctx.io);
+        return aux.metadata_ctx().primary_ring_idx();
+    }
+
+    // Provision a temp pool file. Caller owns the unlink scope.
+    void make_temp_pool(char *const temppath)
+    {
+        auto const fd = ::mkstemp(temppath);
+        ASSERT_NE(fd, -1);
+        ::close(fd);
+        ASSERT_EQ(0, ::truncate(temppath, 6ULL * 1024 * 1024 * 1024));
+    }
+}
+
+TEST(cli_tool, activate_secondary_stamps_secondary_kind)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view create_args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, create_args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--activate-secondary",
+            "--state-machine",
+            "ethereum"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+        EXPECT_NE(
+            std::string::npos,
+            cout.str().find(
+                "Activated secondary timeline; stamped state-machine"));
+    }
+
+    EXPECT_TRUE(read_secondary_active(temppath));
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::primary),
+        monad::mpt::state_machine_kind::ethereum);
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::secondary),
+        monad::mpt::state_machine_kind::ethereum);
+}
+
+TEST(cli_tool, activate_secondary_defaults_to_ethereum_when_flag_omitted)
+{
+    // Pins the design choice that --state-machine defaults to ethereum on
+    // --activate-secondary (matching the --create default), so existing
+    // operator scripts work unmodified. If you change this default, this
+    // test should fail and force a deliberate choice.
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view create_args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, create_args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--activate-secondary"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::secondary),
+        monad::mpt::state_machine_kind::ethereum);
+}
+
+TEST(cli_tool, deactivate_secondary_clears_kind_and_active_flag)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view create_args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, create_args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--activate-secondary"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    ASSERT_TRUE(read_secondary_active(temppath));
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--deactivate-secondary"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+        EXPECT_NE(
+            std::string::npos,
+            cout.str().find("Deactivated secondary timeline"));
+    }
+
+    EXPECT_FALSE(read_secondary_active(temppath));
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::secondary),
+        monad::mpt::state_machine_kind::undefined);
+}
+
+TEST(cli_tool, promote_secondary_flips_primary_ring_idx)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view create_args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, create_args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--activate-secondary"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    ASSERT_EQ(0u, read_primary_ring_idx(temppath));
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--promote-secondary"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+        EXPECT_NE(
+            std::string::npos,
+            cout.str().find("Promoted secondary timeline to primary"));
+    }
+
+    EXPECT_EQ(1u, read_primary_ring_idx(temppath));
+}
+
+TEST(cli_tool, activate_secondary_on_already_active_is_rejected)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view create_args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, create_args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--activate-secondary"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    // Second activate must refuse without mutating state.
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt", "--storage", temppath, "--activate-secondary"};
+    EXPECT_NE(0, main_impl(cout, cerr, args));
+    EXPECT_NE(std::string::npos, cerr.str().find("already active"));
+}
+
+TEST(cli_tool, deactivate_secondary_on_inactive_is_rejected)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view create_args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, create_args));
+    }
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt", "--storage", temppath, "--deactivate-secondary"};
+    EXPECT_NE(0, main_impl(cout, cerr, args));
+    EXPECT_NE(std::string::npos, cerr.str().find("not active"));
 }
 
 struct config

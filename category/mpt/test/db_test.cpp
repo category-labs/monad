@@ -2916,10 +2916,9 @@ TEST_F(OnDiskDbWithFileFixture, timeline_lifecycle_activate_deactivate)
     EXPECT_FALSE(db.timeline_active(timeline_id::secondary));
 
     // Activate secondary timeline (starts empty; first upsert seeds it)
-    StateMachineAlwaysEmpty secondary_machine;
     {
-        auto const secondary_db =
-            db.activate_secondary_timeline(secondary_machine);
+        auto const secondary_db = db.activate_secondary_timeline(
+            std::make_unique<StateMachineAlwaysEmpty>());
         EXPECT_TRUE(db.timeline_active(timeline_id::secondary));
     }
 
@@ -2939,8 +2938,8 @@ TEST_F(OnDiskDbWithFileFixture, timeline_lifecycle_dual_upsert)
     ASSERT_NE(root, nullptr);
 
     // Activate secondary with a different compute
-    StateMachineAlwaysEmpty secondary_machine;
-    auto secondary_db = db.activate_secondary_timeline(secondary_machine);
+    auto secondary_db = db.activate_secondary_timeline(
+        std::make_unique<StateMachineAlwaysEmpty>());
 
     // Upsert the same data on secondary timeline
     auto const k2 = 0x22345678_bytes;

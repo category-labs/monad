@@ -32,6 +32,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -169,7 +170,8 @@ namespace
     {
         // No secondary yet
         EXPECT_FALSE(db.open_secondary_timeline(
-            std::make_unique<StateMachineAlwaysMerkle>()).has_value());
+                           std::make_unique<StateMachineAlwaysMerkle>())
+                         .has_value());
 
         activate_secondary(0);
 
@@ -201,7 +203,8 @@ namespace
 
         // After deactivate, open returns nullopt again
         EXPECT_FALSE(db.open_secondary_timeline(
-            std::make_unique<StateMachineAlwaysMerkle>()).has_value());
+                           std::make_unique<StateMachineAlwaysMerkle>())
+                         .has_value());
     }
 
     // -------------------------------------------------------------------

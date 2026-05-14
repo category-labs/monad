@@ -35,6 +35,7 @@
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
+#include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/precompiles.hpp>
@@ -265,19 +266,22 @@ try {
     if (!statesync.empty()) {
         net.emplace(statesync.c_str());
     }
+    // The on-disk Db ctor reads the persisted state_machine_kind from
+    // db_metadata and constructs the StateMachine via the registry. The
+    // in-memory path has no metadata to read from and constructs the SM
+    // inline.
+    register_ethereum_state_machines();
     mpt::Db raw_db = [&] {
         if (!db_in_memory) {
-            return mpt::Db{
-                std::make_unique<OnDiskMachine>(),
-                mpt::OnDiskDbConfig{
-                    .append = true,
-                    .compaction = !no_compaction,
-                    .rewind_to_latest_finalized = true,
-                    .rd_buffers = 8192,
-                    .wr_buffers = 32,
-                    .uring_entries = 128,
-                    .sq_thread_cpu = sq_thread_cpu,
-                    .dbname_paths = dbname_paths}};
+            return mpt::Db{mpt::OnDiskDbConfig{
+                .append = true,
+                .compaction = !no_compaction,
+                .rewind_to_latest_finalized = true,
+                .rd_buffers = 8192,
+                .wr_buffers = 32,
+                .uring_entries = 128,
+                .sq_thread_cpu = sq_thread_cpu,
+                .dbname_paths = dbname_paths}};
         }
         return mpt::Db{std::make_unique<InMemoryMachine>()};
     }();

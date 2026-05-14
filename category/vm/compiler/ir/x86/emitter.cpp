@@ -7187,23 +7187,14 @@ namespace monad::vm::compiler::native
         return dst;
     }
 
-    // Inline unsigned 256-bit-by-64-bit long division.
+    // Inline unsigned 256-bit / 64-bit long division.
     //
     // Emits the same 4-iteration long division algorithm as
     // `runtime::udiv` -> `udivrem` -> `long_div` (uint256.hpp), but inline
-    // in the JIT'd contract code, avoiding the runtime function call and its
-    // surrounding caller-save spills.
-    //
-    // Preconditions (enforced by debug asserts; caller is responsible):
-    //   - `divisor > 1` (caller handles `0` and powers of two separately).
-    //   - `dividend` is not a literal (literal/literal is folded at the top
-    //     of `div_optimized` / `mod_optimized`).
-    //
+    // avoiding the runtime function call and its surrounding caller-save spills.
+    
     // If `is_mod` is true, returns a fresh `StackElemRef` holding the
-    // remainder `dividend % divisor` (limb 0 = remainder, limbs 1-3 = 0).
-    // Otherwise returns the quotient `dividend / divisor`.
-    //
-    // Discharge: discharges deferred comparison.
+    // remainder.
     StackElemRef Emitter::udiv_by_uint64(
         StackElemRef dividend, uint64_t const divisor, bool const is_mod)
     {
@@ -7215,23 +7206,11 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
-        // Allocate the destination Gpq256. `alloc_general_reg` prefers the
-        // lowest-numbered free slot (callee-save slot 0 first), so we usually
-        // land in slot 0 or 1, where `rdx` is not part of the Gpq256. If both
-        // lower slots are occupied by live elements we fall back to the
-        // volatile slot (slot 2), whose third register is `rdx` itself. In
-        // that case we work with a local Gpq256 whose limb-2 position is
-        // remapped to `reg_context` (rbx) for the duration of the divs,
-        // bracketed by a push/pop pair to preserve rbx. Working on a copy of
-        // the Gpq256 avoids mutating the canonical `gpq256_regs_` entry; see
-        // `mul_with_bit_size` for the in-place variant of this pattern.
         auto [dst, dst_reserv] = alloc_general_reg();
         auto dst_gpq = general_reg_to_gpq256(*dst->general_reg());
         auto const rdx_index = volatile_gpq_index<x86::rdx>();
         bool const dst_aliases_rdx = dst_gpq[rdx_index] == x86::rdx;
 
-        // Track how far the `push`es below have shifted `rsp`, so the
-        // scratch-slot offset (rsp-relative) stays valid.
         int32_t rsp_delta = 0;
 
         if (dst_aliases_rdx) {
@@ -7241,16 +7220,9 @@ namespace monad::vm::compiler::native
             dst_gpq[rdx_index] = reg_context;
         }
 
-        // `mov_stack_elem_to_gpq256<true>` only uses rbp-relative addressing
-        // (the EVM stack memory area), never rsp-relative, so the push above
-        // does not affect it.
         mov_stack_elem_to_gpq256<true>(dividend, dst_gpq);
         dividend.reset();
 
-        // If `rdx` is still owned by some unrelated live stack element after
-        // releasing the dividend, preserve it across the div sequence. This
-        // case is mutually exclusive with `dst_aliases_rdx` — when our dst
-        // occupies slot 2, no other element can be there.
         bool preserve_stack_rdx = false;
         if (!dst_aliases_rdx &&
             stack_.general_reg_stack_elem(rdx_general_reg) != nullptr) {
@@ -7259,11 +7231,6 @@ namespace monad::vm::compiler::native
             preserve_stack_rdx = true;
         }
 
-        // Store the divisor into a scratch stack slot and use it as a memory
-        // operand for `div`. This avoids the complexity of finding a spare
-        // scratch GPR; the cost is one extra L1 load per `div`, which is
-        // dwarfed by `div`'s own latency. The offset is corrected for any
-        // `push` instructions that shifted `rsp` above.
         auto const divisor_mem =
             x86::qword_ptr(x86::rsp, sp_offset_temp_word1 + rsp_delta);
         if (divisor <=
@@ -7275,12 +7242,6 @@ namespace monad::vm::compiler::native
             as_.mov(divisor_mem, x86::rax);
         }
 
-        // Long division, high limb to low. After each `div r/m64`, `rax`
-        // holds the quotient digit and `rdx` holds the remainder, which is
-        // implicitly carried into the next iteration as the high half of the
-        // 128-bit dividend. For UMOD the quotient digits are discarded — the
-        // cleanup below overwrites every dst_gpq position, so writing them
-        // back in the loop would be a dead store.
         as_.xor_(x86::edx, x86::edx);
         for (int i = 3; i >= 0; --i) {
             auto const idx = static_cast<size_t>(i);
@@ -7294,14 +7255,10 @@ namespace monad::vm::compiler::native
         // holds the original dividend. `rdx` holds the final remainder.
 
         if (is_mod) {
-            // Replace `dst_gpq` with {remainder, 0, 0, 0}.
             as_.mov(dst_gpq[0], x86::rdx);
             as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
             as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
             if (dst_aliases_rdx) {
-                // dst_gpq[2] is currently `rbx`; zero `rdx` so that, after
-                // the pop below restores rbx, the caller reads dst_gpq[2]
-                // from the canonical position `rdx` and sees zero.
                 as_.xor_(x86::edx, x86::edx);
             }
             else {
@@ -7309,9 +7266,6 @@ namespace monad::vm::compiler::native
             }
         }
         else if (dst_aliases_rdx) {
-            // UDIV slot-2: the limb-2 quotient digit landed in `rbx` (the
-            // remap target). Move it to `rdx` so the caller — which reads
-            // dst from the canonical Gpq256 — finds it where it belongs.
             as_.mov(x86::rdx, dst_gpq[rdx_index]);
         }
 
@@ -7399,11 +7353,8 @@ namespace monad::vm::compiler::native
             return true;
         }
 
-        // Divisor fits in a single 64-bit limb: emit inline `long_div` (4
-        // hardware `div r/m64` instructions) instead of calling the runtime.
-        // This is gated on the unsigned case; signed UDIV by a 64-bit literal
-        // would additionally require conditional dividend negation and is
-        // left to a future change.
+        // Divisor fits in a single 64-bit limb: emit inline code instead of calling the runtime.
+        // TODO: Using this flag to allow on/off comparison for benchmarks. Remove when integrated.
 #ifndef MONAD_DISABLE_UDIV_BY_UINT64_OPT
         if constexpr (!is_sdiv) {
             MONAD_DEBUG_ASSERT(!needs_negation);

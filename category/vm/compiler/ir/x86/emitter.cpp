@@ -7219,18 +7219,19 @@ namespace monad::vm::compiler::native
         // lowest-numbered free slot (callee-save slot 0 first), so we usually
         // land in slot 0 or 1, where `rdx` is not part of the Gpq256. If both
         // lower slots are occupied by live elements we fall back to the
-        // volatile slot (slot 2), whose third register is `rdx` itself. To
-        // make the algorithm work in that case we follow the precedent set by
-        // `mul_with_bit_size` (see emitter.cpp around line 6811): remap that
-        // position to `reg_context` (rbx) for the duration of the divs, with
-        // a push/pop pair to preserve rbx.
+        // volatile slot (slot 2), whose third register is `rdx` itself. In
+        // that case we work with a local Gpq256 whose limb-2 position is
+        // remapped to `reg_context` (rbx) for the duration of the divs,
+        // bracketed by a push/pop pair to preserve rbx. Working on a copy of
+        // the Gpq256 avoids mutating the canonical `gpq256_regs_` entry; see
+        // `mul_with_bit_size` for the in-place variant of this pattern.
         auto [dst, dst_reserv] = alloc_general_reg();
-        auto &dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+        auto dst_gpq = general_reg_to_gpq256(*dst->general_reg());
         auto const rdx_index = volatile_gpq_index<x86::rdx>();
         bool const dst_aliases_rdx = dst_gpq[rdx_index] == x86::rdx;
 
-        // Track how far the `push` instructions below have shifted `rsp` so
-        // that the scratch-slot offset (which is rsp-relative) stays valid.
+        // Track how far the `push`es below have shifted `rsp`, so the
+        // scratch-slot offset (rsp-relative) stays valid.
         int32_t rsp_delta = 0;
 
         if (dst_aliases_rdx) {
@@ -7240,20 +7241,15 @@ namespace monad::vm::compiler::native
             dst_gpq[rdx_index] = reg_context;
         }
 
-        // Move the dividend into the (possibly remapped) destination Gpq256.
         // `mov_stack_elem_to_gpq256<true>` only uses rbp-relative addressing
         // (the EVM stack memory area), never rsp-relative, so the push above
         // does not affect it.
         mov_stack_elem_to_gpq256<true>(dividend, dst_gpq);
-        // Release the dividend's ref-count so its own register locations are
-        // freed for use by our algorithm. In particular, if the dividend was
-        // residing in the volatile slot (slot 2) and we ourselves are in a
-        // non-volatile slot, this drops the dividend's claim on `rdx`.
         dividend.reset();
 
-        // If after releasing the dividend `rdx` is still owned by some
-        // unrelated live stack element, preserve it across the div sequence.
-        // This case cannot co-occur with `dst_aliases_rdx`: when our `dst`
+        // If `rdx` is still owned by some unrelated live stack element after
+        // releasing the dividend, preserve it across the div sequence. This
+        // case is mutually exclusive with `dst_aliases_rdx` — when our dst
         // occupies slot 2, no other element can be there.
         bool preserve_stack_rdx = false;
         if (!dst_aliases_rdx &&
@@ -7298,32 +7294,24 @@ namespace monad::vm::compiler::native
         // holds the original dividend. `rdx` holds the final remainder.
 
         if (is_mod) {
-            // Replace the contents of `dst_gpq` with {remainder, 0, 0, 0}.
-            // The remainder fits in 64 bits because the divisor does.
+            // Replace `dst_gpq` with {remainder, 0, 0, 0}.
+            as_.mov(dst_gpq[0], x86::rdx);
+            as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
+            as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
             if (dst_aliases_rdx) {
-                // dst_gpq is currently {rcx, rsi, rbx, rdi}. Copy the
-                // remainder into the canonical limb-0 position (rcx) and
-                // zero out `rdx` so that, after we restore the canonical
-                // mapping below, `dst_gpq[rdx_index] = rdx` holds zero.
-                // dst_gpq[rdx_index] (currently rbx) is left untouched here;
-                // it will be reset by the `pop reg_context` and the mapping
-                // restoration that follow.
-                as_.mov(dst_gpq[0], x86::rdx);
+                // dst_gpq[2] is currently `rbx`; zero `rdx` so that, after
+                // the pop below restores rbx, the caller reads dst_gpq[2]
+                // from the canonical position `rdx` and sees zero.
                 as_.xor_(x86::edx, x86::edx);
-                as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
-                as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
             }
             else {
-                as_.mov(dst_gpq[0], x86::rdx);
-                as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
                 as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
-                as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
             }
         }
         else if (dst_aliases_rdx) {
-            // UDIV slot-2: the quotient digit for the rdx-index position is
-            // currently in `reg_context` (rbx). Move it into `rdx` so that
-            // the canonical Gpq256 mapping (restored below) holds it.
+            // UDIV slot-2: the limb-2 quotient digit landed in `rbx` (the
+            // remap target). Move it to `rdx` so the caller — which reads
+            // dst from the canonical Gpq256 — finds it where it belongs.
             as_.mov(x86::rdx, dst_gpq[rdx_index]);
         }
 
@@ -7333,7 +7321,6 @@ namespace monad::vm::compiler::native
 
         if (dst_aliases_rdx) {
             as_.pop(reg_context);
-            dst_gpq[rdx_index] = x86::rdx;
         }
 
         return dst;

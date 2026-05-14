@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -22,6 +23,9 @@
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <optional>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -33,6 +37,18 @@
 #endif
 
 #include <concepts>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+enum class SyscallKind : uint8_t
+{
+    Snapshot = 0,
+    OnEpochChange = 1,
+    Reward = 2,
+    Other = 3,
+};
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
@@ -86,26 +102,46 @@ Result<void> static_validate_monad_body(
 
     auto const end_system_txn =
         txns.begin() + std::distance(senders.begin(), first_user_sender);
-    auto const is_reward = [](Transaction const &tx) { return tx.value > 0; };
 
-    // Find first reward txn.
-    auto const first_reward_txn =
-        std::find_if(txns.begin(), end_system_txn, is_reward);
-    if (MONAD_UNLIKELY(first_reward_txn == end_system_txn)) {
-        return outcome::success();
-    }
+    auto const classify = [](Transaction const &tx) -> SyscallKind {
+        if (MONAD_UNLIKELY(tx.data.size() < 4)) {
+            return SyscallKind::Other;
+        }
+        switch (load_be_unsafe<uint32_t>(tx.data.data())) {
+        case staking::selector::SNAPSHOT:
+            return SyscallKind::Snapshot;
+        case staking::selector::ON_EPOCH_CHANGE:
+            return SyscallKind::OnEpochChange;
+        case staking::selector::REWARD:
+            return SyscallKind::Reward;
+        }
+        return SyscallKind::Other;
+    };
 
-    // No other reward txn should come after it.
-    auto const another_reward =
-        std::find_if(std::next(first_reward_txn), end_system_txn, is_reward);
-    if (MONAD_UNLIKELY(another_reward != end_system_txn)) {
-        return MonadBlockError::MultipleRewardTransactions;
-    }
-
-    // Reward should not exceed 25 MON.
     constexpr uint256_t MAXIMUM_BLOCK_REWARD = 25 * staking::MON;
-    if (MONAD_UNLIKELY(first_reward_txn->value > MAXIMUM_BLOCK_REWARD)) {
-        return MonadBlockError::InvalidRewardValue;
+
+    std::array<bool, 3> seen{};
+    std::optional<SyscallKind> last_kind;
+    for (auto it = txns.begin(); it != end_system_txn; ++it) {
+        auto const kind = classify(*it);
+        if (MONAD_UNLIKELY(kind == SyscallKind::Other)) {
+            return MonadBlockError::UnknownSystemTransaction;
+        }
+
+        if (MONAD_UNLIKELY(seen[static_cast<uint8_t>(kind)])) {
+            return MonadBlockError::DuplicateSystemTransaction;
+        }
+        seen[static_cast<uint8_t>(kind)] = true;
+
+        if (MONAD_UNLIKELY(last_kind.has_value() && kind < *last_kind)) {
+            return MonadBlockError::SystemTransactionOutOfOrder;
+        }
+        last_kind = kind;
+
+        if (kind == SyscallKind::Reward &&
+            MONAD_UNLIKELY(it->value > MAXIMUM_BLOCK_REWARD)) {
+            return MonadBlockError::InvalidRewardValue;
+        }
     }
 
     return outcome::success();
@@ -130,8 +166,14 @@ quick_status_code_from_enum<monad::MonadBlockError>::value_mappings()
         {MonadBlockError::SystemTransactionNotFirstInBlock,
          "system transaction not first in block",
          {}},
-        {MonadBlockError::MultipleRewardTransactions,
-         "multiple reward transactions",
+        {MonadBlockError::SystemTransactionOutOfOrder,
+         "system transaction out of order",
+         {}},
+        {MonadBlockError::DuplicateSystemTransaction,
+         "duplicate system transaction",
+         {}},
+        {MonadBlockError::UnknownSystemTransaction,
+         "unknown system transaction",
          {}},
         {MonadBlockError::InvalidRewardValue, "invalid reward value", {}},
     };

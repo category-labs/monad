@@ -264,6 +264,7 @@ add_library(
   "monad/staking/util/bls.hpp"
   "monad/staking/util/consensus_view.cpp"
   "monad/staking/util/consensus_view.hpp"
+  "monad/staking/util/constants.cpp"
   "monad/staking/util/constants.hpp"
   "monad/staking/util/delegator.cpp"
   "monad/staking/util/delegator.hpp"

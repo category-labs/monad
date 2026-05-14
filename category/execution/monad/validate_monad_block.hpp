@@ -42,7 +42,9 @@ enum class MonadBlockError
     TimestampMismatch,
     BaseFeeMismatch,
     SystemTransactionNotFirstInBlock,
-    MultipleRewardTransactions,
+    SystemTransactionOutOfOrder,
+    DuplicateSystemTransaction,
+    UnknownSystemTransaction,
     InvalidRewardValue,
 };
 

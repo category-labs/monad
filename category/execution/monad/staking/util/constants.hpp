@@ -104,7 +104,15 @@ namespace limits
     {
         return 1;
     }
-};
+}
+
+// staking contract function selectors
+namespace selector
+{
+    inline constexpr uint32_t REWARD = 0x791bdcf3;
+    inline constexpr uint32_t SNAPSHOT = 0x157eeb21;
+    inline constexpr uint32_t ON_EPOCH_CHANGE = 0x1d4e9f02;
+}
 
 // sanity check: commission rate doesn't exceed 100% (1e18)
 // note that: delegator_reward = (raw_reward * COMMISSION) / 1e18

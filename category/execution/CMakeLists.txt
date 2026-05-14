@@ -101,6 +101,8 @@ add_library(
   "ethereum/db/db_snapshot_filesystem.h"
   "ethereum/db/file_db.cpp"
   "ethereum/db/file_db.hpp"
+  "ethereum/db/hash_cache.cpp"
+  "ethereum/db/hash_cache.hpp"
   "ethereum/db/partial_node.hpp"
   "ethereum/db/partial_trie_db.hpp"
   "ethereum/db/partial_trie_db.cpp"

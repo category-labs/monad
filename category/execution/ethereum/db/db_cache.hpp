@@ -21,6 +21,7 @@
 #include <category/core/config.hpp>
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/db/hash_cache.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 
@@ -64,10 +65,16 @@ class DbCache final
 
     AccountsCache accounts_{10'000'000};
     StorageCache storage_{10'000'000};
+    HashCache hash_cache_;
     Proposals proposals_;
 
 public:
     DbCache() = default;
+
+    HashCache &hash_cache() noexcept
+    {
+        return hash_cache_;
+    }
 
     bool
     try_read_account(Address const &address, std::optional<Account> &result)

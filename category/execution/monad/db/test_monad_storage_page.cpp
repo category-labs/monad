@@ -76,7 +76,7 @@ TEST(MonadDb, page_commit_differs_for_different_pages)
 {
     storage_page_t page_a{};
     storage_page_t page_b{};
-    page_b[0] = bytes32_t{0x01};
+    page_b.set(0, bytes32_t{0x01});
 
     EXPECT_NE(page_commit(page_a), page_commit(page_b));
 }
@@ -84,10 +84,10 @@ TEST(MonadDb, page_commit_differs_for_different_pages)
 TEST(MonadDb, page_commit_sensitive_to_slot_position)
 {
     storage_page_t page_a{};
-    page_a[0] = bytes32_t{0x01};
+    page_a.set(0, bytes32_t{0x01});
 
     storage_page_t page_b{};
-    page_b[1] = bytes32_t{0x01};
+    page_b.set(1, bytes32_t{0x01});
 
     EXPECT_NE(page_commit(page_a), page_commit(page_b));
 }
@@ -95,20 +95,25 @@ TEST(MonadDb, page_commit_sensitive_to_slot_position)
 TEST(MonadDb, page_commit_sensitive_to_distant_slots)
 {
     storage_page_t page_a{};
-    page_a[0] = bytes32_t{0x01};
+    page_a.set(0, bytes32_t{0x01});
 
     storage_page_t page_b{};
-    page_b[127] = bytes32_t{0x01};
+    page_b.set(127, bytes32_t{0x01});
 
     EXPECT_NE(page_commit(page_a), page_commit(page_b));
 }
 
 TEST(MonadDb, page_commit_sparse_nonzero)
 {
+    auto const filled = [](uint8_t const v) {
+        bytes32_t b{};
+        std::ranges::fill(b.bytes, v);
+        return b;
+    };
     storage_page_t page{};
-    std::ranges::fill(page[0].bytes, static_cast<uint8_t>(0x11));
-    std::ranges::fill(page[2].bytes, static_cast<uint8_t>(0x22));
-    std::ranges::fill(page[4].bytes, static_cast<uint8_t>(0x33));
+    page.set(0, filled(0x11));
+    page.set(2, filled(0x22));
+    page.set(4, filled(0x33));
 
     storage_page_t zero_page{};
     EXPECT_NE(page_commit(page), page_commit(zero_page));
@@ -117,11 +122,17 @@ TEST(MonadDb, page_commit_sparse_nonzero)
 
 TEST(MonadDb, page_commit_uniform_fill_differs)
 {
+    auto const filled = [](uint8_t const v) {
+        bytes32_t b{};
+        std::ranges::fill(b.bytes, v);
+        return b;
+    };
     storage_page_t page_a{};
-    std::ranges::fill(page_a.slots, static_cast<uint8_t>(0x11));
-
     storage_page_t page_b{};
-    std::ranges::fill(page_b.slots, static_cast<uint8_t>(0x22));
+    for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
+        page_a.set(i, filled(0x11));
+        page_b.set(i, filled(0x22));
+    }
 
     EXPECT_NE(page_commit(page_a), page_commit(page_b));
 }
@@ -141,16 +152,16 @@ TEST(MonadDb, page_commit_cross_check_with_reference)
     EXPECT_EQ(page_commit(zero_page), ZERO_PAGE_COMMIT);
 
     storage_page_t page_slot0{};
-    page_slot0[0] = bytes32_t{0x01};
+    page_slot0.set(0, bytes32_t{0x01});
     EXPECT_EQ(page_commit(page_slot0), SLOT0_ONE_COMMIT);
 
     storage_page_t page_slot127{};
-    page_slot127[127] = bytes32_t{0x01};
+    page_slot127.set(127, bytes32_t{0x01});
     EXPECT_EQ(page_commit(page_slot127), SLOT127_ONE_COMMIT);
 
     storage_page_t full_page{};
     for (uint8_t i = 0; i < 128; ++i) {
-        full_page[i] = bytes32_t{static_cast<uint64_t>(i + 1)};
+        full_page.set(i, bytes32_t{static_cast<uint64_t>(i + 1)});
     }
     EXPECT_EQ(page_commit(full_page), FULL_PAGE_COMMIT);
 }
@@ -171,8 +182,9 @@ TEST(MonadDb, page_commit_density_sweep)
         size_t const k = densities[i];
         storage_page_t page{};
         for (size_t j = 0; j < k; ++j) {
-            page[static_cast<uint8_t>(j * 2)] =
-                bytes32_t{static_cast<uint64_t>(j + 1)};
+            page.set(
+                static_cast<uint8_t>(j * 2),
+                bytes32_t{static_cast<uint64_t>(j + 1)});
         }
 
         auto const c1 = page_commit(page);
@@ -203,11 +215,14 @@ TEST(MonadDb, page_commit_asymmetric_pair)
     constexpr uint8_t left_slot = pair_idx * 2;
     constexpr uint8_t right_slot = pair_idx * 2 + 1;
 
+    bytes32_t pattern_aa{};
+    std::ranges::fill(pattern_aa.bytes, static_cast<uint8_t>(0xAA));
+
     storage_page_t left_only{};
-    std::ranges::fill(left_only[left_slot].bytes, static_cast<uint8_t>(0xAA));
+    left_only.set(left_slot, pattern_aa);
 
     storage_page_t right_only{};
-    std::ranges::fill(right_only[right_slot].bytes, static_cast<uint8_t>(0xAA));
+    right_only.set(right_slot, pattern_aa);
 
     auto const c_left = page_commit(left_only);
     auto const c_right = page_commit(right_only);

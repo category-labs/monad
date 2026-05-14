@@ -117,6 +117,7 @@ namespace
 
         auto rt = asmjit::JitRuntime{};
 
+        size_t native_size = 0;
         for (auto _ : state) {
             auto ncode = monad::vm::compiler::native::compile<
                 monad::EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
@@ -128,9 +129,11 @@ namespace
             if (!ncode->entrypoint()) {
                 return state.SkipWithError("Failed to compile contract");
             }
+            native_size = *ncode->code_size_estimate();
         }
 
         state.counters["codesize"] = static_cast<double>(program.size());
+        state.counters["native_size"] = static_cast<double>(native_size);
     }
 
     auto benchmark_tests()
@@ -140,6 +143,10 @@ namespace
             monad::test_resource::compile_benchmarks_dir / "stop",
             monad::test_resource::compile_benchmarks_dir / "uniswap",
             monad::test_resource::compile_benchmarks_dir / "uniswap_v3",
+            monad::test_resource::compile_benchmarks_dir / "balancer_v3_vault",
+            monad::test_resource::compile_benchmarks_dir / "lido_withdrawal_queue",
+            monad::test_resource::compile_benchmarks_dir / "aave_v3_supply_logic",
+            monad::test_resource::compile_benchmarks_dir / "curve_steth_eth",
         };
     }
 

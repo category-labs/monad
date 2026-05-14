@@ -824,6 +824,57 @@ int main(int argc, char **argv)
     BenchmarkBuilder(
         args,
         results,
+        {.title = "PUSH N; SWAP1; DIV/MOD, random input",
+         .num_inputs = 1,
+         .has_output = true,
+         .iteration_count = 100,
+         .subject_seqs =
+             {// Optimized: divisor fits in 64 bits, unsigned -> new branch
+              EvmBuilder<traits>{}.push(uint64_t{10}).swap1().div(),
+              EvmBuilder<traits>{}.push(uint64_t{10000}).swap1().div(),
+              EvmBuilder<traits>{}
+                  .push(uint64_t{1'000'000'000'000'000'000ULL})
+                  .swap1()
+                  .div(),
+              EvmBuilder<traits>{}.push(uint64_t{10}).swap1().mod(),
+              EvmBuilder<traits>{}.push(uint64_t{10000}).swap1().mod(),
+              EvmBuilder<traits>{}
+                  .push(uint64_t{1'000'000'000'000'000'000ULL})
+                  .swap1()
+                  .mod(),
+              // Control: divisor > 64 bits -> count_significant_words gate
+              // fails, runtime fallback both with and without the toggle.
+              EvmBuilder<traits>{}
+                  .push(uint256_t{0, 3, 0, 0})
+                  .swap1()
+                  .div(),
+              EvmBuilder<traits>{}
+                  .push(uint256_t{0, 3, 0, 0})
+                  .swap1()
+                  .mod(),
+              // Control: signed variants -> gated on !is_sdiv/!is_smod,
+              // runtime fallback both with and without the toggle.
+              EvmBuilder<traits>{}
+                  .push(uint64_t{1'000'000'000'000'000'000ULL})
+                  .swap1()
+                  .sdiv(),
+              EvmBuilder<traits>{}
+                  .push(uint64_t{1'000'000'000'000'000'000ULL})
+                  .swap1()
+                  .smod()}})
+        .make_calldata([](size_t num_inputs) {
+            std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
+            for (size_t i = 0; i < cd.size(); i += 32) {
+                rand_uint256().store_be(&cd[i]);
+            }
+            return cd;
+        })
+        .run_throughput_benchmark()
+        .run_latency_benchmark();
+
+    BenchmarkBuilder(
+        args,
+        results,
         {.title = "EXP, random input",
          .num_inputs = 2,
          .has_output = true,

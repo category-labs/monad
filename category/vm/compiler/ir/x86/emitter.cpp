@@ -7282,15 +7282,20 @@ namespace monad::vm::compiler::native
         // Long division, high limb to low. After each `div r/m64`, `rax`
         // holds the quotient digit and `rdx` holds the remainder, which is
         // implicitly carried into the next iteration as the high half of the
-        // 128-bit dividend.
+        // 128-bit dividend. For UMOD the quotient digits are discarded — the
+        // cleanup below overwrites every dst_gpq position, so writing them
+        // back in the loop would be a dead store.
         as_.xor_(x86::edx, x86::edx);
         for (int i = 3; i >= 0; --i) {
             auto const idx = static_cast<size_t>(i);
             as_.mov(x86::rax, dst_gpq[idx]);
             as_.div(divisor_mem);
-            as_.mov(dst_gpq[idx], x86::rax);
+            if (!is_mod) {
+                as_.mov(dst_gpq[idx], x86::rax);
+            }
         }
-        // dst_gpq[0..3] now holds the quotient and `rdx` holds the remainder.
+        // For UDIV, dst_gpq[0..3] now holds the quotient. For UMOD it still
+        // holds the original dividend. `rdx` holds the final remainder.
 
         if (is_mod) {
             // Replace the contents of `dst_gpq` with {remainder, 0, 0, 0}.
@@ -7412,6 +7417,7 @@ namespace monad::vm::compiler::native
         // This is gated on the unsigned case; signed UDIV by a 64-bit literal
         // would additionally require conditional dividend negation and is
         // left to a future change.
+#ifndef MONAD_DISABLE_UDIV_BY_UINT64_OPT
         if constexpr (!is_sdiv) {
             MONAD_DEBUG_ASSERT(!needs_negation);
             if (count_significant_words(b.as_words()) == 1) {
@@ -7421,6 +7427,7 @@ namespace monad::vm::compiler::native
                 return true;
             }
         }
+#endif
 
         return false;
     }
@@ -7553,6 +7560,7 @@ namespace monad::vm::compiler::native
         // require conditional dividend negation (and re-negation of the
         // remainder to inherit the dividend's sign) and is left to a future
         // change.
+#ifndef MONAD_DISABLE_UDIV_BY_UINT64_OPT
         if constexpr (!is_smod) {
             if (count_significant_words(b.as_words()) == 1) {
                 stack_.pop();
@@ -7561,6 +7569,7 @@ namespace monad::vm::compiler::native
                 return true;
             }
         }
+#endif
 
         return false;
     }

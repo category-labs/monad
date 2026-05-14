@@ -23,7 +23,7 @@ using namespace monad;
 TEST(PageEncoding, single_slot)
 {
     storage_page_t page{};
-    page[42] = bytes32_t{0xFF};
+    page.set(42, bytes32_t{0xFF});
     auto const enc = encode_storage_page(page);
     EXPECT_EQ(decode_storage_page(enc).value(), page);
 }
@@ -31,10 +31,10 @@ TEST(PageEncoding, single_slot)
 TEST(PageEncoding, four_slots)
 {
     storage_page_t page{};
-    page[0] = bytes32_t{0x01};
-    page[31] = bytes32_t{0x02};
-    page[64] = bytes32_t{0x03};
-    page[127] = bytes32_t{0x04};
+    page.set(0, bytes32_t{0x01});
+    page.set(31, bytes32_t{0x02});
+    page.set(64, bytes32_t{0x03});
+    page.set(127, bytes32_t{0x04});
     auto const enc = encode_storage_page(page);
     EXPECT_EQ(decode_storage_page(enc).value(), page);
 }
@@ -43,7 +43,7 @@ TEST(PageEncoding, sixteen_slots)
 {
     storage_page_t page{};
     for (uint8_t i = 0; i < 16; ++i) {
-        page[i * 8] = bytes32_t{static_cast<uint8_t>(i + 1)};
+        page.set(i * 8, bytes32_t{static_cast<uint8_t>(i + 1)});
     }
     auto const enc = encode_storage_page(page);
     EXPECT_EQ(decode_storage_page(enc).value(), page);
@@ -53,7 +53,7 @@ TEST(PageEncoding, full_page)
 {
     storage_page_t page{};
     for (uint8_t i = 0; i < 128; ++i) {
-        page[i] = bytes32_t{static_cast<uint8_t>(i + 1)};
+        page.set(i, bytes32_t{static_cast<uint8_t>(i + 1)});
     }
     auto const enc = encode_storage_page(page);
     EXPECT_EQ(decode_storage_page(enc).value(), page);

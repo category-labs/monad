@@ -108,7 +108,7 @@ TEST(db_metadata, total_size)
 {
     // Both rings now use the same ring-header type. The total metadata size
     // is dominated by the cnv_chunks lists in each ring (SIZE_=32).
-    EXPECT_EQ(sizeof(monad::mpt::detail::db_metadata), 4480u);
+    EXPECT_EQ(sizeof(monad::mpt::detail::db_metadata), 4488u);
 }
 
 TEST(db_metadata, ring_b_layout_matches_ring_a)

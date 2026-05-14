@@ -62,6 +62,8 @@ add_library(
   "request.hpp"
   "read_node_blocking.cpp"
   "state_machine.hpp"
+  "state_machine_kind.cpp"
+  "state_machine_kind.hpp"
   "traverse.hpp"
   "traverse_util.hpp"
   "trie.cpp"

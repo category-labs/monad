@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/async/config.hpp>
+#include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
@@ -23,6 +24,7 @@
 #include <category/core/io/ring.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
 
@@ -39,6 +41,7 @@
 #include <thread>
 #include <vector>
 
+#include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -304,6 +307,111 @@ TEST(update_aux_test, secondary_inactive_by_default)
         EXPECT_FALSE(
             aux.metadata_ctx().timeline_active(timeline_id::secondary));
     });
+}
+
+// -------------------------------------------------------------------
+// State machine kind: per-timeline metadata round-trip
+// -------------------------------------------------------------------
+
+TEST(update_aux_test, state_machine_kind_default_undefined)
+{
+    // A freshly-initialised pool starts with state_machine_kind_ == 0
+    // (state_machine_kind::undefined) on both rings — the cnv-chunk-0 backing
+    // is zeroed by init_new_pool, and monad-mpt's --state-machine flag is
+    // responsible for stamping the real kind after UpdateAux is constructed.
+    with_rw_aux([](UpdateAux &aux) {
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::primary),
+            state_machine_kind::undefined);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::secondary),
+            state_machine_kind::undefined);
+    });
+}
+
+TEST(update_aux_test, state_machine_kind_primary_round_trip)
+{
+    with_rw_aux([](UpdateAux &aux) {
+        aux.metadata_ctx().set_state_machine_kind(
+            timeline_id::primary, state_machine_kind::ethereum);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::primary),
+            state_machine_kind::ethereum);
+        // Secondary unaffected.
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::secondary),
+            state_machine_kind::undefined);
+    });
+}
+
+TEST(update_aux_test, state_machine_kind_secondary_independent)
+{
+    with_rw_aux([](UpdateAux &aux) {
+        aux.metadata_ctx().set_state_machine_kind(
+            timeline_id::primary, state_machine_kind::ethereum);
+        aux.metadata_ctx().set_state_machine_kind(
+            timeline_id::secondary, state_machine_kind::ethereum);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::primary),
+            state_machine_kind::ethereum);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::secondary),
+            state_machine_kind::ethereum);
+    });
+}
+
+TEST(update_aux_test, state_machine_kind_persists_across_reopen)
+{
+    // Verifies the kind written through DbMetadataContext lands in stable
+    // on-disk bytes (both metadata copies) and is observable after a full
+    // close+reopen of the storage pool.
+    monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
+    flags.num_cnv_chunks = 2 + UpdateAux::cnv_chunks_for_db_metadata;
+
+    auto const filename =
+        std::filesystem::path("/tmp/state_machine_kind_persists_test.db");
+    auto const unfilename = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(filename); });
+
+    {
+        int const fd = ::open(
+            filename.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_TRUNC, 0600);
+        ASSERT_GE(fd, 0);
+        ASSERT_EQ(::ftruncate(fd, 8LL << 30), 0);
+        ::close(fd);
+    }
+
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    auto testbuf = monad::io::make_buffers_for_segregated_read_write(
+        ring1,
+        ring2,
+        2,
+        4,
+        monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+        monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    {
+        monad::async::storage_pool pool(
+            std::span{&filename, 1},
+            monad::async::storage_pool::mode::truncate,
+            flags);
+        monad::async::AsyncIO testio(pool, testbuf);
+        monad::mpt::UpdateAux aux(testio);
+        aux.metadata_ctx().set_state_machine_kind(
+            timeline_id::primary, state_machine_kind::ethereum);
+    }
+    {
+        monad::async::storage_pool pool(
+            std::span{&filename, 1},
+            monad::async::storage_pool::mode::open_existing,
+            flags);
+        monad::async::AsyncIO testio(pool, testbuf);
+        monad::mpt::UpdateAux const aux(testio);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::primary),
+            state_machine_kind::ethereum);
+    }
 }
 
 // Simulates opening a DB created by pre-dual-timeline code (MONAD007), whose

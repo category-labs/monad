@@ -31,6 +31,7 @@
 #include <category/mpt/detail/kbhit.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
 
 #include <CLI/CLI.hpp>
@@ -51,6 +52,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -402,6 +404,8 @@ struct impl_t
     bool create_database = false;
     bool truncate_database = false;
     bool create_empty_database = false;
+    MONAD_MPT_NAMESPACE::state_machine_kind state_machine =
+        MONAD_MPT_NAMESPACE::state_machine_kind::ethereum;
     std::optional<uint64_t> rewind_database_to;
     std::optional<uint64_t> reset_history_length;
     bool create_chunk_increasing = false;
@@ -1518,6 +1522,21 @@ opened.
                 "if creating a new database, order the chunks sequentially "
                 "increasing instead of randomly mixed.");
             cli.add_option(
+                   "--state-machine",
+                   impl.state_machine,
+                   "StateMachine kind to stamp at pool create time. Persisted "
+                   "per-timeline in db_metadata; consumed by mpt::Db on open "
+                   "to pick the right StateMachine implementation via the "
+                   "registry. Defaults to 'ethereum'; ignored on subcommands "
+                   "that don't create or truncate.")
+                ->transform(CLI::CheckedTransformer(
+                    std::map<
+                        std::string,
+                        MONAD_MPT_NAMESPACE::state_machine_kind>{
+                        {"ethereum",
+                         MONAD_MPT_NAMESPACE::state_machine_kind::ethereum}},
+                    CLI::ignore_case));
+            cli.add_option(
                 "--compression-level",
                 impl.compression_level,
                 "zstd compression to use during archival (default is 3, 0 "
@@ -1629,6 +1648,15 @@ opened.
                           MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*impl.pool, rwbuf};
         MONAD_MPT_NAMESPACE::UpdateAux aux(io);
+
+        // Stamp the persisted StateMachine kind on freshly-created or
+        // truncated pools. Existing pools keep whatever was previously
+        // stamped — passing --state-machine on an open here is a no-op.
+        if (aux.metadata_ctx().is_new_pool()) {
+            aux.metadata_ctx().set_state_machine_kind(
+                MONAD_MPT_NAMESPACE::timeline_id::primary, impl.state_machine);
+            cout << "Stamped state-machine kind on primary timeline.\n";
+        }
 
         {
             cout << R"(MPT database on storages:

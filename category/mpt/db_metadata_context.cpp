@@ -25,6 +25,7 @@
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
 
@@ -225,9 +226,9 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
             //    each ring header. Save the old value first, then split the
             //    relocation into the two halves either side of the gap so
             //    the destination layout (which has no gap) lines up.
-            static_assert(offsetof(detail::db_metadata, db_offsets) == 304);
+            static_assert(offsetof(detail::db_metadata, db_offsets) == 312);
             static_assert(
-                offsetof(detail::db_metadata, secondary_timeline) == 424);
+                offsetof(detail::db_metadata, secondary_timeline) == 432);
             constexpr size_t MONAD007_AUTO_EXPIRE_OFFSET =
                 MONAD007_DB_OFFSETS_OFFSET + 16 + 5 * 8; // 524384
             constexpr size_t MONAD007_PRE_AUTO_EXPIRE_BYTES =
@@ -576,6 +577,39 @@ void DbMetadataContext::set_auto_expire_version_metadata(
                                : &m->secondary_timeline.auto_expire_version_;
         start_lifetime_as<std::atomic_int64_t>(slot)->store(
             version, std::memory_order_release);
+    };
+    do_(copies_[0].main);
+    do_(copies_[1].main);
+}
+
+state_machine_kind
+DbMetadataContext::get_state_machine_kind(timeline_id const tid) const noexcept
+{
+    auto const *const m = copies_[0].main;
+    uint8_t const ring_idx = (tid == timeline_id::primary)
+                                 ? primary_ring_idx()
+                                 : (primary_ring_idx() ^ 1u);
+    auto const *const slot = (ring_idx == 0)
+                                 ? &m->root_offsets.state_machine_kind_
+                                 : &m->secondary_timeline.state_machine_kind_;
+    auto const raw = start_lifetime_as<std::atomic_uint8_t const>(slot)->load(
+        std::memory_order_acquire);
+    return static_cast<state_machine_kind>(raw);
+}
+
+void DbMetadataContext::set_state_machine_kind(
+    timeline_id const tid, state_machine_kind const kind) noexcept
+{
+    uint8_t const ring_idx = (tid == timeline_id::primary)
+                                 ? primary_ring_idx()
+                                 : (primary_ring_idx() ^ 1u);
+    auto do_ = [&](detail::db_metadata *m) {
+        auto const g = m->hold_dirty();
+        auto *const slot = (ring_idx == 0)
+                               ? &m->root_offsets.state_machine_kind_
+                               : &m->secondary_timeline.state_machine_kind_;
+        start_lifetime_as<std::atomic_uint8_t>(slot)->store(
+            static_cast<uint8_t>(kind), std::memory_order_release);
     };
     do_(copies_[0].main);
     do_(copies_[1].main);

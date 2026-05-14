@@ -125,6 +125,17 @@ namespace detail
             // to the data). Read/written under hold_dirty atomically as
             // std::atomic_int64_t via start_lifetime_as.
             int64_t auto_expire_version_;
+
+            // mpt::state_machine_kind for the timeline currently bound to
+            // this physical ring. Stamped at pool create time by monad-mpt
+            // --state-machine, and on activate-secondary for whichever ring
+            // hosts the secondary at that moment. Read by mpt::Db ctor to
+            // pick the right StateMachine via the registry in
+            // state_machine_kind.hpp. Same per-ring rationale as
+            // auto_expire_version_: travels with the physical data on
+            // promote (which only flips primary_ring_idx, not these bytes).
+            uint8_t state_machine_kind_;
+            uint8_t reserved_sm_[7]; // alignment + future per-ring scalars
         } root_offsets;
 
         struct db_offsets_info_t
@@ -535,7 +546,7 @@ namespace detail
     // and must fit in cnv.capacity()/2 (copy 0 at offset 0, copy 1 at
     // cnv.capacity()/2); enlarging the fixed header eats into the
     // chunk_info[] budget for any given chunk_count.
-    static_assert(sizeof(db_metadata) == 4480);
+    static_assert(sizeof(db_metadata) == 4488);
     static_assert(alignof(db_metadata) == 8);
 
     inline void atomic_memcpy(

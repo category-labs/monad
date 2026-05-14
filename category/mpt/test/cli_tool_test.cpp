@@ -98,7 +98,67 @@ TEST(cli_tool, create)
             std::string::npos,
             cout.str().find(
                 "1 chunks with capacity 256.00 Mb used 0.00 bytes"));
+        // --state-machine defaults to ethereum on a fresh pool; confirm it
+        // was stamped during pool init.
+        EXPECT_NE(
+            std::string::npos,
+            cout.str().find("Stamped state-machine kind on primary timeline"));
     }
+}
+
+TEST(cli_tool, create_with_explicit_state_machine_flag)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    auto const fd = mkstemp(temppath);
+    if (-1 == fd) {
+        abort();
+    }
+    ::close(fd);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    if (-1 == truncate(temppath, 6ULL * 1024 * 1024 * 1024)) {
+        abort();
+    }
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt",
+        "--storage",
+        temppath,
+        "--create",
+        "--state-machine",
+        "ethereum"};
+    int const retcode = main_impl(cout, cerr, args);
+    ASSERT_EQ(retcode, 0);
+    EXPECT_NE(
+        std::string::npos,
+        cout.str().find("Stamped state-machine kind on primary timeline"));
+}
+
+TEST(cli_tool, state_machine_unknown_kind_rejected)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    auto const fd = mkstemp(temppath);
+    if (-1 == fd) {
+        abort();
+    }
+    ::close(fd);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    if (-1 == truncate(temppath, 6ULL * 1024 * 1024 * 1024)) {
+        abort();
+    }
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt",
+        "--storage",
+        temppath,
+        "--create",
+        "--state-machine",
+        "nonsense"};
+    int const retcode = main_impl(cout, cerr, args);
+    EXPECT_NE(retcode, 0);
 }
 
 struct config

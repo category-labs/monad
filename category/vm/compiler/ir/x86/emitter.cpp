@@ -7491,13 +7491,8 @@ namespace monad::vm::compiler::native
             return true;
         }
 
-        // Divisor fits in a single 64-bit limb: emit inline `long_div` (4
-        // hardware `div r/m64` instructions) instead of calling the runtime.
-        // The remainder of the final `div` is the UMOD result; the quotient
-        // is discarded. Signed SMOD by a 64-bit literal would additionally
-        // require conditional dividend negation (and re-negation of the
-        // remainder to inherit the dividend's sign) and is left to a future
-        // change.
+        // Divisor fits in a single 64-bit limb: emit inline code instead of calling the runtime.
+        // TODO: Using this flag to allow on/off comparison for benchmarks. Remove when integrated.
 #ifndef MONAD_DISABLE_UDIV_BY_UINT64_OPT
         if constexpr (!is_smod) {
             if (count_significant_words(b.as_words()) == 1) {

@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assume.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/endian.hpp>
 #include <category/core/likely.h>
@@ -50,13 +51,7 @@ namespace impl
         }
 
         size_t const n_be = std::byteswap(n);
-        if (d.size() < sizeof(size_t)) {
-#ifdef NDEBUG
-            __builtin_unreachable();
-#else
-            abort();
-#endif
-        }
+        MONAD_ASSUME(d.size() >= sizeof(size_t));
         unaligned_store(d.data(), n_be);
         return d.subspan((sizeof(size_t) - lz_bytes));
     }
@@ -81,6 +76,7 @@ constexpr size_t string_length(byte_string_view const s)
 constexpr std::span<unsigned char>
 encode_string(std::span<unsigned char> d, byte_string_view const s)
 {
+    MONAD_ASSUME(d.size() > 0);
     if (s.size() == 1 and s[0] <= 0x7F) {
         d[0] = s[0];
         d = d.subspan(1);
@@ -88,13 +84,7 @@ encode_string(std::span<unsigned char> d, byte_string_view const s)
     else if (s.size() <= 55) {
         d[0] = 0x80 + static_cast<unsigned char>(s.size());
         d = d.subspan(1);
-        if (d.size() < s.size()) {
-#ifdef NDEBUG
-            __builtin_unreachable();
-#else
-            abort();
-#endif
-        }
+        MONAD_ASSUME(d.size() >= s.size());
         std::copy(s.begin(), s.end(), d.data());
         d = d.subspan(s.size());
     }
@@ -102,13 +92,7 @@ encode_string(std::span<unsigned char> d, byte_string_view const s)
         d[0] = 0xB7 + static_cast<unsigned char>(impl::length_length(s.size()));
         d = d.subspan(1);
         d = impl::encode_length(d, s.size());
-        if (d.size() < s.size()) {
-#ifdef NDEBUG
-            __builtin_unreachable();
-#else
-            abort();
-#endif
-        }
+        MONAD_ASSUME(d.size() >= s.size());
         std::copy(s.begin(), s.end(), d.data());
         d = d.subspan(s.size());
     }
@@ -131,6 +115,7 @@ constexpr size_t list_length(size_t const concatenated_size)
 constexpr std::span<unsigned char>
 encode_list_prefix(std::span<unsigned char> d, size_t const payload_size)
 {
+    MONAD_ASSUME(d.size() > 0);
     if (payload_size <= 55) {
         d[0] = 0xC0 + static_cast<unsigned char>(payload_size);
         return d.subspan(1);
@@ -146,13 +131,7 @@ constexpr std::span<unsigned char>
 encode_list(std::span<unsigned char> d, byte_string_view const s)
 {
     d = encode_list_prefix(d, s.size());
-    if (d.size() < s.size()) {
-#ifdef NDEBUG
-        __builtin_unreachable();
-#else
-        abort();
-#endif
-    }
+    MONAD_ASSUME(d.size() >= s.size());
     std::copy(s.begin(), s.end(), d.data());
     return d.subspan(s.size());
 }

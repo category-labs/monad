@@ -73,6 +73,7 @@ add_library(
   "address.hpp"
   "assert.c"
   "assert.h"
+  "assume.h"
   "backtrace.cpp"
   "backtrace.hpp"
   "basic_formatter.hpp"

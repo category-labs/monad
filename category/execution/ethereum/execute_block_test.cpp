@@ -224,7 +224,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     block_rlp = rlp::encode_block(block.value());
     ASSERT_TRUE(!block.has_error());
 
-    if constexpr (TestFixture::Trait::eip_7002_active()) {
+    if constexpr (TestFixture::Trait::eip_7685_active()) {
         block.value().header.requests_hash = EMPTY_REQUESTS_HASH;
     }
 
@@ -388,7 +388,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
     block_rlp = rlp::encode_block(block.value());
     ASSERT_TRUE(!block.has_error());
 
-    if constexpr (TestFixture::Trait::eip_7002_active()) {
+    if constexpr (TestFixture::Trait::eip_7685_active()) {
         block.value().header.requests_hash = EMPTY_REQUESTS_HASH;
     }
 
@@ -542,7 +542,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     block_rlp = rlp::encode_block(block.value());
     ASSERT_TRUE(!block.has_error());
 
-    if constexpr (TestFixture::Trait::eip_7002_active()) {
+    if constexpr (TestFixture::Trait::eip_7685_active()) {
         block.value().header.requests_hash = EMPTY_REQUESTS_HASH;
     }
 

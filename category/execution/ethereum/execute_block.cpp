@@ -342,7 +342,7 @@ Result<std::vector<Receipt>> execute_block(
         process_withdrawal(state, block.withdrawals);
     }
 
-    if constexpr (traits::eip_7002_active()) {
+    if constexpr (traits::eip_7685_active()) {
         BOOST_OUTCOME_TRY(
             auto const computed_requests_hash,
             process_requests<traits>(

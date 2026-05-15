@@ -21,11 +21,24 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/vm/evm/traits.hpp>
 
+#include <cstdint>
+#include <span>
+
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
 class State;
 struct BlockHeader;
+
+struct BlockRequest
+{
+    uint8_t type;
+    byte_string data;
+};
+
+// EIP-7685: Canonical callers must supply requests ordered by ascending request
+// type.  The hash function preserves the supplied order.
+bytes32_t compute_requests_hash(std::span<BlockRequest const> requests);
 
 template <Traits traits>
 Result<bytes32_t> process_requests(

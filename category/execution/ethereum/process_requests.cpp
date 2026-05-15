@@ -32,9 +32,17 @@
 #include <boost/outcome/try.hpp>
 #include <intx/intx.hpp>
 
+#include <array>
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+constexpr uint8_t WITHDRAWAL_REQUEST_TYPE = 0x01;
+constexpr uint8_t CONSOLIDATION_REQUEST_TYPE = 0x02;
 
 template <Traits traits>
 Result<byte_string> system_call(
@@ -125,42 +133,38 @@ Result<byte_string> system_call(
         result.output_data, result.output_data + result.output_size);
 }
 
-bytes32_t compute_requests_hash(
-    byte_string const &withdrawal_output,
-    byte_string const &consolidation_output)
-{
-    // at most 3 types * 32 bytes
-    uint8_t inner_hashes_buf[96];
-    size_t inner_hashes_len = 0;
-
-    auto const hash_request = [&](uint8_t type, byte_string const &data) {
-        // EIP-7685 flat requests encoding: empty request types are excluded
-        // from the hash.
-        if (data.empty()) {
-            return;
-        }
-        byte_string buf;
-        buf.reserve(1 + data.size());
-        buf.push_back(type);
-        buf.insert(buf.end(), data.begin(), data.end());
-        silkpre_sha256(
-            inner_hashes_buf + inner_hashes_len, buf.data(), buf.size(), true);
-        inner_hashes_len += 32;
-    };
-
-    // TODO: EIP-6110 deposits
-    hash_request(0x00, {});
-    hash_request(0x01, withdrawal_output);
-    hash_request(0x02, consolidation_output);
-
-    bytes32_t outer_hash;
-    silkpre_sha256(outer_hash.bytes, inner_hashes_buf, inner_hashes_len, true);
-    return outer_hash;
-}
-
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
+
+bytes32_t compute_requests_hash(std::span<BlockRequest const> const requests)
+{
+    std::vector<uint8_t> inner_hashes;
+    inner_hashes.reserve(32 * requests.size());
+
+    for (auto const &req : requests) {
+        // EIP-7685 flat requests encoding: empty request data are excluded from
+        // the hash.
+        if (req.data.empty()) {
+            continue;
+        }
+
+        bytes32_t inner;
+        byte_string buf;
+        buf.reserve(1 + req.data.size());
+        buf.push_back(req.type);
+        buf.append_range(req.data);
+        silkpre_sha256(inner.bytes, buf.data(), buf.size(), true);
+        inner_hashes.append_range(inner.bytes);
+    }
+
+    static constexpr uint8_t EMPTY_SHA256_INPUT = 0;
+    bytes32_t outer_hash;
+    uint8_t const *outer_input =
+        inner_hashes.empty() ? &EMPTY_SHA256_INPUT : inner_hashes.data();
+    silkpre_sha256(outer_hash.bytes, outer_input, inner_hashes.size(), true);
+    return outer_hash;
+}
 
 template <Traits traits>
 Result<bytes32_t> process_requests(
@@ -171,7 +175,7 @@ Result<bytes32_t> process_requests(
     constexpr auto WITHDRAWAL_REQUEST_ADDRESS =
         0x00000961ef480eb55e80d19ad83579a64c007002_address;
     BOOST_OUTCOME_TRY(
-        auto const withdrawal_output,
+        auto withdrawal_output,
         system_call<traits>(
             chain,
             state,
@@ -184,7 +188,7 @@ Result<bytes32_t> process_requests(
     constexpr auto CONSOLIDATION_REQUEST_ADDRESS =
         0x0000bbddc7ce488642fb579f8b00f3a590007251_address;
     BOOST_OUTCOME_TRY(
-        auto const consolidation_output,
+        auto consolidation_output,
         system_call<traits>(
             chain,
             state,
@@ -193,7 +197,12 @@ Result<bytes32_t> process_requests(
             CONSOLIDATION_REQUEST_ADDRESS,
             chain_ctx));
 
-    return compute_requests_hash(withdrawal_output, consolidation_output);
+    // TODO: EIP-6110 deposits. Deposit requests are type 0x00 and must be
+    // placed before withdrawal and consolidation requests.
+    return compute_requests_hash(std::array<BlockRequest, 2>{{
+        {WITHDRAWAL_REQUEST_TYPE, std::move(withdrawal_output)},
+        {CONSOLIDATION_REQUEST_TYPE, std::move(consolidation_output)},
+    }});
 }
 
 EXPLICIT_EVM_TRAITS(process_requests);

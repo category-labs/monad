@@ -73,7 +73,7 @@ namespace monad::staking::test
             limits::min_auth_address_stake();
 
         static constexpr uint64_t ACTIVE_VALSET_SIZE =
-            limits::active_valset_size();
+            limits::active_valset_size<traits>();
 
         static constexpr uint256_t ACTIVE_VALIDATOR_STAKE =
             limits::active_validator_stake<traits>();

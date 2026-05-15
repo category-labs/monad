@@ -336,13 +336,16 @@ namespace monad::staking::test
         return res;
     }
 
+    template <Traits traits>
     Result<void> StakingContractModel::syscall_snapshot()
     {
         pre_call(uint256_be_t{});
-        auto res = contract_.syscall_snapshot({}, 0);
+        auto res = contract_.syscall_snapshot<traits>({}, 0);
         post_call(res);
         return res;
     }
+
+    EXPLICIT_MONAD_TRAITS_MEMBER(StakingContractModel::syscall_snapshot)
 
     template <Traits traits>
     Result<void> StakingContractModel::syscall_reward(

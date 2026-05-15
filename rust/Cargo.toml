@@ -11,6 +11,7 @@ panic = "abort"
 ignored = [
     "monad-ethcall",
     "monad-exec-events",
+    "monad-statesync",
     "monad-triedb",
 ]
 
@@ -19,6 +20,7 @@ monad-cxx = { path = "./crates/monad-cxx" }
 monad-ethcall = { path = "./crates/monad-ethcall" }
 monad-event-ring = { path = "./crates/monad-event-ring" }
 monad-exec-events = { path = "./crates/monad-exec-events" }
+monad-statesync = { path = "./crates/monad-statesync" }
 monad-triedb = { path = "./crates/monad-triedb" }
 
 alloy-consensus  = { version = "2.0",     default-features = false }

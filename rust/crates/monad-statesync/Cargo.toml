@@ -1,0 +1,13 @@
+[package]
+name = "monad-statesync"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.cargo-shear]
+ignored = ["monad-cxx"]
+
+[dependencies]
+monad-cxx = { workspace = true }
+
+[build-dependencies]
+bindgen = { workspace = true }

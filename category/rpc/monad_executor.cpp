@@ -27,7 +27,6 @@
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
-#include <category/core/lru/static_lru_cache.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/core/runtime/uint256.hpp>
@@ -64,8 +63,8 @@
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/mpt/db.hpp>
-#include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/rpc/lazy_block_hash.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -102,56 +101,6 @@ using namespace monad::vm;
 
 namespace
 {
-    // eth call on latest uses eip-2935. historical eth calls use this class,
-    // which lazily loads the block header from the DB and computes BLOCKHASH.
-    // historical can always query from the finalized prefix.
-    //
-    // A thread-safe LRU is not needed. Each submitted call to the executor pool
-    // creates its own LazyBlockHash instance.
-    class LazyBlockHash : public BlockHashBuffer
-    {
-        using BlockHashBuffer::N;
-
-        mpt::RODb const &db_;
-        uint64_t const n_;
-        using Cache = static_lru_cache<uint64_t, bytes32_t>;
-        mutable Cache blockhash_cache_;
-
-    public:
-        LazyBlockHash(mpt::RODb const &db, uint64_t const n)
-            : db_{db}
-            , n_{n}
-            , blockhash_cache_{N}
-        {
-        }
-
-        ~LazyBlockHash() override = default;
-
-        uint64_t n() const override
-        {
-            return n_;
-        }
-
-        bytes32_t const &get(uint64_t const n) const override
-        {
-            MONAD_ASSERT_PRINTF(n < n_ && n + N >= n_, "n_=%lu, n=%lu", n_, n);
-            if (Cache::ConstAccessor acc; blockhash_cache_.find(acc, n)) {
-                return acc->second->val;
-            }
-
-            auto const cursor_res = db_.find(
-                mpt::concat(
-                    FINALIZED_NIBBLE, mpt::NibblesView{block_header_nibbles}),
-                n);
-            MONAD_ASSERT_THROW(
-                !cursor_res.has_error(), "blockhash: error querying DB");
-            bytes32_t const blockhash =
-                to_bytes(keccak256(cursor_res.value().node->value()));
-            auto const res = blockhash_cache_.insert(n, blockhash);
-            return res.first->second->val;
-        }
-    };
-
     char const *const UNEXPECTED_EXCEPTION_ERR_MSG = "unexpected error";
     char const *const EXCEED_QUEUE_SIZE_ERR_MSG =
         "failure to submit eth_call to thread pool: queue size exceeded";

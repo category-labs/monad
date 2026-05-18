@@ -64,6 +64,8 @@ static std::optional<uint64_t> fmap_optional(byte_string_view const a)
 template <Traits traits>
 std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 {
+    static_assert(traits::evm_rev() > EVMC_SPURIOUS_DRAGON);
+
 #define CASE(addr, gas_cost, execute)                                          \
     do {                                                                       \
         if (MONAD_UNLIKELY(Address{(addr)} == address)) {                      \
@@ -78,12 +80,10 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
     CASE(0x03, ripemd160_gas_cost, ripemd160_execute);
     CASE(0x04, identity_gas_cost, identity_execute);
 
-    if constexpr (traits::evm_rev() >= EVMC_BYZANTIUM) {
-        CASE(0x05, expmod_gas_cost<traits>, expmod_execute);
-        CASE(0x06, ecadd_gas_cost<traits>, ecadd_execute);
-        CASE(0x07, ecmul_gas_cost<traits>, ecmul_execute);
-        CASE(0x08, snarkv_gas_cost<traits>, snarkv_execute);
-    }
+    CASE(0x05, expmod_gas_cost<traits>, expmod_execute);
+    CASE(0x06, ecadd_gas_cost<traits>, ecadd_execute);
+    CASE(0x07, ecmul_gas_cost<traits>, ecmul_execute);
+    CASE(0x08, snarkv_gas_cost<traits>, snarkv_execute);
 
     if constexpr (traits::evm_rev() >= EVMC_ISTANBUL) {
         CASE(0x09, blake2bf_gas_cost<traits>, blake2bf_execute);

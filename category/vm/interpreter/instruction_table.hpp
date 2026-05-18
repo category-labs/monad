@@ -92,7 +92,7 @@ namespace monad::vm::interpreter
     template <Traits traits>
     consteval InstrTable make_instruction_table()
     {
-        static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+        static_assert(traits::evm_rev() > EVMC_SPURIOUS_DRAGON);
 
         constexpr auto since = [](evmc_revision first, InstrEval impl) {
             return (traits::evm_rev() >= first) ? impl : invalid;
@@ -164,8 +164,8 @@ namespace monad::vm::interpreter
             gasprice<traits>, // 0x3A,
             extcodesize<traits>, // 0x3B,
             extcodecopy<traits>, // 0x3C,
-            since(EVMC_BYZANTIUM, returndatasize<traits>), // 0x3D,
-            since(EVMC_BYZANTIUM, returndatacopy<traits>), // 0x3E,
+            returndatasize<traits>, // 0x3D,
+            returndatacopy<traits>, // 0x3E,
             since(EVMC_CONSTANTINOPLE, extcodehash<traits>), // 0x3F,
 
             blockhash<traits>, // 0x40,
@@ -365,10 +365,10 @@ namespace monad::vm::interpreter
             invalid, //
             invalid, //
             invalid, //
-            since(EVMC_BYZANTIUM, staticcall<traits>), // 0xFA,
+            staticcall<traits>, // 0xFA,
             invalid, //
             invalid, //
-            since(EVMC_BYZANTIUM, revert<traits>), // 0xFD,
+            revert<traits>, // 0xFD,
             invalid, // 0xFE,
             selfdestruct<traits>, // 0xFF,
         };

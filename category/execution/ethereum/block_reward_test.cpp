@@ -44,6 +44,8 @@ constexpr auto c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
 
 TYPED_TEST(TraitsTest, apply_block_reward)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;
@@ -66,12 +68,7 @@ TYPED_TEST(TraitsTest, apply_block_reward)
             BlockHeader{.number = 8, .beneficiary = c}}};
     apply_block_reward<typename TestFixture::Trait>(as, block);
 
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_BYZANTIUM) {
-        EXPECT_EQ(as.get_balance(a), 5'312'500'000'000'000'000);
-        EXPECT_EQ(as.get_balance(b), 4'375'000'000'000'000'000);
-        EXPECT_EQ(as.get_balance(c), 3'750'000'000'000'000'000);
-    }
-    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_PETERSBURG) {
+    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PETERSBURG) {
         EXPECT_EQ(as.get_balance(a), 3'187'500'000'000'000'000);
         EXPECT_EQ(as.get_balance(b), 2'625'000'000'000'000'000);
         EXPECT_EQ(as.get_balance(c), 2'250'000'000'000'000'000);

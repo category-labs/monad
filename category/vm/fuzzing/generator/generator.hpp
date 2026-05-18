@@ -634,11 +634,10 @@ namespace monad::vm::fuzzing
     template <typename Engine>
     Address generate_precompile_address(Engine &eng, evmc_revision const rev)
     {
+        MONAD_ASSERT(rev > EVMC_SPURIOUS_DRAGON);
+
         auto addr = [rev, &eng]() {
-            if (rev <= EVMC_SPURIOUS_DRAGON) {
-                return uniform_sample(eng, std::array{1, 2, 3, 4});
-            }
-            else if (rev <= EVMC_PETERSBURG) {
+            if (rev <= EVMC_PETERSBURG) {
                 return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8});
             }
             else if (rev <= EVMC_SHANGHAI) {

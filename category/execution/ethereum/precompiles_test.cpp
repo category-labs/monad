@@ -417,10 +417,9 @@ TYPED_TEST(TraitsTest, identity)
 
 TYPED_TEST(TraitsTest, modular_exponentiation)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_BYZANTIUM) {
-        EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x05_address));
-    }
-    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_BERLIN) {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+
+    if constexpr (TestFixture::Trait::evm_rev() < EVMC_BERLIN) {
         do_geth_tests<typename TestFixture::Trait>(
             "Modular Exponentiation", "modexp.json", 0x05_address);
     }
@@ -438,86 +437,74 @@ TYPED_TEST(TraitsTest, modular_exponentiation)
 
 TYPED_TEST(TraitsTest, bn_add)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_BYZANTIUM) {
-        EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x06_address));
-    }
-    else {
-        auto tests =
-            load_test_cases(test_resource::geth_vectors_dir / "bn256Add.json");
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
 
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-                // MONAD_SEVEN doubles the price of bn_add
-                tests = transform_test_cases(
-                    tests, [](auto &test) { test.gas *= 2; });
-            }
-        }
-        else if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
-            // Before https://eips.ethereum.org/EIPS/eip-1108
+    auto tests =
+        load_test_cases(test_resource::geth_vectors_dir / "bn256Add.json");
+
+    if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            // MONAD_SEVEN doubles the price of bn_add
             tests =
-                transform_test_cases(tests, [](auto &test) { test.gas = 500; });
+                transform_test_cases(tests, [](auto &test) { test.gas *= 2; });
         }
-
-        do_geth_tests<typename TestFixture::Trait>(
-            "bn_add", tests, 0x06_address);
     }
+    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+        // Before https://eips.ethereum.org/EIPS/eip-1108
+        tests = transform_test_cases(tests, [](auto &test) { test.gas = 500; });
+    }
+
+    do_geth_tests<typename TestFixture::Trait>("bn_add", tests, 0x06_address);
 }
 
 TYPED_TEST(TraitsTest, bn_mul)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_BYZANTIUM) {
-        EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x07_address));
-    }
-    else {
-        auto tests = load_test_cases(
-            test_resource::geth_vectors_dir / "bn256ScalarMul.json");
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
 
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-                // MONAD_SEVEN increases the price of bn_mul by 5x
-                tests = transform_test_cases(
-                    tests, [](auto &test) { test.gas *= 5; });
-            }
-        }
-        else if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
-            // Before https://eips.ethereum.org/EIPS/eip-1108
-            tests = transform_test_cases(
-                tests, [](auto &test) { test.gas = 40'000; });
-        }
+    auto tests = load_test_cases(
+        test_resource::geth_vectors_dir / "bn256ScalarMul.json");
 
-        do_geth_tests<typename TestFixture::Trait>(
-            "bn_mul", tests, 0x07_address);
+    if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            // MONAD_SEVEN increases the price of bn_mul by 5x
+            tests =
+                transform_test_cases(tests, [](auto &test) { test.gas *= 5; });
+        }
     }
+    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+        // Before https://eips.ethereum.org/EIPS/eip-1108
+        tests =
+            transform_test_cases(tests, [](auto &test) { test.gas = 40'000; });
+    }
+
+    do_geth_tests<typename TestFixture::Trait>("bn_mul", tests, 0x07_address);
 }
 
 TYPED_TEST(TraitsTest, bn_pairing)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_BYZANTIUM) {
-        EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x08_address));
-    }
-    else {
-        auto tests = load_test_cases(
-            test_resource::geth_vectors_dir / "bn256Pairing.json");
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
 
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-                // MONAD_SEVEN increases the price of bn_pairing by 5x
-                tests = transform_test_cases(
-                    tests, [](auto &test) { test.gas *= 5; });
-            }
-        }
-        else if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
-            // Before https://eips.ethereum.org/EIPS/eip-1108
-            tests = transform_test_cases(tests, [](auto &test) {
-                // k = input size in bytes / 192;
-                auto const k = test.input.size() / 192;
-                test.gas = static_cast<int64_t>(80'000 * k + 100'000);
-            });
-        }
+    auto tests =
+        load_test_cases(test_resource::geth_vectors_dir / "bn256Pairing.json");
 
-        do_geth_tests<typename TestFixture::Trait>(
-            "bn_pairing", tests, 0x08_address);
+    if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            // MONAD_SEVEN increases the price of bn_pairing by 5x
+            tests =
+                transform_test_cases(tests, [](auto &test) { test.gas *= 5; });
+        }
     }
+    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+        // Before https://eips.ethereum.org/EIPS/eip-1108
+        tests = transform_test_cases(tests, [](auto &test) {
+            // k = input size in bytes / 192;
+            auto const k = test.input.size() / 192;
+            test.gas = static_cast<int64_t>(80'000 * k + 100'000);
+        });
+    }
+
+    do_geth_tests<typename TestFixture::Trait>(
+        "bn_pairing", tests, 0x08_address);
 }
 
 TYPED_TEST(TraitsTest, blake2f)
@@ -689,77 +676,72 @@ TYPED_TEST(TraitsTest, p256_verify)
 
 TYPED_TEST(TraitsTest, modexp_truncated_input)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_BYZANTIUM) {
-        GTEST_SKIP()
-            << "Modular Exponentiation precompile not available before "
-               "EVM Byzantium.";
-    }
-    else {
-        // Before Osaka, inputs to modexp could be arbitrarily large, and
-        // would just fail for gas reasons. After Osaka, the large padded
-        // modulus size in this example fails to validate.
-        static constexpr auto expected_failure =
-            TestFixture::Trait::eip_7823_active()
-                ? evmc_status_code::EVMC_PRECOMPILE_FAILURE
-                : evmc_status_code::EVMC_OUT_OF_GAS;
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
 
-        static constexpr auto min_gas = [] {
-            if constexpr (TestFixture::Trait::evm_rev() >= EVMC_OSAKA) {
-                return 500;
-            }
-            else if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BERLIN) {
-                return 200;
-            }
-            else {
-                return 10;
-            }
-        }();
+    // Before Osaka, inputs to modexp could be arbitrarily large, and
+    // would just fail for gas reasons. After Osaka, the large padded
+    // modulus size in this example fails to validate.
+    static constexpr auto expected_failure =
+        TestFixture::Trait::eip_7823_active()
+            ? evmc_status_code::EVMC_PRECOMPILE_FAILURE
+            : evmc_status_code::EVMC_OUT_OF_GAS;
 
-        auto const test_cases = std::array{
-            test_case{
-                .name = "truncated_modulus_len",
-                .input =
-                    from_hex("0x00000000000000000000000000000000000000000000000"
-                             "0000000000000000100000000000000000000000000000000"
-                             "0000000000000000000000000000000100000000000000000"
-                             "000000000000000000000000000000005")
-                        .value(),
-                .expected = expected_failure,
-                .gas = 30'000'000,
-            },
-            test_case{
-                .name = "truncated_exponent_len",
-                .input = from_hex("0x00000000000000000000000000000000000000000"
-                                  "0000000000000000000000100000000000000000000"
-                                  "00000000000000000000000000000005")
-                             .value(),
-                .expected = expected_failure,
-                .gas = 30'000'000,
-            },
-            test_case{
-                .name = "truncated_base_len",
-                .input = from_hex("0x000000000000000000000000000000000000"
-                                  "00000000000000000500")
-                             .value(),
-                .expected = expected_failure,
-                .gas = 30'000'000,
-            },
-            test_case{
-                .name = "truncated_exponent",
-                .input = from_hex("0x00000000000000000000000000000000000"
-                                  "000000000000000000000"
-                                  "0000000100000000000000000000000000000"
-                                  "000000000000000000000"
-                                  "0000000000000200000000000000000000000"
-                                  "000000000000000000000"
-                                  "000000000000000000050201")
-                             .value(),
-                .expected = from_hex("0x0000000000").value(),
-                .gas = min_gas,
-            },
-        };
+    static constexpr auto min_gas = [] {
+        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_OSAKA) {
+            return 500;
+        }
+        else if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BERLIN) {
+            return 200;
+        }
+        else {
+            return 10;
+        }
+    }();
 
-        do_geth_tests<typename TestFixture::Trait>(
-            "modexp_truncated_input", test_cases, 0x05_address);
-    }
+    auto const test_cases = std::array{
+        test_case{
+            .name = "truncated_modulus_len",
+            .input =
+                from_hex("0x00000000000000000000000000000000000000000000000"
+                         "0000000000000000100000000000000000000000000000000"
+                         "0000000000000000000000000000000100000000000000000"
+                         "000000000000000000000000000000005")
+                    .value(),
+            .expected = expected_failure,
+            .gas = 30'000'000,
+        },
+        test_case{
+            .name = "truncated_exponent_len",
+            .input = from_hex("0x00000000000000000000000000000000000000000"
+                              "0000000000000000000000100000000000000000000"
+                              "00000000000000000000000000000005")
+                         .value(),
+            .expected = expected_failure,
+            .gas = 30'000'000,
+        },
+        test_case{
+            .name = "truncated_base_len",
+            .input = from_hex("0x000000000000000000000000000000000000"
+                              "00000000000000000500")
+                         .value(),
+            .expected = expected_failure,
+            .gas = 30'000'000,
+        },
+        test_case{
+            .name = "truncated_exponent",
+            .input = from_hex("0x00000000000000000000000000000000000"
+                              "000000000000000000000"
+                              "0000000100000000000000000000000000000"
+                              "000000000000000000000"
+                              "0000000000000200000000000000000000000"
+                              "000000000000000000000"
+                              "000000000000000000050201")
+                         .value(),
+            .expected = from_hex("0x0000000000").value(),
+            .gas = min_gas,
+        },
+    };
+
+    do_geth_tests<typename TestFixture::Trait>(
+        "modexp_truncated_input", test_cases, 0x05_address);
 }

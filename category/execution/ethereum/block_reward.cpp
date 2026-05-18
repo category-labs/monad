@@ -34,10 +34,9 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 constexpr uint256_t block_reward()
 {
-    if constexpr (traits::evm_rev() < EVMC_BYZANTIUM) {
-        return 5'000'000'000'000'000'000; // YP Eqn. 176
-    }
-    else if constexpr (traits::evm_rev() < EVMC_PETERSBURG) {
+    static_assert(traits::evm_rev() > EVMC_SPURIOUS_DRAGON);
+
+    if constexpr (traits::evm_rev() < EVMC_PETERSBURG) {
         return 3'000'000'000'000'000'000; // YP Eqn. 176, EIP-649
     }
     else if constexpr (traits::evm_rev() < EVMC_PARIS) {

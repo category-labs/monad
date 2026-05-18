@@ -1356,6 +1356,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+
     // This test checks that no events are emitted for self-transfers.
     // Furthermore, it checks that:
     // * CALL: emits an event with value to non-self
@@ -1438,11 +1440,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
         BlockHeader{});
 
     for (uint8_t i = 0; i <= 3; i++) {
-        if (i > 1 && traits::evm_rev() < EVMC_BYZANTIUM) {
-            // DELEGATECALL and STATICCALL are not supported before Byzantium,
-            // so skip.
-            continue;
-        }
         BlockState bs{tdb, vm};
         Incarnation const incarnation{0, 0};
         State s{bs, incarnation};

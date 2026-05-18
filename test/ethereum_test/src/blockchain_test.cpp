@@ -396,6 +396,8 @@ void process_test(
     std::string const &name, nlohmann::json const &j_contents,
     vm::VM::Mode const vm_mode, bool enable_tracing)
 {
+    static_assert(traits::evm_rev() > EVMC_SPURIOUS_DRAGON);
+
     using namespace test;
 
     auto const json_state = load_blockchain_json_state<traits>(j_contents);
@@ -490,11 +492,8 @@ void process_test(
             auto const tdb_ommers_hash = to_bytes(keccak256(encoded_ommers));
             EXPECT_EQ(tdb_ommers_hash, block.value().header.ommers_hash)
                 << name;
-            if constexpr (traits::evm_rev() >= EVMC_BYZANTIUM) {
-                EXPECT_EQ(
-                    tdb.receipts_root(), block.value().header.receipts_root)
-                    << name;
-            }
+            EXPECT_EQ(tdb.receipts_root(), block.value().header.receipts_root)
+                << name;
             EXPECT_EQ(result.value().size(), block.value().transactions.size())
                 << name;
 
@@ -528,13 +527,10 @@ void process_test(
                         exec_events.block_start->eth_block_input.ommers_hash),
                     tdb_ommers_hash)
                     << name;
-                if constexpr (traits::evm_rev() >= EVMC_BYZANTIUM) {
-                    EXPECT_EQ(
-                        bytes32_t(
-                            exec_events.block_end->exec_output.receipts_root),
-                        tdb.receipts_root())
-                        << name;
-                }
+                EXPECT_EQ(
+                    bytes32_t(exec_events.block_end->exec_output.receipts_root),
+                    tdb.receipts_root())
+                    << name;
                 EXPECT_EQ(
                     exec_events.block_start->eth_block_input.txn_count,
                     result.value().size())

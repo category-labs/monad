@@ -291,7 +291,7 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_SPURIOUS_DRAGON>>()
+    make_opcode_table<EvmTraits<EVMC_BYZANTIUM>>()
     {
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
@@ -358,8 +358,8 @@ namespace monad::vm::compiler
             OpCodeInfo{"GASPRICE", 0, 0, 1, false, 2, 0}, // 0x3A,
             OpCodeInfo{"EXTCODESIZE", 0, 1, 1, true, 700, 0}, // 0x3B,
             OpCodeInfo{"EXTCODECOPY", 0, 4, 0, true, 700, 0}, // 0x3C,
-            unknown_opcode_info,
-            unknown_opcode_info,
+            OpCodeInfo{"RETURNDATASIZE", 0, 0, 1, false, 2, 0}, // 0x3D,
+            OpCodeInfo{"RETURNDATACOPY", 0, 3, 0, true, 3, 0}, // 0x3E,
             unknown_opcode_info,
 
             OpCodeInfo{"BLOCKHASH", 0, 1, 1, false, 20, 0}, // 0x40,
@@ -559,28 +559,13 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
+            OpCodeInfo{"STATICCALL", 0, 6, 1, true, 700, 0}, // 0xFA,
             unknown_opcode_info,
             unknown_opcode_info,
-            unknown_opcode_info,
-            unknown_opcode_info,
+            OpCodeInfo{"REVERT", 0, 2, 0, true, 0, 0}, // 0xFD,
             unknown_opcode_info,
             OpCodeInfo{"SELFDESTRUCT", 0, 1, 0, true, 5000, 0} // 0xFF,
         };
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_BYZANTIUM>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_BYZANTIUM)>>();
-
-        add_opcode(0x3D, table, {"RETURNDATASIZE", 0, 0, 1, false, 2, 0});
-        add_opcode(0x3E, table, {"RETURNDATACOPY", 0, 3, 0, true, 3, 0});
-        add_opcode(0xFA, table, {"STATICCALL", 0, 6, 1, true, 700, 0});
-        add_opcode(0xFD, table, {"REVERT", 0, 2, 0, true, 0, 0});
-
-        return table;
     }
 
     template <>

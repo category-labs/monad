@@ -59,9 +59,6 @@ evmc_revision HiveNet::get_revision(
     if (block_number >= 9) {
         return EVMC_BYZANTIUM;
     }
-    if (block_number >= 6) {
-        return EVMC_SPURIOUS_DRAGON;
-    }
     MONAD_ASSERT(false, "unsupported fork");
 }
 

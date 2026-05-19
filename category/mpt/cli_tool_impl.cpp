@@ -122,6 +122,8 @@ state_machine_kind_name(MONAD_MPT_NAMESPACE::state_machine_kind const kind)
         return "undefined";
     case MONAD_MPT_NAMESPACE::state_machine_kind::ethereum:
         return "ethereum";
+    case MONAD_MPT_NAMESPACE::state_machine_kind::monad:
+        return "monad";
     }
     return "unknown";
 }
@@ -1609,7 +1611,9 @@ opened.
                         std::string,
                         MONAD_MPT_NAMESPACE::state_machine_kind>{
                         {"ethereum",
-                         MONAD_MPT_NAMESPACE::state_machine_kind::ethereum}},
+                         MONAD_MPT_NAMESPACE::state_machine_kind::ethereum},
+                        {"monad",
+                         MONAD_MPT_NAMESPACE::state_machine_kind::monad}},
                     CLI::ignore_case));
             cli.add_option(
                 "--compression-level",
@@ -1746,7 +1750,8 @@ opened.
         if (aux.metadata_ctx().is_new_pool()) {
             aux.metadata_ctx().set_state_machine_kind(
                 MONAD_MPT_NAMESPACE::timeline_id::primary, impl.state_machine);
-            cout << "Stamped state-machine kind on primary timeline.\n";
+            cout << "Stamped state-machine kind on primary timeline to "
+                 << state_machine_kind_name(impl.state_machine) << ".\n";
         }
 
         // Secondary timeline lifecycle. These execute against the open
@@ -1771,8 +1776,9 @@ opened.
                 MONAD_MPT_NAMESPACE::timeline_id::secondary,
                 impl.state_machine);
             aux.activate_secondary_timeline();
-            cout << "Activated secondary timeline; stamped state-machine "
-                    "kind.\n";
+            cout << "Activated secondary timeline; stamped state-machine kind "
+                    "to "
+                 << state_machine_kind_name(impl.state_machine) << ".\n";
         }
         else if (impl.deactivate_secondary) {
             if (!aux.metadata_ctx().timeline_active(

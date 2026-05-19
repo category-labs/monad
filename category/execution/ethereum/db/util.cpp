@@ -45,6 +45,7 @@
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
 #include <category/mpt/update.hpp>
@@ -560,6 +561,11 @@ mpt::Compute &MachineBase::storage_root_compute() const
     return compute;
 }
 
+mpt::state_machine_kind InMemoryMachine::kind() const
+{
+    return mpt::state_machine_kind::ethereum;
+}
+
 bool InMemoryMachine::cache() const
 {
     return true;
@@ -573,6 +579,11 @@ bool InMemoryMachine::compact() const
 std::unique_ptr<StateMachine> InMemoryMachine::clone() const
 {
     return std::make_unique<InMemoryMachine>(*this);
+}
+
+mpt::state_machine_kind MonadInMemoryMachine::kind() const
+{
+    return mpt::state_machine_kind::monad;
 }
 
 std::unique_ptr<StateMachine> MonadInMemoryMachine::clone() const
@@ -590,6 +601,11 @@ mpt::Compute &MonadInMemoryMachine::storage_root_compute() const
 {
     static PagedStorageRootMerkleCompute compute;
     return compute;
+}
+
+mpt::state_machine_kind OnDiskMachine::kind() const
+{
+    return mpt::state_machine_kind::ethereum;
 }
 
 bool OnDiskMachine::cache() const
@@ -614,6 +630,11 @@ bool OnDiskMachine::auto_expire() const
 std::unique_ptr<StateMachine> OnDiskMachine::clone() const
 {
     return std::make_unique<OnDiskMachine>(*this);
+}
+
+mpt::state_machine_kind MonadOnDiskMachine::kind() const
+{
+    return mpt::state_machine_kind::monad;
 }
 
 std::unique_ptr<StateMachine> MonadOnDiskMachine::clone() const

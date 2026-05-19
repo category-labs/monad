@@ -96,6 +96,7 @@ static_assert(alignof(MachineBase) == 8);
 
 struct InMemoryMachine : public MachineBase
 {
+    virtual mpt::state_machine_kind kind() const override;
     virtual bool cache() const override;
     virtual bool compact() const override;
     virtual std::unique_ptr<StateMachine> clone() const override;
@@ -103,6 +104,7 @@ struct InMemoryMachine : public MachineBase
 
 struct OnDiskMachine : public MachineBase
 {
+    virtual mpt::state_machine_kind kind() const override;
     virtual bool cache() const override;
     virtual bool compact() const override;
     virtual bool auto_expire() const override;
@@ -113,6 +115,7 @@ struct OnDiskMachine : public MachineBase
 // chain is at a revision that persists storage as pages instead of slots.
 struct MonadInMemoryMachine final : public InMemoryMachine
 {
+    virtual mpt::state_machine_kind kind() const override;
     virtual std::unique_ptr<StateMachine> clone() const override;
 
 protected:
@@ -124,6 +127,7 @@ protected:
 // chain is at a revision that persists storage as pages instead of slots.
 struct MonadOnDiskMachine final : public OnDiskMachine
 {
+    virtual mpt::state_machine_kind kind() const override;
     virtual std::unique_ptr<StateMachine> clone() const override;
 
 protected:

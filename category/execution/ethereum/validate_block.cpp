@@ -335,7 +335,8 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
          "system call target has no code",
          {}},
         {BlockError::SystemCallFailed, "system call failed", {}},
-        {BlockError::InvalidRequestsHash, "invalid requests hash", {}}};
+        {BlockError::InvalidRequestsHash, "invalid requests hash", {}},
+        {BlockError::InvalidDepositLog, "invalid deposit log", {}}};
 
     return v;
 }

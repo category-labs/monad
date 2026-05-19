@@ -56,17 +56,16 @@ Result<T> abi_decode_fixed(byte_string_view &enc)
     return output;
 }
 
-// Dynamic sized data goes in the "tail". Note that for precompiles, we always
-// know the size of the bytes we are reading in, which is why we return a fixed
-// size byte string.
+// Dynamic sized data goes in the "tail". Note that for precompiles and
+// protocol payloads, we often know the size of the bytes we are reading in,
+// which is why we return a fixed size byte string.
 //
 // The expectation for using this API is to simply skip over the user provided
 // offsets in the head, look for bytes of an expected length in the tail.
 template <size_t N>
-Result<byte_string_fixed<N>> abi_decode_bytes_tail(byte_string_view &enc)
+Result<byte_string_fixed<N>>
+abi_decode_dynamic_bytes_tail(byte_string_view &enc)
 {
-    static_assert(N > 32, "bytesN (N<=32) belongs in head");
-
     BOOST_OUTCOME_TRY(auto const length, abi_decode_fixed<u256_be>(enc));
     if (MONAD_UNLIKELY(length.native() != N)) {
         return AbiDecodeError::LengthMismatch;
@@ -81,6 +80,16 @@ Result<byte_string_fixed<N>> abi_decode_bytes_tail(byte_string_view &enc)
     std::memcpy(output.data(), enc.data(), N);
     enc.remove_prefix(padded);
     return output;
+}
+
+// Prefer abi_decode_dynamic_bytes_tail for Solidity `bytes`. This helper keeps
+// the original precompile-focused restriction for existing callers.
+template <size_t N>
+Result<byte_string_fixed<N>> abi_decode_bytes_tail(byte_string_view &enc)
+{
+    static_assert(N > 32, "bytesN (N<=32) belongs in head");
+
+    return abi_decode_dynamic_bytes_tail<N>(enc);
 }
 
 MONAD_NAMESPACE_END

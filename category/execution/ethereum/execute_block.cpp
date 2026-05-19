@@ -349,7 +349,12 @@ Result<std::vector<Receipt>> execute_block(
         BOOST_OUTCOME_TRY(
             auto const computed_requests_hash,
             process_requests<traits>(
-                chain, state, block_hash_buffer, block.header, chain_ctx));
+                chain,
+                state,
+                block_hash_buffer,
+                block.header,
+                chain_ctx,
+                retvals));
         MONAD_ASSERT(block.header.requests_hash.has_value());
         if (MONAD_UNLIKELY(
                 computed_requests_hash != block.header.requests_hash.value())) {

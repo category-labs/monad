@@ -13,9 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/byte_string.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/contract/abi_decode.hpp>
+#include <category/execution/ethereum/core/contract/big_endian.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
@@ -41,6 +45,7 @@ using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
+constexpr uint8_t DEPOSIT_REQUEST_TYPE = 0x00;
 constexpr uint8_t WITHDRAWAL_REQUEST_TYPE = 0x01;
 constexpr uint8_t CONSOLIDATION_REQUEST_TYPE = 0x02;
 
@@ -133,9 +138,87 @@ Result<byte_string> system_call(
         result.output_data, result.output_data + result.output_size);
 }
 
+Result<void> consume_deposit_event_head(byte_string_view &cursor)
+{
+    auto const check_offset = [&](uint32_t expected) -> Result<void> {
+        auto const actual = abi_decode_fixed<u256_be>(cursor);
+        if (actual.has_error() || actual.value().native() != expected) {
+            return BlockError::InvalidDepositLog;
+        }
+        return success();
+    };
+
+    BOOST_OUTCOME_TRY(check_offset(160));
+    BOOST_OUTCOME_TRY(check_offset(256));
+    BOOST_OUTCOME_TRY(check_offset(320));
+    BOOST_OUTCOME_TRY(check_offset(384));
+    BOOST_OUTCOME_TRY(check_offset(512));
+
+    return success();
+}
+
+template <size_t N>
+Result<void>
+append_deposit_event_field(byte_string &deposits, byte_string_view &cursor)
+{
+    auto const field = abi_decode_dynamic_bytes_tail<N>(cursor);
+    if (field.has_error()) {
+        return BlockError::InvalidDepositLog;
+    }
+    deposits.append_range(field.value());
+    return success();
+}
+
+Result<void>
+append_deposit_request(byte_string &deposits, byte_string_view cursor)
+{
+    // EIP-6110 accepts one canonical 576-byte ABI log-data item emitted by the
+    // deposit contract's DepositEvent(bytes,bytes,bytes,bytes,bytes). The
+    // 5-word head occupies bytes [0, 160); each head word is an ABI offset from
+    // the start of that event data to the corresponding dynamic `bytes` tail:
+    //
+    //   pubkey                  offset 160, size 48
+    //   withdrawal_credentials  offset 256, size 32
+    //   amount                  offset 320, size 8
+    //   signature               offset 384, size 96
+    //   index                   offset 512, size 8
+    if (cursor.length() != 576) {
+        return BlockError::InvalidDepositLog;
+    }
+
+    BOOST_OUTCOME_TRY(consume_deposit_event_head(cursor));
+
+    BOOST_OUTCOME_TRY(append_deposit_event_field<48>(deposits, cursor));
+    BOOST_OUTCOME_TRY(append_deposit_event_field<32>(deposits, cursor));
+    BOOST_OUTCOME_TRY(append_deposit_event_field<8>(deposits, cursor));
+    BOOST_OUTCOME_TRY(append_deposit_event_field<96>(deposits, cursor));
+    BOOST_OUTCOME_TRY(append_deposit_event_field<8>(deposits, cursor));
+    return success();
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
+
+Result<byte_string>
+extract_deposit_requests(std::span<Receipt const> const receipts)
+{
+    constexpr auto DEPOSIT_CONTRACT_ADDRESS =
+        0x00000000219ab540356cbb839cbe05303d7705fa_address;
+    constexpr auto DEPOSIT_EVENT_SIGNATURE_HASH =
+        0x649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5_bytes32;
+    byte_string deposits;
+    for (auto const &receipt : receipts) {
+        for (auto const &log : receipt.logs) {
+            if (log.address != DEPOSIT_CONTRACT_ADDRESS || log.topics.empty() ||
+                log.topics[0] != DEPOSIT_EVENT_SIGNATURE_HASH) {
+                continue;
+            }
+            BOOST_OUTCOME_TRY(append_deposit_request(deposits, log.data));
+        }
+    }
+    return deposits;
+}
 
 bytes32_t compute_requests_hash(std::span<BlockRequest const> const requests)
 {
@@ -169,8 +252,11 @@ bytes32_t compute_requests_hash(std::span<BlockRequest const> const requests)
 template <Traits traits>
 Result<bytes32_t> process_requests(
     Chain const &chain, State &state, BlockHashBuffer const &block_hash_buffer,
-    BlockHeader const &header, ChainContext<traits> const &chain_ctx)
+    BlockHeader const &header, ChainContext<traits> const &chain_ctx,
+    std::span<Receipt const> const receipts)
 {
+    BOOST_OUTCOME_TRY(auto deposit_output, extract_deposit_requests(receipts));
+
     // EIP-7002
     constexpr auto WITHDRAWAL_REQUEST_ADDRESS =
         0x00000961ef480eb55e80d19ad83579a64c007002_address;
@@ -197,9 +283,8 @@ Result<bytes32_t> process_requests(
             CONSOLIDATION_REQUEST_ADDRESS,
             chain_ctx));
 
-    // TODO: EIP-6110 deposits. Deposit requests are type 0x00 and must be
-    // placed before withdrawal and consolidation requests.
-    return compute_requests_hash(std::array<BlockRequest, 2>{{
+    return compute_requests_hash(std::array<BlockRequest, 3>{{
+        {DEPOSIT_REQUEST_TYPE, std::move(deposit_output)},
         {WITHDRAWAL_REQUEST_TYPE, std::move(withdrawal_output)},
         {CONSOLIDATION_REQUEST_TYPE, std::move(consolidation_output)},
     }});

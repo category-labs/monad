@@ -205,6 +205,10 @@ namespace monad
 
         static consteval bool eip_7685_active() noexcept
         {
+            // Monad Prague blocks carry a requests_hash header field, but
+            // monad-bft currently proposes and validates it as zero rather
+            // than as an Ethereum EIP-7685 request-list hash. Keep those
+            // paths paired before enabling real request hash processing.
             return false;
         }
 

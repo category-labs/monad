@@ -28,6 +28,7 @@
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -239,6 +240,12 @@ public:
     // and in-memory Dbs; secondary for Dbs returned by the activate /
     // open_secondary_timeline factories).
     timeline_id tid() const;
+
+    // Returns the state_machine_kind stamped on this Db's bound timeline
+    // in db_metadata. On-disk Dbs read it from the metadata superblock;
+    // in-memory Dbs return the kind() of the StateMachine they were
+    // constructed with.
+    state_machine_kind state_machine_type() const;
 
 private:
     friend struct test::DbAccessor;

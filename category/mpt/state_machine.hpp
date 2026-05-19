@@ -16,7 +16,9 @@
 #pragma once
 
 #include <category/mpt/config.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <stddef.h>
 
@@ -27,6 +29,15 @@ struct Compute;
 struct StateMachine
 {
     virtual ~StateMachine() = default;
+
+    // Identifies which StateMachine implementation this instance is. Used by
+    // Db to cross-check the caller's StateMachine against the on-disk
+    // metadata at open time and to stamp metadata on create / activate.
+    virtual state_machine_kind kind() const
+    {
+        return state_machine_kind::undefined;
+    }
+
     virtual std::unique_ptr<StateMachine> clone() const = 0;
     virtual void down(unsigned char nibble) = 0;
     virtual void up(size_t) = 0;

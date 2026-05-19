@@ -16,41 +16,27 @@
 #pragma once
 
 #include <category/mpt/config.hpp>
-#include <category/mpt/state_machine.hpp>
 
 #include <cstdint>
-#include <functional>
-#include <memory>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
 // Identifies which StateMachine implementation a timeline was created with.
-// Persisted per-timeline in db_metadata::root_offsets_ring_t so that opens
-// reconstruct the right SM via the registry below.
+// Persisted per-timeline in db_metadata::root_offsets_ring_t. The caller
+// supplies a StateMachine to mpt::Db's constructors; the Db cross-checks
+// machine->kind() against the stamped kind, and stamps it on first write
+// for fresh timelines.
 enum class state_machine_kind : uint8_t
 {
-    // sentinel; create_state_machine() aborts on this value
+    // sentinel; reads from a fresh (not yet stamped) timeline.
     undefined = 0,
-    // OnDiskMachine; registered by register_ethereum_state_machines
+    // OnDiskMachine / InMemoryMachine
     ethereum = 1,
-    // Future kinds (e.g. for the dual-timeline hash migration target) extend
-    // here. Never reorder or reuse values: they are persisted on disk.
+    // MonadOnDiskMachine / MonadInMemoryMachine: page-encoded storage for
+    // chains at MONAD_NEXT or later.
+    monad = 2,
+    // Future kinds extend here. Never reorder or reuse values: they are
+    // persisted on disk.
 };
-
-constexpr uint8_t NUM_STATE_MACHINE_KINDS = 8;
-
-using state_machine_factory = std::function<std::unique_ptr<StateMachine>()>;
-
-// Register a factory for a given kind. The mpt module never knows about
-// concrete StateMachine subclasses; external init code (e.g.
-// register_ethereum_state_machines() in execution/ethereum/db) populates
-// the registry at process start before any mpt::Db is constructed.
-//
-// Idempotent: re-registering the same kind overwrites the previous factory.
-void register_state_machine(state_machine_kind, state_machine_factory);
-
-// Construct a StateMachine for the given kind via the registered factory.
-// Aborts (MONAD_ASSERT) if the kind is undefined or not registered.
-std::unique_ptr<StateMachine> create_state_machine(state_machine_kind);
 
 MONAD_MPT_NAMESPACE_END

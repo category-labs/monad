@@ -35,7 +35,6 @@
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
-#include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
@@ -276,25 +275,6 @@ try {
     if (!statesync.empty()) {
         net.emplace(statesync.c_str());
     }
-    // The on-disk Db ctor reads the persisted state_machine_kind from
-    // db_metadata and constructs the StateMachine via the registry. The
-    // in-memory path has no metadata to read from and constructs the SM
-    // inline.
-    register_ethereum_state_machines();
-    mpt::Db raw_db = [&] {
-        if (!db_in_memory) {
-            return mpt::Db{mpt::OnDiskDbConfig{
-                .append = true,
-                .compaction = !no_compaction,
-                .rewind_to_latest_finalized = true,
-                .rd_buffers = 8192,
-                .wr_buffers = 32,
-                .uring_entries = 128,
-                .sq_thread_cpu = sq_thread_cpu,
-                .dbname_paths = dbname_paths}};
-        }
-        return mpt::Db{std::make_unique<InMemoryMachine>()};
-    }();
 
     auto chain = [chain_config] -> std::unique_ptr<Chain> {
         switch (chain_config) {
@@ -312,40 +292,50 @@ try {
         MONAD_ASSERT(false);
     }();
 
-    // Detect the on-disk storage encoding for the primary db.
-    //  * For an existing db, the encoding comes from the page-encoded marker
-    //    stamped on the value of the finalized state subtrie's root entry.
-    //  * For a fresh / in-memory db, the encoding is inferred from the chain's
-    //    genesis revision: MONAD_NEXT or later means page-encoded from block 0.
-    //    Ethereum / hive chains are always slot-encoded.
-    bool const page_encoded = [&] {
-        auto const latest_finalized = raw_db.get_latest_finalized_version();
-        if (db_in_memory || latest_finalized == mpt::INVALID_BLOCK_NUM) {
-            auto const *const monad_chain =
-                dynamic_cast<MonadChain const *>(chain.get());
-            GenesisState const genesis_state = chain->get_genesis_state();
-            return monad_chain != nullptr &&
-                   monad_chain->get_monad_revision(
-                       genesis_state.header.timestamp) >= MONAD_NEXT;
-        }
-        auto const res = raw_db.find(
-            mpt::concat(FINALIZED_NIBBLE, STATE_NIBBLE), latest_finalized);
-        MONAD_ASSERT(res.has_value(), "finalized root entry not found in db");
-        return res.value().node->value() ==
-               monad::byte_string_view{page_encoding_marker};
-    }();
-    if (page_encoded) {
-        if (db_in_memory) {
-            raw_db.reset_state_machine(
-                std::make_unique<MonadInMemoryMachine>());
-        }
-        else {
-            raw_db.reset_state_machine(std::make_unique<MonadOnDiskMachine>());
-        }
+    // The on-disk encoding is read from raw_db's stamped state machine
+    // kind. A fresh on-disk db (or an in-memory db) has no metadata to
+    // read from; in that case we infer from the chain's genesis revision:
+    // MONAD_NEXT or later means page-encoded, everything else is slot.
+    mpt::state_machine_kind kind = mpt::state_machine_kind::undefined;
+    if (!db_in_memory) {
+        mpt::AsyncIOContext io_ctx{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = dbname_paths}};
+        mpt::Db rodb{io_ctx};
+        kind = rodb.state_machine_kind();
+    }
+    bool page_encoded = false;
+    if (kind == mpt::state_machine_kind::undefined) {
+        auto const *const monad_chain =
+            dynamic_cast<MonadChain const *>(chain.get());
+        GenesisState const genesis_state = chain->get_genesis_state();
+        page_encoded = monad_chain != nullptr &&
+                       monad_chain->get_monad_revision(
+                           genesis_state.header.timestamp) >= MONAD_NEXT;
+    }
+    else {
+        page_encoded = kind == mpt::state_machine_kind::monad;
     }
     LOG_INFO(
-        "Detected primary db encoding: {}. Reset mpt db state machine",
-        page_encoded ? "page" : "slot");
+        "Detected primary db encoding: {}", page_encoded ? "page" : "slot");
+    mpt::Db raw_db = [&] {
+        if (!db_in_memory) {
+            return mpt::Db{
+                page_encoded ? std::make_unique<MonadOnDiskMachine>()
+                             : std::make_unique<OnDiskMachine>(),
+                mpt::OnDiskDbConfig{
+                    .append = true,
+                    .compaction = !no_compaction,
+                    .rewind_to_latest_finalized = true,
+                    .rd_buffers = 8192,
+                    .wr_buffers = 32,
+                    .uring_entries = 128,
+                    .sq_thread_cpu = sq_thread_cpu,
+                    .dbname_paths = dbname_paths}};
+        }
+        return mpt::Db{
+            page_encoded ? std::make_unique<MonadInMemoryMachine>()
+                         : std::make_unique<InMemoryMachine>()};
+    }();
 
     auto run = [&]<bool page_encoded_primary>() -> int {
         TrieDbImpl<page_encoded_primary> triedb{

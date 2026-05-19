@@ -40,7 +40,6 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
-#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -98,6 +97,8 @@ struct Db::Impl
     virtual void
     move_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
     virtual timeline_id tid() const = 0;
+
+    virtual mpt::state_machine_kind state_machine_kind() const = 0;
 };
 
 AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
@@ -118,7 +119,6 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
           read_ring, options.rd_buffers,
           async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
     , io{pool, buffers}
-    , tid{options.tid}
 {
     io.set_capture_io_latencies(options.capture_io_latencies);
     io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -259,6 +259,11 @@ public:
     {
         return tid_;
     }
+
+    virtual mpt::state_machine_kind state_machine_kind() const override
+    {
+        return aux_.metadata_ctx().get_state_machine_kind(tid_);
+    }
 };
 
 class Db::InMemory final : public Db::Impl
@@ -338,6 +343,12 @@ public:
     virtual timeline_id tid() const override
     {
         return timeline_id::primary;
+    }
+
+    virtual mpt::state_machine_kind state_machine_kind() const override
+    {
+        MONAD_ASSERT(machine_);
+        return machine_->kind();
     }
 };
 
@@ -917,6 +928,12 @@ public:
     {
         return tid_;
     }
+
+    virtual mpt::state_machine_kind state_machine_kind() const override
+    {
+        return worker_thread_->aux().metadata_ctx().get_state_machine_kind(
+            tid_);
+    }
 };
 
 struct RODb::Impl final
@@ -1063,25 +1080,41 @@ Db::Db(std::unique_ptr<StateMachine> machine)
 }
 
 Db::Db(std::unique_ptr<StateMachine> machine, OnDiskDbConfig const &config)
-    : impl_{std::make_unique<RWOnDisk>(
-          std::make_shared<OnDiskDbServiceThread>(config), std::move(machine),
-          timeline_id::primary, config.compaction)}
 {
-    MONAD_ASSERT(impl_->aux().is_on_disk());
-}
-
-Db::Db(OnDiskDbConfig const &config)
-{
-    auto worker = std::make_shared<OnDiskDbServiceThread>(config);
-    auto const kind = worker->aux().metadata_ctx().get_state_machine_kind(
-        timeline_id::primary);
-    auto machine = create_state_machine(kind);
+    MONAD_ASSERT(machine);
+    auto const caller_kind = machine->kind();
     impl_ = std::make_unique<RWOnDisk>(
-        std::move(worker),
+        std::make_shared<OnDiskDbServiceThread>(config),
         std::move(machine),
         timeline_id::primary,
         config.compaction);
     MONAD_ASSERT(impl_->aux().is_on_disk());
+
+    // Cross-check the caller's StateMachine against the primary timeline's
+    // stamped state_machine_kind. A stamped kind must match what the
+    // caller passed in; an unstamped (undefined) kind is only legal on a
+    // fresh timeline that has not yet been written to, and gets stamped
+    // here so subsequent opens cross-check.
+    auto const stamped_kind =
+        impl_->aux().metadata_ctx().get_state_machine_kind(
+            timeline_id::primary);
+    if (stamped_kind == mpt::state_machine_kind::undefined) {
+        MONAD_ASSERT_PRINTF(
+            impl_->aux().metadata_ctx().db_history_max_version(
+                timeline_id::primary) == INVALID_BLOCK_NUM,
+            "primary timeline has no stamped state_machine_kind but is "
+            "not fresh; refusing to bind a StateMachine to it");
+        impl_->aux().metadata_ctx().set_state_machine_kind(
+            timeline_id::primary, caller_kind);
+    }
+    else {
+        MONAD_ASSERT_PRINTF(
+            caller_kind == stamped_kind,
+            "state_machine_kind mismatch on primary timeline: caller "
+            "passed kind=%u, on-disk stamped kind=%u",
+            static_cast<unsigned>(caller_kind),
+            static_cast<unsigned>(stamped_kind));
+    }
 }
 
 Db::Db(AsyncIOContext &io_ctx, timeline_id const tid)
@@ -1313,14 +1346,25 @@ UpdateAux const &Db::aux() const
     return impl_->aux();
 }
 
+mpt::state_machine_kind Db::state_machine_kind() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->state_machine_kind();
+}
+
 Db Db::activate_secondary_timeline(
     std::unique_ptr<StateMachine> secondary_machine)
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(secondary_machine);
+    auto const secondary_kind = secondary_machine->kind();
     auto *const rw = static_cast<RWOnDisk *>(impl_.get());
     MONAD_ASSERT(rw->worker_thread_use_count() == 1);
     rw->aux().activate_secondary_timeline();
+    // Stamp the kind into the secondary's metadata slot so a later
+    // open_secondary_timeline can cross-check the caller's StateMachine.
+    rw->aux().metadata_ctx().set_state_machine_kind(
+        timeline_id::secondary, secondary_kind);
     return Db{rw->spawn_sibling(
         std::move(secondary_machine), timeline_id::secondary)};
 }
@@ -1330,27 +1374,37 @@ Db::open_secondary_timeline(std::unique_ptr<StateMachine> secondary_machine)
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(secondary_machine);
+    auto const caller_kind = secondary_machine->kind();
     auto *const rw = static_cast<RWOnDisk *>(impl_.get());
     MONAD_ASSERT(rw->worker_thread_use_count() == 1);
     if (!rw->aux().metadata_ctx().timeline_active(timeline_id::secondary)) {
         return std::nullopt;
+    }
+    // Cross-check the caller's StateMachine against the secondary
+    // timeline's stamped state_machine_kind. Mirrors the primary cross-
+    // check in Db's on-disk RW ctor; the undefined case stamps the
+    // caller's kind so subsequent opens cross-check.
+    auto const stamped_kind =
+        rw->aux().metadata_ctx().get_state_machine_kind(timeline_id::secondary);
+    if (stamped_kind == mpt::state_machine_kind::undefined) {
+        MONAD_ASSERT_PRINTF(
+            rw->aux().metadata_ctx().db_history_max_version(
+                timeline_id::secondary) == INVALID_BLOCK_NUM,
+            "secondary timeline has no stamped state_machine_kind but "
+            "is not fresh; refusing to bind a StateMachine to it");
+        rw->aux().metadata_ctx().set_state_machine_kind(
+            timeline_id::secondary, caller_kind);
+    }
+    else {
+        MONAD_ASSERT_PRINTF(
+            caller_kind == stamped_kind,
+            "state_machine_kind mismatch on secondary timeline: caller "
+            "passed kind=%u, on-disk stamped kind=%u",
+            static_cast<unsigned>(caller_kind),
+            static_cast<unsigned>(stamped_kind));
     }
     return Db{rw->spawn_sibling(
         std::move(secondary_machine), timeline_id::secondary)};
-}
-
-std::optional<Db> Db::open_secondary_timeline()
-{
-    MONAD_ASSERT(impl_);
-    auto *const rw = static_cast<RWOnDisk *>(impl_.get());
-    MONAD_ASSERT(rw->worker_thread_use_count() == 1);
-    if (!rw->aux().metadata_ctx().timeline_active(timeline_id::secondary)) {
-        return std::nullopt;
-    }
-    auto const kind =
-        rw->aux().metadata_ctx().get_state_machine_kind(timeline_id::secondary);
-    auto machine = create_state_machine(kind);
-    return Db{rw->spawn_sibling(std::move(machine), timeline_id::secondary)};
 }
 
 void Db::promote_secondary_to_primary()

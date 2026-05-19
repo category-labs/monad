@@ -103,8 +103,6 @@ add_library(
   "ethereum/db/file_db.hpp"
   "ethereum/db/partial_trie_db.hpp"
   "ethereum/db/partial_trie_db.cpp"
-  "ethereum/db/state_machine_init.cpp"
-  "ethereum/db/state_machine_init.hpp"
   "ethereum/db/storage_key.hpp"
   "ethereum/db/trie_db.cpp"
   "ethereum/db/trie_db.hpp"

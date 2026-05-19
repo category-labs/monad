@@ -23,7 +23,6 @@
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -203,10 +202,6 @@ namespace
 
         void init()
         {
-            // Production C ABI (monad_statesync_client_context_create) does
-            // this; tests that bypass the C ABI and call the C++ ctor
-            // directly must populate the registry themselves.
-            monad::register_ethereum_state_machines();
             cctx = new monad_statesync_client_context{
                 {cdbname},
                 std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),

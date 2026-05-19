@@ -28,6 +28,7 @@
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -106,13 +107,6 @@ private:
 public:
     explicit Db(std::unique_ptr<StateMachine>); // in-memory
     Db(std::unique_ptr<StateMachine>, OnDiskDbConfig const &); // on-disk RW
-    // Production on-disk RW: reads the primary timeline's state_machine_kind
-    // from db_metadata (routed via primary_ring_idx, so it follows the role
-    // label across promote, not a fixed physical ring), constructs the
-    // StateMachine via the registry in category/mpt/state_machine_kind.hpp,
-    // and owns the SM internally. Caller must have registered the relevant
-    // kinds at process start (e.g. monad::register_ethereum_state_machines()).
-    explicit Db(OnDiskDbConfig const &);
     explicit Db(
         AsyncIOContext &,
         timeline_id const tid = timeline_id::primary); // on-disk RO blocking
@@ -196,16 +190,10 @@ public:
 
     // Attach to a secondary ring that was activated in a prior process
     // and persisted on disk. Returns nullopt if no secondary is active.
+    // The caller supplies the StateMachine; its kind() is cross-checked
+    // against the secondary's stamped state_machine_kind on construction.
     [[nodiscard]] std::optional<Db>
     open_secondary_timeline(std::unique_ptr<StateMachine> secondary_machine);
-
-    // Production variant: read the secondary timeline's persisted
-    // state_machine_kind from db_metadata (routed via primary_ring_idx ^ 1,
-    // so it tracks the secondary role across promote, not a fixed physical
-    // ring) and construct the StateMachine via the registry. Returns nullopt
-    // if no secondary is active. Stamping the kind is the operator's job
-    // (monad-mpt --activate-secondary --state-machine <kind>).
-    [[nodiscard]] std::optional<Db> open_secondary_timeline();
 
     // Swap primary and secondary slots. Clears the primary Db's
     // StateMachine binding so a missed close+reopen (the expected next
@@ -223,6 +211,13 @@ public:
     // open_secondary_timeline return timeline_id::secondary. In-memory
     // Dbs are always primary.
     timeline_id tid() const;
+
+    // Returns the state_machine_kind stamped on this Db's bound timeline
+    // in db_metadata. On-disk Dbs read it from the metadata superblock;
+    // in-memory Dbs return the kind() of the StateMachine they were
+    // constructed with. A fresh on-disk timeline returns
+    // state_machine_kind::undefined until the first write stamps it.
+    state_machine_kind state_machine_kind() const;
 
 private:
     friend struct test::DbAccessor;

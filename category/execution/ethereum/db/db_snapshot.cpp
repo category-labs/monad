@@ -22,7 +22,6 @@
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
-#include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>

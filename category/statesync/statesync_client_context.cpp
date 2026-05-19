@@ -39,15 +39,16 @@ monad_statesync_client_context::monad_statesync_client_context(
     monad_statesync_client *const sync,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request))
-    : db{mpt::OnDiskDbConfig{
-          .append = true,
-          .compaction = false,
-          .rewind_to_latest_finalized = true,
-          .rd_buffers = 8192,
-          .wr_buffers = wr_buffers,
-          .uring_entries = 128,
-          .sq_thread_cpu = sq_thread_cpu,
-          .dbname_paths = dbname_paths}}
+    : db{std::make_unique<OnDiskMachine>(),
+         mpt::OnDiskDbConfig{
+             .append = true,
+             .compaction = false,
+             .rewind_to_latest_finalized = true,
+             .rd_buffers = 8192,
+             .wr_buffers = wr_buffers,
+             .uring_entries = 128,
+             .sq_thread_cpu = sq_thread_cpu,
+             .dbname_paths = dbname_paths}}
     , tdb{db} // open with latest finalized if valid, otherwise init as block 0
     , secondary_db{[this] {
         MONAD_ASSERT(db.timeline_active(timeline_id::secondary));

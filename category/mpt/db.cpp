@@ -98,6 +98,8 @@ struct Db::Impl
     virtual void
     move_trie_version_fiber_blocking(uint64_t src, uint64_t dest) = 0;
     virtual timeline_id tid() const = 0;
+
+    virtual mpt::state_machine_kind state_machine_type() const = 0;
 };
 
 AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
@@ -258,6 +260,11 @@ public:
     {
         return tid_;
     }
+
+    virtual mpt::state_machine_kind state_machine_type() const override
+    {
+        return aux_.metadata_ctx().get_state_machine_kind(tid_);
+    }
 };
 
 class Db::InMemory final : public Db::Impl
@@ -337,6 +344,12 @@ public:
     virtual timeline_id tid() const override
     {
         return timeline_id::primary;
+    }
+
+    virtual mpt::state_machine_kind state_machine_type() const override
+    {
+        MONAD_ASSERT(machine_);
+        return machine_->kind();
     }
 };
 
@@ -921,6 +934,12 @@ public:
     {
         return tid_;
     }
+
+    virtual mpt::state_machine_kind state_machine_type() const override
+    {
+        return worker_thread_->aux().metadata_ctx().get_state_machine_kind(
+            tid_);
+    }
 };
 
 struct RODb::Impl final
@@ -1067,9 +1086,17 @@ Db::Db(std::unique_ptr<StateMachine> machine)
 }
 
 Db::Db(std::unique_ptr<StateMachine> machine, OnDiskDbConfig const &config)
-    : impl_{std::make_unique<RWOnDisk>(
-          std::make_shared<OnDiskDbServiceThread>(config), std::move(machine),
-          timeline_id::primary, config.compaction)}
+    : impl_{[&] {
+        auto const machine_kind = machine->kind();
+        auto impl = std::make_unique<RWOnDisk>(
+            std::make_shared<OnDiskDbServiceThread>(config),
+            std::move(machine),
+            timeline_id::primary,
+            config.compaction);
+        impl->aux().metadata_ctx().set_state_machine_kind(
+            timeline_id::primary, machine_kind);
+        return impl;
+    }()}
 {
     MONAD_ASSERT(impl_->aux().is_on_disk());
 }
@@ -1323,6 +1350,12 @@ UpdateAux &Db::aux()
     return impl_->aux();
 }
 
+mpt::state_machine_kind Db::state_machine_type() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->state_machine_type();
+}
+
 Db Db::activate_secondary_timeline(
     std::unique_ptr<StateMachine> secondary_machine)
 {
@@ -1332,7 +1365,12 @@ Db Db::activate_secondary_timeline(
     auto *const rw = static_cast<RWOnDisk *>(impl_.get());
     MONAD_ASSERT(rw->tid() == timeline_id::primary);
     MONAD_ASSERT(rw->worker_thread_use_count() == 1);
+    MONAD_ASSERT(
+        !rw->aux().metadata_ctx().timeline_active(timeline_id::secondary),
+        "secondary timeline already active, cannot activate again");
     rw->aux().activate_secondary_timeline();
+    rw->aux().metadata_ctx().set_state_machine_kind(
+        timeline_id::secondary, secondary_machine->kind());
     return Db{rw->spawn_sibling(
         std::move(secondary_machine), timeline_id::secondary)};
 }
@@ -1349,6 +1387,8 @@ Db::open_secondary_timeline(std::unique_ptr<StateMachine> secondary_machine)
     if (!rw->aux().metadata_ctx().timeline_active(timeline_id::secondary)) {
         return std::nullopt;
     }
+    rw->aux().metadata_ctx().set_state_machine_kind(
+        timeline_id::secondary, secondary_machine->kind());
     return Db{rw->spawn_sibling(
         std::move(secondary_machine), timeline_id::secondary)};
 }
@@ -1365,7 +1405,7 @@ std::optional<Db> Db::open_secondary_timeline()
     }
     auto const kind =
         rw->aux().metadata_ctx().get_state_machine_kind(timeline_id::secondary);
-    auto machine = create_state_machine(kind);
+    auto machine = create_state_machine(kind); // will assert if undefined
     return Db{rw->spawn_sibling(std::move(machine), timeline_id::secondary)};
 }
 

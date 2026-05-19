@@ -16,13 +16,14 @@
 #pragma once
 
 #include <category/mpt/config.hpp>
-#include <category/mpt/state_machine.hpp>
 
 #include <cstdint>
 #include <functional>
 #include <memory>
 
 MONAD_MPT_NAMESPACE_BEGIN
+
+struct StateMachine;
 
 // Identifies which StateMachine implementation a timeline was created with.
 // Persisted per-timeline in db_metadata::root_offsets_ring_t so that opens
@@ -33,8 +34,11 @@ enum class state_machine_kind : uint8_t
     // so a zeroed metadata byte (DBs created before the kind was persisted,
     // freshly-created pools) reads back as ethereum with no migration step.
     ethereum = 0,
-    // Future kinds (e.g. the dual-timeline hash migration target) extend here.
-    // Never reorder or reuse values: they are persisted on disk.
+    // MonadOnDiskMachine: page-encoded storage for chains at MONAD_NEXT or
+    // later. Registered alongside ethereum.
+    monad = 1,
+    // Future kinds extend here. Never reorder or reuse values: they are
+    // persisted on disk.
 };
 
 constexpr uint8_t NUM_STATE_MACHINE_KINDS = 8;

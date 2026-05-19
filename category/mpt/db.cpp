@@ -118,6 +118,7 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
           read_ring, options.rd_buffers,
           async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
     , io{pool, buffers}
+    , tid{options.tid}
 {
     io.set_capture_io_latencies(options.capture_io_latencies);
     io.set_concurrent_read_io_limit(options.concurrent_read_io_limit);
@@ -1083,8 +1084,8 @@ Db::Db(OnDiskDbConfig const &config)
     MONAD_ASSERT(impl_->aux().is_on_disk());
 }
 
-Db::Db(AsyncIOContext &io_ctx)
-    : impl_{std::make_unique<ROOnDiskBlocking>(io_ctx, timeline_id::primary)}
+Db::Db(AsyncIOContext &io_ctx, timeline_id const tid)
+    : impl_{std::make_unique<ROOnDiskBlocking>(io_ctx, tid)}
 {
 }
 

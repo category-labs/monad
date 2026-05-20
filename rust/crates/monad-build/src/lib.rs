@@ -16,6 +16,9 @@
 #[cfg(feature = "cmake")]
 pub use self::cmake::{MonadCMake, MonadCMakeLinkage};
 
+#[cfg(feature = "bindgen")]
+pub mod bindgen;
+
 #[cfg(feature = "cmake")]
 mod cmake;
 

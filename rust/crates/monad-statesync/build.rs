@@ -13,24 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
-
 fn main() {
-    println!("cargo:rerun-if-changed=../../../");
-
-    let bindings = bindgen::Builder::default()
-        .header("../../../category/statesync/statesync_messages.h")
-        .header("../../../category/statesync/statesync_client.h")
-        .header("../../../category/statesync/statesync_version.h")
-        .clang_arg("-I../../../")
-        .clang_arg("-std=c23")
-        // invalidate on header change
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .generate()
-        .expect("Unable to generate bindings");
-
-    let out_path = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
+    monad_build::bindgen::MonadBindgen::default()
+        .header("wrapper.h")
+        .generate();
 }

@@ -10,4 +10,4 @@ ignored = ["monad-cxx"]
 monad-cxx = { workspace = true }
 
 [build-dependencies]
-bindgen = { workspace = true }
+monad-build = { workspace = true, features = ["bindgen"] }

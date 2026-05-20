@@ -4,9 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bindgen        = { workspace = true, optional = true }
 cargo_metadata = { workspace = true, optional = true }
+cc             = { workspace = true, optional = true }
 cmake          = { workspace = true, optional = true }
 
 [features]
+bindgen = ["dep:bindgen", "metadata"]
+bindgen-static = ["bindgen", "dep:cc"]
 cmake = ["dep:cmake"]
 metadata = ["dep:cargo_metadata"]

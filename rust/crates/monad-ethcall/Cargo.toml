@@ -22,4 +22,4 @@ serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 
 [build-dependencies]
-bindgen = { workspace = true }
+monad-build = { workspace = true, features = ["bindgen"] }

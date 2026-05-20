@@ -17,8 +17,7 @@ strum = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 
 [build-dependencies]
-bindgen = { workspace = true }
-cc = { workspace = true }
+monad-build = { workspace = true, features = ["bindgen-static"] }
 
 [dev-dependencies]
 alloy-primitives = { workspace = true }

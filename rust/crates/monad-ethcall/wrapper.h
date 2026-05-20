@@ -1,4 +1,4 @@
-// Copyright (C) 2025-26 Category Labs, Inc.
+// Copyright (C) 2025 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,18 +13,5 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-fn main() {
-    if monad_build::should_build_execution() {
-        monad_build::MonadCMake::new(
-            monad_build::repository_root(),
-            monad_build::MonadCMakeLinkage::Dynamic,
-        )
-        .build("monad_execution");
-    }
-
-    monad_build::bindgen::MonadBindgen::default()
-        .header("wrapper.h")
-        .derive_copy()
-        .allowlist_files(["category/core/log_ffi.h"])
-        .generate();
-}
+#include <category/execution/ethereum/chain/chain_config.h>
+#include <category/rpc/monad_executor.h>

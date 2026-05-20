@@ -1453,7 +1453,9 @@ dependencies = [
 name = "monad-build"
 version = "0.1.0"
 dependencies = [
+ "bindgen",
  "cargo_metadata",
+ "cc",
  "cmake",
 ]
 
@@ -1461,7 +1463,6 @@ dependencies = [
 name = "monad-cxx"
 version = "0.1.0"
 dependencies = [
- "bindgen",
  "monad-build",
  "tracing",
 ]
@@ -1475,9 +1476,9 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "alloy-sol-types",
- "bindgen",
  "futures",
  "hex",
+ "monad-build",
  "monad-cxx",
  "serde",
  "tracing",
@@ -1487,8 +1488,6 @@ dependencies = [
 name = "monad-event-ring"
 version = "0.1.0"
 dependencies = [
- "bindgen",
- "cc",
  "clap",
  "criterion",
  "itertools 0.10.5",
@@ -1504,14 +1503,13 @@ dependencies = [
  "alloy-eips",
  "alloy-primitives",
  "alloy-rpc-types",
- "bindgen",
- "cc",
  "chrono",
  "clap",
  "criterion",
  "hex",
  "itertools 0.10.5",
  "lazy_static",
+ "monad-build",
  "monad-event-ring",
  "ratatui",
  "serde",
@@ -1524,7 +1522,7 @@ dependencies = [
 name = "monad-statesync"
 version = "0.1.0"
 dependencies = [
- "bindgen",
+ "monad-build",
  "monad-cxx",
 ]
 
@@ -1532,7 +1530,6 @@ dependencies = [
 name = "monad-triedb"
 version = "0.1.0"
 dependencies = [
- "bindgen",
  "futures",
  "monad-build",
  "monad-cxx",

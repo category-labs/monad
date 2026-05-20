@@ -24,7 +24,7 @@ namespace monad::vm::interpreter
     template <typename... FnArgs>
     [[gnu::always_inline]]
     inline void call_runtime(
-        void (*f)(FnArgs...), runtime::Context &ctx, uint256_t *&stack_top,
+        void (*f)(FnArgs...), runtime::Context &ctx, uint256_t *const stack_top,
         int64_t &gas_remaining)
     {
         constexpr auto use_context = runtime::detail::uses_context_v<FnArgs...>;
@@ -79,11 +79,6 @@ namespace monad::vm::interpreter
         ctx.gas_remaining = gas_remaining;
         std::apply(f, all_args);
 
-        static_assert(stack_arg_count <= std::numeric_limits<ptrdiff_t>::max());
-        constexpr ptrdiff_t stack_adjustment =
-            static_cast<ptrdiff_t>(stack_arg_count) - (use_result ? 1 : 0);
-
-        stack_top -= stack_adjustment;
         gas_remaining = ctx.gas_remaining;
     }
 }

@@ -25,9 +25,11 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
+#include <category/vm/utils/lru_weight_cache.hpp>
 
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <memory>
 #include <optional>
 #include <string>
@@ -62,11 +64,13 @@ class DbCache final
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
-    using StorageCache =
-        LruCache<StorageKey, byte_string, StorageKeyHashCompare>;
+    using StorageCache = vm::utils::LruWeightCache<
+        StorageKey, byte_string, StorageKeyHashCompare>;
+
+    static constexpr uint32_t STORAGE_CACHE_MAX_BYTES = 256u * 1024 * 1024;
 
     AccountsCache accounts_{10'000'000};
-    StorageCache storage_{10'000'000};
+    StorageCache storage_{STORAGE_CACHE_MAX_BYTES};
     Proposals proposals_;
 
 public:
@@ -89,6 +93,10 @@ public:
         return false;
     }
 
+    // TODO: switch to a templated `F&& on_found` callback that takes a
+    // byte_string_view (pinned into the cache / proposal state) once
+    // ProposalPostState holds encoded pages — both sources will then expose
+    // pinned byte_strings and the extra copy here becomes unnecessary.
     bool try_read_storage(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, byte_string &result)
@@ -131,7 +139,9 @@ public:
             insert_in_lru_caches(ps->state());
         }
         else {
-            // Finalizing a truncated proposal. Clear LRU caches.
+            // Finalizing a truncated proposal. Clear LRU caches.  This is an
+            // expensive operation. However, with 100 unfinalized propoals,
+            // cache speed is the least of our problems.
             accounts_.clear();
             storage_.clear();
         }
@@ -144,7 +154,8 @@ public:
 
     std::string storage_stats()
     {
-        return storage_.print_stats();
+        return std::format(
+            "{:8} / {:10}", storage_.size(), storage_.approx_weight());
     }
 
 private:
@@ -158,10 +169,12 @@ private:
             if (account.has_value()) {
                 for (auto const &[key, storage_delta] : storage) {
                     auto const incarnation = account->incarnation;
+                    byte_string const v{
+                        compact_storage_view(storage_delta.second)};
                     storage_.insert(
                         StorageKey(address, incarnation, key),
-                        byte_string{
-                            compact_storage_view(storage_delta.second)});
+                        v,
+                        static_cast<uint32_t>(v.size()));
                 }
             }
         }

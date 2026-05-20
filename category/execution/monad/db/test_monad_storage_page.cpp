@@ -291,3 +291,33 @@ TEST(MonadDb, page_write_merges_slots)
         tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), val_0_updated);
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
 }
+
+TEST(MonadDb, byte_size_inline)
+{
+    constexpr bytes32_t val{uint64_t{0xabcd}};
+
+    storage_page_t page;
+    EXPECT_EQ(page.byte_size(), sizeof(storage_page_t));
+
+    // Up to the inline capacity (4 values) nothing is heap-allocated, so the
+    // footprint stays at the base object size.
+    for (uint8_t i = 0; i < 4; ++i) {
+        page.set(i, val);
+        EXPECT_EQ(page.byte_size(), sizeof(storage_page_t));
+    }
+}
+
+TEST(MonadDb, byte_size_spill)
+{
+    constexpr bytes32_t val{uint64_t{0xabcd}};
+
+    storage_page_t page;
+    for (uint8_t i = 0; i < 5; ++i) {
+        page.set(i, val);
+    }
+
+    // The 5th value spills values_ to a heap buffer. Growth is
+    // implementation-defined, so the footprint is at least the base object
+    // plus the live elements.
+    EXPECT_GE(page.byte_size(), sizeof(storage_page_t) + 5 * sizeof(bytes32_t));
+}

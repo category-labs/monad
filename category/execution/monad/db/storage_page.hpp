@@ -107,6 +107,15 @@ struct storage_page_t
         return values_.size();
     }
 
+    // Approximate in-memory footprint in bytes, used as the LRU cache weight.
+    size_t byte_size() const
+    {
+        size_t const heap = values_.capacity() > INLINE_VALUES
+                                ? values_.capacity() * sizeof(bytes32_t)
+                                : 0;
+        return sizeof(storage_page_t) + heap;
+    }
+
     // Bit i of the result is set iff at least one of slots 2i, 2i+1 is
     // non-zero. Used by page_commit to walk only the active pair-leaves.
     // Defined in storage_page.cpp to keep the BMI2 (_pext_u64) dependency

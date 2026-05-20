@@ -149,7 +149,7 @@ namespace monad::vm::test
             if (slot == account->second.storage.end()) {
                 return {};
             }
-            return slot->second.current;
+            return to_evmc(slot->second.current);
         }
 
         evmc_storage_status set_storage(
@@ -197,9 +197,8 @@ namespace monad::vm::test
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
-            return account == accounts.end()
-                       ? evmc::uint256be{}
-                       : evmc::uint256be{account->second.balance};
+            return account == accounts.end() ? evmc::uint256be{}
+                                             : to_evmc(account->second.balance);
         }
 
         size_t get_code_size(evmc::address const &addr) const noexcept override
@@ -216,7 +215,7 @@ namespace monad::vm::test
             auto const account = accounts.find(addr);
             return account == accounts.end()
                        ? evmc::bytes32{}
-                       : evmc::bytes32{account->second.codehash};
+                       : to_evmc(account->second.codehash);
         }
 
         size_t copy_code(
@@ -269,7 +268,7 @@ namespace monad::vm::test
         get_block_hash(int64_t const block_number) const noexcept override
         {
             recorded_blockhashes.emplace_back(block_number);
-            return block_hash;
+            return to_evmc(block_hash);
         }
 
         void emit_log(
@@ -314,7 +313,7 @@ namespace monad::vm::test
             if (slot == account->second.transient_storage.end()) {
                 return {};
             }
-            return slot->second;
+            return to_evmc(slot->second);
         }
 
         void set_transient_storage(

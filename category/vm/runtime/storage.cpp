@@ -38,7 +38,7 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-        auto key = store_be_as<bytes32_t>(*key_ptr);
+        auto const key = store_be_as<evmc_bytes32>(*key_ptr);
 
         auto const access_status =
             ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);
@@ -46,7 +46,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
-        auto const value =
+        evmc_bytes32 const value =
             ctx->host->get_storage(ctx->context, &ctx->env.recipient, &key);
 
         *result_ptr = load_be<uint256_t>(value);
@@ -72,8 +72,8 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::OutOfGas);
         }
 
-        auto key = store_be_as<bytes32_t>(*key_ptr);
-        auto value = store_be_as<bytes32_t>(*value_ptr);
+        auto const key = store_be_as<evmc_bytes32>(*key_ptr);
+        auto const value = store_be_as<evmc_bytes32>(*value_ptr);
 
         if constexpr (traits::mip_8_active()) {
             auto const access_status = ctx->host->access_storage(
@@ -128,8 +128,8 @@ namespace monad::vm::runtime
         auto const magic = uint256_t{0xdeb009};
         auto const base = (magic + base_offset) * 1024;
         if (offset == 0) {
-            auto const base_key = store_be_as<bytes32_t>(base);
-            auto const base_value = ctx->host->get_transient_storage(
+            auto const base_key = store_be_as<evmc_bytes32>(base);
+            evmc_bytes32 const base_value = ctx->host->get_transient_storage(
                 ctx->context, &ctx->env.recipient, &base_key);
             if (base_value != bytes32_t{}) {
                 // If this transient storage location has already been written,
@@ -139,12 +139,12 @@ namespace monad::vm::runtime
             }
         }
         for (uint64_t i = 0; i < stack_size; ++i) {
-            auto const key = store_be_as<bytes32_t>(base + i + offset);
+            auto const key = store_be_as<evmc_bytes32>(base + i + offset);
             auto const &x = stack[static_cast<int64_t>(-i) - 1];
             // Make sure we do not store zero, because incorrect non-zero is
             // more likely to be noticed, due to zero being the default:
             auto const s = x < magic ? x + 1 : x;
-            auto const value = store_be_as<bytes32_t>(s);
+            auto const value = store_be_as<evmc_bytes32>(s);
             ctx->host->set_transient_storage(
                 ctx->context, &ctx->env.recipient, &key, &value);
         }

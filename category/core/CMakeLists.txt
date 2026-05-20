@@ -117,6 +117,7 @@ add_library(
   "blake3.hpp"
   "byte_string.hpp"
   "bytes.hpp"
+  "bytes32.h"
   "bytes_hash_compare.hpp"
   "cases.hpp"
   "checked_math.cpp"

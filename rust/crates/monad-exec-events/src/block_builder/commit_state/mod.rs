@@ -25,7 +25,7 @@ use tracing::{debug, error};
 use super::BlockBuilderError;
 use crate::{
     block_builder::{BlockBuilderResult, ExecutedBlockBuilder},
-    ffi::monad_c_bytes32,
+    ffi::monad_bytes32,
     ExecEvent, ExecEventDecoder, ExecEventRef, ExecutedBlock,
 };
 
@@ -60,8 +60,8 @@ pub struct CommitStateBlockUpdate {
 /// Produces block commit state notifications for an execution event ring.
 #[derive(Debug)]
 pub struct CommitStateBlockBuilder {
-    state: HashMap<monad_c_bytes32, (Arc<ExecutedBlock>, BlockCommitState)>,
-    proposals: BTreeMap<u64, HashSet<monad_c_bytes32>>,
+    state: HashMap<monad_bytes32, (Arc<ExecutedBlock>, BlockCommitState)>,
+    proposals: BTreeMap<u64, HashSet<monad_bytes32>>,
 
     block_builder: ExecutedBlockBuilder,
 }

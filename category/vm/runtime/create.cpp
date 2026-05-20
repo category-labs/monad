@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
-#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
@@ -28,7 +27,6 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <cstdint>
 
@@ -104,9 +102,8 @@ namespace monad::vm::runtime
             .sender = ctx->env.recipient,
             .input_data = (*size > 0) ? ctx->memory.data + *offset : nullptr,
             .input_size = *size,
-            .value = static_cast<evmc::bytes32>(store_be_as<bytes32_t>(value)),
-            .create2_salt =
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(salt_word)),
+            .value = store_be_as<evmc_bytes32>(value),
+            .create2_salt = store_be_as<evmc_bytes32>(salt_word),
             .code_address = {},
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,

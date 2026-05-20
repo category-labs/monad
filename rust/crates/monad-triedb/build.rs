@@ -13,31 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=CMakeLists.txt");
     println!("cargo:rerun-if-changed=include/ffi.h");
     println!("cargo:rerun-if-changed=src/ffi.cpp");
     println!("cargo:rerun-if-changed=../../../category");
-    println!("cargo:rerun-if-env-changed=TRIEDB_TARGET");
-    let build_execution_lib =
-        env::var("TRIEDB_TARGET").is_ok_and(|target| target == "triedb_driver");
-    if build_execution_lib {
-        // monad-cxx must set this
-        let monad_execution_dir = env::var("DEP_MONAD_EXECUTION_CMAKE_BINARY_DIR").unwrap();
 
-        let target = "triedb_driver";
-
-        let dst = cmake::Config::new(".")
-            .define("BUILD_SHARED_LIBS", "ON")
-            .define("MONAD_EXECUTION_DIR", monad_execution_dir)
-            .build_target(target)
-            .build();
-
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dst.display());
-        println!("cargo:rustc-link-search=native={}/build", dst.display());
-        println!("cargo:rustc-link-lib=dylib={}", target);
+    if let Some(execution_dir) = monad_build::execution_dir() {
+        monad_build::MonadCMake::new(".", monad_build::MonadCMakeLinkage::Dynamic)
+            .define("MONAD_EXECUTION_DIR", execution_dir)
+            .with_rpath()
+            .build("triedb_driver");
     }
 
     let bindings = bindgen::Builder::default()
@@ -48,7 +36,7 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings");
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_path = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");

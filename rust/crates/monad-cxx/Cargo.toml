@@ -8,5 +8,6 @@ links = "monad_execution"
 tracing = { workspace = true, features = ["log"] }
 
 [build-dependencies]
+monad-build = { workspace = true, features = ["cmake", "metadata"] }
+
 bindgen = { workspace = true }
-cmake = { workspace = true }

@@ -1,0 +1,12 @@
+[package]
+name = "monad-build"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cargo_metadata = { workspace = true, optional = true }
+cmake          = { workspace = true, optional = true }
+
+[features]
+cmake = ["dep:cmake"]
+metadata = ["dep:cargo_metadata"]

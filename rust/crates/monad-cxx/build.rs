@@ -21,22 +21,13 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../../../category");
-    println!("cargo:rerun-if-env-changed=TRIEDB_TARGET");
 
-    let build_execution_lib =
-        std::env::var("TRIEDB_TARGET").is_ok_and(|target| target == "triedb_driver");
-    if build_execution_lib {
-        let target = "monad_execution";
-        let dst = cmake::Config::new("../../../")
-            .define("BUILD_SHARED_LIBS", "ON")
-            .build_target(target)
-            .build();
-
-        println!("cargo:rustc-link-search=native={}/build", dst.display());
-        println!("cargo:rustc-link-lib=dylib={}", &target);
-
-        // Tell dependent packages where libmonad_execution.so is
-        println!("cargo:CMAKE_BINARY_DIR={}/build", dst.display())
+    if monad_build::should_build_execution() {
+        monad_build::MonadCMake::new(
+            monad_build::repository_root(),
+            monad_build::MonadCMakeLinkage::Dynamic,
+        )
+        .build("monad_execution");
     }
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());

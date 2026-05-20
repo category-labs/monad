@@ -13,15 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=../../../");
-
-    let has_execution_lib = env::var("TRIEDB_TARGET").is_ok_and(|target| target == "triedb_driver");
-    if has_execution_lib {
-        println!("cargo:rustc-link-lib=dylib=monad_execution");
-    }
 
     let bindings = bindgen::Builder::default()
         .header("../../../category/execution/ethereum/chain/chain_config.h")
@@ -32,7 +27,7 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings");
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_path = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");

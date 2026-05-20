@@ -32,16 +32,12 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../../../category");
 
-    let client_target = "monad_event";
-    let client_dst = cmake::Config::new("../../../category/event")
-        .build_target(client_target)
-        .build();
+    monad_build::MonadCMake::new(
+        monad_build::repository_root().join("category/event"),
+        monad_build::MonadCMakeLinkage::Static,
+    )
+    .build("monad_event");
 
-    println!(
-        "cargo:rustc-link-search=native={}/build",
-        client_dst.display()
-    );
-    println!("cargo:rustc-link-lib=static=monad_event");
     println!("cargo:rustc-link-lib=zstd");
     #[cfg(target_os = "linux")]
     println!("cargo:rustc-link-lib=hugetlbfs");

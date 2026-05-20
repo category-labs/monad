@@ -16,6 +16,7 @@ ignored = [
 ]
 
 [workspace.dependencies]
+monad-build = { path = "./crates/monad-build" }
 monad-cxx = { path = "./crates/monad-cxx" }
 monad-ethcall = { path = "./crates/monad-ethcall" }
 monad-event-ring = { path = "./crates/monad-event-ring" }
@@ -30,6 +31,7 @@ alloy-rlp        = { version = "0.3",     default-features = false }
 alloy-rpc-types  = { version = "2.0",     default-features = false, features = ["eth"] }
 alloy-sol-types  = { version = "1.5",     default-features = false }
 bindgen          = { version = "0.71.1",  default-features = false, features = ["logging", "runtime"] }
+cargo_metadata   = { version = "0.23.1",  default-features = false }
 cc               = { version = "1.2.27",  default-features = false }
 chrono           = { version = "0.4.34",  default-features = false, features = ["std", "clock"] }
 clap             = { version = "4.2",     default-features = false }

@@ -97,6 +97,7 @@ checksum = "2919c5a56a1007492da313e7a3b6d45ef5edc5d33416fdec63c0d7a2702a0d20"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
+ "k256",
  "serde",
  "thiserror",
 ]
@@ -161,6 +162,7 @@ dependencies = [
  "hashbrown",
  "indexmap",
  "itoa",
+ "k256",
  "paste",
  "rand 0.9.2",
  "ruint",
@@ -1438,6 +1440,7 @@ dependencies = [
  "futures",
  "hex",
  "monad-cxx",
+ "monad-tx-envelope",
  "serde",
  "tracing",
 ]
@@ -1472,6 +1475,7 @@ dependencies = [
  "itertools 0.10.5",
  "lazy_static",
  "monad-event-ring",
+ "monad-tx-envelope",
  "ratatui",
  "serde",
  "serde_json",
@@ -1496,6 +1500,14 @@ dependencies = [
  "futures",
  "monad-cxx",
  "tracing",
+]
+
+[[package]]
+name = "monad-tx-envelope"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
 ]
 
 [[package]]

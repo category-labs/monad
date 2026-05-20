@@ -94,7 +94,10 @@ impl ExecutedBlock {
     }
 
     /// Creates an alloy block with a full transaction list.
-    pub fn to_alloy_rpc(&self) -> alloy_rpc_types::Block {
+    pub fn to_alloy_rpc(
+        &self,
+    ) -> alloy_rpc_types::Block<alloy_rpc_types::Transaction<monad_tx_envelope::MonadTxEnvelope>>
+    {
         let header = self.to_alloy_rpc_header();
 
         let transactions = self
@@ -130,12 +133,15 @@ impl ExecutedBlock {
     /// Iterate over alloy transactions.
     pub fn iter_alloy_tx_envelopes(
         &self,
-    ) -> impl Iterator<Item = alloy_consensus::TxEnvelope> + '_ {
+    ) -> impl Iterator<Item = monad_tx_envelope::MonadTxEnvelope> + '_ {
         self.txns.iter().map(|tx| tx.to_alloy())
     }
 
     /// Iterate over alloy rpc transactions.
-    pub fn iter_alloy_rpc_txs(&self) -> impl Iterator<Item = alloy_rpc_types::Transaction> + '_ {
+    pub fn iter_alloy_rpc_txs(
+        &self,
+    ) -> impl Iterator<Item = alloy_rpc_types::Transaction<monad_tx_envelope::MonadTxEnvelope>> + '_
+    {
         let block_hash = alloy_primitives::FixedBytes::from(self.end.eth_block_hash.bytes);
         let block_number = self.start.eth_block_input.number;
         let block_timestamp = self.start.eth_block_input.timestamp;
@@ -323,7 +329,7 @@ pub struct ExecutedTxn {
 #[cfg(feature = "alloy")]
 impl ExecutedTxn {
     /// Creates an alloy tx envelope.
-    pub fn to_alloy(&self) -> alloy_consensus::TxEnvelope {
+    pub fn to_alloy(&self) -> monad_tx_envelope::MonadTxEnvelope {
         let to = if self.header.is_contract_creation {
             alloy_primitives::TxKind::Create
         } else {
@@ -398,7 +404,7 @@ impl ExecutedTxn {
 
         match self.header.txn_type {
             ffi::MONAD_TXN_LEGACY => {
-                alloy_consensus::TxEnvelope::Legacy(alloy_consensus::Signed::new_unchecked(
+                monad_tx_envelope::MonadTxEnvelope::Legacy(alloy_consensus::Signed::new_unchecked(
                     alloy_consensus::TxLegacy {
                         chain_id: (chain_id != 0).then_some(chain_id),
                         nonce: self.header.nonce,
@@ -413,7 +419,7 @@ impl ExecutedTxn {
                 ))
             }
             ffi::MONAD_TXN_EIP2930 => {
-                alloy_consensus::TxEnvelope::Eip2930(alloy_consensus::Signed::new_unchecked(
+                monad_tx_envelope::MonadTxEnvelope::Eip2930(alloy_consensus::Signed::new_unchecked(
                     alloy_consensus::TxEip2930 {
                         chain_id,
                         nonce: self.header.nonce,
@@ -429,7 +435,7 @@ impl ExecutedTxn {
                 ))
             }
             ffi::MONAD_TXN_EIP1559 => {
-                alloy_consensus::TxEnvelope::Eip1559(alloy_consensus::Signed::new_unchecked(
+                monad_tx_envelope::MonadTxEnvelope::Eip1559(alloy_consensus::Signed::new_unchecked(
                     alloy_consensus::TxEip1559 {
                         chain_id,
                         nonce: self.header.nonce,
@@ -453,7 +459,7 @@ impl ExecutedTxn {
                 unreachable!("ExecutedTxn encountered unsupported EIP4844 tx type");
             }
             ffi::MONAD_TXN_EIP7702 => {
-                alloy_consensus::TxEnvelope::Eip7702(alloy_consensus::Signed::new_unchecked(
+                monad_tx_envelope::MonadTxEnvelope::Eip7702(alloy_consensus::Signed::new_unchecked(
                     alloy_consensus::TxEip7702 {
                         chain_id,
                         nonce: self.header.nonce,
@@ -488,7 +494,7 @@ impl ExecutedTxn {
     /// Creates a recovered alloy tx envelope.
     pub fn to_alloy_recovered(
         &self,
-    ) -> alloy_consensus::transaction::Recovered<alloy_consensus::TxEnvelope> {
+    ) -> alloy_consensus::transaction::Recovered<monad_tx_envelope::MonadTxEnvelope> {
         alloy_consensus::transaction::Recovered::new_unchecked(
             self.to_alloy(),
             alloy_primitives::Address::from(self.sender.bytes),

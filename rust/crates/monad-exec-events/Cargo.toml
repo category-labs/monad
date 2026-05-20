@@ -6,6 +6,7 @@ edition = "2021"
 
 [dependencies]
 monad-event-ring = { workspace = true }
+monad-tx-envelope = { workspace = true, optional = true }
 
 alloy-consensus = { workspace = true, optional = true }
 alloy-eips = { workspace = true, optional = true }
@@ -33,7 +34,7 @@ strum = { workspace = true }
 
 [features]
 default = []
-alloy = ["dep:alloy-consensus", "dep:alloy-eips", "dep:alloy-primitives", "dep:alloy-rpc-types"]
+alloy = ["dep:alloy-consensus", "dep:alloy-eips", "dep:alloy-primitives", "dep:alloy-rpc-types", "dep:monad-tx-envelope"]
 
 [[bench]]
 name = "snapshot_exec"

@@ -10,6 +10,7 @@ bench = false
 
 [dependencies]
 monad-cxx = { workspace = true }
+monad-tx-envelope = { workspace = true }
 
 alloy-consensus = { workspace = true }
 alloy-eips = { workspace = true }

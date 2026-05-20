@@ -19,12 +19,13 @@ use std::{
     path::Path,
 };
 
-use alloy_consensus::{Header, Transaction as _, TxEnvelope};
+use alloy_consensus::{Header, Transaction as _};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Address, Bytes, B256, U256, U64};
 use alloy_rlp::Encodable;
 use alloy_sol_types::decode_revert_reason;
 use futures::channel::oneshot::{channel, Sender};
+use monad_tx_envelope::MonadTxEnvelope;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
@@ -208,7 +209,7 @@ pub type StateOverrideSet = HashMap<Address, StateOverrideObject>;
 
 pub struct EthCallRequest<'a> {
     pub chain_id: ChainId,
-    pub transaction: &'a TxEnvelope,
+    pub transaction: &'a MonadTxEnvelope,
     pub block_header: &'a Header,
     pub sender: Address,
     pub block_number: u64,

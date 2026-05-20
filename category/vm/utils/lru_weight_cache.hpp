@@ -99,6 +99,14 @@ namespace monad::vm::utils
             return is_new_key;
         }
 
+        // Not thread-safe with other cache operations.
+        void clear()
+        {
+            hmap_.clear();
+            lru_.clear();
+            weight_.store(0, std::memory_order_release);
+        }
+
         /// Like insert, but does not overwrite an existing value in the cache.
         /// Instead if a value already exists under `key` then it will
         /// overwrite the `value` argument with the existing value.
@@ -234,6 +242,12 @@ namespace monad::vm::utils
         public:
             explicit LruList(int64_t const lru_update_period)
                 : lru_update_period_{lru_update_period}
+            {
+                clear();
+            }
+
+            // Not thread-safe with other LruList operations.
+            void clear()
             {
                 base_.second.next_ = &base_;
                 base_.second.prev_ = &base_;

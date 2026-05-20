@@ -251,6 +251,25 @@ TEST_F(LruWeightCacheTest, reread_evict)
     ASSERT_FALSE(weight_cache_find(base_key).has_value());
 }
 
+TEST_F(LruWeightCacheTest, clear)
+{
+    uint32_t total_weight = 0;
+    for (size_t i = 0; i < 3; ++i) {
+        Value const v = default_values(elems[i]);
+        weight_cache_.insert(elems[i], v, v);
+        total_weight += v;
+    }
+    ASSERT_EQ(weight_cache_.size(), 3u);
+    ASSERT_EQ(weight_cache_.approx_weight(), total_weight);
+
+    weight_cache_.clear();
+    ASSERT_EQ(weight_cache_.size(), 0u);
+    ASSERT_EQ(weight_cache_.approx_weight(), 0u);
+    for (size_t i = 0; i < 3; ++i) {
+        ASSERT_FALSE(weight_cache_find(elems[i]).has_value());
+    }
+}
+
 TEST_F(LruWeightCacheTest, is_consistent)
 {
     for (uint32_t i = 0; i < 20; ++i) {

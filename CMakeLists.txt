@@ -330,6 +330,7 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/test/utils)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/ethereum_test)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/unit/common)
 add_subdirectory(${PROJECT_SOURCE_DIR}/test/vm)
+add_subdirectory(${PROJECT_SOURCE_DIR}/test/witness_fuzzer)
 
 # ##############################################################################
 # utilities

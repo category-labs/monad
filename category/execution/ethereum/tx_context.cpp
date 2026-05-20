@@ -36,22 +36,21 @@ evmc_tx_context get_tx_context(
     uint256_t const &chain_id)
 {
     return {
-        .tx_gas_price = store_be_as<bytes32_t>(
-            gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0))),
+        .tx_gas_price =
+            to_evmc(gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0))),
         .tx_origin = sender,
         .block_coinbase = hdr.beneficiary,
         .block_number = static_cast<int64_t>(hdr.number),
         .block_timestamp = static_cast<int64_t>(hdr.timestamp),
         .block_gas_limit = static_cast<int64_t>(hdr.gas_limit),
-        .block_prev_randao = hdr.difficulty
-                                 ? store_be_as<bytes32_t>(hdr.difficulty)
-                                 : hdr.prev_randao,
-        .chain_id = store_be_as<bytes32_t>(chain_id),
-        .block_base_fee =
-            store_be_as<bytes32_t>(hdr.base_fee_per_gas.value_or(0)),
-        .blob_base_fee = store_be_as<bytes32_t>(
+        .block_prev_randao =
+            hdr.difficulty ? to_evmc(hdr.difficulty) : to_evmc(hdr.prev_randao),
+        .chain_id = to_evmc(chain_id),
+        .block_base_fee = to_evmc(hdr.base_fee_per_gas.value_or(0)),
+        .blob_base_fee = to_evmc(
             get_base_fee_per_blob_gas<traits>(hdr.excess_blob_gas.value_or(0))),
-        .blob_hashes = tx.blob_versioned_hashes.data(),
+        .blob_hashes = reinterpret_cast<evmc_bytes32 const *>(
+            tx.blob_versioned_hashes.data()),
         .blob_hashes_count = tx.blob_versioned_hashes.size(),
         .initcodes = nullptr, // TODO
         .initcodes_count = 0, // TODO

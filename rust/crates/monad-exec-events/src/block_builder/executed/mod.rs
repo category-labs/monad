@@ -20,7 +20,7 @@ use self::state::{BlockReassemblyState, TxnOutputReassemblyState, TxnReassemblyS
 use super::{BlockBuilderError, BlockBuilderResult, ReassemblyError};
 use crate::{
     ffi::{
-        monad_c_access_list_entry, monad_c_auth_list_entry, monad_c_bytes32,
+        monad_bytes32, monad_c_access_list_entry, monad_c_auth_list_entry,
         monad_exec_txn_access_list_entry, monad_exec_txn_auth_list_entry,
         monad_exec_txn_evm_output, monad_exec_txn_header_start,
     },
@@ -279,9 +279,9 @@ impl ExecutedBlockBuilder {
                 let storage_keys = storage_key_bytes
                     .into_vec()
                     .into_iter()
-                    .chunks(std::mem::size_of::<monad_c_bytes32>())
+                    .chunks(std::mem::size_of::<monad_bytes32>())
                     .into_iter()
-                    .map(|chunk| monad_c_bytes32 {
+                    .map(|chunk| monad_bytes32 {
                         bytes: chunk.collect_vec().try_into().unwrap(),
                     })
                     .collect_vec()
@@ -410,10 +410,10 @@ impl ExecutedBlockBuilder {
                         topic: topic_bytes
                             .into_vec()
                             .into_iter()
-                            .chunks(std::mem::size_of::<monad_c_bytes32>())
+                            .chunks(std::mem::size_of::<monad_bytes32>())
                             .into_iter()
                             .take(4)
-                            .map(|chunk| monad_c_bytes32 {
+                            .map(|chunk| monad_bytes32 {
                                 bytes: chunk.collect_vec().try_into().unwrap(),
                             })
                             .collect(),

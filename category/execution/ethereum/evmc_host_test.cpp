@@ -130,7 +130,8 @@ TYPED_TEST(TraitsTest, emit_log)
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32};
     static constexpr auto topic1{
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
-    static constexpr evmc::bytes32 topics[] = {topic0, topic1};
+    static constexpr evmc::bytes32 topics[] = {
+        to_evmc(topic0), to_evmc(topic1)};
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};

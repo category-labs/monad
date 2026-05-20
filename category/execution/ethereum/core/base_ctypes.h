@@ -40,14 +40,11 @@
 #if MONAD_CXX_CTYPES_USE_EVMC_HPP
     #include <evmc/evmc.hpp>
     using monad_c_address = evmc::address;
-    using monad_c_bytes32 = evmc::bytes32;
 #elif MONAD_CXX_CTYPES_USE_EVMC
     #include <evmc/evmc.h>
     using monad_c_address = evmc_address;
-    using monad_c_bytes32 = evmc_bytes32;
 #else
     using monad_c_address = std::array<std::uint8_t, 20>;
-    using monad_c_bytes32 = std::array<std::uint8_t, 32>;
 #endif
 
 #if MONAD_CXX_CTYPES_USE_MONAD_INTS
@@ -80,17 +77,11 @@ typedef struct monad_c_b64
 #if MONAD_C_CTYPES_USE_EVMC
     #include <evmc/evmc.h>
     typedef evmc_address monad_c_address;
-    typedef evmc_bytes32 monad_c_bytes32;
 #else
     typedef struct monad_c_address
     {
         uint8_t bytes[20];
     } monad_c_address;
-
-    typedef struct monad_c_bytes32
-    {
-        uint8_t bytes[32];
-    } monad_c_bytes32;
 #endif
 
 // 256-bit integer stored in native endian byte order; the rationale for the

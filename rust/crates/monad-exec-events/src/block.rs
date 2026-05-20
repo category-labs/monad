@@ -19,7 +19,7 @@ use itertools::Itertools;
 #[cfg(feature = "alloy")]
 use crate::ffi;
 use crate::ffi::{
-    monad_c_address, monad_c_bytes32, monad_c_eth_txn_header, monad_c_eth_txn_receipt,
+    monad_bytes32, monad_c_address, monad_c_eth_txn_header, monad_c_eth_txn_receipt,
     monad_c_uint256_ne, monad_exec_block_end, monad_exec_block_start, monad_exec_txn_call_frame,
 };
 
@@ -309,7 +309,7 @@ impl ExecutedBlock {
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
 pub struct ExecutedTxn {
-    pub hash: monad_c_bytes32,
+    pub hash: monad_bytes32,
     pub sender: monad_c_address,
     pub header: monad_c_eth_txn_header,
     pub input: Box<[u8]>,
@@ -511,7 +511,7 @@ impl ExecutedTxn {
 #[derive(Clone, Debug)]
 pub struct ExecutedTxnLog {
     pub address: monad_c_address,
-    pub topic: Box<[monad_c_bytes32]>,
+    pub topic: Box<[monad_bytes32]>,
     pub data: Box<[u8]>,
 }
 
@@ -546,7 +546,7 @@ pub struct ExecutedTxnCallFrame {
 #[derive(Clone, Debug)]
 pub struct ExecutedTxnAccessListEntry {
     pub address: monad_c_address,
-    pub storage_keys: Box<[monad_c_bytes32]>,
+    pub storage_keys: Box<[monad_bytes32]>,
 }
 
 /// Authorization reconstructed from execution events.

@@ -15,16 +15,16 @@
 
 #pragma once
 
-#include <category/execution/ethereum/core/base_ctypes.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <category/core/bytes32.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
 
 typedef struct TriedbRoInner TriedbRoInner;
 
@@ -83,11 +83,11 @@ int triedb_finalize(uint8_t const *value);
 // returns MAX if doesn't exist
 uint64_t triedb_latest_proposed_version(TriedbRoInner *);
 // returns all-zeros if doesn't exist
-monad_c_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *);
+monad_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *);
 // returns MAX if doesn't exist
 uint64_t triedb_latest_voted_version(TriedbRoInner *);
 // returns all-zeros if doesn't exist
-monad_c_bytes32 triedb_latest_voted_block_id(TriedbRoInner *);
+monad_bytes32 triedb_latest_voted_block_id(TriedbRoInner *);
 // returns MAX if doesn't exist
 uint64_t triedb_latest_finalized_version(TriedbRoInner *);
 // returns MAX if doesn't exist

@@ -30,8 +30,8 @@ namespace monad
     namespace constants
     {
         inline constexpr evmc_revision EARLIEST_SUPPORTED_EVM_FORK =
-            EVMC_BYZANTIUM;
-        inline constexpr uint64_t EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER = 4370000;
+            EVMC_CONSTANTINOPLE;
+        inline constexpr uint64_t EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER = 7280000;
 
         inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
         inline constexpr size_t MAX_INITCODE_SIZE_EIP3860 =
@@ -74,7 +74,8 @@ namespace monad
     template <evmc_revision Rev>
     struct EvmTraits
     {
-        static_assert(Rev >= EVMC_BYZANTIUM, "EVM revision is not supported");
+        static_assert(
+            Rev >= EVMC_CONSTANTINOPLE, "EVM revision is not supported");
 
         static consteval evmc_revision evm_rev() noexcept
         {
@@ -307,7 +308,7 @@ namespace monad
         is_specialization_of_v<MonadTraits, T>;
 
     static_assert(is_monad_trait_v<MonadTraits<MONAD_ZERO>> == true);
-    static_assert(is_monad_trait_v<EvmTraits<EVMC_BYZANTIUM>> == false);
+    static_assert(is_monad_trait_v<EvmTraits<EVMC_CONSTANTINOPLE>> == false);
     static_assert(is_evm_trait_v<MonadTraits<MONAD_ZERO>> == false);
-    static_assert(is_evm_trait_v<EvmTraits<EVMC_BYZANTIUM>> == true);
+    static_assert(is_evm_trait_v<EvmTraits<EVMC_CONSTANTINOPLE>> == true);
 }

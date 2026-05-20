@@ -69,9 +69,6 @@ evmc_revision EthereumMainnet::get_revision(
     else if (block_number >= 7280000) {
         return EVMC_PETERSBURG;
     }
-    else if (block_number >= 4370000) {
-        return EVMC_BYZANTIUM;
-    }
     MONAD_ASSERT(false, "unsupported fork");
 }
 

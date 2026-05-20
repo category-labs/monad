@@ -354,6 +354,8 @@ TYPED_TEST(VMTraitsTest, JumpiLiveDestDeferredComparisonBug)
 
 TYPED_TEST(VMTraitsTest, Cmov32BitBug)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_BYZANTIUM);
+
     TestFixture::execute(
         1000,
         {PUSH1,
@@ -367,13 +369,7 @@ TYPED_TEST(VMTraitsTest, Cmov32BitBug)
          SAR,
          ADDRESS,
          JUMPI});
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CONSTANTINOPLE) {
-        // SAR opcode only available since EIP-145
-        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
-    }
-    else {
-        ASSERT_NE(this->result_.status_code, EVMC_SUCCESS);
-    }
+    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
 }
 
 TYPED_TEST(VMTraitsTest, MissingDischargeInJumpiKeepFallthroughStack)

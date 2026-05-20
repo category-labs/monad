@@ -91,25 +91,24 @@ TYPED_TEST(RuntimeTraitsTest, CreateFailure)
 
 TYPED_TEST(RuntimeTraitsTest, Create2)
 {
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CONSTANTINOPLE) {
-        TestFixture::call(mstore<typename TestFixture::Trait>, 0, prog);
-        ASSERT_EQ(this->ctx_.memory.data[31], 0xF3);
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_BYZANTIUM);
 
-        this->ctx_.gas_remaining = 1000000;
-        this->host_.call_result =
-            TestFixture::create_result(result_addr, 900000, 10);
+    TestFixture::call(mstore<typename TestFixture::Trait>, 0, prog);
+    ASSERT_EQ(this->ctx_.memory.data[31], 0xF3);
 
-        auto do_create2 =
-            TestFixture::wrap(create2<typename TestFixture::Trait>);
+    this->ctx_.gas_remaining = 1000000;
+    this->host_.call_result =
+        TestFixture::create_result(result_addr, 900000, 10);
 
-        uint256_t const addr = do_create2(0, 19, 13, 0x99);
+    auto do_create2 = TestFixture::wrap(create2<typename TestFixture::Trait>);
 
-        ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
-        ASSERT_EQ(addr, uint256_from_address(result_addr));
+    uint256_t const addr = do_create2(0, 19, 13, 0x99);
 
-        ASSERT_EQ(this->ctx_.gas_remaining, 915624);
-        ASSERT_EQ(this->ctx_.gas_refund, 10);
-    }
+    ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
+    ASSERT_EQ(addr, uint256_from_address(result_addr));
+
+    ASSERT_EQ(this->ctx_.gas_remaining, 915624);
+    ASSERT_EQ(this->ctx_.gas_refund, 10);
 }
 
 TYPED_TEST(RuntimeTraitsTest, CreateAtMaxCodeSize)

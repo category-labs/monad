@@ -29,7 +29,6 @@ MONAD_TEST_NAMESPACE_BEGIN
 inline std::unordered_map<
     std::string, std::variant<evmc_revision, monad_revision>> const
     revision_map = {
-        {"Byzantium", EVMC_BYZANTIUM},
         {"Constantinople", EVMC_CONSTANTINOPLE},
         {"ConstantinopleFix", EVMC_PETERSBURG},
         {"Petersburg", EVMC_PETERSBURG},

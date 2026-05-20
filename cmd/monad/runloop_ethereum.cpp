@@ -91,6 +91,8 @@ Result<void> process_ethereum_block(
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing)
 {
+    static_assert(traits::evm_rev() > EVMC_BYZANTIUM);
+
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
 
@@ -187,14 +189,7 @@ Result<void> process_ethereum_block(
     db.commit(
         block_id, builder, block.header, std::move(state), [&](BlockHeader &h) {
             // second stage: populate block header
-            if constexpr (traits::evm_rev() <= EVMC_BYZANTIUM) {
-                // TrieDb receipts root is not valid pre-Byzantium; use the
-                // block's original receipts root.
-                h.receipts_root = block.header.receipts_root;
-            }
-            else {
-                h.receipts_root = db.receipts_root();
-            }
+            h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();
             h.withdrawals_root = db.withdrawals_root();
             h.transactions_root = db.transactions_root();

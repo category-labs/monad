@@ -43,8 +43,6 @@
         return f<::monad::EvmTraits<EVMC_PETERSBURG>>(__VA_ARGS__);            \
     case EVMC_CONSTANTINOPLE:                                                  \
         return f<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>(__VA_ARGS__);        \
-    case EVMC_BYZANTIUM:                                                       \
-        return f<::monad::EvmTraits<EVMC_BYZANTIUM>>(__VA_ARGS__);             \
     default:                                                                   \
         break;                                                                 \
     }

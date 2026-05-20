@@ -227,6 +227,8 @@ Result<BlockExecOutput> execute(
     bool enable_tracing, std::vector<Receipt> &receipts,
     std::vector<std::vector<CallFrame>> &call_frames)
 {
+    static_assert(traits::evm_rev() > EVMC_BYZANTIUM);
+
     using namespace monad::test;
 
     TraitsMainnet<traits> const chain{};
@@ -321,14 +323,7 @@ Result<BlockExecOutput> execute(
         block.header,
         std::move(state),
         [&](BlockHeader &h) {
-            if constexpr (traits::evm_rev() <= EVMC_BYZANTIUM) {
-                // TrieDb receipts root is not valid pre-Byzantium; use the
-                // block's original receipts root.
-                h.receipts_root = block.header.receipts_root;
-            }
-            else {
-                h.receipts_root = db.receipts_root();
-            }
+            h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();
             h.withdrawals_root = db.withdrawals_root();
             h.transactions_root = db.transactions_root();

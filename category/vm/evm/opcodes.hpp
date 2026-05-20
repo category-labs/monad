@@ -291,7 +291,7 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_BYZANTIUM>>()
+    make_opcode_table<EvmTraits<EVMC_CONSTANTINOPLE>>()
     {
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
@@ -322,9 +322,9 @@ namespace monad::vm::compiler
             OpCodeInfo{"XOR", 0, 2, 1, false, 3, 0}, // 0x18,
             OpCodeInfo{"NOT", 0, 1, 1, false, 3, 0}, // 0x19,
             OpCodeInfo{"BYTE", 0, 2, 1, false, 3, 0}, // 0x1A,
-            unknown_opcode_info,
-            unknown_opcode_info,
-            unknown_opcode_info,
+            OpCodeInfo{"SHL", 0, 2, 1, false, 3, 0}, // 0x1B,
+            OpCodeInfo{"SHR", 0, 2, 1, false, 3, 0}, // 0x1C,
+            OpCodeInfo{"SAR", 0, 2, 1, false, 3, 0}, // 0x1D,
             unknown_opcode_info,
             unknown_opcode_info,
 
@@ -360,7 +360,7 @@ namespace monad::vm::compiler
             OpCodeInfo{"EXTCODECOPY", 0, 4, 0, true, 700, 0}, // 0x3C,
             OpCodeInfo{"RETURNDATASIZE", 0, 0, 1, false, 2, 0}, // 0x3D,
             OpCodeInfo{"RETURNDATACOPY", 0, 3, 0, true, 3, 0}, // 0x3E,
-            unknown_opcode_info,
+            OpCodeInfo{"EXTCODEHASH", 0, 1, 1, true, 400, 0}, // 0x3F,
 
             OpCodeInfo{"BLOCKHASH", 0, 1, 1, false, 20, 0}, // 0x40,
             OpCodeInfo{"COINBASE", 0, 0, 1, false, 2, 0}, // 0x41,
@@ -384,7 +384,7 @@ namespace monad::vm::compiler
             OpCodeInfo{"MSTORE", 0, 2, 0, true, 3, 0}, // 0x52,
             OpCodeInfo{"MSTORE8", 0, 2, 0, true, 3, 0}, // 0x53,
             OpCodeInfo{"SLOAD", 0, 1, 1, true, 200, 0}, // 0x54,
-            OpCodeInfo{"SSTORE", 0, 2, 0, true, 5000, 0}, // 0x55,
+            OpCodeInfo{"SSTORE", 0, 2, 0, true, 200, 0}, // 0x55,
             OpCodeInfo{"JUMP", 0, 1, 0, false, 8, 0}, // 0x56,
             OpCodeInfo{"JUMPI", 0, 2, 0, false, 10, 0}, // 0x57,
             OpCodeInfo{"PC", 0, 0, 1, false, 2, 0}, // 0x58,
@@ -554,7 +554,7 @@ namespace monad::vm::compiler
             OpCodeInfo{"CALLCODE", 0, 7, 1, true, 700, 0}, // 0xF2,
             OpCodeInfo{"RETURN", 0, 2, 0, true, 0, 0}, // 0xF3,
             OpCodeInfo{"DELEGATECALL", 0, 6, 1, true, 700, 0}, // 0xF4,
-            unknown_opcode_info,
+            OpCodeInfo{"CREATE2", 0, 4, 1, true, 32000, 0}, // 0xF5,
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
@@ -566,25 +566,6 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             OpCodeInfo{"SELFDESTRUCT", 0, 1, 0, true, 5000, 0} // 0xFF,
         };
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_CONSTANTINOPLE>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_CONSTANTINOPLE)>>();
-
-        add_opcode(0x1B, table, {"SHL", 0, 2, 1, false, 3, 0});
-        add_opcode(0x1C, table, {"SHR", 0, 2, 1, false, 3, 0});
-        add_opcode(0x1D, table, {"SAR", 0, 2, 1, false, 3, 0});
-        add_opcode(0x3F, table, {"EXTCODEHASH", 0, 1, 1, true, 400, 0});
-        add_opcode(0xF5, table, {"CREATE2", 0, 4, 1, true, 32000, 0});
-
-        // EIP-1283
-        table[SSTORE].min_gas = 200;
-
-        return table;
     }
 
     template <>

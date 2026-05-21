@@ -97,26 +97,19 @@ namespace
         std::memcpy(out.bytes, cv, BLAKE3_OUT_LEN);
         return out;
     }
-} // namespace
 
-bytes32_t page_commit(storage_page_t const &page)
-{
-    if (page.is_empty()) {
-        // Optimization for empty page
-        return blake3_seal(0, nullptr);
-    }
-
-    uint64_t const pair_bitmap = page.pair_bitmap();
-
-    // Phase 1 — Leaf init: hash active pair-leaves with LEAF_IV.
-    // scratch is pair-indexed (entry i is meaningful iff bit i is in
-    // pair_bitmap).
-    bytes32_t scratch[NUM_PAIRS];
+    // Phase 1 — Leaf init: hash the 64-byte (left || right) pair-leaf for
+    // every bit set in pair_bitmap with LEAF_IV (DERIVE_KEY_MATERIAL flag).
+    // Writes results into `scratch`, indexed by pair index; entries whose
+    // bit is not set in pair_bitmap are left untouched.
+    void init_leaves(
+        storage_page_t const &page, uint64_t const pair_bitmap,
+        bytes32_t (&scratch)[NUM_PAIRS])
     {
-        uint8_t const *inputs[NUM_PAIRS];
+        uint8_t valid_pairs[NUM_PAIRS][BLAKE3_BLOCK_LEN];
+        uint8_t const *inputs[NUM_PAIRS] = {};
         uint8_t indices[NUM_PAIRS];
         size_t n = 0;
-        uint8_t valid_pairs[NUM_PAIRS][BLAKE3_BLOCK_LEN];
         for (uint64_t bits = pair_bitmap; bits != 0; bits &= bits - 1, ++n) {
             auto const i = static_cast<uint8_t>(std::countr_zero(bits));
             auto const left_idx = static_cast<uint8_t>(2 * i);
@@ -146,20 +139,19 @@ bytes32_t page_commit(storage_page_t const &page)
         }
     }
 
-    // Phase 2 — Merge: bitmap-driven bottom-up reduction.
+    // Phase 2 — Merge one level: bitmap-driven sibling reduction.
     //
-    // Invariant: scratch[i] holds the live node whose representative
-    // leaf-index is i, exactly when bit i of bm is set. Singletons that
-    // don't pair this level need no copy, they stay in scratch with
-    // their bit in bm and reappear at the next level. When two indices
-    // (prev, pos) pair, we hash their values into scratch[prev] and clear
-    // bit `pos` from bm; the merged node keeps the left's representative
-    // index so the level-d+1 sibling check works unchanged.
-    //
-    // The popcount==1 case is handled by the loop condition without
-    // entering the body.
-    uint64_t bm = pair_bitmap;
-    for (uint8_t bit = 0; bit < 6 && std::popcount(bm) > 1; ++bit) {
+    // Invariant on entry: scratch[i] holds the live node whose
+    // representative leaf-index is i, exactly when bit i of bm is set.
+    // Singletons that don't pair this level need no copy; they stay in
+    // scratch with their bit in bm and reappear at the next level. When
+    // two indices (prev, pos) pair, we hash their values into
+    // scratch[prev] and clear bit `pos` from bm; the merged node keeps
+    // the left's representative index so the level-d+1 sibling check
+    // works unchanged. Returns the updated bm.
+    uint64_t merge_at_level(
+        uint8_t const level, uint64_t bm, bytes32_t (&scratch)[NUM_PAIRS])
+    {
         // Per-level scratchpads, sized to NUM_PAIRS/2 because at most
         // half of the surviving entries can pair into merges this level.
         // Each merge hashes scratch[left] || scratch[right] and writes
@@ -169,7 +161,7 @@ bytes32_t page_commit(storage_page_t const &page)
         uint8_t rights[NUM_PAIRS / 2]; // index cleared from bm; slot abandoned
         uint8_t blocks[NUM_PAIRS / 2]
                       [BLAKE3_BLOCK_LEN]; // (left || right) bytes to hash
-        uint8_t const *inputs[NUM_PAIRS / 2]; // pointers into blocks[]
+        uint8_t const *inputs[NUM_PAIRS / 2] = {}; // pointers into blocks[]
         size_t merge_count = 0;
 
         // Walk surviving indices in ascending order, pairing siblings and
@@ -179,9 +171,9 @@ bytes32_t page_commit(storage_page_t const &page)
         while (bits != 0) {
             auto const pos = static_cast<uint8_t>(std::countr_zero(bits));
             bits &= bits - 1;
-            bool const sibling = prev != 0xFF &&
-                                 (prev >> (bit + 1)) == (pos >> (bit + 1)) &&
-                                 ((prev >> bit) & 1) == 0;
+            bool const sibling =
+                prev != 0xFF && (prev >> (level + 1)) == (pos >> (level + 1)) &&
+                ((prev >> level) & 1) == 0;
             if (sibling) {
                 lefts[merge_count] = prev;
                 rights[merge_count] = pos;
@@ -201,7 +193,7 @@ bytes32_t page_commit(storage_page_t const &page)
         }
 
         if (merge_count == 0) {
-            continue;
+            return bm;
         }
 
         bytes32_t flat_out[NUM_PAIRS / 2];
@@ -220,12 +212,37 @@ bytes32_t page_commit(storage_page_t const &page)
             scratch[lefts[j]] = flat_out[j];
             bm &= ~(static_cast<uint64_t>(1) << rights[j]);
         }
+        return bm;
     }
 
-    auto const root_idx = std::countr_zero(bm);
+    // Wraps Phase 1 + Phase 2: runs leaf init then the level-by-level
+    // merge loop, returning the single surviving subtree CV. Caller
+    // must ensure the page is non-empty (pair_bitmap != 0).
+    bytes32_t compute_nonempty_subtree_root(
+        storage_page_t const &page, uint64_t const pair_bitmap)
+    {
+        bytes32_t scratch[NUM_PAIRS];
+        init_leaves(page, pair_bitmap, scratch);
 
-    // Phase 3 — Seal.
-    return blake3_seal(page.bitmap(), scratch[root_idx].bytes);
+        uint64_t bm = pair_bitmap;
+        for (uint8_t level = 0; level < 6 && std::popcount(bm) > 1; ++level) {
+            bm = merge_at_level(level, bm, scratch);
+        }
+
+        auto const root_idx = std::countr_zero(bm);
+        return scratch[root_idx];
+    }
+} // namespace
+
+bytes32_t page_commit(storage_page_t const &page)
+{
+    if (page.is_empty()) {
+        return blake3_seal(0, nullptr);
+    }
+    auto const slot_bitmap = page.bitmap();
+    uint64_t const pair_bitmap = page.pair_bitmap();
+    bytes32_t const root = compute_nonempty_subtree_root(page, pair_bitmap);
+    return blake3_seal(slot_bitmap, root.bytes);
 }
 
 // Storage page run-length encoding (RLE).

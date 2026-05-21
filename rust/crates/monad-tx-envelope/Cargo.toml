@@ -1,0 +1,12 @@
+[package]
+name = "monad-tx-envelope"
+description = "Monad's EIP-2718 transaction envelope type"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+bench = false
+
+[dependencies]
+alloy-consensus = { workspace = true, features = ["k256", "serde"] }
+alloy-primitives = { workspace = true, features = ["serde"] }

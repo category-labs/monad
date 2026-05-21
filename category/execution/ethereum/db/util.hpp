@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -138,6 +139,12 @@ inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
+
+// State-trie key construction. Today both return keccak256(...) of the input;
+// the layout-flip PR replaces these bodies so account paths are the raw 20-byte
+// address and storage paths are the raw 32-byte slot.
+hash256 state_account_path_hash(Address const &);
+hash256 state_storage_path_hash(bytes32_t const &);
 
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_account_db_raw(byte_string_view &);

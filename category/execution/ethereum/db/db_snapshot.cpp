@@ -145,7 +145,9 @@ uint64_t monad_db_snapshot_loader_read_account(
         loader->account_offset_to_update.at(shard).emplace(
             account_offset,
             Update{
-                .key = loader->hash_alloc.emplace_back(keccak256(address)),
+                .key = loader->hash_alloc.emplace_back(
+                    state_account_path_hash(
+                        unaligned_load<Address>(address.data()))),
                 .value = before.substr(0, bytes_consumed),
                 .incarnation = false,
                 .next = UpdateList{},
@@ -492,7 +494,7 @@ void monad_db_snapshot_loader_load(
             uint64_t const consumed = before.size() - storage_view.size();
             update.next.push_front(loader->update_alloc.emplace_back(Update{
                 .key = loader->hash_alloc.emplace_back(
-                    keccak256(to_bytes(res.value().first))),
+                    state_storage_path_hash(to_bytes(res.value().first))),
                 .value = before.substr(0, consumed),
                 .next = UpdateList{},
                 .version = static_cast<int64_t>(loader->block)}));

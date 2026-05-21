@@ -591,6 +591,16 @@ decode_transaction_db(byte_string_view &enc)
     return {transaction, sender};
 }
 
+hash256 state_account_path_hash(Address const &addr)
+{
+    return keccak256({addr.bytes, sizeof(addr.bytes)});
+}
+
+hash256 state_storage_path_hash(bytes32_t const &slot)
+{
+    return keccak256({slot.bytes, sizeof(slot.bytes)});
+}
+
 byte_string encode_account_db(Address const &address, Account const &account)
 {
     byte_string encoded_account;

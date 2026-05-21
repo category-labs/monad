@@ -107,7 +107,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
         concat(
             prefix_,
             STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+            NibblesView{state_account_path_hash(addr)}),
         block_number_);
     if (res.has_error()) {
         stats_account_no_value();
@@ -130,8 +130,8 @@ bytes32_t TrieDb::read_storage(
         concat(
             prefix_,
             STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+            NibblesView{state_account_path_hash(addr)},
+            NibblesView{state_storage_path_hash(key)}),
         block_number_);
     if (res.has_error()) {
         stats_storage_no_value();

@@ -107,7 +107,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
         concat(
             prefix_,
             STATE_NIBBLE,
-            NibblesView{state_account_path_hash(addr)}),
+            NibblesView{state_account_path(addr)}),
         block_number_);
     if (res.has_error()) {
         stats_account_no_value();
@@ -130,8 +130,8 @@ bytes32_t TrieDb::read_storage(
         concat(
             prefix_,
             STATE_NIBBLE,
-            NibblesView{state_account_path_hash(addr)},
-            NibblesView{state_storage_path_hash(key)}),
+            NibblesView{state_account_path(addr)},
+            NibblesView{state_storage_path(key)}),
         block_number_);
     if (res.has_error()) {
         stats_storage_no_value();
@@ -386,11 +386,12 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             }
             path = concat(NibblesView{path}, branch, node.path_nibble_view());
 
-            if (path.nibble_size() == (KECCAK256_SIZE * 2)) {
+            if (path.nibble_size() == STATE_ACCOUNT_PATH_NIBBLES) {
                 handle_account(node);
             }
             else if (
-                path.nibble_size() == ((KECCAK256_SIZE + KECCAK256_SIZE) * 2)) {
+                path.nibble_size() ==
+                (STATE_ACCOUNT_PATH_NIBBLES + STATE_STORAGE_PATH_NIBBLES)) {
                 handle_storage(node);
             }
             return true;
@@ -449,12 +450,13 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
             auto const storage = decode_storage_db(encoded_storage);
 
             auto const acct_key = fmt::format(
-                "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
+                "{}",
+                NibblesView{path}.substr(0, STATE_ACCOUNT_PATH_NIBBLES));
 
             auto const key = fmt::format(
                 "{}",
                 NibblesView{path}.substr(
-                    KECCAK256_SIZE * 2, KECCAK256_SIZE * 2));
+                    STATE_ACCOUNT_PATH_NIBBLES, STATE_STORAGE_PATH_NIBBLES));
 
             auto storage_data_json = nlohmann::json::object();
             storage_data_json["slot"] = fmt::format(

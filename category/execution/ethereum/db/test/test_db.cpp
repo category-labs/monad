@@ -148,8 +148,8 @@ namespace
             mpt::concat(
                 FINALIZED_NIBBLE,
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+                mpt::NibblesView{state_account_path(addr)},
+                mpt::NibblesView{state_storage_path(key)}),
             block_number);
         if (!find_res.has_value()) {
             return {};

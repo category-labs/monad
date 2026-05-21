@@ -35,6 +35,11 @@ MONAD_NAMESPACE_BEGIN
 
 struct BlockHeader;
 
+// State-trie path lengths in nibbles. Account paths are the raw 20-byte
+// address; storage paths are the raw 32-byte slot.
+inline constexpr unsigned STATE_ACCOUNT_PATH_NIBBLES = sizeof(Address) * 2; // 40
+inline constexpr unsigned STATE_STORAGE_PATH_NIBBLES = sizeof(bytes32_t) * 2; // 64
+
 struct MachineBase : public mpt::StateMachine
 {
     static constexpr uint64_t TABLE_PREFIX_LEN = 1;
@@ -81,7 +86,9 @@ struct MachineBase : public mpt::StateMachine
 
     constexpr uint8_t max_depth(uint8_t const prefix_length) const
     {
-        return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
+        return static_cast<uint8_t>(
+            prefix_length + STATE_ACCOUNT_PATH_NIBBLES +
+            STATE_STORAGE_PATH_NIBBLES);
     }
 };
 
@@ -140,11 +147,13 @@ inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
 
-// State-trie key construction. Today both return keccak256(...) of the input;
-// the layout-flip PR replaces these bodies so account paths are the raw 20-byte
-// address and storage paths are the raw 32-byte slot.
-hash256 state_account_path_hash(Address const &);
-hash256 state_storage_path_hash(bytes32_t const &);
+// State-trie key construction. Account paths are the raw 20-byte address
+// (40 nibbles); storage paths are the raw 32-byte slot (64 nibbles). The
+// implicit `byte_string` -> `NibblesView` conversion uses the full length, so
+// callers can just pass the result through `NibblesView{...}` or rely on the
+// implicit conversion.
+byte_string state_account_path(Address const &);
+byte_string state_storage_path(bytes32_t const &);
 
 Result<std::pair<byte_string_view, byte_string_view>>
 decode_account_db_raw(byte_string_view &);

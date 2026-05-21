@@ -192,7 +192,11 @@ Result<void> process_ethereum_block(
         block_id, builder, block.header, std::move(state), [&](BlockHeader &h) {
             // second stage: populate block header
             h.receipts_root = db.receipts_root();
-            h.state_root = db.state_root();
+            // No-keccak state trie: the trie-computed root diverges from
+            // mainnet's canonical state_root. Keep the canonical value so the
+            // block hash chain stays mainnet-compatible and BLOCKHASH returns
+            // canonical hashes.
+            h.state_root = block.header.state_root;
             h.withdrawals_root = db.withdrawals_root();
             h.transactions_root = db.transactions_root();
             h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;

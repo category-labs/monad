@@ -38,6 +38,7 @@ struct monad_db_snapshot_loader
     monad::mpt::Node::SharedPtr root;
     std::array<monad::byte_string, 256> eth_headers;
     std::deque<monad::hash256> hash_alloc;
+    std::deque<monad::byte_string> bytes_alloc;
     std::deque<monad::mpt::Update> update_alloc;
     std::array<
         ankerl::unordered_dense::segmented_map<uint64_t, monad::mpt::Update>,
@@ -119,6 +120,7 @@ void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
         false,
         false);
     loader->hash_alloc.clear();
+    loader->bytes_alloc.clear();
     loader->update_alloc.clear();
     for (auto &map : loader->account_offset_to_update) {
         map.clear();
@@ -145,9 +147,8 @@ uint64_t monad_db_snapshot_loader_read_account(
         loader->account_offset_to_update.at(shard).emplace(
             account_offset,
             Update{
-                .key = loader->hash_alloc.emplace_back(
-                    state_account_path_hash(
-                        unaligned_load<Address>(address.data()))),
+                .key = loader->bytes_alloc.emplace_back(state_account_path(
+                    unaligned_load<Address>(address.data()))),
                 .value = before.substr(0, bytes_consumed),
                 .incarnation = false,
                 .next = UpdateList{},
@@ -242,7 +243,8 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
     {
         using namespace monad;
         using namespace monad::mpt;
-        constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
+        // Code-trie keys are 32-byte keccak hashes of the bytecode.
+        constexpr unsigned CODE_PATH_NIBBLES = KECCAK256_SIZE * 2;
 
         if (branch == INVALID_BRANCH) {
             MONAD_ASSERT(path.length() == 0);
@@ -276,7 +278,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
 
         byte_string_view const val = node.value();
         if (nibble == CODE_NIBBLE) {
-            MONAD_ASSERT(path.length() == HASH_SIZE);
+            MONAD_ASSERT(path.length() == CODE_PATH_NIBBLES);
             uint64_t const len = val.size();
             MONAD_ASSERT(
                 write(
@@ -292,13 +294,15 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         else {
             MONAD_ASSERT(nibble == STATE_NIBBLE);
             monad_snapshot_type type;
-            if (path.length() == HASH_SIZE) {
+            if (path.length() == STATE_ACCOUNT_PATH_NIBBLES) {
                 type = MONAD_SNAPSHOT_ACCOUNT;
                 account_offset = account_bytes_written.at(shard);
                 account_bytes_written.at(shard) += val.size();
             }
             else {
-                MONAD_ASSERT(path.length() == (HASH_SIZE * 2));
+                MONAD_ASSERT(
+                    path.length() ==
+                    (STATE_ACCOUNT_PATH_NIBBLES + STATE_STORAGE_PATH_NIBBLES));
                 type = MONAD_SNAPSHOT_STORAGE;
                 MONAD_ASSERT(
                     write(
@@ -493,8 +497,8 @@ void monad_db_snapshot_loader_load(
             auto &update = account_offset_to_update.at(account_offset);
             uint64_t const consumed = before.size() - storage_view.size();
             update.next.push_front(loader->update_alloc.emplace_back(Update{
-                .key = loader->hash_alloc.emplace_back(
-                    state_storage_path_hash(to_bytes(res.value().first))),
+                .key = loader->bytes_alloc.emplace_back(
+                    state_storage_path(to_bytes(res.value().first))),
                 .value = before.substr(0, consumed),
                 .next = UpdateList{},
                 .version = static_cast<int64_t>(loader->block)}));

@@ -452,10 +452,10 @@ mpt::Compute &MachineBase::get_compute() const
         if (MONAD_UNLIKELY(depth == prefix_length)) {
             return account_root_compute;
         }
-        else if (depth < prefix_length + 2 * sizeof(bytes32_t)) {
+        else if (depth < prefix_length + STATE_ACCOUNT_PATH_NIBBLES) {
             return account_compute;
         }
-        else if (depth == prefix_length + 2 * sizeof(bytes32_t)) {
+        else if (depth == prefix_length + STATE_ACCOUNT_PATH_NIBBLES) {
             return storage_root_compute;
         }
         else {
@@ -591,14 +591,14 @@ decode_transaction_db(byte_string_view &enc)
     return {transaction, sender};
 }
 
-hash256 state_account_path_hash(Address const &addr)
+byte_string state_account_path(Address const &addr)
 {
-    return keccak256({addr.bytes, sizeof(addr.bytes)});
+    return byte_string{addr.bytes, sizeof(addr.bytes)};
 }
 
-hash256 state_storage_path_hash(bytes32_t const &slot)
+byte_string state_storage_path(bytes32_t const &slot)
 {
-    return keccak256({slot.bytes, sizeof(slot.bytes)});
+    return byte_string{slot.bytes, sizeof(slot.bytes)};
 }
 
 byte_string encode_account_db(Address const &address, Account const &account)

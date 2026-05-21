@@ -78,8 +78,8 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 if (delta.first != delta.second) {
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
-                            .key = hash_alloc_.emplace_back(
-                                state_storage_path_hash(key)),
+                            .key = bytes_alloc_.emplace_back(
+                                state_storage_path(key)),
                             .value = delta.second == bytes32_t{}
                                          ? std::nullopt
                                          : std::make_optional<byte_string_view>(
@@ -100,8 +100,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 account.has_value() && delta.account.first.has_value() &&
                 delta.account.first->incarnation != account->incarnation;
             account_updates.push_front(update_alloc_.emplace_back(Update{
-                .key = hash_alloc_.emplace_back(
-                    state_account_path_hash(addr)),
+                .key = bytes_alloc_.emplace_back(state_account_path(addr)),
                 .value = value,
                 .incarnation = incarnation,
                 .next = std::move(storage_updates),

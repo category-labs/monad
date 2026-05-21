@@ -159,6 +159,9 @@ add_library(
   # runtime
   "runtime/non_temporal_memory.hpp"
   "runtime/uint256.hpp"
+  "runtime/uint256/intrinsics.hpp"
+  "runtime/uint256/portable.hpp"
+  "runtime/uint256/types.hpp"
   "runtime/unaligned.hpp"
   # test
   "test_util/gtest_signal_stacktrace_printer.hpp"

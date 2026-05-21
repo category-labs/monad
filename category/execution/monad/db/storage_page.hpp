@@ -22,42 +22,63 @@
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 
+#include <boost/container/small_vector.hpp>
 #include <evmc/evmc.hpp>
 
+#include <immintrin.h>
+
+#include <bit>
 #include <cstdint>
+#include <cstring>
 
 MONAD_NAMESPACE_BEGIN
 
 struct storage_page_t
 {
-    static constexpr size_t SLOTS = 128;
     static constexpr size_t SLOT_SIZE = 32;
     static constexpr size_t PAGE_KEY_SHIFT = 7;
+    static constexpr size_t SLOTS = 1 << PAGE_KEY_SHIFT;
+    static constexpr size_t NUM_PAIRS = SLOTS / 2;
     static constexpr uint8_t SLOT_OFFSET_MASK = (1 << PAGE_KEY_SHIFT) - 1;
 
-    constexpr storage_page_t() noexcept = default;
+    using bitmap_t = unsigned __int128;
 
-    constexpr bool operator==(storage_page_t const &other) const = default;
+    storage_page_t() noexcept = default;
 
-    // Read access. To write, use set() so the bitmap stays consistent
-    // with slot contents.
-    bytes32_t const &operator[](uint8_t const offset) const
+    bool operator==(storage_page_t const &other) const = default;
+
+    bytes32_t operator[](uint8_t const offset) const
     {
         MONAD_DEBUG_ASSERT(offset < SLOTS);
-        return slots_[offset];
+        if (!has_bit_(offset)) {
+            return bytes32_t{};
+        }
+        return values_[dense_index_(offset)];
     }
 
     void set(uint8_t const offset, bytes32_t const &value)
     {
         MONAD_DEBUG_ASSERT(offset < SLOTS);
-        slots_[offset] = value;
-        unsigned __int128 const bit = static_cast<unsigned __int128>(1)
-                                      << offset;
-        if (value == bytes32_t{}) {
-            bitmap_ &= ~bit;
+        bool const is_zero = (value == bytes32_t{});
+        bool const was_present = has_bit_(offset);
+        size_t const dense_idx = dense_index_(offset);
+        auto const it =
+            values_.begin() + static_cast<std::ptrdiff_t>(dense_idx);
+        if (is_zero) {
+            if (!was_present) {
+                return;
+            }
+            values_.erase(it);
+            clear_bit_(offset);
         }
         else {
-            bitmap_ |= bit;
+            if (was_present) {
+                values_[dense_idx] = value;
+            }
+            else {
+                values_.insert(it, value);
+                set_bit_(offset);
+            }
         }
     }
 
@@ -66,32 +87,65 @@ struct storage_page_t
         return bitmap_ == 0;
     }
 
-    // Bit i is set iff slots_[i] != bytes32_t{}. Hot consumers (the
-    // BLAKE3 leaf hasher, sparse iteration) read this directly.
-    unsigned __int128 bitmap() const
+    bitmap_t bitmap() const
     {
         return bitmap_;
     }
 
-    // Pointer to the contiguous slot bytes. Used by the BLAKE3 leaf
-    // hasher to consume 64-byte slot pairs as raw input.
-    uint8_t const *slot_bytes() const
+    // Number of non-zero slots.
+    size_t size() const
     {
-        return reinterpret_cast<uint8_t const *>(slots_);
+        return values_.size();
+    }
+
+    // Bit i of the result is set iff at least one of slots 2i, 2i+1 is
+    // non-zero. Used by page_commit to walk only the active pair-leaves.
+    uint64_t pair_bitmap() const
+    {
+        // OR each odd bit into the even bit below it, then compress the
+        // even bits: pair i of the result comes from slots 2i and 2i+1.
+        constexpr uint64_t even_bits = 0x5555555555555555ULL;
+        auto const lo = static_cast<uint64_t>(bitmap_);
+        auto const hi = static_cast<uint64_t>(bitmap_ >> 64);
+        uint64_t const lo_pairs = _pext_u64(lo | (lo >> 1), even_bits);
+        uint64_t const hi_pairs = _pext_u64(hi | (hi >> 1), even_bits);
+        return lo_pairs | (hi_pairs << 32);
     }
 
 private:
-    bytes32_t slots_[SLOTS]{};
-    // In-memory accelerator. Not serialized; the on-disk RLE encoding
-    // already encodes presence. Maintained by set() and by
-    // decode_storage_page during construction.
-    unsigned __int128 bitmap_{0};
-};
+    bool has_bit_(uint8_t const i) const
+    {
+        return (bitmap_ >> i) & static_cast<bitmap_t>(1);
+    }
 
-static_assert(
-    sizeof(storage_page_t) ==
-    storage_page_t::SLOTS * storage_page_t::SLOT_SIZE +
-        sizeof(unsigned __int128));
+    void set_bit_(uint8_t const i)
+    {
+        bitmap_ |= static_cast<bitmap_t>(1) << i;
+    }
+
+    void clear_bit_(uint8_t const i)
+    {
+        bitmap_ &= ~(static_cast<bitmap_t>(1) << i);
+    }
+
+    // Position in values_ corresponding to slot offset i. Equal to the
+    // number of set bits strictly below i in the bitmap.
+    size_t dense_index_(uint8_t const i) const
+    {
+        bitmap_t const below = bitmap_ & ((static_cast<bitmap_t>(1) << i) - 1);
+        return static_cast<size_t>(
+                   std::popcount(static_cast<uint64_t>(below))) +
+               static_cast<size_t>(
+                   std::popcount(static_cast<uint64_t>(below >> 64)));
+    }
+
+    static constexpr size_t INLINE_VALUES = 4;
+
+    // Bit i set iff slot i has a non-zero value. values_ holds the values
+    // in slot-index order; values_[k] is the value for the k-th set bit.
+    bitmap_t bitmap_{0};
+    boost::container::small_vector<bytes32_t, INLINE_VALUES> values_;
+};
 
 inline bytes32_t compute_page_key(bytes32_t const &storage_key)
 {

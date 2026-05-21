@@ -54,13 +54,11 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
-    constexpr size_t NUM_PAIRS = storage_page_t::SLOTS / 2; // 64
+    constexpr size_t NUM_PAIRS = storage_page_t::NUM_PAIRS; // 64
     constexpr char DOMAIN_KEY[] = "ultra_merkle_pair_leaf_domain___";
     static_assert(sizeof(DOMAIN_KEY) - 1 == 32);
     static_assert(NUM_PAIRS == 64);
     static_assert(std::has_single_bit(NUM_PAIRS), "must be power of 2");
-
-    using slot_bitmap_t = unsigned __int128;
 
     uint32_t const *get_leaf_iv()
     {
@@ -78,29 +76,15 @@ namespace
         return cached;
     }
 
-    // bit i of the result indicates either slot 2i or 2i+1 is non-zero.
-    uint64_t derive_pair_bitmap(slot_bitmap_t const slot_bitmap)
-    {
-        uint64_t pair = 0;
-        slot_bitmap_t mask = 0b11;
-        uint64_t pair_mask = 1;
-        for (size_t i = 0; i < NUM_PAIRS; ++i, mask <<= 2, pair_mask <<= 1) {
-            if ((slot_bitmap & mask) != 0) {
-                pair |= pair_mask;
-            }
-        }
-        return pair;
-    }
-
-    bytes32_t
-    blake3_seal(slot_bitmap_t const slot_bitmap, uint8_t const *root_32)
+    bytes32_t blake3_seal(
+        storage_page_t::bitmap_t const slot_bitmap, uint8_t const *root_32)
     {
         // blake3_compress(slot_bitmap_le_16B || merge_root_32B), or just the
         // bitmap when there is no root (empty page).
         uint8_t block[BLAKE3_BLOCK_LEN] = {}; // zero-padded to 64 bytes
         static_assert(std::endian::native == std::endian::little);
         std::memcpy(block, &slot_bitmap, sizeof(slot_bitmap)); // little endian
-        uint8_t len = sizeof(slot_bitmap);
+        uint8_t len = static_cast<uint8_t>(sizeof(storage_page_t::bitmap_t));
         if (root_32 != nullptr) {
             std::memcpy(block + sizeof(slot_bitmap), root_32, BLAKE3_OUT_LEN);
             len += BLAKE3_OUT_LEN; // 16 + 32 = 48
@@ -122,8 +106,7 @@ bytes32_t page_commit(storage_page_t const &page)
         return blake3_seal(0, nullptr);
     }
 
-    slot_bitmap_t const slot_bitmap = page.bitmap();
-    uint64_t const pair_bitmap = derive_pair_bitmap(slot_bitmap);
+    uint64_t const pair_bitmap = page.pair_bitmap();
 
     // Phase 1 — Leaf init: hash active pair-leaves with LEAF_IV.
     // scratch is pair-indexed (entry i is meaningful iff bit i is in
@@ -133,17 +116,18 @@ bytes32_t page_commit(storage_page_t const &page)
         uint8_t const *inputs[NUM_PAIRS];
         uint8_t indices[NUM_PAIRS];
         size_t n = 0;
-        uint64_t bits = pair_bitmap;
-        MONAD_ASSERT(bits != 0); // empty page case handled above
-        auto const *const slot_array_bytes = page.slot_bytes();
-        while (bits != 0) {
-            auto const idx = static_cast<uint8_t>(std::countr_zero(bits));
-            indices[n] = idx;
-            // slots are contiguous in memory: this points to the 64-byte
-            // pair (slot[idx*2] || slot[idx*2 + 1]) that BLAKE3 will read.
-            inputs[n] = slot_array_bytes + idx * 2 * storage_page_t::SLOT_SIZE;
-            ++n;
-            bits &= bits - 1; // clear the lowest set bit
+        uint8_t valid_pairs[NUM_PAIRS][BLAKE3_BLOCK_LEN];
+        for (uint64_t bits = pair_bitmap; bits != 0; bits &= bits - 1, ++n) {
+            auto const i = static_cast<uint8_t>(std::countr_zero(bits));
+            auto const left_idx = static_cast<uint8_t>(2 * i);
+            auto const right_idx = static_cast<uint8_t>(left_idx + 1);
+            std::memcpy(valid_pairs[n], page[left_idx].bytes, BLAKE3_OUT_LEN);
+            std::memcpy(
+                valid_pairs[n] + BLAKE3_OUT_LEN,
+                page[right_idx].bytes,
+                BLAKE3_OUT_LEN);
+            indices[n] = i;
+            inputs[n] = valid_pairs[n];
         }
         bytes32_t flat_out[NUM_PAIRS];
         blake3_hash_many(
@@ -241,7 +225,7 @@ bytes32_t page_commit(storage_page_t const &page)
     auto const root_idx = std::countr_zero(bm);
 
     // Phase 3 — Seal.
-    return blake3_seal(slot_bitmap, scratch[root_idx].bytes);
+    return blake3_seal(page.bitmap(), scratch[root_idx].bytes);
 }
 
 // Storage page run-length encoding (RLE).
@@ -269,7 +253,13 @@ bytes32_t page_commit(storage_page_t const &page)
 byte_string encode_storage_page(storage_page_t const &page)
 {
     byte_string encoded;
+    // Worst case: 33 bytes per compact-framed value plus one header byte
+    // per run (at most SLOTS headers) and the terminator. This deliberately
+    // overallocates (up to ~4KB transient for a full page of small values);
+    // the buffer is short-lived since the caller copies it into the final
+    // DB encoding, so the unused capacity never outlives this call.
     constexpr uint8_t SLOTS = static_cast<uint8_t>(storage_page_t::SLOTS);
+    encoded.reserve(page.size() * 33 + SLOTS + 1);
     constexpr bytes32_t ZERO{};
     uint8_t i = 0;
     while (i < SLOTS) {

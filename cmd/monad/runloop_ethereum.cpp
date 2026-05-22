@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/state_delta_log.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_block_events.hpp>
@@ -187,6 +188,16 @@ Result<void> process_ethereum_block(
         .add_ommers(block.ommers);
     if (block.withdrawals.has_value()) {
         builder.add_withdrawals(block.withdrawals.value());
+    }
+    if (state_delta_logger) {
+        auto const block_hash = to_bytes(
+            keccak256(rlp::encode_block_header(block.header)));
+        log_state_deltas(
+            block.header.number,
+            block_hash,
+            block.header.parent_hash,
+            *state,
+            code);
     }
     db.commit(
         block_id, builder, block.header, std::move(state), [&](BlockHeader &h) {

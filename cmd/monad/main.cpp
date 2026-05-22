@@ -36,6 +36,7 @@
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
+#include <category/execution/ethereum/db/state_delta_log.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/precompiles.hpp>
@@ -135,6 +136,7 @@ try {
     std::vector<fs::path> dbname_paths;
     fs::path snapshot;
     fs::path dump_snapshot;
+    fs::path state_delta_log_path;
     std::string statesync;
     fs::path chain_rlp_path;
     auto log_level = quill::LogLevel::Info;
@@ -177,6 +179,10 @@ try {
         "--dump-snapshot,--dump_snapshot",
         dump_snapshot,
         "directory to dump state to at the end of run");
+    cli.add_option(
+        "--state-delta-log,--state_delta_log",
+        state_delta_log_path,
+        "path to write per-block state-delta JSONL");
     cli.add_flag(
         "--trace-calls,--trace_calls", trace_calls, "enable call tracing");
     auto *const as_eth_blocks_flag = cli.add_flag(
@@ -235,6 +241,13 @@ try {
 
     init_root_logger(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+
+    if (!state_delta_log_path.empty()) {
+        state_delta_logger = create_event_tracer(state_delta_log_path);
+        LOG_INFO(
+            "writing per-block state deltas to {}",
+            state_delta_log_path.string());
+    }
 
     // Initialize the event system if --exec-event-ring is specified
     if (exec_event_ring_option->count() > 0) {

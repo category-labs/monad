@@ -28,12 +28,18 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 find_cursor_result_type find_blocking(
     UpdateAux const &aux, NodeCursor const root, NibblesView const key,
-    uint64_t const version)
+    uint64_t const version, unsigned *const out_nodes_visited)
 {
+    unsigned scratch = 0;
+    unsigned &nodes_visited =
+        (out_nodes_visited != nullptr) ? *out_nodes_visited : scratch;
+    nodes_visited = 0;
+
     if (!root.is_valid()) {
         return {NodeCursor{}, find_result::root_node_is_null_failure};
     }
     Node::SharedPtr node = root.node;
+    nodes_visited = 1; // include the root we already hold
     unsigned node_prefix_index = root.prefix_index;
     unsigned prefix_index = 0;
     while (prefix_index < key.nibble_size()) {
@@ -56,6 +62,7 @@ find_cursor_result_type find_blocking(
                 node->set_next(idx, std::move(next_node_ondisk));
             }
             node = node->next(node->to_child_index(nibble));
+            ++nodes_visited;
             MONAD_ASSERT(node);
             node_prefix_index = 0;
             ++prefix_index;

@@ -73,9 +73,12 @@ public:
     RODb &operator=(RODb const &) = delete;
     RODb &operator=(RODb &&) = delete;
 
-    Result<NodeCursor>
-    find(NodeCursor const &, NibblesView, uint64_t block_id) const;
-    Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+    Result<NodeCursor> find(
+        NodeCursor const &, NibblesView, uint64_t block_id,
+        unsigned *out_nodes_visited = nullptr) const;
+    Result<NodeCursor> find(
+        NibblesView prefix, uint64_t block_id,
+        unsigned *out_nodes_visited = nullptr) const;
 
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
@@ -111,9 +114,12 @@ public:
     // The `block_id` parameter specify the version to read from, and is also
     // used for version control validation. These calls may wait on a fiber
     // future.
-    Result<NodeCursor>
-    find(NodeCursor const &, NibblesView, uint64_t block_id) const;
-    Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
+    Result<NodeCursor> find(
+        NodeCursor const &, NibblesView, uint64_t block_id,
+        unsigned *out_nodes_visited = nullptr) const;
+    Result<NodeCursor> find(
+        NibblesView prefix, uint64_t block_id,
+        unsigned *out_nodes_visited = nullptr) const;
 
     Node::SharedPtr load_root_for_version(uint64_t block_id) const;
 

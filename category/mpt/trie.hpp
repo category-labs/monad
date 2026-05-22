@@ -458,6 +458,7 @@ struct fiber_find_request_t
     ::boost::fibers::promise<find_cursor_result_type> promise{};
     NodeCursor start{};
     NibblesView key{};
+    unsigned *out_nodes_visited{nullptr};
 };
 #ifdef __GNUC__
     #pragma GCC diagnostic pop
@@ -481,9 +482,13 @@ needed.
 during execution, DO NOT invoke it directly from a transaction fiber, as it
 is not race-free.
 */
+// If `out_nodes_visited` is non-null, each recursive entry into this function
+// increments `*out_nodes_visited`. Caller is responsible for initialising the
+// pointee to 0 before starting the find.
 void find_notify_fiber_future(
     UpdateAux &, ::boost::fibers::promise<find_cursor_result_type>,
-    NodeCursor const &start, NibblesView key);
+    NodeCursor const &start, NibblesView key,
+    unsigned *out_nodes_visited = nullptr);
 
 // rodb
 void find_owning_notify_fiber_future(
@@ -505,8 +510,11 @@ the node through blocking read.
 synchronization is provided, and user code should make sure no other place is
 modifying trie.
 */
-find_cursor_result_type
-find_blocking(UpdateAux const &, NodeCursor, NibblesView key, uint64_t version);
+// If `out_nodes_visited` is non-null, it is set to the number of distinct
+// trie nodes traversed by this call.
+find_cursor_result_type find_blocking(
+    UpdateAux const &, NodeCursor, NibblesView key, uint64_t version,
+    unsigned *out_nodes_visited = nullptr);
 
 /* This function reads a node from the specified physical offset `node_offset`,
 where the spare bits indicate the number of pages to read. It returns a valid

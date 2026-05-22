@@ -183,12 +183,16 @@ namespace
 
 void find_notify_fiber_future(
     UpdateAux &aux, ::boost::fibers::promise<find_cursor_result_type> promise,
-    NodeCursor const &root, NibblesView const key)
+    NodeCursor const &root, NibblesView const key,
+    unsigned *const out_nodes_visited)
 {
     if (!root.is_valid()) {
         promise.set_value(
             {NodeCursor{}, find_result::root_node_is_null_failure});
         return;
+    }
+    if (out_nodes_visited != nullptr) {
+        ++(*out_nodes_visited); // entering a new node
     }
     unsigned prefix_index = 0;
     unsigned node_prefix_index = root.prefix_index;
@@ -221,7 +225,8 @@ void find_notify_fiber_future(
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
         if (auto const &next = node->next(child_index); next != nullptr) {
-            find_notify_fiber_future(aux, std::move(promise), next, next_key);
+            find_notify_fiber_future(
+                aux, std::move(promise), next, next_key, out_nodes_visited);
             return;
         }
         if (aux.io->owning_thread_id() != get_tl_tid()) {
@@ -230,9 +235,10 @@ void find_notify_fiber_future(
                  find_result::need_to_continue_in_io_thread});
             return;
         }
-        auto cont = [&aux, p = std::move(promise), next_key](
+        auto cont = [&aux, p = std::move(promise), next_key, out_nodes_visited](
                         NodeCursor const &node_cursor) mutable -> result<void> {
-            find_notify_fiber_future(aux, std::move(p), node_cursor, next_key);
+            find_notify_fiber_future(
+                aux, std::move(p), node_cursor, next_key, out_nodes_visited);
             return success();
         };
         find_receiver receiver(std::move(cont), std::move(node), branch);

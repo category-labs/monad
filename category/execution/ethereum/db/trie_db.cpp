@@ -56,7 +56,9 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -102,13 +104,16 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     if (cache_ && cache_->try_read_account(addr, result)) {
         return result;
     }
+    unsigned nodes_visited = 0;
     auto const res = db_.find(
         curr_root_,
         concat(
             prefix_,
             STATE_NIBBLE,
             NibblesView{state_account_path(addr)}),
-        block_number_);
+        block_number_,
+        &nodes_visited);
+    record_lookup(nodes_visited);
     if (res.has_error()) {
         stats_account_no_value();
         return std::nullopt;
@@ -125,6 +130,7 @@ bytes32_t TrieDb::read_storage(
     if (cache_ && cache_->try_read_storage(addr, incarnation, key, result)) {
         return result;
     }
+    unsigned nodes_visited = 0;
     auto const res = db_.find(
         curr_root_,
         concat(
@@ -132,7 +138,9 @@ bytes32_t TrieDb::read_storage(
             STATE_NIBBLE,
             NibblesView{state_account_path(addr)},
             NibblesView{state_storage_path(key)}),
-        block_number_);
+        block_number_,
+        &nodes_visited);
+    record_lookup(nodes_visited);
     if (res.has_error()) {
         stats_storage_no_value();
         return {};
@@ -344,6 +352,45 @@ BlockHeader TrieDb::read_eth_header()
     return std::move(decode_res.value());
 }
 
+StateLookupStats TrieDb::drain_lookup_stats()
+{
+    std::array<uint64_t, LOOKUP_HISTOGRAM_BUCKETS> snapshot{};
+    uint64_t total_count = 0;
+    uint64_t total_nodes = 0;
+    unsigned max_bucket = 0;
+    for (size_t i = 0; i < LOOKUP_HISTOGRAM_BUCKETS; ++i) {
+        snapshot[i] =
+            lookup_histogram_[i].exchange(0, std::memory_order_acq_rel);
+        if (snapshot[i] != 0) {
+            total_count += snapshot[i];
+            total_nodes += snapshot[i] * i;
+            max_bucket = static_cast<unsigned>(i);
+        }
+    }
+    StateLookupStats out;
+    out.count = total_count;
+    if (total_count == 0) {
+        return out;
+    }
+    out.mean = static_cast<double>(total_nodes) / static_cast<double>(total_count);
+    out.max = max_bucket;
+    auto const percentile = [&](double const p) -> unsigned {
+        uint64_t const threshold = static_cast<uint64_t>(
+            std::ceil(p * static_cast<double>(total_count)));
+        uint64_t cumulative = 0;
+        for (size_t i = 0; i < LOOKUP_HISTOGRAM_BUCKETS; ++i) {
+            cumulative += snapshot[i];
+            if (cumulative >= threshold) {
+                return static_cast<unsigned>(i);
+            }
+        }
+        return max_bucket;
+    };
+    out.p50 = percentile(0.50);
+    out.p99 = percentile(0.99);
+    return out;
+}
+
 std::string TrieDb::print_stats()
 {
     std::string ret;
@@ -357,6 +404,10 @@ std::string TrieDb::print_stats()
     n_account_value_.store(0, std::memory_order_release);
     n_storage_no_value_.store(0, std::memory_order_release);
     n_storage_value_.store(0, std::memory_order_release);
+    auto const lku = drain_lookup_stats();
+    ret += std::format(
+        ",lku_n={},lku_avg={:.2f},lku_p50={},lku_p99={},lku_max={}",
+        lku.count, lku.mean, lku.p50, lku.p99, lku.max);
     if (cache_) {
         ret += ",ac=" + cache_->accounts_stats() +
                ",sc=" + cache_->storage_stats();

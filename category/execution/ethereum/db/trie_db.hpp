@@ -34,6 +34,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <array>
+#include <atomic>
 #include <deque>
 #include <istream>
 #include <memory>
@@ -42,6 +44,18 @@
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+// Per-block aggregate over how many trie nodes each state-trie lookup
+// touched. Useful for understanding how the no-keccak key layout affects
+// trie depth; the histogram is bounded by the maximum nibble path length.
+struct StateLookupStats
+{
+    uint64_t count = 0;
+    double mean = 0.0;
+    unsigned p50 = 0;
+    unsigned p99 = 0;
+    unsigned max = 0;
+};
 
 class TrieDb final : public ::monad::Db
 {
@@ -95,12 +109,28 @@ public:
     nlohmann::json to_json(size_t concurrency_limit = 4096);
     uint64_t get_history_length() const;
 
+    // Returns a per-block aggregate of trie-node-visit counts since the last
+    // call, and resets the histogram. Thread-safe: called once per block from
+    // the runloop while transactions are no longer mutating it.
+    StateLookupStats drain_lookup_stats();
+
 private:
     /// STATS
     std::atomic<uint64_t> n_account_no_value_{0};
     std::atomic<uint64_t> n_account_value_{0};
     std::atomic<uint64_t> n_storage_no_value_{0};
     std::atomic<uint64_t> n_storage_value_{0};
+
+    static constexpr size_t LOOKUP_HISTOGRAM_BUCKETS = 256;
+    std::array<std::atomic<uint64_t>, LOOKUP_HISTOGRAM_BUCKETS>
+        lookup_histogram_{};
+
+    void record_lookup(unsigned nodes_visited)
+    {
+        auto const bucket = std::min<size_t>(
+            nodes_visited, LOOKUP_HISTOGRAM_BUCKETS - 1);
+        lookup_histogram_[bucket].fetch_add(1, std::memory_order_relaxed);
+    }
 
     void stats_account_no_value()
     {

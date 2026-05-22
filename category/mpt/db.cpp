@@ -83,7 +83,8 @@ struct Db::Impl
         Node::SharedPtr src_root, NibblesView src, Node::SharedPtr dest_root,
         NibblesView dest, uint64_t dest_version, bool write_root = true) = 0;
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
+        NodeCursor const &root, NibblesView const &key, uint64_t version,
+        unsigned *out_nodes_visited = nullptr) = 0;
     virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) = 0;
     virtual Node::SharedPtr load_root_for_version(uint64_t version) = 0;
     virtual size_t poll(bool blocking, size_t count) = 0;
@@ -184,7 +185,8 @@ public:
 
     virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key,
-        uint64_t const version) override
+        uint64_t const version,
+        unsigned *const out_nodes_visited) override
     {
         if (!root.is_valid()) {
             return {NodeCursor{}, find_result::root_node_is_null_failure};
@@ -193,7 +195,8 @@ public:
         if (!aux().metadata_ctx().version_is_valid_ondisk(version)) {
             return {NodeCursor{}, find_result::version_no_longer_exist};
         }
-        auto const res = find_blocking(aux(), root, key, version);
+        auto const res =
+            find_blocking(aux(), root, key, version, out_nodes_visited);
         // verify version still valid in history after success
         return aux().metadata_ctx().version_is_valid_ondisk(version)
                    ? res
@@ -280,9 +283,10 @@ public:
 
     virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key,
-        uint64_t const version) override
+        uint64_t const version,
+        unsigned *const out_nodes_visited) override
     {
-        return find_blocking(aux(), root, key, version);
+        return find_blocking(aux(), root, key, version, out_nodes_visited);
     }
 
     virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) override
@@ -508,7 +512,11 @@ private:
                 if (parent->comms_.try_dequeue(request)) {
                     if (auto *req = std::get_if<1>(&request); req != nullptr) {
                         find_notify_fiber_future(
-                            aux, std::move(req->promise), req->start, req->key);
+                            aux,
+                            std::move(req->promise),
+                            req->start,
+                            req->key,
+                            req->out_nodes_visited);
                     }
                     else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {
@@ -703,7 +711,8 @@ public:
     // threadsafe
     virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &start, NibblesView const &key,
-        uint64_t const version) override
+        uint64_t const version,
+        unsigned *const out_nodes_visited) override
     {
         // It's sufficient to validate the version once before starting the
         // lookup, because RWDb never performs upserts concurrently with reads.
@@ -715,7 +724,10 @@ public:
         ::boost::fibers::promise<find_cursor_result_type> promise;
         auto fut = promise.get_future();
         worker_thread_->submit(fiber_find_request_t{
-            .promise = std::move(promise), .start = start, .key = key});
+            .promise = std::move(promise),
+            .start = start,
+            .key = key,
+            .out_nodes_visited = out_nodes_visited});
         return fut.get();
     }
 
@@ -938,17 +950,21 @@ DbError find_result_to_db_error(find_result const result) noexcept
 
 Result<NodeCursor> RODb::find(
     NodeCursor const &node_cursor, NibblesView const key,
-    uint64_t const block_id) const
+    uint64_t const block_id, unsigned *const out_nodes_visited) const
 {
     MONAD_ASSERT(impl_);
+    if (out_nodes_visited != nullptr) {
+        // RODb path isn't yet instrumented; leave the counter at zero so
+        // callers can distinguish "not measured" from "found zero nodes".
+        *out_nodes_visited = 0;
+    }
     if (!node_cursor.is_valid()) {
         return DbError::version_no_longer_exist;
     }
     if (key.empty()) {
         return node_cursor;
     }
-    auto [cursor, result] =
-        impl_->find_fiber_blocking(node_cursor, key, block_id);
+    auto [cursor, result] = impl_->find_fiber_blocking(node_cursor, key, block_id);
     if (result != find_result::success) {
         return find_result_to_db_error(result);
     }
@@ -957,12 +973,13 @@ Result<NodeCursor> RODb::find(
     return cursor;
 }
 
-Result<NodeCursor>
-RODb::find(NibblesView const key, uint64_t const block_id) const
+Result<NodeCursor> RODb::find(
+    NibblesView const key, uint64_t const block_id,
+    unsigned *const out_nodes_visited) const
 {
     MONAD_ASSERT(impl_);
     NodeCursor const cursor = impl_->load_root_fiber_blocking(block_id);
-    return find(cursor, key, block_id);
+    return find(cursor, key, block_id, out_nodes_visited);
 }
 
 bool RODb::traverse(
@@ -997,10 +1014,14 @@ Db::~Db() = default;
 
 Result<NodeCursor> Db::find(
     NodeCursor const &root, NibblesView const key,
-    uint64_t const block_id) const
+    uint64_t const block_id, unsigned *const out_nodes_visited) const
 {
     MONAD_ASSERT(impl_);
-    auto const [it, result] = impl_->find_fiber_blocking(root, key, block_id);
+    if (out_nodes_visited != nullptr) {
+        *out_nodes_visited = 0;
+    }
+    auto const [it, result] = impl_->find_fiber_blocking(
+        root, key, block_id, out_nodes_visited);
     if (result != find_result::success) {
         return find_result_to_db_error(result);
     }
@@ -1009,13 +1030,14 @@ Result<NodeCursor> Db::find(
     return it;
 }
 
-Result<NodeCursor>
-Db::find(NibblesView const key, uint64_t const block_id) const
+Result<NodeCursor> Db::find(
+    NibblesView const key, uint64_t const block_id,
+    unsigned *const out_nodes_visited) const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(impl_->aux().is_on_disk());
     auto const root = impl_->load_root_for_version(block_id);
-    return find(NodeCursor{root}, key, block_id);
+    return find(NodeCursor{root}, key, block_id, out_nodes_visited);
 }
 
 Node::SharedPtr Db::load_root_for_version(uint64_t const block_id) const

@@ -84,6 +84,16 @@
     }                                                                          \
     while (false);
 
+// Some versions of GCC 15 spuriously warn when a reference-bound parameter
+// is forwarded through a musttail call (-Wmaybe-musttail-local-addr). The
+// threaded dispatch below passes gas_remaining by value through the musttail
+// tail call; the reference binding happens inside an always-inlined helper
+// (checked_runtime_call) and does not escape, so this is a false positive.
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 15
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wmaybe-musttail-local-addr"
+#endif
+
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
@@ -1801,6 +1811,10 @@ namespace monad::vm::interpreter
         ctx.exit(Error);
     }
 }
+
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 15
+    #pragma GCC diagnostic pop
+#endif
 
 #undef MONAD_VM_MUST_TAIL
 #undef MONAD_VM_NEXT

@@ -89,10 +89,10 @@ constexpr inline result_with_carry<uint64_t>
 addc(uint64_t const lhs, uint64_t const rhs, bool const carry_in) noexcept
 {
     if consteval {
-        return addc_constexpr(lhs, rhs, carry_in);
+        return monad::uint256::portable::addc(lhs, rhs, carry_in);
     }
     else {
-        return addc_intrinsic(lhs, rhs, carry_in);
+        return monad::uint256::intrinsics::addc(lhs, rhs, carry_in);
     }
 }
 
@@ -100,10 +100,10 @@ addc(uint64_t const lhs, uint64_t const rhs, bool const carry_in) noexcept
 subb(uint64_t const lhs, uint64_t const rhs, bool const borrow_in) noexcept
 {
     if consteval {
-        return subb_constexpr(lhs, rhs, borrow_in);
+        return monad::uint256::portable::subb(lhs, rhs, borrow_in);
     }
     else {
-        return subb_intrinsic(lhs, rhs, borrow_in);
+        return monad::uint256::intrinsics::subb(lhs, rhs, borrow_in);
     }
 }
 
@@ -112,10 +112,10 @@ inline constexpr uint64_t
 shld(uint64_t const high, uint64_t const low, uint8_t const shift) noexcept
 {
     if consteval {
-        return shld_constexpr(high, low, shift);
+        return monad::uint256::portable::shld(high, low, shift);
     }
     else {
-        return shld_intrinsic(high, low, shift);
+        return monad::uint256::intrinsics::shld(high, low, shift);
     }
 }
 
@@ -124,10 +124,10 @@ inline constexpr uint64_t
 shrd(uint64_t const high, uint64_t const low, uint8_t const shift) noexcept
 {
     if consteval {
-        return shrd_constexpr(high, low, shift);
+        return monad::uint256::portable::shrd(high, low, shift);
     }
     else {
-        return shrd_intrinsic(high, low, shift);
+        return monad::uint256::intrinsics::shrd(high, low, shift);
     }
 }
 
@@ -137,10 +137,10 @@ div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
 {
     MONAD_DEBUG_ASSERT(u_hi < v);
     if consteval {
-        return div_constexpr(u_hi, u_lo, v);
+        return monad::uint256::portable::div(u_hi, u_lo, v);
     }
     else {
-        return div_intrinsic(u_hi, u_lo, v);
+        return monad::uint256::intrinsics::div(u_hi, u_lo, v);
     }
 }
 
@@ -202,6 +202,8 @@ public:
     [[gnu::always_inline]]
     inline constexpr explicit operator bool() const noexcept
     {
+        using namespace monad::uint256::intrinsics;
+
         auto const w0 = force(words_[0]);
         auto const w1 = force(words_[1]);
         auto const w2 = force(words_[2]);
@@ -346,6 +348,8 @@ public:
     [[gnu::always_inline]] friend inline constexpr bool
     operator==(uint256_t const &x, uint256_t const &y) noexcept
     {
+        using namespace monad::uint256::intrinsics;
+
         auto const e0 = force(x[0] ^ y[0]);
         auto const e1 = force(x[1] ^ y[1]);
         auto const e2 = force(x[2] ^ y[2]);
@@ -666,10 +670,10 @@ inline constexpr void mulx(
     uint64_t const x, uint64_t const y, uint64_t &r_hi, uint64_t &r_lo) noexcept
 {
     if consteval {
-        return mulx_constexpr(x, y, r_hi, r_lo);
+        return monad::uint256::portable::mulx(x, y, r_hi, r_lo);
     }
     else {
-        return mulx_intrinsic(x, y, r_hi, r_lo);
+        return monad::uint256::intrinsics::mulx(x, y, r_hi, r_lo);
     }
 }
 
@@ -685,10 +689,10 @@ truncating_mul(words_t<M> const &x, words_t<N> const &y) noexcept
     requires(0 < R && 0 < M && 0 < N && R <= M + N)
 {
     if consteval {
-        return truncating_mul_constexpr<R, M, N>(x, y);
+        return monad::uint256::portable::truncating_mul<R, M, N>(x, y);
     }
     else {
-        return truncating_mul_runtime<R, M, N>(x, y);
+        return monad::uint256::intrinsics::truncating_mul<R, M, N>(x, y);
     }
 }
 

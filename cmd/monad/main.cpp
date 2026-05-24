@@ -20,6 +20,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
+#include <category/core/cli/help_formatter.hpp>
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/likely.h>
@@ -114,7 +115,9 @@ try {
     cxx_runtime_terminate_handler = std::get_terminate();
     std::set_terminate(backtrace_terminate_handler);
 
-    CLI::App cli{"monad"};
+    CLI::App cli{
+        "Run the Monad execution engine against a block database.", "monad"};
+    monad::cli::HelpFormatter{GIT_COMMIT_HASH}.install(cli);
     cli.option_defaults()->always_capture_default();
 
     monad_chain_config chain_config;

@@ -285,6 +285,23 @@ function(monad_add_test_death target)
 endfunction()
 
 # ##############################################################################
+# version
+# ##############################################################################
+
+# Embedded in --help output of the C++ binaries. Honors a build-time override
+# (e.g. set by CI) so containerized builds without a .git directory can still
+# stamp the binary.
+if(DEFINED ENV{GIT_COMMIT_HASH})
+  set(GIT_COMMIT_HASH $ENV{GIT_COMMIT_HASH})
+else()
+  execute_process(
+    COMMAND git rev-parse HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+
+# ##############################################################################
 # libs
 # ##############################################################################
 

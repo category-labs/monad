@@ -52,6 +52,7 @@ namespace monad
         { T::eip_2929_active() } -> std::same_as<bool>;
         { T::eip_4844_active() } -> std::same_as<bool>;
         { T::eip_7685_active() } -> std::same_as<bool>;
+        { T::eip_7691_active() } -> std::same_as<bool>;
         { T::eip_7823_active() } -> std::same_as<bool>;
         { T::eip_7883_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
@@ -98,6 +99,11 @@ namespace monad
         }
 
         static consteval bool eip_7685_active() noexcept
+        {
+            return Rev >= EVMC_PRAGUE;
+        }
+
+        static consteval bool eip_7691_active() noexcept
         {
             return Rev >= EVMC_PRAGUE;
         }
@@ -209,6 +215,11 @@ namespace monad
             // monad-bft currently proposes and validates it as zero rather
             // than as an Ethereum EIP-7685 request-list hash. Keep those
             // paths paired before enabling real request hash processing.
+            return false;
+        }
+
+        static consteval bool eip_7691_active() noexcept
+        {
             return false;
         }
 

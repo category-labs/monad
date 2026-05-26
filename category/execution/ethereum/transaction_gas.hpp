@@ -60,8 +60,45 @@ max_gas_cost(uint64_t const gas_limit, uint256_t const max_fee_per_gas) noexcept
     return checked_mul(uint256_t{gas_limit}, max_fee_per_gas);
 }
 
+// EIP-4844
+inline constexpr uint64_t GAS_PER_BLOB = 131'072;
+
+template <Traits traits>
+inline constexpr uint64_t max_blobs_per_block() noexcept
+{
+    // EIP-7691 increases the blob count where active.
+    if constexpr (traits::eip_7691_active()) {
+        return 9;
+    }
+    else {
+        return 6;
+    }
+}
+
+template <Traits traits>
+inline constexpr uint64_t max_blob_gas_per_block() noexcept
+{
+    return max_blobs_per_block<traits>() * GAS_PER_BLOB;
+}
+
+template <Traits traits>
+inline constexpr uint64_t blob_base_fee_update_fraction() noexcept
+{
+    // EIP-7691 adjusts the blob base fee update fraction where active.
+    if constexpr (traits::eip_7691_active()) {
+        return 5'007'716;
+    }
+    else {
+        return 3'338'477;
+    }
+}
+
+template <Traits traits>
 uint256_t calc_blob_fee(Transaction const &, uint64_t) noexcept;
+
+template <Traits traits>
 uint256_t get_base_fee_per_blob_gas(uint64_t) noexcept;
+
 uint64_t get_total_blob_gas(Transaction const &) noexcept;
 
 MONAD_NAMESPACE_END

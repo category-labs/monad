@@ -212,7 +212,8 @@ Result<void> static_validate_transaction(
 
             if (MONAD_UNLIKELY(
                     tx.max_fee_per_blob_gas <
-                    get_base_fee_per_blob_gas(excess_blob_gas.value()))) {
+                    get_base_fee_per_blob_gas<traits>(
+                        excess_blob_gas.value_or(0)))) {
                 return TransactionError::GasLimitOverflow;
             }
         }

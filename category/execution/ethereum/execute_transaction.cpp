@@ -73,7 +73,7 @@ constexpr void irrevocable_change(
     uint256_t blob_gas = 0;
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         blob_gas = (tx.type == TransactionType::eip4844)
-                       ? calc_blob_fee(tx, excess_blob_gas)
+                       ? calc_blob_fee<traits>(tx, excess_blob_gas)
                        : 0;
     }
     auto const upfront_cost =

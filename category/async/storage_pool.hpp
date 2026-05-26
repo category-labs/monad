@@ -327,6 +327,11 @@ public:
         //! can cause pool data loss, as well as system data loss as it will
         //! happily use any partition you feed it, including the system drive.
         uint32_t disable_mismatching_storage_pool_check : 1;
+        //! Whether to permit on-disk format migration on open. Default false;
+        //! only monad-mpt --upgrade sets this to true. When false, a
+        //! DbMetadataContext ctor that observes PREVIOUS_MAGIC aborts with a
+        //! message directing the operator to run monad-mpt --upgrade.
+        uint32_t allow_migration : 1;
 
         //! Number of conventional chunks to allocate per device. Default is 3.
         uint32_t num_cnv_chunks;
@@ -337,13 +342,15 @@ public:
             , open_read_only(false)
             , open_read_only_allow_dirty(false)
             , disable_mismatching_storage_pool_check(false)
+            , allow_migration(false)
             , num_cnv_chunks(3)
         {
         }
     };
 
 private:
-    bool const is_read_only_, is_read_only_allow_dirty_, is_newly_truncated_;
+    bool const is_read_only_, is_read_only_allow_dirty_, is_migration_allowed_,
+        is_newly_truncated_;
     std::vector<device_t> devices_;
 
     // Lock protects everything below this
@@ -393,6 +400,15 @@ public:
     bool is_read_only_allow_dirty() const noexcept
     {
         return is_read_only_allow_dirty_;
+    }
+
+    //! \brief True if the storage pool was opened with allow_migration set.
+    //! Consulted by DbMetadataContext to decide whether a PREVIOUS_MAGIC
+    //! pool should be migrated or rejected with a "run monad-mpt --upgrade"
+    //! message.
+    bool is_migration_allowed() const noexcept
+    {
+        return is_migration_allowed_;
     }
 
     //! \brief True if the storage pool was just truncated, and structures may

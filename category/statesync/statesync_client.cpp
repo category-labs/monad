@@ -20,6 +20,7 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/statesync/statesync_client.h>
@@ -45,6 +46,10 @@ monad_statesync_client_context *monad_statesync_client_context_create(
     std::vector<std::filesystem::path> const paths{
         dbname_paths, dbname_paths + len};
     MONAD_ASSERT(!paths.empty());
+    // C ABI entry — runs in a foreign process; register the state machine
+    // factories so the kind-driven Db ctor can resolve `ethereum`.
+    // Idempotent: re-registration overwrites the prior factory.
+    register_ethereum_state_machines();
     return new monad_statesync_client_context{
         paths,
         sq_thread_cpu == MONAD_SQPOLL_DISABLED

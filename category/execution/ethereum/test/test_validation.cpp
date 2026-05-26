@@ -220,6 +220,25 @@ TYPED_TEST(InMemoryStateTraitsTest, successful_validation)
     EXPECT_TRUE(result2.has_value());
 }
 
+TYPED_TEST(TraitsTest, invalid_signature)
+{
+    // A transaction that passes every earlier static check but carries a bad
+    // r/s must be rejected with InvalidSignature (EIP-2).
+    static Transaction const t{
+        .sc = {.r = 0, .s = s},
+        .nonce = 25,
+        .max_fee_per_gas = 29'443'849'433,
+        .gas_limit = 27'500,
+        .value = 1,
+        .to = to};
+
+    auto const result =
+        static_validate_transaction<typename TestFixture::Trait>(
+            t, 0, std::nullopt, 1);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), TransactionError::InvalidSignature);
+}
+
 TYPED_TEST(TraitsTest, max_fee_less_than_base)
 {
     static Transaction const t{

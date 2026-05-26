@@ -25,6 +25,12 @@ MONAD_NAMESPACE_BEGIN
 
 struct SignatureAndChain
 {
+    static constexpr uint256_t secp256k1_order = [] {
+        using namespace monad::literals;
+        return 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
+    }();
+    static constexpr uint256_t secp256k1_order_half = secp256k1_order / 2;
+
     uint256_t r{};
     uint256_t s{};
     std::optional<uint256_t> chain_id{};
@@ -38,10 +44,21 @@ struct SignatureAndChain
      */
     constexpr bool has_upper_s() const
     {
-        using namespace monad::literals;
-        static constexpr auto secp256k1_order =
-            0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
-        return s > secp256k1_order / 2;
+        return s > secp256k1_order_half;
+    }
+
+    constexpr bool is_valid() const
+    {
+        if (!r || !s) {
+            return false;
+        }
+        if (r >= secp256k1_order || s >= secp256k1_order) {
+            return false;
+        }
+        if (has_upper_s()) {
+            return false;
+        }
+        return true;
     }
 
     friend bool

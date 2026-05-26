@@ -21,15 +21,7 @@ add_executable(
   monad
   monad/main.cpp
   monad/event.cpp
-  monad/event.hpp
-  monad/file_io.hpp
-  monad/file_io.cpp
-  monad/runloop_ethereum.cpp
-  monad/runloop_ethereum.hpp
-  monad/runloop_monad.cpp
-  monad/runloop_monad.hpp
-  monad/runloop_monad_ethblocks.cpp
-  monad/runloop_monad_ethblocks.hpp)
+  monad/event.hpp)
 
 monad_compile_options(monad)
 

@@ -30,6 +30,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/kbhit.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/trie.hpp>
 
@@ -402,6 +403,7 @@ struct impl_t
     bool create_database = false;
     bool truncate_database = false;
     bool create_empty_database = false;
+    bool upgrade_database = false;
     std::optional<uint64_t> rewind_database_to;
     std::optional<uint64_t> reset_history_length;
     bool create_chunk_increasing = false;
@@ -510,7 +512,12 @@ public:
              << ", latest verified is "
              << aux.metadata_ctx().get_latest_verified_version()
              << ", auto expire version is "
-             << aux.metadata_ctx().get_auto_expire_version_metadata() << "\n";
+             << aux.metadata_ctx().get_auto_expire_version_metadata(
+                    monad::mpt::timeline_id::primary)
+             << " (primary), "
+             << aux.metadata_ctx().get_auto_expire_version_metadata(
+                    monad::mpt::timeline_id::secondary)
+             << " (secondary)\n";
     }
 
     void do_restore_database()
@@ -893,10 +900,36 @@ public:
                             old_metadata->latest_verified_version;
                         metadata->latest_voted_version =
                             old_metadata->latest_voted_version;
+                        metadata->latest_proposed_version =
+                            old_metadata->latest_proposed_version;
                         metadata->latest_voted_block_id =
                             old_metadata->latest_voted_block_id;
-                        metadata->auto_expire_version =
-                            old_metadata->auto_expire_version;
+                        metadata->latest_proposed_block_id =
+                            old_metadata->latest_proposed_block_id;
+                        metadata->root_offsets_state.auto_expire_version_ =
+                            old_metadata->root_offsets_state
+                                .auto_expire_version_;
+                        // Dual-timeline role + secondary ring header.
+                        // Without primary_ring_idx the restored DB would
+                        // route the primary role at ring_a even when the
+                        // source DB had promoted ring_b — silent data
+                        // loss. Copy the secondary ring header so its
+                        // chunks (restored under the same cnv ids) are
+                        // mapped by map_ring_b_storage at reopen.
+                        metadata->primary_ring_idx =
+                            old_metadata->primary_ring_idx;
+                        metadata->secondary_timeline_active_ =
+                            old_metadata->secondary_timeline_active_;
+                        metadata->secondary_timeline.restore_from(
+                            old_metadata->secondary_timeline);
+                        metadata->secondary_timeline_state
+                            .auto_expire_version_ =
+                            old_metadata->secondary_timeline_state
+                                .auto_expire_version_;
+                        // Deliberately NOT copied: pending_shrink_grow stays
+                        // at its zero-initialised value (op_kind NONE) so the
+                        // restored DB starts quiescent and does not replay an
+                        // in-flight op against freshly-restored ring data.
                     });
                     fast_list_base_insertion_count =
                         old_metadata->fast_list_begin()->insertion_count();
@@ -1225,6 +1258,16 @@ public:
                         i.uncompressed.subspan(0, db_metadata_size);
                     auto const *m = monad::start_lifetime_as<
                         monad::mpt::detail::db_metadata>(i.uncompressed.data());
+                    // The archive loop below walks contiguous cnv chunk
+                    // ids [0, additional_cnv_chunks_to_archive]; that
+                    // assumption breaks once activate_secondary_header
+                    // has split chunks between root_offsets and
+                    // secondary_timeline. Deactivate before archiving.
+                    MONAD_ASSERT_PRINTF(
+                        m->secondary_timeline_active_ == 0,
+                        "archive of a pool with an active secondary "
+                        "timeline is not supported; run monad-mpt "
+                        "--deactivate-secondary first");
                     additional_cnv_chunks_to_archive =
                         m->root_offsets.cnv_chunks_len();
                 }
@@ -1446,6 +1489,13 @@ opened.
                 "--rewind-to",
                 impl.rewind_database_to,
                 "rewind database to an earlier point in its history.");
+            cli_ops_group->add_flag(
+                "--upgrade",
+                impl.upgrade_database,
+                "migrate the database metadata to the current on-disk "
+                "format (MONAD008) and ensure it is durable on disk "
+                "before exiting. Run after upgrading the monad apt "
+                "package and before starting monad services.");
             cli.add_option(
                 "--archive",
                 impl.archive_database,
@@ -1560,6 +1610,12 @@ opened.
                 impl.flags.open_read_only = false;
                 impl.flags.open_read_only_allow_dirty = false;
             }
+            else if (impl.upgrade_database) {
+                mode = MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
+                impl.flags.open_read_only = false;
+                impl.flags.open_read_only_allow_dirty = false;
+                impl.flags.allow_migration = true;
+            }
             if (mode == MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate) {
                 MONAD_ASYNC_NAMESPACE::storage_pool const pool{
                     {impl.storage_paths}, mode, impl.flags};
@@ -1630,6 +1686,22 @@ opened.
             impl.print_list_info(
                 aux, aux.metadata_ctx().main()->free_list_begin(), "Free");
             impl.print_db_history_summary(aux);
+
+            if (impl.upgrade_database) {
+                if (aux.metadata_ctx().is_new_pool()) {
+                    cout << "\nWARNING: --upgrade found no existing DB "
+                            "metadata; a fresh MONAD008 pool was created. "
+                            "Use --create for an explicit new-pool "
+                            "workflow.\n";
+                }
+                else {
+                    cout << "\nDB is on version MONAD008; flushing "
+                            "metadata...\n";
+                }
+                aux.metadata_ctx().sync_metadata_to_disk();
+                cout << "Success.\n";
+                return 0;
+            }
 
             if (impl.reset_history_length) {
                 // set to fixed history length, database will prune any outdated

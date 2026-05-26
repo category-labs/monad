@@ -40,6 +40,7 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -1068,6 +1069,20 @@ Db::Db(std::unique_ptr<StateMachine> machine, OnDiskDbConfig const &config)
     MONAD_ASSERT(impl_->aux().is_on_disk());
 }
 
+Db::Db(OnDiskDbConfig const &config)
+{
+    auto worker = std::make_shared<OnDiskDbServiceThread>(config);
+    auto const kind = worker->aux().metadata_ctx().get_state_machine_kind(
+        timeline_id::primary);
+    auto machine = create_state_machine(kind);
+    impl_ = std::make_unique<RWOnDisk>(
+        std::move(worker),
+        std::move(machine),
+        timeline_id::primary,
+        config.compaction);
+    MONAD_ASSERT(impl_->aux().is_on_disk());
+}
+
 Db::Db(AsyncIOContext &io_ctx)
     : impl_{std::make_unique<ROOnDiskBlocking>(io_ctx, timeline_id::primary)}
 {
@@ -1329,6 +1344,20 @@ Db::open_secondary_timeline(std::unique_ptr<StateMachine> secondary_machine)
     }
     return Db{rw->spawn_sibling(
         std::move(secondary_machine), timeline_id::secondary)};
+}
+
+std::optional<Db> Db::open_secondary_timeline()
+{
+    MONAD_ASSERT(impl_);
+    auto *const rw = static_cast<RWOnDisk *>(impl_.get());
+    MONAD_ASSERT(rw->worker_thread_use_count() == 1);
+    if (!rw->aux().metadata_ctx().timeline_active(timeline_id::secondary)) {
+        return std::nullopt;
+    }
+    auto const kind =
+        rw->aux().metadata_ctx().get_state_machine_kind(timeline_id::secondary);
+    auto machine = create_state_machine(kind);
+    return Db{rw->spawn_sibling(std::move(machine), timeline_id::secondary)};
 }
 
 void Db::promote_secondary_to_primary()

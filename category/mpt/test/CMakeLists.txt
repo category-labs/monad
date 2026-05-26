@@ -53,6 +53,10 @@ add_trie_test(TARGET node_writer_test SOURCES "node_writer_test.cpp")
 add_trie_test(TARGET plain_trie_test SOURCES "plain_trie_test.cpp")
 add_trie_test(TARGET rewind_test SOURCES "rewind_test.cpp")
 add_trie_test(TARGET state_machine_test SOURCES "state_machine_test.cpp")
+add_trie_test(TARGET state_machine_kind_test SOURCES
+              "state_machine_kind_test.cpp")
+add_trie_test(TARGET db_state_machine_kind_open_test SOURCES
+              "db_state_machine_kind_open_test.cpp")
 add_trie_test(TARGET subtrie_version_test SOURCES "subtrie_version_test.cpp")
 add_trie_test(TARGET unsigned_20_test SOURCES "unsigned_20_test.cpp")
 add_trie_test(TARGET virtual_offset_test SOURCES "virtual_offset_test.cpp")

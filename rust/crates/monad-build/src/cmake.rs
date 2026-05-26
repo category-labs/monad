@@ -59,7 +59,7 @@ impl MonadCMake {
         self
     }
 
-    pub fn build(self, target: &'static str) {
+    pub fn build(self, target: &'static str) -> String {
         let Self {
             mut cmake,
             linkage,
@@ -82,5 +82,7 @@ impl MonadCMake {
         if with_rpath {
             println!("cargo:rustc-link-arg=-Wl,-rpath,{}/build", dst.display());
         }
+
+        dst.to_string_lossy().into_owned()
     }
 }

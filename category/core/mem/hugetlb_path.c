@@ -28,6 +28,28 @@
 #include <fcntl.h>
 #include <linux/limits.h>
 
+#if MONAD_LIBHUGETLBFS_STATIC
+
+// We're statically linking, and won't get the constructor that initializes
+// the library because it is `static`; we just manually kick the tires here,
+// see `init.c` in the libhugetlbfs source code
+static void __attribute__((constructor)) setup_libhugetlbfs(void)
+{
+    // NOLINTBEGIN(bugprone-reserved-identifier)
+    extern void __lh_hugetlbfs_setup_env();
+    extern void __lh_setup_mounts();
+    extern void __lh__hugetlbfs_setup_kernel_page_size();
+    extern void __lh__probe_default_hpage_size();
+    // NOLINTEND(bugprone-reserved-identifier)
+
+    __lh_hugetlbfs_setup_env();
+    __lh__hugetlbfs_setup_kernel_page_size();
+    __lh_setup_mounts();
+    __lh__probe_default_hpage_size();
+}
+
+#endif
+
 thread_local char g_error_buf[PATH_MAX];
 
 #define FORMAT_ERRC(...)                                                       \

@@ -12,7 +12,6 @@ packages=(
   libgmock-dev
   libgmp-dev
   libgtest-dev
-  libhugetlbfs-dev
   libtbb-dev
   liburing-dev
   libzstd-dev

@@ -88,11 +88,13 @@ target_compile_options(monad_event PRIVATE -Wall -Wextra -Wconversion -Werror)
 target_link_libraries(monad_event PRIVATE ${libzstd_file})
 
 if(MONAD_EVENT_USE_LIBHUGETLBFS)
-  find_library(libhugetlbfs NAMES hugetlbfs REQUIRED)
+  if (NOT ${CMAKE_PROJECT_NAME} STREQUAL "monad")
+    add_subdirectory("third_party/libhugetlbfs")
+  endif()
   target_sources(monad_event PRIVATE
     "../core/mem/hugetlb_path.c"
     "../core/mem/hugetlb_path.h")
-  target_link_libraries(monad_event PRIVATE hugetlbfs)
+  target_link_libraries(monad_event PRIVATE libhugetlbfs)
 else()
   target_compile_definitions(monad_event PRIVATE MONAD_EVENT_DISABLE_LIBHUGETLBFS)
 endif()

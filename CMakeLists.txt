@@ -176,6 +176,11 @@ endif()
 add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")
 
+# libhugetlbfs
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  add_subdirectory("third_party/libhugetlbfs")
+endif()
+
 # magic_enum
 add_subdirectory("third_party/magic_enum")
 

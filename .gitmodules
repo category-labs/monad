@@ -65,3 +65,6 @@
 [submodule "third_party/fiber"]
 	path = third_party/fiber
 	url = https://github.com/category-labs/fiber.git
+[submodule "third_party/libhugetlbfs/src"]
+	path = third_party/libhugetlbfs/src
+	url = https://github.com/libhugetlbfs/libhugetlbfs.git

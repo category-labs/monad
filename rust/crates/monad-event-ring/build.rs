@@ -14,7 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 fn main() {
-    monad_build::MonadCMake::new(
+    let cmake_binary_dir = monad_build::MonadCMake::new(
         monad_build::repository_root().join("category/event"),
         monad_build::MonadCMakeLinkage::Static,
     )
@@ -22,7 +22,12 @@ fn main() {
 
     println!("cargo:rustc-link-lib=zstd");
     #[cfg(target_os = "linux")]
-    println!("cargo:rustc-link-lib=hugetlbfs");
+    println!(
+        "cargo:rustc-link-search=native={}/build/libhugetlbfs-install/lib64",
+        cmake_binary_dir
+    );
+    #[cfg(target_os = "linux")]
+    println!("cargo:rustc-link-lib=static=hugetlbfs");
     #[cfg(not(target_os = "linux"))]
     println!("cargo:rustc-link-lib=monad_event_os_compat");
 

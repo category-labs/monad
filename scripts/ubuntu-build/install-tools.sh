@@ -2,6 +2,8 @@
 
 packages=(
   apt-utils
+  autoconf
+  automake
   ca-certificates
   clang-19
   clang-tools-19
@@ -16,7 +18,6 @@ packages=(
   gnupg
   libclang-common-19-dev
   libclang-rt-19-dev
-  libhugetlbfs-bin
   llvm-19-dev
   make
   ninja-build

@@ -23,6 +23,8 @@ pub struct MonadCMake {
     cmake: cmake::Config,
     linkage: MonadCMakeLinkage,
     with_rpath: bool,
+
+    link_libraries: Vec<&'static str>,
 }
 
 impl MonadCMake {
@@ -43,6 +45,8 @@ impl MonadCMake {
             cmake,
             linkage,
             with_rpath: false,
+
+            link_libraries: Vec::default(),
         }
     }
 
@@ -59,11 +63,21 @@ impl MonadCMake {
         self
     }
 
+    pub fn link_libraries(
+        mut self,
+        link_libraries: impl IntoIterator<Item = &'static str>,
+    ) -> Self {
+        self.link_libraries.extend(link_libraries);
+        self
+    }
+
     pub fn build(self, target: &'static str) {
         let Self {
             mut cmake,
             linkage,
             with_rpath,
+
+            link_libraries: libraries,
         } = self;
 
         let dst = cmake.build_target(target).build();
@@ -81,6 +95,10 @@ impl MonadCMake {
 
         if with_rpath {
             println!("cargo:rustc-link-arg=-Wl,-rpath,{}/build", dst.display());
+        }
+
+        for link_library in libraries {
+            println!("cargo:rustc-link-lib={link_library}");
         }
     }
 }

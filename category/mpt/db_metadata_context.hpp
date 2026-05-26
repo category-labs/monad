@@ -23,6 +23,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/util.hpp>
 
 #include <atomic>
@@ -278,6 +279,15 @@ public:
     int64_t get_auto_expire_version_metadata(timeline_id tid) const noexcept;
     void
     set_auto_expire_version_metadata(timeline_id tid, int64_t version) noexcept;
+
+    // Read the persisted StateMachine kind for the given timeline. Stamped
+    // at pool create time by monad-mpt --state-machine and on
+    // activate-secondary for the non-primary ring; consumed by mpt::Db's
+    // production-open ctor to pick the right SM via the registry in
+    // state_machine_kind.hpp.
+    state_machine_kind get_state_machine_kind(timeline_id tid) const noexcept;
+    void
+    set_state_machine_kind(timeline_id tid, state_machine_kind kind) noexcept;
     void update_history_length_metadata(uint64_t history_len) noexcept;
 
     // Root offsets operations. All wrap the two-copy mutation in

@@ -23,6 +23,10 @@
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/mpt/db_metadata_context.hpp>
+#include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/state_machine_kind.hpp>
+#include <category/mpt/trie.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_messages.h>
@@ -100,6 +104,19 @@ void statesync_server_send_done(
     monad_statesync_server_network *const net, monad_sync_done const done)
 {
     monad_statesync_client_handle_done(net->cctx, done);
+}
+
+namespace monad::mpt::test
+{
+    // Friend-of-Db accessor (db.hpp friends monad::mpt::test::DbAccessor).
+    // Lets the fresh-pool helper stamp the persisted state_machine_kind.
+    struct DbAccessor
+    {
+        static UpdateAux &aux(Db &db)
+        {
+            return const_cast<UpdateAux &>(db.aux());
+        }
+    };
 }
 
 MONAD_NAMESPACE_BEGIN
@@ -249,9 +266,13 @@ namespace
             ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
         ::close(fd);
         char const *const path = dbname.c_str();
-        mpt::Db const db{
+        mpt::Db db{
             std::make_unique<OnDiskMachine>(),
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
+        monad::mpt::test::DbAccessor::aux(db)
+            .metadata_ctx()
+            .set_state_machine_kind(
+                timeline_id::primary, state_machine_kind::ethereum);
         return dbname;
     }
 

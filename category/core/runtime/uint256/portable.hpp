@@ -26,19 +26,6 @@
 // binary operations (add, minus, times, division, left shift, and right shift)
 // used by the uint256 implementation,
 
-MONAD_NAMESPACE_BEGIN
-
-[[gnu::always_inline]]
-constexpr inline result_with_carry<uint64_t>
-addc(uint64_t const lhs, uint64_t const rhs, bool const carry_in) noexcept;
-
-[[gnu::always_inline]]
-inline constexpr void mulx(
-    uint64_t const x, uint64_t const y, uint64_t &r_hi,
-    uint64_t &r_lo) noexcept;
-
-MONAD_NAMESPACE_END
-
 namespace monad::uint256::portable
 {
 
@@ -111,12 +98,12 @@ namespace monad::uint256::portable
             for (size_t i = 0; i < M && i + j < R; i++) {
                 uint64_t hi;
                 uint64_t lo;
-                monad::mulx(x[i], y[j], hi, lo);
+                mulx(x[i], y[j], hi, lo);
 
-                auto const [s0, c0] = monad::addc(lo, result[i + j], false);
-                auto const [s1, c1] = monad::addc(s0, carry, false);
+                auto const [s0, c0] = addc(lo, result[i + j], false);
+                auto const [s1, c1] = addc(s0, carry, false);
                 result[i + j] = s1;
-                auto const [s2, c2] = monad::addc(hi, c0, c1);
+                auto const [s2, c2] = addc(hi, c0, c1);
                 carry = s2;
             }
             if (j + M < R) {

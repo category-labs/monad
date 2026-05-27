@@ -14,10 +14,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/int.hpp>
+#include <category/core/log.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
+#include <category/execution/monad/staking/util/staking_error.hpp>
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
@@ -44,6 +47,16 @@ void distribute_priority_fees(State &state)
     StakingContract contract(state, call_tracer);
     auto const res = contract.distribute_priority_fees(fees);
     if (res.has_error()) {
+        LOG_ERROR(
+            "staking: distribute priority fee reverted: {}",
+            res.error().message());
+        // At the start of block execution, the proposer id is always cleared to
+        // 0 and is set by the reward syscall. If the reward syscall was not
+        // included, `UnknownValidator` will be returned, and that is the only
+        // state we permit.
+        MONAD_ASSERT_THROW(
+            res.error() == StakingError::UnknownValidator,
+            "fee distribution error");
         state.pop_reject();
     }
     else {

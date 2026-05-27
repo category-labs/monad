@@ -34,6 +34,7 @@ target_sources(monad-vm-runtime PRIVATE
     "environment.hpp"
     "environment.cpp"
     "exit.S"
+    "exit.hpp"
     "exit.cpp"
     "keccak.hpp"
     "log.hpp"

@@ -13,15 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/types.hpp>
-
-extern "C" void monad_vm_runtime_exit [[noreturn]] (void *);
 
 extern "C" void monad_vm_runtime_context_out_of_gas_exit
     [[noreturn]] (monad::vm::runtime::Context *const ctx)
 {
     ctx->result.status = monad::vm::runtime::StatusCode::OutOfGas;
-    monad_vm_runtime_exit(ctx->exit_stack_ptr);
+    monad::vm::runtime::exit(ctx->exit_stack_ptr);
 }
 
 namespace monad::vm::runtime
@@ -30,12 +29,12 @@ namespace monad::vm::runtime
     {
         is_stack_unwinding_active = true;
         result.status = StatusCode::Error;
-        monad_vm_runtime_exit(exit_stack_ptr);
+        ::monad::vm::runtime::exit(exit_stack_ptr);
     }
 
     void Context::exit [[noreturn]] (StatusCode const code) noexcept
     {
         result.status = code;
-        monad_vm_runtime_exit(exit_stack_ptr);
+        ::monad::vm::runtime::exit(exit_stack_ptr);
     }
 }

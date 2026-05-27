@@ -18,8 +18,6 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -28,8 +26,12 @@
 #include <bit>
 #include <cstring>
 #include <optional>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
+
+class State;
+struct CallTracerBase;
 
 bool init_trusted_setup();
 
@@ -138,26 +140,5 @@ struct PrecompileResult
 };
 
 using precompiled_execute_fn = PrecompileResult(byte_string_view);
-
-PrecompileResult ecrecover_execute(byte_string_view);
-PrecompileResult sha256_execute(byte_string_view);
-PrecompileResult ripemd160_execute(byte_string_view);
-PrecompileResult identity_execute(byte_string_view);
-PrecompileResult expmod_execute(byte_string_view);
-PrecompileResult ecadd_execute(byte_string_view);
-PrecompileResult ecmul_execute(byte_string_view);
-PrecompileResult snarkv_execute(byte_string_view);
-PrecompileResult blake2bf_execute(byte_string_view);
-PrecompileResult point_evaluation_execute(byte_string_view);
-PrecompileResult bls12_g1_add_execute(byte_string_view);
-PrecompileResult bls12_g1_msm_execute(byte_string_view);
-PrecompileResult bls12_g2_add_execute(byte_string_view);
-PrecompileResult bls12_g2_msm_execute(byte_string_view);
-PrecompileResult bls12_pairing_check_execute(byte_string_view);
-PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view);
-PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view);
-
-// Rollup precompiles
-PrecompileResult p256_verify_execute(byte_string_view);
 
 MONAD_NAMESPACE_END

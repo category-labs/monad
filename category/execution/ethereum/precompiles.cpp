@@ -18,10 +18,10 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/precompiles_impl.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <silkpre/precompile.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>

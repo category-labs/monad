@@ -116,11 +116,18 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
     return {EVMC_SUCCESS, output, output_size};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-ecrecover_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult ecrecover_impl(
+    std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
+    uint8_t recid, std::span<uint8_t, 32> const out)
 {
-    auto const clamped_input = input.substr(0, 128);
-    return silkpre_execute<silkpre_ecrec_run>(clamped_input);
+    std::memset(out.data(), 0, 12);
+    thread_local secp256k1_context *context{
+        secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS)};
+    if (!silkpre_recover_address(
+            &out[12], msg.data(), sig.data(), recid, context)) {
+        return {out.data(), 0};
+    }
+    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

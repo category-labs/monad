@@ -151,12 +151,6 @@ add_library(
   "ethereum/fmt/event_trace_fmt.hpp"
   "ethereum/process_requests.cpp"
   "ethereum/process_requests.hpp"
-  "ethereum/precompiles.cpp"
-  "ethereum/precompiles.hpp"
-  "ethereum/precompiles_bls12.cpp"
-  "ethereum/precompiles_bls12.hpp"
-  "ethereum/precompiles_impl.cpp"
-  "ethereum/precompiles_gas_cost_impl.cpp"
   "ethereum/reserve_balance.cpp"
   "ethereum/reserve_balance.hpp"
   "ethereum/trace/call_frame.cpp"
@@ -297,13 +291,28 @@ add_library(
   # monad/state2
   "monad/state2/proposal_state.hpp")
 
+# ##############################################################################
+# Precompiles — extracted into a standalone OBJECT library so that the zkvm
+# build can reuse it without pulling in the full execution dependency tree.
+# ##############################################################################
+
+add_library(
+  monad_precompiles OBJECT
+  "ethereum/precompiles.cpp"
+  "ethereum/precompiles.hpp"
+  "ethereum/precompiles_gas_cost_impl.cpp"
+  "ethereum/precompiles_bls12.cpp"
+  "ethereum/precompiles_bls12.hpp"
+)
+
 target_include_directories(
   monad_execution_ethereum
   PUBLIC ${CATEGORY_MAIN_DIR}
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
   PRIVATE ${Boost_INCLUDE_DIRS}
   PUBLIC ${cthash_SOURCE_DIR}/include
-  PUBLIC ${silkpre_SOURCE_DIR}/lib)
+  PUBLIC ${silkpre_SOURCE_DIR}/lib
+  PUBLIC ${monad_crypto_SOURCE_DIR}/src)
 
 target_include_directories(
   monad_execution_native
@@ -319,6 +328,29 @@ target_compile_definitions(
   monad_execution_native PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
                                 MONAD_CXX_CTYPES_USE_MONAD_INTS)
 
+target_include_directories(
+  monad_precompiles
+  PUBLIC ${CATEGORY_MAIN_DIR}
+  PUBLIC ${silkpre_SOURCE_DIR}/lib
+  PUBLIC ${monad_crypto_SOURCE_DIR}/src)
+
+target_link_libraries(
+  monad_precompiles
+  PUBLIC monad-vm
+  PUBLIC monad_core
+  PUBLIC monad_crypto
+  PUBLIC blst::blst
+  PUBLIC c-kzg-4844
+  PRIVATE PkgConfig::crypto++
+  PUBLIC ethash::keccak
+  PUBLIC evmc
+  PUBLIC immer
+  PUBLIC intx::intx
+  PUBLIC nlohmann_json::nlohmann_json
+  PUBLIC silkpre
+  PUBLIC unordered_dense)
+monad_compile_options(monad_precompiles)
+
 target_link_libraries(
   monad_execution_ethereum
   PUBLIC monad-vm
@@ -330,7 +362,6 @@ target_link_libraries(
   PUBLIC c-kzg-4844
   PRIVATE monad_crypto
   PRIVATE PkgConfig::brotli
-  PRIVATE PkgConfig::crypto++
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC immer

@@ -73,21 +73,27 @@ namespace bls12
     void write_g2(blst_p2_affine const &, uint8_t *);
 
     template <typename Group>
-    PrecompileResult add(byte_string_view);
+    PrecompileImplResult
+        add(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 
     template <typename Group>
-    PrecompileResult msm(byte_string_view);
+    PrecompileImplResult
+        msm(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 
     template <typename Group>
-    PrecompileResult mul(byte_string_view);
+    PrecompileImplResult
+        mul(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 
     template <typename Group>
-    PrecompileResult msm_pippenger(byte_string_view, uint64_t);
+    PrecompileImplResult msm_pippenger(
+        byte_string_view, uint64_t, std::span<uint8_t, Group::encoded_size>);
 
-    PrecompileResult pairing_check(byte_string_view);
+    PrecompileImplResult
+        pairing_check(byte_string_view, std::span<uint8_t, 32>);
 
     template <typename Group>
-    PrecompileResult map_fp_to_g(byte_string_view);
+    PrecompileImplResult
+        map_fp_to_g(byte_string_view, std::span<uint8_t, Group::encoded_size>);
 
     // The BLST library is implemented as an internal C static library with
     // language-specific bindings applied on top. The implementation and
@@ -115,12 +121,12 @@ namespace bls12
 
     struct G1
     {
+        static constexpr auto element_encoded_size = 64;
+        static constexpr auto encoded_size = 2 * element_encoded_size;
+
         using FieldElement = blst_fp;
         using Point = blst_p1;
         using AffinePoint = blst_p1_affine;
-
-        static constexpr auto element_encoded_size = 64;
-        static constexpr auto encoded_size = 2 * element_encoded_size;
 
         DECLARE_GROUP_FN(read, read_g1);
         DECLARE_GROUP_FN(read_element, read_fp);
@@ -140,13 +146,13 @@ namespace bls12
 
     struct G2
     {
-        using FieldElement = blst_fp2;
-        using Point = blst_p2;
-        using AffinePoint = blst_p2_affine;
-
         static constexpr auto element_encoded_size =
             2 * G1::element_encoded_size;
         static constexpr auto encoded_size = 2 * element_encoded_size;
+
+        using FieldElement = blst_fp2;
+        using Point = blst_p2;
+        using AffinePoint = blst_p2_affine;
 
         DECLARE_GROUP_FN(read, read_g2);
         DECLARE_GROUP_FN(read_element, read_fp2);

@@ -70,6 +70,12 @@ add_library(evmc::evmc ALIAS evmc)
 target_compile_features(evmc INTERFACE c_std_99)
 target_include_directories(evmc INTERFACE ${EVMC_INCLUDE_DIR})
 
+add_library(evmc_cpp INTERFACE)
+add_library(evmc::evmc_cpp ALIAS evmc_cpp)
+target_compile_features(evmc_cpp INTERFACE cxx_std_17)
+target_include_directories(evmc_cpp INTERFACE ${EVMC_INCLUDE_DIR})
+target_link_libraries(evmc_cpp INTERFACE evmc::evmc)
+
 # ethash — only keccak, no ethash or global_context (needs std::mutex)
 set(ETHASH_BUILD_ETHASH OFF CACHE BOOL "" FORCE)
 set(ETHASH_TESTING OFF CACHE BOOL "" FORCE)
@@ -96,6 +102,18 @@ add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
 monad_zkvm_drop_sources(monad-vm-runtime
     "context\\.S" "exit\\.S" "math\\.S" "transmute\\.S")
 monad_zkvm_drop_sources(monad-vm-interpreter "entry\\.S")
+
+add_library(monad-zkvm-precompiles OBJECT
+    "${MONAD_ROOT}/category/execution/ethereum/precompiles.cpp"
+    "${MONAD_ROOT}/category/execution/ethereum/precompiles_gas_cost_impl.cpp"
+    "${MONAD_ROOT}/zkvm/category/execution/ethereum/precompiles_bls12.cpp"
+)
+target_include_directories(
+    monad-zkvm-precompiles
+    PRIVATE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
+monad_compile_options(monad-zkvm-precompiles)
+monad_zkvm_compile_options(monad-zkvm-precompiles)
+target_link_libraries(monad-zkvm-precompiles PUBLIC unordered_dense evmc_cpp)
 
 foreach(tgt monad-vm-evm monad-vm-runtime monad-vm-interpreter)
     monad_zkvm_compile_options(${tgt})
@@ -152,6 +170,7 @@ monad_zkvm_compile_options(monad-zkvm-core)
 
 add_library(monad-zkvm STATIC
     $<TARGET_OBJECTS:monad-zkvm-core>
+    $<TARGET_OBJECTS:monad-zkvm-precompiles>
     $<TARGET_OBJECTS:monad-vm-evm>
     $<TARGET_OBJECTS:monad-vm-runtime>
     $<TARGET_OBJECTS:monad-vm-interpreter>

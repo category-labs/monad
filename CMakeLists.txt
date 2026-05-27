@@ -312,6 +312,7 @@ target_link_libraries(
          monad_execution_ethereum
          monad_execution_native
          monad_execution_runloop
+         monad_precompiles
          monad_rpc
          monad_statesync
          monad-vm

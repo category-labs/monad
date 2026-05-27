@@ -40,6 +40,7 @@ target_sources(monad-vm-runtime PRIVATE
     "log.cpp"
     "math.S"
     "math.hpp"
+    "math/intrinsics.hpp"
     "memory.hpp"
     "runtime.hpp"
     "selfdestruct.hpp"

@@ -9,6 +9,7 @@ clang-format-19 \
       "${root_dir}"/category \
       "${root_dir}"/cmd      \
       "${root_dir}"/test     \
+      "${root_dir}"/zkvm     \
         -name '*.hpp' -or \
         -name '*.cpp' -or \
         -name '*.c'   -or \

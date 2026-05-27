@@ -55,6 +55,7 @@ mapfile -t inputs < <(\
     category/mpt   \
     category/rpc   \
     category/vm    \
+    zkvm           \
     \( -name '*.cpp' -or -name '*.c' \))
 
 "${RUN_CLANG_TIDY}"                               \

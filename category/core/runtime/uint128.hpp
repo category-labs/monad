@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/throw.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -72,7 +73,7 @@ struct uint128_t
             constexpr size_t max_hex_digits = sizeof(uint128_t) * 2;
             size_t num_digits = 0;
             if (*p == '\0') {
-                throw std::invalid_argument(s);
+                MONAD_THROW(std::invalid_argument, s);
             }
             unsigned __int128 r = 0;
             while (*p != '\0') {
@@ -87,10 +88,10 @@ struct uint128_t
                     d = static_cast<uint8_t>(*p - 'A' + 10);
                 }
                 else {
-                    throw std::invalid_argument(s);
+                    MONAD_THROW(std::invalid_argument, s);
                 }
                 if (++num_digits > max_hex_digits) {
-                    throw std::out_of_range(s);
+                    MONAD_THROW(std::out_of_range, s);
                 }
                 r = (r << 4) | d;
                 ++p;
@@ -112,20 +113,20 @@ struct uint128_t
                  << 64) |
                 std::numeric_limits<uint64_t>::max();
             if (*p == '\0') {
-                throw std::invalid_argument(s);
+                MONAD_THROW(std::invalid_argument, s);
             }
             unsigned __int128 r = 0;
             while (*p != '\0') {
                 if (*p < '0' || *p > '9') {
-                    throw std::invalid_argument(s);
+                    MONAD_THROW(std::invalid_argument, s);
                 }
                 auto const digit = static_cast<uint8_t>(*p - '0');
                 if (r > max_before_mul10) {
-                    throw std::out_of_range(s);
+                    MONAD_THROW(std::out_of_range, s);
                 }
                 r *= 10;
                 if (r > uint128_max - digit) {
-                    throw std::out_of_range(s);
+                    MONAD_THROW(std::out_of_range, s);
                 }
                 r += digit;
                 ++p;

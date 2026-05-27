@@ -112,6 +112,8 @@ add_library(
   "small_prng.hpp"
   "spinlock.h"
   "srcloc.h"
+  "thread_local.h"
+  "throw.hpp"
   "tl_tid.c"
   "tl_tid.h"
   "detail/start_lifetime_as_polyfill.hpp"

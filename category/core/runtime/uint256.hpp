@@ -22,6 +22,7 @@
 #include <category/core/runtime/uint256/intrinsics.hpp>
 #include <category/core/runtime/uint256/portable.hpp>
 #include <category/core/runtime/uint256/types.hpp>
+#include <category/core/throw.hpp>
 
 #include <algorithm>
 #include <array>
@@ -1174,7 +1175,7 @@ inline constexpr uint8_t from_dec(char const chr)
     if (chr >= '0' && chr <= '9') {
         return static_cast<uint8_t>(chr - '0');
     }
-    throw std::invalid_argument("invalid digit");
+    MONAD_THROW(std::invalid_argument, "invalid digit");
 }
 
 [[gnu::always_inline]]
@@ -1220,30 +1221,30 @@ inline constexpr uint256_t uint256_t::from_string(char const *const str)
     if (ptr[0] == '0' && (ptr[1] == 'x' || ptr[1] == 'X')) {
         ptr += 2;
         if (*ptr == '\0') {
-            throw std::invalid_argument(str);
+            MONAD_THROW(std::invalid_argument, str);
         }
         size_t const max_digits = sizeof(uint256_t) * 2;
         while (auto const chr = *ptr++) {
             num_digits += 1;
             if (num_digits > max_digits) {
-                throw std::out_of_range(str);
+                MONAD_THROW(std::out_of_range, str);
             }
             result = (result << 4) | from_hex(chr);
         }
     }
     else {
         if (*ptr == '\0') {
-            throw std::invalid_argument(str);
+            MONAD_THROW(std::invalid_argument, str);
         }
         while (auto const chr = *ptr++) {
             num_digits += 1;
             if (result > MAX_MULTIPLIABLE_BY_10) {
-                throw std::out_of_range(str);
+                MONAD_THROW(std::out_of_range, str);
             }
             auto const digit = from_dec(chr);
             result = (truncating_mul(result, 10)) + digit;
             if (result < digit) {
-                throw std::out_of_range(str);
+                MONAD_THROW(std::out_of_range, str);
             }
         }
     }

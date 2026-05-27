@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,18 +15,7 @@
 
 #pragma once
 
-#include <category/core/thread_local.h>
-#include <category/vm/runtime/cached_allocator.hpp>
-
-namespace monad::vm::runtime
-{
-    struct EvmStackAllocatorMeta
-    {
-        using base_type = uint256_t;
-        static constexpr size_t size = 1024;
-        static constexpr size_t alignment = 32;
-        static MONAD_THREAD_LOCAL CachedAllocatorList cache_list;
-    };
-
-    using EvmStackAllocator = CachedAllocator<EvmStackAllocatorMeta>;
-}
+// Thread-local storage qualifier. Expands to `thread_local` on the host
+// build; the zkVM mirror leaves it empty since the bare-metal zkVM
+// environment is single-threaded.
+#define MONAD_THREAD_LOCAL thread_local

@@ -13,10 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/thread_local.h>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/cached_allocator.hpp>
 
 namespace monad::vm::runtime
 {
-    thread_local CachedAllocatorList EvmStackAllocatorMeta::cache_list;
+    MONAD_THREAD_LOCAL CachedAllocatorList EvmStackAllocatorMeta::cache_list;
 }

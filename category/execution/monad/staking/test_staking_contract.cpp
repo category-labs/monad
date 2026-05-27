@@ -2162,6 +2162,30 @@ TEST_F(StakeLatest, priority_fee_distribution_no_reward_txn_burns)
         0);
 }
 
+TEST_F(StakeLatest, priority_fee_distribution_throw)
+{
+    auto const auth_address = 0xdeadbeef_address;
+    auto const val_res = add_validator(auth_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(val_res.has_error());
+    auto const val = val_res.value();
+    skip_to_next_epoch();
+
+    EXPECT_FALSE(
+        syscall_reward(val.sign_address, 0 /* isolate priority-fee path */)
+            .has_error());
+
+    // force an accumulator error. viz. any error that is not unknown validator
+    auto proposer =
+        contract.vars.val_execution(contract.vars.proposer_val_id.load());
+    proposer.accumulated_reward_per_token().store(
+        std::numeric_limits<uint256_t>::max());
+
+    // no eligible validator is the only error we handle gracefully
+    constexpr uint256_t fees = 10 * MON;
+    collect_priority_fee(state, fees);
+    EXPECT_THROW(distribute_priority_fees(state), MonadException);
+}
+
 TEST_F(StakeLatest, priority_fee_distribution_one_hundred_percent_commission)
 {
     constexpr uint256_t commission_rate = MON; // 100%

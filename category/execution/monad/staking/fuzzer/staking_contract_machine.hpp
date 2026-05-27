@@ -108,11 +108,18 @@ namespace monad::staking::test
             precompile_claim_rewards,
             precompile_change_commission,
             precompile_external_reward,
-            precompile_get_delegator
+            precompile_get_delegator,
+            distribute_priority_fees,
         };
 
-        static constexpr size_t TRANSITION_COUNT =
-            magic_enum::enum_count<Transition>();
+        static constexpr size_t TRANSITION_COUNT()
+        {
+            constexpr auto total = magic_enum::enum_count<Transition>();
+            if constexpr (!traits::mip_11_active()) {
+                return total - 1;
+            }
+            return total;
+        }
 
         struct Config
         {
@@ -188,7 +195,10 @@ namespace monad::staking::test
 
         void syscall_snapshot();
 
-        void syscall_reward();
+        bool syscall_reward();
+
+        std::optional<u256_be> gen_distribute_priority_fees_input();
+        bool distribute_priority_fees();
 
         Address get_add_validator_message_auth_address(byte_string const &);
 

@@ -118,6 +118,8 @@ namespace monad::staking::test
 
         uint64_t val_id(Address const &);
 
+        uint64_t proposer_val_id();
+
         uint64_t val_id_bls(Address const &);
 
         ValExecution val_execution(u64_be);
@@ -158,6 +160,8 @@ namespace monad::staking::test
 
         template <Traits traits>
         Result<void> syscall_reward(Address const &, u256_be const &);
+
+        Result<void> distribute_priority_fees(u256_be const &);
 
         template <Traits traits>
         Result<u64_be> precompile_add_validator(

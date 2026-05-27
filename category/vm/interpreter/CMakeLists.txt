@@ -39,6 +39,7 @@ target_sources(monad-vm-interpreter PRIVATE
   "intercode.hpp"
   "push.hpp"
   "stack.hpp"
+  "trampoline.hpp"
   "types.hpp"
 )
 

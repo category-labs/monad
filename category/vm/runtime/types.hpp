@@ -22,6 +22,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
 #include <evmc/evmc.hpp>
@@ -244,7 +245,7 @@ namespace monad::vm::runtime
 
         Memory memory;
 
-        void *exit_stack_ptr = nullptr;
+        exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
         [[gnu::always_inline]]

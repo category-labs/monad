@@ -18,28 +18,13 @@
 #include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/math/intrinsics.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.hpp>
 
-// It is assumed that if the `result` pointer overlaps with `left` and/or
-// `right`, then `result` pointer is equal to `left` and/or `right`.
-extern "C" void monad_vm_runtime_mul(
-    monad::uint256_t *result, monad::uint256_t const *left,
-    monad::uint256_t const *right) noexcept;
-
-// It is assumed that if the `result` pointer overlaps with `left` and/or
-// `right`, then `result` pointer is equal to `left` and/or `right`.
-extern "C" void monad_vm_runtime_mul_192(
-    monad::uint256_t *result, monad::uint256_t const *left,
-    monad::uint256_t const *right) noexcept;
-
 namespace monad::vm::runtime
 {
-    constexpr void (*mul)(
-        uint256_t *, uint256_t const *,
-        uint256_t const *) noexcept = monad_vm_runtime_mul;
-
     constexpr void udiv(
         uint256_t *const result_ptr, uint256_t const *const a_ptr,
         uint256_t const *const b_ptr) noexcept

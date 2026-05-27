@@ -437,7 +437,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
         checked_runtime_call<MUL, traits>(
-            monad_vm_runtime_mul,
+            runtime::mul,
             ctx,
             analysis,
             stack_bottom,

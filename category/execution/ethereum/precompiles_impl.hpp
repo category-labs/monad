@@ -124,37 +124,18 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
     return {EVMC_SUCCESS, output, output_size};
 }
 
-[[gnu::always_inline]] inline PrecompileResult
-ecrecover_execute(byte_string_view const input)
+[[gnu::always_inline]] inline PrecompileImplResult ecrecover_impl(
+    std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
+    uint8_t recid, std::span<uint8_t, 32> const out)
 {
-    byte_string d(128, 0);
-    if (!input.empty()) {
-        std::memcpy(d.data(), input.data(), std::min(input.size(), 128uz));
+    std::memset(out.data(), 0, 12);
+    thread_local secp256k1_context *context{
+        secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS)};
+    if (!silkpre_recover_address(
+            &out[12], msg.data(), sig.data(), recid, context)) {
+        return {out.data(), 0};
     }
-
-    auto const v{load_be_unsafe<uint256_t>(&d[32])};
-    auto const r{load_be_unsafe<uint256_t>(&d[64])};
-    auto const s{load_be_unsafe<uint256_t>(&d[96])};
-
-    if (!Secp256k1Signature{r, s}.has_valid_range() || (v != 27 && v != 28)) {
-        return {EVMC_SUCCESS, nullptr, 0};
-    }
-
-    auto *const output = static_cast<uint8_t *>(std::calloc(1, 32));
-    MONAD_ASSERT(output != nullptr);
-
-    thread_local std::
-        unique_ptr<secp256k1_context, void (*)(secp256k1_context *)> const
-            context(
-                secp256k1_context_create(MONAD_SECP256K1_CONTEXT_FLAGS),
-                &secp256k1_context_destroy);
-
-    if (!monad_recover_address(
-            output + 12, &d[0], &d[64], v != 27, context.get())) {
-        std::free(output);
-        return {EVMC_SUCCESS, nullptr, 0};
-    }
-    return {EVMC_SUCCESS, output, 32};
+    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileResult

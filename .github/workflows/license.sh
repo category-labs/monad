@@ -97,6 +97,10 @@ for file in $(git ls-files -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp' '*.S'); do
         continue
     fi
 
+    if [ "$file" == "zkvm/core/zkvm_accelerators.h" ]; then
+        continue
+    fi
+
     if [ "${directory#third_party}" != "$directory" ]; then
         continue
     fi

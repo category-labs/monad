@@ -27,6 +27,7 @@
 #include <evmc/evmc.hpp>
 #include <evmc/helpers.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -187,5 +188,55 @@ check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
 }
 
 EXPLICIT_EVM_TRAITS(check_call_precompile);
+
+static PrecompileResult
+from_impl_result(PrecompileImplResult result, uint8_t *out)
+{
+    auto const [data, size] = result;
+    if (data == nullptr) {
+        MONAD_DEBUG_ASSERT(size == 0);
+        std::free(out);
+        return PrecompileResult::failure();
+    }
+    if (size == 0) {
+        std::free(out);
+        return {EVMC_SUCCESS, nullptr, size};
+    }
+    return {EVMC_SUCCESS, data, size};
+}
+
+PrecompileResult ecrecover_execute(byte_string_view const input)
+{
+    static constexpr auto kSecp256k1n =
+        0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
+
+    alignas(8) std::basic_string<uint8_t> d(128, '\0');
+    if (input.size() != 0) {
+        std::memcpy(d.data(), input.data(), std::min(input.size(), 128ul));
+    }
+
+    auto const v{load_be_unsafe<uint256_t>(&d[32])};
+    auto const r{load_be_unsafe<uint256_t>(&d[64])};
+    auto const s{load_be_unsafe<uint256_t>(&d[96])};
+
+    if (!r || !s || r >= kSecp256k1n || s >= kSecp256k1n) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
+    if (v != 27 && v != 28) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
+    uint8_t *out{static_cast<uint8_t *>(std::aligned_alloc(8, 32))};
+    MONAD_ASSERT(out != nullptr);
+
+    return from_impl_result(
+        ecrecover_impl(
+            std::span<uint8_t const, 32>{&d[0], 32},
+            std::span<uint8_t const, 64>{&d[64], 64},
+            v != 27,
+            std::span<uint8_t, 32>{out, 32}),
+        out);
+}
 
 MONAD_NAMESPACE_END

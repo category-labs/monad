@@ -27,7 +27,7 @@
 #include <category/vm/runtime/math.hpp>
 #include <category/vm/runtime/math/intrinsics.hpp>
 #include <category/vm/runtime/storage.hpp>
-#include <category/vm/runtime/transmute.hpp>
+#include <category/vm/runtime/transmute/intrinsics.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
 

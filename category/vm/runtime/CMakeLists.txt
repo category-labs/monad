@@ -50,6 +50,7 @@ target_sources(monad-vm-runtime PRIVATE
     "storage_costs.hpp"
     "transmute.S"
     "transmute.hpp"
+    "transmute/intrinsics.hpp"
     "types.hpp"
 )
 

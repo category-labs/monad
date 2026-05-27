@@ -56,7 +56,8 @@ mapfile -d '' -t inputs < <(\
     category/core  \
     category/mpt   \
     category/rpc   \
-    category/vm)
+    category/vm    \
+    zkvm)
 
 "${RUN_CLANG_TIDY}"                               \
   "${inputs[@]}"                                  \

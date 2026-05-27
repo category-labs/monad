@@ -15,5 +15,8 @@
 
 #pragma once
 
-// Throw a C++ exception
-#define MONAD_THROW(exc, msg) throw exc(msg)
+#include <cstddef>
+
+// sys_alloc_aligned(bytes, align) is supplied by the backend's Rust
+// entrypoint crate (ziskos for ZisK, sp1-zkvm for SP1) at link time.
+extern "C" void *sys_alloc_aligned(std::size_t bytes, std::size_t align);

@@ -120,6 +120,38 @@ RUN cd src/rust && cargo check --all-targets --all-features
 RUN cd src/rust && cargo doc --all-features --no-deps
 RUN cd src/rust && cargo test --release --doc --all-features
 
+FROM base AS base_riscv_gnu_toolchain
+
+COPY scripts/ubuntu-build/ /opt
+RUN apt-get update && \
+    /opt/install-riscv-deps.sh && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    rm -rf /opt
+
+RUN git clone --depth 1 --branch 2026.06.06 https://github.com/riscv-collab/riscv-gnu-toolchain /riscv-gnu-toolchain
+WORKDIR /riscv-gnu-toolchain
+
+RUN ./configure --prefix=/root/riscv \
+    --with-arch=rv64ima \
+    --with-abi=lp64
+    
+RUN make -j$(nproc)
+
+ENV PATH="/root/riscv/bin:${PATH}"
+
+WORKDIR /
+
+FROM base_riscv_gnu_toolchain AS build_zk
+
+COPY . src
+
+RUN cd src && cmake -B build-zkvm -S zkvm/guest \
+    -DCMAKE_TOOLCHAIN_FILE=/src/category/core/toolchains/riscv64-elf.cmake \
+    -DRISCV_TOOLCHAIN_DIR=/root/riscv \
+    -DCMAKE_BUILD_TYPE=Release
+RUN cd src && cmake --build build-zkvm --target monad-zkvm --parallel
+
 FROM base AS vm_fuzz
 
 RUN apt-get update && apt-get install -y tmux

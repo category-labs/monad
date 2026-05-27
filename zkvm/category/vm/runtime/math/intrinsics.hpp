@@ -1,4 +1,4 @@
-// Copyright (C) 2025-26 Category Labs, Inc.
+// Copyright (C) 2025 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,7 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// zkVM fallback for the runtime math `mul`: uses the in-tree uint256
+// operator overload rather than the hand-rolled x86 assembly.
+
 #pragma once
 
-// Throw a C++ exception
-#define MONAD_THROW(exc, msg) throw exc(msg)
+#include <category/core/runtime/uint256.hpp>
+
+namespace monad::vm::runtime
+{
+    inline void
+    mul(uint256_t *result_ptr, uint256_t const *a_ptr,
+        uint256_t const *b_ptr) noexcept
+    {
+        *result_ptr = *a_ptr * *b_ptr;
+    }
+}

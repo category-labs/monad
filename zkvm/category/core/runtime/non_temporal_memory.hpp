@@ -1,4 +1,4 @@
-// Copyright (C) 2025-26 Category Labs, Inc.
+// Copyright (C) 2025 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,5 +15,19 @@
 
 #pragma once
 
-// Throw a C++ exception
-#define MONAD_THROW(exc, msg) throw exc(msg)
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+namespace monad::vm::runtime
+{
+    inline void non_temporal_bzero(void *dest, size_t n)
+    {
+        std::memset(dest, 0, n);
+    }
+
+    inline void non_temporal_memcpy(void *dest, void const *src, size_t n)
+    {
+        std::memcpy(dest, src, n);
+    }
+}

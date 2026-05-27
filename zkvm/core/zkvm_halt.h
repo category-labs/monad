@@ -13,7 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#pragma once
+#ifndef ZKVM_HALT_H
+#define ZKVM_HALT_H
 
-// Throw a C++ exception
-#define MONAD_THROW(exc, msg) throw exc(msg)
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+[[noreturn]] void zkvm_halt(int status);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // ZKVM_HALT_H

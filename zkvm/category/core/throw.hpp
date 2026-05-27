@@ -15,5 +15,9 @@
 
 #pragma once
 
-// Throw a C++ exception
-#define MONAD_THROW(exc, msg) throw exc(msg)
+// zkVM mirror: exceptions are disabled (-fno-exceptions) on the bare-metal
+// zkVM build, so MONAD_THROW falls back to zkvm_halt(1), which must always
+// be marked as noreturn to preserve throw control flow behavior.
+#include <zkvm/core/zkvm_halt.h>
+
+#define MONAD_THROW(exc, msg) zkvm_halt(1)

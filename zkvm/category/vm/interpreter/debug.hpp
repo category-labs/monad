@@ -1,4 +1,4 @@
-// Copyright (C) 2025-26 Category Labs, Inc.
+// Copyright (C) 2025 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,5 +15,24 @@
 
 #pragma once
 
-// Throw a C++ exception
-#define MONAD_THROW(exc, msg) throw exc(msg)
+#include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/runtime/types.hpp>
+
+#include <evmc/evmc.h>
+
+namespace monad::vm::interpreter
+{
+    constexpr auto debug_enabled = false;
+
+    // No-op trace under the bare-metal zkVM environment, where there is
+    // no stderr to write to.
+    [[gnu::always_inline]]
+    inline void trace(
+        [[maybe_unused]] Intercode const &analysis,
+        [[maybe_unused]] int64_t const gas_remaining,
+        [[maybe_unused]] uint8_t const *const instr_ptr)
+    {
+    }
+}

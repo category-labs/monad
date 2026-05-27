@@ -13,7 +13,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// zkVM mirror: the unwind path is implemented inline with setjmp/longjmp
+// rather than via the host's hand-rolled asm trampoline (see exit.S).
+
 #pragma once
 
-// Throw a C++ exception
-#define MONAD_THROW(exc, msg) throw exc(msg)
+#include <csetjmp>
+
+namespace monad::vm::runtime
+{
+    using exit_stack_ptr_t = std::jmp_buf *;
+
+    [[gnu::always_inline, noreturn]]
+    inline void exit(exit_stack_ptr_t p)
+    {
+        std::longjmp(*p, 1);
+    }
+}

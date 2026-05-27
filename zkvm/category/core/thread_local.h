@@ -15,5 +15,6 @@
 
 #pragma once
 
-// Throw a C++ exception
-#define MONAD_THROW(exc, msg) throw exc(msg)
+// zkVM mirror: bare-metal zkVM is single-threaded, so MONAD_THREAD_LOCAL
+// expands to nothing.
+#define MONAD_THREAD_LOCAL

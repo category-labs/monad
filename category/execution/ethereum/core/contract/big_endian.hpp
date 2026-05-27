@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 MONAD_NAMESPACE_BEGIN
@@ -58,6 +59,14 @@ struct BigEndian
         auto const be = bswap(x);
         unaligned_store(bytes, be);
         return *this;
+    }
+
+    [[gnu::always_inline]] static inline BigEndian<T>
+    unsafe_from(uint8_t const *src) noexcept
+    {
+        BigEndian<T> be;
+        std::memcpy(&be.bytes, src, sizeof(T));
+        return be;
     }
 };
 

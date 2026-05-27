@@ -115,12 +115,12 @@ namespace bls12
 
     struct G1
     {
+        static constexpr auto element_encoded_size = 64;
+        static constexpr auto encoded_size = 2 * element_encoded_size;
+
         using FieldElement = blst_fp;
         using Point = blst_p1;
         using AffinePoint = blst_p1_affine;
-
-        static constexpr auto element_encoded_size = 64;
-        static constexpr auto encoded_size = 2 * element_encoded_size;
 
         DECLARE_GROUP_FN(read, read_g1);
         DECLARE_GROUP_FN(read_element, read_fp);
@@ -140,13 +140,13 @@ namespace bls12
 
     struct G2
     {
-        using FieldElement = blst_fp2;
-        using Point = blst_p2;
-        using AffinePoint = blst_p2_affine;
-
         static constexpr auto element_encoded_size =
             2 * G1::element_encoded_size;
         static constexpr auto encoded_size = 2 * element_encoded_size;
+
+        using FieldElement = blst_fp2;
+        using Point = blst_p2;
+        using AffinePoint = blst_p2_affine;
 
         DECLARE_GROUP_FN(read, read_g2);
         DECLARE_GROUP_FN(read_element, read_fp2);

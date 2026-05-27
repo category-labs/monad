@@ -157,6 +157,11 @@ namespace monad::staking::test
         return contract_.vars.val_id(a).load().native();
     }
 
+    uint64_t StakingContractModel::proposer_val_id()
+    {
+        return contract_.vars.proposer_val_id.load().native();
+    }
+
     uint64_t StakingContractModel::val_id_bls(Address const &a)
     {
         return contract_.vars.val_id_bls(a).load().native();
@@ -365,6 +370,26 @@ namespace monad::staking::test
     }
 
     EXPLICIT_MONAD_TRAITS_MEMBER(StakingContractModel::syscall_reward)
+
+    Result<void>
+    StakingContractModel::distribute_priority_fees(u256_be const &fees)
+    {
+        pre_call(std::bit_cast<uint256_be_t>(fees));
+        auto res = contract_.distribute_priority_fees(fees.native());
+        post_call(res);
+        if (res.has_value()) {
+            u64_be v = contract_.vars.proposer_val_id.load();
+            auto const p = active_consensus_commission_[v.native()];
+            auto const c = (fees.native() * p) / MON;
+            auto const a = contract_.vars.val_execution(v).auth_address();
+            unit_bias_rewards_[{v.native(), a}] += c * UNIT_BIAS;
+            if (fees.native() - c >= limits::min_external_reward()) {
+                distribute_reward(v, u256_be{fees.native() - c});
+                error_bound_ += 1;
+            }
+        }
+        return res;
+    }
 
     template <Traits traits>
     Result<u64_be> StakingContractModel::precompile_add_validator(

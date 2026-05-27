@@ -673,7 +673,7 @@ namespace monad::staking::test
             syscall_snapshot();
             break;
         case Transition::syscall_reward:
-            syscall_reward();
+            ok = syscall_reward();
             break;
         case Transition::precompile_add_validator:
             precompile_add_validator();
@@ -701,6 +701,9 @@ namespace monad::staking::test
             break;
         case Transition::precompile_get_delegator:
             precompile_get_delegator();
+            break;
+        case Transition::distribute_priority_fees:
+            ok = distribute_priority_fees();
             break;
         }
         // Skip `WITHDRAWAL_DELAY` epochs once in a while to allow for
@@ -1075,11 +1078,11 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    void StakingContractMachine<traits>::syscall_reward()
+    bool StakingContractMachine<traits>::syscall_reward()
     {
         auto const pre_val_id = gen_active_consensus_val_id();
         if (!pre_val_id.has_value()) {
-            return;
+            return false;
         }
         auto const val_id = *pre_val_id;
         auto const signer = val_id_to_signer_.at(val_id.native());
@@ -1130,6 +1133,131 @@ namespace monad::staking::test
         MONAD_ASSERT(
             model_.val_execution(val_id).unclaimed_rewards().load().native() ==
             unclaimed_rewards_before + reward - commission);
+
+        MONAD_ASSERT(model_.proposer_val_id() == val_id.native());
+
+        return true;
+    }
+
+    template <Traits traits>
+    std::optional<u256_be>
+    StakingContractMachine<traits>::gen_distribute_priority_fees_input()
+    {
+        if (model_.proposer_val_id() == 0 ||
+            model_.active_consensus_stake(model_.proposer_val_id()) == 0) {
+            if (!syscall_reward()) {
+                return std::nullopt;
+            }
+        }
+        if (auto const val_id = model_.proposer_val_id()) {
+            auto const [lo_del, hi_del] =
+                discrete_choice<std::pair<uint256_t, uint256_t>>(
+                    engine_,
+                    [&](auto &) -> std::pair<uint256_t, uint256_t> {
+                        return {0, MIN_EXTERNAL_REWARD};
+                    },
+                    Choice(
+                        0.50, [&](auto &) -> std::pair<uint256_t, uint256_t> {
+                            return {
+                                MIN_EXTERNAL_REWARD + 1,
+                                MIN_EXTERNAL_REWARD + 3};
+                        }));
+            auto const to_fees = [&](uint256_t const &dr) {
+                auto const p = model_.active_consensus_commission(val_id);
+                if (MON > p) {
+                    return (dr * MON) / (MON - p);
+                }
+                MONAD_ASSERT(MON == p);
+                return dr;
+            };
+            auto const lo = to_fees(lo_del);
+            auto const hi = to_fees(hi_del);
+            return gen_bound_biased_uint256(lo, hi);
+        }
+        return std::nullopt;
+    }
+
+    template <Traits traits>
+    bool StakingContractMachine<traits>::distribute_priority_fees()
+    {
+        auto const pre_fees = gen_distribute_priority_fees_input();
+        if (!pre_fees.has_value()) {
+            return false;
+        }
+        auto const fees = *pre_fees;
+
+        auto const val_id = model_.proposer_val_id();
+
+        auto const error_bound_before = model_.error_bound();
+
+        auto const balance_before = model_.balance_of(STAKING_CA);
+
+        std::vector<uint256_t> unit_bias_rewards_before;
+        for_all_addresses([&, this](Address const &a) {
+            unit_bias_rewards_before.push_back(
+                model_.unit_bias_rewards(val_id, a));
+        });
+
+        auto const unclaimed_rewards_before =
+            model_.val_execution(val_id).unclaimed_rewards().load().native();
+
+        auto const res = model_.distribute_priority_fees(fees);
+        MONAD_ASSERT(res.has_value());
+
+        auto const auth_address = model_.val_execution(val_id).auth_address();
+        auto const commission =
+            (fees.native() * model_.active_consensus_commission(val_id)) / MON;
+        auto const rpt = ((fees.native() - commission) * UNIT_BIAS) /
+                         model_.active_consensus_stake(val_id);
+
+        // Post conditions:
+
+        auto const unclaimed_rewards_after =
+            model_.val_execution(val_id).unclaimed_rewards().load().native();
+
+        if (fees.native() - commission >= MIN_EXTERNAL_REWARD) {
+            MONAD_ASSERT(
+                model_.balance_of(STAKING_CA) ==
+                balance_before + fees.native());
+            MONAD_ASSERT(model_.error_bound() == error_bound_before + 1);
+            size_t i = 0;
+            for_all_addresses([&, this](Address const &a) {
+                auto const before = unit_bias_rewards_before.at(i++);
+                auto const after = model_.unit_bias_rewards(val_id, a);
+                auto const epoch = model_.epoch();
+                auto const d = model_.delegator_stake(val_id, a, epoch) +
+                               model_.withdrawal_stake(val_id, a, epoch);
+                auto const r = d * rpt;
+                if (a == auth_address) {
+                    MONAD_ASSERT(after == before + r + commission * UNIT_BIAS);
+                }
+                else {
+                    MONAD_ASSERT(after == before + r);
+                }
+            });
+            MONAD_ASSERT(
+                unclaimed_rewards_after ==
+                unclaimed_rewards_before + fees.native() - commission);
+        }
+        else {
+            MONAD_ASSERT(
+                model_.balance_of(STAKING_CA) == balance_before + commission);
+            MONAD_ASSERT(model_.error_bound() == error_bound_before);
+            size_t i = 0;
+            for_all_addresses([&, this](Address const &a) {
+                auto const before = unit_bias_rewards_before.at(i++);
+                auto const after = model_.unit_bias_rewards(val_id, a);
+                if (a == auth_address) {
+                    MONAD_ASSERT(after == before + commission * UNIT_BIAS);
+                }
+                else {
+                    MONAD_ASSERT(after == before);
+                }
+            });
+            MONAD_ASSERT(unclaimed_rewards_after == unclaimed_rewards_before);
+        }
+
+        return true;
     }
 
     template <Traits traits>

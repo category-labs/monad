@@ -43,7 +43,7 @@
 #include <category/core/path_util.h>
 #include <category/core/srcloc.h>
 
-#if !MONAD_EVENT_DISABLE_LIBHUGETLBFS
+#ifdef __linux__
     #include <category/core/mem/hugetlb_path.h>
 #endif
 
@@ -321,16 +321,7 @@ int monad_event_ring_query_excl_writer_pid(int const ring_fd, pid_t *const pid)
     return 0;
 }
 
-// libhugetlbfs is always present for Category Labs, but when this is compiled
-// by third parties using the SDK, it is optional
-#if MONAD_EVENT_DISABLE_LIBHUGETLBFS
-
-int monad_event_open_hugetlbfs_dir_fd(int *, char *, size_t)
-{
-    return FORMAT_ERRC(ENOSYS, "compiled without libhugetlbfs support");
-}
-
-#else
+#ifdef __linux__
 
 int monad_event_open_hugetlbfs_dir_fd(
     int *const dirfd, char *const pathbuf, size_t const pathbuf_size)
@@ -352,6 +343,32 @@ int monad_event_open_hugetlbfs_dir_fd(
     return rc;
 }
 
+int monad_check_path_supports_map_hugetlb(
+    char const *const path, bool *const supported)
+{
+    int const rc = monad_hugetlbfs_check_path(path, supported);
+    if (rc != 0) {
+        strlcpy(
+            _g_monad_event_ring_error_buf,
+            monad_hugetlbfs_get_last_error(),
+            sizeof _g_monad_event_ring_error_buf);
+    }
+    return rc;
+}
+
+#else
+
+int monad_event_open_hugetlbfs_dir_fd(int *, char *, size_t)
+{
+    return FORMAT_ERRC(ENOSYS, "system does not support hugetlbfs");
+}
+
+int monad_check_path_supports_map_hugetlb(char const *, bool *const supported)
+{
+    *supported = false;
+    return 0;
+}
+
 #endif
 
 int monad_event_resolve_ring_file(
@@ -371,7 +388,7 @@ int monad_event_resolve_ring_file(
         // relative to the current working directory
         if (strlcpy(pathbuf, file, pathbuf_size) >= pathbuf_size) {
             return FORMAT_ERRC(
-                ENAMETOOLONG,
+                ERANGE,
                 "file %s overflows %zu size pathbuf",
                 file,
                 pathbuf_size);

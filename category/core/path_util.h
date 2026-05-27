@@ -36,7 +36,7 @@ constexpr mode_t MONAD_PATH_NO_CREATE = (mode_t)0;
 
 // Appends a '/' followed by the contents of src to dst; this behaves like
 // stpecpy (always null-terminated and designed for chain-copying, so dst and
-// size are adjusted); if truncated, ENAMETOOLONG is returned; dst must be set
+// size are adjusted); if truncated, ERANGE is returned; dst must be set
 // up to append when called, i.e., EINVAL is returned unless **dst == '\0'
 int monad_path_append(char **dst, char const *src, size_t *size);
 

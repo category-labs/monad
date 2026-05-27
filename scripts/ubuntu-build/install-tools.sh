@@ -16,7 +16,6 @@ packages=(
   gnupg
   libclang-common-19-dev
   libclang-rt-19-dev
-  libhugetlbfs-bin
   llvm-19-dev
   make
   ninja-build

@@ -14,18 +14,16 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 fn main() {
+    let mut link_libs = vec!["zstd"];
+    if build_rs::input::cargo_cfg_target_os() != "linux" {
+        link_libs.push("monad_event_os_compat");
+    }
+
     monad_build::MonadCMake::new(
         monad_build::repository_root().join("category/event"),
         monad_build::MonadCMakeLinkage::Static,
     )
-    .link_libraries([
-        "zstd",
-        if build_rs::input::cargo_cfg_target_os() == "linux" {
-            "hugetlbfs"
-        } else {
-            "monad_event_os_compat"
-        },
-    ])
+    .link_libraries(link_libs)
     .build("monad_event");
 
     monad_build::bindgen::MonadBindgen::default()

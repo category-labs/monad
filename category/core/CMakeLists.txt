@@ -231,7 +231,7 @@ target_link_libraries(monad_core PUBLIC quill)
 target_link_libraries(monad_core PUBLIC unordered_dense)
 target_link_libraries(monad_core PUBLIC PkgConfig::zstd)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  target_link_libraries(monad_core PUBLIC hugetlbfs uring)
+  target_link_libraries(monad_core PUBLIC uring)
 endif()
 
 add_library(

@@ -14,15 +14,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <cerrno>
+#include <cstddef>
+#include <cstdio>
 #include <print>
 
 #include <gtest/gtest.h>
 #include <unistd.h>
-
-extern "C"
-{
-#include <hugetlbfs.h>
-}
 
 #include <category/core/mem/hugetlb_path.h>
 
@@ -30,12 +27,17 @@ TEST(HugetlbfsPath, Basic)
 {
     int rc;
     int dirfd = -1;
+    bool is_hugetlbfs;
+    size_t default_hpage_size;
     char hugetlbfs_path[2048];
 
-    if (gethugepagesize() == -1) {
+    rc = monad_get_default_hugepage_size(&default_hpage_size);
+    if (rc == EOPNOTSUPP) {
         // Huge pages aren't available; skip the test
         GTEST_SKIP();
     }
+    ASSERT_EQ(rc, 0);
+    std::println(stderr, "default hugepage size: {}", default_hpage_size);
 
     monad_hugetlbfs_resolve_params params = {
         .page_size = 0, // Default huge page size
@@ -66,7 +68,8 @@ TEST(HugetlbfsPath, Basic)
     ASSERT_EQ(rc, 0);
     ASSERT_NE(dirfd, -1);
     std::println(stderr, "full path is: {}", hugetlbfs_path);
-    ASSERT_EQ(hugetlbfs_test_path(hugetlbfs_path), 1);
+    ASSERT_EQ(monad_hugetlbfs_check_path(hugetlbfs_path, &is_hugetlbfs), 0);
+    ASSERT_TRUE(is_hugetlbfs);
     (void)close(dirfd);
 
     // Try again; we can't create it, but that's OK: it's there now
@@ -75,7 +78,8 @@ TEST(HugetlbfsPath, Basic)
         &params, &dirfd, hugetlbfs_path, sizeof hugetlbfs_path);
     ASSERT_EQ(rc, 0);
     ASSERT_NE(dirfd, -1);
-    ASSERT_EQ(hugetlbfs_test_path(hugetlbfs_path), 1);
+    ASSERT_EQ(monad_hugetlbfs_check_path(hugetlbfs_path, &is_hugetlbfs), 0);
+    ASSERT_TRUE(is_hugetlbfs);
     (void)close(dirfd);
 
     // Remove the file

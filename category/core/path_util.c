@@ -46,7 +46,7 @@ int monad_path_append(
         return EINVAL;
     }
     if (*size == 0) {
-        return ENAMETOOLONG;
+        return ERANGE;
     }
     **dst = '/';
     *dst += 1;
@@ -55,7 +55,7 @@ int monad_path_append(
     if (n >= *size) {
         *dst += *size;
         *size = 0;
-        return ENAMETOOLONG;
+        return ERANGE;
     }
     *dst += n;
     *size -= n;

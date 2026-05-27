@@ -22,16 +22,6 @@ cmake_minimum_required(VERSION 3.23)
 
 project(monad_event LANGUAGES C)
 
-if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  set(MONAD_EVENT_HUGETLBFS_DEFAULT ON)
-else()
-  set(MONAD_EVENT_HUGETLBFS_DEFAULT OFF)
-endif()
-
-option(MONAD_EVENT_USE_LIBHUGETLBFS
-  "Build with libhugetlbfs support (enables the `monad_event_open_hugetlbfs_dir_fd` API function)"
-  ${MONAD_EVENT_HUGETLBFS_DEFAULT})
-
 find_library(libzstd_file zstd REQUIRED)
 
 add_library(
@@ -77,7 +67,12 @@ target_include_directories(monad_event PUBLIC
     $<INSTALL_INTERFACE:include>)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  target_sources(monad_event PRIVATE "../core/event/event_ring_util_linux.c")
+  target_sources(monad_event PRIVATE
+      "../core/event/event_ring_util_linux.c"
+      "../core/mem/hugetlb_path.c")
+  target_sources(monad_event PUBLIC
+      FILE_SET event_headers
+      FILES "../core/mem/hugetlb_path.h")
 else()
   target_sources(monad_event PRIVATE "../core/event/event_ring_util_posix.c")
 endif()
@@ -86,16 +81,6 @@ target_compile_definitions(monad_event PUBLIC _GNU_SOURCE)
 target_compile_features(monad_event PUBLIC c_std_23)
 target_compile_options(monad_event PRIVATE -Wall -Wextra -Wconversion -Werror)
 target_link_libraries(monad_event PRIVATE ${libzstd_file})
-
-if(MONAD_EVENT_USE_LIBHUGETLBFS)
-  find_library(libhugetlbfs NAMES hugetlbfs REQUIRED)
-  target_sources(monad_event PRIVATE
-    "../core/mem/hugetlb_path.c"
-    "../core/mem/hugetlb_path.h")
-  target_link_libraries(monad_event PRIVATE hugetlbfs)
-else()
-  target_compile_definitions(monad_event PRIVATE MONAD_EVENT_DISABLE_LIBHUGETLBFS)
-endif()
 
 option(MONAD_EVENT_BUILD_EXAMPLE
     "Build the example program that shows how to use the API" ON)

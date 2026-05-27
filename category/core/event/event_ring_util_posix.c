@@ -35,9 +35,3 @@ int monad_event_ring_query_flocks(
 {
     return FORMAT_ERRC(ENOSYS, "function not available on non-Linux platforms");
 }
-
-int monad_check_path_supports_map_hugetlb(char const *, bool *supported)
-{
-    *supported = false;
-    return 0;
-}

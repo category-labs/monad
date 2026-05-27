@@ -51,6 +51,14 @@ int monad_hugetlbfs_open_dir_fd(
     struct monad_hugetlbfs_resolve_params const *, int *dirfd, char *pathbuf,
     size_t pathbuf_size);
 
+/// Given a path to a file (which does not need to exist), check if the
+/// associated file system (i.e., the closest mount point) is hugetlbfs
+int monad_hugetlbfs_check_path(char const *path, bool *is_hugetlbfs);
+
+/// Return the default hugepage size of the system; if hugepages are not
+/// enabled at the kernel level, return EOPNOTSUPP
+int monad_get_default_hugepage_size(size_t *pagesize);
+
 /// Return the last error that occurred on this thread
 char const *monad_hugetlbfs_get_last_error();
 

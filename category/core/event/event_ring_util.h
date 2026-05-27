@@ -36,7 +36,8 @@ enum monad_event_content_type : uint16_t;
 struct monad_event_ring;
 
 /// Value passed to monad_event_resolve_ring_file's `default_path` parameter,
-/// to request the hugetlbfs path that is dynamically computed by libhugetlbfs
+/// to request the hugetlbfs path that is dynamically computed by the
+/// monad_hugetlbfs_open_dir_fd function
 constexpr char const *MONAD_EVENT_DEFAULT_HUGETLBFS = nullptr;
 
 /// Value passed to the `monad_event_decompress_snapshot_{fd,mem}` functions

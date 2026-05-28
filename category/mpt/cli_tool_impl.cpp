@@ -1264,10 +1264,7 @@ public:
                 throw std::runtime_error("libarchive failed");
             }
 
-            uint32_t additional_cnv_chunks_to_archive = 0;
-            auto map_chunk_into_memory = [this,
-                                          &additional_cnv_chunks_to_archive](
-                                             chunk_info_archive_t &i) {
+            auto map_chunk_into_memory = [this](chunk_info_archive_t &i) {
                 auto [fd2, offset] = i.chunk_ptr->read_fd();
                 i.uncompressed_storage = ::mmap(
                     nullptr,
@@ -1295,20 +1292,6 @@ public:
                                 monad::mpt::detail::db_metadata::chunk_info_t);
                     i.uncompressed =
                         i.uncompressed.subspan(0, db_metadata_size);
-                    auto const *m = monad::start_lifetime_as<
-                        monad::mpt::detail::db_metadata>(i.uncompressed.data());
-                    // The archive loop below walks contiguous cnv chunk
-                    // ids [0, additional_cnv_chunks_to_archive]; that
-                    // assumption breaks once activate_secondary_header
-                    // has split chunks between root_offsets and
-                    // secondary_timeline. Deactivate before archiving.
-                    MONAD_ASSERT_PRINTF(
-                        m->secondary_timeline_active_ == 0,
-                        "archive of a pool with an active secondary "
-                        "timeline is not supported; run monad-mpt "
-                        "--deactivate-secondary first");
-                    additional_cnv_chunks_to_archive =
-                        m->root_offsets.cnv_chunks_len();
                 }
                 i.compression_thread =
                     std::async(std::launch::async, [i = &i, this] {
@@ -1316,19 +1299,63 @@ public:
                     });
             };
 
-            std::vector<chunk_info_archive_t *> tocompress;
-            tocompress.reserve(
-                pool->chunks(pool->cnv) + fast.size() + slow.size());
+            // The non-primary ring's cnv_chunks[] is garbage unless
+            // secondary_timeline_active_ is set.
             std::vector<chunk_info_archive_t> cnv_infos;
             cnv_infos.reserve(pool->chunks(pool->cnv));
-            for (uint32_t n = 0; n <= additional_cnv_chunks_to_archive; n++) {
-                cnv_infos.emplace_back(
-                    std::addressof(pool->chunk(pool->cnv, n)), -1);
-                tocompress.push_back(&cnv_infos.back());
-                if (n == 0) {
-                    // Need to determine additional_cnv_chunks_to_archive
-                    map_chunk_into_memory(cnv_infos.back());
+            cnv_infos.emplace_back(
+                std::addressof(pool->chunk(pool->cnv, 0)), -1);
+            map_chunk_into_memory(cnv_infos.back());
+
+            std::vector<uint32_t> cnv_chunk_ids;
+            cnv_chunk_ids.reserve(pool->chunks(pool->cnv));
+            cnv_chunk_ids.push_back(0);
+            {
+                auto const *m =
+                    monad::start_lifetime_as<monad::mpt::detail::db_metadata>(
+                        cnv_infos.back().uncompressed.data());
+                auto const &primary_ring = (m->primary_ring_idx == 0)
+                                               ? m->root_offsets
+                                               : m->secondary_timeline;
+                auto const &secondary_ring = (m->primary_ring_idx == 0)
+                                                 ? m->secondary_timeline
+                                                 : m->root_offsets;
+                auto add_ring = [&cnv_chunk_ids, this](auto const &ring) {
+                    MONAD_ASSERT(ring.cnv_chunks_len() <= ring.SIZE_ - 1);
+                    for (uint32_t k = 0; k < ring.cnv_chunks_len(); k++) {
+                        uint32_t const id = ring.cnv_chunk_id(k);
+                        // Sentinel slots remain in cnv_chunks[] after a
+                        // crash mid-activate_secondary_header until
+                        // replay_pending_shrink_grow_ repairs them on the
+                        // next writable open. --archive does not run
+                        // replay; skip them to match the runtime readers.
+                        if (id == monad::mpt::detail::db_metadata::NULL_CHUNK) {
+                            continue;
+                        }
+                        MONAD_ASSERT(id < pool->chunks(pool->cnv));
+                        if (std::find(
+                                cnv_chunk_ids.begin(),
+                                cnv_chunk_ids.end(),
+                                id) == cnv_chunk_ids.end()) {
+                            cnv_chunk_ids.push_back(id);
+                        }
+                    }
+                };
+                add_ring(primary_ring);
+                if (m->secondary_timeline_active_ != 0) {
+                    add_ring(secondary_ring);
                 }
+            }
+
+            std::vector<chunk_info_archive_t *> tocompress;
+            tocompress.reserve(
+                cnv_chunk_ids.size() + fast.size() + slow.size());
+            tocompress.push_back(&cnv_infos.back());
+            for (size_t k = 1; k < cnv_chunk_ids.size(); k++) {
+                cnv_infos.emplace_back(
+                    std::addressof(pool->chunk(pool->cnv, cnv_chunk_ids[k])),
+                    -1);
+                tocompress.push_back(&cnv_infos.back());
             }
             if (debug_printing) {
                 std::cerr << "Fast list:";

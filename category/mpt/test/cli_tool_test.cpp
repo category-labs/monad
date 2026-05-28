@@ -20,6 +20,8 @@
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
@@ -33,6 +35,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
+#include <category/mpt/update.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -41,10 +44,13 @@
 #include <filesystem>
 #include <future>
 #include <iostream>
+#include <memory>
+#include <optional>
 #include <ostream>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <stdlib.h>
@@ -237,6 +243,17 @@ namespace
         ASSERT_NE(fd, -1);
         ::close(fd);
         ASSERT_EQ(0, ::truncate(temppath, 6ULL * 1024 * 1024 * 1024));
+    }
+
+    monad::mpt::Node::SharedPtr upsert_one(
+        monad::mpt::Db &target, monad::byte_string const &key,
+        monad::byte_string const &value, monad::mpt::Node::SharedPtr root)
+    {
+        monad::mpt::UpdateList ul;
+        auto u = monad::mpt::make_update(
+            monad::mpt::NibblesView{key}, monad::byte_string_view{value});
+        ul.push_front(u);
+        return target.upsert(std::move(root), std::move(ul), 0);
     }
 }
 
@@ -812,6 +829,246 @@ TEST_F(cli_tool_restore_preserves_kind, restore_preserves_state_machine_kind)
             return read_kind(dbpath2, monad::mpt::timeline_id::primary);
         }).get();
     EXPECT_EQ(restored_kind, synthetic_kind);
+}
+
+// Round-trips a Db whose secondary timeline is active and holds a key
+// distinct from the primary. The archive must capture both rings' cnv
+// chunks; otherwise the restored secondary's root_offsets come up
+// zeroed and the find below fails.
+TEST(cli_tool, archives_restores_with_secondary_active)
+{
+    using namespace monad::mpt;
+    using monad::literals::operator""_bytes;
+
+    auto const src_dbname = create_temp_file(8);
+    auto const dst_dbname = create_temp_file(8);
+    char arc_path[] = "cli_tool_test_XXXXXX";
+    int const arc_fd = ::mkstemp(arc_path);
+    ASSERT_NE(arc_fd, -1);
+    ::close(arc_fd);
+    auto const unfiles = monad::make_scope_exit([&]() noexcept {
+        std::filesystem::remove(src_dbname);
+        std::filesystem::remove(dst_dbname);
+        ::unlink(arc_path);
+    });
+
+    auto const k_primary = 0xaabbccdd_bytes;
+    auto const v_primary = 0x11223344_bytes;
+    auto const k_secondary = 0xeeff0011_bytes;
+    auto const v_secondary = 0x55667788_bytes;
+
+    {
+        OnDiskDbConfig const config{
+            .compaction = true,
+            .sq_thread_cpu = std::nullopt,
+            .dbname_paths = {src_dbname},
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
+        Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
+
+        Node::SharedPtr const primary_root =
+            upsert_one(db, k_primary, v_primary, nullptr);
+        ASSERT_NE(primary_root, nullptr);
+
+        {
+            Db secondary_db = db.activate_secondary_timeline(
+                std::make_unique<StateMachineAlwaysMerkle>());
+            Node::SharedPtr const secondary_root =
+                upsert_one(secondary_db, k_secondary, v_secondary, nullptr);
+            ASSERT_NE(secondary_root, nullptr);
+        }
+    }
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            src_dbname.c_str(),
+            "--archive",
+            arc_path};
+        int const retcode = std::async(std::launch::async, [&] {
+                                return main_impl(cout, cerr, args);
+                            }).get();
+        ASSERT_EQ(retcode, 0)
+            << "stderr: " << cerr.str() << "\nstdout: " << cout.str();
+        EXPECT_NE(
+            std::string::npos,
+            cout.str().find("Database has been archived to"));
+    }
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            dst_dbname.c_str(),
+            "--root-offsets-chunk-count",
+            "2",
+            "--yes",
+            "--restore",
+            arc_path};
+        int const retcode = std::async(std::launch::async, [&] {
+                                return main_impl(cout, cerr, args);
+                            }).get();
+        ASSERT_EQ(retcode, 0)
+            << "stderr: " << cerr.str() << "\nstdout: " << cout.str();
+        EXPECT_NE(
+            std::string::npos,
+            cout.str().find("Database has been restored from"));
+    }
+
+    EXPECT_TRUE(read_secondary_active(dst_dbname.c_str()));
+    EXPECT_EQ(0u, read_primary_ring_idx(dst_dbname.c_str()));
+
+    {
+        OnDiskDbConfig const config{
+            .append = true,
+            .compaction = true,
+            .sq_thread_cpu = std::nullopt,
+            .dbname_paths = {dst_dbname},
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
+        Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
+        ASSERT_TRUE(db.timeline_active(timeline_id::secondary));
+
+        Node::SharedPtr const primary_root = db.load_root_for_version(0);
+        ASSERT_NE(primary_root, nullptr);
+        auto const pres =
+            db.find(NodeCursor{primary_root}, NibblesView{k_primary}, 0);
+        ASSERT_TRUE(pres.has_value());
+        EXPECT_EQ(monad::byte_string{pres.value().node->value()}, v_primary);
+
+        auto secondary_db_opt = db.open_secondary_timeline(
+            std::make_unique<StateMachineAlwaysMerkle>());
+        ASSERT_TRUE(secondary_db_opt.has_value());
+        Node::SharedPtr const secondary_root =
+            secondary_db_opt->load_root_for_version(0);
+        ASSERT_NE(secondary_root, nullptr);
+        auto const sres = secondary_db_opt->find(
+            NodeCursor{secondary_root}, NibblesView{k_secondary}, 0);
+        ASSERT_TRUE(sres.has_value());
+        EXPECT_EQ(monad::byte_string{sres.value().node->value()}, v_secondary);
+    }
+}
+
+// Round-trips a Db after promote_secondary_to_primary +
+// deactivate_secondary_timeline, where primary_ring_idx == 1 and the
+// live data sits on the physical ring named by secondary_timeline (now
+// playing the primary role). The archive must dispatch by role, not by
+// physical ring slot; walking m->root_offsets unconditionally would
+// archive the stale, deactivated ring and lose the only live data.
+TEST(cli_tool, archives_restores_after_promote_and_deactivate)
+{
+    using namespace monad::mpt;
+    using monad::literals::operator""_bytes;
+
+    auto const src_dbname = create_temp_file(8);
+    auto const dst_dbname = create_temp_file(8);
+    char arc_path[] = "cli_tool_test_XXXXXX";
+    int const arc_fd = ::mkstemp(arc_path);
+    ASSERT_NE(arc_fd, -1);
+    ::close(arc_fd);
+    auto const unfiles = monad::make_scope_exit([&]() noexcept {
+        std::filesystem::remove(src_dbname);
+        std::filesystem::remove(dst_dbname);
+        ::unlink(arc_path);
+    });
+
+    auto const k_kept = 0xeeff0011_bytes;
+    auto const v_kept = 0x55667788_bytes;
+    auto const k_discarded = 0xaabbccdd_bytes;
+    auto const v_discarded = 0x11223344_bytes;
+
+    OnDiskDbConfig const config{
+        .compaction = true,
+        .sq_thread_cpu = std::nullopt,
+        .dbname_paths = {src_dbname},
+        .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
+
+    {
+        Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
+
+        Node::SharedPtr const primary_root =
+            upsert_one(db, k_discarded, v_discarded, nullptr);
+        ASSERT_NE(primary_root, nullptr);
+
+        {
+            Db secondary_db = db.activate_secondary_timeline(
+                std::make_unique<StateMachineAlwaysMerkle>());
+            Node::SharedPtr const secondary_root =
+                upsert_one(secondary_db, k_kept, v_kept, nullptr);
+            ASSERT_NE(secondary_root, nullptr);
+        }
+
+        db.promote_secondary_to_primary();
+    }
+
+    OnDiskDbConfig reopen_config = config;
+    reopen_config.append = true;
+    {
+        Db db{std::make_unique<StateMachineAlwaysMerkle>(), reopen_config};
+        db.deactivate_secondary_timeline();
+    }
+
+    ASSERT_EQ(1u, read_primary_ring_idx(src_dbname.c_str()));
+    ASSERT_FALSE(read_secondary_active(src_dbname.c_str()));
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            src_dbname.c_str(),
+            "--archive",
+            arc_path};
+        int const retcode = std::async(std::launch::async, [&] {
+                                return main_impl(cout, cerr, args);
+                            }).get();
+        ASSERT_EQ(retcode, 0)
+            << "stderr: " << cerr.str() << "\nstdout: " << cout.str();
+    }
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            dst_dbname.c_str(),
+            "--root-offsets-chunk-count",
+            "2",
+            "--yes",
+            "--restore",
+            arc_path};
+        int const retcode = std::async(std::launch::async, [&] {
+                                return main_impl(cout, cerr, args);
+                            }).get();
+        ASSERT_EQ(retcode, 0)
+            << "stderr: " << cerr.str() << "\nstdout: " << cout.str();
+    }
+
+    EXPECT_EQ(1u, read_primary_ring_idx(dst_dbname.c_str()));
+    EXPECT_FALSE(read_secondary_active(dst_dbname.c_str()));
+
+    {
+        OnDiskDbConfig const restored_config{
+            .append = true,
+            .compaction = true,
+            .sq_thread_cpu = std::nullopt,
+            .dbname_paths = {dst_dbname},
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
+        Db const db{
+            std::make_unique<StateMachineAlwaysMerkle>(), restored_config};
+        EXPECT_FALSE(db.timeline_active(timeline_id::secondary));
+
+        Node::SharedPtr const root = db.load_root_for_version(0);
+        ASSERT_NE(root, nullptr);
+        auto const res = db.find(NodeCursor{root}, NibblesView{k_kept}, 0);
+        ASSERT_TRUE(res.has_value());
+        EXPECT_EQ(monad::byte_string{res.value().node->value()}, v_kept);
+    }
 }
 
 /* There was a bug found whereby if the DB being archived used the lastmost

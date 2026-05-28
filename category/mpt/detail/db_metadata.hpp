@@ -149,6 +149,11 @@ namespace detail
                 return storage_.cnv_chunks_len;
             }
 
+            uint32_t cnv_chunk_id(uint32_t const k) const noexcept
+            {
+                return storage_.cnv_chunks[k].cnv_chunk_id;
+            }
+
             void restore_from(root_offsets_ring_t const &other) noexcept
             {
                 version_lower_bound_ = other.version_lower_bound_;

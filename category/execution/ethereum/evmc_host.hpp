@@ -17,6 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/throw.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
@@ -137,10 +138,12 @@ struct EvmcHost final : public EvmcHostBase
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
-        try {
+        MONAD_TRY
+        {
             return !state_.account_is_dead(address);
         }
-        catch (...) {
+        MONAD_CATCH(...)
+        {
             capture_current_exception();
         }
         stack_unwind();
@@ -150,7 +153,8 @@ struct EvmcHost final : public EvmcHostBase
         evmc::address const &address,
         evmc::address const &beneficiary) noexcept override
     {
-        try {
+        MONAD_TRY
+        {
             auto const [result, transferred_balance] =
                 state_.selfdestruct<traits>(address, beneficiary);
 
@@ -162,7 +166,8 @@ struct EvmcHost final : public EvmcHostBase
 
             return result;
         }
-        catch (...) {
+        MONAD_CATCH(...)
+        {
             capture_current_exception();
         }
         stack_unwind();
@@ -170,7 +175,8 @@ struct EvmcHost final : public EvmcHostBase
 
     virtual evmc::Result call(evmc_message const &msg) noexcept override
     {
-        try {
+        MONAD_TRY
+        {
             if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
                 auto result =
                     ::monad::execute_create_message<traits>(this, state_, msg);
@@ -189,7 +195,8 @@ struct EvmcHost final : public EvmcHostBase
                 return ::monad::execute_call_message<traits>(this, state_, msg);
             }
         }
-        catch (...) {
+        MONAD_CATCH(...)
+        {
             capture_current_exception();
         }
         stack_unwind();
@@ -198,13 +205,15 @@ struct EvmcHost final : public EvmcHostBase
     virtual evmc_access_status
     access_account(evmc::address const &address) noexcept override
     {
-        try {
+        MONAD_TRY
+        {
             if (is_precompile<traits>(address)) {
                 return EVMC_ACCESS_WARM;
             }
             return state_.access_account(address);
         }
-        catch (...) {
+        MONAD_CATCH(...)
+        {
             capture_current_exception();
         }
         stack_unwind();
@@ -214,10 +223,12 @@ struct EvmcHost final : public EvmcHostBase
         evmc::address const &address,
         evmc::bytes32 const &key) noexcept override
     {
-        try {
+        MONAD_TRY
+        {
             return state_.access_storage<traits>(address, key);
         }
-        catch (...) {
+        MONAD_CATCH(...)
+        {
             capture_current_exception();
         }
         stack_unwind();

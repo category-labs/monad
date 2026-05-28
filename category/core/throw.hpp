@@ -17,3 +17,9 @@
 
 // Throw a C++ exception
 #define MONAD_THROW(exc, ...) throw exc(__VA_ARGS__)
+
+// Wrap a try/catch pair. On platforms with exceptions disabled, these are
+// redefined to erase the `try` keyword and reduce the `catch` to a dead
+// `if constexpr (false)`, so the catch body still type-checks but never runs.
+#define MONAD_TRY try
+#define MONAD_CATCH(...) catch (__VA_ARGS__)

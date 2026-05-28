@@ -21,3 +21,5 @@
 #include <zkvm/core/zkvm_halt.h>
 
 #define MONAD_THROW(exc, ...) zkvm_halt(1)
+#define MONAD_TRY
+#define MONAD_CATCH(...) if constexpr (false)

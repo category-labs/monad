@@ -100,6 +100,6 @@ public:
     }
 };
 
-static_assert(sizeof(AccountSubstate) == 24);
+MONAD_STATIC_ASSERT(sizeof(AccountSubstate) == 24);
 
 MONAD_NAMESPACE_END

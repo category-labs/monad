@@ -153,7 +153,7 @@ public:
     }
 };
 
-static_assert(sizeof(AccountState) == 144);
+MONAD_STATIC_ASSERT(sizeof(AccountState) == 144);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

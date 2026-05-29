@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
@@ -50,6 +51,7 @@ monad_statesync_client_context *monad_statesync_client_context_create(
     // factories so the kind-driven Db ctor can resolve `ethereum`.
     // Idempotent: re-registration overwrites the prior factory.
     register_ethereum_state_machines();
+    register_monad_state_machines();
     return new monad_statesync_client_context{
         paths,
         sq_thread_cpu == MONAD_SQPOLL_DISABLED

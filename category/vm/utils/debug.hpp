@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <category/core/bytes.hpp>
+
 #include <optional>
 #include <string>
 

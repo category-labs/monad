@@ -52,6 +52,7 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -60,9 +61,11 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <random>
 #include <span>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -170,7 +173,7 @@ struct TransitionState
     {
         if (std::holds_alternative<evmc::VM>(execution_vm)) {
             auto &e = std::get<evmc::VM>(execution_vm);
-            vm.set_execute_override(
+            vm.debug_set_execute_override(
                 [&e](
                     auto const *const host,
                     auto *const context,
@@ -179,7 +182,12 @@ struct TransitionState
                     auto const *const code,
                     auto const code_size) -> evmc::Result {
                     return e.execute(
-                        *host, context, rev, *msg, code, code_size);
+                        *host,
+                        context,
+                        to_evmc_revision(rev),
+                        *msg,
+                        code,
+                        code_size);
                 });
         }
         else if (std::holds_alternative<CompilerConfig>(execution_vm)) {
@@ -204,7 +212,8 @@ private:
     void commit(uint64_t block_number)
     {
         block_state.merge(state);
-        auto [released_state, released_code, _] = std::move(block_state).release();
+        auto [released_state, released_code, _] =
+            std::move(block_state).release();
         test::commit_simple(
             test_state->trie_db,
             std::move(released_state),
@@ -250,17 +259,18 @@ static evmc::Result message_call(
 }
 
 static evmc::Result transition(
-    TransitionState &tstate, evmc_message const &msg, monad_eth_revision const rev,
-    BlockHashBuffer const &block_hash_buffer, BlockHeader const &block_header)
+    TransitionState &tstate, evmc_message const &msg,
+    monad_eth_revision const rev, BlockHashBuffer const &block_hash_buffer,
+    BlockHeader const &block_header)
 {
-    tstate.state.access_account(msg.sender); // tx sender is always warm
-
     auto tx = tx_from(tstate, msg);
 
     MONAD_ASSERT(tx.to.has_value());
+    tstate.state.add_to_balance(*tx.to, 0); // initialize the account
     tstate.state.access_account(*tx.to);
-    tstate.state.add_to_balance(*tx.to, load_be<uint256_t>(msg.value));
 
+    tstate.state.access_account(msg.sender);
+    tstate.state.add_to_balance(msg.sender, load_be<uint256_t>(msg.value));
     tstate.state.set_nonce(msg.sender, tstate.state.get_nonce(msg.sender) + 1);
 
     MONAD_ASSERT(rev == MONAD_ETH_OSAKA); // TODO switch to monad revisions
@@ -492,7 +502,7 @@ static evmc_status_code fuzz_iteration(
         evmone_state->trie_db.state_root() ==
         monad_state->trie_db.state_root());
 
-    return monad_result.status_code;
+    return evmone_result.status_code;
 }
 
 static void
@@ -560,7 +570,7 @@ static TestBlockHashBuffer generate_test_block_hash_buffer(Engine &engine)
         if (!pre_hash) {
             pre_hash = random_constant(engine).value;
         }
-        b.set_blockhash(i, pre_hash.template store_be<bytes32_t>());
+        b.set_blockhash(i, store_be_as<bytes32_t>(pre_hash));
     }
     return b;
 }
@@ -569,20 +579,16 @@ template <typename Engine>
 static BlockHeader generate_block_header(Engine &engine, uint64_t block_number)
 {
     auto pre_difficulty =
-        some_good_constant(engine).value.template store_be<bytes32_t>();
+        store_be_as<bytes32_t>(some_good_constant(engine).value);
     return BlockHeader{
-        .parent_hash =
-            some_good_constant(engine).value.template store_be<bytes32_t>(),
-        .ommers_hash =
-            some_good_constant(engine).value.template store_be<bytes32_t>(),
-        .state_root =
-            some_good_constant(engine).value.template store_be<bytes32_t>(),
+        .parent_hash = store_be_as<bytes32_t>(some_good_constant(engine).value),
+        .ommers_hash = store_be_as<bytes32_t>(some_good_constant(engine).value),
+        .state_root = store_be_as<bytes32_t>(some_good_constant(engine).value),
         .transactions_root =
-            some_good_constant(engine).value.template store_be<bytes32_t>(),
+            store_be_as<bytes32_t>(some_good_constant(engine).value),
         .receipts_root =
-            some_good_constant(engine).value.template store_be<bytes32_t>(),
-        .prev_randao =
-            some_good_constant(engine).value.template store_be<bytes32_t>(),
+            store_be_as<bytes32_t>(some_good_constant(engine).value),
+        .prev_randao = store_be_as<bytes32_t>(some_good_constant(engine).value),
         .difficulty = load_be<uint256_t>(pre_difficulty),
         .number = block_number,
         .gas_limit = random_uint32(engine) % (block_gas_limit + 1),
@@ -591,6 +597,45 @@ static BlockHeader generate_block_header(Engine &engine, uint64_t block_number)
         .beneficiary = random_address(engine),
     };
 }
+
+class TimeoutWaitThread
+{
+    std::mutex mtx_;
+    std::condition_variable cv_;
+    bool done_;
+    std::thread thread_;
+
+    static constexpr auto timeout_ = std::chrono::seconds{20};
+
+public:
+    TimeoutWaitThread()
+        : done_{}
+        , thread_{[this] { this->timeout_wait(); }}
+    {
+    }
+
+    ~TimeoutWaitThread()
+    {
+        {
+            std::unique_lock<std::mutex> lock{mtx_};
+            done_ = true;
+        }
+        cv_.notify_one();
+        thread_.join();
+    }
+
+private:
+    void timeout_wait()
+    {
+        std::unique_lock<std::mutex> lock{mtx_};
+        auto const done =
+            cv_.wait_for(lock, timeout_, [this] { return done_; });
+        if (!done) {
+            std::cerr << "FUZZER TIMEOUT" << std::endl;
+            std::terminate();
+        }
+    }
+};
 
 static void do_run(
     monad::vm::MemoryPool &memory_pool, std::size_t const run_index,
@@ -622,6 +667,7 @@ static void do_run(
     auto block_hash_buffer = generate_test_block_hash_buffer(engine);
 
     for (auto i = 0; i < args.iterations_per_run; ++i) {
+        TimeoutWaitThread timeout_wait_thread;
         using monad::vm::fuzzing::GeneratorFocus;
         auto const &focus =
             args.focus

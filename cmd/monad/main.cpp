@@ -47,6 +47,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>
@@ -283,6 +284,8 @@ try {
     // in-memory path has no metadata to read from and constructs the SM
     // inline.
     register_ethereum_state_machines();
+    register_monad_state_machines();
+
     mpt::Db raw_db = [&] {
         if (!db_in_memory) {
             return mpt::Db{mpt::OnDiskDbConfig{

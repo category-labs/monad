@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -197,6 +198,7 @@ namespace
             // this; tests that bypass the C ABI and call the C++ ctor
             // directly must populate the registry themselves.
             monad::register_ethereum_state_machines();
+            monad::register_monad_state_machines();
             cctx = new monad_statesync_client_context{
                 {cdbname},
                 std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),

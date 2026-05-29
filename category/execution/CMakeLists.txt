@@ -215,6 +215,8 @@ add_library(
   "monad/db/commit_block_migration.hpp"
   "monad/db/page_commit_builder.hpp"
   "monad/db/page_commit_builder.cpp"
+  "monad/db/state_machine_init.cpp"
+  "monad/db/state_machine_init.hpp"
   "monad/db/storage_page.cpp"
   "monad/db/storage_page.hpp"
   # monad/chain

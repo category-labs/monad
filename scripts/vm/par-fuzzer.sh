@@ -13,7 +13,7 @@ if [ -z "$n" ] || [ $n -gt 100 ] || [ $n -lt 1 ]; then
     exit 1
 fi
 
-pids=
+pids=()
 for i in `seq 1 $n`; do
     "$script_dir"/fuzzer.sh --seed $i $@ &
     pids+=($!)

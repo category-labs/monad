@@ -63,7 +63,7 @@ namespace monad::vm
     template <Traits traits>
     SharedNativecode Compiler::compile(
         SharedIntercode const &icode, CompilerConfig const &pre_config,
-        bytes32_t const &fallback_base_name)
+        bytes32_t const &fallback_base_name __attribute__((unused)))
     {
         CompilerConfig const *config = &pre_config;
 #ifdef MONAD_COMPILER_TESTING

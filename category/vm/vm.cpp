@@ -252,6 +252,17 @@ namespace monad::vm
 
     EXPLICIT_TRAITS_MEMBER(VM::execute_native_entrypoint_raw);
 
+    void VM::debug_set_execute_override(ExecuteOverride f
+                                        __attribute__((unused)))
+    {
+#ifdef MONAD_COMPILER_TESTING
+        execute_override_ = f;
+#else
+        MONAD_ABORT("debug_set_execute_override requires "
+                    "MONAD_COMPILER_TESTING is enabled");
+#endif
+    }
+
     std::string VM::mode_to_string(Mode const mode)
     {
         switch (mode) {

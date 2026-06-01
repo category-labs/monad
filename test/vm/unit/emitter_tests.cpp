@@ -334,7 +334,7 @@ namespace
                    Emitter::location_type_to_string(right_loc));
     }
 
-    template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
+    template <Traits traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>
     void pure_una_instr_test_instance(
         asmjit::JitRuntime &rt, PureEmitterInstr instr, uint256_t const &input,
         Emitter::LocationType loc, uint256_t const &result,
@@ -525,7 +525,7 @@ namespace
             rt, opcode, [&](Emitter &e) { (e.*instr)(); }, left, right, result);
     }
 
-    template <Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
+    template <Traits traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>
     void pure_una_instr_test(
         asmjit::JitRuntime &rt, EvmOpCode opcode, PureEmitterInstr instr,
         uint256_t const &input, uint256_t const &result)
@@ -2408,7 +2408,7 @@ TEST(Emitter, exp)
         for (int i = 0; i < rep_count; ++i) {
             emit.push(513); // some exponent over 512
             emit.push(13); // base (with popcount != 1)
-            emit.exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
+            emit.exp<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
                 std::numeric_limits<int32_t>::max());
             emit.pop();
             ASSERT_EQ(
@@ -2463,7 +2463,7 @@ TEST(Emitter, exp)
                 rt,
                 EXP,
                 [&](Emitter &em) {
-                    (em.exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
+                    (em.exp<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
                         std::numeric_limits<int32_t>::max()));
                 },
                 {b},
@@ -2473,13 +2473,13 @@ TEST(Emitter, exp)
                 rt,
                 EXP,
                 [&](Emitter &em) {
-                    (em.exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(
+                    (em.exp<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
                         std::numeric_limits<int32_t>::max()));
                 },
                 {b},
                 {e},
                 runtime::exp_dynamic_gas_cost_multiplier<
-                    EvmTraits<EVMC_LATEST_STABLE_REVISION>>() *
+                    EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>() *
                     count_significant_bytes(e));
         }
     }
@@ -3091,23 +3091,24 @@ TEST(Emitter, clz)
     asmjit::JitRuntime rt;
 
     // Test zero case
-    pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(rt, CLZ, &Emitter::clz, 0, 256);
+    pure_una_instr_test<EvmTraits<MONAD_ETH_OSAKA>>(
+        rt, CLZ, &Emitter::clz, 0, 256);
 
     // Test all leading zeros
     for (uint64_t i = 0; i < 256; ++i) {
         // 1 hot bit at different positions
         uint256_t value{uint256_t{1} << (255 - i)};
-        pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(
+        pure_una_instr_test<EvmTraits<MONAD_ETH_OSAKA>>(
             rt, CLZ, &Emitter::clz, value, countl_zero(value));
 
         // All ones except leading zeros
         value = ~uint256_t{0} >> i;
-        pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(
+        pure_una_instr_test<EvmTraits<MONAD_ETH_OSAKA>>(
             rt, CLZ, &Emitter::clz, value, countl_zero(value));
 
         // Test with some random bits set after the leading one
         value = value | (uint256_t{0xDEADBEEF} << (i * 4));
-        pure_una_instr_test<EvmTraits<EVMC_OSAKA>>(
+        pure_una_instr_test<EvmTraits<MONAD_ETH_OSAKA>>(
             rt, CLZ, &Emitter::clz, value, countl_zero(value));
     }
 }
@@ -3222,7 +3223,7 @@ TEST(Emitter, runtime_exit)
     emit.push(300);
     emit.push(10);
     emit.call_runtime(
-        9, true, runtime::exp<EvmTraits<EVMC_LATEST_STABLE_REVISION>>);
+        9, true, runtime::exp<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>);
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);

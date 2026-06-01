@@ -48,7 +48,7 @@ Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id)
 {
-    static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
@@ -66,20 +66,20 @@ Result<void> static_validate_transaction(
 
     // TODO: remove the below logic once we fully migrate over to traits
     // EIP-2930 & EIP-2718
-    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_BERLIN) {
         if (MONAD_UNLIKELY(tx.type != TransactionType::legacy)) {
             return TransactionError::TypeNotSupported;
         }
     }
     // EIP-1559
-    else if constexpr (traits::evm_rev() < EVMC_LONDON) {
+    else if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930)) {
             return TransactionError::TypeNotSupported;
         }
     }
-    else if constexpr (traits::evm_rev() < EVMC_CANCUN) {
+    else if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930 &&
@@ -87,7 +87,7 @@ Result<void> static_validate_transaction(
             return TransactionError::TypeNotSupported;
         }
     }
-    else if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
+    else if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930 &&
@@ -116,7 +116,7 @@ Result<void> static_validate_transaction(
     }
 
     // EIP-3860
-    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
         // In `MONAD_TWO`, the maximum code size for contracts was increased
         // without explicitly changing every corresponding check on initcode
         // size. This meant that in some places, the maximum initcode size was
@@ -139,7 +139,7 @@ Result<void> static_validate_transaction(
         return TransactionError::IntrinsicGasGreaterThanLimit;
     }
 
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         // EIP-7623
         if (MONAD_UNLIKELY(floor_data_gas(tx) > tx.gas_limit)) {
             return TransactionError::IntrinsicGasGreaterThanLimit;
@@ -169,7 +169,7 @@ Result<void> static_validate_transaction(
         return TransactionError::InvalidSignature;
     }
 
-    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         if (tx.type == TransactionType::eip4844) {
             if (MONAD_UNLIKELY(tx.blob_versioned_hashes.empty())) {
                 return TransactionError::InvalidBlobHash;

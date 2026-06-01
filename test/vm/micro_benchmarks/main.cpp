@@ -16,6 +16,7 @@
 #include "test_state.hpp"
 
 #include <category/core/address.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/utils/evm-as/kernel-builder.hpp>
 
 #include <test/vm/utils/evm-as_utils.hpp>
@@ -36,7 +37,7 @@ using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::utils::evm_as;
 
-using traits = EvmTraits<EVMC_OSAKA>;
+using traits = EvmTraits<MONAD_ETH_OSAKA>;
 
 enum class OutputFormat
 {
@@ -346,7 +347,7 @@ static double execute_iteration(
     evmone::test::TestBlockHashes block_hashes{};
     evmone::state::Transaction transaction{};
     auto host = evmone::state::Host(
-        traits::evm_rev(),
+        to_evmc_revision(traits::evm_rev()),
         vm,
         host_state,
         block_info,
@@ -379,7 +380,7 @@ static double execute_iteration(
     auto result = bvm->execute(
         interface,
         ctx,
-        traits::evm_rev(),
+        to_evmc_revision(traits::evm_rev()),
         &msg,
         bytecode.data(),
         bytecode.size());

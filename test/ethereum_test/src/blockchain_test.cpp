@@ -67,6 +67,7 @@
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -119,7 +120,7 @@ struct TraitsMainnet : MonadChain
         }
     }
 
-    virtual evmc_revision get_revision(
+    virtual monad_eth_revision get_revision(
         uint64_t /* block_number */, uint64_t /* timestamp */) const override
     {
         return traits::evm_rev();
@@ -227,7 +228,7 @@ Result<BlockExecOutput> execute(
     bool enable_tracing, std::vector<Receipt> &receipts,
     std::vector<std::vector<CallFrame>> &call_frames)
 {
-    static_assert(traits::evm_rev() > EVMC_BYZANTIUM);
+    static_assert(traits::evm_rev() > MONAD_ETH_BYZANTIUM);
 
     using namespace monad::test;
 
@@ -393,7 +394,7 @@ void process_test(
     std::string const &name, nlohmann::json const &j_contents,
     vm::VM::Mode const vm_mode, bool enable_tracing)
 {
-    static_assert(traits::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     using namespace test;
 
@@ -620,13 +621,13 @@ void process_test(
 }
 
 void process_test(
-    std::variant<evmc_revision, monad_revision> const &revision,
+    std::variant<monad_eth_revision, monad_revision> const &revision,
     std::string const &name, nlohmann::json const &j_contents,
     vm::VM::Mode const vm_mode, bool const enable_tracing)
 {
-    if (std::holds_alternative<evmc_revision>(revision)) {
-        auto const rev = std::get<evmc_revision>(revision);
-        MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
+    if (std::holds_alternative<monad_eth_revision>(revision)) {
+        auto const rev = std::get<monad_eth_revision>(revision);
+        MONAD_ASSERT(rev != MONAD_ETH_CONSTANTINOPLE);
         SWITCH_EVM_TRAITS(
             process_test, name, j_contents, vm_mode, enable_tracing);
     }
@@ -698,7 +699,8 @@ void BlockchainTest::TestBody()
 
 void register_blockchain_tests_path(
     std::filesystem::path const &root,
-    std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
+    std::optional<std::variant<monad_eth_revision, monad_revision>> const
+        &revision,
     std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing)
 {
     namespace fs = std::filesystem;
@@ -741,7 +743,8 @@ void register_blockchain_tests_path(
 }
 
 void register_blockchain_tests(
-    std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
+    std::optional<std::variant<monad_eth_revision, monad_revision>> const
+        &revision,
     std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing)
 {
     // skip slow tests

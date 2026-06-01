@@ -65,7 +65,7 @@ namespace
 
 TEST(async_compile_test, stress)
 {
-    using traits = EvmTraits<EVMC_CANCUN>;
+    using traits = EvmTraits<MONAD_ETH_CANCUN>;
 
     constexpr size_t P = 10;
     constexpr size_t L = 120;
@@ -138,7 +138,7 @@ TEST(async_compile_test, disable)
         auto const icode = make_shared_intercode(std::move(code));
 
         ASSERT_TRUE(
-            compiler.async_compile<EvmTraits<EVMC_PRAGUE>>(hash, icode));
+            compiler.async_compile<EvmTraits<MONAD_ETH_PRAGUE>>(hash, icode));
     }
 
     compiler.debug_wait_for_empty_queue();

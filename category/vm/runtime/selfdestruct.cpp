@@ -17,6 +17,7 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -29,7 +30,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void selfdestruct [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
     {
-        static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+        static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
@@ -64,7 +65,7 @@ namespace monad::vm::runtime
         auto const result = ctx->host->selfdestruct(
             ctx->context, &ctx->env.recipient, &address);
 
-        if constexpr (traits::evm_rev() < EVMC_LONDON) {
+        if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
             if (result) {
                 ctx->gas_refund += 24000;
             }

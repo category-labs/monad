@@ -134,7 +134,7 @@ struct EvmcHost final : public EvmcHostBase
     virtual bool
     account_exists(evmc::address const &address) const noexcept override
     {
-        static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+        static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
         try {
             return !state_.account_is_dead(address);
@@ -241,8 +241,10 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(sizeof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 136);
-static_assert(alignof(EvmcHost<EvmTraits<EVMC_LATEST_STABLE_REVISION>>) == 8);
+static_assert(
+    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
+static_assert(
+    alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
 static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 

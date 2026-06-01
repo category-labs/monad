@@ -141,15 +141,15 @@ namespace
     }
 
     void precompile_contract(
-        BlockchainTestVM *vm_ptr, evmc_revision rev, bytes32_t const &code_hash,
-        uint8_t const *code, size_t const code_size)
+        BlockchainTestVM *vm_ptr, monad_eth_revision rev,
+        bytes32_t const &code_hash, uint8_t const *code, size_t const code_size)
     {
         (void)vm_ptr->get_code_analysis(code_hash, code, code_size);
         (void)vm_ptr->get_intercode_nativecode(rev, code_hash, code, code_size);
     }
 
     void precompile_contracts(
-        BlockchainTestVM *vm_ptr, evmc_revision rev,
+        BlockchainTestVM *vm_ptr, monad_eth_revision rev,
         JsonState const &json_state)
     {
         auto const test_state = json_state.make_test_state();
@@ -188,7 +188,7 @@ namespace
         BlockHeader const header{};
         EthereumMainnet const chain{};
 
-        constexpr auto rev = EVMC_CANCUN;
+        constexpr auto rev = MONAD_ETH_CANCUN;
         auto test_host = TestHost<EvmTraits<rev>>{
             block_hash_buffer,
             state,
@@ -235,7 +235,7 @@ namespace
         auto *vm_ptr =
             reinterpret_cast<BlockchainTestVM *>(vm.get_raw_pointer());
 
-        constexpr auto rev = EVMC_CANCUN;
+        constexpr auto rev = MONAD_ETH_CANCUN;
         precompile_contracts(vm_ptr, rev, json_state);
 
         auto const test_state = json_state.make_test_state();

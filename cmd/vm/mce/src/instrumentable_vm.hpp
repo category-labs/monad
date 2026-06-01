@@ -19,6 +19,7 @@
 #include <category/core/assert.h>
 #include <category/core/log.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
@@ -116,7 +117,13 @@ public:
         auto hashes = evmone::test::TestBlockHashes{};
         auto tx = Transaction{};
 
-        auto host = Host(traits::evm_rev(), vm, evm_state, block, hashes, tx);
+        auto host = Host(
+            to_evmc_revision(traits::evm_rev()),
+            vm,
+            evm_state,
+            block,
+            hashes,
+            tx);
 
         auto const *interface = &host.get_interface();
         auto *context = host.to_context();

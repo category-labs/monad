@@ -79,12 +79,12 @@ void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 }
 
 void process_transaction(
-    std::variant<evmc_revision, monad_revision> const &revision,
+    std::variant<monad_eth_revision, monad_revision> const &revision,
     Transaction const &txn, nlohmann::json const &expected)
 {
-    if (std::holds_alternative<evmc_revision>(revision)) {
-        auto const rev = std::get<evmc_revision>(revision);
-        MONAD_ASSERT(rev != EVMC_CONSTANTINOPLE);
+    if (std::holds_alternative<monad_eth_revision>(revision)) {
+        auto const rev = std::get<monad_eth_revision>(revision);
+        MONAD_ASSERT(rev != MONAD_ETH_CONSTANTINOPLE);
         SWITCH_EVM_TRAITS(process_transaction, txn, expected);
     }
     else {
@@ -153,7 +153,8 @@ void TransactionTest::TestBody()
 
 void register_transaction_tests_path(
     std::filesystem::path const &root,
-    std::optional<std::variant<evmc_revision, monad_revision>> const &revision)
+    std::optional<std::variant<monad_eth_revision, monad_revision>> const
+        &revision)
 {
     namespace fs = std::filesystem;
     MONAD_ASSERT(fs::exists(root));
@@ -193,7 +194,8 @@ void register_transaction_tests_path(
 }
 
 void register_transaction_tests(
-    std::optional<std::variant<evmc_revision, monad_revision>> const &revision)
+    std::optional<std::variant<monad_eth_revision, monad_revision>> const
+        &revision)
 {
     register_transaction_tests_path(
         test_resource::ethereum_tests_dir / "TransactionTests", revision);

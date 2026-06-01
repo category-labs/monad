@@ -252,10 +252,11 @@ namespace monad::vm::compiler
         SELFDESTRUCT = 0xFF
     };
 
-    consteval evmc_revision previous_evm_revision(evmc_revision const rev)
+    consteval monad_eth_revision
+    previous_evm_revision(monad_eth_revision const rev)
     {
         MONAD_DEBUG_ASSERT(std::to_underlying(rev) > 0);
-        return evmc_revision(std::to_underlying(rev) - 1);
+        return monad_eth_revision(std::to_underlying(rev) - 1);
     }
 
     /**
@@ -291,7 +292,7 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_CONSTANTINOPLE>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_CONSTANTINOPLE>>()
     {
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
@@ -570,10 +571,10 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_PETERSBURG>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_PETERSBURG>>()
     {
         auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_PETERSBURG)>>();
+            EvmTraits<previous_evm_revision(MONAD_ETH_PETERSBURG)>>();
 
         // EIP-1283 reverted
         table[SSTORE].min_gas = 5000;
@@ -583,10 +584,10 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_ISTANBUL>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_ISTANBUL>>()
     {
         auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_ISTANBUL)>>();
+            EvmTraits<previous_evm_revision(MONAD_ETH_ISTANBUL)>>();
 
         add_opcode(0x46, table, {"CHAINID", 0, 0, 1, false, 2, 0});
         add_opcode(0x47, table, {"SELFBALANCE", 0, 0, 1, false, 5, 0});
@@ -604,10 +605,10 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_BERLIN>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_BERLIN>>()
     {
-        auto table =
-            make_opcode_table<EvmTraits<previous_evm_revision(EVMC_BERLIN)>>();
+        auto table = make_opcode_table<
+            EvmTraits<previous_evm_revision(MONAD_ETH_BERLIN)>>();
 
         // EIP-2929
         table[SLOAD].min_gas = 100;
@@ -626,10 +627,10 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_LONDON>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_LONDON>>()
     {
-        auto table =
-            make_opcode_table<EvmTraits<previous_evm_revision(EVMC_LONDON)>>();
+        auto table = make_opcode_table<
+            EvmTraits<previous_evm_revision(MONAD_ETH_LONDON)>>();
 
         add_opcode(0x48, table, {"BASEFEE", 0, 0, 1, false, 2, 0});
 
@@ -638,10 +639,10 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_PARIS>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_PARIS>>()
     {
-        auto table =
-            make_opcode_table<EvmTraits<previous_evm_revision(EVMC_PARIS)>>();
+        auto table = make_opcode_table<
+            EvmTraits<previous_evm_revision(MONAD_ETH_PARIS)>>();
 
         table[0x44].name = "PREVRANDAO";
 
@@ -650,10 +651,10 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_SHANGHAI>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_SHANGHAI>>()
     {
         auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_SHANGHAI)>>();
+            EvmTraits<previous_evm_revision(MONAD_ETH_SHANGHAI)>>();
 
         add_opcode(0x5F, table, {"PUSH0", 0, 0, 1, false, 2, 0});
 
@@ -662,10 +663,10 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_CANCUN>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_CANCUN>>()
     {
-        auto table =
-            make_opcode_table<EvmTraits<previous_evm_revision(EVMC_CANCUN)>>();
+        auto table = make_opcode_table<
+            EvmTraits<previous_evm_revision(MONAD_ETH_CANCUN)>>();
 
         add_opcode(0x49, table, {"BLOBHASH", 0, 1, 1, false, 3, 0});
         add_opcode(0x4A, table, {"BLOBBASEFEE", 0, 0, 1, false, 2, 0});
@@ -678,18 +679,18 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_PRAGUE>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_PRAGUE>>()
     {
         return make_opcode_table<
-            EvmTraits<previous_evm_revision(EVMC_PRAGUE)>>();
+            EvmTraits<previous_evm_revision(MONAD_ETH_PRAGUE)>>();
     }
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<EVMC_OSAKA>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_OSAKA>>()
     {
-        auto table =
-            make_opcode_table<EvmTraits<previous_evm_revision(EVMC_OSAKA)>>();
+        auto table = make_opcode_table<
+            EvmTraits<previous_evm_revision(MONAD_ETH_OSAKA)>>();
 
         // https://eips.ethereum.org/EIPS/eip-7939
         add_opcode(0x1E, table, {"CLZ", 0, 1, 1, false, 5, 0});

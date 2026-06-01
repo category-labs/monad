@@ -330,7 +330,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
         std::make_pair(false, 0));
 
     s.destruct_suicides<typename TestFixture::Trait>();
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
         EXPECT_TRUE(s.account_exists(a));
     }
     else {
@@ -373,7 +373,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
         std::make_pair(false, 0));
 
     s.destruct_suicides<typename TestFixture::Trait>();
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
         EXPECT_TRUE(s.account_exists(a));
     }
     else {
@@ -441,7 +441,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_separate_tx)
     uint256_t const balance_after_selfdestruct = s.get_balance(a);
     s.destruct_suicides<typename TestFixture::Trait>();
 
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_CANCUN) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_CANCUN) {
         // Pre-cancun behavior
         EXPECT_EQ(balance_after_selfdestruct, 0);
         EXPECT_FALSE(s.account_exists(a));
@@ -504,7 +504,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_incarnation)
     }
     {
         State s2{bs, Incarnation{1, 2}};
-        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
             EXPECT_TRUE(s2.account_exists(a));
         }
         else {
@@ -538,7 +538,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_create_incarnation)
     }
     {
         State s2{bs, Incarnation{1, 2}};
-        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
             EXPECT_TRUE(s2.account_exists(a));
         }
         else {
@@ -663,7 +663,7 @@ TYPED_TEST(
         this->tdb.set_block_and_prefix(1);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key1), value1);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value2);
-        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
             EXPECT_EQ(
                 this->tdb.read_storage(a, Incarnation{1, 2}, key3), value3);
 
@@ -1564,7 +1564,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         EXPECT_EQ(
             this->tdb.read_storage(c, Incarnation{2, 1}, key1),
             monad::bytes32_t{});
-        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
             EXPECT_EQ(
                 this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
         }
@@ -1580,7 +1580,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         EXPECT_EQ(
             this->tdb.read_storage(c, Incarnation{2, 1}, key1),
             monad::bytes32_t{});
-        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_CANCUN) {
+        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
             EXPECT_EQ(
                 this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
         }

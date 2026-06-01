@@ -31,22 +31,23 @@ using namespace monad;
 
 namespace
 {
-    template <evmc_revision r>
-    using rev = std::integral_constant<evmc_revision, r>;
+    template <monad_eth_revision r>
+    using rev = std::integral_constant<monad_eth_revision, r>;
 }
 
 TYPED_TEST(TraitsTest, intrinsic_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_HOMESTEAD);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_HOMESTEAD);
 
-    auto non_zero_since = []<evmc_revision r>(rev<r>, uint64_t val) consteval {
-        if constexpr (TestFixture::Trait::evm_rev() >= r) {
-            return val;
-        }
-        else {
-            return 0;
-        }
-    };
+    auto non_zero_since =
+        []<monad_eth_revision r>(rev<r>, uint64_t val) consteval {
+            if constexpr (TestFixture::Trait::evm_rev() >= r) {
+                return val;
+            }
+            else {
+                return 0;
+            }
+        };
 
     {
         Transaction t{};
@@ -62,7 +63,7 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
 
     static constexpr auto zero_token_cost = 4;
     static constexpr auto non_zero_token_cost = [] {
-        if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_ISTANBUL) {
             // EIP-2028
             return 68;
         }
@@ -74,7 +75,7 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
     // EIP-3860
     // only charged when tx.to is not set
     static constexpr auto extra_cost_per_evm_word =
-        non_zero_since(rev<EVMC_SHANGHAI>{}, 2);
+        non_zero_since(rev<MONAD_ETH_SHANGHAI>{}, 2);
 
     {
         Transaction t{};
@@ -123,9 +124,9 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
 
     // EIP-2930
     static constexpr auto cost_per_access_list_address =
-        non_zero_since(rev<EVMC_BERLIN>{}, 2'400);
+        non_zero_since(rev<MONAD_ETH_BERLIN>{}, 2'400);
     static constexpr auto cost_per_access_list_key =
-        non_zero_since(rev<EVMC_BERLIN>{}, 1'900);
+        non_zero_since(rev<MONAD_ETH_BERLIN>{}, 1'900);
 
     {
         Transaction t{};
@@ -175,7 +176,7 @@ TYPED_TEST(TraitsTest, txn_award)
     EXPECT_EQ(gas_price<typename TestFixture::Trait>(t0, 0u), 1'000);
     EXPECT_EQ(gas_price<typename TestFixture::Trait>(t1, 2'000u), 3'000);
     EXPECT_EQ(gas_price<typename TestFixture::Trait>(t2, 2'000u), 3'000);
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_LONDON) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
         EXPECT_EQ(gas_price<typename TestFixture::Trait>(t3, 2'000u), 5'000);
         EXPECT_EQ(gas_price<typename TestFixture::Trait>(t4, 2'000u), 5'000);
     }

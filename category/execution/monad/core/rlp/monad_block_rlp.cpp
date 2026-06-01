@@ -52,7 +52,7 @@ Result<BlockHeader> decode_execution_inputs(byte_string_view &enc)
 
     // TODO: This backwards-compatible logic should be temporary. When explicit
     // versioning is added to this module, the following field needs to be
-    // parsed only if we're in a revision where EVMC_PRAGUE is active
+    // parsed only if we're in a revision where MONAD_ETH_PRAGUE is active
     // (MONAD_FOUR and onwards).
     if (payload.size() > 0) {
         BOOST_OUTCOME_TRY(header.requests_hash, decode_bytes32(payload));

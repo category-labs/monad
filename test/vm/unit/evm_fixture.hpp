@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -110,7 +111,7 @@ namespace monad::vm::compiler::test
             msg_.input_data = calldata.data();
             msg_.input_size = calldata.size();
 
-            if (TraitsTest<T>::Trait::evm_rev() >= EVMC_BERLIN) {
+            if (TraitsTest<T>::Trait::evm_rev() >= MONAD_ETH_BERLIN) {
                 host_.access_account(msg_.sender);
                 host_.access_account(msg_.recipient);
             }
@@ -150,7 +151,7 @@ namespace monad::vm::compiler::test
                     *static_cast<::evmone::VM *>(evmone_vm.get_raw_pointer()),
                     host_.get_interface(),
                     host_.to_context(),
-                    TraitsTest<T>::Trait::evm_rev(),
+                    to_evmc_revision(TraitsTest<T>::Trait::evm_rev()),
                     msg_,
                     evmone::baseline::analyze(evmc::bytes_view(code)))};
             }
@@ -260,7 +261,8 @@ namespace monad::vm::compiler::test
     class VMFileTest
         : public testing::Test
         , public testing::WithParamInterface<std::tuple<
-              fs::directory_entry, std::variant<evmc_revision, monad_revision>>>
+              fs::directory_entry,
+              std::variant<monad_eth_revision, monad_revision>>>
     {
     protected:
         template <Traits traits>
@@ -284,10 +286,10 @@ namespace monad::vm::compiler::test
 
         void execute_and_compare(
             std::int64_t gas_limit, std::span<std::uint8_t const> code,
-            std::variant<evmc_revision, monad_revision> rev_) noexcept
+            std::variant<monad_eth_revision, monad_revision> rev_) noexcept
         {
-            if (std::holds_alternative<evmc_revision>(rev_)) {
-                auto rev = std::get<evmc_revision>(rev_);
+            if (std::holds_alternative<monad_eth_revision>(rev_)) {
+                auto rev = std::get<monad_eth_revision>(rev_);
                 SWITCH_EVM_TRAITS(
                     VMFileTest::execute_and_compare_evm_rev, gas_limit, code);
             }

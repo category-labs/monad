@@ -17,14 +17,13 @@
 #include <category/core/cases.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
 #include <category/vm/utils/evm-as/validator.hpp>
 #include <category/vm/utils/parser.hpp>
-
-#include <evmc/evmc.h>
 
 #include <algorithm>
 #include <array>
@@ -176,7 +175,7 @@ namespace monad::vm::utils
     std::optional<uint8_t> find_opcode(std::string_view const op)
     {
         auto const &tbl = monad::vm::compiler::make_opcode_table<
-            EvmTraits<EVMC_LATEST_STABLE_REVISION>>();
+            EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>();
         size_t i;
         for (i = 0; i < tbl.size(); ++i) {
             if (tbl[i].name == op) {
@@ -193,7 +192,7 @@ namespace monad::vm::utils
     {
         std::stringstream ss;
         auto const &tbl = monad::vm::compiler::make_opcode_table<
-            EvmTraits<EVMC_LATEST_STABLE_REVISION>>();
+            EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>();
         for (size_t i = 0; i < opcodes.size(); ++i) {
             auto c = opcodes[i];
             ss << std::format("[{:#x}] {:#x} {}\n", i, c, tbl[opcodes[i]].name);
@@ -209,7 +208,8 @@ namespace monad::vm::utils
 
     std::vector<uint8_t> compile_tokens(
         parser_config const &config,
-        evm_as::EvmBuilder<EvmTraits<EVMC_LATEST_STABLE_REVISION>> const &eb)
+        evm_as::EvmBuilder<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>> const
+            &eb)
     {
         std::vector<uint8_t> opcodes{};
         std::vector<evm_as::ValidationError> errors{};

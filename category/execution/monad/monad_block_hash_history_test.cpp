@@ -45,7 +45,7 @@ TYPED_TEST(MonadBlockHashHistoryFixture, noop_before_fork)
     using Trait = TestFixture::Trait;
 
     deploy_block_hash_history_contract<Trait>(this->state);
-    if constexpr (Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         EXPECT_FALSE(this->state.account_exists(BLOCK_HISTORY_ADDRESS));
     }
     else {

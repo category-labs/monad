@@ -632,23 +632,24 @@ namespace monad::vm::fuzzing
     }
 
     template <typename Engine>
-    Address generate_precompile_address(Engine &eng, evmc_revision const rev)
+    Address
+    generate_precompile_address(Engine &eng, monad_eth_revision const rev)
     {
-        MONAD_ASSERT(rev > EVMC_SPURIOUS_DRAGON);
+        MONAD_ASSERT(rev > MONAD_ETH_SPURIOUS_DRAGON);
 
         auto addr = [rev, &eng]() {
-            if (rev <= EVMC_PETERSBURG) {
+            if (rev <= MONAD_ETH_PETERSBURG) {
                 return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8});
             }
-            else if (rev <= EVMC_SHANGHAI) {
+            else if (rev <= MONAD_ETH_SHANGHAI) {
                 return uniform_sample(
                     eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9});
             }
-            else if (rev == EVMC_CANCUN) {
+            else if (rev == MONAD_ETH_CANCUN) {
                 return uniform_sample(
                     eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
             }
-            else if (rev == EVMC_PRAGUE) {
+            else if (rev == MONAD_ETH_PRAGUE) {
                 return uniform_sample(
                     eng,
                     std::array{
@@ -670,7 +671,7 @@ namespace monad::vm::fuzzing
                         16,
                         17});
             }
-            else if (rev == EVMC_OSAKA) {
+            else if (rev == MONAD_ETH_OSAKA) {
                 // New precompile at address 0x100 (256): P256VERIFY
                 return uniform_sample(
                     eng,
@@ -704,7 +705,8 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     void compile_address(
-        Engine &eng, evmc_revision const rev, std::vector<uint8_t> &program,
+        Engine &eng, monad_eth_revision const rev,
+        std::vector<uint8_t> &program,
         std::vector<Address> const &valid_addresses)
     {
         auto const &addr = [&] {
@@ -763,8 +765,9 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     void compile_create(
-        Engine &eng, evmc_revision const rev, std::vector<uint8_t> &program,
-        Create const &c, std::vector<Address> const &valid_addresses)
+        Engine &eng, monad_eth_revision const rev,
+        std::vector<uint8_t> &program, Create const &c,
+        std::vector<Address> const &valid_addresses)
     {
         if (!c.isTrivial) {
             if (c.opcode == CREATE2) {
@@ -804,8 +807,9 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     void compile_call(
-        Engine &eng, evmc_revision const rev, std::vector<uint8_t> &program,
-        Call const &call, std::vector<Address> const &valid_addresses)
+        Engine &eng, monad_eth_revision const rev,
+        std::vector<uint8_t> &program, Call const &call,
+        std::vector<Address> const &valid_addresses)
     {
         bool isTrivial = call.isTrivial;
 
@@ -882,8 +886,8 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     void compile_block(
-        Engine &eng, evmc_revision const rev, std::vector<uint8_t> &program,
-        std::vector<Instruction> const &block,
+        Engine &eng, monad_eth_revision const rev,
+        std::vector<uint8_t> &program, std::vector<Instruction> const &block,
         std::vector<Address> const &valid_addresses,
         std::vector<uint32_t> &valid_jumpdests,
         std::vector<size_t> &jumpdest_patches)
@@ -1011,7 +1015,7 @@ namespace monad::vm::fuzzing
 
     template <typename Engine>
     std::vector<uint8_t> generate_program(
-        GeneratorFocus const &focus, Engine &eng, evmc_revision const rev,
+        GeneratorFocus const &focus, Engine &eng, monad_eth_revision const rev,
         std::vector<Address> const &valid_addresses)
     {
         auto prog = std::vector<uint8_t>{};

@@ -30,6 +30,7 @@
 #include <category/core/bytes.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/generator.hpp>
 #include <category/vm/memory_pool.hpp>
@@ -149,7 +150,7 @@ static Transaction tx_from(State &state, Address const &addr) noexcept
 // book-keeping is elided here to keep the implementation simple and allow us to
 // send arbitrary messages to update the state.
 static evmc::Result transition(
-    State &state, evmc_message const &msg, evmc_revision const rev,
+    State &state, evmc_message const &msg, monad_eth_revision const rev,
     evmc::VM &vm, int64_t const block_gas_left)
 {
     // Pre-transaction clean-up.
@@ -183,7 +184,8 @@ static evmc::Result transition(
     ++sender_acc.nonce;
     sender_acc.balance -= block_gas_left * effective_gas_price;
 
-    Host host{rev, vm, state, block, hashes, tx};
+    // evmone's test Host consumes evmc_revision directly.
+    Host host{to_evmc_revision(rev), vm, state, block, hashes, tx};
 
     sender_acc.access_status = EVMC_ACCESS_WARM; // Tx sender is always warm.
     if (tx.to.has_value()) {
@@ -193,7 +195,7 @@ static evmc::Result transition(
     auto result = host.call(msg);
     auto gas_used = block_gas_left - result.gas_left;
 
-    auto const max_refund_quotient = rev >= EVMC_LONDON ? 5 : 2;
+    auto const max_refund_quotient = rev >= MONAD_ETH_LONDON ? 5 : 2;
     auto const refund_limit = gas_used / max_refund_quotient;
     auto const refund = std::min(result.gas_refund, refund_limit);
     gas_used -= refund;
@@ -318,7 +320,7 @@ namespace
         bool print_stats = false;
         BlockchainTestVM::Implementation implementation =
             BlockchainTestVM::Implementation::Compiler;
-        evmc_revision revision = EVMC_OSAKA;
+        monad_eth_revision revision = MONAD_ETH_OSAKA;
         std::optional<std::string> focus_path = std::nullopt;
         std::optional<GeneratorFocus> focus = std::nullopt;
 
@@ -374,24 +376,24 @@ static arguments parse_args(int const argc, char **const argv)
         args.print_stats,
         "Print message result statistics when logging");
 
-    auto const rev_map = std::map<std::string, evmc_revision>{
-        {"CONSTANTINOPLE", EVMC_CONSTANTINOPLE},
-        {"PETERSBURG", EVMC_PETERSBURG},
-        {"ISTANBUL", EVMC_ISTANBUL},
-        {"BERLIN", EVMC_BERLIN},
-        {"LONDON", EVMC_LONDON},
-        {"PARIS", EVMC_PARIS},
-        {"SHANGHAI", EVMC_SHANGHAI},
-        {"CANCUN", EVMC_CANCUN},
-        {"PRAGUE", EVMC_PRAGUE},
-        {"OSAKA", EVMC_OSAKA},
-        {"LATEST", EVMC_LATEST_STABLE_REVISION}};
+    auto const rev_map = std::map<std::string, monad_eth_revision>{
+        {"CONSTANTINOPLE", MONAD_ETH_CONSTANTINOPLE},
+        {"PETERSBURG", MONAD_ETH_PETERSBURG},
+        {"ISTANBUL", MONAD_ETH_ISTANBUL},
+        {"BERLIN", MONAD_ETH_BERLIN},
+        {"LONDON", MONAD_ETH_LONDON},
+        {"PARIS", MONAD_ETH_PARIS},
+        {"SHANGHAI", MONAD_ETH_SHANGHAI},
+        {"CANCUN", MONAD_ETH_CANCUN},
+        {"PRAGUE", MONAD_ETH_PRAGUE},
+        {"OSAKA", MONAD_ETH_OSAKA},
+        {"LATEST", MONAD_ETH_LATEST_STABLE_REVISION}};
     app.add_option(
            "--revision",
            args.revision,
            std::format(
                "Set EVM revision (default: {})",
-               evmc_revision_to_string(args.revision)))
+               monad_eth_revision_to_string(args.revision)))
         ->transform(CLI::CheckedTransformer(rev_map, CLI::ignore_case))
         ->option_text("TEXT");
 
@@ -407,7 +409,7 @@ static arguments parse_args(int const argc, char **const argv)
 }
 
 static evmc_status_code fuzz_iteration(
-    evmc_message const &msg, evmc_revision const rev, State &evmone_state,
+    evmc_message const &msg, monad_eth_revision const rev, State &evmone_state,
     evmc::VM &evmone_vm, State &monad_state, evmc::VM &monad_vm,
     BlockchainTestVM::Implementation const impl)
 {
@@ -529,7 +531,7 @@ static void do_run(
                       Choice(0.60, [](auto &) { return pow2_focus; }),
                       Choice(0.05, [](auto &) { return dyn_jump_focus; }));
 
-        if (rev >= EVMC_PRAGUE && toss(engine, 0.001)) {
+        if (rev >= MONAD_ETH_PRAGUE && toss(engine, 0.001)) {
             auto precompile =
                 monad::vm::fuzzing::generate_precompile_address(engine, rev);
             auto const a = deploy_delegated_contracts(
@@ -561,7 +563,7 @@ static void do_run(
             contract_addresses.push_back(a);
             known_addresses.push_back(a);
 
-            if (args.revision >= EVMC_PRAGUE && toss(engine, 0.2)) {
+            if (args.revision >= MONAD_ETH_PRAGUE && toss(engine, 0.2)) {
                 auto const b = deploy_delegated_contracts(
                     evmone_state, monad_state, genesis_address, a);
                 known_addresses.push_back(b);
@@ -610,7 +612,7 @@ static void run_loop(int argc, char **argv)
     if (args.focus_path) {
         args.focus = parse_generator_focus(*args.focus_path);
     }
-    auto const *msg_rev = evmc_revision_to_string(args.revision);
+    auto const *msg_rev = monad_eth_revision_to_string(args.revision);
     for (auto i = 0u; i < args.runs; ++i) {
         std::cerr << std::format(
             "Fuzzing with seed @ {}: {}\n", msg_rev, args.seed);

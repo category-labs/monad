@@ -19,6 +19,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/call.hpp>
@@ -61,7 +62,7 @@ namespace monad::vm::runtime
         evmc_call_kind const call_kind, bool const static_call,
         int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+        static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
         ctx->env.clear_return_data();
 
@@ -88,7 +89,7 @@ namespace monad::vm::runtime
         }
 
         auto const code_address = [&]() -> Address {
-            if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+            if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
                 // EIP-7702: if the code address starts with 0xEF0100, then
                 // treat it as a delegated call in the context of the
                 // current authority.
@@ -275,7 +276,7 @@ namespace monad::vm::runtime
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() > EVMC_BYZANTIUM);
+        static_assert(traits::evm_rev() > MONAD_ETH_BYZANTIUM);
 
         *result_ptr = call_impl<traits>(
             ctx,

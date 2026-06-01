@@ -23,6 +23,7 @@
 #include <category/core/hex.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 
 #include <category/vm/vm.hpp>
@@ -114,9 +115,12 @@ BlockchainTestVM::BlockchainTestVM(
 
 evmc::Result BlockchainTestVM::execute(
     evmc_host_interface const *host, evmc_host_context *context,
-    evmc_revision rev, evmc_message const *msg, uint8_t const *code,
+    evmc_revision evmc_rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
 {
+    // evmone consumes evmc_revision directly; our own VM dispatches through
+    // SWITCH_EVM_TRAITS, which switches on a monad_eth_revision named `rev`.
+    monad_eth_revision const rev = from_evmc_revision(evmc_rev);
     MONAD_ASSERT(rev >= constants::EARLIEST_SUPPORTED_EVM_FORK);
     auto *const prev_rt_ctx = rt_ctx_;
     auto new_rt_ctx =
@@ -126,7 +130,7 @@ evmc::Result BlockchainTestVM::execute(
     auto res = [&] {
         if (msg->sender == SYSTEM_ADDRESS) {
             return evmc::Result{evmone_vm_.execute(
-                &evmone_vm_, host, context, rev, msg, code, code_size)};
+                &evmone_vm_, host, context, evmc_rev, msg, code, code_size)};
         }
         else if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2) {
             SWITCH_EVM_TRAITS(
@@ -134,7 +138,8 @@ evmc::Result BlockchainTestVM::execute(
             MONAD_ABORT();
         }
         else if (impl_ == Implementation::Evmone) {
-            return execute_evmone(host, context, rev, msg, code, code_size);
+            return execute_evmone(
+                host, context, evmc_rev, msg, code, code_size);
         }
         else if (impl_ == Implementation::Compiler) {
             return execute_compiler(host, context, rev, msg, code, code_size);
@@ -181,8 +186,8 @@ monad::vm::SharedIntercode const &BlockchainTestVM::get_intercode(
 std::pair<
     monad::vm::SharedIntercode const &, monad::vm::SharedNativecode const> const
 BlockchainTestVM::get_intercode_nativecode(
-    evmc_revision const rev, bytes32_t const &code_hash, uint8_t const *code,
-    size_t code_size)
+    monad_eth_revision const rev, bytes32_t const &code_hash,
+    uint8_t const *code, size_t code_size)
 {
     auto const &icode = get_intercode(code_hash, code, code_size);
 
@@ -228,7 +233,7 @@ evmc::Result BlockchainTestVM::execute_evmone(
 
 evmc::Result BlockchainTestVM::execute_compiler(
     evmc_host_interface const *host, evmc_host_context *context,
-    evmc_revision rev, evmc_message const *msg, uint8_t const *code,
+    monad_eth_revision rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
 {
     auto code_hash = host->get_code_hash(context, &msg->code_address);
@@ -248,7 +253,7 @@ evmc::Result BlockchainTestVM::execute_compiler(
 
 evmc::Result BlockchainTestVM::execute_interpreter(
     evmc_host_interface const *host, evmc_host_context *context,
-    evmc_revision rev, evmc_message const *msg, uint8_t const *code,
+    monad_eth_revision rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
 {
     auto code_hash = host->get_code_hash(context, &msg->code_address);

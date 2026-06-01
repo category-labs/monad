@@ -67,7 +67,7 @@ JsonState load_blockchain_json_state(nlohmann::json const &j_contents)
             .value());
 
     std::optional<std::vector<Withdrawal>> withdrawals;
-    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
         MONAD_ASSERT(
             NULL_ROOT ==
             from_hex<bytes32_t>(

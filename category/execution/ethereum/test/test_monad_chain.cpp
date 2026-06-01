@@ -75,7 +75,7 @@ TYPED_TEST(TraitsTest, Genesis)
 
         auto result =
             static_validate_header<typename TestFixture::Trait>(header);
-        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
+        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
             EXPECT_TRUE(result.has_value());
         }
         else {
@@ -98,7 +98,7 @@ TYPED_TEST(TraitsTest, Genesis)
             0xb711505d8f46fc921ae824f847f26c5c3657bf6c8b9dcf07ffdf3357a143bca9_bytes32);
         auto result =
             static_validate_header<typename TestFixture::Trait>(header);
-        if constexpr (TestFixture::Trait::evm_rev() < EVMC_LONDON) {
+        if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
             EXPECT_TRUE(result.has_value());
         }
         else {
@@ -121,7 +121,7 @@ TYPED_TEST(TraitsTest, Genesis)
 
         auto result =
             static_validate_header<typename TestFixture::Trait>(header);
-        if constexpr (TestFixture::Trait::evm_rev() == EVMC_CANCUN) {
+        if constexpr (TestFixture::Trait::evm_rev() == MONAD_ETH_CANCUN) {
             EXPECT_TRUE(result.has_value());
         }
         else {

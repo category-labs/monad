@@ -70,12 +70,12 @@ template <Traits traits>
 evmc::Result deploy_contract_code(
     State &state, Address const &address, evmc::Result result) noexcept
 {
-    static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
     // EIP-3541
-    if constexpr (traits::evm_rev() >= EVMC_LONDON) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_LONDON) {
         if (result.output_size > 0 && result.output_data[0] == 0xef) {
             return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
         }
@@ -124,7 +124,7 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
         }
     }
 
-    if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
         MONAD_ASSERT(
             msg.kind != EVMC_CALL ||
             Address{msg.recipient} == Address{msg.code_address});
@@ -176,7 +176,7 @@ template <Traits traits>
 evmc::Result execute_create_message(
     EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
-    static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 

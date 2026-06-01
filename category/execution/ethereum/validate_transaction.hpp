@@ -99,7 +99,7 @@ template <Traits traits>
     // YP (71)
     auto const code_hash = state.get_code_hash(sender);
     bool sender_is_eoa = code_hash == NULL_HASH;
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         // EIP-7702
         auto const icode = state.read_code(code_hash)->intercode();
         trace::on_read_code(state_tracer, code_hash, icode);

@@ -76,7 +76,7 @@ bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)
 template <Traits traits>
 Result<void> static_validate_header(BlockHeader const &header)
 {
-    static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+    static_assert(traits::evm_rev() > MONAD_ETH_HOMESTEAD);
 
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_limit < 5000)) {
@@ -95,7 +95,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-1559
-    if constexpr (traits::evm_rev() < EVMC_LONDON) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
         if (MONAD_UNLIKELY(header.base_fee_per_gas.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -105,7 +105,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-7685
-    if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
         if (MONAD_UNLIKELY(header.requests_hash.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -115,7 +115,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-4844 and EIP-4788
-    if constexpr (traits::evm_rev() < EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
         if (MONAD_UNLIKELY(
                 header.blob_gas_used.has_value() ||
                 header.excess_blob_gas.has_value() ||
@@ -131,7 +131,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-4895
-    if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_SHANGHAI) {
         if (MONAD_UNLIKELY(header.withdrawals_root.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -141,7 +141,7 @@ Result<void> static_validate_header(BlockHeader const &header)
     }
 
     // EIP-3675
-    if constexpr (traits::evm_rev() >= EVMC_PARIS) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PARIS) {
         if (MONAD_UNLIKELY(header.difficulty != 0)) {
             return BlockError::PowBlockAfterMerge;
         }
@@ -172,7 +172,7 @@ static_validate_ommers(Chain const &chain, Block const &block)
     }
 
     // EIP-3675
-    if constexpr (traits::evm_rev() >= EVMC_PARIS) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PARIS) {
         if (MONAD_UNLIKELY(!block.ommers.empty())) {
             return BlockError::TooManyOmmers;
         }
@@ -191,7 +191,7 @@ static_validate_ommers(Chain const &chain, Block const &block)
 
     // YP eq. 167
     for (auto const &ommer : block.ommers) {
-        evmc_revision const rev =
+        monad_eth_revision const rev =
             chain.get_revision(ommer.number, ommer.timestamp);
         BOOST_OUTCOME_TRY([&] {
             SWITCH_EVM_TRAITS(static_validate_header, ommer);
@@ -205,7 +205,7 @@ static_validate_ommers(Chain const &chain, Block const &block)
 template <Traits traits>
 constexpr Result<void> static_validate_4844(Block const &block)
 {
-    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         uint64_t blob_gas_used = 0;
         for (auto const &tx : block.transactions) {
             if (tx.type == TransactionType::eip4844) {
@@ -228,7 +228,7 @@ constexpr Result<void>
 static_validate_body(Chain const &chain, Block const &block)
 {
     // EIP-4895
-    if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_SHANGHAI) {
         if (MONAD_UNLIKELY(block.withdrawals.has_value())) {
             return BlockError::FieldBeforeFork;
         }

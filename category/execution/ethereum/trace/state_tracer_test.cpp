@@ -1106,7 +1106,7 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
         0x000000000000000000000000000000000000000b_address;
 
     auto const json_string = [] {
-        if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+        if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
             return R"(
                     [
                         {
@@ -1998,7 +1998,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
 // Site 5: validate_ethereum_transaction records sender code on EIP-7702 check
 TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         GTEST_SKIP() << "EIP-7702 sender code read requires Prague+";
     }
     else {
@@ -2054,7 +2054,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
 // covered by the witness-generation integration tests.
 TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         GTEST_SKIP() << "EIP-7702 authority code read requires Prague+";
     }
     else {

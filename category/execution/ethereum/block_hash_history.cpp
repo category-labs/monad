@@ -49,7 +49,7 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 void deploy_block_hash_history_contract(State &state)
 {
-    if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
         return;
     }
 
@@ -80,7 +80,7 @@ EXPLICIT_TRAITS(deploy_block_hash_history_contract);
 template <Traits traits>
 void set_block_hash_history(State &state, BlockHeader const &header)
 {
-    if constexpr (traits::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
         return;
     }
 

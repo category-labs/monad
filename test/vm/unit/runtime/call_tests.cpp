@@ -33,7 +33,7 @@ using namespace monad::vm::compiler::test;
 
 TYPED_TEST(RuntimeTraitsTest, CallBasic)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
@@ -82,7 +82,7 @@ TYPED_TEST(RuntimeTraitsTest, CallWithValueCold)
                 return 48'000;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
             return 58'000;
         }
         else {
@@ -94,7 +94,7 @@ TYPED_TEST(RuntimeTraitsTest, CallWithValueCold)
 
 TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
@@ -115,7 +115,7 @@ TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
                 return 2882;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
             return 3039;
         }
         else {
@@ -128,7 +128,7 @@ TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 
 TYPED_TEST(RuntimeTraitsTest, CallFailure)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
@@ -147,7 +147,7 @@ TYPED_TEST(RuntimeTraitsTest, CallFailure)
                 return 80'000;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
             return 90'000;
         }
         else {
@@ -159,7 +159,7 @@ TYPED_TEST(RuntimeTraitsTest, CallFailure)
 
 TYPED_TEST(RuntimeTraitsTest, DelegateCall)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::delegatecall<typename TestFixture::Trait>);
@@ -177,7 +177,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegateCall)
                 return 82'000;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
             return 92'000;
         }
         else {
@@ -208,7 +208,7 @@ TYPED_TEST(RuntimeTraitsTest, CallCode)
                 return 72'988;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
             return 82'988;
         }
         else {
@@ -220,7 +220,7 @@ TYPED_TEST(RuntimeTraitsTest, CallCode)
 
 TYPED_TEST(RuntimeTraitsTest, StaticCall)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::staticcall<typename TestFixture::Trait>);
@@ -241,7 +241,7 @@ TYPED_TEST(RuntimeTraitsTest, StaticCall)
                 return 81'909;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
             return 91'909;
         }
         else {
@@ -270,7 +270,7 @@ TYPED_TEST(RuntimeTraitsTest, CallTooDeep)
                 return 58'300;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
             return 68'300;
         }
         else {
@@ -308,7 +308,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCall)
 
 TYPED_TEST(RuntimeTraitsTest, DelegatedStaticCall)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -336,7 +336,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedStaticCall)
 
 TYPED_TEST(RuntimeTraitsTest, DelegatedDelegateCall)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -356,7 +356,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedDelegateCall)
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0);
 
     ASSERT_EQ(res, 1);
-    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+    if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
         ASSERT_EQ(
             this->host_.access_account(address_from_uint256(0xC0FFEE)),
             EVMC_ACCESS_COLD);
@@ -389,7 +389,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallcode)
     auto res = do_call(10000, 0xC0FFEE, 1, 0, 0, 0, 0);
 
     ASSERT_EQ(res, 1);
-    if constexpr (TestFixture::Trait::evm_rev() <= EVMC_ISTANBUL) {
+    if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
         ASSERT_EQ(
             this->host_.access_account(address_from_uint256(0xC0FFEE)),
             EVMC_ACCESS_COLD);
@@ -425,7 +425,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallPrecompile)
         EVMC_ACCESS_WARM);
     ASSERT_EQ(this->host_.recorded_calls.size(), 1);
 
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         ASSERT_EQ(
             this->host_.recorded_calls[0].flags &
                 static_cast<uint32_t>(EVMC_DELEGATED),

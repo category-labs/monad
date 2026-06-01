@@ -23,26 +23,26 @@
 
 #define SWITCH_EVM_TRAITS(f, ...)                                              \
     switch (rev) {                                                             \
-    case EVMC_OSAKA:                                                           \
-        return f<::monad::EvmTraits<EVMC_OSAKA>>(__VA_ARGS__);                 \
-    case EVMC_PRAGUE:                                                          \
-        return f<::monad::EvmTraits<EVMC_PRAGUE>>(__VA_ARGS__);                \
-    case EVMC_CANCUN:                                                          \
-        return f<::monad::EvmTraits<EVMC_CANCUN>>(__VA_ARGS__);                \
-    case EVMC_SHANGHAI:                                                        \
-        return f<::monad::EvmTraits<EVMC_SHANGHAI>>(__VA_ARGS__);              \
-    case EVMC_PARIS:                                                           \
-        return f<::monad::EvmTraits<EVMC_PARIS>>(__VA_ARGS__);                 \
-    case EVMC_LONDON:                                                          \
-        return f<::monad::EvmTraits<EVMC_LONDON>>(__VA_ARGS__);                \
-    case EVMC_BERLIN:                                                          \
-        return f<::monad::EvmTraits<EVMC_BERLIN>>(__VA_ARGS__);                \
-    case EVMC_ISTANBUL:                                                        \
-        return f<::monad::EvmTraits<EVMC_ISTANBUL>>(__VA_ARGS__);              \
-    case EVMC_PETERSBURG:                                                      \
-        return f<::monad::EvmTraits<EVMC_PETERSBURG>>(__VA_ARGS__);            \
-    case EVMC_CONSTANTINOPLE:                                                  \
-        return f<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>(__VA_ARGS__);        \
+    case MONAD_ETH_OSAKA:                                                      \
+        return f<::monad::EvmTraits<MONAD_ETH_OSAKA>>(__VA_ARGS__);            \
+    case MONAD_ETH_PRAGUE:                                                     \
+        return f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>(__VA_ARGS__);           \
+    case MONAD_ETH_CANCUN:                                                     \
+        return f<::monad::EvmTraits<MONAD_ETH_CANCUN>>(__VA_ARGS__);           \
+    case MONAD_ETH_SHANGHAI:                                                   \
+        return f<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>(__VA_ARGS__);         \
+    case MONAD_ETH_PARIS:                                                      \
+        return f<::monad::EvmTraits<MONAD_ETH_PARIS>>(__VA_ARGS__);            \
+    case MONAD_ETH_LONDON:                                                     \
+        return f<::monad::EvmTraits<MONAD_ETH_LONDON>>(__VA_ARGS__);           \
+    case MONAD_ETH_BERLIN:                                                     \
+        return f<::monad::EvmTraits<MONAD_ETH_BERLIN>>(__VA_ARGS__);           \
+    case MONAD_ETH_ISTANBUL:                                                   \
+        return f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>(__VA_ARGS__);         \
+    case MONAD_ETH_PETERSBURG:                                                 \
+        return f<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>(__VA_ARGS__);       \
+    case MONAD_ETH_CONSTANTINOPLE:                                             \
+        return f<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>(__VA_ARGS__);   \
     default:                                                                   \
         break;                                                                 \
     }

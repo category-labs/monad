@@ -192,7 +192,7 @@ TEST_F(RuntimeTest, MulMod)
 
 TYPED_TEST(RuntimeTraitsTest, Exp)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     auto f = TestFixture::wrap(exp<typename TestFixture::Trait>);
 

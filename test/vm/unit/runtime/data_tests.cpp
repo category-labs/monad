@@ -40,7 +40,7 @@ constexpr auto gas_remaining_cold_access()
             return 0;
         }
     }
-    if constexpr (Trait::evm_rev() <= EVMC_ISTANBUL) {
+    if constexpr (Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
         return 10'000;
     }
     else {

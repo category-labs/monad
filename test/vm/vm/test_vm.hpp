@@ -19,6 +19,7 @@
 
 #include <category/core/assert.h>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
 #include <category/vm/vm.hpp>
@@ -88,7 +89,7 @@ public:
         monad::vm::SharedIntercode const &,
         monad::vm::SharedNativecode const> const
     get_intercode_nativecode(
-        evmc_revision const rev, monad::bytes32_t const &code_hash,
+        monad_eth_revision const rev, monad::bytes32_t const &code_hash,
         uint8_t const *code, size_t code_size);
 
 private:
@@ -108,11 +109,11 @@ private:
 
     evmc::Result execute_compiler(
         evmc_host_interface const *host, evmc_host_context *context,
-        evmc_revision rev, evmc_message const *msg, uint8_t const *code,
+        monad_eth_revision rev, evmc_message const *msg, uint8_t const *code,
         size_t code_size);
 
     evmc::Result execute_interpreter(
         evmc_host_interface const *host, evmc_host_context *context,
-        evmc_revision rev, evmc_message const *msg, uint8_t const *code,
+        monad_eth_revision rev, evmc_message const *msg, uint8_t const *code,
         size_t code_size);
 };

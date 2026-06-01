@@ -1356,7 +1356,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     // This test checks that no events are emitted for self-transfers.
     // Furthermore, it checks that:

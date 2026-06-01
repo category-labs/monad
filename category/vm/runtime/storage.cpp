@@ -17,6 +17,7 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
@@ -65,7 +66,7 @@ namespace monad::vm::runtime
         constexpr auto min_gas = minimum_store_gas<traits>();
 
         // EIP-2200
-        if constexpr (traits::evm_rev() >= EVMC_ISTANBUL) {
+        if constexpr (traits::evm_rev() >= MONAD_ETH_ISTANBUL) {
             if (ctx->gas_remaining + remaining_block_base_gas + min_gas <=
                 2300) {
                 ctx->exit(StatusCode::OutOfGas);

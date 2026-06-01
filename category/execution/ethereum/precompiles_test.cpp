@@ -417,13 +417,13 @@ TYPED_TEST(TraitsTest, identity)
 
 TYPED_TEST(TraitsTest, modular_exponentiation)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_BERLIN) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_BERLIN) {
         do_geth_tests<typename TestFixture::Trait>(
             "Modular Exponentiation", "modexp.json", 0x05_address);
     }
-    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_OSAKA) {
+    else if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_OSAKA) {
         // EIP-2565 repricing since Berlin
         do_geth_tests<typename TestFixture::Trait>(
             "Modular Exponentiation", "modexp_eip2565.json", 0x05_address);
@@ -437,7 +437,7 @@ TYPED_TEST(TraitsTest, modular_exponentiation)
 
 TYPED_TEST(TraitsTest, bn_add)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     auto tests =
         load_test_cases(test_resource::geth_vectors_dir / "bn256Add.json");
@@ -449,7 +449,7 @@ TYPED_TEST(TraitsTest, bn_add)
                 transform_test_cases(tests, [](auto &test) { test.gas *= 2; });
         }
     }
-    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+    else if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_ISTANBUL) {
         // Before https://eips.ethereum.org/EIPS/eip-1108
         tests = transform_test_cases(tests, [](auto &test) { test.gas = 500; });
     }
@@ -459,7 +459,7 @@ TYPED_TEST(TraitsTest, bn_add)
 
 TYPED_TEST(TraitsTest, bn_mul)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     auto tests = load_test_cases(
         test_resource::geth_vectors_dir / "bn256ScalarMul.json");
@@ -471,7 +471,7 @@ TYPED_TEST(TraitsTest, bn_mul)
                 transform_test_cases(tests, [](auto &test) { test.gas *= 5; });
         }
     }
-    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+    else if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_ISTANBUL) {
         // Before https://eips.ethereum.org/EIPS/eip-1108
         tests =
             transform_test_cases(tests, [](auto &test) { test.gas = 40'000; });
@@ -482,7 +482,7 @@ TYPED_TEST(TraitsTest, bn_mul)
 
 TYPED_TEST(TraitsTest, bn_pairing)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     auto tests =
         load_test_cases(test_resource::geth_vectors_dir / "bn256Pairing.json");
@@ -494,7 +494,7 @@ TYPED_TEST(TraitsTest, bn_pairing)
                 transform_test_cases(tests, [](auto &test) { test.gas *= 5; });
         }
     }
-    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+    else if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_ISTANBUL) {
         // Before https://eips.ethereum.org/EIPS/eip-1108
         tests = transform_test_cases(tests, [](auto &test) {
             // k = input size in bytes / 192;
@@ -509,7 +509,7 @@ TYPED_TEST(TraitsTest, bn_pairing)
 
 TYPED_TEST(TraitsTest, blake2f)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_ISTANBUL) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_ISTANBUL) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x09_address));
     }
     else {
@@ -536,7 +536,7 @@ TYPED_TEST(TraitsTest, blake2f)
 
 TYPED_TEST(TraitsTest, point_evaluation)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_CANCUN) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_CANCUN) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0a_address));
     }
     else {
@@ -559,7 +559,7 @@ TYPED_TEST(TraitsTest, point_evaluation)
 
 TYPED_TEST(TraitsTest, blsg1add)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0b_address));
     }
     else {
@@ -573,7 +573,7 @@ TYPED_TEST(TraitsTest, blsg1add)
 
 TYPED_TEST(TraitsTest, blsg1mul)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0c_address));
     }
     else {
@@ -593,7 +593,7 @@ TYPED_TEST(TraitsTest, blsg1mul)
 
 TYPED_TEST(TraitsTest, blsg2add)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0d_address));
     }
     else {
@@ -606,7 +606,7 @@ TYPED_TEST(TraitsTest, blsg2add)
 
 TYPED_TEST(TraitsTest, blsg2mul)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0e_address));
     }
     else {
@@ -623,7 +623,7 @@ TYPED_TEST(TraitsTest, blsg2mul)
 
 TYPED_TEST(TraitsTest, bls_pairing_check)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0f_address));
     }
     else {
@@ -638,7 +638,7 @@ TYPED_TEST(TraitsTest, bls_pairing_check)
 
 TYPED_TEST(TraitsTest, bls_map_g1)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x10_address));
     }
     else {
@@ -651,7 +651,7 @@ TYPED_TEST(TraitsTest, bls_map_g1)
 
 TYPED_TEST(TraitsTest, bls_map_g2)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x11_address));
     }
     else {
@@ -676,7 +676,7 @@ TYPED_TEST(TraitsTest, p256_verify)
 
 TYPED_TEST(TraitsTest, modexp_truncated_input)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     // Before Osaka, inputs to modexp could be arbitrarily large, and
     // would just fail for gas reasons. After Osaka, the large padded
@@ -687,10 +687,10 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
             : evmc_status_code::EVMC_OUT_OF_GAS;
 
     static constexpr auto min_gas = [] {
-        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_OSAKA) {
+        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_OSAKA) {
             return 500;
         }
-        else if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BERLIN) {
+        else if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN) {
             return 200;
         }
         else {

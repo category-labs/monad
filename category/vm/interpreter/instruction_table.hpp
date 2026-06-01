@@ -92,9 +92,9 @@ namespace monad::vm::interpreter
     template <Traits traits>
     consteval InstrTable make_instruction_table()
     {
-        static_assert(traits::evm_rev() > EVMC_BYZANTIUM);
+        static_assert(traits::evm_rev() > MONAD_ETH_BYZANTIUM);
 
-        constexpr auto since = [](evmc_revision first, InstrEval impl) {
+        constexpr auto since = [](monad_eth_revision first, InstrEval impl) {
             return (traits::evm_rev() >= first) ? impl : invalid;
         };
 
@@ -130,7 +130,7 @@ namespace monad::vm::interpreter
             shl<traits>, // 0x1B,
             shr<traits>, // 0x1C,
             sar<traits>, // 0x1D,
-            since(EVMC_OSAKA, clz<traits>), // 0x1E,
+            since(MONAD_ETH_OSAKA, clz<traits>), // 0x1E,
             invalid, //
 
             sha3<traits>, // 0x20,
@@ -174,11 +174,11 @@ namespace monad::vm::interpreter
             number<traits>, // 0x43,
             prevrandao<traits>, // 0x44,
             gaslimit<traits>, // 0x45,
-            since(EVMC_ISTANBUL, chainid<traits>), // 0x46,
-            since(EVMC_ISTANBUL, selfbalance<traits>), // 0x47,
-            since(EVMC_LONDON, basefee<traits>), // 0x48,
-            since(EVMC_CANCUN, blobhash<traits>), // 0x49,
-            since(EVMC_CANCUN, blobbasefee<traits>), // 0x4A,
+            since(MONAD_ETH_ISTANBUL, chainid<traits>), // 0x46,
+            since(MONAD_ETH_ISTANBUL, selfbalance<traits>), // 0x47,
+            since(MONAD_ETH_LONDON, basefee<traits>), // 0x48,
+            since(MONAD_ETH_CANCUN, blobhash<traits>), // 0x49,
+            since(MONAD_ETH_CANCUN, blobbasefee<traits>), // 0x4A,
             invalid, //
             invalid, //
             invalid, //
@@ -197,10 +197,10 @@ namespace monad::vm::interpreter
             msize<traits>, // 0x59,
             gas<traits>, // 0x5A,
             jumpdest<traits>, // 0x5B,
-            since(EVMC_CANCUN, tload<traits>), // 0x5C,
-            since(EVMC_CANCUN, tstore<traits>), // 0x5D,
-            since(EVMC_CANCUN, mcopy<traits>), // 0x5E,
-            since(EVMC_SHANGHAI, push<0, traits>), // 0x5F,
+            since(MONAD_ETH_CANCUN, tload<traits>), // 0x5C,
+            since(MONAD_ETH_CANCUN, tstore<traits>), // 0x5D,
+            since(MONAD_ETH_CANCUN, mcopy<traits>), // 0x5E,
+            since(MONAD_ETH_SHANGHAI, push<0, traits>), // 0x5F,
 
             push<1, traits>, // 0x60,
             push<2, traits>, // 0x61,

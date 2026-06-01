@@ -50,8 +50,8 @@ namespace
     static constexpr auto s{
         0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256};
 
-    template <evmc_revision r>
-    using rev = std::integral_constant<evmc_revision, r>;
+    template <monad_eth_revision r>
+    using rev = std::integral_constant<monad_eth_revision, r>;
 
     static constexpr auto sender =
         0x000000000000000000000000000000000000000a_address;
@@ -62,7 +62,7 @@ namespace
 
 TYPED_TEST(TraitsTest, validate_enough_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_FRONTIER);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_FRONTIER);
 
     static Transaction const t{
         .sc = {.r = r, .s = s},
@@ -83,7 +83,7 @@ TYPED_TEST(TraitsTest, validate_floor_gas)
     static constexpr auto gas_limit = [] {
         // intrinsic gas requirement was much higher pre Istanbul due to 68 gas
         // cost per non-zero data vs 16 gas post Istanbul
-        if constexpr (TestFixture::Trait::evm_rev() >= EVMC_ISTANBUL) {
+        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL) {
             return 300'000;
         }
         else {
@@ -100,7 +100,7 @@ TYPED_TEST(TraitsTest, validate_floor_gas)
         static_validate_transaction<typename TestFixture::Trait>(
             t, 0, std::nullopt, 1);
 
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         // Floor gas only introduced since Prague
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(
@@ -138,7 +138,7 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code_delegated)
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
             tx, sender, this->state, noop_state_tracer);
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         EXPECT_TRUE(result.has_value());
     }
     else {
@@ -299,7 +299,7 @@ TYPED_TEST(InMemoryStateTraitsTest, insufficent_balance_overflow)
 // EIP-3860
 TYPED_TEST(TraitsTest, init_code_exceed_limit)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     byte_string long_data;
     for (auto i = 0u; i <= 2 * TestFixture::Trait::max_code_size(); ++i) {
@@ -318,7 +318,7 @@ TYPED_TEST(TraitsTest, init_code_exceed_limit)
         static_validate_transaction<typename TestFixture::Trait>(
             t, 0, std::nullopt, 1);
     // init codesize validation since EIP-3860
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_SHANGHAI) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);
     }
@@ -363,8 +363,8 @@ TYPED_TEST(TraitsTest, invalid_gas_limit)
 
 TYPED_TEST(TraitsTest, optional_fields_existence)
 {
-    auto value_since = []<evmc_revision rev, typename T>(
-                           std::integral_constant<evmc_revision, rev>,
+    auto value_since = []<monad_eth_revision rev, typename T>(
+                           std::integral_constant<monad_eth_revision, rev>,
                            T val) consteval {
         if constexpr (TestFixture::Trait::evm_rev() >= rev) {
             return std::optional<T>{val};
@@ -375,17 +375,17 @@ TYPED_TEST(TraitsTest, optional_fields_existence)
     };
 
     static constexpr auto base_fee_per_gas =
-        value_since(rev<EVMC_LONDON>{}, uint256_t{});
+        value_since(rev<MONAD_ETH_LONDON>{}, uint256_t{});
     static constexpr auto withdrawals_root =
-        value_since(rev<EVMC_SHANGHAI>{}, bytes32_t{});
+        value_since(rev<MONAD_ETH_SHANGHAI>{}, bytes32_t{});
     static constexpr auto blob_gas_used =
-        value_since(rev<EVMC_CANCUN>{}, uint64_t{});
+        value_since(rev<MONAD_ETH_CANCUN>{}, uint64_t{});
     static constexpr auto excess_blob_gas =
-        value_since(rev<EVMC_CANCUN>{}, uint64_t{});
+        value_since(rev<MONAD_ETH_CANCUN>{}, uint64_t{});
     static constexpr auto parent_beacon_block_root =
-        value_since(rev<EVMC_CANCUN>{}, bytes32_t{});
+        value_since(rev<MONAD_ETH_CANCUN>{}, bytes32_t{});
     static constexpr auto requests_hash =
-        value_since(rev<EVMC_PRAGUE>{}, bytes32_t{});
+        value_since(rev<MONAD_ETH_PRAGUE>{}, bytes32_t{});
 
     static constexpr BlockHeader valid_header{
         .gas_limit = 10000,
@@ -401,20 +401,20 @@ TYPED_TEST(TraitsTest, optional_fields_existence)
         static_validate_header<typename TestFixture::Trait>(valid_header)
             .has_value());
 
-    TEST_OPTIONAL_FIELD(base_fee_per_gas, uint256_t{}, EVMC_LONDON)
-    TEST_OPTIONAL_FIELD(withdrawals_root, bytes32_t{}, EVMC_SHANGHAI)
-    TEST_OPTIONAL_FIELD(blob_gas_used, uint64_t{}, EVMC_CANCUN)
-    TEST_OPTIONAL_FIELD(excess_blob_gas, uint64_t{}, EVMC_CANCUN)
-    TEST_OPTIONAL_FIELD(parent_beacon_block_root, bytes32_t{}, EVMC_CANCUN)
-    TEST_OPTIONAL_FIELD(requests_hash, bytes32_t{}, EVMC_PRAGUE)
+    TEST_OPTIONAL_FIELD(base_fee_per_gas, uint256_t{}, MONAD_ETH_LONDON)
+    TEST_OPTIONAL_FIELD(withdrawals_root, bytes32_t{}, MONAD_ETH_SHANGHAI)
+    TEST_OPTIONAL_FIELD(blob_gas_used, uint64_t{}, MONAD_ETH_CANCUN)
+    TEST_OPTIONAL_FIELD(excess_blob_gas, uint64_t{}, MONAD_ETH_CANCUN)
+    TEST_OPTIONAL_FIELD(parent_beacon_block_root, bytes32_t{}, MONAD_ETH_CANCUN)
+    TEST_OPTIONAL_FIELD(requests_hash, bytes32_t{}, MONAD_ETH_PRAGUE)
 }
 
 #undef TEST_OPTIONAL_FIELD
 
 TYPED_TEST(TraitsTest, invalid_nonce)
 {
-    auto value_since = []<evmc_revision rev, typename T>(
-                           std::integral_constant<evmc_revision, rev>,
+    auto value_since = []<monad_eth_revision rev, typename T>(
+                           std::integral_constant<monad_eth_revision, rev>,
                            T val) consteval {
         if constexpr (TestFixture::Trait::evm_rev() >= rev) {
             return std::optional<T>{val};
@@ -428,17 +428,17 @@ TYPED_TEST(TraitsTest, invalid_nonce)
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
 
     static constexpr auto base_fee_per_gas =
-        value_since(rev<EVMC_LONDON>{}, uint256_t{});
+        value_since(rev<MONAD_ETH_LONDON>{}, uint256_t{});
     static constexpr auto withdrawals_root =
-        value_since(rev<EVMC_SHANGHAI>{}, bytes32_t{});
+        value_since(rev<MONAD_ETH_SHANGHAI>{}, bytes32_t{});
     static constexpr auto blob_gas_used =
-        value_since(rev<EVMC_CANCUN>{}, uint64_t{});
+        value_since(rev<MONAD_ETH_CANCUN>{}, uint64_t{});
     static constexpr auto excess_blob_gas =
-        value_since(rev<EVMC_CANCUN>{}, uint64_t{});
+        value_since(rev<MONAD_ETH_CANCUN>{}, uint64_t{});
     static constexpr auto parent_beacon_block_root =
-        value_since(rev<EVMC_CANCUN>{}, bytes32_t{});
+        value_since(rev<MONAD_ETH_CANCUN>{}, bytes32_t{});
     static constexpr auto requests_hash =
-        value_since(rev<EVMC_PRAGUE>{}, bytes32_t{});
+        value_since(rev<MONAD_ETH_PRAGUE>{}, bytes32_t{});
 
     static constexpr BlockHeader header{
         .gas_limit = 10000,
@@ -453,7 +453,7 @@ TYPED_TEST(TraitsTest, invalid_nonce)
 
     auto const result =
         static_validate_header<typename TestFixture::Trait>(header);
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PARIS) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PARIS) {
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.error(), BlockError::InvalidNonce);
     }

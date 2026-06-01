@@ -35,7 +35,7 @@ using namespace monad::vm::compiler;
 
 template <
     typename Op, typename... Args,
-    Traits traits = EvmTraits<EVMC_LATEST_STABLE_REVISION>>
+    Traits traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>
 Instruction i(std::uint32_t pc, Op evm_opcode, Args &&...args)
 {
     auto info = opcode_table<traits>[evm_opcode];

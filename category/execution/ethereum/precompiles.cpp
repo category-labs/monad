@@ -43,7 +43,7 @@ struct PrecompiledContract
 // TODO(Bruce): when we enable feature flags in traits rather than raw use of
 // the EVM version, refactor this code and the general precompile setup to use
 // it.
-template <evmc_revision First, evmc_revision Rev>
+template <monad_eth_revision First, monad_eth_revision Rev>
 static consteval std::optional<PrecompiledContract>
 since(PrecompiledContract impl)
 {
@@ -64,7 +64,7 @@ static std::optional<uint64_t> fmap_optional(byte_string_view const a)
 template <Traits traits>
 std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 {
-    static_assert(traits::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
 #define CASE(addr, gas_cost, execute)                                          \
     do {                                                                       \
@@ -85,15 +85,15 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
     CASE(0x07, ecmul_gas_cost<traits>, ecmul_execute);
     CASE(0x08, snarkv_gas_cost<traits>, snarkv_execute);
 
-    if constexpr (traits::evm_rev() >= EVMC_ISTANBUL) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_ISTANBUL) {
         CASE(0x09, blake2bf_gas_cost<traits>, blake2bf_execute);
     }
 
-    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         CASE(0x0A, point_evaluation_gas_cost<traits>, point_evaluation_execute);
     }
 
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         CASE(0x0B, bls12_g1_add_gas_cost, bls12_g1_add_execute);
         CASE(0x0C, bls12_g1_msm_gas_cost, bls12_g1_msm_execute);
         CASE(0x0D, bls12_g2_add_gas_cost, bls12_g2_add_execute);
@@ -141,7 +141,7 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
         return std::nullopt;
     }
 
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         // EIP-7702 specifies that precompiles don't actually get called when
         // they're the target of a delegation.
         auto const delegated = (msg.flags & EVMC_DELEGATED) != 0;

@@ -654,7 +654,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
 
     static constexpr auto gas_used = [] {
         if constexpr (is_evm_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::evm_rev() <= EVMC_BERLIN) {
+            if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_BERLIN) {
                 // value from
                 // https://github.com/ethereum/legacytests/blob/1f581b8ccdc4c63acf5f2c5c1b155c690c32a8eb/src/LegacyTests/Constantinople/BlockchainTestsFiller/GeneralStateTests/stRefundTest/refund50_1_d0g0v0Filler.json
                 // pre.0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b.balance -
@@ -677,8 +677,8 @@ TYPED_TEST(TraitsTest, call_frames_refund)
                 return 0x186a0;
             }
             else {
-                static_assert(TestFixture::Trait::evm_rev() > EVMC_BERLIN);
-                // same cost as >EVMC_BERLIN
+                static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_BERLIN);
+                // same cost as >MONAD_ETH_BERLIN
                 return static_cast<uint64_t>((10'000'000 - 9'631'760) / 10);
             }
         }

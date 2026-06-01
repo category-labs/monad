@@ -43,32 +43,32 @@ uint256_t EthereumMainnet::get_chain_id() const
     return 1;
 };
 
-evmc_revision EthereumMainnet::get_revision(
+monad_eth_revision EthereumMainnet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
     if (MONAD_LIKELY(timestamp >= 1746612311)) {
-        return EVMC_PRAGUE;
+        return MONAD_ETH_PRAGUE;
     }
     else if (timestamp >= 1710338135) {
-        return EVMC_CANCUN;
+        return MONAD_ETH_CANCUN;
     }
     else if (timestamp >= 1681338455) {
-        return EVMC_SHANGHAI;
+        return MONAD_ETH_SHANGHAI;
     }
     else if (block_number >= 15537394) {
-        return EVMC_PARIS;
+        return MONAD_ETH_PARIS;
     }
     else if (block_number >= 12965000) {
-        return EVMC_LONDON;
+        return MONAD_ETH_LONDON;
     }
     else if (block_number >= 12244000) {
-        return EVMC_BERLIN;
+        return MONAD_ETH_BERLIN;
     }
     else if (block_number >= 9069000) {
-        return EVMC_ISTANBUL;
+        return MONAD_ETH_ISTANBUL;
     }
     else if (block_number >= 7280000) {
-        return EVMC_PETERSBURG;
+        return MONAD_ETH_PETERSBURG;
     }
     MONAD_ASSERT(false, "unsupported fork");
 }

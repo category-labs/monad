@@ -25,26 +25,26 @@
 // Template free functions
 
 #define EXPLICIT_EVM_TRAITS(f)                                                 \
-    template decltype(f<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>)              \
-        f<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>;                            \
-    template decltype(f<::monad::EvmTraits<EVMC_PETERSBURG>>)                  \
-        f<::monad::EvmTraits<EVMC_PETERSBURG>>;                                \
-    template decltype(f<::monad::EvmTraits<EVMC_ISTANBUL>>)                    \
-        f<::monad::EvmTraits<EVMC_ISTANBUL>>;                                  \
-    template decltype(f<::monad::EvmTraits<EVMC_BERLIN>>)                      \
-        f<::monad::EvmTraits<EVMC_BERLIN>>;                                    \
-    template decltype(f<::monad::EvmTraits<EVMC_LONDON>>)                      \
-        f<::monad::EvmTraits<EVMC_LONDON>>;                                    \
-    template decltype(f<::monad::EvmTraits<EVMC_PARIS>>)                       \
-        f<::monad::EvmTraits<EVMC_PARIS>>;                                     \
-    template decltype(f<::monad::EvmTraits<EVMC_SHANGHAI>>)                    \
-        f<::monad::EvmTraits<EVMC_SHANGHAI>>;                                  \
-    template decltype(f<::monad::EvmTraits<EVMC_CANCUN>>)                      \
-        f<::monad::EvmTraits<EVMC_CANCUN>>;                                    \
-    template decltype(f<::monad::EvmTraits<EVMC_PRAGUE>>)                      \
-        f<::monad::EvmTraits<EVMC_PRAGUE>>;                                    \
-    template decltype(f<::monad::EvmTraits<EVMC_OSAKA>>)                       \
-        f<::monad::EvmTraits<EVMC_OSAKA>>;
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>)         \
+        f<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>;                       \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>)             \
+        f<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>;                           \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>)               \
+        f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>;                             \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_BERLIN>>)                 \
+        f<::monad::EvmTraits<MONAD_ETH_BERLIN>>;                               \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_LONDON>>)                 \
+        f<::monad::EvmTraits<MONAD_ETH_LONDON>>;                               \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_PARIS>>)                  \
+        f<::monad::EvmTraits<MONAD_ETH_PARIS>>;                                \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>)               \
+        f<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>;                             \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_CANCUN>>)                 \
+        f<::monad::EvmTraits<MONAD_ETH_CANCUN>>;                               \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>)                 \
+        f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>;                               \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_OSAKA>>)                  \
+        f<::monad::EvmTraits<MONAD_ETH_OSAKA>>;
 
 #define EXPLICIT_MONAD_TRAITS(f)                                               \
     template decltype(f<::monad::MonadTraits<MONAD_ZERO>>)                     \
@@ -77,16 +77,16 @@
 // Template classes
 
 #define EXPLICIT_EVM_TRAITS_CLASS(c)                                           \
-    template class c<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>;                 \
-    template class c<::monad::EvmTraits<EVMC_PETERSBURG>>;                     \
-    template class c<::monad::EvmTraits<EVMC_ISTANBUL>>;                       \
-    template class c<::monad::EvmTraits<EVMC_BERLIN>>;                         \
-    template class c<::monad::EvmTraits<EVMC_LONDON>>;                         \
-    template class c<::monad::EvmTraits<EVMC_PARIS>>;                          \
-    template class c<::monad::EvmTraits<EVMC_SHANGHAI>>;                       \
-    template class c<::monad::EvmTraits<EVMC_CANCUN>>;                         \
-    template class c<::monad::EvmTraits<EVMC_PRAGUE>>;                         \
-    template class c<::monad::EvmTraits<EVMC_OSAKA>>;
+    template class c<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>;            \
+    template class c<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>;                \
+    template class c<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>;                  \
+    template class c<::monad::EvmTraits<MONAD_ETH_BERLIN>>;                    \
+    template class c<::monad::EvmTraits<MONAD_ETH_LONDON>>;                    \
+    template class c<::monad::EvmTraits<MONAD_ETH_PARIS>>;                     \
+    template class c<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>;                  \
+    template class c<::monad::EvmTraits<MONAD_ETH_CANCUN>>;                    \
+    template class c<::monad::EvmTraits<MONAD_ETH_PRAGUE>>;                    \
+    template class c<::monad::EvmTraits<MONAD_ETH_OSAKA>>;
 
 #define EXPLICIT_MONAD_TRAITS_CLASS(c)                                         \
     template class c<::monad::MonadTraits<MONAD_ZERO>>;                        \
@@ -140,16 +140,16 @@
     }
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_LIST(f, id)                                 \
-    template void id<&f<::monad::EvmTraits<EVMC_CONSTANTINOPLE>>>();           \
-    template void id<&f<::monad::EvmTraits<EVMC_PETERSBURG>>>();               \
-    template void id<&f<::monad::EvmTraits<EVMC_ISTANBUL>>>();                 \
-    template void id<&f<::monad::EvmTraits<EVMC_BERLIN>>>();                   \
-    template void id<&f<::monad::EvmTraits<EVMC_LONDON>>>();                   \
-    template void id<&f<::monad::EvmTraits<EVMC_PARIS>>>();                    \
-    template void id<&f<::monad::EvmTraits<EVMC_SHANGHAI>>>();                 \
-    template void id<&f<::monad::EvmTraits<EVMC_CANCUN>>>();                   \
-    template void id<&f<::monad::EvmTraits<EVMC_PRAGUE>>>();                   \
-    template void id<&f<::monad::EvmTraits<EVMC_OSAKA>>>();
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>>();      \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>>();          \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>>();            \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_BERLIN>>>();              \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_LONDON>>>();              \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_PARIS>>>();               \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>>();            \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_CANCUN>>>();              \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>>();              \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_OSAKA>>>();
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_HELPER(f, id)                               \
     EXPLICIT_TRAITS_MEMBER_FN(id)                                              \

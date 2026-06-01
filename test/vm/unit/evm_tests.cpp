@@ -55,7 +55,7 @@ TYPED_TEST(VMTraitsTest, Push0)
 {
     TestFixture::execute(2, {PUSH0});
     // PUSH0 supported since EIP-3855
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_SHANGHAI) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
         ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
     }
     else {
@@ -66,7 +66,7 @@ TYPED_TEST(VMTraitsTest, Push0)
 
 TYPED_TEST(VMTraitsTest, PushSeveral)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_SHANGHAI) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_SHANGHAI) {
         TestFixture::execute(11, {PUSH1, 0x01, PUSH2, 0x20, 0x20, PUSH1, 0x0});
     }
     else {
@@ -302,7 +302,7 @@ TEST_P(VMFileTest, RegressionFile)
 
     // TODO: this test is disabled for MONAD_SEVEN onward until evmone has a
     // monad revision and can execute with the same gas costs as MONAD_SEVEN
-    if (rev >= std::variant<evmc_revision, monad_revision>{MONAD_SEVEN}) {
+    if (rev >= std::variant<monad_eth_revision, monad_revision>{MONAD_SEVEN}) {
         return;
     }
     auto file = std::ifstream{entry.path(), std::ifstream::binary};
@@ -354,7 +354,7 @@ TYPED_TEST(VMTraitsTest, JumpiLiveDestDeferredComparisonBug)
 
 TYPED_TEST(VMTraitsTest, Cmov32BitBug)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_BYZANTIUM);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_BYZANTIUM);
 
     TestFixture::execute(
         1000,
@@ -730,7 +730,7 @@ TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
     TestFixture::execute(
         30'000'000, code, data, TestFixture::Implementation::Interpreter);
     // code contains PUSH0, so will terminate with a failure pre Shanghai
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_SHANGHAI) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
         ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
     }
     else {
@@ -740,12 +740,12 @@ TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
 
 namespace
 {
-    std::vector<std::variant<evmc_revision, monad_revision>>
+    std::vector<std::variant<monad_eth_revision, monad_revision>>
     monad_evm_revisions()
     {
-        std::vector<std::variant<evmc_revision, monad_revision>> result;
-        for (auto evm_rev = 0; evm_rev < EVMC_MAX_REVISION; ++evm_rev) {
-            result.push_back(static_cast<evmc_revision>(evm_rev));
+        std::vector<std::variant<monad_eth_revision, monad_revision>> result;
+        for (auto evm_rev = 0; evm_rev < MONAD_ETH_MAX_REVISION; ++evm_rev) {
+            result.push_back(static_cast<monad_eth_revision>(evm_rev));
         }
         for (auto monad_rev = 0; monad_rev <= MONAD_NEXT; ++monad_rev) {
             result.push_back(static_cast<monad_revision>(monad_rev));
@@ -759,15 +759,16 @@ namespace
             monad_evm_revisions()) |
         std::ranges::to<std::vector>();
 
-    std::string
-    monad_evm_revision_name(std::variant<evmc_revision, monad_revision> rev)
+    std::string monad_evm_revision_name(
+        std::variant<monad_eth_revision, monad_revision> rev)
     {
         std::string name;
         if (std::holds_alternative<monad_revision>(rev)) {
             name = monad_revision_to_string(std::get<monad_revision>(rev));
         }
         else {
-            name = evmc_revision_to_string(std::get<evmc_revision>(rev));
+            name =
+                monad_eth_revision_to_string(std::get<monad_eth_revision>(rev));
         }
         std::replace(name.begin(), name.end(), ' ', '_');
         return name;

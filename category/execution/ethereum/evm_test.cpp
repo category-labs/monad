@@ -818,7 +818,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
 
 TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_FRONTIER);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_FRONTIER);
 
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
@@ -863,7 +863,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
 
 TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
@@ -919,7 +919,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
         EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
     auto const r2 =
         deploy_contract_code<typename TestFixture::Trait>(s, a, std::move(r));
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_LONDON) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
         // Contract starting with 0xef was valid before the London revision
         EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r2.create_address, a);
@@ -1021,7 +1021,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         chain_ctx};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         auto const result = h.call(m);
         // CREATE should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
@@ -1151,7 +1151,7 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         chain_ctx};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         auto const result = h.call(m);
         // CREATE2 should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
@@ -1246,7 +1246,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
     };
 
     // requires EIP-7702
-    if constexpr (TestFixture::Trait::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
         Transaction tx{};
@@ -1274,7 +1274,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 
 TYPED_TEST(TraitsTest, cold_account_access)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_HOMESTEAD);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_HOMESTEAD);
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
@@ -1360,10 +1360,11 @@ TYPED_TEST(TraitsTest, cold_account_access)
             }
         }
         else {
-            if constexpr (TestFixture::Trait::evm_rev() >= EVMC_BERLIN) {
+            if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN) {
                 return 2600;
             }
-            else if constexpr (TestFixture::Trait::evm_rev() >= EVMC_ISTANBUL) {
+            else if constexpr (
+                TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL) {
                 return 700;
             }
             else {

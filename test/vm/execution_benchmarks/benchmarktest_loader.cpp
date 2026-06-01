@@ -49,7 +49,7 @@ namespace monad::test
             BenchmarkTest bt;
             bt.name = name;
 
-            constexpr auto rev = EVMC_CANCUN;
+            constexpr auto rev = MONAD_ETH_CANCUN;
             bt.json_state = load_blockchain_json_state<EvmTraits<rev>>(j);
 
             for (auto const &el : j.at("blocks")) {

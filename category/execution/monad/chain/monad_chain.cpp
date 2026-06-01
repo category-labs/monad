@@ -48,16 +48,16 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-evmc_revision MonadChain::get_revision(
+monad_eth_revision MonadChain::get_revision(
     uint64_t /*block_number*/, uint64_t const timestamp) const
 {
     auto const monad_revision = get_monad_revision(timestamp);
 
     if (MONAD_LIKELY(monad_revision >= MONAD_FOUR)) {
-        return EVMC_PRAGUE;
+        return MONAD_ETH_PRAGUE;
     }
 
-    return EVMC_CANCUN;
+    return MONAD_ETH_CANCUN;
 }
 
 template <typename T>

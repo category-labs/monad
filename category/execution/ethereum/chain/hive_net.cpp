@@ -29,32 +29,32 @@ uint256_t HiveNet::get_chain_id() const
 // Fork schedule from the hive tests:
 // see: https://github.com/ethereum/execution-apis/blob/main/tests/genesis.json
 // see: https://github.com/ethereum/execution-apis/blob/main/tests/forkenv.json
-evmc_revision HiveNet::get_revision(
+monad_eth_revision HiveNet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
     if (block_number >= 36) {
         if (timestamp >= 450) {
-            return EVMC_PRAGUE;
+            return MONAD_ETH_PRAGUE;
         }
         if (timestamp >= 420) {
-            return EVMC_CANCUN;
+            return MONAD_ETH_CANCUN;
         }
         if (timestamp >= 390) {
-            return EVMC_SHANGHAI;
+            return MONAD_ETH_SHANGHAI;
         }
-        return EVMC_PARIS;
+        return MONAD_ETH_PARIS;
     }
     if (block_number >= 27) {
-        return EVMC_LONDON;
+        return MONAD_ETH_LONDON;
     }
     if (block_number >= 24) {
-        return EVMC_BERLIN;
+        return MONAD_ETH_BERLIN;
     }
     if (block_number >= 18) {
-        return EVMC_ISTANBUL;
+        return MONAD_ETH_ISTANBUL;
     }
     if (block_number >= 12) {
-        return EVMC_PETERSBURG;
+        return MONAD_ETH_PETERSBURG;
     }
     MONAD_ASSERT(false, "unsupported fork");
 }

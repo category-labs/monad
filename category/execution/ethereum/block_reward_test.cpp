@@ -44,7 +44,7 @@ constexpr auto c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
 
 TYPED_TEST(TraitsTest, apply_block_reward)
 {
-    static_assert(TestFixture::Trait::evm_rev() > EVMC_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
@@ -68,12 +68,12 @@ TYPED_TEST(TraitsTest, apply_block_reward)
             BlockHeader{.number = 8, .beneficiary = c}}};
     apply_block_reward<typename TestFixture::Trait>(as, block);
 
-    if constexpr (TestFixture::Trait::evm_rev() < EVMC_PETERSBURG) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PETERSBURG) {
         EXPECT_EQ(as.get_balance(a), 3'187'500'000'000'000'000);
         EXPECT_EQ(as.get_balance(b), 2'625'000'000'000'000'000);
         EXPECT_EQ(as.get_balance(c), 2'250'000'000'000'000'000);
     }
-    else if constexpr (TestFixture::Trait::evm_rev() < EVMC_PARIS) {
+    else if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PARIS) {
         EXPECT_EQ(as.get_balance(a), 2'125'000'000'000'000'000);
         EXPECT_EQ(as.get_balance(b), 1'750'000'000'000'000'000);
         EXPECT_EQ(as.get_balance(c), 1'500'000'000'000'000'000);

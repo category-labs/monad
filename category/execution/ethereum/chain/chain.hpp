@@ -41,7 +41,7 @@ struct Chain
 
     virtual uint256_t get_chain_id() const = 0;
 
-    virtual evmc_revision
+    virtual monad_eth_revision
     get_revision(uint64_t block_number, uint64_t timestamp) const = 0;
 
     virtual GenesisState get_genesis_state() const = 0;

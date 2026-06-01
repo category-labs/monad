@@ -71,7 +71,7 @@ constexpr void irrevocable_change(
     }
 
     uint256_t blob_gas = 0;
-    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         blob_gas = (tx.type == TransactionType::eip4844)
                        ? calc_blob_fee<traits>(tx, excess_blob_gas)
                        : 0;
@@ -250,12 +250,12 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
 
     // EIP-7702
     uint64_t auth_refund = 0u;
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         auth_refund = process_authorizations(state, host);
     }
 
     // EIP-3651
-    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
         host.access_account(header_.beneficiary);
     }
 
@@ -274,7 +274,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     auto msg = to_message(msg_memory, state.vm().message_memory_capacity());
 
     // EIP-7702
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         if (tx_.to.has_value()) {
             if (auto const delegate = vm::evm::resolve_delegation(
                     &host.get_interface(), host.to_context(), *tx_.to)) {
@@ -363,7 +363,7 @@ template <Traits traits>
 Receipt ExecuteTransaction<traits>::execute_final(
     State &state, evmc::Result const &result)
 {
-    static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
@@ -382,7 +382,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
     auto gas_used = tx_.gas_limit - gas_refund;
 
     // EIP-7623
-    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         auto const floor_gas = floor_data_gas(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;

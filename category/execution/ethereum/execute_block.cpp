@@ -173,14 +173,14 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
 template <Traits traits>
 void execute_block_header(BlockState &block_state, BlockHeader const &header)
 {
-    static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
+    static_assert(traits::evm_rev() > MONAD_ETH_HOMESTEAD);
 
     State state{block_state, Incarnation{header.number, 0}};
 
     deploy_block_hash_history_contract<traits>(state);
     set_block_hash_history<traits>(state, header);
 
-    if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         set_beacon_root(state, header);
     }
 
@@ -312,7 +312,7 @@ Result<std::vector<Receipt>> execute_block(
     trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx, bool const trace_transfers)
 {
-    static_assert(traits::evm_rev() > EVMC_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
     TRACE_BLOCK_EVENT(StartBlock);
 
@@ -342,7 +342,7 @@ Result<std::vector<Receipt>> execute_block(
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
-    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
+    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
         process_withdrawal(state, block.withdrawals);
     }
 

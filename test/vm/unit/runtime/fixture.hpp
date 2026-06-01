@@ -201,7 +201,7 @@ namespace monad::vm::compiler::test
 
             ASSERT_EQ(host_.recorded_calls.size(), 1);
 
-            if constexpr (TraitsTest<T>::Trait::evm_rev() >= EVMC_PRAGUE) {
+            if constexpr (TraitsTest<T>::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
                 ASSERT_EQ(
                     host_.access_account(delegate_addr), EVMC_ACCESS_WARM);
                 ASSERT_EQ(

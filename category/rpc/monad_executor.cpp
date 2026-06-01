@@ -71,6 +71,7 @@
 #include <category/rpc/chain_context_buffer.hpp>
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -1404,7 +1405,7 @@ struct monad_executor
                     auto const res = [&]() -> Result<evmc::Result> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            evmc_revision const rev = chain->get_revision(
+                            monad_eth_revision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(
                                 eth_call_impl,
@@ -1734,7 +1735,7 @@ struct monad_executor
                     auto const res = [&]() -> Result<nlohmann::json> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            evmc_revision const rev = chain->get_revision(
+                            monad_eth_revision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(
                                 eth_trace_block_or_transaction_impl,
@@ -1934,7 +1935,7 @@ struct monad_executor
 
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            evmc_revision const rev = chain->get_revision(
+                            monad_eth_revision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(
                                 eth_simulate_impl,

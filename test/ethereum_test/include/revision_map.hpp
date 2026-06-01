@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/revision.h>
 #include <monad/test/config.hpp>
 
 #include <evmc/evmc.h>
@@ -27,20 +28,20 @@
 MONAD_TEST_NAMESPACE_BEGIN
 
 inline std::unordered_map<
-    std::string, std::variant<evmc_revision, monad_revision>> const
+    std::string, std::variant<monad_eth_revision, monad_revision>> const
     revision_map = {
-        {"Constantinople", EVMC_CONSTANTINOPLE},
-        {"ConstantinopleFix", EVMC_PETERSBURG},
-        {"Petersburg", EVMC_PETERSBURG},
-        {"Istanbul", EVMC_ISTANBUL},
-        {"Berlin", EVMC_BERLIN},
-        {"London", EVMC_LONDON},
-        {"Merge", EVMC_PARIS},
-        {"Paris", EVMC_PARIS},
-        {"Shanghai", EVMC_SHANGHAI},
-        {"Cancun", EVMC_CANCUN},
-        {"Prague", EVMC_PRAGUE},
-        {"Osaka", EVMC_OSAKA},
+        {"Constantinople", MONAD_ETH_CONSTANTINOPLE},
+        {"ConstantinopleFix", MONAD_ETH_PETERSBURG},
+        {"Petersburg", MONAD_ETH_PETERSBURG},
+        {"Istanbul", MONAD_ETH_ISTANBUL},
+        {"Berlin", MONAD_ETH_BERLIN},
+        {"London", MONAD_ETH_LONDON},
+        {"Merge", MONAD_ETH_PARIS},
+        {"Paris", MONAD_ETH_PARIS},
+        {"Shanghai", MONAD_ETH_SHANGHAI},
+        {"Cancun", MONAD_ETH_CANCUN},
+        {"Prague", MONAD_ETH_PRAGUE},
+        {"Osaka", MONAD_ETH_OSAKA},
         {"MONAD_ZERO", MONAD_ZERO},
         {"MONAD_ONE", MONAD_ONE},
         {"MONAD_TWO", MONAD_TWO},

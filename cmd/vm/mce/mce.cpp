@@ -260,37 +260,37 @@ int main(int argc, char **argv)
     auto args = parse_args(argc, argv);
     std::string const rev = uppercase(args.revision);
     if (rev == "CONSTANTINOPLE") {
-        return mce_main<EvmTraits<EVMC_CONSTANTINOPLE>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_CONSTANTINOPLE>>(args);
     }
     else if (rev == "PETERSBURG") {
-        return mce_main<EvmTraits<EVMC_PETERSBURG>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_PETERSBURG>>(args);
     }
     else if (rev == "ISTANBUL") {
-        return mce_main<EvmTraits<EVMC_ISTANBUL>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_ISTANBUL>>(args);
     }
     else if (rev == "BERLIN") {
-        return mce_main<EvmTraits<EVMC_BERLIN>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_BERLIN>>(args);
     }
     else if (rev == "LONDON") {
-        return mce_main<EvmTraits<EVMC_LONDON>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_LONDON>>(args);
     }
     else if (rev == "PARIS") {
-        return mce_main<EvmTraits<EVMC_PARIS>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_PARIS>>(args);
     }
     else if (rev == "SHANGHAI") {
-        return mce_main<EvmTraits<EVMC_SHANGHAI>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_SHANGHAI>>(args);
     }
     else if (rev == "CANCUN") {
-        return mce_main<EvmTraits<EVMC_CANCUN>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_CANCUN>>(args);
     }
     else if (rev == "PRAGUE") {
-        return mce_main<EvmTraits<EVMC_PRAGUE>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_PRAGUE>>(args);
     }
     else if (rev == "OSAKA") {
-        return mce_main<EvmTraits<EVMC_OSAKA>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_OSAKA>>(args);
     }
     else if (rev == "LATEST") {
-        return mce_main<EvmTraits<EVMC_LATEST_STABLE_REVISION>>(args);
+        return mce_main<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(args);
     }
     else {
         LOG_ERROR("unsupported revision '{}'", args.revision);

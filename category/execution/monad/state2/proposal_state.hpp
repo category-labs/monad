@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/vm.hpp>
 
 #include <category/core/hex.hpp>
@@ -69,7 +70,7 @@ public:
 
     bool try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, bytes32_t &result) const
+        bytes32_t const &key, storage_page_t &result) const
     {
         StateDeltas::const_accessor it{};
         if (!state_->find(it, address)) {
@@ -77,13 +78,15 @@ public:
         }
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
-            result = {};
+            result = storage_page_t{};
             return true;
         }
         auto const &storage = it->second.storage;
         StorageDeltas::const_accessor it2{};
         if (storage.find(it2, key)) {
-            result = it2->second.second;
+            // Use storage_page_t for single slot storage, key is slot key,
+            // offset in a page is always 0
+            result.set(0, it2->second.second);
             return true;
         }
         return false;
@@ -135,7 +138,7 @@ public:
 
     TryReadResult try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, bytes32_t &result) const
+        bytes32_t const &key, storage_page_t &result) const
     {
         auto const fn =
             [&address, incarnation, &key, &result](ProposalState const &ps) {

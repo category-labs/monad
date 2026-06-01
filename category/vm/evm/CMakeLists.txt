@@ -23,6 +23,8 @@ target_sources(monad-vm-evm PRIVATE
     "explicit_traits.hpp"
     "opcodes.hpp"
     "opcodes_xmacro.hpp"
+    "revision.cpp"
+    "revision.h"
     "switch_traits.hpp"
     "traits.hpp"
 

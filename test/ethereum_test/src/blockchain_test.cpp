@@ -99,6 +99,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <optional>
 #include <set>
@@ -442,7 +443,8 @@ Result<std::vector<Receipt>> execute_and_record(
 template <Traits traits>
 void process_test(
     std::string const &name, nlohmann::json const &j_contents,
-    vm::VM::Mode const vm_mode, bool enable_tracing, bool witness_roundtrip)
+    vm::VM::Mode const vm_mode, bool enable_tracing, bool witness_roundtrip,
+    std::string const &dump_witnesses_dir)
 {
     static_assert(traits::evm_rev() > EVMC_SPURIOUS_DRAGON);
 
@@ -726,6 +728,44 @@ void process_test(
                     parent_senders,
                     grandparent_senders);
 
+                if (!dump_witnesses_dir.empty()) {
+                    std::filesystem::path const dir{dump_witnesses_dir};
+                    std::filesystem::create_directories(dir);
+                    // Sanitize the test name for use as a filename. The
+                    // BlockchainTest hierarchy uses '/' separators in the
+                    // gtest test name; flatten to '_'.
+                    std::string safe_name = name;
+                    for (char &c : safe_name) {
+                        if (c == '/' || c == ':' || c == ' ' || c == '(' ||
+                            c == ')') {
+                            c = '_';
+                        }
+                    }
+                    auto const base =
+                        safe_name + "_" + std::to_string(curr_block_number);
+
+                    auto const witness_path = dir / (base + ".witness");
+                    std::ofstream out{witness_path, std::ios::binary};
+                    out.write(
+                        reinterpret_cast<char const *>(witness_bytes.data()),
+                        static_cast<std::streamsize>(witness_bytes.size()));
+
+                    // Also drop the live post-state root next to the witness
+                    // as a hex string, for manual comparison against what the
+                    // zkVM guest emits. The block executed before we got
+                    // here, so tdb.state_root() is the post-state.
+                    auto const post_root = tdb.state_root();
+                    auto const root_path = dir / (base + ".post_state_root");
+                    std::ofstream root_out{root_path};
+                    root_out << "0x";
+                    for (auto const b : post_root.bytes) {
+                        root_out << std::hex << std::setw(2)
+                                 << std::setfill('0')
+                                 << static_cast<unsigned>(b);
+                    }
+                    root_out << '\n';
+                }
+
                 auto const witness = parse_execution_witness(witness_bytes);
                 ASSERT_TRUE(witness.has_value())
                     << "generated witness failed to parse for " << name
@@ -859,7 +899,7 @@ void process_test(
     std::variant<evmc_revision, monad_revision> const &revision,
     std::string const &name, nlohmann::json const &j_contents,
     vm::VM::Mode const vm_mode, bool const enable_tracing,
-    bool const witness_roundtrip)
+    bool const witness_roundtrip, std::string const &dump_witnesses_dir)
 {
     if (std::holds_alternative<evmc_revision>(revision)) {
         auto const rev = std::get<evmc_revision>(revision);
@@ -870,7 +910,8 @@ void process_test(
             j_contents,
             vm_mode,
             enable_tracing,
-            witness_roundtrip);
+            witness_roundtrip,
+            dump_witnesses_dir);
     }
     else {
         auto const rev = std::get<monad_revision>(revision);
@@ -880,7 +921,8 @@ void process_test(
             j_contents,
             vm_mode,
             enable_tracing,
-            witness_roundtrip);
+            witness_roundtrip,
+            dump_witnesses_dir);
     }
 }
 
@@ -936,7 +978,8 @@ void BlockchainTest::TestBody()
                 j_contents,
                 vm_mode,
                 enable_tracing_,
-                witness_roundtrip_);
+                witness_roundtrip_,
+                dump_witnesses_dir_);
         }
     }
 
@@ -953,41 +996,44 @@ void register_blockchain_tests_path(
     std::filesystem::path const &root,
     std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
     std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing,
-    bool const witness_roundtrip)
+    bool const witness_roundtrip, std::string const &dump_witnesses_dir)
 {
     namespace fs = std::filesystem;
     MONAD_ASSERT(fs::exists(root));
 
-    auto register_test =
-        [&root, &revision, vm_mode, enable_tracing, witness_roundtrip](
-            fs::path const &path) {
-            if (path.extension() == ".json") {
-                MONAD_ASSERT(fs::is_regular_file(path));
+    auto register_test = [&root,
+                          &revision,
+                          vm_mode,
+                          enable_tracing,
+                          witness_roundtrip,
+                          dump_witnesses_dir](fs::path const &path) {
+        if (path.extension() == ".json") {
+            MONAD_ASSERT(fs::is_regular_file(path));
 
-                auto test_name = path == root
-                                     ? path.filename().string()
-                                     : fs::relative(path, root).string();
-                // get rid of minus signs, which is a special symbol when used
-                // in filtering
-                std::ranges::replace(test_name, '-', '_');
+            auto test_name = path == root ? path.filename().string()
+                                          : fs::relative(path, root).string();
+            // get rid of minus signs, which is a special symbol when used
+            // in filtering
+            std::ranges::replace(test_name, '-', '_');
 
-                testing::RegisterTest(
-                    "BlockchainTests",
-                    test_name.c_str(),
-                    nullptr,
-                    nullptr,
-                    path.string().c_str(),
-                    0,
-                    [=] {
-                        return new test::BlockchainTest(
-                            path,
-                            revision,
-                            vm_mode,
-                            enable_tracing,
-                            witness_roundtrip);
-                    });
-            }
-        };
+            testing::RegisterTest(
+                "BlockchainTests",
+                test_name.c_str(),
+                nullptr,
+                nullptr,
+                path.string().c_str(),
+                0,
+                [=] {
+                    return new test::BlockchainTest(
+                        path,
+                        revision,
+                        vm_mode,
+                        enable_tracing,
+                        witness_roundtrip,
+                        dump_witnesses_dir);
+                });
+        }
+    };
 
     if (fs::is_directory(root)) {
         for (auto const &entry : fs::recursive_directory_iterator{root}) {
@@ -1003,7 +1049,7 @@ void register_blockchain_tests_path(
 void register_blockchain_tests(
     std::optional<std::variant<evmc_revision, monad_revision>> const &revision,
     std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing,
-    bool const witness_roundtrip)
+    bool const witness_roundtrip, std::string const &dump_witnesses_dir)
 {
     // skip slow tests
     testing::FLAGS_gtest_filter +=
@@ -1018,20 +1064,23 @@ void register_blockchain_tests(
         revision,
         vm_mode,
         enable_tracing,
-        witness_roundtrip);
+        witness_roundtrip,
+        dump_witnesses_dir);
     register_blockchain_tests_path(
         test_resource::internal_blockchain_tests_dir,
         revision,
         vm_mode,
         enable_tracing,
-        witness_roundtrip);
+        witness_roundtrip,
+        dump_witnesses_dir);
     register_blockchain_tests_path(
         test_resource::build_dir /
             "src/ExecutionSpecTestFixtures/blockchain_tests",
         revision,
         vm_mode,
         enable_tracing,
-        witness_roundtrip);
+        witness_roundtrip,
+        dump_witnesses_dir);
 }
 
 MONAD_TEST_NAMESPACE_END

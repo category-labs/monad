@@ -32,6 +32,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -53,6 +54,7 @@ class BlockchainTest : public testing::Test
     std::optional<vm::VM::Mode> fixed_vm_mode_;
     bool enable_tracing_;
     bool witness_roundtrip_;
+    std::string dump_witnesses_dir_;
 
 public:
     static void SetUpTestSuite();
@@ -63,12 +65,14 @@ public:
         std::optional<std::variant<evmc_revision, monad_revision>> const
             &revision,
         std::optional<vm::VM::Mode> const fixed_vm_mode,
-        bool const enable_tracing, bool const witness_roundtrip) noexcept
+        bool const enable_tracing, bool const witness_roundtrip,
+        std::string dump_witnesses_dir) noexcept
         : file_{file}
         , revision_{revision}
         , fixed_vm_mode_{fixed_vm_mode}
         , enable_tracing_{enable_tracing}
         , witness_roundtrip_{witness_roundtrip}
+        , dump_witnesses_dir_{std::move(dump_witnesses_dir)}
     {
     }
 
@@ -78,10 +82,12 @@ public:
 void register_blockchain_tests_path(
     std::filesystem::path const &,
     std::optional<std::variant<evmc_revision, monad_revision>> const &,
-    std::optional<vm::VM::Mode>, bool, bool witness_roundtrip = false);
+    std::optional<vm::VM::Mode>, bool, bool witness_roundtrip = false,
+    std::string const &dump_witnesses_dir = {});
 
 void register_blockchain_tests(
     std::optional<std::variant<evmc_revision, monad_revision>> const &,
-    std::optional<vm::VM::Mode>, bool, bool witness_roundtrip = false);
+    std::optional<vm::VM::Mode>, bool, bool witness_roundtrip = false,
+    std::string const &dump_witnesses_dir = {});
 
 MONAD_TEST_NAMESPACE_END

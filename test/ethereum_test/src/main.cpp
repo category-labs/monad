@@ -61,6 +61,7 @@ int main(int argc, char *argv[])
     std::optional<std::filesystem::path> blockchain_tests_path;
     std::optional<std::filesystem::path> transaction_tests_path;
     bool witness_roundtrip = false;
+    std::string dump_witnesses_dir;
     bool trace_calls = false;
     unsigned sleep_seconds = 0;
 
@@ -101,6 +102,11 @@ int main(int argc, char *argv[])
         "reconstruct a PartialTrieDb from it, and re-execute the block "
         "against the reconstructed db. Validates that the witness "
         "contains enough information to replay the block.");
+    app.add_option(
+        "--dump-witnesses",
+        dump_witnesses_dir,
+        "Directory to write every generated witness to as "
+        "<test_name>_<block_number>.witness. Implies --witness.");
     CLI::Option const *const record_exec_events =
         app.add_option(
                "--record-exec-events",
@@ -111,6 +117,12 @@ int main(int argc, char *argv[])
     app.add_option(
         "--sleep", sleep_seconds, "Sleep for the specified number of seconds");
     CLI11_PARSE(app, argc, argv);
+
+    // --dump-witnesses implies --witness (the witness round-trip pipeline
+    // is what produces the bytes we'd dump).
+    if (!dump_witnesses_dir.empty()) {
+        witness_roundtrip = true;
+    }
 
     std::optional<vm::VM::Mode> vm_mode;
     if (vm_mode_name.has_value()) {
@@ -136,7 +148,8 @@ int main(int argc, char *argv[])
                 revision,
                 vm_mode,
                 trace_calls,
-                witness_roundtrip);
+                witness_roundtrip,
+                dump_witnesses_dir);
         }
         if (transaction_tests_path) {
             test::register_transaction_tests_path(
@@ -145,7 +158,11 @@ int main(int argc, char *argv[])
     }
     else {
         test::register_blockchain_tests(
-            revision, vm_mode, trace_calls, witness_roundtrip);
+            revision,
+            vm_mode,
+            trace_calls,
+            witness_roundtrip,
+            dump_witnesses_dir);
         test::register_transaction_tests(revision);
     }
 

@@ -22,6 +22,7 @@
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 
 #include <cstdint>
@@ -60,7 +61,11 @@ class DbCache final
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
-    using StorageCache = LruCache<StorageKey, bytes32_t, StorageKeyHashCompare>;
+    // The cache is slot-granular: keyed by slot_key, the value is a
+    // storage_page_t used as a single-slot container holding the value at
+    // index 0 only. This will be compatible for future page-granular reads.
+    using StorageCache =
+        LruCache<StorageKey, storage_page_t, StorageKeyHashCompare>;
 
     AccountsCache accounts_{10'000'000};
     StorageCache storage_{10'000'000};
@@ -90,16 +95,19 @@ public:
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, bytes32_t &result)
     {
+        storage_page_t page;
         auto const res =
-            proposals_.try_read_storage(address, incarnation, key, result);
+            proposals_.try_read_storage(address, incarnation, key, page);
         if (res.found) {
+            // Single-slot page: the value lives at index 0.
+            result = page[0];
             return true;
         }
         if (!res.truncated) {
             StorageKey const skey{address, incarnation, key};
             StorageCache::ConstAccessor acc{};
             if (storage_.find(acc, skey)) {
-                result = acc->second.value_;
+                result = acc->second.value_[0];
                 return true;
             }
         }
@@ -155,9 +163,12 @@ private:
             if (account.has_value()) {
                 for (auto const &[key, storage_delta] : storage) {
                     auto const incarnation = account->incarnation;
+                    // Single-slot page: store the value at index 0. A zero
+                    // value leaves the page empty, so a hit reads back zero.
+                    storage_page_t page;
+                    page.set(0, storage_delta.second);
                     storage_.insert(
-                        StorageKey(address, incarnation, key),
-                        storage_delta.second);
+                        StorageKey(address, incarnation, key), page);
                 }
             }
         }

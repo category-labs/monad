@@ -43,9 +43,13 @@ MONAD_ASSERT_REVISION_EQ(PRAGUE);
 MONAD_ASSERT_REVISION_EQ(OSAKA);
 MONAD_ASSERT_REVISION_EQ(EXPERIMENTAL);
 MONAD_ASSERT_REVISION_EQ(MAX_REVISION);
-MONAD_ASSERT_REVISION_EQ(LATEST_STABLE_REVISION);
 
 #undef MONAD_ASSERT_REVISION_EQ
+
+// MONAD_ETH_LATEST_STABLE_REVISION intentionally diverges from
+// EVMC_LATEST_STABLE_REVISION (still Cancun in the bundled evmc), so it is not
+// asserted equal above. The per-revision asserts already guarantee the
+// conversions below are value-preserving.
 
 // These are value-preserving casts: monad_eth_revision mirrors evmc_revision
 // 1:1, enforced by the static_asserts above. C linkage matches the declarations

@@ -56,7 +56,7 @@ enum monad_eth_revision
     MONAD_ETH_MAX_REVISION = MONAD_ETH_EXPERIMENTAL,
 
     // The latest known EVM revision with finalized specification.
-    MONAD_ETH_LATEST_STABLE_REVISION = MONAD_ETH_CANCUN
+    MONAD_ETH_LATEST_STABLE_REVISION = MONAD_ETH_PRAGUE
 };
 
 char const *monad_eth_revision_to_string(enum monad_eth_revision rev);

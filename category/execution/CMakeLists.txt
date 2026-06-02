@@ -152,6 +152,7 @@ add_library(
   "ethereum/reserve_balance.hpp"
   "ethereum/trace/call_frame.cpp"
   "ethereum/trace/call_frame.hpp"
+  "ethereum/trace/call_trace_operations.hpp"
   "ethereum/trace/call_tracer.cpp"
   "ethereum/trace/call_tracer.hpp"
   "ethereum/trace/event_trace.cpp"

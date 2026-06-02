@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/trace/call_trace_operations.hpp>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -83,6 +84,44 @@ public:
     virtual std::span<CallFrame const> get_call_frames() const override;
 
     nlohmann::json to_json() const;
+};
+
+// Experimental
+struct CallTraceRunner
+{
+    using Signature = monad::trace::call_trace::Signature;
+
+    void operator()(monad::trace::call_trace::Enter const &op)
+    {
+        tracer->on_enter(op.message);
+    }
+
+    void operator()(monad::trace::call_trace::Exit const &op)
+    {
+        tracer->on_exit(op.result);
+    }
+
+    void operator()(monad::trace::call_trace::Log const &op)
+    {
+        tracer->on_log(op.log);
+    }
+
+    void operator()(monad::trace::call_trace::SelfDestruct const &op)
+    {
+        tracer->on_self_destruct(op.from, op.to, op.transferred_balance);
+    }
+
+    void operator()(monad::trace::call_trace::Finish const &op)
+    {
+        tracer->on_finish(op.gas_used);
+    }
+
+    void operator()(monad::trace::call_trace::Reset const &)
+    {
+        tracer->reset();
+    }
+
+    CallTracerBase *tracer;
 };
 
 MONAD_NAMESPACE_END

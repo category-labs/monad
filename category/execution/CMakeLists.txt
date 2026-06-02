@@ -307,6 +307,7 @@ target_link_libraries(
   PRIVATE Boost::fiber
   PRIVATE Boost::json
   PUBLIC c-kzg-4844
+  PRIVATE monad_crypto
   PRIVATE PkgConfig::brotli
   PRIVATE PkgConfig::crypto++
   PUBLIC ethash::keccak

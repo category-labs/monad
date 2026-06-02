@@ -31,10 +31,12 @@
  *      TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  *      SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *
+ *      Modified 2026 by Category Labs: renamed silkpre_rmd160 to monad_rmd160.
+ *
 \********************************************************************/
 
 /*  header files */
-#include "rmd160.h"
+#include <silkpre_vendor/rmd160.h>
 
 #include <string.h>
 
@@ -362,7 +364,7 @@ static inline uint32_t load32(const void* src) {
     return w;
 }
 
-void silkpre_rmd160(uint8_t out[20], const uint8_t* ptr, size_t len) {
+void monad_rmd160(uint8_t out[20], const uint8_t* ptr, size_t len) {
     uint32_t buf[160 / 32];
 
     rmd160_init(buf);

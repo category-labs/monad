@@ -16,6 +16,7 @@
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/rpc/overrides.h>
@@ -71,7 +72,7 @@ void set_override_balance(
 
     MONAD_ASSERT(balance);
     MONAD_ASSERT(balance_len == sizeof(uint256_t));
-    m->override_sets[address].balance = uint256_t::load_be_unsafe(balance);
+    m->override_sets[address].balance = load_be_unsafe<uint256_t>(balance);
 }
 
 void set_override_nonce(
@@ -301,7 +302,7 @@ void set_block_override_base_fee_per_gas(
     MONAD_ASSERT(fee);
     MONAD_ASSERT(fee_len == sizeof(uint256_t));
     MONAD_ASSERT(!m->base_fee_per_gas.has_value());
-    m->base_fee_per_gas = uint256_t::load_be_unsafe(fee);
+    m->base_fee_per_gas = load_be_unsafe<uint256_t>(fee);
 }
 
 void add_block_override_withdrawal(

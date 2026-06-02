@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -46,7 +47,7 @@ namespace monad::vm::runtime
 
         auto const balance = static_cast<bytes32_t>(
             ctx->host->get_balance(ctx->context, &address));
-        *result_ptr = uint256_from_bytes32(balance);
+        *result_ptr = load_be<uint256_t>(balance);
     }
 
     EXPLICIT_TRAITS(balance);
@@ -206,7 +207,7 @@ namespace monad::vm::runtime
 
         auto const hash = static_cast<bytes32_t>(
             ctx->host->get_code_hash(ctx->context, &address));
-        *result_ptr = uint256_from_bytes32(hash);
+        *result_ptr = load_be<uint256_t>(hash);
     }
 
     EXPLICIT_TRAITS(extcodehash);

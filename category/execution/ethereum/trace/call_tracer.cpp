@@ -17,6 +17,7 @@
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -139,7 +140,7 @@ void CallTracer::on_enter(evmc_message const &msg)
         .flags = msg.flags,
         .from = from,
         .to = to,
-        .value = uint256_t::load_be(msg.value.bytes),
+        .value = load_be<uint256_t>(msg.value),
         .gas = depth == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
         .gas_used = 0,
         .input = msg.input_data == nullptr

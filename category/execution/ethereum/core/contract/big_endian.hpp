@@ -50,7 +50,7 @@ struct BigEndian
 
     [[nodiscard]] constexpr native_type native() const noexcept
     {
-        return bswap(std::bit_cast<native_type>(bytes));
+        return load_be<native_type>(bytes);
     }
 
     constexpr BigEndian<T> &operator=(T const &x) noexcept

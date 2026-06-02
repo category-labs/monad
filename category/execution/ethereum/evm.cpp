@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
@@ -46,7 +47,7 @@ namespace
 
     bool sender_has_balance(State &state, evmc_message const &msg) noexcept
     {
-        uint256_t const value = uint256_t::load_be(msg.value.bytes);
+        uint256_t const value = load_be<uint256_t>(msg.value);
         // for optimistic execution, we do NOT require the original balance to
         // match exactly, just add a lower bound constraint to suffice for this
         // debit
@@ -58,7 +59,7 @@ namespace
         State &state, EvmcHost<traits> &host, evmc_message const &msg,
         Address const &to)
     {
-        uint256_t const value = uint256_t::load_be(msg.value.bytes);
+        uint256_t const value = load_be<uint256_t>(msg.value);
         state.subtract_from_balance(msg.sender, value);
         state.add_to_balance(to, value);
         host.emit_native_transfer_event(msg.sender, to, value);

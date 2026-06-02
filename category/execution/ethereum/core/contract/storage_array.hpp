@@ -47,7 +47,7 @@ public:
         : state_{state}
         , address_{address}
         , length_{StorageVariable<u64_be>(state, address, slot)}
-        , start_index_{uint256_t::load_be(slot.bytes) + 1}
+        , start_index_{load_be<uint256_t>(slot) + 1}
     {
     }
 

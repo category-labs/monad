@@ -19,6 +19,7 @@
 #include <category/core/assert.h>
 #include <category/core/cases.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -192,7 +193,7 @@ namespace monad::vm::utils::evm_as
                         emit_byte(push.opcode);
                         // SAFETY: The buffer `imm_bytes` is
                         // large enough to hold an uint256_t.
-                        push.imm.store_be(imm_bytes.data());
+                        store_be(imm_bytes.data(), push.imm);
                         auto const n = push.n();
                         for (size_t i = 0; i < n; i++) {
                             emit_byte(imm_bytes[32 - n + i]);

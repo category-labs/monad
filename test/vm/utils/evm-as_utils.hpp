@@ -15,8 +15,11 @@
 
 #pragma once
 
+#include <category/core/int.hpp>
 #include <category/vm/interpreter/execute.hpp>
 #include <test/vm/utils/test_context.hpp>
+
+#include <cstring>
 
 namespace monad::vm::test
 {
@@ -82,8 +85,7 @@ namespace monad::vm::test
             for (size_t j = 0; j < max_stack_values; j += n) {
                 for (size_t k = 0; k < n; ++k) {
                     size_t const c = i + 32 * (max_stack_values - j - n + k);
-                    uint256_t::load_be_unsafe(&base_calldata[count * 32])
-                        .store_be(&ret[c]);
+                    std::memcpy(&ret[c], &base_calldata[count * 32], 32);
                     ++count;
                 }
             }
@@ -121,8 +123,8 @@ namespace monad::vm::test
                    KB::get_sequence_repetition_count(
                        args_size, throughput_calldata.size());
         MONAD_ASSERT(ctx->result.status == runtime::StatusCode::Success);
-        MONAD_ASSERT(uint256_t::load_le(ctx->result.size) == n);
-        MONAD_ASSERT(uint256_t::load_le(ctx->result.offset) == 0);
+        MONAD_ASSERT(load_le<uint256_t>(ctx->result.size) == n);
+        MONAD_ASSERT(load_le<uint256_t>(ctx->result.offset) == 0);
 
         KernelCalldata ret{throughput_calldata.size()};
         std::memcpy(ret.data(), ctx->memory.data, n);

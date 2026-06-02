@@ -15,9 +15,10 @@
 
 #include "fixture.hpp"
 
+#include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/storage.hpp>
-#include <category/vm/runtime/transmute.hpp>
 
 #include <evmc/evmc.h>
 
@@ -86,7 +87,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
     auto load = TestFixture::wrap(sload<traits>);
 
     this->host_.access_storage(
-        this->ctx_.env.recipient, bytes32_from_uint256(key));
+        this->ctx_.env.recipient, store_be_as<bytes32_t>(key));
 
     this->ctx_.gas_remaining = 0;
     ASSERT_EQ(load(key), 0);
@@ -159,9 +160,9 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
 
     // current == original
     auto &loc = this->host_.accounts[this->ctx_.env.recipient]
-                    .storage[bytes32_from_uint256(key)];
-    loc.original = bytes32_from_uint256(val);
-    loc.current = bytes32_from_uint256(val);
+                    .storage[store_be_as<bytes32_t>(key)];
+    loc.original = store_be_as<bytes32_t>(val);
+    loc.current = store_be_as<bytes32_t>(val);
 
     auto do_test = [&load, &store, &ctx_ = this->ctx_](
                        int64_t nonempty_same_nonempty_cold_remaining,

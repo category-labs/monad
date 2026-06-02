@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -899,7 +900,7 @@ namespace monad::vm::interpreter
     {
         check_requirements<CALLVALUE, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
-        push(stack_top, runtime::uint256_from_bytes32(ctx.env.value));
+        push(stack_top, load_be<uint256_t>(ctx.env.value));
 
         MONAD_VM_NEXT(CALLVALUE);
     }
@@ -992,9 +993,7 @@ namespace monad::vm::interpreter
     {
         check_requirements<GASPRICE, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
-        push(
-            stack_top,
-            runtime::uint256_from_bytes32(ctx.env.tx_context->tx_gas_price));
+        push(stack_top, load_be<uint256_t>(ctx.env.tx_context->tx_gas_price));
 
         MONAD_VM_NEXT(GASPRICE);
     }
@@ -1153,8 +1152,7 @@ namespace monad::vm::interpreter
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         push(
             stack_top,
-            runtime::uint256_from_bytes32(
-                ctx.env.tx_context->block_prev_randao));
+            load_be<uint256_t>(ctx.env.tx_context->block_prev_randao));
 
         MONAD_VM_NEXT(DIFFICULTY);
     }
@@ -1180,9 +1178,7 @@ namespace monad::vm::interpreter
     {
         check_requirements<CHAINID, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
-        push(
-            stack_top,
-            runtime::uint256_from_bytes32(ctx.env.tx_context->chain_id));
+        push(stack_top, load_be<uint256_t>(ctx.env.tx_context->chain_id));
 
         MONAD_VM_NEXT(CHAINID);
     }
@@ -1213,9 +1209,7 @@ namespace monad::vm::interpreter
     {
         check_requirements<BASEFEE, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
-        push(
-            stack_top,
-            runtime::uint256_from_bytes32(ctx.env.tx_context->block_base_fee));
+        push(stack_top, load_be<uint256_t>(ctx.env.tx_context->block_base_fee));
 
         MONAD_VM_NEXT(BASEFEE);
     }
@@ -1246,9 +1240,7 @@ namespace monad::vm::interpreter
     {
         check_requirements<BLOBBASEFEE, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
-        push(
-            stack_top,
-            runtime::uint256_from_bytes32(ctx.env.tx_context->blob_base_fee));
+        push(stack_top, load_be<uint256_t>(ctx.env.tx_context->blob_base_fee));
 
         MONAD_VM_NEXT(BLOBBASEFEE);
     }
@@ -1731,7 +1723,7 @@ namespace monad::vm::interpreter
         {
             for (auto *result_loc : {&ctx.result.offset, &ctx.result.size}) {
                 std::copy_n(
-                    stack_top->as_bytes(),
+                    as_bytes(*stack_top),
                     32,
                     reinterpret_cast<uint8_t *>(result_loc));
 

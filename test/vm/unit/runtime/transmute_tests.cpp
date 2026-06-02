@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
@@ -53,7 +54,7 @@ namespace
     uint256_t get_test_uint256()
     {
         uint256_t u;
-        uint8_t *b = u.as_bytes();
+        uint8_t *b = as_bytes(u);
         for (uint8_t i = 0; i < 32; ++i) {
             b[i] = i + 1;
         }
@@ -65,8 +66,8 @@ TEST_F(RuntimeTest, TransmuteBytes32)
 {
     bytes32_t const b = get_test_bytes32();
     uint256_t const u = get_test_uint256();
-    ASSERT_EQ(bytes32_from_uint256(u), b);
-    ASSERT_EQ(u, uint256_from_bytes32(b));
+    ASSERT_EQ(store_be_as<bytes32_t>(u), b);
+    ASSERT_EQ(u, load_be<uint256_t>(b));
 }
 
 TEST_F(RuntimeTest, TransmuteAddress)
@@ -74,7 +75,7 @@ TEST_F(RuntimeTest, TransmuteAddress)
     Address const a = get_test_address();
     uint256_t u = get_test_uint256();
     ASSERT_EQ(address_from_uint256(u), a);
-    uint8_t *b = u.as_bytes();
+    uint8_t *b = as_bytes(u);
     for (auto i = 20; i < 32; ++i) {
         b[i] = 0;
     }
@@ -91,7 +92,7 @@ TEST_F(RuntimeTest, LoadBounded)
         uint256_t expected_le;
         if (n > 0) {
             std::memcpy(
-                expected_le.as_bytes(),
+                as_bytes(expected_le),
                 src_buffer,
                 static_cast<size_t>(std::min(n, int64_t{32})));
         }
@@ -105,6 +106,6 @@ TEST_F(RuntimeTest, LoadBounded)
         ASSERT_EQ(le2, expected_le);
 
         uint256_t be = uint256_load_bounded_be(src_buffer, n);
-        ASSERT_EQ(be, expected_le.to_be());
+        ASSERT_EQ(be, bswap(expected_le));
     }
 }

@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -42,6 +43,6 @@ namespace monad::vm::runtime
         }
 
         auto const hash = ethash::keccak256(ctx->memory.data + *offset, *size);
-        *result_ptr = uint256_t::load_be(hash.bytes);
+        *result_ptr = load_be<uint256_t>(hash);
     }
 }

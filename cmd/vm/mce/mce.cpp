@@ -20,6 +20,7 @@
 #include <instrumentation_device.hpp>
 #include <stopwatch.hpp>
 
+#include <category/core/int.hpp>
 #include <category/core/log.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
@@ -150,7 +151,7 @@ static void dump_result(arguments const &args, evmc::Result const &result)
             object["result"] = json("");
         }
         else {
-            auto const x = uint256_t::load_be_unsafe(&result.output_data[0]);
+            auto const x = load_be_unsafe<uint256_t>(&result.output_data[0]);
             object["result"] = json(x.to_string(16));
         }
     }

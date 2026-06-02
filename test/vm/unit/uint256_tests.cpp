@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 
 #include <intx/intx.hpp>
@@ -706,25 +707,25 @@ TEST(uint256, shifts)
 TEST(uint256, load_store)
 {
     for (auto x : test_inputs) {
-        auto *le_bytes = std::bit_cast<uint8_t(*)[32]>(x.as_bytes());
-        ASSERT_EQ(x, uint256_t::load_le_unsafe(x.as_bytes()));
-        ASSERT_EQ(x, uint256_t::load_le(*le_bytes));
+        auto *le_bytes = std::bit_cast<uint8_t(*)[32]>(as_bytes(x));
+        ASSERT_EQ(x, load_le_unsafe<uint256_t>(as_bytes(x)));
+        ASSERT_EQ(x, load_le<uint256_t>(*le_bytes));
 
         uint8_t le_stored[32];
-        x.store_le(le_stored);
+        store_le(le_stored, x);
         ASSERT_EQ(0, std::memcmp(le_bytes, le_stored, 32));
-        ASSERT_EQ(x, uint256_t::load_le(le_stored));
+        ASSERT_EQ(x, load_le<uint256_t>(le_stored));
 
-        auto const x_be = x.to_be();
+        auto const x_be = bswap(x);
 
-        auto *be_bytes = std::bit_cast<uint8_t(*)[32]>(x_be.as_bytes());
-        ASSERT_EQ(x, uint256_t::load_be_unsafe(x_be.as_bytes()));
-        ASSERT_EQ(x, uint256_t::load_be(*be_bytes));
+        auto *be_bytes = std::bit_cast<uint8_t(*)[32]>(as_bytes(x_be));
+        ASSERT_EQ(x, load_be_unsafe<uint256_t>(as_bytes(x_be)));
+        ASSERT_EQ(x, load_be<uint256_t>(*be_bytes));
 
         uint8_t be_stored[32];
-        x.store_be(be_stored);
+        store_be(be_stored, x);
         ASSERT_EQ(0, std::memcmp(be_bytes, be_stored, 32));
-        ASSERT_EQ(x, uint256_t::load_be(be_stored));
+        ASSERT_EQ(x, load_be<uint256_t>(be_stored));
     }
 }
 

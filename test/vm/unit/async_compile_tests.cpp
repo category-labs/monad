@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/types.hpp>
@@ -114,8 +115,8 @@ TEST(async_compile_test, stress)
 
             auto const &ret = ctx->result;
             ASSERT_EQ(ret.status, runtime::StatusCode::Success);
-            ASSERT_EQ(uint256_t::load_le(ret.offset), index);
-            ASSERT_EQ(uint256_t::load_le(ret.size), 1);
+            ASSERT_EQ(load_le<uint256_t>(ret.offset), index);
+            ASSERT_EQ(load_le<uint256_t>(ret.size), 1);
         }
     };
 

@@ -14,6 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/delegation.hpp>
@@ -102,9 +104,9 @@ namespace monad::vm::runtime
             .sender = ctx->env.recipient,
             .input_data = (*size > 0) ? ctx->memory.data + *offset : nullptr,
             .input_size = *size,
-            .value = static_cast<evmc::bytes32>(bytes32_from_uint256(value)),
+            .value = static_cast<evmc::bytes32>(store_be_as<bytes32_t>(value)),
             .create2_salt =
-                static_cast<evmc::bytes32>(bytes32_from_uint256(salt_word)),
+                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(salt_word)),
             .code_address = {},
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,

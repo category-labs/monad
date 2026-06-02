@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 
 #include <evmc/evmc.h>
@@ -48,7 +49,7 @@ namespace monad::vm::runtime
     uint256_load_bounded_le(uint8_t const *const bytes, int64_t const max_len)
     {
         if (MONAD_LIKELY(max_len >= 32)) {
-            return uint256_t::load_le_unsafe(bytes);
+            return load_le_unsafe<uint256_t>(bytes);
         }
         return uint256_t{monad_vm_runtime_load_bounded_le(bytes, max_len)};
     }
@@ -57,21 +58,13 @@ namespace monad::vm::runtime
     inline uint256_t
     uint256_load_bounded_be(uint8_t const *const bytes, int64_t const max_len)
     {
-        return uint256_load_bounded_le(bytes, max_len).to_be();
-    }
-
-    [[gnu::always_inline]]
-    inline bytes32_t bytes32_from_uint256(uint256_t const &x)
-    {
-        bytes32_t ret;
-        x.store_be(ret.bytes);
-        return ret;
+        return bswap(uint256_load_bounded_le(bytes, max_len));
     }
 
     [[gnu::always_inline]]
     inline Address address_from_uint256(uint256_t const &x)
     {
-        auto const *bytes = x.as_bytes();
+        auto const *bytes = as_bytes(x);
 
         uint64_t t2;
         std::memcpy(&t2, bytes, 8);
@@ -90,12 +83,6 @@ namespace monad::vm::runtime
         std::memcpy(ret.bytes + 4, &t1, 8);
         std::memcpy(ret.bytes + 12, &t2, 8);
         return ret;
-    }
-
-    [[gnu::always_inline]]
-    inline uint256_t uint256_from_bytes32(bytes32_t const &x)
-    {
-        return uint256_t::load_be(x.bytes);
     }
 
     [[gnu::always_inline]]

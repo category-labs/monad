@@ -43,7 +43,7 @@ namespace
     // Byte encode 64 bit integers in 256 bit big endian format.
     bytes32_t enc(uint64_t const x)
     {
-        return to_bytes(to_big_endian(uint256_t{x}));
+        return store_be_as<bytes32_t>(uint256_t{x});
     }
 
     struct BlockHashHistoryTest : public ::testing::Test

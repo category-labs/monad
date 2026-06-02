@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -75,14 +76,14 @@ Result<byte_string> system_call(
         .block_timestamp = static_cast<int64_t>(header.timestamp),
         .block_gas_limit = static_cast<int64_t>(header.gas_limit),
         .block_prev_randao = header.difficulty
-                                 ? to_bytes(to_big_endian(header.difficulty))
+                                 ? store_be_as<bytes32_t>(header.difficulty)
                                  : header.prev_randao,
-        .chain_id = to_bytes(to_big_endian(chain.get_chain_id())),
+        .chain_id = store_be_as<bytes32_t>(chain.get_chain_id()),
         .block_base_fee =
-            to_bytes(to_big_endian(header.base_fee_per_gas.value_or(0))),
+            store_be_as<bytes32_t>(header.base_fee_per_gas.value_or(0)),
         .blob_base_fee =
-            to_bytes(to_big_endian(get_base_fee_per_blob_gas<traits>(
-                header.excess_blob_gas.value_or(0)))),
+            store_be_as<bytes32_t>(get_base_fee_per_blob_gas<traits>(
+                header.excess_blob_gas.value_or(0))),
         .blob_hashes = nullptr,
         .blob_hashes_count = 0,
         .initcodes = nullptr,

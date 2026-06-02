@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -21,7 +22,6 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
-#include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
@@ -36,7 +36,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
     {
-        auto key = bytes32_from_uint256(*key_ptr);
+        auto key = store_be_as<bytes32_t>(*key_ptr);
 
         if constexpr (traits::eip_2929_active()) {
             auto const access_status = ctx->host->access_storage(
@@ -49,7 +49,7 @@ namespace monad::vm::runtime
         auto const value =
             ctx->host->get_storage(ctx->context, &ctx->env.recipient, &key);
 
-        *result_ptr = uint256_from_bytes32(value);
+        *result_ptr = load_be<uint256_t>(value);
     }
 
     EXPLICIT_TRAITS(sload);
@@ -73,8 +73,8 @@ namespace monad::vm::runtime
             }
         }
 
-        auto key = bytes32_from_uint256(*key_ptr);
-        auto value = bytes32_from_uint256(*value_ptr);
+        auto key = store_be_as<bytes32_t>(*key_ptr);
+        auto value = store_be_as<bytes32_t>(*value_ptr);
 
         auto access_status = EVMC_ACCESS_COLD;
         if constexpr (traits::eip_2929_active()) {
@@ -110,7 +110,7 @@ namespace monad::vm::runtime
         auto const magic = uint256_t{0xdeb009};
         auto const base = (magic + base_offset) * 1024;
         if (offset == 0) {
-            auto const base_key = bytes32_from_uint256(base);
+            auto const base_key = store_be_as<bytes32_t>(base);
             auto const base_value = ctx->host->get_transient_storage(
                 ctx->context, &ctx->env.recipient, &base_key);
             if (base_value != bytes32_t{}) {
@@ -121,12 +121,12 @@ namespace monad::vm::runtime
             }
         }
         for (uint64_t i = 0; i < stack_size; ++i) {
-            auto const key = bytes32_from_uint256(base + i + offset);
+            auto const key = store_be_as<bytes32_t>(base + i + offset);
             auto const &x = stack[static_cast<int64_t>(-i) - 1];
             // Make sure we do not store zero, because incorrect non-zero is
             // more likely to be noticed, due to zero being the default:
             auto const s = x < magic ? x + 1 : x;
-            auto const value = bytes32_from_uint256(s);
+            auto const value = store_be_as<bytes32_t>(s);
             ctx->host->set_transient_storage(
                 ctx->context, &ctx->env.recipient, &key, &value);
         }

@@ -3498,17 +3498,17 @@ TEST_F(EthCallFixture, prestate_override_state)
     auto const code_hash = to_bytes(keccak256(bytecode_view));
     auto const compiled_code = vm::make_shared_intercode(bytecode_view);
 
-    bytes32_t const storage_key = to_bytes(to_big_endian(uint256_t{0}));
-    bytes32_t const storage_value = to_bytes(to_big_endian(uint256_t{64}));
+    bytes32_t const storage_key = store_be_as<bytes32_t>(uint256_t{0});
+    bytes32_t const storage_value = store_be_as<bytes32_t>(uint256_t{64});
 
-    bytes32_t const other_storage_key = to_bytes(to_big_endian(uint256_t{1}));
+    bytes32_t const other_storage_key = store_be_as<bytes32_t>(uint256_t{1});
     bytes32_t const other_storage_value =
-        to_bytes(to_big_endian(uint256_t{128}));
+        store_be_as<bytes32_t>(uint256_t{128});
 
     bytes32_t const untouched_storage_key =
-        to_bytes(to_big_endian(uint256_t{2}));
+        store_be_as<bytes32_t>(uint256_t{2});
     bytes32_t const untouched_storage_value =
-        to_bytes(to_big_endian(uint256_t{256}));
+        store_be_as<bytes32_t>(uint256_t{256});
 
     StateDeltas deltas{
         {CONTRACT_ADDR,
@@ -3531,10 +3531,8 @@ TEST_F(EthCallFixture, prestate_override_state)
         BlockHeader{.number = 0});
 
     auto const storage = tdb.read_storage(
-        CONTRACT_ADDR,
-        Incarnation{0, 0},
-        to_bytes(to_big_endian(uint256_t{0})));
-    ASSERT_EQ(storage, to_bytes(to_big_endian(uint256_t{uint64_t{64}})));
+        CONTRACT_ADDR, Incarnation{0, 0}, store_be_as<bytes32_t>(uint256_t{0}));
+    ASSERT_EQ(storage, store_be_as<bytes32_t>(uint256_t{uint64_t{64}}));
 
     for (uint64_t i = 1; i < 256; ++i) {
         commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
@@ -3607,7 +3605,7 @@ TEST_F(EthCallFixture, prestate_override_state)
             result.bytes, ctx_state.result->output_data, sizeof(bytes32_t));
 
         bytes32_t const expected =
-            to_bytes(to_big_endian(uint256_t{uint64_t{128}}));
+            store_be_as<bytes32_t>(uint256_t{uint64_t{128}});
 
         EXPECT_EQ(result, expected);
 
@@ -3689,7 +3687,7 @@ TEST_F(EthCallFixture, prestate_override_state)
             result.bytes, ctx_statediff.result->output_data, sizeof(bytes32_t));
 
         bytes32_t const expected =
-            to_bytes(to_big_endian(uint256_t{uint64_t{192}}));
+            store_be_as<bytes32_t>(uint256_t{uint64_t{192}});
 
         EXPECT_EQ(result, expected);
 
@@ -6396,7 +6394,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
 
     auto const expected_half = uint256_t{5} * WEI_PER_MON;
-    auto const expected_bytes = expected_half.store_be<bytes32_t>();
+    auto const expected_bytes = store_be_as<bytes32_t>(expected_half);
     auto const expected_return_data =
         std::format("0x{}", to_hex(expected_bytes));
     EXPECT_EQ(output[1]["calls"][0]["returnData"], expected_return_data);
@@ -6599,7 +6597,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     EXPECT_EQ(logs[0]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
     EXPECT_EQ(logs[0]["topics"][1], format_address_topic(sender));
     EXPECT_EQ(logs[0]["topics"][2], format_address_topic(forwarder_addr));
-    auto const ten_mon = (uint256_t{10} * WEI_PER_MON).store_be<bytes32_t>();
+    auto const ten_mon = store_be_as<bytes32_t>(uint256_t{10} * WEI_PER_MON);
     EXPECT_EQ(logs[0]["data"], std::format("0x{}", to_hex(ten_mon)));
 
     // Log 1: forwarder -> sink (5 MON)
@@ -6609,7 +6607,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     EXPECT_EQ(logs[1]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
     EXPECT_EQ(logs[1]["topics"][1], format_address_topic(forwarder_addr));
     EXPECT_EQ(logs[1]["topics"][2], format_address_topic(sink));
-    auto const five_mon = (uint256_t{5} * WEI_PER_MON).store_be<bytes32_t>();
+    auto const five_mon = store_be_as<bytes32_t>(uint256_t{5} * WEI_PER_MON);
     EXPECT_EQ(logs[1]["data"], std::format("0x{}", to_hex(five_mon)));
 
     monad_block_override_vec_destroy(bo);
@@ -6639,7 +6637,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_time_travel)
     auto const code_hash = to_bytes(keccak256(code));
     auto const icode = vm::make_shared_intercode(code);
 
-    bytes32_t const unlock_time = uint256_t{512}.store_be<bytes32_t>();
+    bytes32_t const unlock_time = store_be_as<bytes32_t>(uint256_t{512});
 
     commit_sequential(
         tdb,

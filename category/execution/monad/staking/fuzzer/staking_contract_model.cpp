@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
@@ -394,7 +395,7 @@ namespace monad::staking::test
                                : contract_.vars.epoch.load().native() + 1;
 
         add_delegator_stake(
-            val_id.native(), addr, epoch, uint256_t::load_be(value.bytes));
+            val_id.native(), addr, epoch, load_be<uint256_t>(value));
 
         val_id_to_historic_delegators_[val_id.native()].insert(addr);
 
@@ -420,7 +421,7 @@ namespace monad::staking::test
                                : contract_.vars.epoch.load().native() + 1;
 
         add_delegator_stake(
-            val_id.native(), sender, epoch, uint256_t::load_be(value.bytes));
+            val_id.native(), sender, epoch, load_be<uint256_t>(value));
 
         val_id_to_historic_delegators_[val_id.native()].insert(sender);
 
@@ -581,7 +582,7 @@ namespace monad::staking::test
         auto const input = encoder.encode_final();
         auto res = dispatch<traits>(input, sender, value);
         if (res.has_value()) {
-            auto const rew = uint256_t::load_be(value.bytes);
+            auto const rew = load_be<uint256_t>(value);
             distribute_reward(val_id, u256_be{rew});
             error_bound_ += 1;
         }
@@ -675,7 +676,7 @@ namespace monad::staking::test
     void StakingContractModel::pre_call(uint256_be_t const &value)
     {
         state_.push();
-        state_.add_to_balance(STAKING_CA, uint256_t::load_be(value.bytes));
+        state_.add_to_balance(STAKING_CA, load_be<uint256_t>(value));
     }
 
     template <typename T>

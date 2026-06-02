@@ -79,8 +79,20 @@ template <typename T>
     return reinterpret_cast<uint8_t const *>(&x);
 }
 
+// Block rvalue binding: as_bytes(make_T()) would return a pointer into
+// a temporary that dies at the end of the full expression. Lvalue calls
+// prefer the references above; rvalues pick this deleted overload.
 template <typename T>
-[[nodiscard]] inline constexpr T bswap(T const x) noexcept
+uint8_t const *as_bytes(T const &&) = delete;
+
+// Byte-swap primitive: converts between native and big-endian byte order on
+// the little-endian-only platform this codebase targets (see
+// `static_assert(std::endian::native == std::endian::little)` above). Prefer
+// the higher-level load_* / store_* helpers below when working with byte
+// buffers — they handle the surrounding memcpy / bit_cast. Use bswap
+// directly when the value is already in a register.
+template <typename T>
+[[nodiscard, gnu::always_inline]] inline constexpr T bswap(T const x) noexcept
 {
     if constexpr (std::same_as<T, uint256_t>) {
         return byteswap(x);
@@ -96,47 +108,90 @@ template <typename T>
     }
 }
 
+// Load a little-endian encoded integer from an unaligned byte buffer.
 template <typename T>
-[[nodiscard]] inline constexpr T to_big_endian(T const x) noexcept
-{
-    return bswap(x);
-}
-
-// Load a big-endian encoded integer from an unaligned byte buffer.
-template <typename T>
-[[nodiscard]] inline T load_be_unsafe(uint8_t const *src) noexcept
+[[nodiscard, gnu::always_inline]] inline T
+load_le_unsafe(uint8_t const *src) noexcept
 {
     static_assert(std::is_trivially_copyable_v<T>);
     T x;
     std::memcpy(&x, src, sizeof(x));
-    return bswap(x);
+    return x;
+}
+
+// Load a big-endian encoded integer from an unaligned byte buffer.
+template <typename T>
+[[nodiscard, gnu::always_inline]] inline T
+load_be_unsafe(uint8_t const *src) noexcept
+{
+    return bswap(load_le_unsafe<T>(src));
+}
+
+// Load a little-endian encoded integer from a struct with a .bytes member.
+template <typename T, FixedBytes Src>
+[[nodiscard, gnu::always_inline]] inline constexpr T
+load_le(Src const &src) noexcept
+{
+    static_assert(sizeof(Src::bytes) == sizeof(T));
+    return std::bit_cast<T>(src);
 }
 
 // Load a big-endian encoded integer from a struct with a .bytes member.
 template <typename T, FixedBytes Src>
-[[nodiscard]] inline T load_be(Src const &src) noexcept
+[[nodiscard, gnu::always_inline]] inline constexpr T
+load_be(Src const &src) noexcept
 {
-    static_assert(sizeof(Src::bytes) == sizeof(T));
-    return load_be_unsafe<T>(src.bytes);
+    return bswap(load_le<T>(src));
+}
+
+// Load a little-endian encoded integer from a sized byte array.
+template <typename T, size_t N>
+[[nodiscard, gnu::always_inline]] inline constexpr T
+load_le(uint8_t const (&src)[N]) noexcept
+{
+    static_assert(N == sizeof(T));
+    return std::bit_cast<T>(src);
+}
+
+// Load a big-endian encoded integer from a sized byte array.
+template <typename T, size_t N>
+[[nodiscard, gnu::always_inline]] inline constexpr T
+load_be(uint8_t const (&src)[N]) noexcept
+{
+    return bswap(load_le<T>(src));
+}
+
+// Store an integer as little-endian bytes into an unaligned byte buffer.
+// The width constraint blocks accidental truncation when T is deduced
+// from a narrow integer (e.g. store_le(buf, 77u) writing only 4 bytes).
+template <typename T>
+    requires(sizeof(T) >= 8)
+[[gnu::always_inline]] inline void store_le(uint8_t *dst, T const x) noexcept
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+    std::memcpy(dst, &x, sizeof(x));
 }
 
 // Store an integer as big-endian bytes into an unaligned byte buffer.
+// The width constraint blocks accidental truncation when T is deduced
+// from a narrow integer (e.g. store_be(buf, 77u) writing only 4 bytes).
 template <typename T>
-inline void store_be(uint8_t *dst, T const x) noexcept
+    requires(sizeof(T) >= 8)
+[[gnu::always_inline]] inline void store_be(uint8_t *dst, T const x) noexcept
 {
-    T const be = bswap(x);
-    std::memcpy(dst, &be, sizeof(be));
+    store_le(dst, bswap(x));
 }
 
 // Store an integer as big-endian bytes into a new value of type DstT
 // (which must have a .bytes member of matching size).
 template <FixedBytes DstT, typename SrcT>
-[[nodiscard]] inline DstT store_be_as(SrcT const x) noexcept
+    requires(sizeof(SrcT) >= 8)
+[[nodiscard, gnu::always_inline]] inline constexpr DstT
+store_be_as(SrcT const x) noexcept
 {
     static_assert(sizeof(DstT::bytes) == sizeof(SrcT));
-    DstT dst{};
-    store_be(dst.bytes, x);
-    return dst;
+    static_assert(std::is_trivially_copyable_v<DstT>);
+    return std::bit_cast<DstT>(bswap(x));
 }
 
 MONAD_NAMESPACE_END

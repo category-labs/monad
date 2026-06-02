@@ -232,18 +232,6 @@ public:
     }
 
     [[gnu::always_inline]]
-    inline uint8_t *as_bytes() noexcept
-    {
-        return reinterpret_cast<uint8_t *>(&words_);
-    }
-
-    [[gnu::always_inline]]
-    inline uint8_t const *as_bytes() const noexcept
-    {
-        return reinterpret_cast<uint8_t const *>(&words_);
-    }
-
-    [[gnu::always_inline]]
     inline constexpr std::array<uint64_t, 4> &as_words() noexcept
     {
         return words_;
@@ -501,68 +489,6 @@ public:
     inline constexpr uint256_t &operator>>=(uint256_t const &shift) noexcept
     {
         return *this = *this >> shift;
-    }
-
-    [[gnu::always_inline]]
-    inline constexpr uint256_t to_be() const noexcept
-    {
-        static_assert(
-            std::endian::native == std::endian::little,
-            "to_be only supported on little-endian platforms");
-        return byteswap(*this);
-    }
-
-    [[gnu::always_inline]]
-    static inline constexpr uint256_t
-    load_be(uint8_t const (&bytes)[num_bytes]) noexcept
-    {
-        return load_le(bytes).to_be();
-    }
-
-    [[gnu::always_inline]]
-    static inline constexpr uint256_t
-    load_le(uint8_t const (&bytes)[num_bytes]) noexcept
-    {
-        return load_le_unsafe(bytes);
-    }
-
-    [[gnu::always_inline]]
-    static inline constexpr uint256_t
-    load_be_unsafe(uint8_t const *bytes) noexcept
-    {
-        return load_le_unsafe(bytes).to_be();
-    }
-
-    [[gnu::always_inline]] static inline constexpr uint256_t
-    load_le_unsafe(uint8_t const *bytes) noexcept
-    {
-        static_assert(std::endian::native == std::endian::little);
-        uint256_t result;
-        std::memcpy(&result.words_, bytes, num_bytes);
-        return result;
-    }
-
-    template <typename DstT>
-    [[gnu::always_inline]]
-    inline DstT store_be() const noexcept
-    {
-        DstT result;
-        static_assert(sizeof(result.bytes) == sizeof(words_));
-        store_be(result.bytes);
-        return result;
-    }
-
-    [[gnu::always_inline]]
-    inline void store_be(uint8_t *dest) const noexcept
-    {
-        uint256_t const be = to_be();
-        std::memcpy(dest, &be.words_, num_bytes);
-    }
-
-    [[gnu::always_inline]]
-    inline void store_le(uint8_t *dest) const noexcept
-    {
-        std::memcpy(dest, &words_, num_bytes);
     }
 
     // String conversion functions
@@ -1117,7 +1043,9 @@ inline uint256_t from_bytes(size_t n, size_t remaining, uint8_t const *src)
 
     std::memcpy(&dst[32 - n], src, std::min(n, remaining));
 
-    return uint256_t::load_be(dst);
+    uint256_t result;
+    std::memcpy(&result, dst, sizeof(result));
+    return byteswap(result);
 }
 
 /**

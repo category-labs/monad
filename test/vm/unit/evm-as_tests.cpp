@@ -21,6 +21,7 @@
 #include "category/vm/utils/evm-as/compiler.hpp"
 #include "evmc/evmc.hpp"
 #include <category/core/address.hpp>
+#include <category/core/int.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/opcodes.hpp>
@@ -150,7 +151,7 @@ namespace
             [&]() { ASSERT_EQ(ret.status, runtime::StatusCode::Success); }();
 
             // TODO: artificial restriction on result offset and size.
-            return uint256_t::load_be_unsafe(ctx->memory.data);
+            return load_be_unsafe<uint256_t>(ctx->memory.data);
         }
     };
 
@@ -159,7 +160,7 @@ namespace
         auto const sz = 3000 * 32 * (args_size == 0 ? 1 : args_size);
         std::vector<uint8_t> ret(sz, 0);
         for (size_t i = 0; i < ret.size() / 32; ++i) {
-            uint256_t{i + 1}.store_be(&ret[i * 32]);
+            store_be(&ret[i * 32], uint256_t{i + 1});
         }
         return ret;
     }
@@ -1184,12 +1185,12 @@ TEST(EvmAs, KernelBuilderRepetitionCount)
 
         ASSERT_EQ(ctx->result.status, runtime::StatusCode::Success);
         ASSERT_EQ(
-            uint256_t::load_le(ctx->result.size), KB::resulting_memory_size);
+            load_le<uint256_t>(ctx->result.size), KB::resulting_memory_size);
         ASSERT_EQ(
-            uint256_t::load_le(ctx->result.offset), KB::free_memory_start);
+            load_le<uint256_t>(ctx->result.offset), KB::free_memory_start);
 
         auto const n =
-            uint256_t::load_be_unsafe(&ctx->memory.data[KB::free_memory_start]);
+            load_be_unsafe<uint256_t>(&ctx->memory.data[KB::free_memory_start]);
         ASSERT_EQ(
             n, KB::get_sequence_repetition_count(args_size, calldata.size()));
     };
@@ -1290,9 +1291,9 @@ TEST(EvmAs, KernelBuilderCalldata)
 
         ASSERT_EQ(ctx->result.status, runtime::StatusCode::Success);
         ASSERT_EQ(
-            uint256_t::load_le(ctx->result.size), KB::resulting_memory_size);
+            load_le<uint256_t>(ctx->result.size), KB::resulting_memory_size);
         ASSERT_EQ(
-            uint256_t::load_le(ctx->result.offset), KB::free_memory_start);
+            load_le<uint256_t>(ctx->result.offset), KB::free_memory_start);
     };
 
     for (size_t args_size = 0; args_size <= 10; ++args_size) {
@@ -1884,7 +1885,7 @@ struct fixed_bytes
     explicit fixed_bytes(uint256_t const &value)
     {
         uint8_t buf[32] = {};
-        value.store_be(buf);
+        store_be(buf, value);
         std::memcpy(bytes, buf + (32 - N), N);
     }
 

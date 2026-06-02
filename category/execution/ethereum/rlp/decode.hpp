@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
@@ -49,8 +50,7 @@ inline Result<T> decode_raw_num(byte_string_view const enc)
     T result{};
     std::memcpy(
         &as_bytes(result)[sizeof(T) - enc.size()], enc.data(), enc.size());
-    result = to_big_endian(result);
-    return result;
+    return bswap(result);
 }
 
 inline Result<size_t> decode_length(byte_string_view const enc)

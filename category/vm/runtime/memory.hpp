@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -30,7 +31,7 @@ namespace monad::vm::runtime
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<32>);
-        *result_ptr = uint256_t::load_be_unsafe(ctx->memory.data + *offset);
+        *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
     }
 
     template <Traits traits>
@@ -39,7 +40,7 @@ namespace monad::vm::runtime
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<32>);
-        value_ptr->store_be(ctx->memory.data + *offset);
+        store_be(ctx->memory.data + *offset, *value_ptr);
     }
 
     template <Traits traits>
@@ -48,7 +49,7 @@ namespace monad::vm::runtime
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<1>);
-        ctx->memory.data[*offset] = value_ptr->as_bytes()[0];
+        ctx->memory.data[*offset] = as_bytes(*value_ptr)[0];
     }
 
     template <Traits traits>

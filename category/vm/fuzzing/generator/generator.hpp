@@ -19,10 +19,10 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/instruction_data.hpp>
-#include <category/vm/runtime/transmute.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -288,7 +288,7 @@ namespace monad::vm::fuzzing
         auto ret = Address{};
         auto const value = random_constant<192>(eng);
 
-        auto const *bytes = value.value.as_bytes();
+        auto const *bytes = as_bytes(value.value);
         std::copy_n(bytes, 20, &ret.bytes[0]);
 
         return ret;
@@ -731,7 +731,7 @@ namespace monad::vm::fuzzing
     {
         program.push_back(PUSH32);
 
-        auto const *bs = c.value.as_bytes();
+        auto const *bs = as_bytes(c.value);
         for (auto i = 31; i >= 0; --i) {
             program.push_back(bs[i]);
         }
@@ -865,7 +865,7 @@ namespace monad::vm::fuzzing
                 [&](Constant const &c) {
                     program.push_back(PUSH32);
 
-                    auto const *bs = c.value.as_bytes();
+                    auto const *bs = as_bytes(c.value);
                     for (auto i = 31; i >= 0; --i) {
                         program.push_back(bs[i]);
                     }
@@ -908,7 +908,7 @@ namespace monad::vm::fuzzing
 
                     program.push_back(PUSH0 + static_cast<uint8_t>(byte_size));
 
-                    auto const *bs = safe_value.value.as_bytes();
+                    auto const *bs = as_bytes(safe_value.value);
                     for (auto i = 0u; i < byte_size; ++i) {
                         program.push_back(bs[byte_size - 1 - i]);
                     }
@@ -1215,10 +1215,9 @@ namespace monad::vm::fuzzing
             .sender = sender,
             .input_data = input_data,
             .input_size = input_size,
-            .value = static_cast<evmc::bytes32>(
-                value.template store_be<bytes32_t>()),
+            .value = static_cast<evmc::bytes32>(store_be_as<bytes32_t>(value)),
             .create2_salt =
-                static_cast<evmc::bytes32>(salt.template store_be<bytes32_t>()),
+                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(salt)),
             .code_address = target,
             .memory_handle = memory_handle,
             .memory = memory_handle,

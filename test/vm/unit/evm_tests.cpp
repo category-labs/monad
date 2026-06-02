@@ -16,6 +16,7 @@
 #include "evm_fixture.hpp"
 
 #include <category/core/hex.hpp>
+#include <category/core/int.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/types.hpp>
@@ -41,6 +42,7 @@
 namespace fs = std::filesystem;
 
 using monad::EvmTraits;
+using monad::load_be_unsafe;
 using namespace monad::vm;
 using namespace monad::vm::compiler;
 using namespace monad::vm::compiler::test;
@@ -143,12 +145,14 @@ TYPED_TEST(VMTraitsTest, ResultDataAtBound)
     auto const return_size = [&] {
         switch (memory_version) {
         case runtime::Memory::Version::V1:
-            return (uint256_t{1} << runtime::Memory::offset_bits - 1).to_be();
+            return uint256_t{1} << runtime::Memory::offset_bits - 1;
         case runtime::Memory::Version::MIP3:
-            return uint256_t{8 * 1024 * 1024}.to_be();
+            return uint256_t{8 * 1024 * 1024};
         }
         MONAD_ABORT();
     }();
+    uint8_t return_size_be[32];
+    store_be(return_size_be, return_size);
 
     auto const impls = {
         TestFixture::Implementation::Compiler,
@@ -157,10 +161,10 @@ TYPED_TEST(VMTraitsTest, ResultDataAtBound)
         constexpr auto gas = 35'000'000'000;
         std::vector<uint8_t> bytecode;
         bytecode.push_back(PUSH32);
-        uint8_t const *const return_size_bytes = return_size.as_bytes();
-        for (size_t i = 0; i < 32; ++i) {
-            bytecode.push_back(return_size_bytes[i]);
-        }
+        bytecode.insert(
+            bytecode.end(),
+            std::begin(return_size_be),
+            std::end(return_size_be));
         bytecode.push_back(PUSH1);
         bytecode.push_back(0);
         bytecode.push_back(RETURN);
@@ -184,12 +188,14 @@ TYPED_TEST(VMTraitsTest, ResultDataOutOfBound)
     auto const return_size = [&] {
         switch (memory_version) {
         case runtime::Memory::Version::V1:
-            return (uint256_t{1} << runtime::Memory::offset_bits).to_be();
+            return uint256_t{1} << runtime::Memory::offset_bits;
         case runtime::Memory::Version::MIP3:
-            return uint256_t{8 * 1024 * 1024 + 1}.to_be();
+            return uint256_t{8 * 1024 * 1024 + 1};
         }
         MONAD_ABORT();
     }();
+    uint8_t return_size_be[32];
+    store_be(return_size_be, return_size);
 
     auto const impls = {
         TestFixture::Implementation::Compiler,
@@ -198,10 +204,10 @@ TYPED_TEST(VMTraitsTest, ResultDataOutOfBound)
         constexpr auto gas = 35'000'000'000;
         std::vector<uint8_t> bytecode;
         bytecode.push_back(PUSH32);
-        uint8_t const *const return_size_bytes = return_size.as_bytes();
-        for (size_t i = 0; i < 32; ++i) {
-            bytecode.push_back(return_size_bytes[i]);
-        }
+        bytecode.insert(
+            bytecode.end(),
+            std::begin(return_size_be),
+            std::end(return_size_be));
         bytecode.push_back(PUSH1);
         bytecode.push_back(0);
         bytecode.push_back(RETURN);
@@ -331,7 +337,7 @@ TYPED_TEST(VMTraitsTest, SignextendLiveIndexBug)
          RETURN});
     ASSERT_EQ(this->result_.output_size, 32);
     ASSERT_EQ(
-        uint256_t::load_be_unsafe(this->result_.output_data), uint256_t{98});
+        load_be_unsafe<uint256_t>(this->result_.output_data), uint256_t{98});
 }
 
 TYPED_TEST(VMTraitsTest, JumpiLiveDestDeferredComparisonBug)

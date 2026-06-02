@@ -15,6 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/delegation.hpp>
@@ -208,7 +209,7 @@ namespace monad::vm::runtime
             *gas_ptr,
             *address_ptr,
             *value_ptr != 0,
-            bytes32_from_uint256(*value_ptr),
+            store_be_as<bytes32_t>(*value_ptr),
             *args_offset_ptr,
             *args_size_ptr,
             *ret_offset_ptr,
@@ -233,7 +234,7 @@ namespace monad::vm::runtime
             *gas_ptr,
             *address_ptr,
             *value_ptr != 0,
-            bytes32_from_uint256(*value_ptr),
+            store_be_as<bytes32_t>(*value_ptr),
             *args_offset_ptr,
             *args_size_ptr,
             *ret_offset_ptr,

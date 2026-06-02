@@ -15,6 +15,8 @@
 
 #include "fixture.hpp"
 
+#include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/data.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -370,7 +372,7 @@ TYPED_TEST(RuntimeTraitsTest, ExtCodeHash)
     auto hash = TestFixture::wrap(extcodehash<traits>);
 
     this->host_.accounts[address_from_uint256(addr)].codehash =
-        bytes32_from_uint256(713682);
+        store_be_as<bytes32_t>(uint256_t{713682});
 
     this->ctx_.gas_remaining = 10'000;
 

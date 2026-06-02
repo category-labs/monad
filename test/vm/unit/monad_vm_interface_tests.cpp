@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/host.hpp>
@@ -335,8 +336,8 @@ TEST(MonadVmInterface, compile)
     test::TestContext ctx1;
     entry1(&*ctx1, nullptr);
 
-    ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.size), 0);
-    ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.offset), 1);
+    ASSERT_EQ(load_le<uint256_t>(ctx1->result.size), 0);
+    ASSERT_EQ(load_le<uint256_t>(ctx1->result.offset), 1);
 
     ASSERT_FALSE(vm.find_varcode(hash1).has_value());
 }
@@ -355,8 +356,8 @@ TEST(MonadVmInterface, cached_compile)
     test::TestContext ctx1;
     entry1(&*ctx1, nullptr);
 
-    ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.size), 0);
-    ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.offset), 1);
+    ASSERT_EQ(load_le<uint256_t>(ctx1->result.size), 0);
+    ASSERT_EQ(load_le<uint256_t>(ctx1->result.offset), 1);
 
     auto vcode1 = vm.find_varcode(hash1);
     ASSERT_TRUE(vcode1.has_value());
@@ -385,8 +386,8 @@ TEST(MonadVmInterface, async_compile)
             ASSERT_NE(entry1, nullptr);
             test::TestContext ctx1;
             entry1(&*ctx1, nullptr);
-            ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.size), 0);
-            ASSERT_EQ(compiler::uint256_t::load_le(ctx1->result.offset), 1);
+            ASSERT_EQ(load_le<uint256_t>(ctx1->result.size), 0);
+            ASSERT_EQ(load_le<uint256_t>(ctx1->result.offset), 1);
         }
         else {
             ASSERT_EQ(entry1, nullptr);

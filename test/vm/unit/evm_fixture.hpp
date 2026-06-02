@@ -16,6 +16,8 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
@@ -104,8 +106,7 @@ namespace monad::vm::compiler::test
             output_data_ = {};
 
             host_.accounts[msg_.sender].balance =
-                std::numeric_limits<uint256_t>::max()
-                    .template store_be<bytes32_t>();
+                store_be_as<bytes32_t>(std::numeric_limits<uint256_t>::max());
 
             msg_.gas = gas_limit;
             msg_.input_data = calldata.data();

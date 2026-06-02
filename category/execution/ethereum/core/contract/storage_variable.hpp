@@ -69,7 +69,7 @@ public:
     StorageVariable(State &state, Address const &address, bytes32_t const &key)
         : state_{state}
         , address_{address}
-        , offset_{uint256_t::load_be(key.bytes)}
+        , offset_{load_be<uint256_t>(key)}
     {
     }
 

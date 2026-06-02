@@ -26,7 +26,7 @@ ConsensusView::ConsensusView(
     State &state, Address const &address, bytes32_t const &key)
     : state_{state}
     , address_{address}
-    , key_{uint256_t::load_be(key.bytes)}
+    , key_{load_be<uint256_t>(key)}
 {
 }
 

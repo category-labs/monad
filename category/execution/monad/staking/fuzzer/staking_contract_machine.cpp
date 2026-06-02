@@ -1178,7 +1178,7 @@ namespace monad::staking::test
         auto const val_id = result.value();
 
         all_val_ids_.push_back(val_id);
-        if (uint256_t::load_be(value.bytes) <= MAX_DELEGABLE_STAKE) {
+        if (load_be<uint256_t>(value) <= MAX_DELEGABLE_STAKE) {
             MONAD_ASSERT(model_.val_execution(val_id).exists());
             auto const ins = delegable_val_ids_.insert(val_id.native());
             MONAD_ASSERT(ins);
@@ -1211,7 +1211,7 @@ namespace monad::staking::test
 
         auto const balance_after = model_.balance_of(STAKING_CA);
 
-        auto const stake = uint256_t::load_be(value.bytes);
+        auto const stake = load_be<uint256_t>(value);
 
         MONAD_ASSERT(balance_after - balance_before == stake);
 
@@ -1307,7 +1307,7 @@ namespace monad::staking::test
         auto result = model_.precompile_delegate<traits>(val_id, sender, value);
         MONAD_ASSERT(result.has_value());
 
-        if (uint256_t::load_be(value.bytes) == 0) {
+        if (load_be<uint256_t>(value) == 0) {
             return;
         }
 
@@ -1351,7 +1351,7 @@ namespace monad::staking::test
 
         auto const balance_after = model_.balance_of(STAKING_CA);
 
-        auto const stake = uint256_t::load_be(value.bytes);
+        auto const stake = load_be<uint256_t>(value);
 
         if (!stake) {
             return;
@@ -1965,7 +1965,7 @@ namespace monad::staking::test
         }
         auto const [val_id, sender, value] = *input;
 
-        auto const reward = uint256_t::load_be(value.bytes);
+        auto const reward = load_be<uint256_t>(value);
 
         auto const error_bound_before = model_.error_bound();
 

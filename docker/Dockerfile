@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1-labs
 
-FROM ubuntu:25.10 AS base
+FROM ubuntu:26.04 AS base
 
 COPY scripts/ubuntu-build/ /opt
 

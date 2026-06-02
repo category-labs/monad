@@ -11,7 +11,7 @@ aim of merging the compiler into the core Monad monorepo.
 
 ## Building & Running
 
-The compiler is built and tested in CI on Ubuntu 24.04. To build locally, first
+The compiler is built and tested in CI on Ubuntu 26.04. To build locally, first
 install the following dependencies via `apt`:
 ```
 build-essential

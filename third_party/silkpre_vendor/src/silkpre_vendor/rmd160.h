@@ -33,10 +33,12 @@
  *
  *      Modified 2022 for Silkpre by Andrew Ashikhmin.
  *
+ *      Modified 2026 by Category Labs: renamed silkpre_rmd160 to monad_rmd160.
+ *
 \********************************************************************/
 
-#ifndef SILKPRE_RMD160_H_
-#define SILKPRE_RMD160_H_
+#ifndef MONAD_RMD160_H_
+#define MONAD_RMD160_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -45,10 +47,10 @@
 extern "C" {
 #endif
 
-void silkpre_rmd160(uint8_t out[20], const uint8_t* input, size_t len);
+void monad_rmd160(uint8_t out[20], const uint8_t* input, size_t len);
 
 #if defined(__cplusplus)
 }
 #endif
 
-#endif  // SILKPRE_RMD160_H_
+#endif  // MONAD_RMD160_H_

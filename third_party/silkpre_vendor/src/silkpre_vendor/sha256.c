@@ -14,12 +14,17 @@
    limitations under the License.
 */
 
+// Modified 2026 by Category Labs:
+//   - renamed silkpre_sha256 to monad_sha256
+//   - made internal helper `cpuid` static to avoid colliding with silkpre's
+//     copy at link time
+
 // Based on several bits of code released to public domain:
 // https://github.com/amosnier/sha-2 (Author: Alain Mosnier)
 // https://github.com/noloader/SHA-Intrinsics (Author: Jeffrey Walton)
 // https://github.com/Mysticial/FeatureDetector (Author: Alexander Yee)
 
-#include "sha256.h"
+#include <silkpre_vendor/sha256.h>
 
 #include <string.h>
 
@@ -452,7 +457,7 @@ __attribute__((target("sha,sse4.1"))) static void sha_256_x86_sha(uint32_t h[8],
 #pragma GCC diagnostic pop
 
 // https://stackoverflow.com/questions/6121792/how-to-check-if-a-cpu-supports-the-sse3-instruction-set
-void cpuid(int info[4], int InfoType) { __cpuid_count(InfoType, 0, info[0], info[1], info[2], info[3]); }
+static void cpuid(int info[4], int InfoType) { __cpuid_count(InfoType, 0, info[0], info[1], info[2], info[3]); }
 
 __attribute__((constructor)) static void select_sha256_implementation() {
     int info[4];
@@ -680,7 +685,7 @@ __attribute__((constructor)) static void select_sha256_implementation() {
  *   for bit string lengths that are not multiples of eight, and it really operates on arrays of bytes.
  *   In particular, the len parameter is a number of bytes.
  */
-void silkpre_sha256(uint8_t hash[32], const uint8_t* input, size_t len, bool use_cpu_extensions) {
+void monad_sha256(uint8_t hash[32], const uint8_t* input, size_t len, bool use_cpu_extensions) {
     /*
      * Initialize hash values:
      * (first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19):

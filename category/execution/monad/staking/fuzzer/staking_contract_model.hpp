@@ -36,9 +36,8 @@ namespace monad::staking::test
         TrieDb trie_db_{mpt_db_};
         BlockState block_state_{trie_db_, vm_};
         State state_{block_state_, Incarnation{0, 0}};
-        NoopCallTracer call_tracer_{};
-        StakingContract contract_{
-            state_, call_tracer_, monad::TxTraceContext{}};
+        TxTraceContext const trace_context_{};
+        StakingContract contract_{state_, trace_context_};
 
         // An upper bound on reward rounding errors:
         uint256_t error_bound_{};

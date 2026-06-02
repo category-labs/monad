@@ -24,7 +24,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class State;
-struct CallTracerBase;
+class TxTraceContext;
 
 // Sender for the EIP-7002/EIP-7251 system calls; emitter for EIP-7708's logs.
 inline constexpr Address ETH_SYSTEM_ADDRESS =
@@ -37,13 +37,13 @@ inline constexpr Address SIMULATE_NATIVE_TOKEN_LOG_ADDRESS =
 namespace detail
 {
     void emit_native_transfer_log(
-        State &, CallTracerBase &, Address const &log_address,
+        State &, TxTraceContext const &, Address const &log_address,
         Address const &from, Address const &to, uint256_t const &value);
 }
 
 template <Traits traits>
 void emit_native_transfer_logs(
-    State &state, CallTracerBase &call_tracer, Address const &from,
+    State &state, TxTraceContext const &trace_ctx, Address const &from,
     Address const &to, uint256_t const &value, bool const log_native_transfers)
 {
     if constexpr (!traits::eip_7708_active()) {
@@ -60,12 +60,12 @@ void emit_native_transfer_logs(
     // the transfer.
     if constexpr (traits::eip_7708_active()) {
         detail::emit_native_transfer_log(
-            state, call_tracer, ETH_SYSTEM_ADDRESS, from, to, value);
+            state, trace_ctx, ETH_SYSTEM_ADDRESS, from, to, value);
     }
     else {
         detail::emit_native_transfer_log(
             state,
-            call_tracer,
+            trace_ctx,
             SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
             from,
             to,

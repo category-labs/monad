@@ -158,6 +158,7 @@ add_library(
   "ethereum/trace/call_frame.hpp"
   "ethereum/trace/call_tracer.cpp"
   "ethereum/trace/call_tracer.hpp"
+  "ethereum/trace/commands/call_trace.hpp"
   "ethereum/trace/event_trace.cpp"
   "ethereum/trace/event_trace.hpp"
   "ethereum/trace/state_tracer.cpp"

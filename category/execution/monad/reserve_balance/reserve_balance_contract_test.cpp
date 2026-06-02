@@ -33,7 +33,6 @@
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -90,9 +89,8 @@ struct ReserveBalanceTest : public ::testing::Test
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-    NoopCallTracer call_tracer;
     TxTraceContext trace_ctx{};
-    ReserveBalanceContract contract{state, call_tracer, trace_ctx};
+    ReserveBalanceContract contract{state, trace_ctx};
 };
 
 struct ReserveBalanceEvm : public ReserveBalanceTest
@@ -120,7 +118,6 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
     TxTraceContext const trace_ctx{};
     trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
-        call_tracer,
         noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
@@ -259,7 +256,6 @@ void run_dipped_into_reserve_test(
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    NoopCallTracer call_tracer;
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized block_hash_buffer{};
 
@@ -329,10 +325,9 @@ void run_dipped_into_reserve_test(
     {
         State state{bs, Incarnation{1, 1}};
         trace::StateTracer noop_state_tracer = std::monostate{};
-        TxTraceContext const trace_context{};
+        TxTraceContext const trace_ctx{};
 
         EvmcHost<traits> host{
-            call_tracer,
             noop_state_tracer,
             tx_context,
             block_hash_buffer,
@@ -341,7 +336,7 @@ void run_dipped_into_reserve_test(
             BASE_FEE_PER_GAS,
             1,
             chain_context,
-            trace_context};
+            trace_ctx};
 
         monad::vm::test::TestMessage test_msg_;
         evmc_message msg{*test_msg_};
@@ -579,10 +574,9 @@ void run_check_call_precompile_test(
     State &state, evmc_message const &msg, evmc_status_code expected_status,
     std::string_view expected_message = "")
 {
-    NoopCallTracer call_tracer;
     TxTraceContext trace_ctx{};
-    auto const result = check_call_precompile<traits>(
-        state, call_tracer, msg, trace_ctx, false);
+    auto const result =
+        check_call_precompile<traits>(state, msg, trace_ctx, false);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, expected_status);
@@ -606,7 +600,6 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-    NoopCallTracer call_tracer;
 
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const empty_tx{};
@@ -631,7 +624,6 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
     TxTraceContext const trace_ctx{};
     trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
-        call_tracer,
         noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
@@ -665,10 +657,9 @@ TYPED_TEST(
     };
 
     if constexpr (!TestFixture::Trait::mip_4_active()) {
-        NoopCallTracer call_tracer;
         TxTraceContext trace_ctx{};
         auto const result = check_call_precompile<typename TestFixture::Trait>(
-            this->state, call_tracer, make_msg(), trace_ctx, false);
+            this->state, make_msg(), trace_ctx, false);
         EXPECT_FALSE(result.has_value());
         return;
     }

@@ -43,9 +43,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
@@ -78,6 +76,7 @@
 #include <optional>
 #include <ranges>
 #include <set>
+#include <span>
 #include <string>
 #include <tuple>
 #include <unordered_set>
@@ -122,8 +121,8 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-    NoopCallTracer call_tracer{};
-    StakingContract contract{state, call_tracer, TxTraceContext{}};
+    TxTraceContext const trace_context{};
+    StakingContract contract{state, trace_context};
 
     // test constants
     static constexpr uint256_t MIN_VALIDATE_STAKE =
@@ -5196,7 +5195,10 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
         boost::fibers::promise<void> prev_promise{};
         auto prev = prev_promise.get_future();
         prev_promise.set_value();
-        TxTraceContext const trace_context{};
+        auto erased_tracer = trace::TypeErasedTracer::erase(call_tracer);
+        std::span<trace::TypeErasedTracer const> const tracers{
+            &erased_tracer, 1};
+        TxTraceContext const trace_context{tracers};
 
         return ExecuteTransaction<Trait>(
             MonadDevnet{},
@@ -5209,7 +5211,6 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
             this->bs,
             metrics,
             prev,
-            call_tracer,
             state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
@@ -5310,8 +5311,6 @@ TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
     BlockHeader const header{.number = 1};
     BlockHashBufferFinalized const block_hash_buffer;
     BlockMetrics metrics;
-    std::vector<CallFrame> frames;
-    CallTracer call_tracer{tx, frames};
     trace::StateTracer state_tracer = std::monostate{};
     boost::fibers::promise<void> prev_promise{};
     auto prev = prev_promise.get_future();
@@ -5341,7 +5340,6 @@ TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
         this->bs,
         metrics,
         prev,
-        call_tracer,
         state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,

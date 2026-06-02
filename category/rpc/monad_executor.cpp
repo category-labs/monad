@@ -54,6 +54,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/commands/call_trace.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
@@ -211,7 +212,7 @@ namespace
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
+        TxTraceContext const &trace_context, trace::StateTracer &state_tracer)
     {
         Transaction enriched_txn{txn};
 
@@ -291,11 +292,7 @@ namespace
             chain.get_chain_id(),
             chain.get_blob_schedule(header.timestamp));
 
-        std::span<trace::TypeErasedTracer const> const call_tracers{};
-        TxTraceContext const trace_context{call_tracers};
-
         EvmcHost<traits> host{
-            call_tracer,
             state_tracer,
             tx_context,
             buffer,
@@ -319,7 +316,7 @@ namespace
             static_cast<uint64_t>(execution_result.gas_left),
             static_cast<uint64_t>(execution_result.gas_refund));
         auto const gas_used = enriched_txn.gas_limit - gas_refund;
-        call_tracer.on_finish(gas_used);
+        trace::emit<trace::Finish>(trace_context, gas_used);
 
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
 
@@ -404,15 +401,6 @@ namespace
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
         state_tracers.reserve(transactions_size);
 
-        std::vector<std::unique_ptr<CallTracerBase>> noop_call_tracers{};
-        noop_call_tracers.reserve(transactions_size);
-
-        for (size_t i = 0; i < transactions_size; ++i) {
-            noop_call_tracers.emplace_back(std::make_unique<NoopCallTracer>());
-        }
-        std::span<std::unique_ptr<CallTracerBase>> const noop_call_tracers_view{
-            noop_call_tracers.data(), transactions_size};
-
         BlockTraceContext block_trace_context{transactions_size};
 
         auto const chain_context = [&] {
@@ -463,7 +451,6 @@ namespace
                 buffer,
                 tx_exec_pool,
                 metrics,
-                noop_call_tracers_view,
                 state_tracers_view,
                 chain_context,
                 /*exec_recorder=*/nullptr,
@@ -516,7 +503,6 @@ namespace
                 buffer,
                 tx_exec_pool,
                 metrics,
-                noop_call_tracers_view,
                 state_tracers_view,
                 chain_context,
                 /*exec_recorder=*/nullptr,
@@ -786,7 +772,6 @@ namespace
         std::vector<std::vector<std::optional<Address>>> const &authorities,
         BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
         fiber::FiberGroup &tx_exec_pool,
-        std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
         std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
         ChainContextBuffer &context_buffer,
         bool const emit_native_transfer_logs,
@@ -814,7 +799,6 @@ namespace
             block_hash_buffer,
             tx_exec_pool,
             block_metrics,
-            call_tracers,
             state_tracers,
             system_call_state_tracer,
             chain_context,
@@ -830,7 +814,6 @@ namespace
         std::vector<std::vector<std::optional<Address>>> const &authorities,
         BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
         fiber::FiberGroup &tx_exec_pool,
-        std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
         std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
         ChainContextBuffer &context_buffer,
         bool const emit_native_transfer_logs,
@@ -852,7 +835,6 @@ namespace
                 block_state,
                 block_hash_buffer,
                 tx_exec_pool,
-                call_tracers,
                 state_tracers,
                 context_buffer,
                 emit_native_transfer_logs,
@@ -871,7 +853,6 @@ namespace
                 block_state,
                 block_hash_buffer,
                 tx_exec_pool,
-                call_tracers,
                 state_tracers,
                 context_buffer,
                 emit_native_transfer_logs,
@@ -1020,8 +1001,6 @@ namespace
                         },
                 };
 
-                auto call_tracers =
-                    std::vector<std::unique_ptr<CallTracerBase>>{};
                 auto state_tracers =
                     std::vector<std::unique_ptr<trace::StateTracer>>{};
 
@@ -1042,7 +1021,6 @@ namespace
                         block_state,
                         block_hash_buffer,
                         tx_exec_pool,
-                        call_tracers,
                         state_tracers,
                         context_buffer,
                         emit_native_transfer_logs,
@@ -1133,7 +1111,7 @@ namespace
 
             auto call_frames = std::vector<std::vector<CallFrame>>{};
             call_frames.reserve(calls[block_idx].size());
-            auto call_tracers = std::vector<std::unique_ptr<CallTracerBase>>{};
+            auto call_tracers = std::vector<CallTracer>{};
             call_tracers.reserve(calls[block_idx].size());
             auto state_tracers =
                 std::vector<std::unique_ptr<trace::StateTracer>>{};
@@ -1148,8 +1126,8 @@ namespace
 
             for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
-                call_tracers.emplace_back(std::make_unique<CallTracer>(
-                    tx, call_frames.back(), call_tracer_max_size));
+                call_tracers.emplace_back(
+                    tx, call_frames.back(), call_tracer_max_size);
                 state_tracers.emplace_back(
                     std::make_unique<trace::StateTracer>());
             }
@@ -1163,6 +1141,8 @@ namespace
 
             auto block_trace_context =
                 BlockTraceContext{block.transactions.size()};
+            block_trace_context.with_tracers(
+                std::span<CallTracer>{call_tracers});
 
             BOOST_OUTCOME_TRY(
                 auto const receipts,
@@ -1175,15 +1155,13 @@ namespace
                     block_state,
                     block_hash_buffer,
                     tx_exec_pool,
-                    call_tracers,
                     state_tracers,
                     context_buffer,
                     emit_native_transfer_logs,
                     block_trace_context));
 
             for (auto const &call_tracer : call_tracers) {
-                static_cast<CallTracer const &>(*call_tracer)
-                    .check_size_limit();
+                call_tracer.check_size_limit();
             }
 
             // The next block derives its defaults from the executed header.
@@ -1599,15 +1577,23 @@ struct monad_executor
                     TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
                     nlohmann::json state_trace;
-                    std::unique_ptr<CallTracerBase> call_tracer =
-                        tracer_config == CALL_TRACER
-                            ? std::unique_ptr<
-                                  CallTracerBase>{std::make_unique<CallTracer>(
-                                  transaction,
-                                  call_frames,
-                                  call_tracer_max_size)}
-                            : std::unique_ptr<CallTracerBase>{
-                                  std::make_unique<NoopCallTracer>()};
+                    std::optional<CallTracer> call_tracer{};
+                    std::optional<trace::TypeErasedTracer> erased_tracer{};
+                    if (tracer_config == CALL_TRACER) {
+                        call_tracer.emplace(
+                            transaction, call_frames, call_tracer_max_size);
+                        erased_tracer.emplace(
+                            trace::TypeErasedTracer::erase(*call_tracer));
+                    }
+                    auto const trace_context = [&]() -> TxTraceContext {
+                        if (tracer_config != CALL_TRACER) {
+                            return TxTraceContext{};
+                        }
+                        MONAD_ASSERT(erased_tracer.has_value());
+                        std::span<trace::TypeErasedTracer const> const
+                            call_tracers{&*erased_tracer, 1};
+                        return TxTraceContext{call_tracers};
+                    }();
                     auto state_tracer = [&]() -> trace::StateTracer {
                         switch (tracer_config) {
                         case NOOP_TRACER:
@@ -1647,7 +1633,7 @@ struct monad_executor
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
-                                *call_tracer,
+                                trace_context,
                                 state_tracer);
                             MONAD_ASSERT(false);
                         }
@@ -1669,7 +1655,7 @@ struct monad_executor
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
-                                *call_tracer,
+                                trace_context,
                                 state_tracer);
                             MONAD_ASSERT(false);
                         }
@@ -1707,8 +1693,8 @@ struct monad_executor
                         return;
                     }
                     if (tracer_config == CALL_TRACER) {
-                        static_cast<CallTracer const &>(*call_tracer)
-                            .check_size_limit();
+                        MONAD_ASSERT(call_tracer.has_value());
+                        call_tracer->check_size_limit();
                     }
                     call_complete(
                         transaction,

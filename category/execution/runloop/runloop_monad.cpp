@@ -230,25 +230,25 @@ Result<BlockExecOutput> propose_block(
     BOOST_OUTCOME_TRY(
         static_validate_monad_body<traits>(senders, block.transactions));
 
-    // Create call frames vectors for tracers
+    // Create call frames vectors for call tracers
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
-        block.transactions.size()};
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
         block.transactions.size());
     trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        call_tracers[i] =
-            enable_tracing
-                ? std::unique_ptr<CallTracerBase>{std::make_unique<CallTracer>(
-                      block.transactions[i], call_frames[i])}
-                : std::unique_ptr<CallTracerBase>{
-                      std::make_unique<NoopCallTracer>()};
         state_tracers[i] =
             std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
+    std::vector<CallTracer> call_tracers;
     BlockTraceContext block_trace_context(block.transactions.size());
+    if (enable_tracing) {
+        call_tracers.reserve(block.transactions.size());
+        for (unsigned i = 0; i < block.transactions.size(); ++i) {
+            call_tracers.emplace_back(block.transactions[i], call_frames[i]);
+        }
+        block_trace_context.with_tracers(std::span<CallTracer>{call_tracers});
+    }
 
     auto const
         &[grandparent_senders_and_authorities,
@@ -307,7 +307,6 @@ Result<BlockExecOutput> propose_block(
             block_hash_buffer,
             priority_pool.fiber_group(),
             block_metrics,
-            call_tracers,
             state_tracers,
             system_call_state_tracer,
             chain_context,

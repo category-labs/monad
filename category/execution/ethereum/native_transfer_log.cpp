@@ -23,7 +23,8 @@
 #include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/commands/call_trace.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 
 #include <utility>
 
@@ -32,8 +33,9 @@ MONAD_NAMESPACE_BEGIN
 namespace detail
 {
     void emit_native_transfer_log(
-        State &state, CallTracerBase &call_tracer, Address const &log_address,
-        Address const &from, Address const &to, uint256_t const &value)
+        State &state, TxTraceContext const &trace_ctx,
+        Address const &log_address, Address const &from, Address const &to,
+        uint256_t const &value)
     {
         static constexpr bytes32_t signature =
             abi_encode_event_signature("Transfer(address,address,uint256)");
@@ -49,7 +51,7 @@ namespace detail
                          .build();
 
         state.store_log(event);
-        call_tracer.on_log(std::move(event));
+        trace::emit<trace::Log>(trace_ctx, std::move(event));
     }
 }
 

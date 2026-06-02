@@ -42,7 +42,6 @@
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
@@ -195,7 +194,6 @@ Result<bytes32_t> execute_block_zkvm(
     ChainContext<traits> const
         chain_ctx{}; // chain context is empty for evm traits
     BlockMetrics metrics{}; // unused; constructor requires a reference
-    NoopCallTracer call_tracer{};
     trace::StateTracer state_tracer{std::monostate{}};
     TxTraceContext const trace_context{};
     std::vector<Receipt> receipts;
@@ -226,7 +224,6 @@ Result<bytes32_t> execute_block_zkvm(
             block_state,
             metrics,
             prev,
-            call_tracer,
             state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,

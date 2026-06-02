@@ -26,7 +26,6 @@
 #include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -109,11 +108,9 @@ Result<byte_string> system_call(
     state.access_account(contract_address);
 
     // TODO(dhil): Use a non-empty trace context here for state tracing.
-    NoopCallTracer noop_tracer;
     Transaction const empty_tx{};
     TxTraceContext const trace_ctx{};
     EvmcHost<traits> host{
-        noop_tracer,
         state_tracer,
         tx_context,
         block_hash_buffer,

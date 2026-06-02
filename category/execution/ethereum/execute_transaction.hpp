@@ -37,7 +37,6 @@ struct BlockHeader;
 struct BlockMetrics;
 class BlockState;
 class TxTraceContext;
-struct CallTracerBase;
 struct Chain;
 template <Traits traits>
 struct EvmcHost;
@@ -83,7 +82,6 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
     boost::fibers::future<void> &prev_;
-    CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
     ExecutionEventRecorder *exec_recorder_;
     bool trace_transfers_;
@@ -97,8 +95,8 @@ public:
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
-        boost::fibers::future<void> &prev, CallTracerBase &,
-        trace::StateTracer &, ChainContext<traits> const &chain_ctx,
+        boost::fibers::future<void> &prev, trace::StateTracer &,
+        ChainContext<traits> const &chain_ctx,
         ExecutionEventRecorder *exec_recorder,
         TxTraceContext const &tx_trace_context, bool trace_transfers = false);
 
@@ -106,9 +104,9 @@ public:
         Chain const &, uint64_t, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
-        boost::fibers::future<void> &, CallTracerBase &, trace::StateTracer &,
+        boost::fibers::future<void> &, trace::StateTracer &,
         ChainContext<traits> const &&, ExecutionEventRecorder *,
-        TxTraceContext const &, bool = false) = delete;
+        TxTraceContext const &&, bool = false) = delete;
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

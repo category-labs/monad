@@ -95,8 +95,11 @@ TYPED_TEST(TraitsTest, speculative_call_trace_size_limit_is_discarded_on_retry)
     BlockMetrics metrics{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{transaction, call_frames, sizeof(CallFrame) + 32};
+    trace::TypeErasedTracer erased_tracer{
+        trace::TypeErasedTracer::erase(call_tracer)};
+    std::span<trace::TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
     trace::StateTracer state_tracer{std::monostate{}};
-    TxTraceContext const trace_context{};
     std::vector<Address> const senders{predecessor_sender, sender};
     std::vector<std::vector<std::optional<Address>>> const authorities(2);
     auto const senders_and_authorities =
@@ -137,7 +140,6 @@ TYPED_TEST(TraitsTest, speculative_call_trace_size_limit_is_discarded_on_retry)
                         block_state,
                         metrics,
                         predecessor_future,
-                        call_tracer,
                         state_tracer,
                         chain_context,
                         nullptr,
@@ -165,6 +167,7 @@ TYPED_TEST(TraitsTest, speculative_call_trace_size_limit_is_discarded_on_retry)
     EXPECT_EQ(result.value().status, 1u);
     EXPECT_EQ(metrics.num_retries, 1);
     ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_NO_THROW(call_tracer.check_size_limit());
     EXPECT_EQ(call_frames.front().status, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(call_frames.front().output.size(), 32);
 }
@@ -220,8 +223,6 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     boost::fibers::promise<void> prev_promise{};
     boost::fibers::future<void> prev = prev_promise.get_future();
     prev_promise.set_value();
-
-    NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -238,7 +239,6 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         bs,
         metrics,
         prev,
-        noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
@@ -318,8 +318,6 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
 
     BlockHeader const header{.beneficiary = bene};
     BlockHashBufferFinalized const block_hash_buffer;
-
-    NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
     boost::fibers::promise<void> prev_promise{};
@@ -341,7 +339,6 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         bs,
         metrics,
         prev,
-        noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
@@ -468,8 +465,6 @@ TYPED_TEST(TraitsTest, refunds_delete)
         boost::fibers::promise<void> prev_promise{};
         boost::fibers::future<void> prev = prev_promise.get_future();
         prev_promise.set_value();
-
-        NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
         auto const chain_ctx =
@@ -487,7 +482,6 @@ TYPED_TEST(TraitsTest, refunds_delete)
             bs,
             metrics,
             prev,
-            noop_call_tracer,
             noop_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
@@ -535,8 +529,6 @@ TYPED_TEST(TraitsTest, refunds_delete)
         boost::fibers::promise<void> prev_promise{};
         boost::fibers::future<void> prev = prev_promise.get_future();
         prev_promise.set_value();
-
-        NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
         auto const chain_ctx =
@@ -554,7 +546,6 @@ TYPED_TEST(TraitsTest, refunds_delete)
             bs,
             metrics,
             prev,
-            noop_call_tracer,
             noop_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
@@ -648,8 +639,6 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
         boost::fibers::promise<void> prev_promise{};
         boost::fibers::future<void> prev = prev_promise.get_future();
         prev_promise.set_value();
-
-        NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
 
         auto const chain_ctx =
@@ -667,7 +656,6 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             bs,
             metrics,
             prev,
-            noop_call_tracer,
             noop_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
@@ -730,8 +718,6 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
     boost::fibers::promise<void> prev_promise{};
     boost::fibers::future<void> prev = prev_promise.get_future();
     prev_promise.set_value();
-
-    NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
     auto const chain_ctx =
@@ -757,7 +743,6 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
         bs,
         metrics,
         prev,
-        noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
@@ -816,7 +801,6 @@ TYPED_TEST(TraitsTest, selfdestructed_beneficiary_keeps_award)
     BlockHeader const header{.beneficiary = bene};
     BlockHashBufferFinalized const block_hash_buffer;
 
-    NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
     boost::fibers::promise<void> prev_promise{};
@@ -838,7 +822,6 @@ TYPED_TEST(TraitsTest, selfdestructed_beneficiary_keeps_award)
         bs,
         metrics,
         prev,
-        noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,

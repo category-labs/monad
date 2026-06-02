@@ -83,6 +83,28 @@ namespace
             EXPECT_EQ(state.logs()[i], frame_logs[i].log);
         }
     }
+
+    struct TxTraceContextWithTracer
+    {
+        explicit TxTraceContextWithTracer(
+            Transaction const &tx, std::vector<CallFrame> &call_frames)
+            : tracer{tx, call_frames}
+            , erased_tracer{trace::TypeErasedTracer::erase(tracer)}
+            , tracers{&erased_tracer, 1}
+            , tx_trace_context{tracers}
+        {
+        }
+
+        operator TxTraceContext const &() const
+        {
+            return tx_trace_context;
+        }
+
+        CallTracer tracer;
+        trace::TypeErasedTracer erased_tracer;
+        std::span<trace::TypeErasedTracer const> tracers;
+        TxTraceContext tx_trace_context;
+    };
 }
 
 TEST(CallFrame, to_json)
@@ -123,15 +145,18 @@ TEST(CallTrace, enter_and_exit)
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
+    auto erased_tracer = trace::TypeErasedTracer::erase(call_tracer);
+    std::span<trace::TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_ctx{tracers};
     {
         msg.depth = 0;
-        call_tracer.on_enter(msg);
+        trace::emit<trace::Enter>(trace_ctx, msg);
         {
             msg.depth = 1;
-            call_tracer.on_enter(msg);
-            call_tracer.on_exit(res);
+            trace::emit<trace::Enter>(trace_ctx, msg);
+            trace::emit<trace::Exit>(trace_ctx, res);
         }
-        call_tracer.on_exit(res);
+        trace::emit<trace::Exit>(trace_ctx, res);
     }
 
     EXPECT_EQ(call_frames.size(), 2);
@@ -164,13 +189,13 @@ TEST(CallTrace, size_limit_is_checked_explicitly)
     CallTracer tracer{tx, frames, 0};
     evmc_message const msg{};
 
-    EXPECT_NO_THROW(tracer.on_enter(msg));
-    EXPECT_NO_THROW(tracer.on_exit(evmc::Result{EVMC_SUCCESS, 0, 0}));
-    EXPECT_NO_THROW(tracer.on_finish(0));
+    EXPECT_NO_THROW(tracer(trace::Enter{msg}));
+    EXPECT_NO_THROW(tracer(trace::Exit{evmc::Result{EVMC_SUCCESS, 0, 0}}));
+    EXPECT_NO_THROW(tracer(trace::Finish{0}));
     EXPECT_THROW(tracer.check_size_limit(), MonadException);
     EXPECT_THROW(tracer.to_json(), MonadException);
 
-    tracer.reset();
+    tracer(trace::CallReset{});
     EXPECT_NO_THROW(tracer.check_size_limit());
 }
 
@@ -182,12 +207,12 @@ TEST(CallTrace, frame_size_limit_throws_on_check)
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
 
     msg.depth = 0;
-    call_tracer.on_enter(msg);
+    call_tracer(trace::Enter{msg});
 
     msg.depth = 1;
-    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_NO_THROW(call_tracer(trace::Enter{msg}));
     EXPECT_EQ(call_frames.size(), 1);
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 }
 
@@ -199,9 +224,9 @@ TEST(CallTrace, zero_size_limit_throws_on_check)
     CallTracer call_tracer{tx, call_frames, 0};
 
     msg.depth = 0;
-    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_NO_THROW(call_tracer(trace::Enter{msg}));
     EXPECT_TRUE(call_frames.empty());
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 }
 
@@ -218,11 +243,11 @@ TEST(CallTrace, output_size_limit_throws_on_check)
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
 
     msg.depth = 0;
-    call_tracer.on_enter(msg);
-    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    call_tracer(trace::Enter{msg});
+    EXPECT_NO_THROW(call_tracer(trace::Exit{res}));
     ASSERT_EQ(call_frames.size(), 1);
     EXPECT_TRUE(call_frames.front().output.empty());
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 }
 
@@ -233,12 +258,12 @@ TEST(CallTrace, log_size_limit_throws_on_check)
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
 
-    call_tracer.on_enter(msg);
-    EXPECT_NO_THROW(call_tracer.on_log(Receipt::Log{}));
+    call_tracer(trace::Enter{msg});
+    EXPECT_NO_THROW(call_tracer(trace::Log{Receipt::Log{}}));
     ASSERT_EQ(call_frames.size(), 1);
     ASSERT_TRUE(call_frames.front().logs.has_value());
     EXPECT_TRUE(call_frames.front().logs->empty());
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 }
 
@@ -249,10 +274,10 @@ TEST(CallTrace, self_destruct_size_limit_throws_on_check)
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
 
-    call_tracer.on_enter(msg);
-    EXPECT_NO_THROW(call_tracer.on_self_destruct(a, b, 0));
+    call_tracer(trace::Enter{msg});
+    EXPECT_NO_THROW(call_tracer(trace::SelfDestruct{a, b, 0}));
     EXPECT_EQ(call_frames.size(), 1);
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 }
 
@@ -265,20 +290,20 @@ TEST(CallTrace, callbacks_after_size_limit_exceeded_are_ignored)
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
 
-    call_tracer.on_enter(msg);
+    call_tracer(trace::Enter{msg});
     msg.depth = 1;
-    EXPECT_NO_THROW(call_tracer.on_enter(msg));
-    EXPECT_NO_THROW(call_tracer.on_exit(res));
-    EXPECT_NO_THROW(call_tracer.on_log(Receipt::Log{}));
-    EXPECT_NO_THROW(call_tracer.on_self_destruct(a, b, 0));
+    EXPECT_NO_THROW(call_tracer(trace::Enter{msg}));
+    EXPECT_NO_THROW(call_tracer(trace::Exit{res}));
+    EXPECT_NO_THROW(call_tracer(trace::Log{Receipt::Log{}}));
+    EXPECT_NO_THROW(call_tracer(trace::SelfDestruct{a, b, 0}));
     msg.depth = 0;
-    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    EXPECT_NO_THROW(call_tracer(trace::Exit{res}));
 
     ASSERT_EQ(call_frames.size(), 1);
     EXPECT_EQ(call_frames.front().status, MONAD_STATUS_FAILURE);
     ASSERT_TRUE(call_frames.front().logs.has_value());
     EXPECT_TRUE(call_frames.front().logs->empty());
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 }
 
@@ -292,23 +317,23 @@ TEST(CallTrace, reset_clears_size_limit_exceeded)
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
 
-    call_tracer.on_enter(msg);
-    EXPECT_NO_THROW(call_tracer.on_log(Receipt::Log{}));
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    call_tracer(trace::Enter{msg});
+    EXPECT_NO_THROW(call_tracer(trace::Log{Receipt::Log{}}));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 
-    call_tracer.reset();
+    call_tracer(trace::CallReset{});
     EXPECT_TRUE(call_frames.empty());
-    call_tracer.on_enter(msg);
-    call_tracer.on_exit(res);
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    call_tracer(trace::Enter{msg});
+    call_tracer(trace::Exit{res});
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_NO_THROW(call_tracer.check_size_limit());
 
     ASSERT_EQ(call_frames.size(), 1);
     EXPECT_EQ(call_frames.front().status, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(call_frames.front().gas_used, 1'000);
 
-    call_tracer.on_enter(msg);
+    call_tracer(trace::Enter{msg});
     EXPECT_EQ(call_frames.size(), 1);
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 }
@@ -326,9 +351,9 @@ TEST(CallTrace, exact_size_limit_succeeds)
     CallTracer call_tracer{
         tx, call_frames, sizeof(CallFrame) + sizeof(input) + sizeof(output)};
 
-    call_tracer.on_enter(msg);
-    call_tracer.on_exit(res);
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    call_tracer(trace::Enter{msg});
+    call_tracer(trace::Exit{res});
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_NO_THROW(call_tracer.check_size_limit());
 
     ASSERT_EQ(call_frames.size(), 1);
@@ -350,9 +375,9 @@ TEST(CallTrace, one_byte_over_size_limit_is_rejected)
         call_frames,
         sizeof(CallFrame) + sizeof(input) + sizeof(output) - 1};
 
-    call_tracer.on_enter(msg);
-    EXPECT_NO_THROW(call_tracer.on_exit(res));
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    call_tracer(trace::Enter{msg});
+    EXPECT_NO_THROW(call_tracer(trace::Exit{res}));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
     ASSERT_EQ(call_frames.size(), 1);
     EXPECT_TRUE(call_frames.front().output.empty());
@@ -364,10 +389,10 @@ TEST(CallTrace, input_size_overflow_is_rejected)
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
-    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_NO_THROW(call_tracer(trace::Enter{msg}));
     EXPECT_TRUE(call_frames.empty());
-    EXPECT_NO_THROW(call_tracer.on_exit(evmc::Result{EVMC_SUCCESS, 0, 0}));
-    EXPECT_NO_THROW(call_tracer.on_finish(0));
+    EXPECT_NO_THROW(call_tracer(trace::Exit{evmc::Result{EVMC_SUCCESS, 0, 0}}));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{0}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 }
 
@@ -380,10 +405,10 @@ TEST(CallTrace, output_size_overflow_is_rejected)
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
-    call_tracer.on_enter(msg);
+    call_tracer(trace::Enter{msg});
 
-    EXPECT_NO_THROW(call_tracer.on_exit(res));
-    EXPECT_NO_THROW(call_tracer.on_finish(0));
+    EXPECT_NO_THROW(call_tracer(trace::Exit{res}));
+    EXPECT_NO_THROW(call_tracer(trace::Finish{0}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
     ASSERT_EQ(call_frames.size(), 1);
     EXPECT_TRUE(call_frames.front().output.empty());
@@ -407,10 +432,10 @@ TEST(CallTrace, exact_log_size_limit_succeeds)
         sizeof(CallFrame) + sizeof(CallFrame::Log) + log.data.size() +
             log.topics.size() * sizeof(bytes32_t)};
 
-    call_tracer.on_enter(msg);
-    call_tracer.on_log(log);
-    call_tracer.on_exit(res);
-    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    call_tracer(trace::Enter{msg});
+    call_tracer(trace::Log{log});
+    call_tracer(trace::Exit{res});
+    EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_NO_THROW(call_tracer.check_size_limit());
     ASSERT_EQ(call_frames.size(), 1);
     ASSERT_TRUE(call_frames.front().logs.has_value());
@@ -429,9 +454,9 @@ TEST(CallTrace, json_output_has_empty_calls_without_nested_frames)
     CallTracer call_tracer{tx, call_frames};
 
     msg.depth = 0;
-    call_tracer.on_enter(msg);
-    call_tracer.on_exit(res);
-    call_tracer.on_finish(1'000);
+    call_tracer(trace::Enter{msg});
+    call_tracer(trace::Exit{res});
+    call_tracer(trace::Finish{1'000});
 
     ASSERT_EQ(call_frames.size(), 1);
 
@@ -482,15 +507,13 @@ TYPED_TEST(TraitsTest, execute_success)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -587,16 +610,14 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -680,15 +701,13 @@ TYPED_TEST(TraitsTest, create_call_trace)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -806,15 +825,13 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -896,15 +913,13 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -996,15 +1011,13 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -1078,7 +1091,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
 
@@ -1086,9 +1098,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -1192,7 +1203,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
 
@@ -1200,9 +1210,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -1300,7 +1309,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
 
@@ -1308,10 +1316,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -1446,7 +1453,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
 
@@ -1454,10 +1460,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -1676,7 +1681,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     evmc_tx_context const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
 
     uint256_t base_fee{0};
 
@@ -1684,10 +1688,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithTracer trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
         noop_state_tracer,
         tx_context,
         buffer,
@@ -1851,7 +1854,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
         evmc_tx_context const tx_context{};
         BlockHashBufferFinalized buffer{};
         std::vector<CallFrame> call_frames;
-        CallTracer call_tracer{tx, call_frames};
 
         uint256_t base_fee{0};
 
@@ -1859,11 +1861,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         constexpr std::span<std::optional<Address> const> authorities_empty{};
-        TxTraceContext const trace_context{};
+        TxTraceContextWithTracer trace_context{tx, call_frames};
 
         EvmcHost<typename TestFixture::Trait> host{
-            call_tracer,
-            noop_state_tracer,
+        noop_state_tracer,
             tx_context,
             buffer,
             s,

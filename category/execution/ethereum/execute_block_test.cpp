@@ -36,8 +36,10 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/commands/call_trace.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -83,37 +85,36 @@ namespace
 {
     using monad::literals::operator""_bytes;
 
-    class ResetCallTracer final : public CallTracerBase
+    class ResetCallTracer final
     {
         std::move_only_function<void()> reset_;
 
     public:
+        using Signature = trace::CallTraceSignature;
+
         explicit ResetCallTracer(std::move_only_function<void()> reset)
             : reset_{std::move(reset)}
         {
         }
 
-        void on_enter(evmc_message const &) override {}
+        void operator()(trace::Enter const &) {}
 
-        void on_exit(evmc::Result const &) override {}
+        void operator()(trace::Exit const &) {}
 
-        void on_log(Receipt::Log) override {}
+        void operator()(trace::Log const &) {}
 
-        void on_self_destruct(
-            Address const &, Address const &, uint256_t const &) override
-        {
-        }
+        void operator()(trace::SelfDestruct const &) {}
 
-        void on_finish(uint64_t const) override {}
+        void operator()(trace::Finish const &) {}
 
-        void reset() override
+        void operator()(trace::CallReset const &)
         {
             reset_();
         }
 
-        std::span<CallFrame const> get_call_frames() const override
+        void operator()(trace::GetCallFrames const &op)
         {
-            return {};
+            *op.call_frames = {};
         }
     };
 
@@ -300,12 +301,13 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
         recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<CallTracer> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     trace::StateTracer system_call_state_tracer{std::monostate{}};
+    call_tracers.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
+        call_tracers.emplace_back(
+            block.value().transactions[i], call_frames[i]);
         state_tracers.emplace_back(
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
@@ -333,6 +335,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     }();
 
     BlockTraceContext block_trace_context(block.value().transactions.size());
+    block_trace_context.with_tracers(std::span{call_tracers});
 
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
@@ -344,7 +347,6 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             block_hash_buffer,
             pool.fiber_group(),
             metrics,
-            call_tracers,
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
@@ -481,12 +483,13 @@ TYPED_TEST(TraitsTest, assertion_exception)
         recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<CallTracer> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     trace::StateTracer system_call_state_tracer{std::monostate{}};
+    call_tracers.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
+        call_tracers.emplace_back(
+            block.value().transactions[i], call_frames[i]);
         state_tracers.emplace_back(
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
@@ -514,6 +517,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
     }();
 
     BlockTraceContext block_trace_context(block.value().transactions.size());
+    block_trace_context.with_tracers(std::span{call_tracers});
 
     auto execute = [&](Chain const &chain) {
         (void)execute_block<typename TestFixture::Trait>(
@@ -525,7 +529,6 @@ TYPED_TEST(TraitsTest, assertion_exception)
             block_hash_buffer,
             pool.fiber_group(),
             metrics,
-            call_tracers,
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
@@ -581,18 +584,19 @@ TYPED_TEST(TraitsTest, fibers_join_exception)
     boost::fibers::promise<void> unblock_first;
     boost::fibers::promise<void> last_transaction_failed;
     auto last_transaction_failed_future = last_transaction_failed.get_future();
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
-    call_tracers.emplace_back(std::make_unique<ResetCallTracer>(
-        [future = unblock_first.get_future()] mutable { future.wait(); }));
-    call_tracers.emplace_back(std::make_unique<ResetCallTracer>([&] {
+    std::vector<ResetCallTracer> call_tracers;
+    call_tracers.emplace_back(
+        [future = unblock_first.get_future()] mutable { future.wait(); });
+    call_tracers.emplace_back([&] {
         last_transaction_failed.set_value();
         throw std::runtime_error{"tracer reset failed"};
-    }));
+    });
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(2);
     for (auto &tracer : state_tracers) {
         tracer = std::make_unique<trace::StateTracer>(std::monostate{});
     }
     BlockTraceContext block_trace_context(transactions.size());
+    block_trace_context.with_tracers(std::span{call_tracers});
 
     fiber::PriorityPool pool{1, 2};
     // Run execute_block_transactions in a non-blocking context such that we can
@@ -608,7 +612,6 @@ TYPED_TEST(TraitsTest, fibers_join_exception)
             block_hash_buffer,
             pool.fiber_group(),
             block_metrics,
-            call_tracers,
             state_tracers,
             chain_ctx,
             nullptr,
@@ -737,12 +740,13 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<CallTracer> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     trace::StateTracer system_call_state_tracer{std::monostate{}};
+    call_tracers.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
+        call_tracers.emplace_back(
+            block.value().transactions[i], call_frames[i]);
         state_tracers.emplace_back(
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
@@ -770,6 +774,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     }();
 
     BlockTraceContext block_trace_context(block.value().transactions.size());
+    block_trace_context.with_tracers(std::span{call_tracers});
 
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
@@ -781,7 +786,6 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             block_hash_buffer,
             pool.fiber_group(),
             metrics,
-            call_tracers,
             state_tracers,
             system_call_state_tracer,
             chain_ctx,

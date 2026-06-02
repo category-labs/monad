@@ -21,8 +21,6 @@
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -68,9 +66,8 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 ReserveBalanceContract::ReserveBalanceContract(
-    State &state, CallTracerBase &tracer, TxTraceContext const &trace_ctx, bool)
+    State &state, TxTraceContext const &trace_ctx, bool)
     : state_{state}
-    , call_tracer_{tracer}
     , trace_ctx_{trace_ctx}
 {
     state_.add_to_balance(RESERVE_BALANCE_CA, 0);

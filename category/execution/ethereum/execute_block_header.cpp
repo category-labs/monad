@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -58,7 +59,9 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-void execute_block_header(BlockState &block_state, BlockHeader const &header)
+void execute_block_header(
+    BlockState &block_state, BlockHeader const &header,
+    ExecutionEventRecorder *exec_recorder)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
@@ -78,7 +81,8 @@ void execute_block_header(BlockState &block_state, BlockHeader const &header)
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
-    record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_PROLOGUE, state);
+    record_account_access_events(
+        exec_recorder, MONAD_ACCT_ACCESS_BLOCK_PROLOGUE, state);
 }
 
 EXPLICIT_TRAITS(execute_block_header);

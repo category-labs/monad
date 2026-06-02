@@ -22,6 +22,7 @@ MONAD_NAMESPACE_BEGIN
 
 struct BlockHeader;
 class BlockState;
+class ExecutionEventRecorder;
 
 // Block-prelude actions: deploys block-hash-history contract, sets the
 // block-hash history, sets EIP-4788 beacon root (Cancun+), runs Monad's
@@ -29,6 +30,7 @@ class BlockState;
 // zkVM guest can pull it without dragging in execute_block.cpp's fiber/
 // dispatch_transaction deps.
 template <Traits traits>
-void execute_block_header(BlockState &, BlockHeader const &);
+void execute_block_header(
+    BlockState &, BlockHeader const &, ExecutionEventRecorder *);
 
 MONAD_NAMESPACE_END

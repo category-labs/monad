@@ -395,7 +395,8 @@ namespace
         // MonadConsensusBlockHeader::block_round where a real round exists, per
         // EXE-60.
         // Execute block header
-        execute_block_header<traits>(block_state, header);
+        execute_block_header<traits>(
+            block_state, header, /*exec_recorder=*/nullptr);
         BlockMetrics metrics{};
 
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
@@ -460,7 +461,8 @@ namespace
                 metrics,
                 noop_call_tracers_view,
                 state_tracers_view,
-                chain_context));
+                chain_context,
+                /*exec_recorder=*/nullptr));
             return Result<nlohmann::json>{std::move(trace)};
         }
         else {
@@ -510,7 +512,8 @@ namespace
                 metrics,
                 noop_call_tracers_view,
                 state_tracers_view,
-                chain_context));
+                chain_context,
+                /*exec_recorder=*/nullptr));
 
             // Compose state traces
             return Result<nlohmann::json>{std::move(traces)};
@@ -904,6 +907,7 @@ namespace
                         state_tracers,
                         system_call_state_tracer,
                         chain_context,
+                        /*exec_recorder=*/nullptr,
                         emit_native_transfer_logs));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
@@ -1026,6 +1030,7 @@ namespace
                     state_tracers,
                     system_call_state_tracer,
                     chain_context,
+                    /*exec_recorder=*/nullptr,
                     emit_native_transfer_logs));
 
             // Receipts have cumulative gas_used (YP eq. 22), so

@@ -21,10 +21,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class ExecutionEventRecorder;
+
 /// Other EVM implementations do not emit consensus events like the Monad chain,
 /// but emitting dummy versions reduces the difference for event consumers that
 /// wait to see a particular commitment state (e.g., finalized) before acting.
 void record_mock_consensus_events(
-    bytes32_t const &block_id, uint64_t block_number);
+    ExecutionEventRecorder *, bytes32_t const &block_id, uint64_t block_number);
 
 MONAD_NAMESPACE_END

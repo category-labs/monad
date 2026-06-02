@@ -182,7 +182,8 @@ Result<BlockExecOutput> propose_block(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
-    bool const enable_tracing, BlockCache &block_cache, Db *secondary_db,
+    bool const enable_tracing, BlockCache &block_cache,
+    ExecutionEventRecorder *const exec_recorder, Db *secondary_db,
     RunloopMonadOverride const runloop_override)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
@@ -303,7 +304,7 @@ Result<BlockExecOutput> propose_block(
     BlockMetrics block_metrics;
 
     BlockState block_state(db, vm, secondary_db);
-    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
+    record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const results,
         execute_block<traits>(
@@ -318,8 +319,9 @@ Result<BlockExecOutput> propose_block(
             call_tracers,
             state_tracers,
             system_call_state_tracer,
-            chain_context));
-    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
+            chain_context,
+            exec_recorder));
+    record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
@@ -505,8 +507,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing, Db *secondary_db,
-    RunloopMonadOverride const runloop_override)
+    bool const enable_tracing, ExecutionEventRecorder *const exec_recorder,
+    Db *secondary_db, RunloopMonadOverride const runloop_override)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     bool is_first_block = runloop_override.is_first_run();
@@ -658,6 +660,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &is_first_block,
              enable_tracing,
              &block_cache,
+             exec_recorder,
              secondary_db,
              runloop_override](
                 bytes32_t const &block_id,
@@ -669,7 +672,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 secondary_db->update_voted_metadata(
                     header.seqno - 1, header.parent_id());
             }
-            record_block_qc(header, last_finalized_block_number);
+            record_block_qc(exec_recorder, header, last_finalized_block_number);
 
             uint64_t const block_number = header.execution_inputs.number;
             auto body = read_body(header.block_body_id, body_dir);
@@ -685,6 +688,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             };
 
             record_block_start(
+                exec_recorder,
                 block_id,
                 chain_id,
                 header.execution_inputs,
@@ -719,13 +723,14 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     is_first_block,
                     enable_tracing,
                     block_cache,
+                    exec_recorder,
                     secondary_db,
                     runloop_override);
                 MONAD_ABORT_PRINTF("handled rev value %d", rev);
             };
             BOOST_OUTCOME_TRY(
                 BlockExecOutput const exec_output,
-                record_block_result(propose_dispatch()));
+                record_block_result(exec_recorder, propose_dispatch()));
 
             is_first_block = false;
 
@@ -762,7 +767,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 secondary_db->finalize(block, block_id);
             }
             block_hash_chain.finalize(block_id);
-            record_block_finalized(block_id, block);
+            record_block_finalized(exec_recorder, block_id, block);
             finalized_block_num = block;
 
             if (!verified_blocks.empty() &&
@@ -772,7 +777,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     secondary_db->update_verified_block(verified_blocks.back());
                 }
             }
-            record_block_verified(verified_blocks);
+            record_block_verified(exec_recorder, verified_blocks);
         }
 
         if (!to_finalize.empty()) {

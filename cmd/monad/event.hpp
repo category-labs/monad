@@ -26,10 +26,13 @@
 
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <string>
 #include <string_view>
 
 MONAD_NAMESPACE_BEGIN
+
+class OwnedEventRing;
 
 // clang-format off
 
@@ -59,9 +62,9 @@ constexpr uint8_t DEFAULT_EXEC_RING_PAYLOAD_BUF_SHIFT = 29;
 std::expected<EventRingConfig, std::string>
     try_parse_event_ring_config(std::string_view);
 
-/// Initialize the global recorder object for the execution event ring (an
-/// object inside the libmonad_execution_ethereum object library) with the
-/// given configuration options
-int init_execution_event_recorder(EventRingConfig);
+/// Initialize an execution event ring with the given configuration options;
+/// all initialization errors are logged
+int init_execution_event_ring(
+    EventRingConfig, std::unique_ptr<OwnedEventRing> &);
 
 MONAD_NAMESPACE_END

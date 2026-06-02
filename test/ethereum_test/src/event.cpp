@@ -39,15 +39,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-MONAD_NAMESPACE_BEGIN
-
-// These symbols link against the global objects in libmonad_execution_ethereum;
-// they remain uninitialized if execution event recording is disabled
-extern std::unique_ptr<OwnedEventRing> g_exec_event_ring;
-extern std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
-
-MONAD_NAMESPACE_END
-
 MONAD_TEST_NAMESPACE_BEGIN
 
 void find_execution_events(
@@ -119,7 +110,8 @@ ConsumeMore:
     goto ConsumeMore;
 }
 
-void init_exec_event_recorder(std::string const event_ring_path)
+std::unique_ptr<OwnedEventRing>
+init_exec_event_ring(std::string const event_ring_path)
 {
     constexpr uint8_t DESCRIPTORS_SHIFT = 20;
     constexpr uint8_t PAYLOAD_BUF_SHIFT = 28; // 256 MiB
@@ -163,16 +155,8 @@ void init_exec_event_recorder(std::string const event_ring_path)
     int const owned_fd = dup(ring_fd);
     MONAD_ASSERT_PRINTF(
         owned_fd != -1, "dup(2) failed: %s (%d)", strerror(errno), errno);
-    g_exec_event_ring =
-        std::make_unique<OwnedEventRing>(owned_fd, event_ring_path, exec_ring);
-
-    auto ex_recorder = ExecutionEventRecorder::from_event_ring(
-        g_exec_event_ring->get_event_ring());
-    MONAD_ASSERT_PRINTF(
-        ex_recorder.has_value(),
-        "event library error -- %s",
-        monad_event_ring_get_last_error());
-    g_exec_event_recorder = std::move(*ex_recorder);
+    return std::make_unique<OwnedEventRing>(
+        owned_fd, event_ring_path, exec_ring);
 }
 
 MONAD_TEST_NAMESPACE_END

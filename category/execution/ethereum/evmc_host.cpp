@@ -39,14 +39,13 @@
 MONAD_NAMESPACE_BEGIN
 
 EvmcHostBase::EvmcHostBase(
-    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-    evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
-    State &state, TxTraceContext const &tx_trace_context,
+    trace::StateTracer &state_tracer, evmc_tx_context const &tx_context,
+    BlockHashBuffer const &block_hash_buffer, State &state,
+    TxTraceContext const &tx_trace_context,
     bool const log_native_transfers) noexcept
     : block_hash_buffer_{block_hash_buffer}
     , tx_context_{tx_context}
     , state_{state}
-    , call_tracer_{call_tracer}
     , tx_trace_context_{tx_trace_context}
     , log_native_transfers_{log_native_transfers}
     , state_tracer_{state_tracer}
@@ -204,7 +203,7 @@ void EvmcHostBase::emit_log(
             log.topics.push_back({topics[i]});
         }
         state_.store_log(log);
-        call_tracer_.on_log(std::move(log));
+        trace::emit<trace::Log>(get_tx_trace_context(), std::move(log));
         return;
     }
     MONAD_CATCH(...)

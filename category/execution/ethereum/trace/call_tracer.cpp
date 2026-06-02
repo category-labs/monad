@@ -75,26 +75,6 @@ namespace
     }
 }
 
-void NoopCallTracer::on_enter(evmc_message const &) {}
-
-void NoopCallTracer::on_exit(evmc::Result const &) {}
-
-void NoopCallTracer::on_log(Receipt::Log) {}
-
-void NoopCallTracer::on_self_destruct(
-    Address const &, Address const &, uint256_t const &)
-{
-}
-
-void NoopCallTracer::on_finish(uint64_t const) {}
-
-void NoopCallTracer::reset() {}
-
-std::span<CallFrame const> NoopCallTracer::get_call_frames() const
-{
-    return {};
-}
-
 CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
     : CallTracer(tx, frames, std::numeric_limits<size_t>::max())
 {
@@ -213,8 +193,10 @@ CallTracer::CallTracer(
     frames_.reserve(initial_capacity);
 }
 
-void CallTracer::on_enter(evmc_message const &msg)
+void CallTracer::operator()(monad::trace::Enter const &op)
 {
+    auto const &msg = op.message;
+
     if (!(size_ += sizeof(CallFrame)) || !(size_ += msg.input_size)) {
         return;
     }
@@ -270,8 +252,10 @@ void CallTracer::on_enter(evmc_message const &msg)
     });
 }
 
-void CallTracer::on_exit(evmc::Result const &res)
+void CallTracer::operator()(monad::trace::Exit const &op)
 {
+    auto const &res = op.result;
+
     size_t const output_size =
         res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT
             ? res.output_size
@@ -301,8 +285,10 @@ void CallTracer::on_exit(evmc::Result const &res)
     }
 }
 
-void CallTracer::on_log(Receipt::Log log)
+void CallTracer::operator()(monad::trace::Log const &op)
 {
+    Receipt::Log log = op.log;
+
     if (!(size_ += sizeof(CallFrame::Log)) || !(size_ += log.data.size())) {
         return;
     }
@@ -319,10 +305,12 @@ void CallTracer::on_log(Receipt::Log log)
     frame.logs->emplace_back(std::move(log), frames_stack_.position());
 }
 
-void CallTracer::on_self_destruct(
-    Address const &from, Address const &to,
-    uint256_t const &transferred_balance)
+void CallTracer::operator()(monad::trace::SelfDestruct const &op)
 {
+    auto const &from = op.from;
+    auto const &to = op.to;
+    auto const &transferred_balance = op.transferred_balance;
+
     if (!(size_ += sizeof(CallFrame))) {
         return;
     }
@@ -345,8 +333,10 @@ void CallTracer::on_self_destruct(
     });
 }
 
-void CallTracer::on_finish(uint64_t const gas_used)
+void CallTracer::operator()(monad::trace::Finish const &op)
 {
+    auto const gas_used = op.gas_used;
+
     if (!size_) {
         return;
     }
@@ -358,16 +348,18 @@ void CallTracer::on_finish(uint64_t const gas_used)
     frames_.front().gas_used = gas_used;
 }
 
-void CallTracer::reset()
+void CallTracer::operator()(monad::trace::CallReset const &op)
 {
+    (void)op;
+
     frames_.clear();
     frames_stack_.reset();
     size_.reset();
 }
 
-std::span<CallFrame const> CallTracer::get_call_frames() const
+void CallTracer::operator()(monad::trace::GetCallFrames const &op)
 {
-    return frames_;
+    *op.call_frames = frames_;
 }
 
 void CallTracer::check_size_limit() const
@@ -387,7 +379,8 @@ nlohmann::json CallTracer::to_json() const
     nlohmann::json value{};
 
     MONAD_ASSERT_THROW(!frames_.empty(), "Frames vector is empty");
-    MONAD_ASSERT_THROW(frames_[0].depth == 0, "First frame depth is not zero");
+    MONAD_ASSERT_THROW(
+        frames_[0].depth == 0, "First frame depth is not zero");
     size_t pos = 0;
     to_json_helper(frames_, value, pos);
 

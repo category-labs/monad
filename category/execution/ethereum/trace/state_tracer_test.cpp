@@ -1221,7 +1221,6 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
     BlockHeader const header{};
     BlockHashBufferFinalized const block_hash_buffer;
 
-    NoopCallTracer noop_call_tracer;
     nlohmann::json diff;
     StateTracer state_tracer = StateDiffTracer{diff};
 
@@ -1244,7 +1243,6 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
         bs,
         metrics,
         prev,
-        noop_call_tracer,
         state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
@@ -1990,8 +1988,6 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
 
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-
-    NoopCallTracer call_tracer;
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const tx{};
     auto const chain_ctx =
@@ -2000,8 +1996,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
     trace::StateTracer state_tracer = trace::CodeTracer{};
     TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
-        state_tracer,
+                state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -2041,8 +2036,6 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
 
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-
-    NoopCallTracer call_tracer;
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const tx{};
     auto const chain_ctx =
@@ -2051,8 +2044,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
     trace::StateTracer state_tracer = trace::CodeTracer{};
     TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
-        state_tracer,
+                state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -2102,8 +2094,6 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
 
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-
-    NoopCallTracer call_tracer;
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const tx{};
     auto const chain_ctx =
@@ -2112,8 +2102,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
     trace::StateTracer state_tracer = trace::CodeTracer{};
     TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
-        state_tracer,
+                state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -2310,8 +2299,6 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
         tx.authorization_list.push_back(auth);
 
         std::vector<std::optional<Address>> const authorities = {ADDR_B};
-
-        NoopCallTracer call_tracer;
         BlockHashBufferFinalized const block_hash_buffer;
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -2319,8 +2306,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
         trace::StateTracer state_tracer = trace::CodeTracer{};
         TxTraceContext const trace_context{};
         EvmcHost<typename TestFixture::Trait> host{
-            call_tracer,
-            state_tracer,
+                        state_tracer,
             EMPTY_TX_CONTEXT,
             block_hash_buffer,
             state,

@@ -57,7 +57,6 @@ class EvmcHostBase : public vm::Host
 protected:
     evmc_tx_context const &tx_context_;
     State &state_;
-    CallTracerBase &call_tracer_;
     TxTraceContext const &tx_trace_context_;
 
 public:
@@ -65,8 +64,8 @@ public:
     trace::StateTracer &state_tracer_;
 
     EvmcHostBase(
-        CallTracerBase &, trace::StateTracer &, evmc_tx_context const &,
-        BlockHashBuffer const &, State &, TxTraceContext const &,
+        trace::StateTracer &, evmc_tx_context const &, BlockHashBuffer const &,
+        State &, TxTraceContext const &tx_trace_context,
         bool log_native_transfers) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
@@ -113,7 +112,7 @@ public:
     }
 };
 
-static_assert(sizeof(EvmcHostBase) == 80);
+static_assert(sizeof(EvmcHostBase) == 72);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -125,14 +124,14 @@ struct EvmcHost final : public EvmcHostBase
     ChainContext<traits> const &chain_ctx_;
 
     EvmcHost(
-        CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-        evmc_tx_context const &tx_context,
+        trace::StateTracer &state_tracer, evmc_tx_context const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
         TxTraceContext const &tx_trace_context,
         bool const log_native_transfers = false) noexcept
-        : EvmcHostBase{call_tracer, state_tracer, tx_context, block_hash_buffer, state, tx_trace_context, log_native_transfers}
+        : EvmcHostBase{state_tracer, tx_context, block_hash_buffer, state, tx_trace_context, log_native_transfers}
+
         , tx_{tx}
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
@@ -165,12 +164,12 @@ struct EvmcHost final : public EvmcHostBase
             auto const [result, transferred_balance] =
                 state_.selfdestruct<traits>(address, beneficiary);
 
-            call_tracer_.on_self_destruct(
-                address, beneficiary, transferred_balance);
+            trace::emit<trace::SelfDestruct>(
+                tx_trace_context_, address, beneficiary, transferred_balance);
 
             emit_native_transfer_logs<traits>(
                 state_,
-                call_tracer_,
+                tx_trace_context_,
                 address,
                 beneficiary,
                 transferred_balance,
@@ -268,11 +267,6 @@ struct EvmcHost final : public EvmcHostBase
         }
     }
 
-    CallTracerBase &get_call_tracer() noexcept
-    {
-        return call_tracer_;
-    }
-
     TxTraceContext const &get_tx_trace_context() const noexcept override
     {
         return tx_trace_context_;
@@ -280,10 +274,10 @@ struct EvmcHost final : public EvmcHostBase
 };
 
 static_assert(
-    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 144);
+    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
 static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 144);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

@@ -112,24 +112,22 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
     static_assert(traits::evm_rev() > EVMC_HOMESTEAD);
 
-    if constexpr (traits::evm_rev() < EVMC_BERLIN) {
-        return 21'000 + g_data<traits>(tx) + g_txn_create(tx);
+    uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx);
+
+    // EIP-2930: access-list and storage-key cost (Berlin)
+    if constexpr (traits::evm_rev() >= EVMC_BERLIN) {
+        gas += g_access_and_storage(tx);
     }
-    else if constexpr (traits::evm_rev() < EVMC_SHANGHAI) {
-        return 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
-               g_access_and_storage(tx);
+    // EIP-3860: per-word initcode cost (Shanghai)
+    if constexpr (traits::evm_rev() >= EVMC_SHANGHAI) {
+        gas += g_extra_cost_init(tx);
     }
-    else if constexpr (traits::evm_rev() < EVMC_CANCUN) {
-        // EIP-3860
-        return 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
-               g_access_and_storage(tx) + g_extra_cost_init(tx);
+    // EIP-7702: authorization-list cost (Prague)
+    if constexpr (traits::evm_rev() >= EVMC_PRAGUE) {
+        gas += g_authorization(tx);
     }
-    else {
-        // EIP-7702
-        return 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
-               g_access_and_storage(tx) + g_extra_cost_init(tx) +
-               g_authorization(tx);
-    }
+
+    return gas;
 }
 
 EXPLICIT_TRAITS(intrinsic_gas);

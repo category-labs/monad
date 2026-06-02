@@ -22,16 +22,21 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class ExecutionEventRecorder;
+
 /// Record the BLOCK_QC event, using the QC for the parent block that is
 /// presented in a newly proposed block's header
 template <class MonadConsensusBlockHeader>
 void record_block_qc(
-    MonadConsensusBlockHeader const &, uint64_t finalized_block_num);
+    ExecutionEventRecorder *, MonadConsensusBlockHeader const &,
+    uint64_t finalized_block_num);
 
 /// Record the BLOCK_FINALIZED event
-void record_block_finalized(bytes32_t const &block_id, uint64_t block_number);
+void record_block_finalized(
+    ExecutionEventRecorder *, bytes32_t const &block_id, uint64_t block_number);
 
 /// Record a BLOCK_VERIFIED event for each of the given block numbers
-void record_block_verified(std::span<uint64_t const> verified_blocks);
+void record_block_verified(
+    ExecutionEventRecorder *, std::span<uint64_t const> verified_blocks);
 
 MONAD_NAMESPACE_END

@@ -36,6 +36,7 @@ MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
 class BlockState;
+class ExecutionEventRecorder;
 class State;
 struct Block;
 struct Chain;
@@ -54,7 +55,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     std::span<std::unique_ptr<CallTracerBase>>,
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
-    ChainContext<traits> const &chain_ctx, bool trace_transfers = false);
+    ChainContext<traits> const &chain_ctx, ExecutionEventRecorder *,
+    bool trace_transfers = false);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
@@ -64,7 +66,8 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::unique_ptr<CallTracerBase>>,
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
     trace::StateTracer &system_call_state_tracer,
-    ChainContext<traits> const &chain_ctx, bool trace_transfers = false);
+    ChainContext<traits> const &chain_ctx, ExecutionEventRecorder *,
+    bool trace_transfers = false);
 
 std::vector<std::optional<Address>>
 recover_senders(std::span<Transaction const>, fiber::PriorityPool &);

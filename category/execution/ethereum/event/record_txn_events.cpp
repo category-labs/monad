@@ -295,11 +295,10 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 void record_txn_header_events(
-    uint32_t const txn_num, Transaction const &transaction,
-    Address const &sender,
+    ExecutionEventRecorder *const exec_recorder, uint32_t const txn_num,
+    Transaction const &transaction, Address const &sender,
     std::span<std::optional<Address> const> const authorities)
 {
-    ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
     if (exec_recorder == nullptr) {
         return;
     }
@@ -358,10 +357,10 @@ void record_txn_header_events(
 }
 
 void record_txn_output_events(
-    uint32_t const txn_num, Receipt const &receipt,
-    std::span<CallFrame const> const call_frames, State const &txn_state)
+    ExecutionEventRecorder *const exec_recorder, uint32_t const txn_num,
+    Receipt const &receipt, std::span<CallFrame const> const call_frames,
+    State const &txn_state)
 {
-    ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
     if (exec_recorder == nullptr) {
         return;
     }
@@ -434,9 +433,9 @@ void record_txn_output_events(
 }
 
 void record_txn_error_event(
-    uint32_t const txn_num, Result<Receipt>::error_type const &txn_error)
+    ExecutionEventRecorder *const exec_recorder, uint32_t const txn_num,
+    Result<Receipt>::error_type const &txn_error)
 {
-    ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
     if (exec_recorder == nullptr) {
         return;
     }
@@ -472,11 +471,12 @@ void record_txn_error_event(
 // is called from execute_block.cpp, to record prologue and epilogue accesses;
 // transaction-scope state accesses use record_txn_output_events instead
 void record_account_access_events(
+    ExecutionEventRecorder *const exec_recorder,
     monad_exec_account_access_context const ctx, State const &state)
 {
-    if (ExecutionEventRecorder *const e = g_exec_event_recorder.get()) {
+    if (exec_recorder != nullptr) {
         return record_account_access_events_internal(
-            e, ctx, std::nullopt, state);
+            exec_recorder, ctx, std::nullopt, state);
     }
 }
 

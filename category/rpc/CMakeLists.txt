@@ -23,6 +23,10 @@ add_library(
   monad_rpc
   OBJECT
   # rpc
+  "chain_context_buffer.cpp"
+  "chain_context_buffer.hpp"
+  "eth_simulate_block_hash_buffer.cpp"
+  "eth_simulate_block_hash_buffer.hpp"
   "lazy_block_hash.cpp" 
   "lazy_block_hash.hpp"
   "monad_executor.cpp" 

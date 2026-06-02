@@ -259,10 +259,7 @@ int main(int argc, char **argv)
     std::ios_base::sync_with_stdio(false);
     auto args = parse_args(argc, argv);
     std::string const rev = uppercase(args.revision);
-    if (rev == "BYZANTIUM") {
-        return mce_main<EvmTraits<EVMC_BYZANTIUM>>(args);
-    }
-    else if (rev == "CONSTANTINOPLE") {
+    if (rev == "CONSTANTINOPLE") {
         return mce_main<EvmTraits<EVMC_CONSTANTINOPLE>>(args);
     }
     else if (rev == "PETERSBURG") {

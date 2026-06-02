@@ -33,14 +33,14 @@ MONAD_NAMESPACE_BEGIN
 // creates its own LazyBlockHash instance.
 class LazyBlockHash : public BlockHashBuffer
 {
-    using BlockHashBuffer::N;
-
     mpt::RODb const &db_;
     uint64_t const n_;
     using Cache = static_lru_cache<uint64_t, bytes32_t>;
     mutable Cache blockhash_cache_;
 
 public:
+    using BlockHashBuffer::N;
+
     LazyBlockHash(mpt::RODb const &db, uint64_t const n);
     ~LazyBlockHash() override = default;
 

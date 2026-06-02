@@ -119,6 +119,9 @@ add_library(
   "lru/static_lru_cache.hpp"
   "mem/batch_mem_pool.hpp"
   "synchronization/spin_lock.hpp"
+  # cli
+  "cli/help_formatter.cpp"
+  "cli/help_formatter.hpp"
   # event
   "event/event_iterator.h"
   "event/event_iterator_inline.h"
@@ -159,6 +162,9 @@ add_library(
   # runtime
   "runtime/non_temporal_memory.hpp"
   "runtime/uint256.hpp"
+  "runtime/uint256/intrinsics.hpp"
+  "runtime/uint256/portable.hpp"
+  "runtime/uint256/types.hpp"
   "runtime/unaligned.hpp"
   # test
   "test_util/gtest_signal_stacktrace_printer.hpp"
@@ -216,6 +222,7 @@ endif()
 
 target_link_libraries(monad_core PUBLIC ankerl_hash)
 target_link_libraries(monad_core PUBLIC Boost::fiber TBB::tbb)
+target_link_libraries(monad_core PUBLIC CLI11::CLI11)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)

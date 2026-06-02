@@ -91,6 +91,8 @@ Result<void> process_ethereum_block(
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing)
 {
+    static_assert(traits::evm_rev() > EVMC_BYZANTIUM);
+
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
 
@@ -132,8 +134,9 @@ Result<void> process_ethereum_block(
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{
-        block.transactions.size()};
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
+        block.transactions.size());
+    trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         call_tracers[i] =
             enable_tracing
@@ -141,8 +144,8 @@ Result<void> process_ethereum_block(
                       block.transactions[i], call_frames[i])}
                 : std::unique_ptr<CallTracerBase>{
                       std::make_unique<NoopCallTracer>()};
-        state_tracers[i] = std::unique_ptr<trace::StateTracer>{
-            std::make_unique<trace::StateTracer>(std::monostate{})};
+        state_tracers[i] =
+            std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
     // Core execution: transaction-level EVM execution that tracks state
@@ -166,6 +169,7 @@ Result<void> process_ethereum_block(
             block_metrics,
             call_tracers,
             state_tracers,
+            system_call_state_tracer,
             chain_ctx));
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
@@ -187,14 +191,7 @@ Result<void> process_ethereum_block(
     db.commit(
         block_id, builder, block.header, std::move(state), [&](BlockHeader &h) {
             // second stage: populate block header
-            if constexpr (traits::evm_rev() <= EVMC_BYZANTIUM) {
-                // TrieDb receipts root is not valid pre-Byzantium; use the
-                // block's original receipts root.
-                h.receipts_root = block.header.receipts_root;
-            }
-            else {
-                h.receipts_root = db.receipts_root();
-            }
+            h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();
             h.withdrawals_root = db.withdrawals_root();
             h.transactions_root = db.transactions_root();

@@ -210,25 +210,30 @@ uint256_t calculate_txn_award(
 
 EXPLICIT_TRAITS(calculate_txn_award);
 
+template <Traits traits>
 uint256_t
 calc_blob_fee(Transaction const &tx, uint64_t const excess_blob_gas) noexcept
 {
-    return get_base_fee_per_blob_gas(excess_blob_gas) * get_total_blob_gas(tx);
+    return get_base_fee_per_blob_gas<traits>(excess_blob_gas) *
+           get_total_blob_gas(tx);
 }
 
+EXPLICIT_TRAITS(calc_blob_fee);
+
+template <Traits traits>
 uint256_t get_base_fee_per_blob_gas(uint64_t const excess_blob_gas) noexcept
 {
     constexpr uint256_t MIN_BASE_FEE_PER_BLOB_GAS = 1;
-    constexpr uint256_t BLOB_BASE_FEE_UPDATE_FRACTION = 3338477;
     return fake_exponential(
         MIN_BASE_FEE_PER_BLOB_GAS,
         uint256_t{excess_blob_gas},
-        BLOB_BASE_FEE_UPDATE_FRACTION);
+        uint256_t{blob_base_fee_update_fraction<traits>()});
 }
+
+EXPLICIT_TRAITS(get_base_fee_per_blob_gas);
 
 uint64_t get_total_blob_gas(Transaction const &tx) noexcept
 {
-    constexpr uint64_t GAS_PER_BLOB{131072};
     return GAS_PER_BLOB * tx.blob_versioned_hashes.size();
 }
 

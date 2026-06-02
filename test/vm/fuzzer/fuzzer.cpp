@@ -207,10 +207,10 @@ static evmc::Result transition(
             return p.second.destructed;
         });
 
-    // Delete empty accounts after every transaction. This is strictly required
-    // until Byzantium where intermediate state root hashes are part of the
-    // transaction receipt.
-    // TODO: Consider limiting this only to Spurious Dragon.
+    // EIP-161 (Spurious Dragon) requires touched-empty accounts to be
+    // deleted at the end of each transaction as part of the state
+    // transition. The fuzzer's State does not perform this cleanup
+    // automatically, so we do it here after every call.
     std::erase_if(
         state.get_modified_accounts(),
         [](std::pair<address const, Account> const &p) noexcept {
@@ -375,7 +375,6 @@ static arguments parse_args(int const argc, char **const argv)
         "Print message result statistics when logging");
 
     auto const rev_map = std::map<std::string, evmc_revision>{
-        {"BYZANTIUM", EVMC_BYZANTIUM},
         {"CONSTANTINOPLE", EVMC_CONSTANTINOPLE},
         {"PETERSBURG", EVMC_PETERSBURG},
         {"ISTANBUL", EVMC_ISTANBUL},

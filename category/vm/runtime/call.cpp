@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
-#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
@@ -276,7 +275,8 @@ namespace monad::vm::runtime
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, int64_t const remaining_block_base_gas)
     {
-        MONAD_DEBUG_ASSERT(traits::evm_rev() >= EVMC_BYZANTIUM);
+        static_assert(traits::evm_rev() > EVMC_BYZANTIUM);
+
         *result_ptr = call_impl<traits>(
             ctx,
             *gas_ptr,

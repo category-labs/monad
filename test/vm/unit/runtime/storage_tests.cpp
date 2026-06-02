@@ -96,6 +96,8 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_BYZANTIUM);
+
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
     auto store = TestFixture::wrap(sstore<traits>);
@@ -133,9 +135,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
             return do_test(28000, 19900);
         }
     }
-    if constexpr (
-        traits::evm_rev() <= EVMC_BYZANTIUM ||
-        traits::evm_rev() == EVMC_PETERSBURG) {
+    if constexpr (traits::evm_rev() == EVMC_PETERSBURG) {
         do_test(15000, 15000);
     }
     else if constexpr (traits::evm_rev() == EVMC_CONSTANTINOPLE) {
@@ -151,6 +151,8 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
 {
+    static_assert(TestFixture::Trait::evm_rev() > EVMC_BYZANTIUM);
+
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
     auto store = TestFixture::wrap(sstore<traits>);
@@ -200,9 +202,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
             return do_test(0, 2800);
         }
     }
-    if constexpr (
-        traits::evm_rev() <= EVMC_BYZANTIUM ||
-        traits::evm_rev() == EVMC_PETERSBURG) {
+    if constexpr (traits::evm_rev() == EVMC_PETERSBURG) {
         do_test(8100, 0);
     }
     else if constexpr (traits::evm_rev() == EVMC_CONSTANTINOPLE) {

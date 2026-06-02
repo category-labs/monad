@@ -212,8 +212,7 @@ constexpr Result<void> static_validate_4844(Block const &block)
                 blob_gas_used += get_total_blob_gas(tx);
             }
         }
-        constexpr uint64_t MAX_BLOB_GAS_PER_BLOCK = 786432;
-        if (MONAD_UNLIKELY(blob_gas_used > MAX_BLOB_GAS_PER_BLOCK)) {
+        if (MONAD_UNLIKELY(blob_gas_used > max_blob_gas_per_block<traits>())) {
             return BlockError::GasAboveLimit;
         }
         if (MONAD_UNLIKELY(
@@ -335,7 +334,8 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
          "system call target has no code",
          {}},
         {BlockError::SystemCallFailed, "system call failed", {}},
-        {BlockError::InvalidRequestsHash, "invalid requests hash", {}}};
+        {BlockError::InvalidRequestsHash, "invalid requests hash", {}},
+        {BlockError::InvalidDepositLog, "invalid deposit log", {}}};
 
     return v;
 }

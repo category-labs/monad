@@ -13,7 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
+#include <category/execution/ethereum/validate_block.hpp>
 
 #include <gtest/gtest.h>
 
@@ -21,6 +24,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
+#include <vector>
 
 using namespace monad;
 
@@ -45,6 +50,69 @@ namespace
         0x1bfdf42ee5c7c1cf68be7759dc298f49ff824ceea15be154dedd2d40822de069_bytes32;
     constexpr auto REVERSED_0X02_0X01_REQUESTS_HASH =
         0x00a28f3139e5ac6a7c8aa970bce5488f9669e3f5db94205291b6bf9772478bf0_bytes32;
+
+    constexpr auto DEPOSIT_CONTRACT_ADDRESS =
+        0x00000000219ab540356cbb839cbe05303d7705fa_address;
+    constexpr auto OTHER_ADDRESS =
+        0x0000000000000000000000000000000000000001_address;
+    constexpr auto DEPOSIT_EVENT_SIGNATURE_HASH =
+        0x649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5_bytes32;
+
+    byte_string make_bytes(std::size_t const size, uint8_t const seed)
+    {
+        byte_string bytes(size, uint8_t{0});
+        for (std::size_t i = 0; i < bytes.size(); ++i) {
+            bytes[i] = static_cast<uint8_t>(seed + i);
+        }
+        return bytes;
+    }
+
+    struct DepositEvent
+    {
+        byte_string log_data;
+        byte_string request_data;
+    };
+
+    DepositEvent make_deposit_event(uint8_t const seed)
+    {
+        byte_string const pubkey = make_bytes(48, seed);
+        byte_string const withdrawal_credentials = make_bytes(32, seed + 0x30);
+        byte_string const amount = make_bytes(8, seed + 0x50);
+        byte_string const signature = make_bytes(96, seed + 0x60);
+        byte_string const index = make_bytes(8, seed + 0xc0);
+
+        AbiEncoder encoder;
+        encoder.add_bytes(pubkey);
+        encoder.add_bytes(withdrawal_credentials);
+        encoder.add_bytes(amount);
+        encoder.add_bytes(signature);
+        encoder.add_bytes(index);
+
+        byte_string request_data;
+        request_data += pubkey;
+        request_data += withdrawal_credentials;
+        request_data += amount;
+        request_data += signature;
+        request_data += index;
+
+        return {
+            .log_data = encoder.encode_final(),
+            .request_data = std::move(request_data)};
+    }
+
+    Receipt::Log make_log(
+        Address const address, std::vector<bytes32_t> topics, byte_string data)
+    {
+        return {
+            .data = std::move(data),
+            .topics = std::move(topics),
+            .address = address};
+    }
+
+    Receipt make_receipt(std::vector<Receipt::Log> logs)
+    {
+        return {.logs = std::move(logs)};
+    }
 }
 
 TEST(ProcessRequests, EmptyRequestListHash)
@@ -124,4 +192,124 @@ TEST(ProcessRequests, NoncanonicalRequestOrderIsPreserved)
     EXPECT_NE(
         compute_requests_hash(ordered_requests),
         compute_requests_hash(reversed_requests));
+}
+
+TEST(ProcessRequests, ExtractDepositRequestsDecodesCanonicalEvent)
+{
+    auto const deposit = make_deposit_event(0x10);
+    std::vector<Receipt> const receipts{make_receipt({make_log(
+        DEPOSIT_CONTRACT_ADDRESS,
+        {DEPOSIT_EVENT_SIGNATURE_HASH},
+        deposit.log_data)})};
+
+    auto const result = extract_deposit_requests(receipts);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), deposit.request_data);
+}
+
+TEST(ProcessRequests, ExtractDepositRequestsAppendsLogsInReceiptOrder)
+{
+    auto const first = make_deposit_event(0x10);
+    auto const second = make_deposit_event(0x20);
+    std::vector<Receipt> const receipts{
+        make_receipt({make_log(
+            DEPOSIT_CONTRACT_ADDRESS,
+            {DEPOSIT_EVENT_SIGNATURE_HASH},
+            first.log_data)}),
+        make_receipt({make_log(
+            DEPOSIT_CONTRACT_ADDRESS,
+            {DEPOSIT_EVENT_SIGNATURE_HASH},
+            second.log_data)})};
+    byte_string expected = first.request_data;
+    expected += second.request_data;
+
+    auto const result = extract_deposit_requests(receipts);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), expected);
+}
+
+TEST(ProcessRequests, ExtractDepositRequestsAppendsLogsInSingleReceiptOrder)
+{
+    auto const first = make_deposit_event(0x10);
+    auto const second = make_deposit_event(0x20);
+    std::vector<Receipt> const receipts{make_receipt({
+        make_log(
+            DEPOSIT_CONTRACT_ADDRESS,
+            {DEPOSIT_EVENT_SIGNATURE_HASH},
+            first.log_data),
+        make_log(
+            DEPOSIT_CONTRACT_ADDRESS,
+            {DEPOSIT_EVENT_SIGNATURE_HASH},
+            second.log_data),
+    })};
+    byte_string expected = first.request_data;
+    expected += second.request_data;
+
+    auto const result = extract_deposit_requests(receipts);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), expected);
+}
+
+TEST(ProcessRequests, ExtractDepositRequestsIgnoresNonDepositLogs)
+{
+    auto const deposit = make_deposit_event(0x10);
+    std::vector<Receipt> const receipts{make_receipt({
+        make_log(
+            OTHER_ADDRESS, {DEPOSIT_EVENT_SIGNATURE_HASH}, deposit.log_data),
+        make_log(DEPOSIT_CONTRACT_ADDRESS, {}, deposit.log_data),
+        make_log(DEPOSIT_CONTRACT_ADDRESS, {bytes32_t{}}, deposit.log_data),
+    })};
+
+    auto const result = extract_deposit_requests(receipts);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result.value().empty());
+}
+
+TEST(ProcessRequests, ExtractDepositRequestsRejectsBadHeadOffset)
+{
+    auto deposit = make_deposit_event(0x10);
+    deposit.log_data[31] ^= 0x01;
+    std::vector<Receipt> const receipts{make_receipt({make_log(
+        DEPOSIT_CONTRACT_ADDRESS,
+        {DEPOSIT_EVENT_SIGNATURE_HASH},
+        deposit.log_data)})};
+
+    auto const result = extract_deposit_requests(receipts);
+
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::InvalidDepositLog);
+}
+
+TEST(ProcessRequests, ExtractDepositRequestsRejectsBadFieldLength)
+{
+    auto deposit = make_deposit_event(0x10);
+    deposit.log_data[351] = 0x09;
+    std::vector<Receipt> const receipts{make_receipt({make_log(
+        DEPOSIT_CONTRACT_ADDRESS,
+        {DEPOSIT_EVENT_SIGNATURE_HASH},
+        deposit.log_data)})};
+
+    auto const result = extract_deposit_requests(receipts);
+
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::InvalidDepositLog);
+}
+
+TEST(ProcessRequests, ExtractDepositRequestsRejectsTruncatedEvent)
+{
+    auto deposit = make_deposit_event(0x10);
+    deposit.log_data.pop_back();
+    std::vector<Receipt> const receipts{make_receipt({make_log(
+        DEPOSIT_CONTRACT_ADDRESS,
+        {DEPOSIT_EVENT_SIGNATURE_HASH},
+        deposit.log_data)})};
+
+    auto const result = extract_deposit_requests(receipts);
+
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::InvalidDepositLog);
 }

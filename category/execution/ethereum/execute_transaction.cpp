@@ -73,7 +73,7 @@ constexpr void irrevocable_change(
     uint256_t blob_gas = 0;
     if constexpr (traits::evm_rev() >= EVMC_CANCUN) {
         blob_gas = (tx.type == TransactionType::eip4844)
-                       ? calc_blob_fee(tx, excess_blob_gas)
+                       ? calc_blob_fee<traits>(tx, excess_blob_gas)
                        : 0;
     }
     auto const upfront_cost =
@@ -142,7 +142,9 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         state.access_account(*authority);
 
         // 5. Verify the code of authority is empty or already delegated.
-        auto const icode = state.get_code(*authority)->intercode();
+        auto const code_hash = state.get_code_hash(*authority);
+        auto const icode = state.read_code(code_hash)->intercode();
+        trace::on_read_code(host.state_tracer_, code_hash, icode);
         auto const code = std::span{icode->code(), *icode->code_size()};
         if (!(code.empty() || vm::evm::is_delegated(code))) {
             continue;
@@ -235,6 +237,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
             tx_,
             header_.base_fee_per_gas,
             host.i_,
+            host.state_tracer_,
             host.chain_ctx_);
     }
 
@@ -301,7 +304,8 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
+    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
+    bool const trace_transfers)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header}
     , i_{i}
@@ -312,6 +316,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , prev_{prev}
     , call_tracer_{call_tracer}
     , state_tracer_{state_tracer}
+    , trace_transfers_{trace_transfers}
 {
     record_txn_header_events(static_cast<uint32_t>(i), tx, sender, authorities);
 }
@@ -325,7 +330,8 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
             sender_,
             state,
             header_.base_fee_per_gas.value_or(0),
-            authorities_);
+            authorities_,
+            state_tracer_);
         if (!result) {
             // RELAXED MERGE
             // if `validate_transaction` fails using current values, require
@@ -347,7 +353,8 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         tx_,
         header_.base_fee_per_gas,
         i_,
-        chain_ctx_};
+        chain_ctx_,
+        trace_transfers_};
 
     return ExecuteTransactionNoValidation<traits>::operator()(state, host);
 }

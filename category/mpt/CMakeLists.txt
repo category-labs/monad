@@ -81,6 +81,9 @@ monad_compile_options(monad-mpt)
 target_link_libraries(monad-mpt PUBLIC monad_execution PkgConfig::zstd
                                        PkgConfig::archive CLI11::CLI11)
 
+target_compile_definitions(monad-mpt
+                           PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+
 function(add_trie_test)
   set(ONE_VALUE_ARGS TARGET TEST_FILTER)
   set(MULTI_VALUE_ARGS SOURCES LINK_LIBRARIES)

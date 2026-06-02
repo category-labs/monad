@@ -17,6 +17,7 @@
 #include <category/core/basic_formatter.hpp> // NOLINT
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/cli/help_formatter.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/keccak.h>
@@ -800,7 +801,10 @@ int main(int const argc, char *argv[])
     uint64_t total_shards = 1;
     uint64_t shard_number = 0;
 
-    CLI::App cli{"monad-cli"};
+    CLI::App cli{
+        "Inspection and snapshot tooling for a Monad execution database.",
+        "monad-cli"};
+    monad::cli::HelpFormatter{GIT_COMMIT_HASH}.install(cli);
     cli.add_option(
            "--db",
            dbname_paths,

@@ -18,13 +18,15 @@ fn main() {
         monad_build::repository_root().join("category/event"),
         monad_build::MonadCMakeLinkage::Static,
     )
+    .link_libraries([
+        "zstd",
+        if build_rs::input::cargo_cfg_target_os() == "linux" {
+            "hugetlbfs"
+        } else {
+            "monad_event_os_compat"
+        },
+    ])
     .build("monad_event");
-
-    println!("cargo:rustc-link-lib=zstd");
-    #[cfg(target_os = "linux")]
-    println!("cargo:rustc-link-lib=hugetlbfs");
-    #[cfg(not(target_os = "linux"))]
-    println!("cargo:rustc-link-lib=monad_event_os_compat");
 
     monad_build::bindgen::MonadBindgen::default()
         .header("wrapper.h")

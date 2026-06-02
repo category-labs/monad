@@ -39,16 +39,6 @@ add_executable(monad-cli monad_cli.cpp)
 monad_compile_options(monad-cli)
 target_link_libraries(monad-cli PUBLIC monad_execution CLI11::CLI11)
 
-if(DEFINED ENV{GIT_COMMIT_HASH})
-  set(GIT_COMMIT_HASH $ENV{GIT_COMMIT_HASH})
-else()
-  execute_process(
-    COMMAND git rev-parse HEAD
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE GIT_COMMIT_HASH
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-endif()
-
 target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 target_compile_definitions(monad-cli
                            PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")

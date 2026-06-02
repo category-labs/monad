@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/likely.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -35,14 +36,15 @@
 MONAD_NAMESPACE_BEGIN
 
 EvmcHostBase::EvmcHostBase(
-    CallTracerBase &call_tracer, evmc_tx_context const &tx_context,
-    BlockHashBuffer const &block_hash_buffer, State &state,
-    bool const log_native_transfers) noexcept
+    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
+    evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
+    State &state, bool const log_native_transfers) noexcept
     : block_hash_buffer_{block_hash_buffer}
     , tx_context_{tx_context}
     , state_{state}
     , call_tracer_{call_tracer}
     , log_native_transfers_{log_native_transfers}
+    , state_tracer_{state_tracer}
 {
 }
 
@@ -86,6 +88,17 @@ EvmcHostBase::get_balance(evmc::address const &address) const noexcept
 size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
 {
     try {
+        if (MONAD_UNLIKELY(
+                std::holds_alternative<trace::CodeTracer>(state_tracer_))) {
+            bytes32_t const hash = state_.get_code_hash(address);
+            if (hash == NULL_HASH) {
+                return 0;
+            }
+            auto const vcode = state_.read_code(hash);
+            MONAD_ASSERT(vcode);
+            trace::on_read_code(state_tracer_, hash, vcode->intercode());
+            return vcode->intercode()->size();
+        }
         return state_.get_code_size(address);
     }
     catch (...) {
@@ -114,6 +127,17 @@ size_t EvmcHostBase::copy_code(
     size_t const size) const noexcept
 {
     try {
+        if (MONAD_UNLIKELY(
+                std::holds_alternative<trace::CodeTracer>(state_tracer_))) {
+            bytes32_t const hash = state_.get_code_hash(address);
+            if (hash != NULL_HASH) {
+                auto const vcode = state_.read_code(hash);
+                MONAD_ASSERT(vcode);
+                trace::on_read_code(state_tracer_, hash, vcode->intercode());
+                return vcode->intercode()->copy_code(offset, data, size);
+            }
+            return 0;
+        }
         return state_.copy_code(address, offset, data, size);
     }
     catch (...) {

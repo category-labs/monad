@@ -92,7 +92,7 @@ namespace monad::vm::interpreter
     template <Traits traits>
     consteval InstrTable make_instruction_table()
     {
-        static_assert(traits::evm_rev() > EVMC_SPURIOUS_DRAGON);
+        static_assert(traits::evm_rev() > EVMC_BYZANTIUM);
 
         constexpr auto since = [](evmc_revision first, InstrEval impl) {
             return (traits::evm_rev() >= first) ? impl : invalid;
@@ -127,9 +127,9 @@ namespace monad::vm::interpreter
             xor_<traits>, // 0x18,
             not_<traits>, // 0x19,
             byte<traits>, // 0x1A,
-            since(EVMC_CONSTANTINOPLE, shl<traits>), // 0x1B,
-            since(EVMC_CONSTANTINOPLE, shr<traits>), // 0x1C,
-            since(EVMC_CONSTANTINOPLE, sar<traits>), // 0x1D,
+            shl<traits>, // 0x1B,
+            shr<traits>, // 0x1C,
+            sar<traits>, // 0x1D,
             since(EVMC_OSAKA, clz<traits>), // 0x1E,
             invalid, //
 
@@ -166,7 +166,7 @@ namespace monad::vm::interpreter
             extcodecopy<traits>, // 0x3C,
             returndatasize<traits>, // 0x3D,
             returndatacopy<traits>, // 0x3E,
-            since(EVMC_CONSTANTINOPLE, extcodehash<traits>), // 0x3F,
+            extcodehash<traits>, // 0x3F,
 
             blockhash<traits>, // 0x40,
             coinbase<traits>, // 0x41,
@@ -360,7 +360,7 @@ namespace monad::vm::interpreter
             callcode<traits>, // 0xF2,
             return_<traits>, // 0xF3,
             delegatecall<traits>, // 0xF4,
-            since(EVMC_CONSTANTINOPLE, create2<traits>), // 0xF5,
+            create2<traits>, // 0xF5,
             invalid, //
             invalid, //
             invalid, //

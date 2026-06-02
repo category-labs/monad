@@ -57,7 +57,8 @@ enum class BlockError
     WrongMerkleRoot,
     SystemCallMissingCode,
     SystemCallFailed,
-    InvalidRequestsHash
+    InvalidRequestsHash,
+    InvalidDepositLog
 };
 
 struct Chain;

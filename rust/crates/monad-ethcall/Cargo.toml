@@ -12,7 +12,7 @@ bench = false
 monad-cxx = { workspace = true }
 
 alloy-consensus = { workspace = true }
-alloy-eips = { workspace = true }
+alloy-eips = { workspace = true, features = ["serde"] }
 alloy-primitives = { workspace = true, features = ["serde"] }
 alloy-rlp = { workspace = true }
 alloy-sol-types = { workspace = true }

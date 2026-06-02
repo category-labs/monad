@@ -191,3 +191,19 @@ TYPED_TEST(TraitsTest, txn_award)
             Transaction{.max_fee_per_gas = 100'000'000'000}, 0, 90'000'000),
         uint256_t{9'000'000'000'000'000'000});
 }
+
+TYPED_TEST(TraitsTest, blob_schedule)
+{
+    if constexpr (TestFixture::Trait::eip_7691_active()) {
+        EXPECT_EQ(max_blobs_per_block<typename TestFixture::Trait>(), 9);
+        EXPECT_EQ(
+            blob_base_fee_update_fraction<typename TestFixture::Trait>(),
+            5'007'716);
+    }
+    else {
+        EXPECT_EQ(max_blobs_per_block<typename TestFixture::Trait>(), 6);
+        EXPECT_EQ(
+            blob_base_fee_update_fraction<typename TestFixture::Trait>(),
+            3'338'477);
+    }
+}

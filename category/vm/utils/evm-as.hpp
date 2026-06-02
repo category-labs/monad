@@ -37,11 +37,6 @@ namespace monad::vm::utils::evm_as
         return EvmBuilder<EvmTraits<constants::EARLIEST_SUPPORTED_EVM_FORK>>{};
     }
 
-    inline EvmBuilder<EvmTraits<EVMC_BYZANTIUM>> byzantium()
-    {
-        return EvmBuilder<EvmTraits<EVMC_BYZANTIUM>>{};
-    }
-
     inline EvmBuilder<EvmTraits<EVMC_CONSTANTINOPLE>> constantinople()
     {
         return EvmBuilder<EvmTraits<EVMC_CONSTANTINOPLE>>{};

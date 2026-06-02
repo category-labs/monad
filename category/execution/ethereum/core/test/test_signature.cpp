@@ -62,3 +62,39 @@ TEST(Signature, from_v)
         EXPECT_EQ(sc.y_parity, true);
     }
 }
+
+TEST(Signature, is_valid_boundaries)
+{
+    constexpr auto n = SignatureAndChain::secp256k1_order;
+    constexpr auto half_n = SignatureAndChain::secp256k1_order_half;
+
+    // Sanity: minimal valid signature (r = 1, s = 1).
+    EXPECT_TRUE((SignatureAndChain{.r = 1, .s = 1}).is_valid());
+
+    // r = 0 or s = 0 is rejected.
+    EXPECT_FALSE((SignatureAndChain{.r = 0, .s = 1}).is_valid());
+    EXPECT_FALSE((SignatureAndChain{.r = 1, .s = 0}).is_valid());
+    EXPECT_FALSE((SignatureAndChain{.r = 0, .s = 0}).is_valid());
+
+    // r or s == n is rejected (must be strictly less than the group order).
+    EXPECT_FALSE((SignatureAndChain{.r = n, .s = 1}).is_valid());
+    EXPECT_FALSE((SignatureAndChain{.r = 1, .s = n}).is_valid());
+
+    // r or s == n - 1 is rejected via the low-s rule for s, but r = n - 1 is
+    // accepted (only s is constrained by EIP-2).
+    EXPECT_TRUE((SignatureAndChain{.r = n - 1, .s = 1}).is_valid());
+    EXPECT_FALSE((SignatureAndChain{.r = 1, .s = n - 1}).is_valid());
+
+    // EIP-2 low-s boundary: s == n/2 is valid, s == n/2 + 1 is not.
+    EXPECT_TRUE((SignatureAndChain{.r = 1, .s = half_n}).is_valid());
+    EXPECT_FALSE((SignatureAndChain{.r = 1, .s = half_n + 1}).is_valid());
+}
+
+TEST(Signature, has_upper_s_boundary)
+{
+    constexpr auto half_n = SignatureAndChain::secp256k1_order_half;
+
+    EXPECT_FALSE((SignatureAndChain{.r = 1, .s = 1}).has_upper_s());
+    EXPECT_FALSE((SignatureAndChain{.r = 1, .s = half_n}).has_upper_s());
+    EXPECT_TRUE((SignatureAndChain{.r = 1, .s = half_n + 1}).has_upper_s());
+}

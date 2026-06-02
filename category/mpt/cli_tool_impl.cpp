@@ -21,6 +21,7 @@
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
+#include <category/core/cli/help_formatter.hpp>
 #include <category/core/detail/start_lifetime_as_polyfill.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/io/buffers.hpp>
@@ -1381,6 +1382,7 @@ int main_impl(
     std::span<std::string_view> const args)
 {
     CLI::App cli("Tool for managing MPT databases", "monad-mpt");
+    monad::cli::HelpFormatter{GIT_COMMIT_HASH}.install(cli);
     cli.footer(R"(Suitable sources of block storage:
 
 1. Raw partitions on a storage device.

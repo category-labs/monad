@@ -57,10 +57,7 @@ namespace test
         }
         db.commit(
             block_id, builder, header, std::move(deltas), [&](BlockHeader &h) {
-                // eth pre-byzantium receipts root is invalid
-                if (h.receipts_root == NULL_ROOT) {
-                    h.receipts_root = db.receipts_root();
-                }
+                h.receipts_root = db.receipts_root();
                 h.state_root = db.state_root();
                 h.withdrawals_root = db.withdrawals_root();
                 h.transactions_root = db.transactions_root();

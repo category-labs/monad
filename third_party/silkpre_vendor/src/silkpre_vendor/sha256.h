@@ -14,8 +14,10 @@
    limitations under the License.
 */
 
-#ifndef SILKPRE_SHA256_H_
-#define SILKPRE_SHA256_H_
+// Modified 2026 by Category Labs: renamed silkpre_sha256 to monad_sha256.
+
+#ifndef MONAD_SHA256_H_
+#define MONAD_SHA256_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -25,10 +27,10 @@
 extern "C" {
 #endif
 
-void silkpre_sha256(uint8_t hash[32], const uint8_t* input, size_t len, bool use_cpu_extensions);
+void monad_sha256(uint8_t hash[32], const uint8_t* input, size_t len, bool use_cpu_extensions);
 
 #if defined(__cplusplus)
 }
 #endif
 
-#endif  // SILKPRE_SHA256_H_
+#endif  // MONAD_SHA256_H_

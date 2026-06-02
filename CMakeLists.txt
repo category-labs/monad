@@ -205,6 +205,9 @@ set(CMAKE_POLICY_VERSION_MINIMUM "${OLD_CMAKE_POLICY_VERSION_MINIMUM}")
 set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE)
 set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK)
 
+# silkpre_vendor (vendored sha256 + rmd160)
+add_subdirectory("third_party/silkpre_vendor")
+
 # tbb
 find_package(TBB REQUIRED)
 

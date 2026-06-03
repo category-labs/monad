@@ -17,6 +17,8 @@
 
 #include "test_state.hpp"
 
+#include <nlohmann/json.hpp>
+
 MONAD_TEST_NAMESPACE_BEGIN
 
 struct JsonState

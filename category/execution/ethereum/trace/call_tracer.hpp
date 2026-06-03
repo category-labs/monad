@@ -21,7 +21,7 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 
 #include <evmc/evmc.hpp>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <optional>
 #include <span>

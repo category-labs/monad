@@ -75,7 +75,7 @@
 
 #include <gtest/gtest.h>
 
-#include <nlohmann/json_fwd.hpp>
+#include <nlohmann/json.hpp>
 
 #include <array>
 #include <cstddef>

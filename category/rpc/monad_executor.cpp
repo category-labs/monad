@@ -102,7 +102,7 @@
 #include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <nlohmann/json_fwd.hpp>
+#include <nlohmann/json.hpp>
 
 using namespace monad;
 using namespace monad::vm;

@@ -23,7 +23,7 @@
 
 #include <ankerl/unordered_dense.h>
 #include <immer/map.hpp>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <memory>
 #include <span>

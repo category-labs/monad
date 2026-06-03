@@ -32,7 +32,7 @@
 #include <category/mpt/state_machine.hpp>
 #include <category/vm/vm.hpp>
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <deque>
 #include <istream>

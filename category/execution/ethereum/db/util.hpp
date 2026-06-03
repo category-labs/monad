@@ -24,7 +24,7 @@
 #include <category/mpt/db.hpp>
 #include <category/mpt/state_machine.hpp>
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <filesystem>
 #include <functional>

@@ -33,7 +33,7 @@
 #include <category/mpt/traverse_util.hpp>
 
 #include <ethash/keccak.hpp>
-#include <nlohmann/json_fwd.hpp>
+#include <nlohmann/json.hpp>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

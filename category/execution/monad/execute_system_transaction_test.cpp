@@ -39,6 +39,8 @@
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <cstdint>
 
 #include <gtest/gtest.h>

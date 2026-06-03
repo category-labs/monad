@@ -4990,6 +4990,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         state_override,
         block_override,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5100,6 +5101,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         state_overrides,
         block_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5201,6 +5203,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         so_overrides,
         bo_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5258,6 +5261,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
         so_overrides,
         bo_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5332,6 +5336,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         so_overrides,
         bo_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5433,6 +5438,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         so_overrides,
         bo_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5539,6 +5545,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             subs[i]->so,
             subs[i]->bo,
             false,
+            nullptr, // exec_event_ring
             complete_callback,
             (void *)&subs[i]->ctx);
     }
@@ -5708,6 +5715,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         so,
         bo,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5868,6 +5876,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             so,
             bo,
             false,
+            nullptr, // exec_event_ring
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -6009,6 +6018,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             so,
             bo,
             false,
+            nullptr, // exec_event_ring
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -6239,6 +6249,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         so,
         bo,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6391,6 +6402,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         so,
         bo,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6616,6 +6628,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         so,
         bo,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6805,6 +6818,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
         so,
         bo,
         true, // emit_native_transfer_logs
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6956,6 +6970,7 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
         so,
         bo,
         true, // emit_native_transfer_logs
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7088,6 +7103,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
         so,
         bo,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7235,6 +7251,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
         state_overrides,
         block_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7353,6 +7370,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
         state_overrides,
         block_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7485,6 +7503,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
         state_overrides,
         block_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7645,6 +7664,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
         state_overrides,
         block_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7768,6 +7788,7 @@ TEST_F(
         state_overrides,
         block_overrides,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7891,6 +7912,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
         state_override,
         block_override,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7984,6 +8006,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
         state_override,
         block_override,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8122,6 +8145,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         state_override,
         block_override,
         false,
+        nullptr, // exec_event_ring
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8195,6 +8219,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
             state_override,
             block_override,
             false,
+            nullptr, // exec_event_ring
             nullptr,
             nullptr),
         "maybe_txns\\.has_value\\(\\)"); // Pattern match on the expected

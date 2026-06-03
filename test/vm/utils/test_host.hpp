@@ -77,7 +77,8 @@ namespace monad::test
             , noop_call_tracer_{}
             , state_{state}
             , tx_context_{get_tx_context<traits>(
-                  tx, sender, header, chain.get_chain_id())}
+                  tx, sender, header, chain.get_chain_id(),
+                  chain.get_blob_schedule(header.timestamp))}
             , chain_context_senders_{sender}
             , chain_context_authorities_{authorities}
             , chain_context_senders_and_authorities_{combine_senders_and_authorities(

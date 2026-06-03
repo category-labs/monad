@@ -27,6 +27,7 @@ static_assert(alignof(evmc_tx_context) == 8);
 MONAD_NAMESPACE_BEGIN
 
 struct BlockHeader;
+struct BlobSchedule;
 struct Transaction;
 
 inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
@@ -49,6 +50,6 @@ inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
 template <Traits traits>
 evmc_tx_context get_tx_context(
     Transaction const &, Address const &sender, BlockHeader const &,
-    uint256_t const &chain_id);
+    uint256_t const &chain_id, BlobSchedule const &blob_schedule);
 
 MONAD_NAMESPACE_END

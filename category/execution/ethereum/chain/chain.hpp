@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -43,6 +44,8 @@ struct Chain
 
     virtual monad_eth_revision
     get_revision(uint64_t block_number, uint64_t timestamp) const = 0;
+
+    virtual BlobSchedule get_blob_schedule(uint64_t timestamp) const = 0;
 
     virtual GenesisState get_genesis_state() const = 0;
 };

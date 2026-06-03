@@ -88,7 +88,8 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             tx,
             std::nullopt /* 0 base fee to pass validation */,
             std::nullopt /* 0 blob fee to pass validation */,
-            chain_.get_chain_id());
+            chain_.get_chain_id(),
+            chain_.get_blob_schedule(header_.timestamp));
         if (tx_validation_result.has_error()) {
             prev_.get_future().wait();
             return std::move(tx_validation_result).as_failure();

@@ -18,6 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/core/contract/checked_math.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -64,40 +65,33 @@ max_gas_cost(uint64_t const gas_limit, uint256_t const max_fee_per_gas) noexcept
 inline constexpr uint64_t GAS_PER_BLOB = 131'072;
 
 template <Traits traits>
-inline constexpr uint64_t max_blobs_per_block() noexcept
+inline constexpr BlobSchedule default_blob_schedule() noexcept
 {
     // EIP-7691 increases the blob count where active.
     if constexpr (traits::eip_7691_active()) {
-        return 9;
+        return PRAGUE_BLOB_SCHEDULE;
     }
     else {
-        return 6;
+        return CANCUN_BLOB_SCHEDULE;
     }
 }
 
-template <Traits traits>
-inline constexpr uint64_t max_blob_gas_per_block() noexcept
+inline constexpr uint64_t
+max_blob_gas_per_block(BlobSchedule const &blob_schedule) noexcept
 {
-    return max_blobs_per_block<traits>() * GAS_PER_BLOB;
+    return blob_schedule.max_blobs_per_block * GAS_PER_BLOB;
 }
 
-template <Traits traits>
-inline constexpr uint64_t blob_base_fee_update_fraction() noexcept
+inline constexpr uint64_t
+blob_base_fee_update_fraction(BlobSchedule const &blob_schedule) noexcept
 {
-    // EIP-7691 adjusts the blob base fee update fraction where active.
-    if constexpr (traits::eip_7691_active()) {
-        return 5'007'716;
-    }
-    else {
-        return 3'338'477;
-    }
+    return blob_schedule.blob_base_fee_update_fraction;
 }
 
-template <Traits traits>
-uint256_t calc_blob_fee(Transaction const &, uint64_t) noexcept;
+uint256_t
+calc_blob_fee(Transaction const &, uint64_t, BlobSchedule const &) noexcept;
 
-template <Traits traits>
-uint256_t get_base_fee_per_blob_gas(uint64_t) noexcept;
+uint256_t get_base_fee_per_blob_gas(uint64_t, BlobSchedule const &) noexcept;
 
 uint64_t get_total_blob_gas(Transaction const &) noexcept;
 

@@ -211,7 +211,12 @@ namespace
 
         for (auto _ : bench_state) {
             auto const result = evmc::Result{vm_ptr->execute(
-                interface, ctx, rev, &msg, code.data(), code.size())};
+                interface,
+                ctx,
+                to_evmc_revision(rev),
+                &msg,
+                code.data(),
+                code.size())};
 
             MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
         }
@@ -277,7 +282,12 @@ namespace
             bench_state.ResumeTiming();
 
             auto const result = evmc::Result{vm_ptr->execute(
-                interface, ctx, rev, &msg, code->code(), code->size())};
+                interface,
+                ctx,
+                to_evmc_revision(rev),
+                &msg,
+                code->code(),
+                code->size())};
 
             if (assert_success) {
                 MONAD_ASSERT(result.status_code == EVMC_SUCCESS);

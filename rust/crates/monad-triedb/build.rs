@@ -14,19 +14,22 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 fn main() {
-    println!("cargo:rerun-if-changed=CMakeLists.txt");
-    println!("cargo:rerun-if-changed=include/ffi.h");
-    println!("cargo:rerun-if-changed=src/ffi.cpp");
-    println!("cargo:rerun-if-changed=../../../category");
-
-    if let Some(execution_dir) = monad_build::execution_dir() {
-        monad_build::MonadCMake::new(".", monad_build::MonadCMakeLinkage::Dynamic)
-            .define("MONAD_EXECUTION_DIR", execution_dir)
-            .with_rpath()
-            .build("triedb_driver");
-    }
-
-    monad_build::bindgen::MonadBindgen::default()
-        .header("include/ffi.h")
-        .generate();
+    monad_build::MonadCxx::new("src/ffi.rs")
+        .file("src/ffi.cpp")
+        .includes([
+            "third_party/ankerl",
+            "third_party/concurrentqueue",
+            "third_party/ethash/include",
+            "third_party/evmc/include",
+            "third_party/fiber/include",
+            "third_party/intx/include",
+            "third_party/nlohmann_json/include",
+            "third_party/quill/quill/include",
+            "third_party/unordered_dense/include",
+        ])
+        .defines([
+            ("MONAD_CXX_CTYPES_USE_EVMC_HPP", "1"),
+            ("QUILL_ROOT_LOGGER_ONLY", "1"),
+        ])
+        .compile("monad_triedb_ffi");
 }

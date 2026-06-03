@@ -15,112 +15,150 @@
 
 #pragma once
 
-#include <category/execution/ethereum/core/base_ctypes.h>
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <vector>
 
-#ifdef __cplusplus
-extern "C"
+#include "rust/cxx.h"
+
+#include <category/execution/monad/staking/read_valset.hpp>
+#include <category/mpt/db.hpp>
+#include <category/mpt/node_cursor.hpp>
+
+namespace monad::mpt
 {
-#endif
+    inline ::rust::Slice<uint8_t const>
+    node_cursor_as_bytes(NodeCursor const &cursor)
+    {
+        auto const &val = cursor.node->value();
+        return {val.data(), val.size()};
+    }
+} // namespace monad::mpt
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
-typedef struct TriedbRoInner TriedbRoInner;
-
-int triedb_open(
-    char const *dbdirpath, TriedbRoInner **, uint64_t node_lru_max_mem);
-int triedb_close(TriedbRoInner *);
-
-// returns -1 if key not found
-// if >= 0, returns length of value
-int triedb_read(
-    TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
-    uint8_t const **value, uint64_t block_id);
-
-typedef void (*triedb_async_read_callback_fn)(
-    uint8_t const *value, int length, void *user);
-// calls (*completed) when read is
-// complete. length is -1 if key not
-// found. If >=0, returns length of
-// value. Call triedb_finalize when
-// done with the value.
-void triedb_async_read(
-    TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
-    uint64_t block_id, triedb_async_read_callback_fn callback, void *user);
-
-// traverse the trie.
-enum triedb_async_traverse_callback
+namespace monad::staking
 {
-    triedb_async_traverse_callback_value,
-    triedb_async_traverse_callback_finished_normally,
-    triedb_async_traverse_callback_finished_early
-};
+    inline std::array<uint8_t, 33>
+    validator_secp_pubkey(Validator const &validator)
+    {
+        std::array<uint8_t, 33> out;
+        std::copy_n(validator.secp_pubkey, out.size(), out.begin());
+        return out;
+    }
 
-typedef void (*triedb_async_traverse_callback_fn)(
-    enum triedb_async_traverse_callback kind, void *context,
-    uint8_t const *path, size_t path_len, uint8_t const *value,
-    size_t value_len);
-bool triedb_traverse(
-    TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
-    uint64_t block_id, void *context,
-    triedb_async_traverse_callback_fn callback);
-void triedb_async_traverse(
-    TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
-    uint64_t block_id, void *context,
-    triedb_async_traverse_callback_fn callback);
-void triedb_async_ranged_get(
-    TriedbRoInner *, uint8_t const *prefix_key, uint8_t prefix_len_nibbles,
-    uint8_t const *min_key, uint8_t min_len_nibbles, uint8_t const *max_key,
-    uint8_t max_len_nibbles, uint64_t block_id, void *context,
-    triedb_async_traverse_callback_fn callback);
-// pumps async reads, processing no
-// more than count maximum, returning
-// how many were processed.
-size_t triedb_poll(TriedbRoInner *, bool blocking, size_t count);
-int triedb_finalize(uint8_t const *value);
+    inline std::array<uint8_t, 48>
+    validator_bls_pubkey(Validator const &validator)
+    {
+        std::array<uint8_t, 48> out;
+        std::copy_n(validator.bls_pubkey, out.size(), out.begin());
+        return out;
+    }
 
-// returns MAX if doesn't exist
-uint64_t triedb_latest_proposed_version(TriedbRoInner *);
-// returns all-zeros if doesn't exist
-monad_c_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *);
-// returns MAX if doesn't exist
-uint64_t triedb_latest_voted_version(TriedbRoInner *);
-// returns all-zeros if doesn't exist
-monad_c_bytes32 triedb_latest_voted_block_id(TriedbRoInner *);
-// returns MAX if doesn't exist
-uint64_t triedb_latest_finalized_version(TriedbRoInner *);
-// returns MAX if doesn't exist
-uint64_t triedb_latest_verified_version(TriedbRoInner *);
+    inline std::array<uint8_t, 32> validator_stake(Validator const &validator)
+    {
+        std::array<uint8_t, 32> out;
+        std::copy_n(validator.stake.bytes, out.size(), out.begin());
+        return out;
+    }
+} // namespace monad::staking
 
-// returns MAX if doesn't exist
-uint64_t triedb_earliest_version(TriedbRoInner *);
-// returns MAX if doesn't exist
-uint64_t triedb_latest_version(TriedbRoInner *);
-
-#pragma pack(push, 1)
-
-typedef struct validator_data
+namespace monad::rust::ffi
 {
-    uint8_t secp_pubkey[33];
-    uint8_t bls_pubkey[48];
-    // big endian u256
-    uint8_t stake[32];
-} validator_data;
+    struct CallbackContext;
+} // namespace monad::rust::ffi
 
-typedef struct validator_set
+namespace monad::rust
 {
-    struct validator_data *validators;
-    uint64_t length;
-} validator_set;
+    struct TriedbRoInner
+    {
+        monad::mpt::AsyncIOContext io_ctx;
+        monad::mpt::Db db;
+        monad::mpt::AsyncContext async_ctx;
 
-#pragma pack(pop)
+        explicit TriedbRoInner(
+            std::vector<std::filesystem::path> dbname_paths,
+            uint64_t node_lru_max_mem,
+            bool disable_mismatching_storage_pool_check);
+    };
 
-void triedb_free_valset(validator_set *);
+    std::unique_ptr<TriedbRoInner> triedb_open(
+        ::rust::Str dbdirpath, uint64_t node_lru_max_mem,
+        bool disable_mismatching_storage_pool_check);
 
-validator_set *
-triedb_read_valset(TriedbRoInner *, size_t block_num, uint64_t requested_epoch);
+    inline size_t
+    triedb_poll(TriedbRoInner &inner, bool const blocking, size_t const count)
+    {
+        return inner.db.poll(blocking, count);
+    }
 
-#ifdef __cplusplus
-}
-#endif
+    inline uint64_t triedb_latest_proposed_version(TriedbRoInner const &inner)
+    {
+        return inner.db.get_latest_proposed_version();
+    }
+
+    inline uint64_t triedb_latest_voted_version(TriedbRoInner const &inner)
+    {
+        return inner.db.get_latest_voted_version();
+    }
+
+    inline uint64_t triedb_latest_finalized_version(TriedbRoInner const &inner)
+    {
+        return inner.db.get_latest_finalized_version();
+    }
+
+    inline uint64_t triedb_latest_verified_version(TriedbRoInner const &inner)
+    {
+        return inner.db.get_latest_verified_version();
+    }
+
+    inline uint64_t triedb_earliest_version(TriedbRoInner const &inner)
+    {
+        return inner.db.get_earliest_version();
+    }
+
+    inline uint64_t triedb_latest_version(TriedbRoInner const &inner)
+    {
+        return inner.db.get_latest_version();
+    }
+
+    inline monad::bytes32_t
+    triedb_latest_proposed_block_id(TriedbRoInner const &inner)
+    {
+        return inner.db.get_latest_proposed_block_id();
+    }
+
+    inline monad::bytes32_t
+    triedb_latest_voted_block_id(TriedbRoInner const &inner)
+    {
+        return inner.db.get_latest_voted_block_id();
+    }
+
+    std::unique_ptr<monad::mpt::NodeCursor> triedb_read(
+        TriedbRoInner const &inner, ::rust::Slice<uint8_t const> const key,
+        uint8_t const key_len_nibbles, uint64_t const block_id);
+
+    void triedb_async_read(
+        TriedbRoInner &inner, ::rust::Slice<uint8_t const> key,
+        uint8_t key_len_nibbles, uint64_t block_id, ffi::CallbackContext *ctx);
+
+    void triedb_traverse(
+        TriedbRoInner &inner, ::rust::Slice<uint8_t const> key,
+        uint8_t key_len_nibbles, uint64_t block_id, ffi::CallbackContext *ctx);
+
+    void triedb_async_ranged_get(
+        TriedbRoInner &inner, ::rust::Slice<uint8_t const> prefix_key,
+        uint8_t prefix_key_len_nibbles, ::rust::Slice<uint8_t const> min_key,
+        uint8_t min_key_len_nibbles, ::rust::Slice<uint8_t const> max_key,
+        uint8_t max_key_len_nibbles, uint64_t block_id,
+        ffi::CallbackContext *ctx);
+
+    void triedb_async_traverse(
+        TriedbRoInner &inner, ::rust::Slice<uint8_t const> key,
+        uint8_t key_len_nibbles, uint64_t block_id, ffi::CallbackContext *ctx);
+
+    std::unique_ptr<std::vector<monad::staking::Validator>> triedb_read_valset(
+        TriedbRoInner &inner, size_t block_num, uint64_t requested_epoch);
+} // namespace monad::rust

@@ -60,6 +60,11 @@ monad_eth_revision MonadChain::get_revision(
     return MONAD_ETH_CANCUN;
 }
 
+BlobSchedule MonadChain::get_blob_schedule(uint64_t /*timestamp*/) const
+{
+    return MONAD_BLOB_SCHEDULE;
+}
+
 template <typename T>
     requires is_monad_trait_v<T>
 ChainContext<T> ChainContext<T>::debug_empty()

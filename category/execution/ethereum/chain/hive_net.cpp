@@ -55,6 +55,14 @@ monad_eth_revision HiveNet::get_revision(
     return MONAD_ETH_ISTANBUL;
 }
 
+BlobSchedule HiveNet::get_blob_schedule(uint64_t const timestamp) const
+{
+    if (timestamp >= 450) {
+        return PRAGUE_BLOB_SCHEDULE;
+    }
+    return CANCUN_BLOB_SCHEDULE;
+}
+
 GenesisState HiveNet::get_genesis_state() const
 {
     BlockHeader header;

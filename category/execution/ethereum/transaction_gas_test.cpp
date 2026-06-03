@@ -188,16 +188,15 @@ TYPED_TEST(TraitsTest, txn_award)
 
 TYPED_TEST(TraitsTest, blob_schedule)
 {
+    constexpr auto blob_schedule =
+        default_blob_schedule<typename TestFixture::Trait>();
+
     if constexpr (TestFixture::Trait::eip_7691_active()) {
-        EXPECT_EQ(max_blobs_per_block<typename TestFixture::Trait>(), 9);
-        EXPECT_EQ(
-            blob_base_fee_update_fraction<typename TestFixture::Trait>(),
-            5'007'716);
+        EXPECT_EQ(blob_schedule.max_blobs_per_block, 9);
+        EXPECT_EQ(blob_schedule.blob_base_fee_update_fraction, 5'007'716);
     }
     else {
-        EXPECT_EQ(max_blobs_per_block<typename TestFixture::Trait>(), 6);
-        EXPECT_EQ(
-            blob_base_fee_update_fraction<typename TestFixture::Trait>(),
-            3'338'477);
+        EXPECT_EQ(blob_schedule.max_blobs_per_block, 6);
+        EXPECT_EQ(blob_schedule.blob_base_fee_update_fraction, 3'338'477);
     }
 }

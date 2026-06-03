@@ -55,7 +55,11 @@ template <Traits traits>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
     if (auto const result = static_validate_transaction<traits>(
-            txn, std::nullopt, std::nullopt, 1);
+            txn,
+            std::nullopt,
+            std::nullopt,
+            1,
+            default_blob_schedule<traits>());
         result.has_error()) {
         EXPECT_TRUE(expected.contains("exception"));
     }

@@ -30,15 +30,29 @@ MONAD_TEST_NAMESPACE_BEGIN
 inline std::unordered_map<
     std::string, std::variant<monad_eth_revision, monad_revision>> const
     revision_map = {
-        {"Istanbul", MONAD_ETH_ISTANBUL}, {"Berlin", MONAD_ETH_BERLIN},
-        {"London", MONAD_ETH_LONDON},     {"Merge", MONAD_ETH_PARIS},
-        {"Paris", MONAD_ETH_PARIS},       {"Shanghai", MONAD_ETH_SHANGHAI},
-        {"Cancun", MONAD_ETH_CANCUN},     {"Prague", MONAD_ETH_PRAGUE},
-        {"Osaka", MONAD_ETH_OSAKA},       {"MONAD_ZERO", MONAD_ZERO},
-        {"MONAD_ONE", MONAD_ONE},         {"MONAD_TWO", MONAD_TWO},
-        {"MONAD_THREE", MONAD_THREE},     {"MONAD_FOUR", MONAD_FOUR},
-        {"MONAD_FIVE", MONAD_FIVE},       {"MONAD_SIX", MONAD_SIX},
-        {"MONAD_SEVEN", MONAD_SEVEN},     {"MONAD_EIGHT", MONAD_EIGHT},
-        {"MONAD_NINE", MONAD_NINE},       {"MONAD_NEXT", MONAD_NEXT}};
+        {"Istanbul", MONAD_ETH_ISTANBUL},
+        {"Berlin", MONAD_ETH_BERLIN},
+        {"London", MONAD_ETH_LONDON},
+        {"Merge", MONAD_ETH_PARIS},
+        {"Paris", MONAD_ETH_PARIS},
+        {"Shanghai", MONAD_ETH_SHANGHAI},
+        {"Cancun", MONAD_ETH_CANCUN},
+        {"Prague", MONAD_ETH_PRAGUE},
+        {"Osaka", MONAD_ETH_OSAKA},
+        {"BPO1", MONAD_ETH_OSAKA},
+        {"BPO2", MONAD_ETH_OSAKA},
+        {"OsakaToBPO1AtTime15k", MONAD_ETH_OSAKA},
+        {"BPO1ToBPO2AtTime15k", MONAD_ETH_OSAKA},
+        {"MONAD_ZERO", MONAD_ZERO},
+        {"MONAD_ONE", MONAD_ONE},
+        {"MONAD_TWO", MONAD_TWO},
+        {"MONAD_THREE", MONAD_THREE},
+        {"MONAD_FOUR", MONAD_FOUR},
+        {"MONAD_FIVE", MONAD_FIVE},
+        {"MONAD_SIX", MONAD_SIX},
+        {"MONAD_SEVEN", MONAD_SEVEN},
+        {"MONAD_EIGHT", MONAD_EIGHT},
+        {"MONAD_NINE", MONAD_NINE},
+        {"MONAD_NEXT", MONAD_NEXT}};
 
 MONAD_TEST_NAMESPACE_END

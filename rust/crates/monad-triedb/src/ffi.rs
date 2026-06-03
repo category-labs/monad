@@ -25,7 +25,7 @@ pub(crate) use self::bridge::{
     triedb_read, triedb_read_valset, triedb_traverse, validator_bls_pubkey, validator_secp_pubkey,
     validator_stake, TriedbRoInner,
 };
-pub use self::bridge::{NodeCursor, Validator};
+pub use self::bridge::{NibblesView, NodeCursor, Validator};
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -45,6 +45,11 @@ use OpaqueCallbackContext as CallbackContext;
 
 #[cxx::bridge(namespace = "monad::rust")]
 mod bridge {
+    pub struct NibblesView<'a> {
+        pub(super) bytes: &'a [u8],
+        pub(super) odd: bool,
+    }
+
     #[namespace = "monad"]
     unsafe extern "C++" {
         include!("monad-triedb/include/ffi.h");
@@ -101,43 +106,36 @@ mod bridge {
 
         fn triedb_read(
             inner: &TriedbRoInner,
-            key: &[u8],
-            key_len_nibbles: u8,
+            key: NibblesView,
             block_id: u64,
         ) -> UniquePtr<NodeCursor>;
 
         unsafe fn triedb_async_read(
             inner: Pin<&mut TriedbRoInner>,
-            key: &[u8],
-            key_len_nibbles: u8,
+            key: NibblesView,
             block_id: u64,
             ctx: *mut CallbackContext,
         );
 
         unsafe fn triedb_traverse(
             inner: Pin<&mut TriedbRoInner>,
-            key: &[u8],
-            key_len_nibbles: u8,
+            key: NibblesView,
             block_id: u64,
             ctx: *mut CallbackContext,
         );
 
         unsafe fn triedb_async_ranged_get(
             inner: Pin<&mut TriedbRoInner>,
-            prefix_key: &[u8],
-            prefix_key_len_nibbles: u8,
-            min_key: &[u8],
-            min_key_len_nibbles: u8,
-            max_key: &[u8],
-            max_key_len_nibbles: u8,
+            prefix: NibblesView,
+            min: NibblesView,
+            max: NibblesView,
             block_id: u64,
             ctx: *mut CallbackContext,
         );
 
         unsafe fn triedb_async_traverse(
             inner: Pin<&mut TriedbRoInner>,
-            key: &[u8],
-            key_len_nibbles: u8,
+            key: NibblesView,
             block_id: u64,
             ctx: *mut CallbackContext,
         );
@@ -159,6 +157,34 @@ mod bridge {
         unsafe fn callback_async_read(ctx: *mut CallbackContext, value: &[u8], found: bool);
         unsafe fn callback_traverse_value(ctx: *mut CallbackContext, key: &[u8], value: &[u8]);
         unsafe fn callback_traverse_finished(ctx: *mut CallbackContext, completed: bool);
+    }
+}
+
+impl<'a> NibblesView<'a> {
+    pub fn new(bytes: &'a [u8], nibble_len: usize) -> Option<Self> {
+        let bytes_len = TryInto::<u8>::try_into(nibble_len).ok()?.div_ceil(2);
+
+        bytes
+            .split_at_checked(bytes_len as usize)
+            .map(|(bytes, _)| Self {
+                bytes,
+                odd: nibble_len & 1 == 1,
+            })
+    }
+
+    pub fn try_from_bytes(bytes: &'a [u8]) -> Option<Self> {
+        Self::new(bytes, bytes.len().saturating_mul(2))
+    }
+
+    pub const fn empty() -> Self {
+        Self {
+            bytes: &[],
+            odd: false,
+        }
+    }
+
+    pub const fn nibble_len(&self) -> usize {
+        self.bytes.len() * 2 - self.odd as usize
     }
 }
 

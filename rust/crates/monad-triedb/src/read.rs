@@ -15,7 +15,7 @@
 
 use cxx::UniquePtr;
 
-use crate::{ffi, NibblesView, TriedbRoHandle};
+use crate::{ffi, TriedbRoHandle};
 
 /// A value read from the triedb, holding a cursor that pins the underlying
 /// node in the cache. The byte view is valid as long as the `NodeValue` is
@@ -61,7 +61,7 @@ pub trait TriedbRead {
     /// May return an inconsistent id under concurrent writes.
     fn latest_voted_block_id(&self) -> Option<[u8; 32]>;
 
-    fn read(&self, key: NibblesView<'_>, block_id: u64) -> Option<NodeValue>;
+    fn read(&self, key: ffi::NibblesView<'_>, block_id: u64) -> Option<NodeValue>;
 }
 
 #[inline]
@@ -116,12 +116,7 @@ impl TriedbRead for TriedbRoHandle {
     }
 
     #[inline]
-    fn read(&self, key: NibblesView<'_>, block_id: u64) -> Option<NodeValue> {
-        NodeValue::new(crate::ffi::triedb_read(
-            &self.inner,
-            key.bytes,
-            key.nibble_len,
-            block_id,
-        ))
+    fn read(&self, key: ffi::NibblesView<'_>, block_id: u64) -> Option<NodeValue> {
+        NodeValue::new(crate::ffi::triedb_read(&self.inner, key, block_id))
     }
 }

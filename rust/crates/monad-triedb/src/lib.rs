@@ -26,44 +26,6 @@ pub mod ffi;
 mod read;
 mod validator;
 
-/// Borrowed view of a nibble-aligned key.
-///
-/// Odd nibble lengths are supported — the trailing low nibble of the last
-/// byte is ignored when `nibble_len` is odd.
-#[derive(Debug, Clone, Copy)]
-pub struct NibblesView<'a> {
-    bytes: &'a [u8],
-    nibble_len: u8,
-}
-
-impl<'a> NibblesView<'a> {
-    pub fn new(bytes: &'a [u8], nibble_len: u8) -> Option<Self> {
-        ((nibble_len as usize).div_ceil(2) <= bytes.len()).then_some(Self { bytes, nibble_len })
-    }
-
-    /// Interprets the full slice as a byte-aligned key. Returns `None` if
-    /// the slice is longer than 127 bytes (would overflow `u8` nibbles).
-    pub fn from_bytes(bytes: &'a [u8]) -> Option<Self> {
-        let nibble_len = u8::try_from(bytes.len().saturating_mul(2)).ok()?;
-        Some(Self { bytes, nibble_len })
-    }
-
-    pub const fn empty() -> Self {
-        Self {
-            bytes: &[],
-            nibble_len: 0,
-        }
-    }
-
-    pub fn bytes(&self) -> &'a [u8] {
-        self.bytes
-    }
-
-    pub fn nibble_len(&self) -> u8 {
-        self.nibble_len
-    }
-}
-
 pub struct TriedbRoHandle {
     inner: UniquePtr<ffi::TriedbRoInner>,
 }
@@ -108,7 +70,7 @@ impl TriedbRoHandle {
 
     pub fn find_async(
         &mut self,
-        key: NibblesView<'_>,
+        key: ffi::NibblesView<'_>,
         block_id: u64,
         sender: ffi::AsyncReadSender,
         concurrency_tracker: Arc<()>,
@@ -117,21 +79,24 @@ impl TriedbRoHandle {
             sender,
             concurrency_tracker,
         ))) as *mut ffi::OpaqueCallbackContext;
-        unsafe {
-            ffi::triedb_async_read(self.inner_mut(), key.bytes, key.nibble_len, block_id, ctx)
-        };
+        unsafe { ffi::triedb_async_read(self.inner_mut(), key, block_id, ctx) };
     }
 
-    pub fn traverse(&mut self, key: NibblesView<'_>, block_id: u64, sender: ffi::TraverseSender) {
+    pub fn traverse(
+        &mut self,
+        key: ffi::NibblesView<'_>,
+        block_id: u64,
+        sender: ffi::TraverseSender,
+    ) {
         let ctx = Box::into_raw(Box::new(ffi::TraverseContext::new(sender, Arc::new(()))))
             as *mut ffi::OpaqueCallbackContext;
 
-        unsafe { ffi::triedb_traverse(self.inner_mut(), key.bytes, key.nibble_len, block_id, ctx) };
+        unsafe { ffi::triedb_traverse(self.inner_mut(), key, block_id, ctx) };
     }
 
     pub fn traverse_async(
         &mut self,
-        key: NibblesView<'_>,
+        key: ffi::NibblesView<'_>,
         block_id: u64,
         sender: ffi::TraverseSender,
         concurrency_tracker: Arc<()>,
@@ -141,16 +106,14 @@ impl TriedbRoHandle {
             concurrency_tracker,
         ))) as *mut ffi::OpaqueCallbackContext;
 
-        unsafe {
-            ffi::triedb_async_traverse(self.inner_mut(), key.bytes, key.nibble_len, block_id, ctx)
-        };
+        unsafe { ffi::triedb_async_traverse(self.inner_mut(), key, block_id, ctx) };
     }
 
     pub fn traverse_range(
         &mut self,
-        prefix: NibblesView<'_>,
-        min: NibblesView<'_>,
-        max: NibblesView<'_>,
+        prefix: ffi::NibblesView<'_>,
+        min: ffi::NibblesView<'_>,
+        max: ffi::NibblesView<'_>,
         block_id: u64,
         sender: ffi::TraverseSender,
         concurrency_tracker: Arc<()>,
@@ -161,17 +124,7 @@ impl TriedbRoHandle {
         ))) as *mut ffi::OpaqueCallbackContext;
 
         unsafe {
-            ffi::triedb_async_ranged_get(
-                self.inner_mut(),
-                prefix.bytes,
-                prefix.nibble_len,
-                min.bytes,
-                min.nibble_len,
-                max.bytes,
-                max.nibble_len,
-                block_id,
-                ctx,
-            );
+            ffi::triedb_async_ranged_get(self.inner_mut(), prefix, min, max, block_id, ctx);
         }
     }
 

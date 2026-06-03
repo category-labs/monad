@@ -83,7 +83,12 @@ namespace monad::rust
             uint64_t node_lru_max_mem,
             bool disable_mismatching_storage_pool_check);
     };
+} // namespace monad::rust
 
+#include "monad-triedb/src/ffi.rs.h"
+
+namespace monad::rust
+{
     std::unique_ptr<TriedbRoInner> triedb_open(
         ::rust::Str dbdirpath, uint64_t node_lru_max_mem,
         bool disable_mismatching_storage_pool_check);
@@ -136,28 +141,24 @@ namespace monad::rust
         return inner.db.get_latest_voted_block_id();
     }
 
-    std::unique_ptr<monad::mpt::NodeCursor> triedb_read(
-        TriedbRoInner const &inner, ::rust::Slice<uint8_t const> const key,
-        uint8_t const key_len_nibbles, uint64_t const block_id);
+    std::unique_ptr<monad::mpt::NodeCursor>
+    triedb_read(TriedbRoInner const &inner, NibblesView key, uint64_t block_id);
 
     void triedb_async_read(
-        TriedbRoInner &inner, ::rust::Slice<uint8_t const> key,
-        uint8_t key_len_nibbles, uint64_t block_id, ffi::CallbackContext *ctx);
-
-    void triedb_traverse(
-        TriedbRoInner &inner, ::rust::Slice<uint8_t const> key,
-        uint8_t key_len_nibbles, uint64_t block_id, ffi::CallbackContext *ctx);
-
-    void triedb_async_ranged_get(
-        TriedbRoInner &inner, ::rust::Slice<uint8_t const> prefix_key,
-        uint8_t prefix_key_len_nibbles, ::rust::Slice<uint8_t const> min_key,
-        uint8_t min_key_len_nibbles, ::rust::Slice<uint8_t const> max_key,
-        uint8_t max_key_len_nibbles, uint64_t block_id,
+        TriedbRoInner &inner, NibblesView key, uint64_t block_id,
         ffi::CallbackContext *ctx);
 
+    void triedb_traverse(
+        TriedbRoInner &inner, NibblesView key, uint64_t block_id,
+        ffi::CallbackContext *ctx);
+
+    void triedb_async_ranged_get(
+        TriedbRoInner &inner, NibblesView prefix, NibblesView min,
+        NibblesView max, uint64_t block_id, ffi::CallbackContext *ctx);
+
     void triedb_async_traverse(
-        TriedbRoInner &inner, ::rust::Slice<uint8_t const> key,
-        uint8_t key_len_nibbles, uint64_t block_id, ffi::CallbackContext *ctx);
+        TriedbRoInner &inner, NibblesView key, uint64_t block_id,
+        ffi::CallbackContext *ctx);
 
     std::unique_ptr<std::vector<monad::staking::Validator>> triedb_read_valset(
         TriedbRoInner &inner, size_t block_num, uint64_t requested_epoch);

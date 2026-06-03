@@ -62,10 +62,15 @@ namespace monad::rust
         }
     }
 
-    monad::mpt::NibblesView key_to_nibbles_view(
-        ::rust::Slice<uint8_t const> key, uint8_t const key_len_nibbles)
+    monad::mpt::NibblesView to_mpt_view(NibblesView const &view)
     {
-        return monad::mpt::NibblesView{0u, key_len_nibbles, key.data()};
+        unsigned nibble_count = static_cast<unsigned>(view.bytes.size() * 2);
+
+        if (nibble_count > 0 && view.odd) {
+            nibble_count -= 1;
+        }
+
+        return monad::mpt::NibblesView{0u, nibble_count, view.bytes.data()};
     }
 
     std::unique_ptr<TriedbRoInner> triedb_open(
@@ -104,12 +109,10 @@ namespace monad::rust
         }
     }
 
-    std::unique_ptr<monad::mpt::NodeCursor> triedb_read(
-        TriedbRoInner const &db, ::rust::Slice<uint8_t const> const key,
-        uint8_t const key_len_nibbles, uint64_t const block_id)
+    std::unique_ptr<monad::mpt::NodeCursor>
+    triedb_read(TriedbRoInner const &inner, NibblesView key, uint64_t block_id)
     {
-        auto result =
-            db.db.find(key_to_nibbles_view(key, key_len_nibbles), block_id);
+        auto result = inner.db.find(to_mpt_view(key), block_id);
         if (!result.has_value()) {
             return nullptr;
         }
@@ -139,15 +142,12 @@ namespace monad::rust
     };
 
     void triedb_async_read(
-        TriedbRoInner &db, ::rust::Slice<uint8_t const> const key,
-        uint8_t const key_len_nibbles, uint64_t const block_id,
+        TriedbRoInner &inner, NibblesView const key, uint64_t const block_id,
         ffi::CallbackContext *const ctx)
     {
         auto *state = new auto(monad::async::connect(
             monad::mpt::make_get_sender(
-                &db.async_ctx,
-                key_to_nibbles_view(key, key_len_nibbles),
-                block_id),
+                &inner.async_ctx, to_mpt_view(key), block_id),
             AsyncReadReceiver{ctx}));
         state->initiate();
     }
@@ -265,14 +265,10 @@ namespace monad::rust
     };
 
     void triedb_traverse(
-        TriedbRoInner &db, ::rust::Slice<uint8_t const> const key,
-        uint8_t const key_len_nibbles, uint64_t const block_id,
+        TriedbRoInner &inner, NibblesView const key, uint64_t const block_id,
         ffi::CallbackContext *const ctx)
     {
-        monad::mpt::NibblesView const prefix =
-            key_to_nibbles_view(key, key_len_nibbles);
-
-        auto cursor = db.db.find(prefix, block_id);
+        auto cursor = inner.db.find(to_mpt_view(key), block_id);
 
         if (!cursor.has_value()) {
             ffi::callback_traverse_finished(ctx, false);
@@ -282,28 +278,19 @@ namespace monad::rust
         TraverseMachineWithCallback machine(ctx, monad::mpt::NibblesView{});
 
         bool const completed =
-            db.db.traverse(cursor.value(), machine, block_id);
+            inner.db.traverse(cursor.value(), machine, block_id);
 
         ffi::callback_traverse_finished(ctx, completed);
     }
 
     void triedb_async_ranged_get(
-        TriedbRoInner &db, ::rust::Slice<uint8_t const> const prefix_key,
-        uint8_t const prefix_key_len_nibbles,
-        ::rust::Slice<uint8_t const> const min_key,
-        uint8_t const min_key_len_nibbles,
-        ::rust::Slice<uint8_t const> const max_key,
-        uint8_t const max_key_len_nibbles, uint64_t const block_id,
-        ffi::CallbackContext *const ctx)
+        TriedbRoInner &inner, NibblesView const prefix_view,
+        NibblesView const min_view, NibblesView const max_view,
+        uint64_t const block_id, ffi::CallbackContext *const ctx)
     {
-        monad::mpt::NibblesView const prefix =
-            key_to_nibbles_view(prefix_key, prefix_key_len_nibbles);
-
-        monad::mpt::NibblesView const min =
-            key_to_nibbles_view(min_key, min_key_len_nibbles);
-
-        monad::mpt::NibblesView const max =
-            key_to_nibbles_view(max_key, max_key_len_nibbles);
+        monad::mpt::NibblesView const prefix = to_mpt_view(prefix_view);
+        monad::mpt::NibblesView const min = to_mpt_view(min_view);
+        monad::mpt::NibblesView const max = to_mpt_view(max_view);
 
         auto machine = std::make_unique<monad::mpt::RangedGetMachine>(
             min,
@@ -330,32 +317,32 @@ namespace monad::rust
             });
 
         (new auto(monad::async::connect(
-             monad::mpt::make_get_node_sender(&db.async_ctx, prefix, block_id),
+             monad::mpt::make_get_node_sender(
+                 &inner.async_ctx, prefix, block_id),
              GetRootForTraverseReceiver{
                  ctx,
                  monad::mpt::make_traverse_sender(
-                     &db.async_ctx, {}, std::move(machine), block_id),
+                     &inner.async_ctx, {}, std::move(machine), block_id),
              })))
             ->initiate();
     }
 
     void triedb_async_traverse(
-        TriedbRoInner &db, ::rust::Slice<uint8_t const> const key,
-        uint8_t const key_len_nibbles, uint64_t const block_id,
+        TriedbRoInner &inner, NibblesView const key, uint64_t const block_id,
         ffi::CallbackContext *const ctx)
     {
-        monad::mpt::NibblesView const prefix =
-            key_to_nibbles_view(key, key_len_nibbles);
+        monad::mpt::NibblesView const prefix = to_mpt_view(key);
 
         auto machine = std::make_unique<TraverseMachineWithCallback>(
             ctx, monad::mpt::NibblesView{});
 
         (new auto(monad::async::connect(
-             monad::mpt::make_get_node_sender(&db.async_ctx, prefix, block_id),
+             monad::mpt::make_get_node_sender(
+                 &inner.async_ctx, prefix, block_id),
              GetRootForTraverseReceiver{
                  ctx,
                  monad::mpt::make_traverse_sender(
-                     &db.async_ctx, {}, std::move(machine), block_id),
+                     &inner.async_ctx, {}, std::move(machine), block_id),
              })))
             ->initiate();
     }

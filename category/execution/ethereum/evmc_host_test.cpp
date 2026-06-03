@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/vm.hpp>
@@ -98,8 +99,8 @@ TYPED_TEST(TraitsTest, get_tx_context)
     Transaction const tx{
         .sc = {.chain_id = chain_id}, .max_fee_per_gas = base_fee_per_gas};
 
-    auto const result =
-        get_tx_context<typename TestFixture::Trait>(tx, from, hdr, 1);
+    auto const result = get_tx_context<typename TestFixture::Trait>(
+        tx, from, hdr, 1, default_blob_schedule<typename TestFixture::Trait>());
     evmc_tx_context ctx{
         .tx_origin = from,
         .block_coinbase = bene,
@@ -114,8 +115,8 @@ TYPED_TEST(TraitsTest, get_tx_context)
     EXPECT_EQ(result, ctx);
 
     hdr.difficulty = 0;
-    auto const pos_result =
-        get_tx_context<typename TestFixture::Trait>(tx, from, hdr, 1);
+    auto const pos_result = get_tx_context<typename TestFixture::Trait>(
+        tx, from, hdr, 1, default_blob_schedule<typename TestFixture::Trait>());
     std::memcpy(
         ctx.block_prev_randao.bytes,
         hdr.prev_randao.bytes,
@@ -126,7 +127,12 @@ TYPED_TEST(TraitsTest, get_tx_context)
     // covered by the comparisons above).
     hdr.slot_number = 9'000'000'000;
     EXPECT_EQ(
-        get_tx_context<typename TestFixture::Trait>(tx, from, hdr, 1)
+        get_tx_context<typename TestFixture::Trait>(
+            tx,
+            from,
+            hdr,
+            1,
+            default_blob_schedule<typename TestFixture::Trait>())
             .block_round,
         uint64_t{9'000'000'000});
 }

@@ -64,7 +64,8 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 template <Traits traits>
 constexpr void irrevocable_change(
     State &state, Transaction const &tx, Address const &sender,
-    uint256_t const &base_fee_per_gas, uint64_t const excess_blob_gas)
+    uint256_t const &base_fee_per_gas, uint64_t const excess_blob_gas,
+    BlobSchedule const &blob_schedule)
 {
     if (tx.to) { // EVM will increment if new contract
         auto const nonce = state.get_nonce(sender);
@@ -74,7 +75,7 @@ constexpr void irrevocable_change(
     uint256_t blob_gas = 0;
     if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         blob_gas = (tx.type == TransactionType::eip4844)
-                       ? calc_blob_fee<traits>(tx, excess_blob_gas)
+                       ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
                        : 0;
     }
     auto const upfront_cost =
@@ -246,7 +247,8 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         tx_,
         sender_,
         header_.base_fee_per_gas.value_or(0),
-        header_.excess_blob_gas.value_or(0));
+        header_.excess_blob_gas.value_or(0),
+        chain_.get_blob_schedule(header_.timestamp));
 
     // EIP-7702
     uint64_t auth_refund = 0u;
@@ -342,8 +344,12 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
     };
     BOOST_OUTCOME_TRY(validate_lambda());
 
-    auto const tx_context =
-        get_tx_context<traits>(tx_, sender_, header_, chain_.get_chain_id());
+    auto const tx_context = get_tx_context<traits>(
+        tx_,
+        sender_,
+        header_,
+        chain_.get_chain_id(),
+        chain_.get_blob_schedule(header_.timestamp));
     EvmcHost<traits> host{
         call_tracer_,
         state_tracer_,
@@ -434,7 +440,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             tx_,
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
-            chain_.get_chain_id());
+            chain_.get_chain_id(),
+            chain_.get_blob_schedule(header_.timestamp));
         if (validation_result.has_error()) {
             prev_.get_future().wait();
             return std::move(validation_result).as_failure();

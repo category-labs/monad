@@ -202,7 +202,7 @@ Result<void> static_validate_ommers(Chain const &chain, Block const &block)
 }
 
 template <Traits traits>
-Result<void> static_validate_4844(Block const &block)
+Result<void> static_validate_4844(Chain const &chain, Block const &block)
 {
     if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         uint64_t blob_gas_used = 0;
@@ -211,7 +211,10 @@ Result<void> static_validate_4844(Block const &block)
                 blob_gas_used += get_total_blob_gas(tx);
             }
         }
-        if (MONAD_UNLIKELY(blob_gas_used > max_blob_gas_per_block<traits>())) {
+        auto const blob_schedule =
+            chain.get_blob_schedule(block.header.timestamp);
+        if (MONAD_UNLIKELY(
+                blob_gas_used > max_blob_gas_per_block(blob_schedule))) {
             return BlockError::GasAboveLimit;
         }
         if (MONAD_UNLIKELY(
@@ -238,7 +241,7 @@ Result<void> static_validate_body(Chain const &chain, Block const &block)
     }
 
     BOOST_OUTCOME_TRY(static_validate_ommers<traits>(chain, block));
-    BOOST_OUTCOME_TRY(static_validate_4844<traits>(block));
+    BOOST_OUTCOME_TRY(static_validate_4844<traits>(chain, block));
 
     return success();
 }

@@ -34,9 +34,19 @@
 #include <cstdint>
 #include <optional>
 
-MONAD_NAMESPACE_BEGIN
-
 using BOOST_OUTCOME_V2_NAMESPACE::success;
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+// Mainnet BPO activation times and blob parameters are canonicalized in
+// EIP-8134 and EIP-8135. BPO scheduling itself is defined by EIP-7892.
+constexpr uint64_t PRAGUE_ACTIVATION_TIMESTAMP = 1746612311;
+constexpr uint64_t BPO1_ACTIVATION_TIMESTAMP = 1765290071;
+constexpr uint64_t BPO2_ACTIVATION_TIMESTAMP = 1767747671;
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
 
 uint256_t EthereumMainnet::get_chain_id() const
 {
@@ -46,7 +56,7 @@ uint256_t EthereumMainnet::get_chain_id() const
 monad_eth_revision EthereumMainnet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
-    if (MONAD_LIKELY(timestamp >= 1746612311)) {
+    if (MONAD_LIKELY(timestamp >= PRAGUE_ACTIVATION_TIMESTAMP)) {
         return MONAD_ETH_PRAGUE;
     }
     else if (timestamp >= 1710338135) {
@@ -68,6 +78,21 @@ monad_eth_revision EthereumMainnet::get_revision(
         return MONAD_ETH_ISTANBUL;
     }
     MONAD_ASSERT(false, "unsupported fork");
+}
+
+BlobSchedule EthereumMainnet::get_blob_schedule(uint64_t const timestamp) const
+{
+    if (timestamp >= BPO1_ACTIVATION_TIMESTAMP &&
+        get_revision(0, timestamp) >= MONAD_ETH_OSAKA) {
+        if (MONAD_LIKELY(timestamp >= BPO2_ACTIVATION_TIMESTAMP)) {
+            return BPO2_BLOB_SCHEDULE;
+        }
+        return BPO1_BLOB_SCHEDULE;
+    }
+    if (timestamp >= PRAGUE_ACTIVATION_TIMESTAMP) {
+        return PRAGUE_BLOB_SCHEDULE;
+    }
+    return CANCUN_BLOB_SCHEDULE;
 }
 
 GenesisState EthereumMainnet::get_genesis_state() const

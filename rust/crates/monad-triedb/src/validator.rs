@@ -60,7 +60,7 @@ impl TriedbValSetRead for TriedbRoHandle {
         block_num: usize,
         requested_epoch: u64,
     ) -> Option<ValidatorSet> {
-        ValidatorSet::new(crate::ffi::triedb_read_valset(
+        ValidatorSet::new(crate::ffi::triedb_ro_read_valset(
             self.inner_mut(),
             block_num,
             requested_epoch,

@@ -28,6 +28,7 @@
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/node_cursor.hpp>
+#include <category/mpt/state_machine.hpp>
 
 namespace monad::mpt
 {
@@ -83,83 +84,115 @@ namespace monad::rust
             uint64_t node_lru_max_mem,
             bool disable_mismatching_storage_pool_check);
     };
+
+    struct TriedbRwInner
+    {
+        monad::mpt::Db db;
+        std::shared_ptr<monad::mpt::Node> root;
+
+        TriedbRwInner(
+            std::unique_ptr<monad::mpt::StateMachine> sm,
+            monad::mpt::OnDiskDbConfig const &config)
+            : db(std::move(sm), config)
+            , root()
+        {
+        }
+    };
 } // namespace monad::rust
 
 #include "monad-triedb/src/ffi.rs.h"
 
 namespace monad::rust
 {
-    std::unique_ptr<TriedbRoInner> triedb_open(
+    std::unique_ptr<TriedbRoInner> triedb_open_ro(
         ::rust::Str dbdirpath, uint64_t node_lru_max_mem,
         bool disable_mismatching_storage_pool_check);
 
-    inline size_t
-    triedb_poll(TriedbRoInner &inner, bool const blocking, size_t const count)
+    std::unique_ptr<TriedbRwInner> triedb_open_rw(
+        ::rust::Str dbdirpath, bool append, int64_t file_size_gb,
+        bool compaction);
+
+    std::unique_ptr<TriedbRwInner>
+    triedb_open_rw_memory(int64_t file_size_gb, bool compaction);
+
+#define MONAD_RUST_TRIEDB_METADATA_GETTER(name, ret, call)                     \
+    inline ret triedb_ro_##name(TriedbRoInner const &inner)                    \
+    {                                                                          \
+        return inner.db.call();                                                \
+    }                                                                          \
+    inline ret triedb_rw_##name(TriedbRwInner const &inner)                    \
+    {                                                                          \
+        return inner.db.call();                                                \
+    }
+
+    MONAD_RUST_TRIEDB_METADATA_GETTER(
+        latest_proposed_version, uint64_t, get_latest_proposed_version)
+    MONAD_RUST_TRIEDB_METADATA_GETTER(
+        latest_voted_version, uint64_t, get_latest_voted_version)
+    MONAD_RUST_TRIEDB_METADATA_GETTER(
+        latest_finalized_version, uint64_t, get_latest_finalized_version)
+    MONAD_RUST_TRIEDB_METADATA_GETTER(
+        latest_verified_version, uint64_t, get_latest_verified_version)
+    MONAD_RUST_TRIEDB_METADATA_GETTER(
+        earliest_version, uint64_t, get_earliest_version)
+    MONAD_RUST_TRIEDB_METADATA_GETTER(
+        latest_version, uint64_t, get_latest_version)
+    MONAD_RUST_TRIEDB_METADATA_GETTER(
+        latest_proposed_block_id, monad::bytes32_t,
+        get_latest_proposed_block_id)
+    MONAD_RUST_TRIEDB_METADATA_GETTER(
+        latest_voted_block_id, monad::bytes32_t, get_latest_voted_block_id)
+
+#undef MONAD_RUST_TRIEDB_METADATA_GETTER
+
+    std::unique_ptr<monad::mpt::NodeCursor> triedb_ro_read(
+        TriedbRoInner const &inner, NibblesView key, uint64_t block_id);
+
+    std::unique_ptr<monad::mpt::NodeCursor> triedb_rw_read(
+        TriedbRwInner const &inner, NibblesView key, uint64_t block_id);
+
+    inline size_t triedb_ro_poll(
+        TriedbRoInner &inner, bool const blocking, size_t const count)
     {
         return inner.db.poll(blocking, count);
     }
 
-    inline uint64_t triedb_latest_proposed_version(TriedbRoInner const &inner)
-    {
-        return inner.db.get_latest_proposed_version();
-    }
-
-    inline uint64_t triedb_latest_voted_version(TriedbRoInner const &inner)
-    {
-        return inner.db.get_latest_voted_version();
-    }
-
-    inline uint64_t triedb_latest_finalized_version(TriedbRoInner const &inner)
-    {
-        return inner.db.get_latest_finalized_version();
-    }
-
-    inline uint64_t triedb_latest_verified_version(TriedbRoInner const &inner)
-    {
-        return inner.db.get_latest_verified_version();
-    }
-
-    inline uint64_t triedb_earliest_version(TriedbRoInner const &inner)
-    {
-        return inner.db.get_earliest_version();
-    }
-
-    inline uint64_t triedb_latest_version(TriedbRoInner const &inner)
-    {
-        return inner.db.get_latest_version();
-    }
-
-    inline monad::bytes32_t
-    triedb_latest_proposed_block_id(TriedbRoInner const &inner)
-    {
-        return inner.db.get_latest_proposed_block_id();
-    }
-
-    inline monad::bytes32_t
-    triedb_latest_voted_block_id(TriedbRoInner const &inner)
-    {
-        return inner.db.get_latest_voted_block_id();
-    }
-
-    std::unique_ptr<monad::mpt::NodeCursor>
-    triedb_read(TriedbRoInner const &inner, NibblesView key, uint64_t block_id);
-
-    void triedb_async_read(
+    void triedb_ro_async_read(
         TriedbRoInner &inner, NibblesView key, uint64_t block_id,
         ffi::CallbackContext *ctx);
 
-    void triedb_traverse(
-        TriedbRoInner &inner, NibblesView key, uint64_t block_id,
-        ffi::CallbackContext *ctx);
-
-    void triedb_async_ranged_get(
+    void triedb_ro_async_ranged_get(
         TriedbRoInner &inner, NibblesView prefix, NibblesView min,
         NibblesView max, uint64_t block_id, ffi::CallbackContext *ctx);
 
-    void triedb_async_traverse(
+    void triedb_ro_traverse(
         TriedbRoInner &inner, NibblesView key, uint64_t block_id,
         ffi::CallbackContext *ctx);
 
-    std::unique_ptr<std::vector<monad::staking::Validator>> triedb_read_valset(
+    void triedb_ro_async_traverse(
+        TriedbRoInner &inner, NibblesView key, uint64_t block_id,
+        ffi::CallbackContext *ctx);
+
+    std::unique_ptr<std::vector<monad::staking::Validator>>
+    triedb_ro_read_valset(
         TriedbRoInner &inner, size_t block_num, uint64_t requested_epoch);
+
+    bool triedb_rw_load_root(TriedbRwInner &inner, uint64_t version);
+
+    void triedb_rw_clear_root(TriedbRwInner &inner);
+
+    void triedb_rw_upsert(
+        TriedbRwInner &inner, ::rust::Slice<UpsertEntry const> updates,
+        uint64_t block_id);
+
+    void triedb_rw_update_proposed_metadata(
+        TriedbRwInner &inner, uint64_t version,
+        monad::bytes32_t const &block_id);
+
+    void triedb_rw_update_voted_metadata(
+        TriedbRwInner &inner, uint64_t version,
+        monad::bytes32_t const &block_id);
+
+    void
+    triedb_rw_update_finalized_version(TriedbRwInner &inner, uint64_t version);
 } // namespace monad::rust

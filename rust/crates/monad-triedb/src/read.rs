@@ -15,7 +15,7 @@
 
 use cxx::UniquePtr;
 
-use crate::{ffi, TriedbRoHandle};
+use crate::{ffi, TriedbRoHandle, TriedbRwHandle};
 
 /// A value read from the triedb, holding a cursor that pins the underlying
 /// node in the cache. The byte view is valid as long as the `NodeValue` is
@@ -77,46 +77,92 @@ fn parse_block_id(value: ffi::Bytes32) -> Option<[u8; 32]> {
 impl TriedbRead for TriedbRoHandle {
     #[inline]
     fn latest_proposed_block(&self) -> Option<u64> {
-        parse_block_num(crate::ffi::triedb_latest_proposed_version(&self.inner))
+        parse_block_num(crate::ffi::triedb_ro_latest_proposed_version(&self.inner))
     }
 
     #[inline]
     fn latest_voted_block(&self) -> Option<u64> {
-        parse_block_num(crate::ffi::triedb_latest_voted_version(&self.inner))
+        parse_block_num(crate::ffi::triedb_ro_latest_voted_version(&self.inner))
     }
 
     #[inline]
     fn latest_finalized_block(&self) -> Option<u64> {
-        parse_block_num(crate::ffi::triedb_latest_finalized_version(&self.inner))
+        parse_block_num(crate::ffi::triedb_ro_latest_finalized_version(&self.inner))
     }
 
     #[inline]
     fn latest_verified_block(&self) -> Option<u64> {
-        parse_block_num(crate::ffi::triedb_latest_verified_version(&self.inner))
+        parse_block_num(crate::ffi::triedb_ro_latest_verified_version(&self.inner))
     }
 
     #[inline]
     fn earliest_finalized_block(&self) -> Option<u64> {
-        parse_block_num(crate::ffi::triedb_earliest_version(&self.inner))
+        parse_block_num(crate::ffi::triedb_ro_earliest_version(&self.inner))
     }
 
     #[inline]
     fn latest_version(&self) -> Option<u64> {
-        parse_block_num(crate::ffi::triedb_latest_version(&self.inner))
+        parse_block_num(crate::ffi::triedb_ro_latest_version(&self.inner))
     }
 
     #[inline]
     fn latest_proposed_block_id(&self) -> Option<[u8; 32]> {
-        parse_block_id(crate::ffi::triedb_latest_proposed_block_id(&self.inner))
+        parse_block_id(crate::ffi::triedb_ro_latest_proposed_block_id(&self.inner))
     }
 
     #[inline]
     fn latest_voted_block_id(&self) -> Option<[u8; 32]> {
-        parse_block_id(crate::ffi::triedb_latest_voted_block_id(&self.inner))
+        parse_block_id(crate::ffi::triedb_ro_latest_voted_block_id(&self.inner))
     }
 
     #[inline]
     fn read(&self, key: ffi::NibblesView<'_>, block_id: u64) -> Option<NodeValue> {
-        NodeValue::new(crate::ffi::triedb_read(&self.inner, key, block_id))
+        NodeValue::new(crate::ffi::triedb_ro_read(&self.inner, key, block_id))
+    }
+}
+
+impl TriedbRead for TriedbRwHandle {
+    fn latest_proposed_block(&self) -> Option<u64> {
+        parse_block_num(crate::ffi::triedb_rw_latest_proposed_version(&self.inner))
+    }
+
+    #[inline]
+    fn latest_voted_block(&self) -> Option<u64> {
+        parse_block_num(crate::ffi::triedb_rw_latest_voted_version(&self.inner))
+    }
+
+    #[inline]
+    fn latest_finalized_block(&self) -> Option<u64> {
+        parse_block_num(crate::ffi::triedb_rw_latest_finalized_version(&self.inner))
+    }
+
+    #[inline]
+    fn latest_verified_block(&self) -> Option<u64> {
+        parse_block_num(crate::ffi::triedb_rw_latest_verified_version(&self.inner))
+    }
+
+    #[inline]
+    fn earliest_finalized_block(&self) -> Option<u64> {
+        parse_block_num(crate::ffi::triedb_rw_earliest_version(&self.inner))
+    }
+
+    #[inline]
+    fn latest_version(&self) -> Option<u64> {
+        parse_block_num(crate::ffi::triedb_rw_latest_version(&self.inner))
+    }
+
+    #[inline]
+    fn latest_proposed_block_id(&self) -> Option<[u8; 32]> {
+        parse_block_id(crate::ffi::triedb_rw_latest_proposed_block_id(&self.inner))
+    }
+
+    #[inline]
+    fn latest_voted_block_id(&self) -> Option<[u8; 32]> {
+        parse_block_id(crate::ffi::triedb_rw_latest_voted_block_id(&self.inner))
+    }
+
+    #[inline]
+    fn read(&self, key: ffi::NibblesView<'_>, block_id: u64) -> Option<NodeValue> {
+        NodeValue::new(crate::ffi::triedb_rw_read(&self.inner, key, block_id))
     }
 }

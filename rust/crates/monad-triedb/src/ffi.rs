@@ -18,14 +18,21 @@ use std::sync::{Arc, Mutex};
 use futures::channel::oneshot::Sender;
 
 pub(crate) use self::bridge::{
-    node_cursor_as_bytes, triedb_async_ranged_get, triedb_async_read, triedb_async_traverse,
-    triedb_earliest_version, triedb_latest_finalized_version, triedb_latest_proposed_block_id,
-    triedb_latest_proposed_version, triedb_latest_verified_version, triedb_latest_version,
-    triedb_latest_voted_block_id, triedb_latest_voted_version, triedb_open, triedb_poll,
-    triedb_read, triedb_read_valset, triedb_traverse, validator_bls_pubkey, validator_secp_pubkey,
-    validator_stake, TriedbRoInner,
+    node_cursor_as_bytes, triedb_open_ro, triedb_open_rw, triedb_open_rw_memory,
+    triedb_ro_async_ranged_get, triedb_ro_async_read, triedb_ro_async_traverse,
+    triedb_ro_earliest_version, triedb_ro_latest_finalized_version,
+    triedb_ro_latest_proposed_block_id, triedb_ro_latest_proposed_version,
+    triedb_ro_latest_verified_version, triedb_ro_latest_version, triedb_ro_latest_voted_block_id,
+    triedb_ro_latest_voted_version, triedb_ro_poll, triedb_ro_read, triedb_ro_read_valset,
+    triedb_ro_traverse, triedb_rw_clear_root, triedb_rw_earliest_version,
+    triedb_rw_latest_finalized_version, triedb_rw_latest_proposed_block_id,
+    triedb_rw_latest_proposed_version, triedb_rw_latest_verified_version, triedb_rw_latest_version,
+    triedb_rw_latest_voted_block_id, triedb_rw_latest_voted_version, triedb_rw_load_root,
+    triedb_rw_read, triedb_rw_update_finalized_version, triedb_rw_update_proposed_metadata,
+    triedb_rw_update_voted_metadata, triedb_rw_upsert, validator_bls_pubkey, validator_secp_pubkey,
+    validator_stake, TriedbRoInner, TriedbRwInner,
 };
-pub use self::bridge::{NibblesView, NodeCursor, Validator};
+pub use self::bridge::{NibblesView, NodeCursor, UpsertEntry, Validator};
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -48,6 +55,12 @@ mod bridge {
     pub struct NibblesView<'a> {
         pub(super) bytes: &'a [u8],
         pub(super) odd: bool,
+    }
+
+    pub struct UpsertEntry<'a> {
+        pub key: &'a [u8],
+        pub key_odd: bool,
+        pub value: &'a [u8],
     }
 
     #[namespace = "monad"]
@@ -81,50 +94,77 @@ mod bridge {
         include!("monad-triedb/include/ffi.h");
 
         type TriedbRoInner;
+        type TriedbRwInner;
 
-        fn triedb_open(
+        fn triedb_open_ro(
             dbdirpath: &str,
             node_lru_max_mem: u64,
             disable_mismatching_storage_pool_check: bool,
         ) -> UniquePtr<TriedbRoInner>;
 
-        fn triedb_poll(inner: Pin<&mut TriedbRoInner>, blocking: bool, count: usize) -> usize;
+        fn triedb_open_rw(
+            dbdirpath: &str,
+            append: bool,
+            file_size_gb: i64,
+            compaction: bool,
+        ) -> UniquePtr<TriedbRwInner>;
 
-        fn triedb_latest_proposed_version(inner: &TriedbRoInner) -> u64;
-        fn triedb_latest_voted_version(inner: &TriedbRoInner) -> u64;
-        fn triedb_latest_finalized_version(inner: &TriedbRoInner) -> u64;
-        fn triedb_latest_verified_version(inner: &TriedbRoInner) -> u64;
+        fn triedb_open_rw_memory(file_size_gb: i64, compaction: bool) -> UniquePtr<TriedbRwInner>;
 
-        fn triedb_earliest_version(inner: &TriedbRoInner) -> u64;
-        fn triedb_latest_version(inner: &TriedbRoInner) -> u64;
+        fn triedb_ro_poll(inner: Pin<&mut TriedbRoInner>, blocking: bool, count: usize) -> usize;
+
+        fn triedb_ro_latest_proposed_version(inner: &TriedbRoInner) -> u64;
+        fn triedb_rw_latest_proposed_version(inner: &TriedbRwInner) -> u64;
+
+        fn triedb_ro_latest_voted_version(inner: &TriedbRoInner) -> u64;
+        fn triedb_rw_latest_voted_version(inner: &TriedbRwInner) -> u64;
+
+        fn triedb_ro_latest_finalized_version(inner: &TriedbRoInner) -> u64;
+        fn triedb_rw_latest_finalized_version(inner: &TriedbRwInner) -> u64;
+
+        fn triedb_ro_latest_verified_version(inner: &TriedbRoInner) -> u64;
+        fn triedb_rw_latest_verified_version(inner: &TriedbRwInner) -> u64;
+
+        fn triedb_ro_earliest_version(inner: &TriedbRoInner) -> u64;
+        fn triedb_rw_earliest_version(inner: &TriedbRwInner) -> u64;
+
+        fn triedb_ro_latest_version(inner: &TriedbRoInner) -> u64;
+        fn triedb_rw_latest_version(inner: &TriedbRwInner) -> u64;
 
         /// Returns all-zeros if no proposed block is recorded.
-        fn triedb_latest_proposed_block_id(inner: &TriedbRoInner) -> bytes32_t;
+        fn triedb_ro_latest_proposed_block_id(inner: &TriedbRoInner) -> bytes32_t;
+        fn triedb_rw_latest_proposed_block_id(inner: &TriedbRwInner) -> bytes32_t;
 
         /// Returns all-zeros if no voted block is recorded.
-        fn triedb_latest_voted_block_id(inner: &TriedbRoInner) -> bytes32_t;
+        fn triedb_ro_latest_voted_block_id(inner: &TriedbRoInner) -> bytes32_t;
+        fn triedb_rw_latest_voted_block_id(inner: &TriedbRwInner) -> bytes32_t;
 
-        fn triedb_read(
+        fn triedb_ro_read(
             inner: &TriedbRoInner,
             key: NibblesView,
             block_id: u64,
         ) -> UniquePtr<NodeCursor>;
+        fn triedb_rw_read(
+            inner: &TriedbRwInner,
+            key: NibblesView,
+            block_id: u64,
+        ) -> UniquePtr<NodeCursor>;
 
-        unsafe fn triedb_async_read(
+        unsafe fn triedb_ro_async_read(
             inner: Pin<&mut TriedbRoInner>,
             key: NibblesView,
             block_id: u64,
             ctx: *mut CallbackContext,
         );
 
-        unsafe fn triedb_traverse(
+        unsafe fn triedb_ro_traverse(
             inner: Pin<&mut TriedbRoInner>,
             key: NibblesView,
             block_id: u64,
             ctx: *mut CallbackContext,
         );
 
-        unsafe fn triedb_async_ranged_get(
+        unsafe fn triedb_ro_async_ranged_get(
             inner: Pin<&mut TriedbRoInner>,
             prefix: NibblesView,
             min: NibblesView,
@@ -133,18 +173,38 @@ mod bridge {
             ctx: *mut CallbackContext,
         );
 
-        unsafe fn triedb_async_traverse(
+        unsafe fn triedb_ro_async_traverse(
             inner: Pin<&mut TriedbRoInner>,
             key: NibblesView,
             block_id: u64,
             ctx: *mut CallbackContext,
         );
 
-        fn triedb_read_valset(
+        fn triedb_ro_read_valset(
             inner: Pin<&mut TriedbRoInner>,
             block_num: usize,
             requested_epoch: u64,
         ) -> UniquePtr<CxxVector<Validator>>;
+
+        fn triedb_rw_upsert(inner: Pin<&mut TriedbRwInner>, updates: &[UpsertEntry], block_id: u64);
+
+        fn triedb_rw_clear_root(inner: Pin<&mut TriedbRwInner>);
+
+        fn triedb_rw_load_root(inner: Pin<&mut TriedbRwInner>, version: u64) -> bool;
+
+        fn triedb_rw_update_finalized_version(inner: Pin<&mut TriedbRwInner>, version: u64);
+
+        fn triedb_rw_update_voted_metadata(
+            inner: Pin<&mut TriedbRwInner>,
+            version: u64,
+            block_id: &bytes32_t,
+        );
+
+        fn triedb_rw_update_proposed_metadata(
+            inner: Pin<&mut TriedbRwInner>,
+            version: u64,
+            block_id: &bytes32_t,
+        );
     }
 
     // Generates VectorElement for Validator so CxxVector<Validator> is usable.

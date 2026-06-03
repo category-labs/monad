@@ -73,7 +73,41 @@ namespace monad::rust
         return monad::mpt::NibblesView{0u, nibble_count, view.bytes.data()};
     }
 
-    std::unique_ptr<TriedbRoInner> triedb_open(
+    class PlainStateMachine final : public monad::mpt::StateMachine
+    {
+    public:
+        std::unique_ptr<monad::mpt::StateMachine> clone() const override
+        {
+            return std::make_unique<PlainStateMachine>(*this);
+        }
+
+        void down(unsigned char) override {}
+
+        void up(size_t) override {}
+
+        monad::mpt::Compute &get_compute() const override
+        {
+            static monad::mpt::EmptyCompute e{};
+            return e;
+        }
+
+        bool cache() const override
+        {
+            return true;
+        }
+
+        bool compact() const override
+        {
+            return true;
+        }
+
+        bool is_variable_length() const override
+        {
+            return false;
+        }
+    };
+
+    std::unique_ptr<TriedbRoInner> triedb_open_ro(
         ::rust::Str dbdirpath, uint64_t const node_lru_max_mem,
         bool const disable_mismatching_storage_pool_check)
     {
@@ -104,13 +138,66 @@ namespace monad::rust
                 disable_mismatching_storage_pool_check);
         }
         catch (std::exception const &e) {
-            LOG_ERROR("Failed to open triedb: {}", e.what());
+            LOG_ERROR("Failed to open ro triedb: {}", e.what());
             return nullptr;
         }
     }
 
-    std::unique_ptr<monad::mpt::NodeCursor>
-    triedb_read(TriedbRoInner const &inner, NibblesView key, uint64_t block_id)
+    namespace
+    {
+        std::unique_ptr<TriedbRwInner>
+        open_rw_impl(monad::mpt::OnDiskDbConfig config)
+        {
+            try {
+                return std::make_unique<TriedbRwInner>(
+                    std::make_unique<PlainStateMachine>(), config);
+            }
+            catch (std::exception const &e) {
+                LOG_ERROR("Failed to open rw triedb: {}", e.what());
+                return nullptr;
+            }
+        }
+    }
+
+    std::unique_ptr<TriedbRwInner> triedb_open_rw(
+        ::rust::Str dbdirpath, bool const append, int64_t const file_size_gb,
+        bool const compaction)
+    {
+        std::string const path{dbdirpath.data(), dbdirpath.size()};
+
+        std::vector<std::filesystem::path> paths;
+        paths.emplace_back(path);
+
+        return open_rw_impl(monad::mpt::OnDiskDbConfig{
+            .append = append,
+            .compaction = compaction,
+            .dbname_paths = std::move(paths),
+            .file_size_db = file_size_gb});
+    }
+
+    std::unique_ptr<TriedbRwInner>
+    triedb_open_rw_memory(int64_t const file_size_gb, bool const compaction)
+    {
+        return open_rw_impl(monad::mpt::OnDiskDbConfig{
+            .append = false,
+            .compaction = compaction,
+            .dbname_paths = {},
+            .file_size_db = file_size_gb});
+    }
+
+    std::unique_ptr<monad::mpt::NodeCursor> triedb_ro_read(
+        TriedbRoInner const &inner, NibblesView key, uint64_t block_id)
+    {
+        auto result = inner.db.find(to_mpt_view(key), block_id);
+        if (!result.has_value()) {
+            return nullptr;
+        }
+        return std::make_unique<monad::mpt::NodeCursor>(
+            std::move(result.value()));
+    }
+
+    std::unique_ptr<monad::mpt::NodeCursor> triedb_rw_read(
+        TriedbRwInner const &inner, NibblesView key, uint64_t block_id)
     {
         auto result = inner.db.find(to_mpt_view(key), block_id);
         if (!result.has_value()) {
@@ -141,7 +228,7 @@ namespace monad::rust
         }
     };
 
-    void triedb_async_read(
+    void triedb_ro_async_read(
         TriedbRoInner &inner, NibblesView const key, uint64_t const block_id,
         ffi::CallbackContext *const ctx)
     {
@@ -264,7 +351,7 @@ namespace monad::rust
         }
     };
 
-    void triedb_traverse(
+    void triedb_ro_traverse(
         TriedbRoInner &inner, NibblesView const key, uint64_t const block_id,
         ffi::CallbackContext *const ctx)
     {
@@ -283,7 +370,7 @@ namespace monad::rust
         ffi::callback_traverse_finished(ctx, completed);
     }
 
-    void triedb_async_ranged_get(
+    void triedb_ro_async_ranged_get(
         TriedbRoInner &inner, NibblesView const prefix_view,
         NibblesView const min_view, NibblesView const max_view,
         uint64_t const block_id, ffi::CallbackContext *const ctx)
@@ -327,7 +414,7 @@ namespace monad::rust
             ->initiate();
     }
 
-    void triedb_async_traverse(
+    void triedb_ro_async_traverse(
         TriedbRoInner &inner, NibblesView const key, uint64_t const block_id,
         ffi::CallbackContext *const ctx)
     {
@@ -347,7 +434,8 @@ namespace monad::rust
             ->initiate();
     }
 
-    std::unique_ptr<std::vector<monad::staking::Validator>> triedb_read_valset(
+    std::unique_ptr<std::vector<monad::staking::Validator>>
+    triedb_ro_read_valset(
         TriedbRoInner &db, size_t const block_num,
         uint64_t const requested_epoch)
     {
@@ -358,6 +446,66 @@ namespace monad::rust
         }
         return std::make_unique<std::vector<monad::staking::Validator>>(
             std::move(ret).value());
+    }
+
+    bool triedb_rw_load_root(TriedbRwInner &inner, uint64_t const version)
+    {
+        auto root = inner.db.load_root_for_version(version);
+        if (root == nullptr) {
+            return false;
+        }
+        inner.root = std::move(root);
+        return true;
+    }
+
+    void triedb_rw_clear_root(TriedbRwInner &inner)
+    {
+        inner.root.reset();
+    }
+
+    void triedb_rw_upsert(
+        TriedbRwInner &inner, ::rust::Slice<UpsertEntry const> const updates,
+        uint64_t const block_id)
+    {
+        std::vector<monad::mpt::Update> update_storage;
+        update_storage.reserve(updates.size());
+
+        monad::mpt::UpdateList update_list;
+
+        for (auto const &entry : updates) {
+            NibblesView const key_view{
+                ::rust::Slice<uint8_t const>{
+                    entry.key.data(), entry.key.size()},
+                entry.key_odd};
+            update_storage.push_back(monad::mpt::make_update(
+                to_mpt_view(key_view),
+                monad::byte_string_view{
+                    entry.value.data(), entry.value.size()}));
+            update_list.push_front(update_storage.back());
+        }
+
+        inner.root = inner.db.upsert(
+            std::move(inner.root), std::move(update_list), block_id);
+    }
+
+    void triedb_rw_update_proposed_metadata(
+        TriedbRwInner &inner, uint64_t const version,
+        monad::bytes32_t const &block_id)
+    {
+        inner.db.update_proposed_metadata(version, block_id);
+    }
+
+    void triedb_rw_update_voted_metadata(
+        TriedbRwInner &inner, uint64_t const version,
+        monad::bytes32_t const &block_id)
+    {
+        inner.db.update_voted_metadata(version, block_id);
+    }
+
+    void triedb_rw_update_finalized_version(
+        TriedbRwInner &inner, uint64_t const version)
+    {
+        inner.db.update_finalized_version(version);
     }
 
 } // namespace monad::rust

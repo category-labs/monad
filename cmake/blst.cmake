@@ -1,4 +1,4 @@
-set(BLST_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/blst")
+set(BLST_SOURCE_DIR "${THIRD_PARTY_DIR}/blst")
 
 enable_language(ASM)
 

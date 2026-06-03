@@ -15,42 +15,52 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <cstdint>
 #include <span>
 
 MONAD_NAMESPACE_BEGIN
 
-/// A shallowly-parsed Reth witness bundle.
-///
-/// Only the two fixed-size root hashes (fields [1] and [2]) are eagerly
-/// decoded. All other fields are represented as byte_string_view spans
+/// A shallowly-parsed witness bundle. Every field is a byte_string_view
 /// pointing into the original witness bytes; the caller must keep that
 /// buffer alive for as long as this struct is used.
 ///
-/// Wire format (7-field RLP list):
-///   [0] block_rlp        RLP-encoded block
-///   [1] pre_state_root   bytes32
-///   [2] post_state_root  bytes32
-///   [3] [node...]        RLP list of MPT node preimages
-///   [4] [code...]        RLP list of contract bytecodes
-///   [5] [key...]         RLP list of address/slot preimages (not stored)
-///   [6] [header...]      RLP list of ancestor block headers
+/// Wire format (6-field RLP list):
+///   [0] block_rlp                     RLP-encoded block
+///   [1] [node...]                     RLP list of MPT node preimages
+///   [2] [code...]                     RLP list of contract bytecodes
+///   [3] [header...]                   RLP list of ancestor block headers
+///   [4] [address...]                  Parent sender+authority set
+///   [5] [address...]                  Grandparent sender+authority set
+///
+/// Fields [4] and [5] can be left unpopulated for chains/revisions where
+/// can_sender_dip_into_reserve is not active (EVM traits, pre-MONAD_FOUR).
 struct ExecutionWitness
 {
     byte_string_view block_rlp;
-    bytes32_t pre_state_root;
-    bytes32_t post_state_root;
     byte_string_view encoded_nodes;
     byte_string_view encoded_codes;
     byte_string_view encoded_headers;
+    byte_string_view encoded_parent_senders_and_authorities;
+    byte_string_view encoded_grandparent_senders_and_authorities;
 };
 
 Result<ExecutionWitness>
 parse_execution_witness(byte_string_view witness_bytes);
+
+byte_string encode_execution_witness(
+    byte_string_view block_rlp, std::span<byte_string const> nodes,
+    std::span<byte_string const> codes, std::span<byte_string const> headers,
+    ankerl::unordered_dense::segmented_set<Address> const
+        *const parent_senders_and_authorities = nullptr,
+    ankerl::unordered_dense::segmented_set<Address> const
+        *const grandparent_senders_and_authorities = nullptr);
 
 MONAD_NAMESPACE_END

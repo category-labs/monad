@@ -40,28 +40,9 @@ using namespace monad;
 
 namespace
 {
-    constexpr auto PRE_ROOT =
-        0x0101010101010101010101010101010101010101010101010101010101010101_bytes32;
-    constexpr auto POST_ROOT =
-        0x0202020202020202020202020202020202020202020202020202020202020202_bytes32;
-
-    byte_string make_minimal_witness(
-        bytes32_t const &pre, bytes32_t const &post,
-        byte_string nodes_payload = {}, byte_string codes_payload = {})
+    byte_string make_minimal_witness()
     {
-        return rlp::encode_list2(
-            rlp::encode_string2({}), // [0] block_rlp (empty)
-            rlp::encode_string2(
-                byte_string_view{pre.bytes, 32}), // [1] pre_state_root
-            rlp::encode_string2(
-                byte_string_view{post.bytes, 32}), // [2] post_state_root
-            rlp::encode_list2(nodes_payload), // [3] node preimages
-            rlp::encode_list2(codes_payload), // [4] contract bytecodes
-            byte_string{
-                static_cast<unsigned char>(0xc0)}, // [5] preimages (skipped)
-            byte_string{static_cast<unsigned char>(0xc0)}
-            // [6] ancestor headers
-        );
+        return encode_execution_witness({}, {}, {}, {});
     }
 
     void storage_leaf_roundtrip(
@@ -91,12 +72,8 @@ namespace
     {
         bytes32_t const root = to_bytes(
             keccak256(byte_string_view{node_rlp.data(), node_rlp.size()}));
-        byte_string const encoded_nodes = rlp::encode_string2(
-            byte_string_view{node_rlp.data(), node_rlp.size()});
         return PartialTrieDb::from_witness(
-            root,
-            byte_string_view{encoded_nodes.data(), encoded_nodes.size()},
-            {});
+            root, byte_string_view{node_rlp.data(), node_rlp.size()}, {});
     }
 
     PartialTrieDb make_empty_db()
@@ -156,14 +133,16 @@ namespace
 
 TEST(ParseExecutionWitness, ValidMinimalWitness)
 {
-    auto const w = make_minimal_witness(PRE_ROOT, POST_ROOT);
+    auto const w = make_minimal_witness();
     auto const result = parse_execution_witness(w);
     ASSERT_FALSE(result.has_error());
-    EXPECT_EQ(result.value().pre_state_root, PRE_ROOT);
-    EXPECT_EQ(result.value().post_state_root, POST_ROOT);
+    EXPECT_TRUE(result.value().block_rlp.empty());
     EXPECT_TRUE(result.value().encoded_nodes.empty());
     EXPECT_TRUE(result.value().encoded_codes.empty());
     EXPECT_TRUE(result.value().encoded_headers.empty());
+    EXPECT_TRUE(result.value().encoded_parent_senders_and_authorities.empty());
+    EXPECT_TRUE(
+        result.value().encoded_grandparent_senders_and_authorities.empty());
 }
 
 TEST(ParseExecutionWitness, EmptyInput)
@@ -182,27 +161,73 @@ TEST(ParseExecutionWitness, OuterTypeNotList)
 
 TEST(ParseExecutionWitness, Truncated)
 {
-    auto w = make_minimal_witness(PRE_ROOT, POST_ROOT);
-    w.resize(w.size() - 5);
+    auto w = make_minimal_witness();
+    w.resize(w.size() - 1);
     auto const result = parse_execution_witness(w);
     EXPECT_TRUE(result.has_error());
 }
 
-TEST(ParseExecutionWitness, PreRootWrongLength)
+TEST(EncodeExecutionWitness, AllFieldsRoundtrip)
 {
-    // Replace the 32-byte pre_state_root item with a 16-byte one so that
-    // decode_byte_string_fixed<32> returns ArrayLengthUnexpected.
-    byte_string const w = rlp::encode_list2(
-        rlp::encode_string2({}),
-        rlp::encode_string2(
-            byte_string_view{PRE_ROOT.bytes, 16}), // 16 bytes, not 32
-        rlp::encode_string2(byte_string_view{POST_ROOT.bytes, 32}),
-        byte_string{static_cast<unsigned char>(0xc0)},
-        byte_string{static_cast<unsigned char>(0xc0)},
-        byte_string{static_cast<unsigned char>(0xc0)},
-        byte_string{static_cast<unsigned char>(0xc0)});
-    auto const result = parse_execution_witness(w);
-    EXPECT_TRUE(result.has_error());
+    // block_rlp is wrapped by the encoder as an RLP string; the parser hands
+    // back the unwrapped payload.
+    byte_string const block_rlp{0x01, 0x02, 0x03, 0x04};
+
+    // Nodes are already complete RLP items and are emitted raw, so the parsed
+    // [1] payload is their straight concatenation.
+    std::vector<byte_string> const nodes{
+        rlp::encode_list2(rlp::encode_string2(byte_string{0xaa})),
+        rlp::encode_string2(byte_string{0xbb, 0xcc})};
+
+    // Codes and headers are each wrapped as RLP strings by the encoder.
+    std::vector<byte_string> const codes{
+        byte_string{0x60, 0x00, 0x60, 0x00}, byte_string{0x00}};
+    std::vector<byte_string> const headers{
+        byte_string{0xde, 0xad}, byte_string{0xbe, 0xef, 0xfe}};
+
+    ankerl::unordered_dense::segmented_set<Address> parents;
+    parents.insert(ADDR_X);
+    parents.insert(ADDR_Y);
+    ankerl::unordered_dense::segmented_set<Address> grandparents;
+    grandparents.insert(ADDR_Z);
+
+    byte_string const encoded = encode_execution_witness(
+        block_rlp, nodes, codes, headers, &parents, &grandparents);
+
+    auto const result = parse_execution_witness(encoded);
+    ASSERT_FALSE(result.has_error());
+    auto const &w = result.value();
+
+    EXPECT_EQ(w.block_rlp, byte_string_view{block_rlp});
+
+    // [1] nodes: raw concatenation.
+    EXPECT_EQ(w.encoded_nodes, byte_string_view{nodes[0] + nodes[1]});
+
+    // [2] codes / [3] headers: each entry wrapped as an RLP string.
+    EXPECT_EQ(
+        w.encoded_codes,
+        byte_string_view{
+            rlp::encode_string2(codes[0]) + rlp::encode_string2(codes[1])});
+    EXPECT_EQ(
+        w.encoded_headers,
+        byte_string_view{
+            rlp::encode_string2(headers[0]) + rlp::encode_string2(headers[1])});
+
+    // [4]/[5] addresses: emitted in sorted order, each wrapped as an RLP
+    // string.
+    std::vector<Address> sorted_parents{ADDR_X, ADDR_Y};
+    std::sort(sorted_parents.begin(), sorted_parents.end());
+    byte_string expected_parents;
+    for (auto const &a : sorted_parents) {
+        expected_parents += rlp::encode_string2(to_byte_string_view(a.bytes));
+    }
+    EXPECT_EQ(
+        w.encoded_parent_senders_and_authorities,
+        byte_string_view{expected_parents});
+    EXPECT_EQ(
+        w.encoded_grandparent_senders_and_authorities,
+        byte_string_view{
+            rlp::encode_string2(to_byte_string_view(ADDR_Z.bytes))});
 }
 
 TEST(StorageLeafValue, DecodeZeroValue)
@@ -390,33 +415,6 @@ TEST(PartialTrieDb, EmptyInlineNode)
     auto result = db_from_rlp_node(branch);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), rlp::DecodeError::InputTooShort);
-}
-
-TEST(PartialTrieDb, NodeIndexEntryTrailingData)
-{
-    // When a hash resolves to a node in the index, the raw entry must be
-    // exactly one RLP list with no trailing bytes.  Append a spurious byte
-    // so that the "!node_enc.empty()" check fires InputTooLong.
-    mpt::Nibbles leaf_path{2};
-    leaf_path.set(0, 0xA);
-    leaf_path.set(1, 0xB);
-
-    unsigned char compact_buf[33];
-    auto const compact_sv = mpt::compact_encode(
-        compact_buf, mpt::NibblesView{leaf_path}, /*terminating=*/true);
-
-    AccountLeafValue const val{.account = {.nonce = 1}};
-    byte_string const encoded_val = AccountLeafValue::encode(val);
-
-    byte_string node_rlp = rlp::encode_list2(
-        rlp::encode_string2(compact_sv),
-        rlp::encode_string2(
-            byte_string_view{encoded_val.data(), encoded_val.size()}));
-    node_rlp.push_back(static_cast<unsigned char>(0xFF));
-
-    auto result = db_from_rlp_node(node_rlp);
-    ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(result.error(), rlp::DecodeError::InputTooLong);
 }
 
 TEST(PartialTrieDb, PathTooLong)

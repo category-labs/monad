@@ -29,7 +29,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/mpt/nibbles_view.hpp>
-#include <category/vm/vm.hpp>
+#include <category/vm/code.hpp>
 
 #include <ankerl/unordered_dense.h>
 
@@ -140,8 +140,9 @@ using CodeIndex = ankerl::unordered_dense::map<bytes32_t, vm::SharedIntercode>;
 
 /// A sparse Ethereum account + storage MPT that implements the Db interface.
 ///
-/// Built from an execution witness bundle; serves as a drop-in replacement
-/// for TrieDb during zkVM STF proving.
+/// Built from a Reth witness bundle; serves as a drop-in replacement for
+/// TrieDb during zkVM STF proving. The trie IS the pre-state — there are no
+/// separate account or storage vectors.
 class PartialTrieDb final : public Db
 {
     AccountTrie root_;

@@ -145,8 +145,9 @@ COPY . src
 RUN cd src && cmake -B build-zkvm -S zkvm/guest \
     -DCMAKE_TOOLCHAIN_FILE=/src/category/core/toolchains/riscv64-elf.cmake \
     -DRISCV_TOOLCHAIN_DIR=/root/riscv \
+    -DMONAD_ZKVM_GUEST_TARGET=zisk \
     -DCMAKE_BUILD_TYPE=Release
-RUN cd src && cmake --build build-zkvm --target monad-zkvm --parallel
+RUN cd src && cmake --build build-zkvm --target monad-zkvm-guest-zisk --parallel
 
 FROM base AS vm_fuzz
 

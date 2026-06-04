@@ -23,7 +23,6 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>

@@ -381,17 +381,18 @@ monad_compile_options(monad_execution_runloop)
 # ##############################################################################
 # unit tests
 # ##############################################################################
+if(NOT CMAKE_CROSSCOMPILING)
+  monad_add_test_folder("ethereum")
+  monad_add_test_folder("monad")
 
-monad_add_test_folder("ethereum")
-monad_add_test_folder("monad")
-
-add_executable(
-    monad_staking_contract_fuzzer
-    "monad/staking/fuzzer/staking_contract_fuzzer.cpp")
-target_include_directories(
-    monad_staking_contract_fuzzer
-    PRIVATE "${CMAKE_BINARY_DIR}/test")
-target_link_libraries(
-    monad_staking_contract_fuzzer
-    PRIVATE monad_execution)
-monad_compile_options(monad_staking_contract_fuzzer)
+  add_executable(
+      monad_staking_contract_fuzzer
+      "monad/staking/fuzzer/staking_contract_fuzzer.cpp")
+  target_include_directories(
+      monad_staking_contract_fuzzer
+      PRIVATE "${CMAKE_BINARY_DIR}/test")
+  target_link_libraries(
+      monad_staking_contract_fuzzer
+      PRIVATE monad_execution)
+  monad_compile_options(monad_staking_contract_fuzzer)
+endif()

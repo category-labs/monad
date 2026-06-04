@@ -17,6 +17,22 @@
 
 #include_next <category/core/assert.h>
 
+#include <zkvm/core/zkvm_halt.h>
+
 // Layout invariants from the host build which don't hold in zkVM get erased
 #undef MONAD_STATIC_ASSERT
 #define MONAD_STATIC_ASSERT(...)
+
+
+#define monad_assertion_failed(expr, function, file, line, msg) zkvm_halt(1)
+
+#undef MONAD_ASSERT_PRINTF
+#define MONAD_ASSERT_PRINTF(expr, format, ...)                                 \
+    if (MONAD_LIKELY(expr)) { /* likeliest */                                  \
+    }                                                                          \
+    else {                                                                     \
+        zkvm_halt(1);                                                          \
+    }
+
+#undef MONAD_ABORT_PRINTF
+#define MONAD_ABORT_PRINTF(format, ...) zkvm_halt(1)

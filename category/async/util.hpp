@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include "config.hpp"
+#include <category/async/config.hpp>
 
 #include <concepts>
 #include <filesystem>

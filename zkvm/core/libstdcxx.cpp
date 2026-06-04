@@ -19,6 +19,9 @@
 #include <zkvm/core/zkvm_halt.h>
 
 #include <cstddef>
+#include <exception>
+#include <memory>
+#include <typeinfo>
 
 // operator new / delete
 [[gnu::always_inline]] static inline void *alloc_or_exit(std::size_t size)
@@ -51,18 +54,13 @@ void operator delete(void *, std::size_t) noexcept {}
 
 void operator delete[](void *, std::size_t) noexcept {}
 
-namespace std
+// Weak since SP1 backend's libzkevm.a, exports its own strong abort()
+// on ZisK no other definition exists, so this fallback is used.
+extern "C" [[gnu::weak]] [[noreturn]] void abort() noexcept
 {
-    [[noreturn]] void terminate() noexcept
-    {
-        zkvm_halt(1);
-    }
+    zkvm_halt(1);
 }
 
-// Static-storage-duration destructors get registered through __cxa_atexit
-// at construction time. The bare-metal zkVM exits via syscall_halt and
-// never runs these callbacks, so the registration itself is a no-op.
-// __dso_handle is referenced by __cxa_atexit calls the compiler emits.
 extern "C"
 {
 void *__dso_handle = nullptr;
@@ -71,4 +69,48 @@ int __cxa_atexit(void (*)(void *), void *, void *)
 {
     return 0;
 }
+}
+
+namespace std
+{
+    [[noreturn]] void terminate() noexcept
+    {
+        zkvm_halt(1);
+    }
+
+    [[noreturn]] void __throw_length_error(char const *)
+    {
+        zkvm_halt(1);
+    }
+
+    [[noreturn]] void __throw_logic_error(char const *)
+    {
+        zkvm_halt(1);
+    }
+
+    // Pulled in via std::function
+    [[noreturn]] void __throw_bad_function_call()
+    {
+        zkvm_halt(1);
+    }
+
+    [[noreturn]] void rethrow_exception(exception_ptr)
+    {
+        zkvm_halt(1);
+    }
+
+    // std::exception_ptr is refcounted. With exceptions disabled the
+    // refcount path is dead code in practice but std::function's move/copy
+    // still emits references to these.
+    namespace __exception_ptr
+    {
+        void exception_ptr::_M_addref() noexcept {}
+
+        void exception_ptr::_M_release() noexcept {}
+    }
+
+    bool _Sp_make_shared_tag::_S_eq(type_info const &) noexcept
+    {
+        return false;
+    }
 }

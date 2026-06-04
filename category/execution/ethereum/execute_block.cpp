@@ -24,7 +24,6 @@
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
-#include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -37,6 +36,7 @@
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
+#include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
@@ -46,7 +46,6 @@
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -79,25 +78,6 @@ void process_withdrawal(
                 withdrawal.recipient,
                 uint256_t{withdrawal.amount} * uint256_t{1'000'000'000u});
         }
-    }
-}
-
-// EIP-4788
-void set_beacon_root(State &state, BlockHeader const &header)
-{
-    constexpr auto BEACON_ROOTS_ADDRESS{
-        0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02_address};
-    constexpr uint256_t HISTORY_BUFFER_LENGTH{8191};
-
-    if (state.account_exists(BEACON_ROOTS_ADDRESS)) {
-        uint256_t timestamp{header.timestamp};
-        bytes32_t k1{store_be_as<bytes32_t>(timestamp % HISTORY_BUFFER_LENGTH)};
-        bytes32_t k2{store_be_as<bytes32_t>(
-            timestamp % HISTORY_BUFFER_LENGTH + HISTORY_BUFFER_LENGTH)};
-        state.set_storage(
-            BEACON_ROOTS_ADDRESS, k1, store_be_as<bytes32_t>(timestamp));
-        state.set_storage(
-            BEACON_ROOTS_ADDRESS, k2, header.parent_beacon_block_root.value());
     }
 }
 
@@ -169,32 +149,6 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
 
     return authorities;
 }
-
-template <Traits traits>
-void execute_block_header(BlockState &block_state, BlockHeader const &header)
-{
-    static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
-
-    State state{block_state, Incarnation{header.number, 0}};
-
-    deploy_block_hash_history_contract<traits>(state);
-    set_block_hash_history<traits>(state, header);
-
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
-        set_beacon_root(state, header);
-    }
-
-    // TODO: move to execute_monad_block eventually
-    if constexpr (is_monad_trait_v<traits>) {
-        staking::execute_block_prelude<traits>(state);
-    }
-
-    MONAD_ASSERT(block_state.can_merge(state));
-    block_state.merge(state);
-    record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_PROLOGUE, state);
-}
-
-EXPLICIT_TRAITS(execute_block_header);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block_transactions(

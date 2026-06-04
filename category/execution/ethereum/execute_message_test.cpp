@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
@@ -125,6 +126,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -134,7 +136,8 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
@@ -189,6 +192,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -198,7 +202,8 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
     auto const result =
@@ -267,6 +272,7 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         state_tracer,
@@ -276,7 +282,8 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
     init_rb_for_test<typename TestFixture::Trait>(s, h, from);
 
     auto msg_memory = vm.message_memory_ref();
@@ -358,6 +365,7 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -367,7 +375,8 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
@@ -394,6 +403,7 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -403,7 +413,8 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     commit_sequential(
         tdb,
@@ -458,6 +469,7 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -467,7 +479,8 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     commit_sequential(
         tdb,
@@ -528,6 +541,7 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -537,7 +551,8 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     commit_sequential(
         tdb,
@@ -640,6 +655,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -649,7 +665,8 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{from});
 
     // Initcode fits inside size limit
@@ -764,6 +781,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -773,7 +791,8 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{from});
 
     // Initcode fits inside size limit
@@ -1012,6 +1031,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -1021,7 +1041,8 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
     if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
@@ -1143,6 +1164,7 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -1152,7 +1174,8 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
     if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
@@ -1259,6 +1282,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t base_fee{0};
         trace::StateTracer noop_state_tracer = std::monostate{};
+        TxTraceContext const trace_context{};
         EvmcHost<typename TestFixture::Trait> h{
             call_tracer,
             noop_state_tracer,
@@ -1268,7 +1292,8 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
             tx,
             base_fee,
             0,
-            chain_ctx};
+            chain_ctx,
+            trace_context};
         init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
         auto const result = h.call(m);
@@ -1342,6 +1367,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -1351,7 +1377,8 @@ TYPED_TEST(TraitsTest, cold_account_access)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
     auto const result = h.call(m);
     auto const gas_used = gas_limit - result.gas_left;
@@ -1462,6 +1489,7 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> h{
         call_tracer,
         noop_state_tracer,
@@ -1471,7 +1499,8 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     auto const d1 = vm::evm::resolve_delegation(
         &h.get_interface(), h.to_context(), falsely_delegated_1);

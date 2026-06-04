@@ -27,7 +27,6 @@
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
-
 TxTraceContext::TxTraceContext(
     std::span<monad::trace::TypeErasedRunner const> const runners)
     : runners_{runners}

@@ -227,6 +227,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # ---- Extract __popcountdi2 from the compiler's libgcc.a ----
     # immer's HAMT bit math needs __popcountdi2
+    # the symbol lives in _popcountsi2.o because libgcc names units
+    # by word count (SI = single word = historically 32 bits)
+    # and symbols by machine mode si = 32, di = 64, ti = 128 bits
+    # where risvc64 word is 64 bits, hence __popcount*di*2
     execute_process(
         COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
         OUTPUT_VARIABLE _libgcc_a
@@ -295,7 +299,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_zkvm_drop_sources(monad_execution_ethereum
         "dispatch_transaction.cpp"
         "execute_block.cpp"
-        "validate_block.cpp"
         "block_db.cpp"
         "block_hash_buffer/util.cpp"
         "db_snapshot.cpp"
@@ -339,11 +342,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         silkpre
         TBB::tbb)
 
-    # the guest still references the BlockError status-code domain which needs 
-    # the value_mappings() definition that backs it.
-    target_sources(monad_execution_ethereum PRIVATE
-        "${MONAD_ROOT}/zkvm/category/execution/ethereum/validate_block.cpp"
-    )
+    # validate_block.cpp carries the validators and the BlockError
+    # value_mappings() the shadow used to provide alone.
 
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum
@@ -466,6 +466,8 @@ endif()
 # bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
 # the dependency edge is conditional, never the target or its file list.
 add_library(monad-zkvm-guest OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
 )
 monad_compile_options(monad-zkvm-guest)

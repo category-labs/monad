@@ -36,7 +36,7 @@ void execute_block_prelude(State &state)
     // pessimistically clear the proposer id slot in the case no reward txn is
     // included with this block.
     NoopCallTracer call_tracer;
-    StakingContract contract(state, call_tracer);
+    StakingContract contract(state, call_tracer, TxTraceContext{});
     contract.vars.proposer_val_id.clear();
 }
 

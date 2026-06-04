@@ -197,6 +197,16 @@ Result<void> process_monad_block(
             std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
+    BlockTraceContext block_trace_context(block.transactions.size());
+    std::vector<CallTraceRunner> call_trace_runners;
+    call_trace_runners.reserve(block.transactions.size());
+    for (unsigned i = 0; i < block.transactions.size(); ++i) {
+        call_trace_runners.emplace_back(
+            CallTraceRunner{*call_tracers[i].get()});
+    }
+    block_trace_context.with_runners(
+        std::span<CallTraceRunner const>{call_trace_runners});
+
     senders_and_authorities_out = senders_and_authorities;
 
     ChainContext<traits> const chain_context{
@@ -233,8 +243,10 @@ Result<void> process_monad_block(
             state_tracers,
             system_call_state_tracer,
             chain_context,
-            exec_recorder));
-    record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
+                exec_recorder,
+            false,
+            block_trace_context));
+            record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();

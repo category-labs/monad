@@ -44,7 +44,8 @@ void distribute_priority_fees(State &state)
     state.push();
     state.add_to_balance(STAKING_CA, fees);
     NoopCallTracer call_tracer;
-    StakingContract contract(state, call_tracer);
+    TxTraceContext const trace_ctx;
+    StakingContract contract(state, call_tracer, trace_ctx);
     auto const res = contract.distribute_priority_fees(fees);
     if (res.has_error()) {
         auto const error_message = res.error().message();

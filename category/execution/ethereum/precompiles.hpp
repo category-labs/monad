@@ -32,6 +32,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class State;
+class TxTraceContext;
 struct CallTracerBase;
 
 bool init_trusted_setup();
@@ -48,8 +49,8 @@ template <Traits traits>
 std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &);
+std::optional<evmc::Result> check_call_precompile(
+    State &, CallTracerBase &, TxTraceContext const &, evmc_message const &);
 
 using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 

@@ -55,7 +55,8 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Address const &sender, BlockHeader const &header, BlockState &block_state,
     BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
     CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-    ExecutionEventRecorder *const exec_recorder)
+    ExecutionEventRecorder *const exec_recorder,
+    TxTraceContext const &tx_trace_context)
     : chain_{chain}
     , i_{i}
     , tx_{tx}
@@ -67,6 +68,7 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     , call_tracer_{call_tracer}
     , state_tracer_{state_tracer}
     , exec_recorder_{exec_recorder}
+    , tx_trace_context_{tx_trace_context}
 {
     record_txn_header_events(
         exec_recorder_, static_cast<uint32_t>(i), tx, sender, {});
@@ -212,7 +214,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     // creates staking account in state if it doesn't exist
     state.add_to_balance(staking::STAKING_CA, 0);
 
-    staking::StakingContract contract(state, call_tracer_);
+    staking::StakingContract contract(state, call_tracer_, tx_trace_context_);
     if (MONAD_UNLIKELY(calldata.size() < 4)) {
         return staking::StakingError::InvalidInput;
     }

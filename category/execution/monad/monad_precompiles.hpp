@@ -29,12 +29,13 @@
 MONAD_NAMESPACE_BEGIN
 
 class State;
+class TxTraceContext;
 
 template <Traits traits>
 bool is_precompile(Address const &);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &msg);
+std::optional<evmc::Result> check_call_precompile(
+    State &, CallTracerBase &, TxTraceContext const &, evmc_message const &msg);
 
 MONAD_NAMESPACE_END

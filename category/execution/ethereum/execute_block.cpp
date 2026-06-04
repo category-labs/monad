@@ -46,6 +46,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -164,11 +165,13 @@ Result<std::vector<Receipt>> execute_block_transactions(
     std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
+    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers,
+    BlockTraceContext const &block_trace_context)
 {
     MONAD_ASSERT(senders.size() == transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
+    MONAD_ASSERT(block_trace_context.can_slice(transactions.size()));
 
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
         new boost::fibers::promise<void>[transactions.size() + 1]};
@@ -195,6 +198,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &block_metrics,
              &call_tracer = *call_tracers[i],
              &state_tracer = *state_tracers[i],
+             trace_ctx = block_trace_context.slice(i),
              &chain_ctx = chain_ctx,
              exec_recorder = exec_recorder,
              trace_transfers = trace_transfers] {
@@ -216,6 +220,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         state_tracer,
                         chain_ctx,
                         exec_recorder,
+                        trace_ctx,
                         trace_transfers);
                     if (results[i]->has_error()) {
                         record_txn_error_event(
@@ -275,7 +280,8 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
+    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers,
+    BlockTraceContext const &block_trace_context)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
@@ -284,6 +290,7 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == block.transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
+    MONAD_ASSERT(block_trace_context.can_slice(block.transactions.size()));
 
     execute_block_header<traits>(block_state, block.header, exec_recorder);
 
@@ -303,7 +310,8 @@ Result<std::vector<Receipt>> execute_block(
             state_tracers,
             chain_ctx,
             exec_recorder,
-            trace_transfers));
+            trace_transfers,
+            block_trace_context));
 
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};

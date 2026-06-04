@@ -1891,6 +1891,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
@@ -1900,7 +1901,8 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     EXPECT_EQ(host.get_code_size(ADDR_A), A_ICODE->size());
 
@@ -1940,6 +1942,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
@@ -1949,7 +1952,8 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     std::vector<uint8_t> buf(A_ICODE->size(), 0);
     auto const n = host.copy_code(ADDR_A, 0, buf.data(), buf.size());
@@ -1999,6 +2003,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
@@ -2008,7 +2013,8 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     // depth = 1 to bypass the depth-0 reserve-balance revert path; we want
     // to isolate execute_call_message's own code-read here.
@@ -2204,6 +2210,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t const base_fee{0};
         trace::StateTracer state_tracer = trace::CodeTracer{};
+        TxTraceContext const trace_context{};
         EvmcHost<typename TestFixture::Trait> host{
             call_tracer,
             state_tracer,
@@ -2213,7 +2220,8 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
             tx,
             base_fee,
             0,
-            chain_ctx};
+            chain_ctx,
+            trace_context};
 
         (void)ExecuteTransactionNoValidation<typename TestFixture::Trait>{
             EthereumMainnet{}, tx, ADDR_A, authorities, BlockHeader{}}(

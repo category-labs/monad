@@ -392,6 +392,16 @@ Result<BlockExecOutput> execute(
         }
     }();
 
+    BlockTraceContext block_trace_context(block.transactions.size());
+    std::vector<CallTraceRunner> call_trace_runners;
+    call_trace_runners.reserve(block.transactions.size());
+    for (unsigned i = 0; i < block.transactions.size(); ++i) {
+        call_trace_runners.emplace_back(
+            CallTraceRunner{*call_tracers[i].get()});
+    }
+    block_trace_context.with_runners(
+        std::span<CallTraceRunner const>{call_trace_runners});
+
     BOOST_OUTCOME_TRY(
         receipts,
         execute_block<traits>(
@@ -407,7 +417,9 @@ Result<BlockExecOutput> execute(
             state_tracers,
             system_call_state_tracer,
             chain_context,
-            exec_recorder));
+            exec_recorder,
+            false,
+            block_trace_context));
 
     block_state.log_debug();
     auto [state, code, _] = std::move(block_state).release();

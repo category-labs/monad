@@ -744,7 +744,8 @@ public:
                     break;
                 }
                 auto const chunkid = item->index(aux.metadata_ctx().main());
-                MONAD_ASSERT(chunkid != UINT32_MAX);
+                MONAD_ASSERT(
+                    chunkid != monad::mpt::detail::db_metadata::NULL_CHUNK);
                 aux.metadata_ctx().remove(chunkid);
                 chunks.push_back(chunkid);
             }
@@ -754,7 +755,8 @@ public:
                     break;
                 }
                 auto const chunkid = item->index(aux.metadata_ctx().main());
-                MONAD_ASSERT(chunkid != UINT32_MAX);
+                MONAD_ASSERT(
+                    chunkid != monad::mpt::detail::db_metadata::NULL_CHUNK);
                 aux.metadata_ctx().remove(chunkid);
                 chunks.push_back(chunkid);
             }
@@ -764,7 +766,8 @@ public:
                     break;
                 }
                 auto const chunkid = item->index(aux.metadata_ctx().main());
-                MONAD_ASSERT(chunkid != UINT32_MAX);
+                MONAD_ASSERT(
+                    chunkid != monad::mpt::detail::db_metadata::NULL_CHUNK);
                 aux.metadata_ctx().remove(chunkid);
                 chunks.push_back(chunkid);
             }
@@ -817,10 +820,14 @@ public:
             UINT32_MAX);
         monad::mpt::detail::unsigned_20 slow_list_base_insertion_count(
             UINT32_MAX);
-        uint32_t fast_list_begin_index{UINT32_MAX};
-        uint32_t fast_list_end_index{UINT32_MAX};
-        uint32_t slow_list_begin_index{UINT32_MAX};
-        uint32_t slow_list_end_index{UINT32_MAX};
+        uint32_t fast_list_begin_index{
+            monad::mpt::detail::db_metadata::NULL_CHUNK};
+        uint32_t fast_list_end_index{
+            monad::mpt::detail::db_metadata::NULL_CHUNK};
+        uint32_t slow_list_begin_index{
+            monad::mpt::detail::db_metadata::NULL_CHUNK};
+        uint32_t slow_list_end_index{
+            monad::mpt::detail::db_metadata::NULL_CHUNK};
         for (auto &i : todecompress) {
             if (i.type == monad::async::storage_pool::cnv) {
                 if (i.chunk_id == 0) {
@@ -901,8 +908,12 @@ public:
                         old_metadata->fast_list_begin()->insertion_count();
                     slow_list_base_insertion_count =
                         old_metadata->slow_list_begin()->insertion_count();
-                    MONAD_ASSERT(old_metadata->fast_list.begin != UINT32_MAX);
-                    MONAD_ASSERT(old_metadata->slow_list.begin != UINT32_MAX);
+                    MONAD_ASSERT(
+                        old_metadata->fast_list.begin !=
+                        monad::mpt::detail::db_metadata::NULL_CHUNK);
+                    MONAD_ASSERT(
+                        old_metadata->slow_list.begin !=
+                        monad::mpt::detail::db_metadata::NULL_CHUNK);
                     fast_list_begin_index = old_metadata->fast_list.begin;
                     slow_list_begin_index = old_metadata->slow_list.begin;
                     if (auto const max_seq_chunk = std::max(
@@ -1027,7 +1038,7 @@ public:
                     auto const it =
                         std::find(chunks.begin(), chunks.end(), i.chunk_id);
                     MONAD_ASSERT(it != chunks.end());
-                    *it = UINT32_MAX;
+                    *it = monad::mpt::detail::db_metadata::NULL_CHUNK;
                 }
             }
         }
@@ -1041,7 +1052,7 @@ public:
             auto const it =
                 std::find(chunks.begin(), chunks.end(), fast_list_begin_index);
             MONAD_ASSERT(it != chunks.end());
-            *it = UINT32_MAX;
+            *it = monad::mpt::detail::db_metadata::NULL_CHUNK;
             // override the first insertion count
             aux.metadata_ctx().modify_metadata(
                 override_insertion_count,
@@ -1060,7 +1071,7 @@ public:
             auto const it =
                 std::find(chunks.begin(), chunks.end(), slow_list_begin_index);
             MONAD_ASSERT(it != chunks.end());
-            *it = UINT32_MAX;
+            *it = monad::mpt::detail::db_metadata::NULL_CHUNK;
             // override the first insertion count
             aux.metadata_ctx().modify_metadata(
                 override_insertion_count,
@@ -1074,7 +1085,7 @@ public:
             aux.metadata_ctx().main()->slow_list.end == slow_list_end_index);
 
         for (unsigned int const &chunk : chunks) {
-            if (chunk != UINT32_MAX) {
+            if (chunk != monad::mpt::detail::db_metadata::NULL_CHUNK) {
                 aux.metadata_ctx().append(
                     monad::mpt::UpdateAux::chunk_list::free, chunk);
             }

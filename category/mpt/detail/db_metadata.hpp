@@ -176,6 +176,11 @@ namespace detail
             uint32_t begin, end;
         } free_list, fast_list, slow_list;
 
+        // Empty-list sentinel for id_pair begin/end: a full-width uint32
+        // array index, unlike the 20-bit chunk_info_t::INVALID_CHUNK_ID node
+        // id used in the prev/next links.
+        static constexpr uint32_t NULL_CHUNK = UINT32_MAX;
+
         struct chunk_info_t
         {
             static constexpr uint32_t INVALID_CHUNK_ID = 0xfffff;
@@ -284,7 +289,7 @@ namespace detail
 
         chunk_info_t const *free_list_begin() const noexcept
         {
-            if (free_list.begin == UINT32_MAX) {
+            if (free_list.begin == NULL_CHUNK) {
                 return nullptr;
             }
             return at(free_list.begin);
@@ -292,7 +297,7 @@ namespace detail
 
         chunk_info_t const *free_list_end() const noexcept
         {
-            if (free_list.end == UINT32_MAX) {
+            if (free_list.end == NULL_CHUNK) {
                 return nullptr;
             }
             return at(free_list.end);
@@ -300,7 +305,7 @@ namespace detail
 
         chunk_info_t const *fast_list_begin() const noexcept
         {
-            if (fast_list.begin == UINT32_MAX) {
+            if (fast_list.begin == NULL_CHUNK) {
                 return nullptr;
             }
             return at(fast_list.begin);
@@ -308,7 +313,7 @@ namespace detail
 
         chunk_info_t const *fast_list_end() const noexcept
         {
-            if (fast_list.end == UINT32_MAX) {
+            if (fast_list.end == NULL_CHUNK) {
                 return nullptr;
             }
             return at(fast_list.end);
@@ -316,7 +321,7 @@ namespace detail
 
         chunk_info_t const *slow_list_begin() const noexcept
         {
-            if (slow_list.begin == UINT32_MAX) {
+            if (slow_list.begin == NULL_CHUNK) {
                 return nullptr;
             }
             return at(slow_list.begin);
@@ -324,7 +329,7 @@ namespace detail
 
         chunk_info_t const *slow_list_end() const noexcept
         {
-            if (slow_list.end == UINT32_MAX) {
+            if (slow_list.end == NULL_CHUNK) {
                 return nullptr;
             }
             return at(slow_list.end);
@@ -346,8 +351,8 @@ namespace detail
             info.in_slow_list = (&list == &slow_list);
             info.insertion_count0_ = info.insertion_count1_ = 0;
             info.next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
-            if (list.end == UINT32_MAX) {
-                MONAD_ASSERT(list.begin == UINT32_MAX);
+            if (list.end == NULL_CHUNK) {
+                MONAD_ASSERT(list.begin == NULL_CHUNK);
                 info.prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                 list.begin = list.end = i->index(this);
             }
@@ -393,7 +398,7 @@ namespace detail
                 id_pair &list = get_list();
                 MONAD_ASSERT(list.begin == i->index(this));
                 MONAD_ASSERT(list.end == i->index(this));
-                list.begin = list.end = UINT32_MAX;
+                list.begin = list.end = NULL_CHUNK;
 #ifndef NDEBUG
                 i->in_fast_list = i->in_slow_list = false;
 #endif

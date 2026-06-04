@@ -1,0 +1,17 @@
+[package]
+name = "monad-zkvm-sp1-script"
+description = "Host driver and prover for the monad SP1 witness-execution guest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Matches the SP1 SDK version libzkevm.a's sp1-zkvm runtime is built from
+# (vendored in sdk/, from the tamir/zkevm branch which is at 6.2.2).
+sp1-sdk = "6.2.2"
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[build-dependencies]
+# Cross-builds the C++ guest archive and links it with the vendored SP1 SDK
+# (sdk/libzkevm.a + zkvm.ld) into the guest ELF. See build.rs.
+monad-zkvm-build-support = { path = "../../build-support" }

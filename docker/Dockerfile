@@ -63,14 +63,12 @@ FROM base_rust AS build_and_test_rust
 
 COPY . src
 
-ARG CC
-ARG CXX
 ENV TRIEDB_TARGET="triedb_driver"
 
 RUN cd src/rust && cargo update --workspace --locked
 RUN cd src/rust && cargo +nightly-2025-12-09 fmt --all --check
-RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo build --release --all-targets --all-features
-RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo test  --release --all-targets --all-features
+RUN cd src/rust && CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cargo build --release --all-targets --all-features
+RUN cd src/rust && CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cargo test  --release --all-targets --all-features
 
 FROM base AS code_quality
 

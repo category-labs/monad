@@ -37,7 +37,7 @@
 
 #include <evmc/evmc.h>
 
-#include <immer/vector.hpp>
+#include <category/core/immutable/vector.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -600,7 +600,7 @@ void State::create_account_no_rollback(Address const &address)
         }};
 }
 
-immer::vector<Receipt::Log> const &State::logs()
+immutable::vector<Receipt::Log> const &State::logs()
 {
     return logs_.recent();
 }

@@ -20,19 +20,15 @@
 
 #include <evmc/evmc.h>
 
-// TODO immer known to trigger incorrect warning
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#include <immer/set.hpp>
-#pragma GCC diagnostic pop
+#include <category/core/immutable/set.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
 // YP 6.1
 class AccountSubstate
 {
-    using Set =
-        immer::set<bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+    using Set = immutable::set<
+        bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
 
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t

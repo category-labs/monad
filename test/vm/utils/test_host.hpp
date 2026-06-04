@@ -43,6 +43,7 @@ namespace monad::test
             chain_context_senders_and_authorities_;
         ChainContext<traits> chain_context_;
         trace::StateTracer noop_state_tracer_;
+        TxTraceContext const tx_trace_context_;
         EvmcHost<traits> host_;
 
         ChainContext<traits> make_chain_context()
@@ -85,6 +86,7 @@ namespace monad::test
                   chain_context_senders_, chain_context_authorities_)}
             , chain_context_{make_chain_context()}
             , noop_state_tracer_{std::monostate{}}
+            , tx_trace_context_{}
             , host_{
                   noop_call_tracer_,
                   noop_state_tracer_,
@@ -94,7 +96,8 @@ namespace monad::test
                   tx,
                   base_fee_per_gas,
                   tx_index_,
-                  chain_context_}
+                  chain_context_,
+                  tx_trace_context_}
         {
         }
 

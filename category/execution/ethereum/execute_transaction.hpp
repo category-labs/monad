@@ -36,6 +36,7 @@ class BlockHashBuffer;
 struct BlockHeader;
 struct BlockMetrics;
 class BlockState;
+class TxTraceContext;
 struct CallTracerBase;
 struct Chain;
 template <Traits traits>
@@ -86,6 +87,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     trace::StateTracer &state_tracer_;
     ExecutionEventRecorder *exec_recorder_;
     bool trace_transfers_;
+    TxTraceContext const &tx_trace_context_;
 
     Result<evmc::Result> execute_impl2(State &);
     Receipt execute_final(State &, evmc::Result const &);
@@ -97,7 +99,8 @@ public:
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::future<void> &prev, CallTracerBase &,
         trace::StateTracer &, ChainContext<traits> const &chain_ctx,
-        ExecutionEventRecorder *exec_recorder, bool trace_transfers = false);
+        ExecutionEventRecorder *exec_recorder,
+        TxTraceContext const &tx_trace_context, bool trace_transfers = false);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

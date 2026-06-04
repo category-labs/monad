@@ -123,7 +123,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer{};
-    StakingContract contract{state, call_tracer};
+    StakingContract contract{state, call_tracer, TxTraceContext{}};
 
     // test constants
     static constexpr uint256_t MIN_VALIDATE_STAKE =
@@ -5196,6 +5196,8 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
         boost::fibers::promise<void> prev_promise{};
         auto prev = prev_promise.get_future();
         prev_promise.set_value();
+        TxTraceContext const trace_context{};
+
         return ExecuteTransaction<Trait>(
             MonadDevnet{},
             nonce,
@@ -5211,6 +5213,7 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
             state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
+            trace_context,
             trace_transfers)();
     };
 
@@ -5326,6 +5329,7 @@ TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
         .senders = senders,
         .authorities = authorities};
 
+    TxTraceContext const trace_context{};
     auto const receipt = ExecuteTransaction<Trait>(
         MonadDevnet{},
         0,
@@ -5340,7 +5344,8 @@ TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
         call_tracer,
         state_tracer,
         chain_ctx,
-        /*exec_recorder=*/nullptr)();
+        /*exec_recorder=*/nullptr,
+        trace_context)();
     ASSERT_TRUE(receipt.has_value());
     EXPECT_EQ(receipt.value().status, 1u);
 

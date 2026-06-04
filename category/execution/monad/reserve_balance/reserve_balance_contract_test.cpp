@@ -35,6 +35,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
@@ -90,7 +91,8 @@ struct ReserveBalanceTest : public ::testing::Test
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer;
-    ReserveBalanceContract contract{state, call_tracer};
+    TxTraceContext trace_ctx{};
+    ReserveBalanceContract contract{state, call_tracer, trace_ctx};
 };
 
 struct ReserveBalanceEvm : public ReserveBalanceTest
@@ -115,6 +117,7 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
         senders,
         authorities};
 
+    TxTraceContext const trace_ctx{};
     trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
         call_tracer,
@@ -125,7 +128,8 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
         empty_tx,
         0,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_ctx};
 };
 
 void add_revert_if_true(std::vector<uint8_t> &code)
@@ -325,6 +329,7 @@ void run_dipped_into_reserve_test(
     {
         State state{bs, Incarnation{1, 1}};
         trace::StateTracer noop_state_tracer = std::monostate{};
+        TxTraceContext const trace_context{};
 
         EvmcHost<traits> host{
             call_tracer,
@@ -335,13 +340,16 @@ void run_dipped_into_reserve_test(
             tx,
             BASE_FEE_PER_GAS,
             1,
-            chain_context};
+            chain_context,
+            trace_context};
 
         monad::vm::test::TestMessage test_msg_;
         evmc_message msg{*test_msg_};
         msg.gas = int64_t{GAS_LIMIT}, msg.recipient = ENTRYPOINT;
         msg.sender = BUNDLER;
 
+        // TODO(dhil): Make `init_reserve_balance_context` take a
+        // `TxTraceContext`.
         init_reserve_balance_context<traits>(
             state,
             msg.sender,
@@ -572,8 +580,9 @@ void run_check_call_precompile_test(
     std::string_view expected_message = "")
 {
     NoopCallTracer call_tracer;
-    auto const result =
-        check_call_precompile<traits>(state, call_tracer, msg, false);
+    TxTraceContext trace_ctx{};
+    auto const result = check_call_precompile<traits>(
+        state, call_tracer, msg, trace_ctx, false);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, expected_status);
@@ -619,6 +628,7 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
         senders,
         authorities};
 
+    TxTraceContext const trace_ctx{};
     trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
         call_tracer,
@@ -629,7 +639,8 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
         empty_tx,
         0,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_ctx};
 };
 
 DEFINE_MONAD_TRAITS_FIXTURE(MonadPrecompileTest);
@@ -655,8 +666,9 @@ TYPED_TEST(
 
     if constexpr (!TestFixture::Trait::mip_4_active()) {
         NoopCallTracer call_tracer;
+        TxTraceContext trace_ctx{};
         auto const result = check_call_precompile<typename TestFixture::Trait>(
-            this->state, call_tracer, make_msg(), false);
+            this->state, call_tracer, make_msg(), trace_ctx, false);
         EXPECT_FALSE(result.has_value());
         return;
     }

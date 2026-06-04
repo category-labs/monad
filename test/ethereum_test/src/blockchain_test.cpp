@@ -392,6 +392,8 @@ Result<BlockExecOutput> execute(
         }
     }();
 
+    BlockTraceContext block_trace_context(block.transactions.size());
+
     BOOST_OUTCOME_TRY(
         receipts,
         execute_block<traits>(
@@ -407,7 +409,9 @@ Result<BlockExecOutput> execute(
             state_tracers,
             system_call_state_tracer,
             chain_context,
-            exec_recorder));
+            exec_recorder,
+            false,
+            block_trace_context));
 
     block_state.log_debug();
     auto [state, code, _] = std::move(block_state).release();

@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/access_status.h>
 #include <category/vm/evm/delegation.hpp>
@@ -57,6 +58,7 @@ protected:
     evmc_tx_context const &tx_context_;
     State &state_;
     CallTracerBase &call_tracer_;
+    TxTraceContext const &tx_trace_context_;
 
 public:
     bool const log_native_transfers_;
@@ -64,7 +66,8 @@ public:
 
     EvmcHostBase(
         CallTracerBase &, trace::StateTracer &, evmc_tx_context const &,
-        BlockHashBuffer const &, State &, bool log_native_transfers) noexcept;
+        BlockHashBuffer const &, State &, TxTraceContext const &,
+        bool log_native_transfers) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
 
@@ -103,9 +106,14 @@ public:
     virtual void set_transient_storage(
         evmc::address const &, evmc::bytes32 const &key,
         evmc::bytes32 const &value) noexcept override;
+
+    virtual TxTraceContext const &get_tx_trace_context() const noexcept
+    {
+        return tx_trace_context_;
+    }
 };
 
-static_assert(sizeof(EvmcHostBase) == 72);
+static_assert(sizeof(EvmcHostBase) == 80);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -122,8 +130,9 @@ struct EvmcHost final : public EvmcHostBase
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
+        TxTraceContext const &tx_trace_context,
         bool const log_native_transfers = false) noexcept
-        : EvmcHostBase{call_tracer, state_tracer, tx_context, block_hash_buffer, state, log_native_transfers}
+        : EvmcHostBase{call_tracer, state_tracer, tx_context, block_hash_buffer, state, tx_trace_context, log_native_transfers}
         , tx_{tx}
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
@@ -263,13 +272,18 @@ struct EvmcHost final : public EvmcHostBase
     {
         return call_tracer_;
     }
+
+    TxTraceContext const &get_tx_trace_context() const noexcept override
+    {
+        return tx_trace_context_;
+    }
 };
 
 static_assert(
-    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
+    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 144);
 static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 144);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

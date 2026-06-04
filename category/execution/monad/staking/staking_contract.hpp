@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/util/consensus_view.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -51,11 +52,13 @@ class StakingContract
 {
     State &state_;
     CallTracerBase &call_tracer_;
+    [[maybe_unused]] TxTraceContext const &tx_trace_context_;
     bool const log_native_transfers_;
 
 public:
     StakingContract(
-        State &, CallTracerBase &, bool log_native_transfers = false);
+        State &, CallTracerBase &, TxTraceContext const &,
+        bool log_native_transfers = false);
 
     struct WithdrawalRequest
     {

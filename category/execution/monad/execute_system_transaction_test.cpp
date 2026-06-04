@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
@@ -95,6 +96,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
         auto prev = promise.get_future();
         promise.set_value();
 
+        TxTraceContext const trace_ctx{};
         Result<Receipt> const result =
             ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
                 chain,
@@ -107,7 +109,8 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 prev,
                 noop_call_tracer,
                 prestate_tracer,
-                /*exec_recorder=*/nullptr}();
+                /*exec_recorder=*/nullptr,
+                trace_ctx}();
 
         EXPECT_TRUE(result.has_value());
 
@@ -132,6 +135,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
         auto prev = promise.get_future();
         promise.set_value();
 
+        TxTraceContext const trace_ctx{};
         Result<Receipt> const result =
             ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
                 chain,
@@ -144,7 +148,8 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 prev,
                 noop_call_tracer,
                 prestate_tracer,
-                /*exec_recorder=*/nullptr}();
+                /*exec_recorder=*/nullptr,
+                trace_ctx}();
 
         EXPECT_TRUE(result.has_value());
 
@@ -206,6 +211,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
         auto prev = promise.get_future();
         promise.set_value();
 
+        TxTraceContext const trace_ctx{};
         Result<Receipt> const result =
             ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
                 chain,
@@ -218,7 +224,8 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 prev,
                 noop_call_tracer,
                 statediff_tracer,
-                /*exec_recorder=*/nullptr}();
+                /*exec_recorder=*/nullptr,
+                trace_ctx}();
 
         EXPECT_TRUE(result.has_value());
 
@@ -249,6 +256,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
         auto prev = promise.get_future();
         promise.set_value();
 
+        TxTraceContext const trace_ctx{};
         Result<Receipt> const result =
             ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
                 chain,
@@ -261,7 +269,8 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 prev,
                 noop_call_tracer,
                 statediff_tracer,
-                /*exec_recorder=*/nullptr}();
+                /*exec_recorder=*/nullptr,
+                trace_ctx}();
 
         EXPECT_TRUE(result.has_value());
 
@@ -316,6 +325,7 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
     auto prev = promise.get_future();
     promise.set_value();
 
+    TxTraceContext const trace_ctx{};
     Result<Receipt> const result =
         ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
             chain,
@@ -328,7 +338,8 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
             prev,
             noop_call_tracer,
             noop_state_tracer,
-            /*exec_recorder=*/nullptr}();
+            /*exec_recorder=*/nullptr,
+            trace_ctx}();
 
     EXPECT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), SystemTransactionError::TypeNotLegacy);
@@ -357,6 +368,7 @@ TEST(SystemTransaction, static_validate_transaction_failure)
     auto prev = promise.get_future();
     promise.set_value();
 
+    TxTraceContext const trace_ctx{};
     Result<Receipt> const result =
         ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
             chain,
@@ -369,7 +381,8 @@ TEST(SystemTransaction, static_validate_transaction_failure)
             prev,
             noop_call_tracer,
             noop_state_tracer,
-            /*exec_recorder=*/nullptr}();
+            /*exec_recorder=*/nullptr,
+            trace_ctx}();
 
     EXPECT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::WrongChainId);

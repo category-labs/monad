@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -197,6 +198,8 @@ Result<void> process_monad_block(
             std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
+    BlockTraceContext block_trace_context(block.transactions.size());
+
     senders_and_authorities_out = senders_and_authorities;
 
     ChainContext<traits> const chain_context{
@@ -233,7 +236,9 @@ Result<void> process_monad_block(
             state_tracers,
             system_call_state_tracer,
             chain_context,
-            exec_recorder));
+            exec_recorder,
+            false,
+            block_trace_context));
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)

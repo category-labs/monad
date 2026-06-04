@@ -46,6 +46,7 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
@@ -196,6 +197,7 @@ Result<bytes32_t> execute_block_zkvm(
     BlockMetrics metrics{}; // unused; constructor requires a reference
     NoopCallTracer call_tracer{};
     trace::StateTracer state_tracer{std::monostate{}};
+    TxTraceContext const trace_context{};
     std::vector<Receipt> receipts;
     receipts.reserve(block.transactions.size());
 
@@ -227,7 +229,8 @@ Result<bytes32_t> execute_block_zkvm(
             call_tracer,
             state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr};
+            /*exec_recorder=*/nullptr,
+            trace_context};
         BOOST_OUTCOME_TRY(auto receipt, exec());
         block_gas_used += receipt.gas_used;
         receipts.push_back(std::move(receipt));

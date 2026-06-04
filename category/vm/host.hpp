@@ -58,6 +58,8 @@ namespace monad::vm
             runtime_context_->stack_unwind();
         }
 
+        virtual uint64_t *growth_gas_ptr() noexcept = 0;
+
     private:
         [[gnu::always_inline]]
         void rethrow_on_active_exception()

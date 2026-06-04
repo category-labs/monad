@@ -98,6 +98,9 @@ namespace monad::vm::runtime
 
         ctx->gas_refund += gas_refund;
         ctx->deduct_gas(gas_used);
+        if (storage_status == EVMC_STORAGE_ADDED) {
+            ctx->add_growth_gas(traits::sstore_growth_gas());
+        }
     }
 
     EXPLICIT_TRAITS(sstore);

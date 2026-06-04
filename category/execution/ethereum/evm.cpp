@@ -181,6 +181,8 @@ evmc::Result execute_create_message(
 
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
+    state.stats().add_growth_gas(traits::create_growth_gas());
+
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 

@@ -201,6 +201,11 @@ namespace
             evmc::bytes32 const &) noexcept override
         {
         }
+
+        uint64_t *growth_gas_ptr() noexcept override
+        {
+            return nullptr;
+        }
     };
 }
 

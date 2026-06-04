@@ -59,6 +59,7 @@ namespace monad::vm::runtime
 
             if (!exists) {
                 ctx->deduct_gas(25000);
+                ctx->add_growth_gas(25000);
             }
         }
 

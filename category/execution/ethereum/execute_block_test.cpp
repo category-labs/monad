@@ -332,6 +332,8 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
         }
     }();
 
+    BlockTraceContext block_trace_context(block.value().transactions.size());
+
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
             chain,
@@ -346,7 +348,9 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr);
+            /*exec_recorder=*/nullptr,
+            false,
+            block_trace_context);
     };
 
     auto const receipts = [&] {
@@ -509,6 +513,8 @@ TYPED_TEST(TraitsTest, assertion_exception)
         }
     }();
 
+    BlockTraceContext block_trace_context(block.value().transactions.size());
+
     auto execute = [&](Chain const &chain) {
         (void)execute_block<typename TestFixture::Trait>(
             chain,
@@ -523,7 +529,9 @@ TYPED_TEST(TraitsTest, assertion_exception)
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr);
+            /*exec_recorder=*/nullptr,
+            false,
+            block_trace_context);
     };
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
@@ -584,6 +592,7 @@ TYPED_TEST(TraitsTest, fibers_join_exception)
     for (auto &tracer : state_tracers) {
         tracer = std::make_unique<trace::StateTracer>(std::monostate{});
     }
+    BlockTraceContext block_trace_context(transactions.size());
 
     fiber::PriorityPool pool{1, 2};
     // Run execute_block_transactions in a non-blocking context such that we can
@@ -602,7 +611,9 @@ TYPED_TEST(TraitsTest, fibers_join_exception)
             call_tracers,
             state_tracers,
             chain_ctx,
-            nullptr);
+            nullptr,
+            false,
+            block_trace_context);
     });
 
     // Wait on the second transaction to fail.
@@ -758,6 +769,8 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         }
     }();
 
+    BlockTraceContext block_trace_context(block.value().transactions.size());
+
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
             chain,
@@ -772,7 +785,9 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr);
+            /*exec_recorder=*/nullptr,
+            false,
+            block_trace_context);
     };
 
     auto const receipts = [&] {

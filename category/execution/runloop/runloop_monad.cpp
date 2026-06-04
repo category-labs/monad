@@ -40,6 +40,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -247,6 +248,8 @@ Result<BlockExecOutput> propose_block(
             std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
+    BlockTraceContext block_trace_context(block.transactions.size());
+
     auto const
         &[grandparent_senders_and_authorities,
           parent_senders_and_authorities] = [&] {
@@ -308,7 +311,9 @@ Result<BlockExecOutput> propose_block(
             state_tracers,
             system_call_state_tracer,
             chain_context,
-            exec_recorder));
+            exec_recorder,
+            false,
+            block_trace_context));
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)

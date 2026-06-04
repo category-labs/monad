@@ -56,6 +56,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -290,6 +291,9 @@ namespace
             chain.get_chain_id(),
             chain.get_blob_schedule(header.timestamp));
 
+        std::span<trace::TypeErasedTracer const> const call_tracers{};
+        TxTraceContext const trace_context{call_tracers};
+
         EvmcHost<traits> host{
             call_tracer,
             state_tracer,
@@ -299,7 +303,8 @@ namespace
             enriched_txn,
             header.base_fee_per_gas,
             0,
-            chain_context};
+            chain_context,
+            trace_context};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
             chain,
             enriched_txn,
@@ -408,6 +413,8 @@ namespace
         std::span<std::unique_ptr<CallTracerBase>> const noop_call_tracers_view{
             noop_call_tracers.data(), transactions_size};
 
+        BlockTraceContext block_trace_context{transactions_size};
+
         auto const chain_context = [&] {
             if constexpr (is_monad_trait_v<traits>) {
                 return ChainContext<traits>{
@@ -459,7 +466,9 @@ namespace
                 noop_call_tracers_view,
                 state_tracers_view,
                 chain_context,
-                /*exec_recorder=*/nullptr));
+                /*exec_recorder=*/nullptr,
+                false,
+                block_trace_context));
             return Result<nlohmann::json>{std::move(trace)};
         }
         else {
@@ -510,7 +519,9 @@ namespace
                 noop_call_tracers_view,
                 state_tracers_view,
                 chain_context,
-                /*exec_recorder=*/nullptr));
+                /*exec_recorder=*/nullptr,
+                false,
+                block_trace_context));
 
             // Compose state traces
             return Result<nlohmann::json>{std::move(traces)};
@@ -778,7 +789,8 @@ namespace
         std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
         std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
         ChainContextBuffer &context_buffer,
-        bool const emit_native_transfer_logs)
+        bool const emit_native_transfer_logs,
+        BlockTraceContext const &trace_ctx)
     {
         if constexpr (traits::eip_7843_active()) {
             block.header.requests_hash = bytes32_t{};
@@ -807,7 +819,8 @@ namespace
             system_call_state_tracer,
             chain_context,
             /*exec_recorder=*/nullptr,
-            emit_native_transfer_logs);
+            emit_native_transfer_logs,
+            trace_ctx);
     }
 
     template <Traits base_traits>
@@ -820,7 +833,8 @@ namespace
         std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
         std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
         ChainContextBuffer &context_buffer,
-        bool const emit_native_transfer_logs)
+        bool const emit_native_transfer_logs,
+        BlockTraceContext const &trace_ctx)
     {
         if constexpr (is_monad_trait_v<base_traits>) {
             auto const *const monad_chain =
@@ -841,7 +855,8 @@ namespace
                 call_tracers,
                 state_tracers,
                 context_buffer,
-                emit_native_transfer_logs);
+                emit_native_transfer_logs,
+                trace_ctx);
         }
         else {
             monad_eth_revision const rev =
@@ -859,7 +874,8 @@ namespace
                 call_tracers,
                 state_tracers,
                 context_buffer,
-                emit_native_transfer_logs);
+                emit_native_transfer_logs,
+                trace_ctx);
         }
         MONAD_ASSERT(false);
     }
@@ -1013,6 +1029,8 @@ namespace
                 static std::vector<std::vector<std::optional<Address>>> const
                     empty_authorities{};
 
+                auto const block_trace_context = BlockTraceContext{0};
+
                 BOOST_OUTCOME_TRY(
                     auto const receipts,
                     eth_simulate_dispatch_block<traits>(
@@ -1027,7 +1045,8 @@ namespace
                         call_tracers,
                         state_tracers,
                         context_buffer,
-                        emit_native_transfer_logs));
+                        emit_native_transfer_logs,
+                        block_trace_context));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
                 // `gas_consumed_so_far`.
@@ -1142,6 +1161,9 @@ namespace
                     is_monad_trait_v<traits> ? std::nullopt : bo.withdrawals,
             };
 
+            auto block_trace_context =
+                BlockTraceContext{block.transactions.size()};
+
             BOOST_OUTCOME_TRY(
                 auto const receipts,
                 eth_simulate_dispatch_block<traits>(
@@ -1156,7 +1178,8 @@ namespace
                     call_tracers,
                     state_tracers,
                     context_buffer,
-                    emit_native_transfer_logs));
+                    emit_native_transfer_logs,
+                    block_trace_context));
 
             for (auto const &call_tracer : call_tracers) {
                 static_cast<CallTracer const &>(*call_tracer)

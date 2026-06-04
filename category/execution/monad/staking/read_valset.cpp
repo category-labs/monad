@@ -38,7 +38,7 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
     Incarnation const incarnation{block_num, Incarnation::LAST_TX - 1u};
     State state{block_state, incarnation};
     NoopCallTracer call_tracer{};
-    staking::StakingContract contract(state, call_tracer);
+    staking::StakingContract contract(state, call_tracer, TxTraceContext{});
     state.add_to_balance(staking::STAKING_CA, 0);
 
     uint64_t const contract_epoch = contract.vars.epoch.load().native();

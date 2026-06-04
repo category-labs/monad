@@ -29,6 +29,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class State;
+class TxTraceContext;
 
 template <Traits traits>
 bool is_precompile(Address const &);
@@ -36,6 +37,6 @@ bool is_precompile(Address const &);
 template <Traits traits>
 std::optional<evmc::Result> check_call_precompile(
     State &, CallTracerBase &, evmc_message const &msg,
-    bool log_native_transfers);
+    TxTraceContext const &, bool log_native_transfers);
 
 MONAD_NAMESPACE_END

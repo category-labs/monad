@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
@@ -55,6 +56,118 @@
 using namespace monad;
 
 using db_t = TrieDb;
+
+TYPED_TEST(TraitsTest, speculative_call_trace_size_limit_is_discarded_on_retry)
+{
+    static constexpr auto sender =
+        0x5353535353535353535353535353535353535353_address;
+    static constexpr auto contract =
+        0xbebebebebebebebebebebebebebebebebebebebe_address;
+    static constexpr auto predecessor_sender =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    bytes32_t const slot{};
+    auto const large_output_size = store_be_as<bytes32_t>(uint256_t{4'096});
+    auto const small_output_size = store_be_as<bytes32_t>(uint256_t{32});
+
+    {
+        State initial_state{block_state, Incarnation{0, 0}};
+        initial_state.add_to_balance(sender, 1'000'000);
+        initial_state.create_contract(contract);
+        initial_state.set_code(contract, from_hex("6000546000f3").value());
+        initial_state.set_storage(contract, slot, large_output_size);
+        block_state.merge(initial_state);
+    }
+
+    Transaction const transaction{
+        .sc = {.signature = {.r = 1, .s = 1}},
+        .max_fee_per_gas = 1,
+        .gas_limit = 100'000,
+        .to = contract,
+    };
+    EthereumMainnet const chain;
+    BlockHeader const header{.number = 1};
+    BlockHashBufferFinalized const block_hash_buffer;
+    BlockMetrics metrics{};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{transaction, call_frames, sizeof(CallFrame) + 32};
+    trace::StateTracer state_tracer{std::monostate{}};
+    TxTraceContext const trace_context{};
+    std::vector<Address> const senders{predecessor_sender, sender};
+    std::vector<std::vector<std::optional<Address>>> const authorities(2);
+    auto const senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities);
+    ankerl::unordered_dense::segmented_set<Address> const ancestor_senders;
+    auto const chain_context = [&] {
+        if constexpr (TestFixture::is_monad_trait()) {
+            return ChainContext<typename TestFixture::Trait>{
+                .grandparent_senders_and_authorities = ancestor_senders,
+                .parent_senders_and_authorities = ancestor_senders,
+                .senders_and_authorities = senders_and_authorities,
+                .senders = senders,
+                .authorities = authorities,
+            };
+        }
+        else {
+            return ChainContext<typename TestFixture::Trait>{};
+        }
+    }();
+    boost::fibers::promise<void> predecessor;
+    auto predecessor_future = predecessor.get_future();
+    boost::fibers::promise<Result<Receipt>> result_promise;
+    auto result_future = result_promise.get_future();
+    bool execution_finished = false;
+
+    boost::fibers::fiber execution{
+        boost::fibers::launch::dispatch, [&] {
+            try {
+                result_promise.set_value(
+                    ExecuteTransaction<typename TestFixture::Trait>{
+                        chain,
+                        1,
+                        transaction,
+                        sender,
+                        {},
+                        header,
+                        block_hash_buffer,
+                        block_state,
+                        metrics,
+                        predecessor_future,
+                        call_tracer,
+                        state_tracer,
+                        chain_context,
+                        nullptr,
+                        trace_context}());
+            }
+            catch (...) {
+                result_promise.set_exception(std::current_exception());
+            }
+            execution_finished = true;
+        }};
+
+    EXPECT_FALSE(execution_finished);
+    EXPECT_EQ(call_frames.size(), 1);
+    {
+        State predecessor_state{block_state, Incarnation{header.number, 1}};
+        predecessor_state.set_storage(contract, slot, small_output_size);
+        EXPECT_TRUE(block_state.can_merge(predecessor_state));
+        block_state.merge(predecessor_state);
+    }
+    predecessor.set_value();
+    execution.join();
+
+    auto const result = result_future.get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().status, 1u);
+    EXPECT_EQ(metrics.num_retries, 1);
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_EQ(call_frames.front().status, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(call_frames.front().output.size(), 32);
+}
 
 TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
 {
@@ -112,6 +225,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
+    TxTraceContext const trace_context{};
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         EthereumMainnet{},
@@ -127,7 +241,8 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
-        /*exec_recorder=*/nullptr)();
+        /*exec_recorder=*/nullptr,
+        trace_context)();
 
     ASSERT_TRUE(!receipt.has_error());
 
@@ -213,6 +328,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
+    TxTraceContext const trace_context{};
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadTestnet{},
@@ -228,7 +344,8 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
-        /*exec_recorder=*/nullptr)();
+        /*exec_recorder=*/nullptr,
+        trace_context)();
 
     if constexpr (TestFixture::is_monad_trait()) {
         if (data.size() <= 2 * TestFixture::Trait::max_code_size()) {
@@ -357,6 +474,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
+        TxTraceContext const trace_context{};
 
         auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
@@ -372,7 +490,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr)();
+            /*exec_recorder=*/nullptr,
+            trace_context)();
 
         ASSERT_TRUE(receipt.has_value());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -422,6 +541,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
+        TxTraceContext const trace_context{};
 
         auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
@@ -437,7 +557,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr)();
+            /*exec_recorder=*/nullptr,
+            trace_context)();
 
         ASSERT_TRUE(!receipt.has_error());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -533,6 +654,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
 
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
+        TxTraceContext const trace_context{};
 
         auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
@@ -548,7 +670,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr)();
+            /*exec_recorder=*/nullptr,
+            trace_context)();
 
         ASSERT_TRUE(!receipt.has_error());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -621,6 +744,7 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
 
     BlockHeader const header{};
     BlockHashBufferFinalized const block_hash_buffer;
+    TxTraceContext const trace_context{};
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadDevnet{},
@@ -636,7 +760,8 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
-        /*exec_recorder=*/nullptr)();
+        /*exec_recorder=*/nullptr,
+        trace_context)();
 
     ASSERT_TRUE(receipt.has_error());
 
@@ -700,6 +825,7 @@ TYPED_TEST(TraitsTest, selfdestructed_beneficiary_keeps_award)
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
+    TxTraceContext const trace_context{};
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadTestnet{},
@@ -715,7 +841,8 @@ TYPED_TEST(TraitsTest, selfdestructed_beneficiary_keeps_award)
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
-        /*exec_recorder=*/nullptr)();
+        /*exec_recorder=*/nullptr,
+        trace_context)();
 
     ASSERT_TRUE(receipt.has_value());
     EXPECT_EQ(receipt.value().status, 1u);

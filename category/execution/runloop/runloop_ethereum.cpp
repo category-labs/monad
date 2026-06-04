@@ -39,6 +39,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -154,6 +155,8 @@ Result<void> process_ethereum_block(
             std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
+    BlockTraceContext block_trace_context(block.transactions.size());
+
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
@@ -177,7 +180,9 @@ Result<void> process_ethereum_block(
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
-            exec_recorder));
+            exec_recorder,
+            false,
+            block_trace_context));
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)

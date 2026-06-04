@@ -129,6 +129,7 @@ namespace
                 chain.get_blob_schedule(header.timestamp));
             NoopCallTracer call_tracer{};
             trace::StateTracer noop_state_tracer = std::monostate{};
+            TxTraceContext const trace_context{};
             BlockHashBufferFinalized const buffer{};
             uint256_t base_fee{0};
             EvmcHost<Trait> host{
@@ -140,7 +141,8 @@ namespace
                 tx,
                 base_fee,
                 0,
-                ChainContext<Trait>::debug_empty()};
+                ChainContext<Trait>::debug_empty(),
+                trace_context};
 
             auto msg_memory = state.vm().message_memory_ref();
             evmc_message const msg{

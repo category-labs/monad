@@ -1,0 +1,17 @@
+[package]
+name = "monad-zkvm-build-support"
+description = "Shared build.rs helper for the monad ZisK / SP1 guest crates"
+version = "0.1.0"
+edition = "2021"
+
+# Standalone so it stays out of both the zisk and sp1 cargo workspaces.
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+cmake = "0.1"
+# `find_lld()` for the SP1 guest-ELF link step. Pinned to the same commit as
+# the vendored SP1 SDK in zkvm/sp1/sdk/
+sp1-build = { git = "https://github.com/succinctlabs/sp1", rev = "d291ca10f77d55a38b10accd9db52c21daadb6c5" }

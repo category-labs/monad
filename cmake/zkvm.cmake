@@ -30,6 +30,14 @@ function(monad_zkvm_compile_options target)
     target_include_directories(${target} BEFORE PUBLIC "${ZKVM_INCLUDE_DIR}")
     target_include_directories(${target} PUBLIC "${MONAD_ROOT}")
 
+    # category/core/keccak.hpp aliases monad::hash256 to ethash::hash256, a
+    # header-only typedef in <ethash/hash_types.hpp>. The guest routes actual
+    # hashing through its own keccak accelerator (zkvm/category/core/keccak.h),
+    # so only ethash's header dir is needed here — not the ethash::keccak
+    # library the host links.
+    target_include_directories(${target}
+        PUBLIC "${MONAD_ROOT}/third_party/ethash/include")
+
     # NDEBUG: bare-metal zkVM has no libc, so __assert_func is missing.
     # _GLIBCXX_HAVE_ALIGNED_ALLOC: tells libstdc++ that our libc shim
     # (zkvm/core/libc.cpp) provides aligned_alloc; without it,

@@ -21,14 +21,23 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/mpt/db.hpp>
+#include <category/mpt/node.hpp>
 #include <category/mpt/state_machine.hpp>
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <filesystem>
 #include <functional>
 #include <istream>
+
+namespace monad::mpt
+{
+    // Forward-declared so this header doesn't have to pull in mpt/db.hpp
+    // (which transitively reaches async/<linux/types.h>
+    struct Compute;
+    class Db;
+    class RODb;
+}
 
 MONAD_NAMESPACE_BEGIN
 

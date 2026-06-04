@@ -26,7 +26,7 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/vm/vm.hpp>
+#include <category/vm/code.hpp>
 
 #include <cstdint>
 #include <functional>

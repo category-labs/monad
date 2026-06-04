@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <evmc/evmc.hpp>

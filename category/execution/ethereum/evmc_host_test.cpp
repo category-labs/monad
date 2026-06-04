@@ -145,6 +145,7 @@ TYPED_TEST(TraitsTest, emit_log)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
@@ -154,7 +155,8 @@ TYPED_TEST(TraitsTest, emit_log)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     host.emit_log(from, data.data(), data.size(), topics, std::size(topics));
 
@@ -181,6 +183,7 @@ TYPED_TEST(TraitsTest, access_precompile)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
+    TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
@@ -190,7 +193,8 @@ TYPED_TEST(TraitsTest, access_precompile)
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),

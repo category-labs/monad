@@ -362,9 +362,12 @@ MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
-StakingContract::StakingContract(State &state, CallTracerBase &call_tracer)
+StakingContract::StakingContract(
+    State &state, CallTracerBase &call_tracer,
+    TxTraceContext const tx_trace_context)
     : state_{state}
     , call_tracer_{call_tracer}
+    , tx_trace_context_{tx_trace_context}
     , vars{state}
 {
 }

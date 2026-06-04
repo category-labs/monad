@@ -20,6 +20,7 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <silkpre/precompile.h>
 
@@ -182,8 +183,8 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
 EXPLICIT_TRAITS(check_call_eth_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
+std::optional<evmc::Result> check_call_precompile(
+    State &, CallTracerBase &, TxTraceContext const, evmc_message const &msg)
 {
     return check_call_eth_precompile<traits>(msg);
 }

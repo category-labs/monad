@@ -91,7 +91,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
     NoopCallTracer call_tracer{};
-    StakingContract contract{state, call_tracer};
+    StakingContract contract{state, call_tracer, TxTraceContext{}};
 
     // test constants
     static constexpr uint256_t MIN_VALIDATE_STAKE =

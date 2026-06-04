@@ -110,6 +110,7 @@ Result<byte_string> system_call(
 
     state.access_account(contract_address);
 
+    // TODO(dhil): Use a non-empty trace context here for state tracing.
     NoopCallTracer noop_tracer;
     Transaction const empty_tx{};
     EvmcHost<traits> host{
@@ -121,7 +122,8 @@ Result<byte_string> system_call(
         empty_tx,
         header.base_fee_per_gas,
         0,
-        chain_ctx};
+        chain_ctx,
+        TxTraceContext{}};
 
     // We intentionally invoke the VM directly: system calls must not go
     // through the regular call path which does state push/pop -- a revert

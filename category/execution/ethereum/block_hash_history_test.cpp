@@ -99,6 +99,7 @@ namespace
 
             uint256_t base_fee{0};
             trace::StateTracer noop_state_tracer = std::monostate{};
+            TxTraceContext const trace_context{};
             EvmcHost<Trait> host{
                 call_tracer,
                 noop_state_tracer,
@@ -108,7 +109,8 @@ namespace
                 tx,
                 base_fee,
                 0,
-                ChainContext<Trait>::debug_empty()};
+                ChainContext<Trait>::debug_empty(),
+                trace_context};
 
             auto msg_memory = state.vm().message_memory_ref();
             evmc_message const msg{

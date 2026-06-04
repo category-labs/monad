@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
@@ -83,6 +84,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
     bool trace_transfers_;
+    TxTraceContext tx_trace_context_;
 
     Result<evmc::Result> execute_impl2(State &);
     Receipt execute_final(State &, evmc::Result const &);
@@ -94,7 +96,7 @@ public:
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
         trace::StateTracer &, ChainContext<traits> const &chain_ctx,
-        bool trace_transfers = false);
+        TxTraceContext const tx_trace_context, bool trace_transfers = false);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

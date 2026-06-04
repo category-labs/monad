@@ -278,6 +278,8 @@ namespace
         auto const tx_context = get_tx_context<traits>(
             enriched_txn, sender, header, chain.get_chain_id());
 
+        TxTraceContext const trace_context{};
+
         EvmcHost<traits> host{
             call_tracer,
             state_tracer,
@@ -287,7 +289,8 @@ namespace
             enriched_txn,
             header.base_fee_per_gas,
             0,
-            chain_context};
+            chain_context,
+            trace_context};
         auto execution_result = ExecuteTransactionNoValidation<traits>{
             chain,
             enriched_txn,
@@ -390,6 +393,16 @@ namespace
         std::span<std::unique_ptr<CallTracerBase>> const noop_call_tracers_view{
             noop_call_tracers.data(), transactions_size};
 
+        BlockTraceContext block_trace_context{transactions_size};
+        std::vector<CallTraceRunner> call_trace_runners;
+        call_trace_runners.reserve(transactions_size);
+        for (size_t i = 0; i < transactions_size; ++i) {
+            call_trace_runners.emplace_back(
+                CallTraceRunner{noop_call_tracers[i].get()});
+        }
+        block_trace_context.with_runners(
+            std::span<CallTraceRunner const>{call_trace_runners});
+
         auto const chain_context = [&] {
             if constexpr (is_monad_trait_v<traits>) {
                 return ChainContext<traits>{
@@ -440,7 +453,9 @@ namespace
                 metrics,
                 noop_call_tracers_view,
                 state_tracers_view,
-                chain_context));
+                chain_context,
+                false,
+                block_trace_context));
             return Result<nlohmann::json>{std::move(trace)};
         }
         else {
@@ -490,7 +505,9 @@ namespace
                 metrics,
                 noop_call_tracers_view,
                 state_tracers_view,
-                chain_context));
+                chain_context,
+                false,
+                block_trace_context));
 
             // Compose state traces
             return Result<nlohmann::json>{std::move(traces)};
@@ -849,6 +866,8 @@ namespace
                 auto const chain_context =
                     context_buffer.advance(empty_senders, empty_authorities);
 
+                auto block_trace_context = BlockTraceContext{0};
+
                 BOOST_OUTCOME_TRY(
                     auto const receipts,
                     execute_block<traits>(
@@ -864,7 +883,8 @@ namespace
                         state_tracers,
                         system_call_state_tracer,
                         chain_context,
-                        emit_native_transfer_logs));
+                        emit_native_transfer_logs,
+                        block_trace_context));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
                 // `gas_consumed_so_far`.
@@ -969,6 +989,17 @@ namespace
                     is_monad_trait_v<traits> ? std::nullopt : bo.withdrawals,
             };
 
+            auto block_trace_context =
+                BlockTraceContext{block.transactions.size()};
+            std::vector<CallTraceRunner> call_trace_runners;
+            call_trace_runners.reserve(call_tracers.size());
+            for (size_t i = 0; i < call_tracers.size(); ++i) {
+                call_trace_runners.emplace_back(
+                    CallTraceRunner{call_tracers[i].get()});
+            }
+            block_trace_context.with_runners(
+                std::span<CallTraceRunner const>{call_trace_runners});
+
             BOOST_OUTCOME_TRY(
                 auto const receipts,
                 execute_block<traits>(
@@ -984,7 +1015,8 @@ namespace
                     state_tracers,
                     system_call_state_tracer,
                     chain_context,
-                    emit_native_transfer_logs));
+                    emit_native_transfer_logs,
+                    block_trace_context));
 
             // Receipts have cumulative gas_used (YP eq. 22), so
             // the last receipt's value is the total for the block.

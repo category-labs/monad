@@ -619,6 +619,7 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 name = "monad-zkvm-build-support"
 version = "0.1.0"
 dependencies = [
+ "cargo_metadata",
  "cmake",
  "sp1-build",
 ]
@@ -996,8 +997,8 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slop-algebra"
-version = "6.2.2"
-source = "git+https://github.com/succinctlabs/sp1?rev=d291ca10f77d55a38b10accd9db52c21daadb6c5#d291ca10f77d55a38b10accd9db52c21daadb6c5"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "itertools 0.14.0",
  "p3-field",
@@ -1006,8 +1007,8 @@ dependencies = [
 
 [[package]]
 name = "slop-bn254"
-version = "6.2.2"
-source = "git+https://github.com/succinctlabs/sp1?rev=d291ca10f77d55a38b10accd9db52c21daadb6c5#d291ca10f77d55a38b10accd9db52c21daadb6c5"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "ff",
  "p3-bn254-fr",
@@ -1020,8 +1021,8 @@ dependencies = [
 
 [[package]]
 name = "slop-challenger"
-version = "6.2.2"
-source = "git+https://github.com/succinctlabs/sp1?rev=d291ca10f77d55a38b10accd9db52c21daadb6c5#d291ca10f77d55a38b10accd9db52c21daadb6c5"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "futures",
  "p3-challenger",
@@ -1032,8 +1033,8 @@ dependencies = [
 
 [[package]]
 name = "slop-koala-bear"
-version = "6.2.2"
-source = "git+https://github.com/succinctlabs/sp1?rev=d291ca10f77d55a38b10accd9db52c21daadb6c5#d291ca10f77d55a38b10accd9db52c21daadb6c5"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "lazy_static",
  "p3-koala-bear",
@@ -1046,32 +1047,32 @@ dependencies = [
 
 [[package]]
 name = "slop-poseidon2"
-version = "6.2.2"
-source = "git+https://github.com/succinctlabs/sp1?rev=d291ca10f77d55a38b10accd9db52c21daadb6c5#d291ca10f77d55a38b10accd9db52c21daadb6c5"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "p3-poseidon2",
 ]
 
 [[package]]
 name = "slop-primitives"
-version = "6.2.2"
-source = "git+https://github.com/succinctlabs/sp1?rev=d291ca10f77d55a38b10accd9db52c21daadb6c5#d291ca10f77d55a38b10accd9db52c21daadb6c5"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "slop-algebra",
 ]
 
 [[package]]
 name = "slop-symmetric"
-version = "6.2.2"
-source = "git+https://github.com/succinctlabs/sp1?rev=d291ca10f77d55a38b10accd9db52c21daadb6c5#d291ca10f77d55a38b10accd9db52c21daadb6c5"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "p3-symmetric",
 ]
 
 [[package]]
 name = "sp1-build"
-version = "6.2.2"
-source = "git+https://github.com/succinctlabs/sp1?rev=d291ca10f77d55a38b10accd9db52c21daadb6c5#d291ca10f77d55a38b10accd9db52c21daadb6c5"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "anyhow",
  "cargo_metadata",
@@ -1083,8 +1084,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-primitives"
-version = "6.2.2"
-source = "git+https://github.com/succinctlabs/sp1?rev=d291ca10f77d55a38b10accd9db52c21daadb6c5#d291ca10f77d55a38b10accd9db52c21daadb6c5"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "bincode",
  "blake3",

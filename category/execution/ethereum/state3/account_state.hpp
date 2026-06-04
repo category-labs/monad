@@ -26,11 +26,7 @@
 
 #include <evmc/evmc.h>
 
-// TODO immer known to trigger incorrect warning
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#include <immer/map.hpp>
-#pragma GCC diagnostic pop
+#include <category/core/immutable/map.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -50,7 +46,7 @@ namespace trace
 class AccountState : public AccountSubstate
 {
 public: // TODO
-    using StorageMap = immer::map<
+    using StorageMap = immutable::map<
         bytes32_t, bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
 
 protected:

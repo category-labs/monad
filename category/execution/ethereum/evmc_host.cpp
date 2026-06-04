@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -96,8 +97,7 @@ size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
 {
     MONAD_TRY
     {
-        if (MONAD_UNLIKELY(
-                std::holds_alternative<trace::CodeTracer>(state_tracer_))) {
+        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
             bytes32_t const hash = state_.get_code_hash(address);
             if (hash == NULL_HASH) {
                 return 0;
@@ -139,8 +139,7 @@ size_t EvmcHostBase::copy_code(
 {
     MONAD_TRY
     {
-        if (MONAD_UNLIKELY(
-                std::holds_alternative<trace::CodeTracer>(state_tracer_))) {
+        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
             bytes32_t const hash = state_.get_code_hash(address);
             if (hash != NULL_HASH) {
                 auto const vcode = state_.read_code(hash);

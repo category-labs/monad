@@ -138,6 +138,11 @@ namespace trace
         std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer,
         CodeTracer>;
 
+    [[gnu::always_inline]] inline bool is_code_tracer(StateTracer const &tracer)
+    {
+        return std::holds_alternative<CodeTracer>(tracer);
+    }
+
     inline void on_read_code(
         StateTracer &tracer, bytes32_t const &code_hash,
         vm::SharedIntercode const &intercode)

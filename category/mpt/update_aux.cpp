@@ -544,7 +544,7 @@ void UpdateAux::release_unreferenced_chunks()
         chunks_to_remove_before_count_fast_,
         chunks_to_remove_before_count_slow_);
     MONAD_ASSERT(
-        metadata_ctx_->main()->root_offsets.version_lower_bound_ >=
+        metadata_ctx_->root_offsets().version_lower_bound() >=
         min_valid_version);
     free_compacted_chunks();
 }

@@ -552,7 +552,7 @@ uint64_t DbMetadataContext::db_history_range_lower_bound() const noexcept
                 ? (max_version - version_history_length() + 1)
                 : 0;
         auto const ro_version_lower_bound =
-            copies_[0].main->root_offsets.version_lower_bound_;
+            root_offsets().version_lower_bound();
         MONAD_ASSERT(ro_version_lower_bound >= history_range_min);
         return ro_version_lower_bound;
     }

@@ -178,6 +178,11 @@ public:
                 return wp - 1;
             }
 
+            uint64_t version_lower_bound() const noexcept
+            {
+                return version_lower_bound_.load(std::memory_order_acquire);
+            }
+
             void reset_all(uint64_t const version)
             {
                 version_lower_bound_.store(0, std::memory_order_release);

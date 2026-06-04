@@ -205,7 +205,7 @@ public:
         with_runners(runners);
     }
 
-    BlockTraceContext(size_t num_txs);
+    explicit BlockTraceContext(size_t num_txs);
 
     template <typename R>
         requires Runner<R>

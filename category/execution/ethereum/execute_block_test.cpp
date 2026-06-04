@@ -281,6 +281,16 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
         }
     }();
 
+    BlockTraceContext block_trace_context(block.value().transactions.size());
+    std::vector<CallTraceRunner> call_trace_runners;
+    call_trace_runners.reserve(block.value().transactions.size());
+    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
+        call_trace_runners.emplace_back(
+            CallTraceRunner{*call_tracers[i].get()});
+    }
+    block_trace_context.with_runners(
+        std::span<CallTraceRunner const>{call_trace_runners});
+
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
             chain,
@@ -295,7 +305,9 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr);
+            /*exec_recorder=*/nullptr,
+            false,
+            block_trace_context);
     };
 
     auto const receipts = [&] {
@@ -449,6 +461,16 @@ TYPED_TEST(TraitsTest, assertion_exception)
         }
     }();
 
+    BlockTraceContext block_trace_context(block.value().transactions.size());
+    std::vector<CallTraceRunner> call_trace_runners;
+    call_trace_runners.reserve(block.value().transactions.size());
+    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
+        call_trace_runners.emplace_back(
+            CallTraceRunner{*call_tracers[i].get()});
+    }
+    block_trace_context.with_runners(
+        std::span<CallTraceRunner const>{call_trace_runners});
+
     auto execute = [&](Chain const &chain) {
         (void)execute_block<typename TestFixture::Trait>(
             chain,
@@ -463,7 +485,9 @@ TYPED_TEST(TraitsTest, assertion_exception)
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr);
+            /*exec_recorder=*/nullptr,
+            false,
+            block_trace_context);
     };
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
@@ -607,6 +631,16 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         }
     }();
 
+    BlockTraceContext block_trace_context(block.value().transactions.size());
+    std::vector<CallTraceRunner> call_trace_runners;
+    call_trace_runners.reserve(block.value().transactions.size());
+    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
+        call_trace_runners.emplace_back(
+            CallTraceRunner{*call_tracers[i].get()});
+    }
+    block_trace_context.with_runners(
+        std::span<CallTraceRunner const>{call_trace_runners});
+
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
             chain,
@@ -621,7 +655,9 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr);
+            /*exec_recorder=*/nullptr,
+            false,
+            block_trace_context);
     };
 
     auto const receipts = [&] {

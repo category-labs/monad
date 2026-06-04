@@ -22,11 +22,14 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
+#include <type_traits>
+
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg)
+    State &state, CallTracerBase &call_tracer, TxTraceContext const trace_ctx,
+    evmc_message const &msg)
 {
 
     if (msg.code_address != contract_address) {
@@ -44,7 +47,7 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
-    Contract contract = Contract{state, call_tracer};
+    Contract contract{state, call_tracer, trace_ctx};
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
@@ -83,7 +86,8 @@ EXPLICIT_MONAD_TRAITS(is_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result> check_call_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg)
+    State &state, CallTracerBase &call_tracer, TxTraceContext const trace_ctx,
+    evmc_message const &msg)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
         return maybe_result;
@@ -94,7 +98,7 @@ std::optional<evmc::Result> check_call_precompile(
         if constexpr ((cond)) {                                                \
             if (auto maybe_result =                                            \
                     check_call_monad_precompile<traits, contract, addr>(       \
-                        state, call_tracer, msg)) {                            \
+                        state, call_tracer, trace_ctx, msg)) {                 \
                 return maybe_result;                                           \
             }                                                                  \
         }                                                                      \

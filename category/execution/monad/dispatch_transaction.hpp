@@ -32,6 +32,7 @@ Result<Receipt> dispatch_transaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &, ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *exec_recorder, bool trace_transfers);
+    ExecutionEventRecorder *exec_recorder,
+    TxTraceContext const &tx_trace_context, bool trace_transfers);
 
 MONAD_NAMESPACE_END

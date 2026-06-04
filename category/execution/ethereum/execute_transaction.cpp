@@ -307,7 +307,8 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
+    ExecutionEventRecorder *const exec_recorder,
+    TxTraceContext const &tx_trace_context, bool const trace_transfers)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header}
     , i_{i}
@@ -320,6 +321,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , state_tracer_{state_tracer}
     , exec_recorder_{exec_recorder}
     , trace_transfers_{trace_transfers}
+    , tx_trace_context_{tx_trace_context}
 {
     record_txn_header_events(
         exec_recorder_, static_cast<uint32_t>(i), tx, sender, authorities);
@@ -362,6 +364,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         header_.base_fee_per_gas,
         i_,
         chain_ctx_,
+        tx_trace_context_,
         trace_transfers_};
 
     return ExecuteTransactionNoValidation<traits>::operator()(state, host);

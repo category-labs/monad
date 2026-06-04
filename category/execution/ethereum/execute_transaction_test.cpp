@@ -108,6 +108,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
+    TxTraceContext const trace_context{};
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         EthereumMainnet{},
@@ -123,7 +124,8 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
-        /*exec_recorder=*/nullptr)();
+        /*exec_recorder=*/nullptr,
+        trace_context)();
 
     ASSERT_TRUE(!receipt.has_error());
 
@@ -223,6 +225,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
+    TxTraceContext const trace_context{};
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadTestnet{},
@@ -238,7 +241,8 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
-        /*exec_recorder=*/nullptr)();
+        /*exec_recorder=*/nullptr,
+        trace_context)();
 
     if constexpr (TestFixture::is_monad_trait()) {
         if constexpr (TestFixture::Trait::monad_rev() >= MONAD_TWO) {
@@ -375,6 +379,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
+        TxTraceContext const trace_context{};
 
         auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
@@ -390,7 +395,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr)();
+            /*exec_recorder=*/nullptr,
+            trace_context)();
 
         ASSERT_TRUE(receipt.has_value());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -439,6 +445,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
+        TxTraceContext const trace_context{};
 
         auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
@@ -454,7 +461,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr)();
+            /*exec_recorder=*/nullptr,
+            trace_context)();
 
         ASSERT_TRUE(!receipt.has_error());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -549,6 +557,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
 
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
+        TxTraceContext const trace_context{};
 
         auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
             MonadDevnet{},
@@ -564,7 +573,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr)();
+            /*exec_recorder=*/nullptr,
+            trace_context)();
 
         ASSERT_TRUE(!receipt.has_error());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -645,6 +655,7 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
 
     BlockHeader const header{};
     BlockHashBufferFinalized const block_hash_buffer;
+    TxTraceContext const trace_context{};
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadDevnet{},
@@ -660,7 +671,8 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx,
-        /*exec_recorder=*/nullptr)();
+        /*exec_recorder=*/nullptr,
+        trace_context)();
 
     ASSERT_TRUE(receipt.has_error());
 

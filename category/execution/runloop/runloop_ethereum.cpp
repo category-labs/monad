@@ -154,6 +154,16 @@ Result<void> process_ethereum_block(
             std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
+    BlockTraceContext block_trace_context(block.transactions.size());
+    std::vector<CallTraceRunner> call_trace_runners;
+    call_trace_runners.reserve(block.transactions.size());
+    for (unsigned i = 0; i < block.transactions.size(); ++i) {
+        call_trace_runners.emplace_back(
+            CallTraceRunner{*call_tracers[i].get()});
+    }
+    block_trace_context.with_runners(
+        std::span<CallTraceRunner const>{call_trace_runners});
+
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
@@ -177,8 +187,10 @@ Result<void> process_ethereum_block(
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
-            exec_recorder));
-    record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
+                exec_recorder,
+            false,
+            block_trace_context));
+            record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();

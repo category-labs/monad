@@ -22,6 +22,7 @@ packages=(
   pkg-config
   python-is-python3
   python3-pytest
+  ripgrep
   software-properties-common
   valgrind
   wget

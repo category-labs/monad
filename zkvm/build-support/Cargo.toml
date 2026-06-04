@@ -1,0 +1,32 @@
+[package]
+name = "monad-zkvm-build-support"
+description = "Shared build.rs helper for the monad ZisK / SP1 guest crates"
+version = "0.1.0"
+edition = "2021"
+
+# Standalone so it stays out of both the zisk and sp1 cargo workspaces.
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+cmake = "0.1"
+
+# SP1-only dependencies, behind the `sp1` feature so the ZisK guest crate does
+# not fetch or build the SP1 prover graph it never uses.
+
+# Locates the sp1-build git checkout (which carries the whole SP1 repo, incl.
+# zkevm/libzkevm-cabi) so build.rs can compile libzkevm.a from source.
+cargo_metadata = { version = "0.18", optional = true }
+# The SP1 zkEVM SDK: `find_lld()` and `build_program_staticlib()` for the guest
+# link step, and — via cargo's full-repo git checkout — the `zkevm/` source
+# (libzkevm-cabi, zkvm.ld, include/) that build.rs compiles into libzkevm.a
+# from source. Pinned to the merge of succinctlabs/sp1#2865 (spec-conformant
+# zkvm_bls12_* / zkvm_ripemd160 encodings, 6.8.1 workspace) until a release
+# tag includes it.
+sp1-build = { git = "https://github.com/succinctlabs/sp1", rev = "9e94952a5a04ea1b1a5360262e68af0586f1e387", optional = true }
+
+[features]
+# Enables `Backend::build_guest_elf` and friends (the SP1 full-SDK link).
+sp1 = ["dep:cargo_metadata", "dep:sp1-build"]

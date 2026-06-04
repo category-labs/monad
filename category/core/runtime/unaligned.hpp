@@ -21,6 +21,7 @@
 #include <array>
 #include <bit>
 #include <compare>
+#include <cstdint>
 #include <cstring>
 #include <span>
 #include <type_traits>

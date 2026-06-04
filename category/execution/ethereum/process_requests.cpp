@@ -35,7 +35,6 @@
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
-#include <intx/intx.hpp>
 
 #include <array>
 #include <cstdint>

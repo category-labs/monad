@@ -114,7 +114,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         block_hash_buffer,
         bs,
         metrics,
-        prev,
+        [&prev]() { prev.get_future().wait(); },
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx)();
@@ -223,7 +223,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         block_hash_buffer,
         bs,
         metrics,
-        prev,
+        [&prev]() { prev.get_future().wait(); },
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx)();
@@ -379,7 +379,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
             block_hash_buffer,
             bs,
             metrics,
-            prev,
+            [&prev]() { prev.get_future().wait(); },
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx)();
@@ -437,7 +437,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
             block_hash_buffer,
             bs,
             metrics,
-            prev,
+            [&prev]() { prev.get_future().wait(); },
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx)();
@@ -540,7 +540,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             block_hash_buffer,
             bs,
             metrics,
-            prev,
+            [&prev]() { prev.get_future().wait(); },
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx)();
@@ -665,7 +665,7 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
         block_hash_buffer,
         bs,
         metrics,
-        prev,
+        [&prev]() { prev.get_future().wait(); },
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx)();

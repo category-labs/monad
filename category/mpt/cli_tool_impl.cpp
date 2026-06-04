@@ -884,14 +884,8 @@ public:
                     });
                     do_([&](monad::mpt::detail::db_metadata *metadata) {
                         metadata->db_offsets.store(old_metadata->db_offsets);
-                        metadata->root_offsets.next_version_ =
-                            old_metadata->root_offsets.next_version_;
-                        metadata->root_offsets.version_lower_bound_ =
-                            old_metadata->root_offsets.version_lower_bound_;
-                        memcpy(
-                            &metadata->root_offsets.storage_,
-                            &old_metadata->root_offsets.storage_,
-                            sizeof(metadata->root_offsets.storage_));
+                        metadata->root_offsets.restore_from(
+                            old_metadata->root_offsets);
                         metadata->history_length = old_metadata->history_length;
                         metadata->latest_finalized_version =
                             old_metadata->latest_finalized_version;
@@ -1232,7 +1226,7 @@ public:
                     auto const *m = monad::start_lifetime_as<
                         monad::mpt::detail::db_metadata>(i.uncompressed.data());
                     additional_cnv_chunks_to_archive =
-                        m->root_offsets.storage_.cnv_chunks_len;
+                        m->root_offsets.cnv_chunks_len();
                 }
                 i.compression_thread =
                     std::async(std::launch::async, [i = &i, this] {

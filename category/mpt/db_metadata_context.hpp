@@ -117,12 +117,13 @@ public:
             }
 
         public:
-            explicit root_offsets_delegator(metadata_copy const *const m)
-                : version_lower_bound_(
-                      m->main->root_offsets.version_lower_bound_)
-                , next_version_(m->main->root_offsets.next_version_)
-                , root_offsets_chunks_(
-                      std::span<chunk_offset_t>(m->root_offsets))
+            explicit root_offsets_delegator(
+                std::atomic_ref<uint64_t> const version_lower_bound,
+                std::atomic_ref<uint64_t> const next_version,
+                std::span<chunk_offset_t> const root_offsets_chunks)
+                : version_lower_bound_(version_lower_bound)
+                , next_version_(next_version)
+                , root_offsets_chunks_(root_offsets_chunks)
             {
                 MONAD_ASSERT_PRINTF(
                     root_offsets_chunks_.size() ==
@@ -212,7 +213,12 @@ public:
             }
         };
 
-        return root_offsets_delegator{&copies_[which]};
+        auto const &c = copies_[which];
+        return root_offsets_delegator{
+            std::atomic_ref<uint64_t>(
+                c.main->root_offsets.version_lower_bound_),
+            std::atomic_ref<uint64_t>(c.main->root_offsets.next_version_),
+            std::span<chunk_offset_t>(c.root_offsets)};
     }
 
     // Version metadata getters/setters

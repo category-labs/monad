@@ -92,6 +92,11 @@ namespace detail
         {
             static constexpr size_t SIZE_ = 65536;
 
+            friend class MONAD_MPT_NAMESPACE::DbMetadataContext;
+            friend inline void
+            db_copy(db_metadata *dest, db_metadata const *src, size_t bytes);
+
+        private:
             uint64_t version_lower_bound_;
             uint64_t
                 next_version_; // all bits zero turns into INVALID_BLOCK_NUM
@@ -109,6 +114,20 @@ namespace detail
                     uint32_t cnv_chunk_id; // The read-write chunk id
                 } cnv_chunks[SIZE_ - 1];
             } storage_;
+
+        public:
+            // no atomic needed: write-once at pool init, then immutable.
+            uint32_t cnv_chunks_len() const noexcept
+            {
+                return storage_.cnv_chunks_len;
+            }
+
+            void restore_from(root_offsets_ring_t const &other) noexcept
+            {
+                version_lower_bound_ = other.version_lower_bound_;
+                next_version_ = other.next_version_;
+                storage_ = other.storage_;
+            }
         } root_offsets;
 
         struct db_offsets_info_t

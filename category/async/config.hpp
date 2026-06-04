@@ -22,8 +22,10 @@
 #include <cstdint>
 #include <span>
 
-#include <linux/types.h> // for __u64
-#include <sys/uio.h> // for struct iovec
+#if defined(__linux__)
+    #include <linux/types.h> // for __u64
+    #include <sys/uio.h> // for struct iovec
+#endif
 
 #define MONAD_ASYNC_NAMESPACE_BEGIN                                            \
     namespace monad                                                            \
@@ -63,7 +65,11 @@
 MONAD_ASYNC_NAMESPACE_BEGIN
 
 //! The same type io_uring uses for offsets into files during i/o
+#if defined(__linux__)
 using file_offset_t = __u64;
+#else
+using file_offset_t = std::uint64_t;
+#endif
 
 //! An identifier of data within a `storage_pool`
 struct chunk_offset_t
@@ -185,6 +191,7 @@ static constexpr uint16_t DISK_PAGE_SIZE = (1U << DISK_PAGE_BITS);
 static constexpr uint16_t DMA_PAGE_BITS = 6;
 static constexpr uint16_t DMA_PAGE_SIZE = (1U << DMA_PAGE_BITS);
 
+#if defined(__linux__)
 //! Calculate total byte length from an array of iovec buffers
 inline size_t iov_length(std::span<const struct iovec> const iovecs)
 {
@@ -194,6 +201,7 @@ inline size_t iov_length(std::span<const struct iovec> const iovecs)
     }
     return total;
 }
+#endif
 
 MONAD_ASYNC_NAMESPACE_END
 

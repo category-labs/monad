@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include "config.hpp"
+#include <category/async/config.hpp>
 
 #include <boost/outcome/experimental/status_result.hpp>
 #include <boost/outcome/try.hpp>

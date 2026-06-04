@@ -302,3 +302,5 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/test/vm)
 if(UTILS_CLANG_TIDY_AUTO_CONST)
   add_subdirectory(${PROJECT_SOURCE_DIR}/utils)
 endif()
+
+add_subdirectory(${PROJECT_SOURCE_DIR}/zkvm/guest)

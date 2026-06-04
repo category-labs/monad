@@ -22,7 +22,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 
 #include <evmc/evmc.hpp>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <cstdint>
 #include <optional>

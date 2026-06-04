@@ -371,6 +371,7 @@ monad_compile_options(monad_execution_native)
 # ##############################################################################
 # unit tests
 # ##############################################################################
+if(NOT CMAKE_CROSSCOMPILING)
 
 monad_add_test_folder("ethereum")
 monad_add_test_folder("monad")
@@ -385,3 +386,4 @@ target_link_libraries(
     monad_staking_contract_fuzzer
     PRIVATE monad_execution)
 monad_compile_options(monad_staking_contract_fuzzer)
+endif()

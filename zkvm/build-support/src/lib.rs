@@ -142,34 +142,47 @@ impl Backend {
 
     /// SP1 full-SDK link. Build the guest archive, compile the entry
     /// `program/main.c` with the same RISC-V GCC the cmake build uses, then
-    /// link `main.o` + the guest archive + the vendored `libzkevm.a` against
-    /// `zkvm.ld` via `ld.lld`. Returns the path to the resulting guest ELF.
+    /// link `main.o` + the guest archive + `libzkevm.a` against `zkvm.ld` via
+    /// `ld.lld`. Returns the path to the resulting guest ELF.
     ///
-    /// `sdk_dir` is `zkvm/sp1/sdk/` (holds `libzkevm.a`, `zkvm.ld`, and
-    /// `include/zkvm_accelerators.h`). Unlike the ZisK path there is no Rust
-    /// guest crate: `libzkevm.a` supplies `_start`, the allocator, the IO ABI,
-    /// and every accelerator.
-    pub fn build_guest_elf(self, sdk_dir: &Path) -> PathBuf {
+    /// `libzkevm.a` is built from source from the SP1 zkEVM SDK's
+    /// `zkevm/libzkevm-cabi` staticlib crate (found in the `sp1-build` git
+    /// checkout) rather than vendored as a binary blob; `zkvm.ld` and the
+    /// accelerator header come from the same SP1 source. Unlike the ZisK path
+    /// there is no Rust guest crate: `libzkevm.a` supplies `_start`, the
+    /// allocator, the IO ABI, and every accelerator.
+    pub fn build_guest_elf(self) -> PathBuf {
         assert!(matches!(self, Self::Sp1), "build_guest_elf is SP1-only");
 
-        let manifest = manifest_dir();
-        let repo_root = locate_repo_root(&manifest);
+        let repo_root = locate_repo_root(&manifest_dir());
         let gcc = riscv_gcc(&riscv_toolchain_dir());
 
         let build_dir = self.build_guest_archive();
         let archive = build_dir.join(format!("lib{}.a", self.guest_target()));
 
+        // Build libzkevm.a from source (SP1's zkevm/libzkevm-cabi staticlib
+        // crate) via the SP1 SDK's own helper, and take the accelerator header
+        // from the same SP1 zkevm/ source tree.
+        let zkevm = sp1_zkevm_dir();
+        let libzkevm = sp1_build::build_program_staticlib(
+            zkevm.join("libzkevm-cabi").to_str().expect("cabi path is utf-8"),
+        );
+        let include = zkevm.join("include");
+
         let main_c = repo_root.join("zkvm/sp1/program/main.c");
-        let include = sdk_dir.join("include");
-        let zkvm_ld = sdk_dir.join("zkvm.ld");
-        let libzkevm = sdk_dir.join("libzkevm.a");
         let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
         let main_o = out_dir.join("main.o");
         let elf = out_dir.join("monad-zkvm-guest-sp1.elf");
 
+        // The upstream zkvm.ld targets Rust guests, whose `_start` never runs
+        // `.init_array`. The C++ guest's main.c runs the static constructors
+        // itself (RLP encoder tables, commit_builder/partial_trie_db statics,
+        // ...) via boundary symbols, so inject a `.init_array` section into the
+        // upstream script (kept otherwise verbatim from source) before `.data`.
+        let zkvm_ld = out_dir.join("zkvm.ld");
+        patch_zkvm_ld(&zkevm.join("zkvm.ld"), &zkvm_ld);
+
         println!("cargo:rerun-if-changed={}", main_c.display());
-        println!("cargo:rerun-if-changed={}", libzkevm.display());
-        println!("cargo:rerun-if-changed={}", zkvm_ld.display());
 
         // 1) Compile main.c -> main.o with the RISC-V GCC (rv64im / lp64),
         //    matching the flags the cmake guest build uses for SP1.
@@ -211,6 +224,87 @@ impl Backend {
 
         elf
     }
+}
+
+/// Copy the upstream SP1 `zkvm.ld` to `dst`, injecting a `.init_array` section
+/// (before `.data`) so the C++ guest's `main()` can run its static
+/// constructors — the upstream script targets Rust guests whose `_start`
+/// skips `.init_array`. Everything else (RAM layout, symbols) is kept verbatim.
+fn patch_zkvm_ld(src: &Path, dst: &Path) {
+    let script = std::fs::read_to_string(src)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", src.display()));
+
+    // Inject one contiguous RELRO block before `.data`:
+    //   .data.rel.ro, .init_array (+ boundary symbols), .got
+    //
+    // Two problems this fixes, both because the upstream script targets Rust
+    // guests and places neither section:
+    //  - `.got`: the C++ guest emits GOT-indirected references (e.g. the
+    //    out-of-line intx uint256 divide used by expmod_gas_cost). Without an
+    //    explicit placement ld.lld emits `.got` past `_end`/`_heap_start`, and
+    //    the first heap allocation clobbers the pointers — turning an indirect
+    //    call into a jump to heap garbage (SIGSEGV). Placing it before `.data`
+    //    keeps it inside the loaded image, below the heap.
+    //  - `.init_array`: the SDK's Rust `_start` never runs it, so the C++ guest
+    //    `main()` iterates it via the boundary symbols to run static ctors.
+    //
+    // The sections are kept adjacent because ld.lld requires the RELRO sections
+    // (which `.data.rel.ro`, `.init_array` and `.got` all are) to be contiguous.
+    let anchor = "    .data : ALIGN(16)";
+    assert!(
+        script.contains(anchor),
+        "upstream zkvm.ld layout changed ({}): no `{anchor}` to inject before",
+        src.display()
+    );
+    let relro = "\
+    .data.rel.ro : ALIGN(16)\n    {\n        \
+        *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*)\n    } > RAM\n\n    \
+    .init_array : ALIGN(8)\n    {\n        \
+        __init_array_start = .;\n        \
+        KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))\n        \
+        KEEP(*(.init_array))\n        \
+        __init_array_end = .;\n    } > RAM\n\n    \
+    .got : ALIGN(16)\n    {\n        \
+        *(.got.plt) *(.igot.plt) *(.got) *(.igot)\n    } > RAM\n\n";
+
+    let patched = script.replacen(anchor, &format!("{relro}{anchor}"), 1);
+    std::fs::write(dst, patched)
+        .unwrap_or_else(|e| panic!("failed to write {}: {e}", dst.display()));
+}
+
+/// Locate the SP1 `zkevm/` source tree inside the `sp1-build` git checkout that
+/// cargo fetched for that dependency. cargo checks out the whole SP1 repo, so
+/// `zkevm/libzkevm-cabi`, `zkevm/zkvm.ld`, and `zkevm/include/` sit alongside
+/// the `crates/build` crate we depend on — no submodule or vendored blob.
+fn sp1_zkevm_dir() -> PathBuf {
+    let meta = cargo_metadata::MetadataCommand::new()
+        .exec()
+        .expect("cargo metadata failed while locating the sp1-build checkout");
+    // Match the git-sourced sp1-build (our dep), not the crates.io `sp1-build`
+    // the prover pulls in — only the git checkout carries the zkevm/ tree.
+    let pkg = meta
+        .packages
+        .iter()
+        .find(|p| {
+            p.name == "sp1-build"
+                && p.source
+                    .as_ref()
+                    .map_or(false, |s| s.repr.contains("succinctlabs/sp1"))
+        })
+        .expect("git-sourced sp1-build not found in cargo metadata");
+    // <checkout>/crates/build/Cargo.toml -> <checkout> -> <checkout>/zkevm
+    let manifest = pkg.manifest_path.clone().into_std_path_buf();
+    let checkout = manifest
+        .ancestors()
+        .nth(3)
+        .expect("unexpected sp1-build manifest path layout");
+    let zkevm = checkout.join("zkevm");
+    assert!(
+        zkevm.join("libzkevm-cabi/Cargo.toml").exists(),
+        "SP1 zkevm source not found at {} — sp1-build git checkout incomplete?",
+        zkevm.display()
+    );
+    zkevm
 }
 
 fn manifest_dir() -> PathBuf {

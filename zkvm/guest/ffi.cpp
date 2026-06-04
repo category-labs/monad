@@ -24,9 +24,9 @@
 // (zkvm/core/zkvm_io.h):
 //   - read_input(...)  — fetches the RLP-encoded witness buffer
 //   - write_output(...) — emits the computed post-state root as 32 bytes
-// Both symbols are resolved by the backend's runtime (ziskos on ZisK; the
-// SP1 program crate provides a thin shim that wraps sp1_zkvm::io; the x86
-// test runner provides them against a --input file).
+// Both symbols are resolved by the backend's runtime (ziskos on ZisK;
+// libzkevm.a on SP1; the x86 test runner provides them against a --input
+// file).
 
 #include <zkvm/core/zkvm_io.h>
 #include <zkvm/guest/execute_block_zkvm.hpp>

@@ -28,8 +28,8 @@
  * Implementation is supplied at link time by the backend:
  *   - ZisK: ziskos (entrypoint crate) provides read_input / write_output via
  *     zisklib::zkvm_io and the eth-act-standard symbols.
- *   - SP1: a thin shim in zkvm/sp1/program calls sp1_zkvm::io::read_vec /
- *     sp1_zkvm::io::commit_slice to satisfy the same ABI.
+ *   - SP1: libzkevm.a (built from the SP1 zkEVM SDK source; see
+ *     zkvm/build-support) provides read_input / write_output natively.
  */
 
 #ifndef ZKVM_IO_H

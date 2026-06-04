@@ -13,29 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Shared zkVM shadow of category/core/keccak.h. Forwards keccak256(in, len,
-// out) to the standardized zkVM accelerator API (zkvm/core/zkvm_accelerators.h
-// :: zkvm_keccak256), which both ZisK and SP1 expose as `extern "C"` link-time
-// symbols (ZisK provides it natively in zisklib; SP1 in libzkevm.a).
-
-#pragma once
-
-#include <zkvm/core/zkvm_accelerators.h>
-
-#define KECCAK256_SIZE 32
-
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
-[[gnu::always_inline]] static inline void keccak256(
-    unsigned char const *const in, unsigned long const len,
-    unsigned char out[KECCAK256_SIZE])
-{
-    zkvm_keccak256(in, (size_t)len, (zkvm_keccak256_hash *)out);
+fn main() {
+    // Build the C++ guest archive and link it (plus program/main.c) against
+    // libzkevm.a — built from source from the SP1 zkEVM SDK — into the guest
+    // ELF. Surface its path to the host driver via GUEST_ELF (embedded by
+    // include_bytes! in src/main.rs).
+    let elf = monad_zkvm_build_support::Backend::Sp1.build_guest_elf();
+    println!("cargo:rustc-env=GUEST_ELF={}", elf.display());
 }
-
-#ifdef __cplusplus
-}
-#endif

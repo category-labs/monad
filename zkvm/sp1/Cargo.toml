@@ -1,0 +1,26 @@
+[workspace]
+members = ["script"]
+resolver = "2"
+
+# This workspace is intentionally split from the main monad cargo workspace
+# at /rust: the script crate pulls sp1-sdk, which conflicts with the host-side
+# dependency graph. The guest itself is no longer a Rust crate — it is the C++
+# guest archive linked against the vendored SP1 SDK (see sdk/ and
+# program/main.c), driven from script/build.rs.
+
+# Default profile for day-to-day iteration. The script binary statically links
+# the whole sp1-sdk prover graph (~40 crates), so fat LTO + a single codegen
+# unit turns every relink into a single-threaded whole-program pass (~4m). With
+# LTO off the same relink is ~20s and parallel. Prover runtime perf is left to
+# the `dist` profile below.
+[profile.release]
+opt-level = 3
+lto = false
+
+# Fully-optimized prover binary for actual proof generation. Fat LTO + a single
+# codegen unit: slow to build, fastest at proving time. Build/run real proofs
+# with `--profile prover` (see README).
+[profile.prover]
+inherits = "release"
+lto = true
+codegen-units = 1

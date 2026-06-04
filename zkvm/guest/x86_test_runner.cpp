@@ -38,7 +38,11 @@ extern "C" void monad_zkvm_execute_witness(void);
 namespace
 {
     std::vector<std::uint8_t> g_input;
-    std::string g_output_path;
+    // stdout, or the --output file. Opened once in main — the guest may emit
+    // its output in several write_output calls (e.g. the precompile
+    // harness), and reopening would truncate the earlier chunks.
+    std::FILE *g_out = nullptr;
+    bool g_output_failed = false;
 
     void usage(char const *const prog)
     {
@@ -57,27 +61,22 @@ read_input(std::uint8_t const **const buf_ptr, std::size_t *const buf_size)
 extern "C" void
 write_output(std::uint8_t const *const output, std::size_t const size)
 {
-    if (g_output_path.empty()) {
-        std::fwrite(output, 1, size, stdout);
-    }
-    else {
-        std::ofstream out{g_output_path, std::ios::binary};
-        out.write(
-            reinterpret_cast<char const *>(output),
-            static_cast<std::streamsize>(size));
+    if (std::fwrite(output, 1, size, g_out) != size) {
+        g_output_failed = true;
     }
 }
 
 int main(int const argc, char **const argv)
 {
     std::string input_path;
+    std::string output_path;
     for (int i = 1; i < argc; ++i) {
         std::string_view const arg{argv[i]};
         if ((arg == "--input" || arg == "-i") && i + 1 < argc) {
             input_path = argv[++i];
         }
         else if ((arg == "--output" || arg == "-o") && i + 1 < argc) {
-            g_output_path = argv[++i];
+            output_path = argv[++i];
         }
         else {
             usage(argv[0]);
@@ -97,6 +96,30 @@ int main(int const argc, char **const argv)
     g_input.assign(
         std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{});
 
+    if (output_path.empty()) {
+        g_out = stdout;
+    }
+    else {
+        g_out = std::fopen(output_path.c_str(), "wb");
+        if (g_out == nullptr) {
+            std::fprintf(stderr, "failed to open %s\n", output_path.c_str());
+            return 1;
+        }
+    }
+
     monad_zkvm_execute_witness();
+
+    // A short write, a failed flush, or a failed close all mean the output is
+    // missing or truncated; report that rather than a successful run.
+    if (std::fflush(g_out) != 0 || std::ferror(g_out) != 0) {
+        g_output_failed = true;
+    }
+    if (g_out != stdout && std::fclose(g_out) != 0) {
+        g_output_failed = true;
+    }
+    if (g_output_failed) {
+        std::fprintf(stderr, "failed to write output\n");
+        return 1;
+    }
     return 0;
 }

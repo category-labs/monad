@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,30 +13,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#pragma once
+
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/core/ecrecover.hpp>
-#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
-#include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/trace/event_trace.hpp>
 
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<Address> recover_authority(AuthorizationEntry const &auth_entry)
-{
-    byte_string const auth_encoding =
-        rlp::encode_authorization_entry_for_signing(auth_entry);
-    return ecrecover(auth_entry.sc, auth_encoding);
-}
+struct SignatureAndChain;
 
-std::optional<Address> recover_sender(Transaction const &tx)
-{
-    TRACE_TXN_EVENT(StartSenderRecovery);
-    byte_string const tx_encoding = rlp::encode_transaction_for_signing(tx);
-    return ecrecover(tx.sc, tx_encoding);
-}
+/// Recovers the Ethereum address that signed `encoding` with the given
+/// (r, s, y_parity) signature. Rejects malformed signatures up-front
+/// (y_parity > 1, malleable s); returns nullopt if ECDSA recovery fails.
+///
+/// Split out of transaction.cpp into its own TU so the silkpre / secp256k1
+/// dependency is confined to a single source file (this one's impl), and
+/// can be substituted on platforms that supply ecrecover via syscall.
+std::optional<Address>
+ecrecover(SignatureAndChain const &, byte_string_view encoding);
 
 MONAD_NAMESPACE_END

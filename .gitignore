@@ -5,6 +5,9 @@ build-zkvm
 perf.data*
 scratch
 
+# Local, machine-specific zkVM cargo config (sets RISCV_TOOLCHAIN_DIR)
+zkvm/.cargo/
+
 ### CMake ignore
 
 CMakeLists.txt.user

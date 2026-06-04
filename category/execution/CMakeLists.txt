@@ -56,6 +56,8 @@ add_library(
   "ethereum/core/contract/events.hpp"
   "ethereum/core/contract/storage_array.hpp"
   "ethereum/core/contract/storage_variable.hpp"
+  "ethereum/core/ecrecover.cpp"
+  "ethereum/core/ecrecover.hpp"
   "ethereum/core/fmt/account_fmt.hpp"
   "ethereum/core/fmt/address_fmt.hpp"
   "ethereum/core/fmt/block_fmt.hpp"
@@ -123,6 +125,8 @@ add_library(
   # ethereum/execution
   "ethereum/block_hash_buffer.cpp"
   "ethereum/block_hash_buffer.hpp"
+  "ethereum/block_hash_buffer/util.cpp"
+  "ethereum/block_hash_buffer/util.hpp"
   "ethereum/block_hash_history.cpp"
   "ethereum/block_hash_history.hpp"
   "ethereum/block_reward.cpp"
@@ -137,17 +141,13 @@ add_library(
   "ethereum/evmc_host.hpp"
   "ethereum/execute_block.cpp"
   "ethereum/execute_block.hpp"
+  "ethereum/execute_block_header.cpp"
+  "ethereum/execute_block_header.hpp"
   "ethereum/execute_transaction.cpp"
   "ethereum/execute_transaction.hpp"
   "ethereum/fmt/event_trace_fmt.hpp"
   "ethereum/process_requests.cpp"
   "ethereum/process_requests.hpp"
-  "ethereum/precompiles.cpp"
-  "ethereum/precompiles.hpp"
-  "ethereum/precompiles_bls12.cpp"
-  "ethereum/precompiles_bls12.hpp"
-  "ethereum/precompiles_impl.cpp"
-  "ethereum/precompiles_gas_cost_impl.cpp"
   "ethereum/reserve_balance.cpp"
   "ethereum/reserve_balance.hpp"
   "ethereum/trace/call_frame.cpp"
@@ -276,6 +276,20 @@ add_library(
   # monad/state2
   "monad/state2/proposal_state.hpp")
 
+# ##############################################################################
+# Precompiles — extracted into a standalone OBJECT library so that the zkvm
+# build can reuse it without pulling in the full execution dependency tree.
+# ##############################################################################
+
+add_library(
+  monad_precompiles OBJECT
+  "ethereum/precompiles.cpp"
+  "ethereum/precompiles.hpp"
+  "ethereum/precompiles_gas_cost_impl.cpp"
+  "ethereum/precompiles_bls12.cpp"
+  "ethereum/precompiles_bls12.hpp"
+)
+
 target_include_directories(
   monad_execution_ethereum
   PUBLIC ${CATEGORY_MAIN_DIR}
@@ -298,6 +312,28 @@ target_compile_definitions(
   monad_execution_native PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
                                 MONAD_CXX_CTYPES_USE_MONAD_INTS)
 
+target_include_directories(
+  monad_precompiles
+  PUBLIC ${CATEGORY_MAIN_DIR}
+  PUBLIC ${silkpre_SOURCE_DIR}/lib)
+
+target_link_libraries(
+  monad_precompiles
+  PUBLIC monad-vm
+  PUBLIC monad_core
+  PUBLIC blst::blst
+  PUBLIC c-kzg-4844
+  PRIVATE monad_crypto
+  PRIVATE PkgConfig::crypto++
+  PUBLIC ethash::keccak
+  PUBLIC evmc
+  PUBLIC immer
+  PUBLIC intx::intx
+  PUBLIC nlohmann_json::nlohmann_json
+  PUBLIC silkpre
+  PUBLIC unordered_dense)
+monad_compile_options(monad_precompiles)
+
 target_link_libraries(
   monad_execution_ethereum
   PUBLIC monad-vm
@@ -307,8 +343,8 @@ target_link_libraries(
   PRIVATE Boost::fiber
   PRIVATE Boost::json
   PUBLIC c-kzg-4844
+  PRIVATE monad_crypto
   PRIVATE PkgConfig::brotli
-  PRIVATE PkgConfig::crypto++
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC immer
@@ -335,6 +371,7 @@ monad_compile_options(monad_execution_native)
 # ##############################################################################
 # unit tests
 # ##############################################################################
+if(NOT CMAKE_CROSSCOMPILING)
 
 monad_add_test_folder("ethereum")
 monad_add_test_folder("monad")
@@ -349,3 +386,4 @@ target_link_libraries(
     monad_staking_contract_fuzzer
     PRIVATE monad_execution)
 monad_compile_options(monad_staking_contract_fuzzer)
+endif()

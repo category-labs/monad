@@ -1,0 +1,14 @@
+[workspace]
+members = ["script"]
+resolver = "2"
+
+# This workspace is intentionally split from the main monad cargo workspace
+# at /rust: the script crate pulls sp1-sdk, which conflicts with the host-side
+# dependency graph. The guest itself is no longer a Rust crate — it is the C++
+# guest archive linked against the vendored SP1 SDK (see sdk/ and
+# program/main.c), driven from script/build.rs.
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

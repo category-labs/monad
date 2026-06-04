@@ -40,7 +40,7 @@ Result<Receipt> dispatch_transaction(
         block_hash_buffer,
         block_state,
         block_metrics,
-        prev,
+        [&prev]() { prev.get_future().wait(); },
         call_tracer,
         state_tracer,
         chain_ctx,

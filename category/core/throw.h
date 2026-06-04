@@ -19,3 +19,9 @@
 // MONAD_ASSERT(false) since the bare-metal zkVM build is compiled with
 // -fno-exceptions.
 #define MONAD_THROW(exc, msg) throw exc(msg)
+
+// Wrap a try/catch(...) pair. The zkVM mirror erases the `try` keyword and
+// reduces `catch (...)` to a dead `if (false)` so the catch body still
+// type-checks but never runs in the no-exceptions build.
+#define MONAD_TRY try
+#define MONAD_CATCH_ALL catch (...)

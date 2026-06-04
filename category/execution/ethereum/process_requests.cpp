@@ -31,11 +31,10 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <silkpre/sha256.h>
+#include <silkpre_vendor/sha256.h>
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
-#include <intx/intx.hpp>
 
 #include <array>
 #include <cstdint>
@@ -239,7 +238,7 @@ bytes32_t compute_requests_hash(std::span<BlockRequest const> const requests)
         buf.reserve(1 + req.data.size());
         buf.push_back(req.type);
         buf.append_range(req.data);
-        silkpre_sha256(inner.bytes, buf.data(), buf.size(), true);
+        monad_sha256(inner.bytes, buf.data(), buf.size(), true);
         inner_hashes.append_range(inner.bytes);
     }
 
@@ -247,7 +246,7 @@ bytes32_t compute_requests_hash(std::span<BlockRequest const> const requests)
     bytes32_t outer_hash;
     uint8_t const *outer_input =
         inner_hashes.empty() ? &EMPTY_SHA256_INPUT : inner_hashes.data();
-    silkpre_sha256(outer_hash.bytes, outer_input, inner_hashes.size(), true);
+    monad_sha256(outer_hash.bytes, outer_input, inner_hashes.size(), true);
     return outer_hash;
 }
 

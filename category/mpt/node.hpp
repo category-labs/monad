@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include <category/async/storage_pool.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/endian.hpp> // NOLINT
 #include <category/core/keccak.h>

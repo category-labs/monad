@@ -51,7 +51,7 @@
 
 #include <boost/outcome/try.hpp>
 
-#include <nlohmann/json_fwd.hpp>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <chrono>

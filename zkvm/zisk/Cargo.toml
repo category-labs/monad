@@ -1,0 +1,37 @@
+[package]
+name = "monad-zkvm-zisk"
+description = "Monad witness-execution guest for the ZisK zkVM"
+version = "0.1.0"
+edition = "2021"
+
+# Standalone workspace — the main monad cargo workspace at /rust targets
+# x86_64-linux and pins a host-only dependency tree (alloy, bindgen, cmake
+# host toolchains). ziskos pulls a custom rust-toolchain and cross-builds
+# for riscv64ima-zisk-zkvm-elf, so it has to live in its own resolution
+# tree to avoid polluting the host workspace.
+[workspace]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+ziskos = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v0.18.0" }
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+sha2 = { version = "0.10", default-features = false }
+ripemd = { version = "0.1", default-features = false }
+k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+
+# Heavier precompile crates that only make sense once the C++ side actually
+# calls into them. Cfg-gated to the ZisK target so the x86 development build
+# doesn't pull them in.
+[target.'cfg(all(target_os = "zkvm", target_vendor = "zisk"))'.dependencies]
+substrate-bn = "0.6"
+aurora-engine-modexp = "1.2"
+kzg-rs = { git = "https://github.com/succinctlabs/kzg-rs.git" }
+
+[build-dependencies]
+monad-zkvm-build-support = { path = "../build-support" }

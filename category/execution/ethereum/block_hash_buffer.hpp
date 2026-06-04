@@ -24,13 +24,6 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class BlockDb;
-
-namespace mpt
-{
-    class Db;
-}
-
 class BlockHashBuffer
 {
 public:
@@ -93,11 +86,5 @@ public:
     void finalize(bytes32_t const &block_id);
     BlockHashBuffer const &find_chain(bytes32_t const &block_id) const;
 };
-
-bool init_block_hash_buffer_from_triedb(
-    mpt::Db &, uint64_t, BlockHashBufferFinalized &);
-
-bool init_block_hash_buffer_from_blockdb(
-    BlockDb &, uint64_t block_number, BlockHashBufferFinalized &);
 
 MONAD_NAMESPACE_END

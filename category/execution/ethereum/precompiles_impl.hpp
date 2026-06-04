@@ -1,0 +1,398 @@
+// Copyright (C) 2025 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#pragma once
+
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
+#include <category/core/hex.hpp>
+#include <category/core/likely.h>
+#include <category/execution/ethereum/precompiles.hpp>
+#include <category/execution/ethereum/precompiles_bls12.hpp>
+
+#include <cryptopp/eccrypto.h>
+#include <cryptopp/ecp.h>
+#include <cryptopp/integer.h>
+#include <cryptopp/oids.h>
+
+#include <c-kzg-4844/trusted_setup.hpp>
+
+#include <eip4844/eip4844.h>
+
+#include <common/bytes.h>
+#include <common/ret.h>
+
+#include <evmc/evmc.h>
+
+#include <silkpre_vendor/rmd160.h>
+#include <silkpre_vendor/sha256.h>
+
+#include <setup/settings.h>
+#include <setup/setup.h>
+
+#include <silkpre/ecdsa.h>
+#include <silkpre/precompile.h>
+
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <optional>
+#include <string_view>
+
+namespace
+{
+    std::optional<KZGSettings> g_trustedSetup;
+
+    monad::bytes32_t kzg_to_version_hashed(KZGCommitment const &commitment)
+    {
+        constexpr uint8_t VERSION_HASH_VERSION_KZG = 1;
+        monad::bytes32_t h;
+        monad_sha256(
+            h.bytes,
+            commitment.bytes,
+            sizeof(KZGCommitment),
+            true /* use_cpu_extensions */);
+        h.bytes[0] = VERSION_HASH_VERSION_KZG;
+        return h;
+    }
+
+    struct bytes64_t
+    {
+        uint8_t bytes[64];
+    };
+
+    constexpr bytes64_t blob_precompile_return_value()
+    {
+        constexpr std::string_view v{
+            "0x0000000000000000000000000000000000000000000000000000000000001000"
+            "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"};
+        constexpr auto r = monad::from_hex<bytes64_t>(v);
+        static_assert(r.has_value());
+        return r.value();
+    }
+}
+
+MONAD_NAMESPACE_BEGIN
+
+bool init_trusted_setup()
+{
+    if (!g_trustedSetup.has_value()) {
+        auto const setup = c_kzg_4844::trusted_setup_data();
+        KZGSettings settings;
+        FILE *fp = fmemopen((void *)(setup.data()), setup.size(), "r");
+        if (fp) {
+            if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
+                g_trustedSetup.emplace(settings);
+            }
+            fclose(fp);
+        }
+    }
+    return g_trustedSetup.has_value();
+}
+
+// TODO: remove silkpre
+template <SilkpreRunFunction Func>
+static inline PrecompileResult silkpre_execute(byte_string_view const input)
+{
+    auto const [output, output_size] = Func(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return PrecompileResult::failure();
+    }
+    return {EVMC_SUCCESS, output, output_size};
+}
+
+// Substitute a pointer to the empty string when `input.data()` is null.
+// monad_sha256 / monad_rmd160 invoke undefined behaviour on a null input
+// pointer even when the length is zero.
+static inline uint8_t const *nonnull_input_data(byte_string_view const input)
+{
+    return input.data() != nullptr ? input.data()
+                                   : reinterpret_cast<uint8_t const *>("");
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult ecrecover_impl(
+    std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
+    uint8_t recid, std::span<uint8_t, 32> const out)
+{
+    std::memset(out.data(), 0, 12);
+    thread_local secp256k1_context *context{
+        secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS)};
+    if (!silkpre_recover_address(
+            &out[12], msg.data(), sig.data(), recid, context)) {
+        return {out.data(), 0};
+    }
+    return {out.data(), 32};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult
+sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out)
+{
+    monad_sha256(
+        out.data(),
+        nonnull_input_data(input),
+        input.size(),
+        true /* use_cpu_extensions */);
+    return {out.data(), 32};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult
+ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
+{
+    std::memset(out.data(), 0, 12);
+    monad_rmd160(&out[12], nonnull_input_data(input), input.size());
+    return {out.data(), 32};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult
+ecadd_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
+{
+    auto const [output, output_size] =
+        silkpre_bn_add_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), output_size};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult
+ecmul_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
+{
+    auto const [output, output_size] =
+        silkpre_bn_mul_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), output_size};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult
+identity_impl(byte_string_view const input, std::span<uint8_t> const out)
+{
+    MONAD_ASSERT(!input.empty());
+
+    std::memcpy(out.data(), input.data(), input.size());
+    return {out.data(), input.size()};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult
+expmod_impl(byte_string_view const input, std::span<uint8_t> const out)
+{
+    auto const [output, output_size] =
+        silkpre_expmod_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {out.data(), 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), output_size};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult
+snarkv_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
+{
+    auto const [output, output_size] =
+        silkpre_snarkv_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), output_size};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult
+blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
+{
+    auto const [output, output_size] =
+        silkpre_blake2_f_run(input.data(), input.size());
+    if (output == nullptr) {
+        MONAD_ASSERT(output_size == 0);
+        return {nullptr, 0};
+    }
+    std::memcpy(out.data(), output, output_size);
+    std::free(output);
+    return {out.data(), output_size};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult point_evaluation_impl(
+    byte_string_view const input, std::span<uint8_t, 64> const out)
+{
+    if (input.size() != 192) {
+        return {nullptr, 0};
+    }
+
+    bytes32_t versioned_hash;
+    std::memcpy(versioned_hash.bytes, input.data(), sizeof(bytes32_t));
+
+    auto const *const z =
+        reinterpret_cast<Bytes32 const *>(input.substr(32).data());
+    auto const *const y =
+        reinterpret_cast<Bytes32 const *>(input.substr(64).data());
+    auto const *const commitment_data =
+        reinterpret_cast<KZGCommitment const *>(input.substr(96).data());
+    auto const *const proof =
+        reinterpret_cast<KZGProof const *>(input.substr(144).data());
+
+    KZGCommitment commitment{*commitment_data};
+    if (versioned_hash != kzg_to_version_hashed(commitment)) {
+        return {nullptr, 0};
+    }
+
+    bool ok{false};
+    verify_kzg_proof(&ok, &commitment, z, y, proof, &g_trustedSetup.value());
+    if (!ok) {
+        return {nullptr, 0};
+    }
+
+    std::memcpy(
+        out.data(), blob_precompile_return_value().bytes, sizeof(bytes64_t));
+    return {out.data(), 64};
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult bls12_g1_add_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
+{
+    return bls12::add<bls12::G1>(input, out);
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult bls12_g1_msm_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
+{
+    return bls12::msm<bls12::G1>(input, out);
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult bls12_g2_add_impl(
+    byte_string_view const input, std::span<uint8_t, 256> const out)
+{
+    return bls12::add<bls12::G2>(input, out);
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult bls12_g2_msm_impl(
+    byte_string_view const input, std::span<uint8_t, 256> const out)
+{
+    return bls12::msm<bls12::G2>(input, out);
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult bls12_pairing_check_impl(
+    byte_string_view const input, std::span<uint8_t, 32> const out)
+{
+    return bls12::pairing_check(input, out);
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult bls12_map_fp_to_g1_impl(
+    byte_string_view const input, std::span<uint8_t, 128> const out)
+{
+    return bls12::map_fp_to_g<bls12::G1>(input, out);
+}
+
+[[gnu::always_inline]] inline PrecompileImplResult bls12_map_fp2_to_g2_impl(
+    byte_string_view const input, std::span<uint8_t, 256> const out)
+{
+    return bls12::map_fp_to_g<bls12::G2>(input, out);
+}
+
+// Rollup precompiles
+
+// EIP-7951
+[[gnu::always_inline]] inline PrecompileImplResult
+p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
+{
+    using namespace CryptoPP;
+
+    static constexpr PrecompileImplResult empty_result{nullptr, 0};
+
+    if (input.size() != 160) {
+        return empty_result;
+    }
+
+    Integer h(input.data(), 32);
+    Integer r(input.data() + 32, 32);
+    Integer s(input.data() + 64, 32);
+    Integer qx(input.data() + 96, 32);
+    Integer qy(input.data() + 128, 32);
+
+    DL_GroupParameters_EC<ECP> params(ASN1::secp256r1());
+    auto const &ec = params.GetCurve();
+    auto const &n = params.GetSubgroupOrder();
+    auto const p_mod = ec.FieldSize();
+    auto const &G = params.GetSubgroupGenerator();
+
+    // if not (0 < r < n and 0 < s < n): return
+    if (!(r > Integer::Zero() && r < n)) {
+        return empty_result;
+    }
+
+    if (!(s > Integer::Zero() && s < n)) {
+        return empty_result;
+    }
+
+    // if not (0 ≤ qx < p and 0 ≤ qy < p): return
+    if (!(qx >= Integer::Zero() && qx < p_mod)) {
+        return empty_result;
+    }
+
+    if (!(qy >= Integer::Zero() && qy < p_mod)) {
+        return empty_result;
+    }
+
+    // if qy^2 ≢ qx^3 + a*qx + b (mod p): return
+    if (!ec.VerifyPoint({qx, qy})) {
+        return empty_result;
+    }
+
+    // if (qx, qy) == (0, 0): return
+    if (qx.IsZero() && qy.IsZero()) {
+        return empty_result;
+    }
+
+    // s1 = s^(-1) (mod n)
+    auto const s1 = s.InverseMod(n);
+
+    // R' = (h * s1) * G + (r * s1) * (qx, qy)
+    auto const u1 = a_times_b_mod_c(h, s1, n);
+    auto const u2 = a_times_b_mod_c(r, s1, n);
+
+    auto const p1 = ec.Multiply(u1, G);
+    auto const p2 = ec.Multiply(u2, {qx, qy});
+    auto const r_prime = ec.Add(p1, p2);
+
+    // If R' is at infinity: return
+    if (r_prime.identity) {
+        return empty_result;
+    }
+
+    // if R'.x ≢ r (mod n): return
+    if (r_prime.x % n != r) {
+        return empty_result;
+    }
+
+    // Return 0x000...1
+    std::memset(out.data(), 0, 32);
+    out.data()[31] = 1;
+    return {out.data(), 32};
+}
+
+MONAD_NAMESPACE_END

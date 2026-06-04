@@ -16,68 +16,12 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
-#include <category/core/keccak.hpp>
+#include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
-#include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 
-#include <silkpre/ecdsa.h>
-
-#include <secp256k1.h>
-
-#include <cstdint>
-#include <memory>
 #include <optional>
-
-MONAD_ANONYMOUS_NAMESPACE_BEGIN
-
-/// Recover an Ethereum address from an ECDSA signature.
-///
-/// @param sc            The signature and chain information.
-/// @param encoding      The RLP-encoded payload that was signed.
-///
-std::optional<Address>
-ecrecover(SignatureAndChain const &sc, byte_string_view const encoding)
-{
-    if (sc.y_parity > 1) {
-        return std::nullopt;
-    }
-
-    if (sc.has_upper_s()) {
-        return std::nullopt;
-    }
-
-    auto const encoding_hash = keccak256(encoding);
-
-    uint8_t signature[sizeof(sc.r) * 2];
-    store_be(signature, sc.r);
-    store_be(signature + sizeof(sc.r), sc.s);
-
-    thread_local std::unique_ptr<
-        secp256k1_context,
-        decltype(&secp256k1_context_destroy)> const
-        context(
-            secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS),
-            &secp256k1_context_destroy);
-
-    Address result;
-
-    // TODO: remove silkpre
-    if (!silkpre_recover_address(
-            result.bytes,
-            encoding_hash.bytes,
-            signature,
-            sc.y_parity,
-            context.get())) {
-        return std::nullopt;
-    }
-
-    return result;
-}
-
-MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 

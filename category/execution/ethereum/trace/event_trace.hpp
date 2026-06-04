@@ -54,6 +54,11 @@
     #define TRACE_TXN_EVENT(enum)
 #endif
 
+namespace quill
+{
+    class Logger;
+}
+
 MONAD_NAMESPACE_BEGIN
 
 extern quill::Logger *event_tracer;

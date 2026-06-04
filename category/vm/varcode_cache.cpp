@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/compiler/ir/x86/types.hpp> // IWYU pragma: keep
 #include <category/vm/varcode_cache.hpp>
 
 #include <cstdint>

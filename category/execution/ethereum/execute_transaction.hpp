@@ -22,11 +22,12 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 
-#include <boost/fiber/future/promise.hpp>
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <span>
 
 MONAD_NAMESPACE_BEGIN
@@ -79,7 +80,9 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockHashBuffer const &block_hash_buffer_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
-    boost::fibers::promise<void> &prev_;
+    // Production passes a lambda waiting on a fiber promise; the zkVM
+    // passes a no-op.
+    std::function<void()> prev_wait_;
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
     bool trace_transfers_;
@@ -92,9 +95,8 @@ public:
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, CallTracerBase &,
-        trace::StateTracer &, ChainContext<traits> const &chain_ctx,
-        bool trace_transfers = false);
+        std::function<void()> prev_wait, CallTracerBase &, trace::StateTracer &,
+        ChainContext<traits> const &chain_ctx, bool trace_transfers = false);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

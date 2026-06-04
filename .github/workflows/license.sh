@@ -86,7 +86,13 @@ for file in $(git ls-files -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp' '*.S'); do
     echo "$file" >&2
 done
 
-for file in $(git ls-files -- '*.py' '*CMakeLists.txt'); do
+for file in $(git ls-files -- '*.py' '*CMakeLists.txt' '*.cmake'); do
+    directory=$(dirname "$file")
+
+    if [ "$directory" == "cmake/dummy" ]; then
+        continue
+    fi
+
     if check_license "$file" "${PYTHON_LICENSE_LINES[@]}"; then
         continue
     fi

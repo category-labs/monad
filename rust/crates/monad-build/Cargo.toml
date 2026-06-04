@@ -8,9 +8,11 @@ bindgen        = { workspace = true, optional = true }
 cargo_metadata = { workspace = true, optional = true }
 cc             = { workspace = true, optional = true }
 cmake          = { workspace = true, optional = true }
+cxx-build      = { workspace = true, optional = true }
 
 [features]
 bindgen = ["dep:bindgen", "metadata"]
 bindgen-static = ["bindgen", "dep:cc"]
 cmake = ["dep:cmake"]
+cxx = ["dep:cc", "dep:cxx-build", "metadata"]
 metadata = ["dep:cargo_metadata"]
